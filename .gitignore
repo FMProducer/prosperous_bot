@@ -1,0 +1,21 @@
+# build artefacts / metadata
+*.egg-info/
+dist/
+build/
+__pycache__/
+
+# venvs
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+
+# secrets
+.env
+
+# coverage
+.coverage
+htmlcov/
