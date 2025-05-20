@@ -57,3 +57,4 @@ poetry.lock
 
 # VS Code
 .vscode/
+miniconda3/
