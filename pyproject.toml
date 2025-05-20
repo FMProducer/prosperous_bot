@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptive_agent"          # обязательно
+version = "0.1.0"                # ← добавьте эту строку
+description = "Trading AI Agent prototype"
+authors = [{ name = "FMProducer", email = "dev@example.com" }]
+requires-python = ">=3.11"
+
+dependencies = [
+    "aiohttp>=3.9",
+    "gate-api>=6.23",
+    "pydantic>=2.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["adaptive_agent"]
