@@ -1,0 +1,14 @@
+(.venv) (base) PS C:\Python\prosperous_bot> python -m pytest
+...............                                                                                    [100%]
+============================================ tests coverage ============================================= 
+____________________________ coverage: platform win32, python 3.11.9-final-0 ____________________________ 
+
+Name                                  Stmts   Miss  Cover
+---------------------------------------------------------
+adaptive_agent\exchange_api.py           68      5    93%
+adaptive_agent\portfolio_manager.py      41      3    93%
+---------------------------------------------------------
+TOTAL                                   109      8    93%
+Required test coverage of 90% reached. Total coverage: 92.66%
+15 passed in 5.13s
+(.venv) (base) PS C:\Python\prosperous_bot> 

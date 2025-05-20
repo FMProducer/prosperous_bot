@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+27,13,11,13,6,295,LINKUSDT,0.38333333333333336,0.3728813559322034,0.3055555555555556,72.0,1.0

@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+35,18,11,20,8,200,MUBARAKUSDT,0.35714285714285715,0,0,0,1.0

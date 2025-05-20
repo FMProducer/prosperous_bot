@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+30,11,29,24,8,70,DOGEUSDT,0.5217391304347826,0.5,0.45081967213114754,122.0,1.0

@@ -1,75 +1,68 @@
-"""portfolio_manager.py – расчёт NAV и ноциональных весов BTC-нейтрального портфеля."""
+# c:\Python\Prosperous_Bot\adaptive_agent\portfolio_manager.py
 
 from __future__ import annotations
-import asyncio, logging, time
+import asyncio, time, logging
 from typing import Dict
 from adaptive_agent.exchange_api import ExchangeAPI
 
 _LOG = logging.getLogger(__name__)
 
+
 class PortfolioManager:
-    """Служебный слой: берёт снапшот позиций и выдаёт веса BTC-порта по спотовой цене."""
+    """
+    Снимок портфеля (spot BTC + USDT-фьючерсы) → NAV и notional-веса.
+    Кэш снапшота живёт `cache_sec` секунд, чтобы не спамить API.
+    """
 
-    def __init__(self, spot_api: ExchangeAPI, fut_api: ExchangeAPI, leverage: int = 5):
-        self.spot_api, self.fut_api = spot_api, fut_api
-        self.leverage = leverage
-        self._last_snapshot: dict | None = None
-        self._ts_snapshot: float = 0
+    def __init__(self, spot: ExchangeAPI, fut: ExchangeAPI, cache_sec: int = 3):
+        self.spot, self.fut, self.cache_sec = spot, fut, cache_sec
+        self._snap: dict[str, float] | None = None
+        self._ts = 0.0
 
-    # ------------------------------------------------------------------ #
-    async def _snapshot(self) -> dict:
-        """Возвращает кешированный снимок (spot_qty, long_qty, short_qty, upl)."""
-        if self._last_snapshot and time.time() - self._ts_snapshot < 3:
-            return self._last_snapshot           # 3-секундный кеш
+    # ---- внутренний снапшот ----
+    async def _snapshot(self) -> dict[str, float]:
+        if self._snap and time.time() - self._ts < self.cache_sec:
+            return self._snap
 
-        # --- spot BTC баланс ---
-        bal = await self.spot_api.get_wallet_balance('BTC')
-        spot_qty = float(bal.available) if bal else 0.0
+        # spot-баланс BTC (sync SDK → to_thread)
+        bal = await asyncio.to_thread(self.spot.spot.get_account_detail)
+        spot_qty = float(next((a.available for a in bal if a.currency == "BTC"), 0))
 
-        # --- фьючерсные позиции ---
-        pos = await self.fut_api.make_request(self.fut_api.futures.list_positions, settle='usdt')
-        long_qty = short_qty = upl = 0.0
+        # позиции BTC-USDT futures (sync SDK → to_thread)
+        pos = await asyncio.to_thread(self.fut.futures.list_positions, settle="usdt")
+        long_q = short_q = upl = 0.0
         for p in pos:
-            if p.contract != 'BTC_USDT':           # рассматриваем только BTC
+            if p.contract != "BTC_USDT":
                 continue
-            qty = float(p.size)
-            if qty > 0:
-                long_qty += qty
-            elif qty < 0:
-                short_qty += abs(qty)
+            q = float(p.size)
             upl += float(p.unrealised_pnl)
+            if q > 0:
+                long_q += q
+            elif q < 0:
+                short_q += abs(q)
 
-        snap = dict(spot_qty=spot_qty, long_qty=long_qty,
-                    short_qty=short_qty, upl=upl)
-        self._last_snapshot, self._ts_snapshot = snap, time.time()
-        return snap
+        self._snap = s = dict(spot_qty=spot_qty, long_qty=long_q, short_qty=short_q, upl=upl)
+        self._ts = time.time()
+        return s
 
-    # ------------------------------------------------------------------ #
-    async def _equity_usd(self, p_spot: float) -> float:
+    # ---- NAV ----
+    async def nav_usd(self, p_spot: float) -> float:
         s = await self._snapshot()
         return s["spot_qty"] * p_spot + s["upl"]
 
-    # ------------------------------------------------------------------ #
+    # ---- notional-веса ----
     async def get_notional_weights(self, p_spot: float) -> Dict[str, float]:
-        """
-        Возвращает веса ножек портфеля:
-        { 'BTC_SPOT': w1, 'BTC_LONG5X': w2, 'BTC_SHORT5X': w3 }
-        """
         s = await self._snapshot()
-        not_long  = s["long_qty"]  * p_spot
-        not_short = s["short_qty"] * p_spot
-        nav = await self._equity_usd(p_spot)
+        nav = await self.nav_usd(p_spot)
         if nav == 0:
-            _LOG.warning("NAV == 0; возвращаю нули")
-            return {k: 0 for k in ("BTC_SPOT", "BTC_LONG5X", "BTC_SHORT5X")}
+            return {k: 0.0 for k in ("BTC_SPOT", "BTC_LONG5X", "BTC_SHORT5X")}
         return {
-            "BTC_SPOT"   : (s["spot_qty"] * p_spot) / nav,
-            "BTC_LONG5X" : not_long  / nav,
-            "BTC_SHORT5X": not_short / nav,
+            "BTC_SPOT": s["spot_qty"] * p_spot / nav,
+            "BTC_LONG5X": s["long_qty"] * p_spot / nav,
+            "BTC_SHORT5X": s["short_qty"] * p_spot / nav,
         }
 
-    # ------------------------------------------------------------------ #
-    async def refresh_and_log(self, p_spot: float):
-        """Асинхронно печатает веса – удобно для Prometheus-экспорта."""
+    # ---- helper для метрик ----
+    async def log_weights(self, p_spot: float) -> None:
         w = await self.get_notional_weights(p_spot)
-        _LOG.info("Weights: %s", {k: f"{v:.3%}" for k, v in w.items()})
+        _LOG.info("Weights %%: %s", {k: f"{v:.2%}" for k, v in w.items()})

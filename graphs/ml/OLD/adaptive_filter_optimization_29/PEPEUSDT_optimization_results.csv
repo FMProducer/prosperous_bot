@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+33,11,30,28,5,242,PEPEUSDT,0.48559670781893005,0.4423076923076923,0.36507936507936506,63.0,1.0

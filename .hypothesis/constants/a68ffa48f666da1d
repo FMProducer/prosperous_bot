@@ -1,0 +1,4 @@
+# file: C:\Python\prosperous_bot\adaptive_agent\exchange_api.py
+# hypothesis_version: 6.131.20
+
+[0.0, 429, 1000, 1800, '0', 'GATE_KEY', 'GATE_SECRET', 'Gate API %s – %s', 'Time offset %+d ms', 'amount', 'contract', 'currency_pair', 'gtc', 'iceberg', 'ioc', 'limit', 'long', 'market', 'message', 'price', 'reduce_only', 'side', 'size', 'tif', 'time_in_force', 'too many', 'type', 'usdt']

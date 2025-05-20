@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "adaptive_agent"          # обязательно
-version = "0.1.0"                # ← добавьте эту строку
+name = "adaptive_agent"
+version = "0.1.0"
 description = "Trading AI Agent prototype"
 authors = [{ name = "FMProducer", email = "dev@example.com" }]
 requires-python = ">=3.11"
@@ -17,3 +17,19 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["adaptive_agent"]
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=adaptive_agent.exchange_api --cov=adaptive_agent.portfolio_manager --cov-fail-under=90"
+asyncio_default_fixture_loop_scope = "session"
+filterwarnings = [
+    "ignore::pytest.PytestDeprecationWarning",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pytest-mock",
+    "hypothesis",
+]

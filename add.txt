@@ -1,0 +1,16 @@
+исправить tests/test_portfolio_property.py
+diff
+Копировать
+Редактировать
+-from unittest.mock import Mock
+-
+-@given(...)
+-@settings(...)
+-def test_weights_sum(monkeypatch, Mock, spot, long, short, px):
+-    spot_api, fut_api = Mock(), Mock()
++from unittest.mock import Mock
++
++@given(...)
++@settings(...)
++def test_weights_sum(monkeypatch, spot, long, short, px):
++    spot_api, fut_api = Mock(), Mock()

@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+19,17,14,26,4,180,PNUTUSDT,0.48231511254019294,0,0,0,0

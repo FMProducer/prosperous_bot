@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+21,16,15,25,8,74,SOLUSDT,0.45962732919254656,0.4666666666666667,0.4083333333333333,120.0,1.0

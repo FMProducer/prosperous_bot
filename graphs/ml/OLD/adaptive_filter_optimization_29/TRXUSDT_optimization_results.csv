@@ -1,0 +1,2 @@
+cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
+18,11,13,14,5,269,TRXUSDT,0.47058823529411764,0.46938775510204084,0.3709677419354839,124.0,1.0
