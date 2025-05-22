@@ -1,14 +1,70 @@
-(.venv) (base) PS C:\Python\prosperous_bot> python -m pytest
-...............                                                                                    [100%]
-============================================ tests coverage ============================================= 
-____________________________ coverage: platform win32, python 3.11.9-final-0 ____________________________ 
+(.venv) (base) PS C:\Python\Prosperous_Bot> pytest -q --cov=adaptive_agent.exchange_api --cov-fail-under=90
+..............FC:\Python\prosperous_bot\.venv\Lib\site-packages\coverage\inorout.py:525: CoverageWarning: Module adaptive_agent.exchange_api was previously imported, but not measured (module-not-measured)
+  self.warn(msg, slug="module-not-measured")
+                                                                                                                                                                   [100%]
+======================================================================================= FAILURES ======================================================================================= 
+___________________________________________________________________________________ test_weights_sum ___________________________________________________________________________________ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002290FB60150>
+
+    @given(
+>       spot=st.floats(min_value=0.001, max_value=5),
+        long=st.floats(min_value=0, max_value=2),
+        short=st.floats(min_value=0, max_value=2),
+        px=st.floats(min_value=10_000, max_value=100_000)
+    )
+
+tests\test_portfolio_property.py:10:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _  
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002290FB60150>, spot = 1.0, long = 0.0, short = 1.0, px = 10000.0
+
+    @given(
+        spot=st.floats(min_value=0.001, max_value=5),
+        long=st.floats(min_value=0, max_value=2),
+        short=st.floats(min_value=0, max_value=2),
+        px=st.floats(min_value=10_000, max_value=100_000)
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_weights_sum(monkeypatch, spot, long, short, px):
+        spot_api, fut_api = Mock(), Mock()
+
+        spot_api.spot.get_account_detail = Mock(
+            return_value=[gate_api.SpotAccount(currency="BTC", available=str(spot))]
+        )
+        fut_api.futures.list_positions = Mock(return_value=[
+            gate_api.Position(size=str(long), contract="BTC_USDT", unrealised_pnl="0"),
+            gate_api.Position(size=str(-short), contract="BTC_USDT", unrealised_pnl="0"),
+        ])
+
+        pm = PortfolioManager(spot_api, fut_api)
+        w = asyncio.run(pm.get_notional_weights(px))
+        total = sum(w.values())
+
+        # Проверка адекватности весов
+        assert all(v >= 0.0 and isfinite(v) for v in w.values())
+>       assert isfinite(total) and 0.0 <= total <= 1.01  # допускаем небольшое отклонение из-за округлений
+E       assert (True and 2.0 <= 1.01)
+E        +  where True = isfinite(2.0)
+E       Falsifying example: test_weights_sum(
+E           # The test always failed when commented parts were varied together.
+E           monkeypatch=<_pytest.monkeypatch.MonkeyPatch object at 0x000002290FB60150>,
+E           spot=1.0,  # or any other generated value
+E           long=0.0,  # or any other generated value
+E           short=1.0,
+E           px=10000.0,  # or any other generated value
+E       )
+
+tests\test_portfolio_property.py:33: AssertionError
+==================================================================================== tests coverage ==================================================================================== 
+___________________________________________________________________ coverage: platform win32, python 3.11.9-final-0 ____________________________________________________________________ 
 
 Name                                  Stmts   Miss  Cover
 ---------------------------------------------------------
 adaptive_agent\exchange_api.py           68      5    93%
-adaptive_agent\portfolio_manager.py      41      3    93%
+adaptive_agent\portfolio_manager.py      41      4    90%
 ---------------------------------------------------------
-TOTAL                                   109      8    93%
-Required test coverage of 90% reached. Total coverage: 92.66%
-15 passed in 5.13s
-(.venv) (base) PS C:\Python\prosperous_bot> 
+TOTAL                                   109      9    92%
+Required test coverage of 90% reached. Total coverage: 91.74%
+=============================================================================== short test summary info ================================================================================ 
+FAILED tests/test_portfolio_property.py::test_weights_sum - assert (True and 2.0 <= 1.01)
