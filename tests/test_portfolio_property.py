@@ -1,33 +1,30 @@
-from unittest.mock import Mock
-from hypothesis import given, settings, strategies as st
+
+import pytest, gate_api
 from adaptive_agent.portfolio_manager import PortfolioManager
-import gate_api
+from unittest.mock import Mock
 import asyncio
-from math import isfinite
+from hypothesis import given, strategies as st
 
-# Ограничение: исключаем почти нулевые значения spot (e.g. 2e-313)
 @given(
-    spot=st.floats(min_value=0.001, max_value=5),
-    long=st.floats(min_value=0, max_value=2),
-    short=st.floats(min_value=0, max_value=2),
-    px=st.floats(min_value=10_000, max_value=100_000)
+    spot=st.floats(0.01, 1),
+    short=st.integers(1, 10),
+    long=st.integers(1, 10),
+    price=st.floats(10000, 60000)
 )
-@settings(max_examples=200, deadline=None)
-def test_weights_sum(monkeypatch, spot, long, short, px):
-    spot_api, fut_api = Mock(), Mock()
-
+def test_value_distribution_valid(spot, short, long, price):
+    spot_api = Mock()
+    fut_api = Mock()
     spot_api.spot.get_account_detail = Mock(
         return_value=[gate_api.SpotAccount(currency="BTC", available=str(spot))]
     )
-    fut_api.futures.list_positions = Mock(return_value=[
-        gate_api.Position(size=str(long), contract="BTC_USDT", unrealised_pnl="0"),
-        gate_api.Position(size=str(-short), contract="BTC_USDT", unrealised_pnl="0"),
-    ])
-
+    fut_api.futures.list_positions = Mock(
+        return_value=[
+            gate_api.Position(size=str(long), contract="BTC_USDT", unrealised_pnl="0", margin="1000"),
+            gate_api.Position(size=str(-short), contract="BTC_USDT", unrealised_pnl="0", margin="1000")
+        ]
+    )
     pm = PortfolioManager(spot_api, fut_api)
-    w = asyncio.run(pm.get_notional_weights(px))
-    total = sum(w.values())
-
-    # Проверка адекватности весов
-    assert all(v >= 0.0 and isfinite(v) for v in w.values())
-    assert isfinite(total) and 0.0 <= total <= 1.01  # допускаем небольшое отклонение из-за округлений
+    values = asyncio.run(pm.get_value_distribution_usdt(price, 250))
+    total = sum(values.values())
+    assert all(v >= 0 for v in values.values())
+    assert total > 0

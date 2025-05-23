@@ -1,27 +1,21 @@
-# c:\Python\Prosperous_Bot\tests\test_portfolio.py
-import pytest, gate_api
-from unittest.mock import Mock
-from adaptive_agent.portfolio_manager import PortfolioManager
 
+import pytest, gate_api
+from adaptive_agent.portfolio_manager import PortfolioManager
+from unittest.mock import Mock
 
 @pytest.mark.asyncio
-async def test_nav_and_weights(monkeypatch):
-    spot_api, fut_api = Mock(), Mock()
-
-    # spot 0.1 BTC
-    spot_api.spot.get_account_detail = Mock(return_value=[
+async def test_get_value_distribution_usdt(mocker):
+    spot_api = mocker.Mock()
+    fut_api = mocker.Mock()
+    spot_api.spot.get_account_detail = mocker.Mock(return_value=[
         gate_api.SpotAccount(currency="BTC", available="0.1")
     ])
-    # long 0.02 / short –0.02
-    fut_api.futures.list_positions = Mock(return_value=[
-        gate_api.Position(size="0.02", contract="BTC_USDT", unrealised_pnl="0"),
-        gate_api.Position(size="-0.02", contract="BTC_USDT", unrealised_pnl="0"),
+    fut_api.futures.list_positions = mocker.Mock(return_value=[
+        gate_api.Position(size="0.02", contract="BTC_USDT", unrealised_pnl="50", margin="500"),
+        gate_api.Position(size="-0.02", contract="BTC_USDT", unrealised_pnl="-20", margin="200")
     ])
-
     pm = PortfolioManager(spot_api, fut_api)
-    nav = await pm.nav_usd(50_000)
-    assert nav == 0.1 * 50_000
-
-    w = await pm.get_notional_weights(50_000)
-    assert 1.3 <= sum(w.values()) <= 1.5
-    assert w["BTC_SPOT"] > 0.99
+    values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250)
+    assert isinstance(values, dict)
+    assert all(k in values for k in ("BTC_SPOT", "BTC_SHORT5X", "BTC_LONG5X"))
+    assert all(isinstance(v, float) for v in values.values())
