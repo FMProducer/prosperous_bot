@@ -1,2 +1,0 @@
-cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
-16,14,18,21,4,153,SUIUSDT,0.4435146443514644,0.39855072463768115,0.41044776119402987,134.0,1.0

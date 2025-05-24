@@ -1,2 +1,0 @@
-cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
-22,14,28,23,2,229,ETHUSDT,0.56,0.36538461538461536,0.24675324675324675,77.0,1.0

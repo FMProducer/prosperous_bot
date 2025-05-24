@@ -1,2 +1,0 @@
-cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
-40,20,30,25,7,300,AVAXUSDT,0.3878787878787879,0.3333333333333333,0.30434782608695654,69.0,1.0

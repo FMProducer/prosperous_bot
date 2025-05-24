@@ -1,2 +1,0 @@
-cci_n,roc_k,rsi_n,will_n,change_n,n_estimators,symbol,f1_score,precision,recall,support,train_f1
-20,8,9,9,10,64,BTCUSDT,0.6956521739130435,0.3780487804878049,0.4189189189189189,74.0,1.0

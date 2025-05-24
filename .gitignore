@@ -49,14 +49,11 @@ docs/_build/
 .dmypy.json
 dmypy.json
 
-# Poetry
-poetry.lock
-
 # JupyterLab
 .jupyterlab/workspaces/
 
-# VS Code
-.vscode/
-
 # Miniconda
 miniconda3/
+
+# Custom application folders
+graphs/

@@ -8,20 +8,20 @@
         "time": "2025-05-24T02:18:38.035918"
     },
     "TRUMPUSDT": {
-        "signal": "sell",
-        "time": "2025-05-24T02:18:38.035918"
+        "signal": "buy",
+        "time": "2025-05-24T21:54:38.482753"
     },
     "WIFUSDT": {
         "signal": "sell",
         "time": "2025-05-24T02:18:38.035918"
     },
     "ADAUSDT": {
-        "signal": "sell",
-        "time": "2025-05-24T02:18:38.035918"
+        "signal": "buy",
+        "time": "2025-05-24T21:54:38.482753"
     },
     "ENAUSDT": {
-        "signal": "sell",
-        "time": "2025-05-24T02:18:38.035918"
+        "signal": "buy",
+        "time": "2025-05-24T21:54:38.482753"
     },
     "WLDUSDT": {
         "signal": "sell",
@@ -31,12 +31,12 @@
         "signal": "sell",
         "time": "2025-05-24T02:18:38.035918"
     },
-    "FETUSDT": {
-        "signal": "sell",
-        "time": "2025-05-24T03:18:35.553361"
+    "AAVEUSDT": {
+        "signal": "buy",
+        "time": "2025-05-24T21:54:38.482753"
     },
-    "AVAXUSDT": {
+    "ALPACAUSDT": {
         "signal": "sell",
-        "time": "2025-05-24T03:52:41.573111"
+        "time": "2025-05-24T22:27:01.226042"
     }
 }
