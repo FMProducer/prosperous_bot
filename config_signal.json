@@ -1,0 +1,153 @@
+{
+  "interval": "5m",
+  "lookback_period": 720,
+  "visualization_interval": 60,
+  "graph_dir": "C:\\Python\\Prosperous_Bot\\graphs\\ml",
+  "symbol_source": "dynamic",
+  "symbol_limit": 10,
+  "min_quote_volume": 10,
+  "symbol_cache_ttl": 1800,
+  "excluded_symbols": [
+    "FDUSDUSDT",
+    "USDCUSDT",
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "TRXUSDT",
+    "PEPEUSDT",
+    "INITUSDT",
+    "ETHFIUSDT"
+  ],
+  "binance_pairs": [
+    "DOGEUSDT",
+    "SUIUSDT",
+    "TRUMPUSDT",
+    "WIFUSDT",
+    "WLDUSDT",
+    "ADAUSDT",
+    "NEIROUSDT",
+    "ENAUSDT",
+    "FETUSDT",
+    "AVAXUSDT"
+  ],
+  "ema1_window": 20,
+  "ema2_window": 30,
+  "ema3_window": 40,
+  "ma1_window": 15,
+  "ma2_window": 17,
+  "bb_window": 80,
+  "bb_std_dev": 2,
+  "adx_window": 14,
+  "adx_threshold": 30,
+  "volatility_threshold": 0.0005,
+  "min_price_change_percent": 0.05,
+  "model_path": "models/{symbol}_xgb_model.pkl",
+  "threshold": 0.8,
+  "ml_model": {
+    "model_path": "models/{symbol}_xgb_model.pkl",
+    "params": {
+      "objective": "binary:logistic",
+      "n_estimators": 100,
+      "max_depth": 3,
+      "learning_rate": 0.1,
+      "verbosity": 0
+    },
+    "search_space": {
+      "ema1_window": [
+        20,
+        20
+      ],
+      "ema2_window": [
+        30,
+        30
+      ],
+      "ema3_window": [
+        40,
+        40
+      ],
+      "ma1_window": [
+        15,
+        15
+      ],
+      "ma2_window": [
+        17,
+        17
+      ],
+      "bb_window": [
+        80,
+        80
+      ],
+      "adx_window": [
+        14,
+        14
+      ],
+      "volatility_threshold": [
+        0.0005,
+        0.0005
+      ]
+    },
+    "target_shift": 3,
+    "test_size": 0.3
+  },
+  "last_signals": {
+    "DOGEUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "SUIUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "TRUMPUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "WIFUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "ADAUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "ENAUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "WLDUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "NEIROUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T02:18:38.035918"
+    },
+    "FETUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T03:18:35.553361"
+    },
+    "AVAXUSDT": {
+      "signal": "sell",
+      "time": "2025-05-24T03:52:41.573111"
+    }
+  },
+  "asset_distributions": {
+    "BUY": {
+      "GALA_USDT": 0.35715,
+      "GALA5L_USDT": 0.334281,
+      "GALA5S_USDT": 0.308569
+    },
+    "SELL": {
+      "GALA_USDT": 0.35715,
+      "GALA5L_USDT": 0.237139,
+      "GALA5S_USDT": 0.405711
+    },
+    "NEUTRAL": {
+      "GALA_USDT": 0.35715,
+      "GALA5L_USDT": 0.28571,
+      "GALA5S_USDT": 0.35714
+    }
+  }
+}

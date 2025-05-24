@@ -4,6 +4,7 @@
 import pandas as pd
 from abc import ABC, abstractmethod
 
+
 class BaseStrategy(ABC):
     """
     Абстрактная стратегия.

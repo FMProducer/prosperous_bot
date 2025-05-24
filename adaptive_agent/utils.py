@@ -1,83 +1,45 @@
-# c:\Python\Prosperous_Bot\src\utils.py
 
-import requests
+import os
+import json
 import logging
-from adaptive_agent.datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+from pathlib import Path
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Кэш для топ-символов
-top_symbols_cache = {
-    'data': None,
-    'expiry': None
-}
-
-def get_binance_top_symbols(limit=20, cache_ttl=1800, min_quote_volume=10, excluded=None):
-    """Возвращает top-N пар с максимальным объёмом за сутки (USDT) и минимальным объёмом торгов, исключая указанные символы."""
-    global top_symbols_cache
-
-    # Проверяем, есть ли актуальные данные в кэше
-    if top_symbols_cache['data'] and top_symbols_cache['expiry'] > datetime.now():
-        logger.info("Using cached top symbols")
-        return top_symbols_cache['data']
-
-    url = "https://api.binance.com/api/v3/ticker/24hr"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # Проверяем, что запрос успешен
-        data = response.json()
-        excluded = set(excluded or [])
-        usdt_pairs = [
-            item for item in data
-            if item["symbol"].endswith("USDT")
-            and item["symbol"] not in excluded  # фильтруем полные имена
-            and float(item["quoteVolume"]) >= min_quote_volume * 1_000_000
-        ]
-        sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x["quoteVolume"]), reverse=True)
-        top_symbols = [pair["symbol"] for pair in sorted_pairs[:limit]]
-
-        # Обновляем кэш
-        top_symbols_cache['data'] = top_symbols
-        top_symbols_cache['expiry'] = datetime.now() + timedelta(seconds=cache_ttl)
-        logger.info("Top symbols fetched and cached")
-        return top_symbols
-    except requests.RequestException as e:
-        logger.warning("Ошибка сети или API-лимит при получении топ-символов с Binance: %s", e)
-        return []  # Возвращаем пустой список, если запрос не удался
-    except Exception as e:
-        logger.error("Ошибка получения топ-символов с Binance: %s", e, exc_info=True)
-        return []
-
-def save_to_csv(df, path):
-    """
-    Сохраняет DataFrame в CSV файл, предварительно
-    перенося индекс (timestamp) в столбец 'timestamp'.
-    """
-    df_to_save = df.copy()
-    # Если индекс не назван, выносим его под именем 'timestamp'
-    idx_name = df_to_save.index.name or 'timestamp'
-    df_to_save.reset_index(inplace=True)
-    # Переименуем колонку index в 'timestamp' если нужно
-    if idx_name != 'timestamp':
-        df_to_save.rename(columns={idx_name: 'timestamp'}, inplace=True)
-    df_to_save.to_csv(path, index=False)
-    logger.info("Data saved to %s", path)
-
 def ensure_directory(directory):
-    """Создаёт директорию, если она не существует."""
+    directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     logger.info("Directory %s ensured", directory)
 
-def load_symbols(config):
-    """Загружает символы из конфигурации или динамически, если указано."""
-    if config.get('symbol_source') == 'dynamic':
-        return get_binance_top_symbols(
-            config.get('symbol_limit', 20),
-            config.get('symbol_cache_ttl', 1800),
-            config.get('min_quote_volume', 10),
-            config.get('excluded_symbols', [])
-        )
-    else:
-        return config.get('binance_pairs', [])
+def save_to_csv(dataframe, path):
+    ensure_directory(Path(path).parent)
+    dataframe.to_csv(path, index=False)
+    logger.info("Saved CSV to %s", path)
+
+def load_symbols(config_path="config_signal.json") -> List[str]:
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    return config.get("symbols", [])
+
+def save_bot_state(state: Dict, path="bot_state.json"):
+    with open(path, "w") as f:
+        json.dump(state, f, indent=2)
+
+def load_bot_state(path="bot_state.json") -> Dict:
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r") as f:
+        return json.load(f)
+
+def check_signal_expired(signal_time_str: str, timeout_minutes=30) -> bool:
+    signal_time = datetime.fromisoformat(signal_time_str)
+    return datetime.utcnow() - signal_time > timedelta(minutes=timeout_minutes)
+
+def save_last_signals_to_config(config_path: str, last_signals: dict):
+    with open(config_path, "r") as f:
+        cfg = json.load(f)
+    cfg["last_signals"] = last_signals
+    with open(config_path, "w") as f:
+        json.dump(cfg, f, indent=2)
