@@ -7,12 +7,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from src.data_loader import DataLoader
-from src.signal_generator import process_all_data
-from src.update_distribution import update_distribution
-from src.graphs import plot_indicators
-from src.utils import save_to_csv, ensure_directory, load_symbols  # Добавлен импорт load_symbols
-from src.strategy import MLStrategy, RuleBasedStrategy, HybridStrategy  # Исправлен импорт
+from .data_loader import DataLoader
+from .signal_generator import process_all_data
+from .update_distribution import update_distribution
+from .graphs import plot_indicators
+from .utils import save_to_csv, ensure_directory, load_symbols  # Добавлен импорт load_symbols
+from .strategy import MLStrategy, RuleBasedStrategy, HybridStrategy  # Исправлен импорт
 
 # ----
 # Константы путей / файлов
