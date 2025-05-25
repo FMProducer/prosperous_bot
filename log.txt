@@ -1,313 +1,152 @@
-(.venv) (base) PS C:\Python\prosperous_bot> pytest -q
-FF....F.F........F...FF..F.                                                                                                    [100%]
-============================================================= FAILURES ============================================================== 
-____________________________________________ TestExchangeAPI.test_cancel_all_open_orders ____________________________________________ 
+(.venv) (base) PS C:\Python\prosperous_bot> pytest -v
+C:\Python\prosperous_bot\.venv\Lib\site-packages\pytest_asyncio\plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
 
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_cancel_all_open_orders>
-mock_cancel_order = <MagicMock name='cancel_order' id='1575518981200'>
-mock_list_orders = <MagicMock name='list_orders' id='1575520373584'>
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+================================================================= test session starts ==================================================================
+platform win32 -- Python 3.11.9, pytest-8.3.5, pluggy-1.6.0
+rootdir: C:\Python\prosperous_bot
+configfile: pytest.ini
+plugins: hypothesis-6.131.21, asyncio-0.26.0, cov-6.1.1, mock-3.14.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 27 items                                                                                                                                      
 
-    @patch('gate_api.SpotApi.list_orders')
-    @patch('gate_api.SpotApi.cancel_order')
-    async def test_cancel_all_open_orders(self, mock_cancel_order, mock_list_orders):
-        mock_order1 = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
-        mock_order2 = create_mock_order('2', 'sell', 'BTC_USDT', 2.0)
-        mock_list_orders.return_value = [mock_order1, mock_order2]
-        mock_cancel_order.return_value = None
-        await self.exchange_api.cancel_all_open_orders(['BTC_USDT'])
->       self.assertEqual(mock_cancel_order.call_count, 2)
-E       AssertionError: 0 != 2
+src\test_exchange_api.py .........                                                                                                                [ 33%]
+tests\test_exchange.py ............                                                                                                               [ 77%]
+tests\test_exchange_property.py ...                                                                                                               [ 88%]
+tests\test_portfolio.py .                                                                                                                         [ 92%] 
+tests\test_portfolio_property.py .                                                                                                                [ 96%] 
+tests\test_rebalance.py .                                                                                                                         [100%] 
 
-src\test_exchange_api.py:77: AssertionError
-______________________________________________ TestExchangeAPI.test_check_open_orders _______________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_check_open_orders>
-mock_list_orders = <MagicMock name='list_orders' id='1575518747024'>
-
-    @patch('gate_api.SpotApi.list_orders')
-    async def test_check_open_orders(self, mock_list_orders):
-        mock_order1 = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
-        mock_order2 = create_mock_order('2', 'sell', 'BTC_USDT', 2.0)
-        mock_list_orders.return_value = [mock_order1, mock_order2]
-        has_open_orders = await self.exchange_api.check_open_orders('BTC_USDT', 'buy')
->       self.assertTrue(has_open_orders)
-E       AssertionError: False is not true
-
-src\test_exchange_api.py:67: AssertionError
-________________________________________ TestExchangeAPI.test_place_market_order_with_value _________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_market_order_with_value>
-mock_create_order = <MagicMock name='create_order' id='1575521263888'>
-
-    @patch('gate_api.SpotApi.create_order')
-    async def test_place_market_order_with_value(self, mock_create_order):
-        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 100)
-        mock_result.status = 'closed'
-        mock_create_order.return_value = mock_result
-        result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 100, is_value=True)
-        self.assertTrue(result)
-        args, kwargs = mock_create_order.call_args
->       self.assertEqual(args[0].amount, '100')
-E       AssertionError: '0.0009348231922155402' != '100'
-E       - 0.0009348231922155402
-E       + 100
-
-src\test_exchange_api.py:109: AssertionError
-______________________________________________ TestExchangeAPI.test_update_time_offset ______________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_update_time_offset>
-mock_get_system_time = <MagicMock name='get_system_time' id='1575521629904'>
-
-    @patch('gate_api.SpotApi.get_system_time')
-    async def test_update_time_offset(self, mock_get_system_time):
-        mock_result = Mock()
-        mock_result.server_time = int(time.time() * 1000) + 5000  # Simulate server time 5 seconds ahead
-        mock_get_system_time.return_value = mock_result
-        await self.exchange_api.update_time_offset()
->       self.assertNotEqual(self.exchange_api.time_offset, 0)
-E       AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
-
-src\test_exchange_api.py:38: AttributeError
-__________________________________________________________ test_sync_time ___________________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED461EBD0>
-
-    @pytest.mark.asyncio
-    async def test_sync_time(exch, mocker):
-        # time before call = 0  ➜  заставим функции думать, что прошло 1 ч.
-        exch._last_sync = 0
-        mocker.patch.object(
-            gate_api.SpotApi,
-            "get_system_time",
-            return_value=gate_api.SystemTime(server_time=2000),
-        )
-        await exch._sync_time()
->       assert exch._time_offset == 2000 - int(exch._last_sync * 1000)
-E       assert 0 == (2000 - 1748186573366)
-E        +  where 0 = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>._time_offset
-E        +  and   1748186573366 = int((1748186573.366342 * 1000))
-E        +    where 1748186573.366342 = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>._last_sync
-
-tests\test_exchange.py:115: AssertionError
-________________________________________________ test_create_futures_order_property _________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>
-
-    @pytest.mark.asyncio
->   @settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
-
-tests\test_exchange_property.py:20:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-.venv\Lib\site-packages\pytest_asyncio\plugin.py:1069: in inner
-    _loop.run_until_complete(task)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
-    return future.result()
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>, qty = 1, side = 'long', reduce_only = False
-
-    @pytest.mark.asyncio
-    @settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
-    @given(qty=qty_st, side=side_st, reduce_only=ro_st)
-    async def test_create_futures_order_property(exch, mocker, qty, side, reduce_only):
-        expected_size = qty if side == "long" else -qty
-
-        # Mock for futures_api.create_futures_order
-        # It's called with (self, settle, futures_order_payload)
-        # It should return an object that simulates a FuturesOrder response
-        def _echo_futures(settle_param, order_obj_futures):
-            # order_obj_futures is the gate_api.FuturesOrder object created in ExchangeAPI.create_futures_order
-            returned_mock = UMMock(spec=gate_api.FuturesOrder) # Use spec for stricter mocking
-
-            # Copy attributes from the actual order_obj_futures that the test asserts
-            if hasattr(order_obj_futures, 'contract'):
-                returned_mock.contract = order_obj_futures.contract
-            if hasattr(order_obj_futures, 'size'):
-                returned_mock.size = order_obj_futures.size
-            if hasattr(order_obj_futures, 'reduce_only'):
-                returned_mock.reduce_only = order_obj_futures.reduce_only
-
-            # Set the 'settle' attribute on the mock, so 'assert res.settle' can pass
-            # Note: 'settle' is not a standard attribute of gate_api.FuturesOrder response.
-            # This is to satisfy the existing test assertion.
-            returned_mock.settle = settle_param
-
-            # Simulate other attributes if the real API response would have them and tests need them
-            # For example, an ID or status:
-            returned_mock.id = "mock_fut_id_123"
-            returned_mock.status = "open"
-
-            return returned_mock
-
-        mocker.patch.object(exch.futures_api, "create_futures_order", side_effect=_echo_futures)
-
-        # Act
-        res = await exch.create_futures_order("BTC_USDT", side, qty, reduce_only)
-
-        # Assert
-        assert res.contract == "BTC_USDT"
->       assert res.size == expected_size
-E       AssertionError: assert '1' == 1
-E        +  where '1' = <Mock spec='FuturesOrder' id='1575521514512'>.size
-E       Falsifying example: test_create_futures_order_property(
-E           exch=<exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>,
-E           mocker=<pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>,
-E           qty=1,
-E           side='long',
-E           reduce_only=False,
-E       )
-
-tests\test_exchange_property.py:59: AssertionError
-__________________________________________________ test_create_spot_order_property __________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>
-
-    @pytest.mark.asyncio
->   @settings(max_examples=50, deadline=None)
-
-tests\test_exchange_property.py:64:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-.venv\Lib\site-packages\pytest_asyncio\plugin.py:1069: in inner
-    _loop.run_until_complete(task)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
-    return future.result()
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>, qty = 1, side = 'buy', price = None, post_only = False      
-
-    @pytest.mark.asyncio
-    @settings(max_examples=50, deadline=None)
-    @given(qty=qty_st, side=spot_side_st, price=price_st, post_only=post_only_st)
-    async def test_create_spot_order_property(exch, mocker, qty, side, price, post_only):
-        # Mock for spot_api.create_order
-        # It's called with (self, order_payload)
-        # It should return an object that simulates an Order response
-        def _echo_spot(order_obj_spot):
-            # order_obj_spot is the gate_api.Order object created in ExchangeAPI.create_spot_order
-            returned_mock = UMMock(spec=gate_api.Order) # Use spec for stricter mocking
-
-            # Copy attributes from the actual order_obj_spot that the test asserts
-            if hasattr(order_obj_spot, 'currency_pair'):
-                returned_mock.currency_pair = order_obj_spot.currency_pair
-            if hasattr(order_obj_spot, 'side'):
-                returned_mock.side = order_obj_spot.side
-            if hasattr(order_obj_spot, 'amount'):
-                returned_mock.amount = order_obj_spot.amount
-            if hasattr(order_obj_spot, 'type'):
-                returned_mock.type = order_obj_spot.type
-            if hasattr(order_obj_spot, 'time_in_force'):
-                returned_mock.time_in_force = order_obj_spot.time_in_force
-
-            # Handle optional price attribute
-            if hasattr(order_obj_spot, 'price') and order_obj_spot.price is not None:
-                returned_mock.price = order_obj_spot.price
-            else:
-                returned_mock.price = None # Ensure price attribute exists on mock even if None
-
-            # Set the 'id' attribute on the mock for the assertion
-            returned_mock.id = "spot123"
-
-            # Simulate other attributes like status
-            returned_mock.status = "filled" if price is None else "open" # Example status
-
-            return returned_mock
-
-        mocker.patch.object(exch.spot_api, "create_order", side_effect=_echo_spot)
-
-        # Act
-        res = await exch.create_spot_order("BTC_USDT", side, float(qty), price=price, post_only=post_only)
-
-        # Assert
-        assert res.id == "spot123"
-        assert res.currency_pair == "BTC_USDT"
-        assert res.side == side
->       assert res.amount == str(qty) # Order amount is string
-E       AssertionError: assert '1.0' == '1'
-E
-E         - 1
-E         + 1.0
-E       Falsifying example: test_create_spot_order_property(
-E           exch=<exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>,
-E           mocker=<pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>,
-E           qty=1,
-E           side='buy',
-E           price=None,
-E           post_only=False,
-E       )
-
-tests\test_exchange_property.py:109: AssertionError
-___________________________________________________ test_value_distribution_valid ___________________________________________________ 
-
-    @given(
->       spot=st.floats(0.01, 1),
-        short=st.integers(1, 10),
-        long=st.integers(1, 10),
-        price=st.floats(10000, 60000)
-    )
-
-tests\test_portfolio_property.py:9:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-spot = 1.0, short = 1, long = 1, price = 10000.0
-
-    @given(
-        spot=st.floats(0.01, 1),
-        short=st.integers(1, 10),
-        long=st.integers(1, 10),
-        price=st.floats(10000, 60000)
-    )
-    def test_value_distribution_valid(spot, short, long, price):
-        spot_api = Mock()
-        fut_api = Mock()
-        spot_api.spot.get_account_detail = Mock(
-            return_value=[gate_api.SpotAccount(currency="BTC", available=str(spot))]
-        )
-        fut_api.futures.list_positions = Mock(
-            return_value=[
-                gate_api.Position(size=str(long), contract="BTC_USDT", unrealised_pnl="0", margin="1000"),
-                gate_api.Position(size=str(-short), contract="BTC_USDT", unrealised_pnl="0", margin="1000")
-            ]
-        )
-        pm = PortfolioManager(spot_api, fut_api)
->       values = asyncio.run(pm.get_value_distribution_usdt(price, 250))
-E       TypeError: PortfolioManager.get_value_distribution_usdt() takes 1 positional argument but 3 were given
-E       Falsifying example: test_value_distribution_valid(
-E           spot=1.0,
-E           short=1,
-E           long=1,
-E           price=10000.0,
-E       )
-
-tests\test_portfolio_property.py:27: TypeError
-========================================================= warnings summary ========================================================== 
-src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value
+=================================================================== warnings summary =================================================================== 
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
   C:\Python\prosperous_bot\.venv\Lib\site-packages\gate_api\rest.py:47: DeprecationWarning: HTTPResponse.getheader() is deprecated and will be removed in urllib3 v2.1.0. Instead use HTTPResponse.headers.get(name, default).
     return self.urllib3_response.getheader(name, default)
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-========================================================== tests coverage =========================================================== 
-__________________________________________ coverage: platform win32, python 3.11.9-final-0 __________________________________________ 
+============================================================ 27 passed, 2 warnings in 3.05s ============================================================ 
+(.venv) (base) PS C:\Python\prosperous_bot> pytest --cov=src --cov-report=term-missing
+C:\Python\prosperous_bot\.venv\Lib\site-packages\pytest_asyncio\plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
 
-Name                       Stmts   Miss Branch BrPart  Cover   Missing
-----------------------------------------------------------------------
-src\exchange_api.py           13      1      2      1    87%   17
-src\portfolio_manager.py      27      1     10      2    92%   17->16, 29->24, 41
-src\rebalance_engine.py       17      0      4      1    95%   20->17
-----------------------------------------------------------------------
-TOTAL                         57      2     16      4    92%
-Required test coverage of 90% reached. Total coverage: 91.78%
-====================================================== short test summary info ====================================================== 
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders - AssertionError: 0 != 2
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders - AssertionError: False is not true
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value - AssertionError: '0.0009348231922155402' != '100'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_update_time_offset - AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
-FAILED tests/test_exchange.py::test_sync_time - assert 0 == (2000 - 1748186573366)
-FAILED tests/test_exchange_property.py::test_create_futures_order_property - AssertionError: assert '1' == 1
-FAILED tests/test_exchange_property.py::test_create_spot_order_property - AssertionError: assert '1.0' == '1'
-FAILED tests/test_portfolio_property.py::test_value_distribution_valid - TypeError: PortfolioManager.get_value_distribution_usdt() takes 1 positional argument but 3 were given
-(.venv) (base) PS C:\Python\prosperous_bot> 
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...........................                                                                                                                       [100%]
+=================================================================== warnings summary ===================================================================
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+  C:\Python\prosperous_bot\.venv\Lib\site-packages\gate_api\rest.py:47: DeprecationWarning: HTTPResponse.getheader() is deprecated and will be removed in urllib3 v2.1.0. Instead use HTTPResponse.headers.get(name, default).
+    return self.urllib3_response.getheader(name, default)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================================================== tests coverage ==================================================================== 
+___________________________________________________ coverage: platform win32, python 3.11.9-final-0 ____________________________________________________ 
+
+Name                         Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------
+src\config.py                   45     45      0      0     0%   1-83
+src\data_loader.py              92     92     20      0     0%   1-174
+src\exchange_gate.py            80      5     24      7    88%   25, 32, 101->100, 103, 108->107, 110, 115
+src\futures_backtester.py      145    145     46      0     0%   11-206
+src\graphs.py                   49     49      4      0     0%   4-69
+src\ml_model.py                234    234     34      0     0%   3-409
+src\portfolio_manager.py        24      1      6      1    93%   26->21, 37
+src\rebalance_engine.py         17      0      4      1    95%   20->17
+src\signal_bot.py              190    190     66      0     0%   3-267
+src\signal_generator.py         28     28      8      0     0%   1-82
+src\strategy.py                 26     26      0      0     0%   4-53
+src\test_exchange_api.py        98      1      2      1    98%   114
+src\update_distribution.py      41     41     12      0     0%   1-71
+src\utils.py                    44     44      6      0     0%   3-83
+------------------------------------------------------------------------
+TOTAL                         1115    901    232     10    18%
+
+2 files skipped due to complete coverage.
+27 passed, 2 warnings in 3.95s
+(.venv) (base) PS C:\Python\prosperous_bot> pytest -x
+C:\Python\prosperous_bot\.venv\Lib\site-packages\pytest_asyncio\plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...........................                                                                                                                       [100%]
+=================================================================== warnings summary =================================================================== 
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+  C:\Python\prosperous_bot\.venv\Lib\site-packages\gate_api\rest.py:47: DeprecationWarning: HTTPResponse.getheader() is deprecated and will be removed in urllib3 v2.1.0. Instead use HTTPResponse.headers.get(name, default).
+    return self.urllib3_response.getheader(name, default)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+27 passed, 2 warnings in 3.56s
+(.venv) (base) PS C:\Python\prosperous_bot> pytest -vv --durations=10
+C:\Python\prosperous_bot\.venv\Lib\site-packages\pytest_asyncio\plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+================================================================= test session starts ==================================================================
+platform win32 -- Python 3.11.9, pytest-8.3.5, pluggy-1.6.0 -- C:\Python\prosperous_bot\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'ci' -> suppress_health_check=(HealthCheck.function_scoped_fixture,)
+rootdir: C:\Python\prosperous_bot
+configfile: pytest.ini
+plugins: hypothesis-6.131.21, asyncio-0.26.0, cov-6.1.1, mock-3.14.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 27 items                                                                                                                                      
+
+src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders PASSED                                                                     [  3%]
+src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders PASSED                                                                          [  7%] 
+src/test_exchange_api.py::TestExchangeAPI::test_get_current_price PASSED                                                                          [ 11%]
+src/test_exchange_api.py::TestExchangeAPI::test_get_system_time PASSED                                                                            [ 14%] 
+src/test_exchange_api.py::TestExchangeAPI::test_get_wallet_balance PASSED                                                                         [ 18%] 
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order PASSED                                                                         [ 22%]
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value PASSED                                                              [ 25%] 
+src/test_exchange_api.py::TestExchangeAPI::test_place_order PASSED                                                                                [ 29%]
+src/test_exchange_api.py::TestExchangeAPI::test_update_time_offset PASSED                                                                         [ 33%] 
+tests/test_exchange.py::test_get_system_time PASSED                                                                                               [ 37%]
+tests/test_exchange.py::test_get_current_price PASSED                                                                                             [ 40%] 
+tests/test_exchange.py::test_create_futures_order PASSED                                                                                          [ 44%] 
+tests/test_exchange.py::test_create_spot_order PASSED                                                                                             [ 48%] 
+tests/test_exchange.py::test_positions PASSED                                                                                                     [ 51%] 
+tests/test_exchange.py::test_safe_call_retries PASSED                                                                                             [ 55%]
+tests/test_exchange.py::test_create_spot_post_only PASSED                                                                                         [ 59%] 
+tests/test_exchange.py::test_safe_call_raises PASSED                                                                                              [ 62%]
+tests/test_exchange.py::test_sync_time PASSED                                                                                                     [ 66%] 
+tests/test_exchange.py::test_safe_call_generic_error PASSED                                                                                       [ 70%] 
+tests/test_exchange.py::test_create_spot_limit_post_only PASSED                                                                                   [ 74%]
+tests/test_exchange.py::test_sync_time_skip PASSED                                                                                                [ 77%] 
+tests/test_exchange_property.py::test_create_futures_order_property PASSED                                                                        [ 81%]
+tests/test_exchange_property.py::test_create_spot_order_property PASSED                                                                           [ 85%]
+tests/test_exchange_property.py::test_positions_property PASSED                                                                                   [ 88%]
+tests/test_portfolio.py::test_get_value_distribution_usdt PASSED                                                                                  [ 92%] 
+tests/test_portfolio_property.py::test_value_distribution_valid PASSED                                                                            [ 96%]
+tests/test_rebalance.py::test_build_orders_pct_logic PASSED                                                                                       [100%] 
+
+=================================================================== warnings summary =================================================================== 
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+  C:\Python\prosperous_bot\.venv\Lib\site-packages\gate_api\rest.py:47: DeprecationWarning: HTTPResponse.getheader() is deprecated and will be removed in urllib3 v2.1.0. Instead use HTTPResponse.headers.get(name, default).
+    return self.urllib3_response.getheader(name, default)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================================================= slowest 10 durations ================================================================= 
+1.58s call     src/test_exchange_api.py::TestExchangeAPI::test_place_market_order
+0.30s call     tests/test_portfolio_property.py::test_value_distribution_valid
+0.21s call     tests/test_exchange.py::test_safe_call_retries
+0.20s call     tests/test_exchange_property.py::test_create_futures_order_property
+0.08s call     tests/test_exchange_property.py::test_create_spot_order_property
+0.02s call     src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders
+0.01s call     src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders
+0.01s call     src/test_exchange_api.py::TestExchangeAPI::test_place_order
+0.01s call     src/test_exchange_api.py::TestExchangeAPI::test_get_system_time
+0.01s call     src/test_exchange_api.py::TestExchangeAPI::test_get_wallet_balance
+============================================================ 27 passed, 2 warnings in 2.65s ============================================================ 
+(.venv) (base) PS C:\Python\prosperous_bot> pytest --collect-only -q
+C:\Python\prosperous_bot\.venv\Lib\site-packages\pytest_asyncio\plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+src/test_exchange_api.py: 9
+tests/test_exchange.py: 12
+tests/test_exchange_property.py: 3
+tests/test_portfolio.py: 1
+tests/test_portfolio_property.py: 1
+tests/test_rebalance.py: 1
