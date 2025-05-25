@@ -57,3 +57,5 @@ miniconda3/
 
 # Custom application folders
 graphs/
+
+.hypothesis/
