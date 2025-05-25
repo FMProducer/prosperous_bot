@@ -15,11 +15,27 @@ dependencies = [
     "pydantic>=2.7",
 ]
 
-[tool.setuptools.packages.find]
-where = ["adaptive_agent"]
+[tool.setuptools]
+# Укажи здесь все имена .py файлов (без расширения .py),
+# которые ты переместил из src/adaptive_agent/ в src/
+py-modules = [
+    "__init__",
+    "config_loader",
+    "data_processor",
+    "exchange_api",
+    "main_logic",
+    "models",
+    "monitoring_module",
+    "order_manager",
+    "portfolio_manager",
+    "signal_generator",
+    "telegram_bot",
+    "utils"
+]
+package-dir = {"" = "src"} # Сообщает setuptools, что корневые модули находятся в 'src'
 
 [tool.pytest.ini_options]
-addopts = "-q --cov=adaptive_agent.exchange_api --cov=adaptive_agent.portfolio_manager --cov-fail-under=90"
+addopts = "-q --cov=exchange_api --cov=portfolio_manager --cov-fail-under=90" # Обнови пути и добавь другие модули из src/ для покрытия
 asyncio_default_fixture_loop_scope = "session"
 filterwarnings = [
     "ignore::pytest.PytestDeprecationWarning",
