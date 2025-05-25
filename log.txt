@@ -1,13 +1,11 @@
-(.venv) (base) PS C:\Python\prosperous_bot> pytest -q  
-FF..FFFFF..FFF.F...F.FFFFF.
-ERROR: Coverage failure: total of 59 is less than fail-under=90
-                                                                                                                               [100%]
+(.venv) (base) PS C:\Python\prosperous_bot> pytest -q
+FF....F.F........F...FF..F.                                                                                                    [100%]
 ============================================================= FAILURES ============================================================== 
 ____________________________________________ TestExchangeAPI.test_cancel_all_open_orders ____________________________________________ 
 
 self = <src.test_exchange_api.TestExchangeAPI testMethod=test_cancel_all_open_orders>
-mock_cancel_order = <MagicMock name='cancel_order' id='2259211509584'>
-mock_list_orders = <MagicMock name='list_orders' id='2259212120336'>
+mock_cancel_order = <MagicMock name='cancel_order' id='1575518981200'>
+mock_list_orders = <MagicMock name='list_orders' id='1575520373584'>
 
     @patch('gate_api.SpotApi.list_orders')
     @patch('gate_api.SpotApi.cancel_order')
@@ -16,680 +14,233 @@ mock_list_orders = <MagicMock name='list_orders' id='2259212120336'>
         mock_order2 = create_mock_order('2', 'sell', 'BTC_USDT', 2.0)
         mock_list_orders.return_value = [mock_order1, mock_order2]
         mock_cancel_order.return_value = None
->       await self.exchange_api.cancel_all_open_orders(['BTC_USDT'])
-E       AttributeError: 'ExchangeAPI' object has no attribute 'cancel_all_open_orders'
+        await self.exchange_api.cancel_all_open_orders(['BTC_USDT'])
+>       self.assertEqual(mock_cancel_order.call_count, 2)
+E       AssertionError: 0 != 2
 
-src\test_exchange_api.py:76: AttributeError
+src\test_exchange_api.py:77: AssertionError
 ______________________________________________ TestExchangeAPI.test_check_open_orders _______________________________________________ 
 
 self = <src.test_exchange_api.TestExchangeAPI testMethod=test_check_open_orders>
-mock_list_orders = <MagicMock name='list_orders' id='2259212949328'>
+mock_list_orders = <MagicMock name='list_orders' id='1575518747024'>
 
     @patch('gate_api.SpotApi.list_orders')
     async def test_check_open_orders(self, mock_list_orders):
         mock_order1 = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
         mock_order2 = create_mock_order('2', 'sell', 'BTC_USDT', 2.0)
         mock_list_orders.return_value = [mock_order1, mock_order2]
->       has_open_orders = await self.exchange_api.check_open_orders('BTC_USDT', 'buy')
-E       AttributeError: 'ExchangeAPI' object has no attribute 'check_open_orders'
+        has_open_orders = await self.exchange_api.check_open_orders('BTC_USDT', 'buy')
+>       self.assertTrue(has_open_orders)
+E       AssertionError: False is not true
 
-src\test_exchange_api.py:66: AttributeError
-______________________________________________ TestExchangeAPI.test_get_wallet_balance ______________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_get_wallet_balance>
-mock_list_spot_accounts = <MagicMock name='list_spot_accounts' id='2259211106064'>
-
-    @patch('gate_api.SpotApi.list_spot_accounts')
-    async def test_get_wallet_balance(self, mock_list_spot_accounts):
-        mock_balance = create_mock_balance('BTC', '1.0', '0.5')
-        mock_list_spot_accounts.return_value = [mock_balance]
->       balance = await self.exchange_api.get_wallet_balance('BTC')
-E       AttributeError: 'ExchangeAPI' object has no attribute 'get_wallet_balance'
-
-src\test_exchange_api.py:45: AttributeError
-______________________________________________ TestExchangeAPI.test_place_market_order ______________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_market_order>
-mock_create_order = <MagicMock name='create_order' id='2259213056528'>
-
-    @patch('gate_api.SpotApi.create_order')
-    async def test_place_market_order(self, mock_create_order):
-        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
-        mock_result.status = 'closed'
-        mock_create_order.return_value = mock_result
->       result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 1)
-E       AttributeError: 'ExchangeAPI' object has no attribute 'place_market_order'
-
-src\test_exchange_api.py:93: AttributeError
+src\test_exchange_api.py:67: AssertionError
 ________________________________________ TestExchangeAPI.test_place_market_order_with_value _________________________________________ 
 
 self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_market_order_with_value>
-mock_create_order = <MagicMock name='create_order' id='2259213490448'>
+mock_create_order = <MagicMock name='create_order' id='1575521263888'>
 
     @patch('gate_api.SpotApi.create_order')
     async def test_place_market_order_with_value(self, mock_create_order):
         mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 100)
         mock_result.status = 'closed'
         mock_create_order.return_value = mock_result
->       result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 100, is_value=True)
-E       AttributeError: 'ExchangeAPI' object has no attribute 'place_market_order'
+        result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 100, is_value=True)
+        self.assertTrue(result)
+        args, kwargs = mock_create_order.call_args
+>       self.assertEqual(args[0].amount, '100')
+E       AssertionError: '0.0009348231922155402' != '100'
+E       - 0.0009348231922155402
+E       + 100
 
-src\test_exchange_api.py:106: AttributeError
-_________________________________________________ TestExchangeAPI.test_place_order __________________________________________________ 
-
-self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_order>
-mock_create_order = <MagicMock name='create_order' id='2259213046352'>
-
-    @patch('gate_api.SpotApi.create_order')
-    async def test_place_order(self, mock_create_order):
-        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
-        mock_result.status = 'open'
-        mock_create_order.return_value = mock_result
->       result = await self.exchange_api.place_order('BTC_USDT', 'buy', 1, 50000)
-E       AttributeError: 'ExchangeAPI' object has no attribute 'place_order'
-
-src\test_exchange_api.py:84: AttributeError
+src\test_exchange_api.py:109: AssertionError
 ______________________________________________ TestExchangeAPI.test_update_time_offset ______________________________________________ 
 
 self = <src.test_exchange_api.TestExchangeAPI testMethod=test_update_time_offset>
-mock_get_system_time = <MagicMock name='get_system_time' id='2259213409680'>
+mock_get_system_time = <MagicMock name='get_system_time' id='1575521629904'>
 
     @patch('gate_api.SpotApi.get_system_time')
     async def test_update_time_offset(self, mock_get_system_time):
         mock_result = Mock()
         mock_result.server_time = int(time.time() * 1000) + 5000  # Simulate server time 5 seconds ahead
         mock_get_system_time.return_value = mock_result
->       await self.exchange_api.update_time_offset()
-E       AttributeError: 'ExchangeAPI' object has no attribute 'update_time_offset'
+        await self.exchange_api.update_time_offset()
+>       self.assertNotEqual(self.exchange_api.time_offset, 0)
+E       AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
 
-src\test_exchange_api.py:37: AttributeError
-_____________________________________________________ test_create_futures_order _____________________________________________________ 
+src\test_exchange_api.py:38: AttributeError
+__________________________________________________________ test_sync_time ___________________________________________________________ 
 
-exch = <exchange_gate.ExchangeAPI object at 0x0000020E0395E410>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E03982290>
-
-    @pytest.mark.asyncio
-    async def test_create_futures_order(exch, mocker):
-        # мок: FuturesApi.create_futures_order должен просто вернуть echo-dict
-        mock_create = mocker.patch.object(
-            gate_api.FuturesApi,
-            "create_futures_order",
-            return_value={"status": "open", "size": "1"},
-        )
->       res = await exch.create_futures_order(
-            contract="BTC_USDT",
-            side="long",
-            qty=1,
-            reduce_only=False,
-        )
-
-tests\test_exchange.py:37:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src\exchange_gate.py:76: in create_futures_order
-    await self._sync_time()
-src\exchange_gate.py:61: in _sync_time
-    srv = await self._safe_call(self.spot_api.get_system_time)
-src\exchange_gate.py:41: in _safe_call
-    return await asyncio.to_thread(fn, *a, **kw) # Обертка для синхронных функций
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
-    return await loop.run_in_executor(None, func_call)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
-    result = self.fn(*self.args, **self.kwargs)
-.venv\Lib\site-packages\gate_api\api\spot_api.py:2956: in get_system_time
-    return self.get_system_time_with_http_info(**kwargs)  # noqa: E501
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <gate_api.api.spot_api.SpotApi object at 0x0000020E039FF750>, kwargs = {'_return_http_data_only': True}
-local_var_params = {'_return_http_data_only': True, 'all_params': ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], 'body_params': None, 'collection_formats': {}, ...}
-all_params = ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], k = '_return_http_data_only', v = True  
-collection_formats = {}, path_params = {}, query_params = []
-
-    def get_system_time_with_http_info(self, **kwargs):  # noqa: E501
-        """Get server current time  # noqa: E501
-
-        This method makes a synchronous HTTP request by default. To make an
-        asynchronous HTTP request, please pass async_req=True
-        >>> thread = api.get_system_time_with_http_info(async_req=True)
-        >>> result = thread.get()
-
-        :param bool async_req: execute request asynchronously
-        :param _return_http_data_only: response data without head status code
-                                       and headers
-        :param _preload_content: if False, the urllib3.HTTPResponse object will
-                                 be returned without reading/decoding response
-                                 data. Default is True.
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :rtype: tuple(gate_api.SystemTime, status_code(int), headers(HTTPHeaderDict))
-        :return: If the method is called asynchronously,
-                 returns the request thread.
-        """
-
-        local_var_params = locals()
-
-        all_params = [
-        ]
-        all_params.extend(
-            [
-                'async_req',
-                '_return_http_data_only',
-                '_preload_content',
-                '_request_timeout'
-            ]
-        )
-
-        for k, v in six.iteritems(local_var_params['kwargs']):
-            if k not in all_params:
-                raise ApiTypeError(
-                    "Got an unexpected keyword argument '%s'"
-                    " to method get_system_time" % k
-                )
-            local_var_params[k] = v
-        del local_var_params['kwargs']
-
-        collection_formats = {}
-
-        path_params = {}
-
-        query_params = []
-
-        header_params = {}
-
-        form_params = []
-        local_var_files = {}
-
-        body_params = None
-        # HTTP header `Accept`
->       header_params['Accept'] = self.api_client.select_header_accept(
-            ['application/json'])  # noqa: E501
-E       AttributeError: 'SpotApi' object has no attribute 'api_client'
-
-.venv\Lib\site-packages\gate_api\api\spot_api.py:3016: AttributeError
---------------------------------------------------------- Captured log call --------------------------------------------------------- 
-ERROR    root:exchange_gate.py:52 An unexpected error occurred during API call: 'SpotApi' object has no attribute 'api_client'        
-______________________________________________________ test_create_spot_order _______________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000020E03379B10>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E034C3610>
+exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED461EBD0>
 
     @pytest.mark.asyncio
-    async def test_create_spot_order(exch, mocker):
+    async def test_sync_time(exch, mocker):
+        # time before call = 0  ➜  заставим функции думать, что прошло 1 ч.
+        exch._last_sync = 0
         mocker.patch.object(
             gate_api.SpotApi,
-            "create_order",
-            return_value={"id": "123", "side": "buy"},
+            "get_system_time",
+            return_value=gate_api.SystemTime(server_time=2000),
         )
->       res = await exch.create_spot_order(
-            pair="BTC_USDT", side="buy", qty=0.01, price=None, post_only=False
-        )
-
-tests\test_exchange.py:55:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src\exchange_gate.py:87: in create_spot_order
-    await self._sync_time()
-src\exchange_gate.py:61: in _sync_time
-    srv = await self._safe_call(self.spot_api.get_system_time)
-src\exchange_gate.py:41: in _safe_call
-    return await asyncio.to_thread(fn, *a, **kw) # Обертка для синхронных функций
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
-    return await loop.run_in_executor(None, func_call)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
-    result = self.fn(*self.args, **self.kwargs)
-.venv\Lib\site-packages\gate_api\api\spot_api.py:2956: in get_system_time
-    return self.get_system_time_with_http_info(**kwargs)  # noqa: E501
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <gate_api.api.spot_api.SpotApi object at 0x0000020E0395EDD0>, kwargs = {'_return_http_data_only': True}
-local_var_params = {'_return_http_data_only': True, 'all_params': ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], 'body_params': None, 'collection_formats': {}, ...}
-all_params = ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], k = '_return_http_data_only', v = True  
-collection_formats = {}, path_params = {}, query_params = []
-
-    def get_system_time_with_http_info(self, **kwargs):  # noqa: E501
-        """Get server current time  # noqa: E501
-
-        This method makes a synchronous HTTP request by default. To make an
-        asynchronous HTTP request, please pass async_req=True
-        >>> thread = api.get_system_time_with_http_info(async_req=True)
-        >>> result = thread.get()
-
-        :param bool async_req: execute request asynchronously
-        :param _return_http_data_only: response data without head status code
-                                       and headers
-        :param _preload_content: if False, the urllib3.HTTPResponse object will
-                                 be returned without reading/decoding response
-                                 data. Default is True.
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :rtype: tuple(gate_api.SystemTime, status_code(int), headers(HTTPHeaderDict))
-        :return: If the method is called asynchronously,
-                 returns the request thread.
-        """
-
-        local_var_params = locals()
-
-        all_params = [
-        ]
-        all_params.extend(
-            [
-                'async_req',
-                '_return_http_data_only',
-                '_preload_content',
-                '_request_timeout'
-            ]
-        )
-
-        for k, v in six.iteritems(local_var_params['kwargs']):
-            if k not in all_params:
-                raise ApiTypeError(
-                    "Got an unexpected keyword argument '%s'"
-                    " to method get_system_time" % k
-                )
-            local_var_params[k] = v
-        del local_var_params['kwargs']
-
-        collection_formats = {}
-
-        path_params = {}
-
-        query_params = []
-
-        header_params = {}
-
-        form_params = []
-        local_var_files = {}
-
-        body_params = None
-        # HTTP header `Accept`
->       header_params['Accept'] = self.api_client.select_header_accept(
-            ['application/json'])  # noqa: E501
-E       AttributeError: 'SpotApi' object has no attribute 'api_client'
-
-.venv\Lib\site-packages\gate_api\api\spot_api.py:3016: AttributeError
---------------------------------------------------------- Captured log call --------------------------------------------------------- 
-ERROR    root:exchange_gate.py:52 An unexpected error occurred during API call: 'SpotApi' object has no attribute 'api_client'        
-__________________________________________________________ test_positions ___________________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000020E03319750>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E03A2BA90>
-
-    @pytest.mark.asyncio
-    async def test_positions(exch, mocker):
-        mocker.patch.object(
-            gate_api.FuturesApi,
-            "list_positions",
-            return_value=[{"size": "1", "contract": "BTC_USDT"}],
-        )
->       pos = await exch.positions()
-
-tests\test_exchange.py:68:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src\exchange_gate.py:100: in positions
-    await self._sync_time()
-src\exchange_gate.py:61: in _sync_time
-    srv = await self._safe_call(self.spot_api.get_system_time)
-src\exchange_gate.py:41: in _safe_call
-    return await asyncio.to_thread(fn, *a, **kw) # Обертка для синхронных функций
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
-    return await loop.run_in_executor(None, func_call)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
-    result = self.fn(*self.args, **self.kwargs)
-.venv\Lib\site-packages\gate_api\api\spot_api.py:2956: in get_system_time
-    return self.get_system_time_with_http_info(**kwargs)  # noqa: E501
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <gate_api.api.spot_api.SpotApi object at 0x0000020E039D6950>, kwargs = {'_return_http_data_only': True}
-local_var_params = {'_return_http_data_only': True, 'all_params': ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], 'body_params': None, 'collection_formats': {}, ...}
-all_params = ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], k = '_return_http_data_only', v = True  
-collection_formats = {}, path_params = {}, query_params = []
-
-    def get_system_time_with_http_info(self, **kwargs):  # noqa: E501
-        """Get server current time  # noqa: E501
-
-        This method makes a synchronous HTTP request by default. To make an
-        asynchronous HTTP request, please pass async_req=True
-        >>> thread = api.get_system_time_with_http_info(async_req=True)
-        >>> result = thread.get()
-
-        :param bool async_req: execute request asynchronously
-        :param _return_http_data_only: response data without head status code
-                                       and headers
-        :param _preload_content: if False, the urllib3.HTTPResponse object will
-                                 be returned without reading/decoding response
-                                 data. Default is True.
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :rtype: tuple(gate_api.SystemTime, status_code(int), headers(HTTPHeaderDict))
-        :return: If the method is called asynchronously,
-                 returns the request thread.
-        """
-
-        local_var_params = locals()
-
-        all_params = [
-        ]
-        all_params.extend(
-            [
-                'async_req',
-                '_return_http_data_only',
-                '_preload_content',
-                '_request_timeout'
-            ]
-        )
-
-        for k, v in six.iteritems(local_var_params['kwargs']):
-            if k not in all_params:
-                raise ApiTypeError(
-                    "Got an unexpected keyword argument '%s'"
-                    " to method get_system_time" % k
-                )
-            local_var_params[k] = v
-        del local_var_params['kwargs']
-
-        collection_formats = {}
-
-        path_params = {}
-
-        query_params = []
-
-        header_params = {}
-
-        form_params = []
-        local_var_files = {}
-
-        body_params = None
-        # HTTP header `Accept`
->       header_params['Accept'] = self.api_client.select_header_accept(
-            ['application/json'])  # noqa: E501
-E       AttributeError: 'SpotApi' object has no attribute 'api_client'
-
-.venv\Lib\site-packages\gate_api\api\spot_api.py:3016: AttributeError
---------------------------------------------------------- Captured log call --------------------------------------------------------- 
-ERROR    root:exchange_gate.py:52 An unexpected error occurred during API call: 'SpotApi' object has no attribute 'api_client'        
-____________________________________________________ test_create_spot_post_only _____________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000020E038F9F90>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E038FA810>
-
-    @pytest.mark.asyncio
-    async def test_create_spot_post_only(exch, mocker):
-        mocker.patch.object(
-            gate_api.SpotApi,
-            "create_order",
-            return_value={"id": "999", "iceberg": "0"},
-        )
->       res = await exch.create_spot_order(
-            pair="BTC_USDT", side="sell", qty=0.02, price=50_000, post_only=True
-        )
-
-tests\test_exchange.py:89:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src\exchange_gate.py:87: in create_spot_order
-    await self._sync_time()
-src\exchange_gate.py:61: in _sync_time
-    srv = await self._safe_call(self.spot_api.get_system_time)
-src\exchange_gate.py:41: in _safe_call
-    return await asyncio.to_thread(fn, *a, **kw) # Обертка для синхронных функций
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
-    return await loop.run_in_executor(None, func_call)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
-    result = self.fn(*self.args, **self.kwargs)
-.venv\Lib\site-packages\gate_api\api\spot_api.py:2956: in get_system_time
-    return self.get_system_time_with_http_info(**kwargs)  # noqa: E501
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <gate_api.api.spot_api.SpotApi object at 0x0000020E039F4F90>, kwargs = {'_return_http_data_only': True}
-local_var_params = {'_return_http_data_only': True, 'all_params': ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], 'body_params': None, 'collection_formats': {}, ...}
-all_params = ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], k = '_return_http_data_only', v = True  
-collection_formats = {}, path_params = {}, query_params = []
-
-    def get_system_time_with_http_info(self, **kwargs):  # noqa: E501
-        """Get server current time  # noqa: E501
-
-        This method makes a synchronous HTTP request by default. To make an
-        asynchronous HTTP request, please pass async_req=True
-        >>> thread = api.get_system_time_with_http_info(async_req=True)
-        >>> result = thread.get()
-
-        :param bool async_req: execute request asynchronously
-        :param _return_http_data_only: response data without head status code
-                                       and headers
-        :param _preload_content: if False, the urllib3.HTTPResponse object will
-                                 be returned without reading/decoding response
-                                 data. Default is True.
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :rtype: tuple(gate_api.SystemTime, status_code(int), headers(HTTPHeaderDict))
-        :return: If the method is called asynchronously,
-                 returns the request thread.
-        """
-
-        local_var_params = locals()
-
-        all_params = [
-        ]
-        all_params.extend(
-            [
-                'async_req',
-                '_return_http_data_only',
-                '_preload_content',
-                '_request_timeout'
-            ]
-        )
-
-        for k, v in six.iteritems(local_var_params['kwargs']):
-            if k not in all_params:
-                raise ApiTypeError(
-                    "Got an unexpected keyword argument '%s'"
-                    " to method get_system_time" % k
-                )
-            local_var_params[k] = v
-        del local_var_params['kwargs']
-
-        collection_formats = {}
-
-        path_params = {}
-
-        query_params = []
-
-        header_params = {}
-
-        form_params = []
-        local_var_files = {}
-
-        body_params = None
-        # HTTP header `Accept`
->       header_params['Accept'] = self.api_client.select_header_accept(
-            ['application/json'])  # noqa: E501
-E       AttributeError: 'SpotApi' object has no attribute 'api_client'
-
-.venv\Lib\site-packages\gate_api\api\spot_api.py:3016: AttributeError
---------------------------------------------------------- Captured log call --------------------------------------------------------- 
-ERROR    root:exchange_gate.py:52 An unexpected error occurred during API call: 'SpotApi' object has no attribute 'api_client'        
-_________________________________________________ test_create_spot_limit_post_only __________________________________________________ 
-
-exch = <exchange_gate.ExchangeAPI object at 0x0000020E039F4FD0>
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E03379D10>
-
-    @pytest.mark.asyncio
-    async def test_create_spot_limit_post_only(exch, mocker):
-        mocker.patch.object(
-            gate_api.SpotApi,
-            "create_order",
-            return_value={"id": "321", "iceberg": "0"},
-        )
->       res = await exch.create_spot_order(
-            pair="BTC_USDT",
-            side="buy",
-            qty=0.03,
-            price=48_000,    # limit-price → post_only проверка
-            post_only=True,
-        )
-
-tests\test_exchange.py:133:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src\exchange_gate.py:87: in create_spot_order
-    await self._sync_time()
-src\exchange_gate.py:61: in _sync_time
-    srv = await self._safe_call(self.spot_api.get_system_time)
-src\exchange_gate.py:41: in _safe_call
-    return await asyncio.to_thread(fn, *a, **kw) # Обертка для синхронных функций
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
-    return await loop.run_in_executor(None, func_call)
-C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
-    result = self.fn(*self.args, **self.kwargs)
-.venv\Lib\site-packages\gate_api\api\spot_api.py:2956: in get_system_time
-    return self.get_system_time_with_http_info(**kwargs)  # noqa: E501
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <gate_api.api.spot_api.SpotApi object at 0x0000020E03AFD710>, kwargs = {'_return_http_data_only': True}
-local_var_params = {'_return_http_data_only': True, 'all_params': ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], 'body_params': None, 'collection_formats': {}, ...}
-all_params = ['async_req', '_return_http_data_only', '_preload_content', '_request_timeout'], k = '_return_http_data_only', v = True  
-collection_formats = {}, path_params = {}, query_params = []
-
-    def get_system_time_with_http_info(self, **kwargs):  # noqa: E501
-        """Get server current time  # noqa: E501
-
-        This method makes a synchronous HTTP request by default. To make an
-        asynchronous HTTP request, please pass async_req=True
-        >>> thread = api.get_system_time_with_http_info(async_req=True)
-        >>> result = thread.get()
-
-        :param bool async_req: execute request asynchronously
-        :param _return_http_data_only: response data without head status code
-                                       and headers
-        :param _preload_content: if False, the urllib3.HTTPResponse object will
-                                 be returned without reading/decoding response
-                                 data. Default is True.
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :rtype: tuple(gate_api.SystemTime, status_code(int), headers(HTTPHeaderDict))
-        :return: If the method is called asynchronously,
-                 returns the request thread.
-        """
-
-        local_var_params = locals()
-
-        all_params = [
-        ]
-        all_params.extend(
-            [
-                'async_req',
-                '_return_http_data_only',
-                '_preload_content',
-                '_request_timeout'
-            ]
-        )
-
-        for k, v in six.iteritems(local_var_params['kwargs']):
-            if k not in all_params:
-                raise ApiTypeError(
-                    "Got an unexpected keyword argument '%s'"
-                    " to method get_system_time" % k
-                )
-            local_var_params[k] = v
-        del local_var_params['kwargs']
-
-        collection_formats = {}
-
-        path_params = {}
-
-        query_params = []
-
-        header_params = {}
-
-        form_params = []
-        local_var_files = {}
-
-        body_params = None
-        # HTTP header `Accept`
->       header_params['Accept'] = self.api_client.select_header_accept(
-            ['application/json'])  # noqa: E501
-E       AttributeError: 'SpotApi' object has no attribute 'api_client'
-
-.venv\Lib\site-packages\gate_api\api\spot_api.py:3016: AttributeError
---------------------------------------------------------- Captured log call --------------------------------------------------------- 
-ERROR    root:exchange_gate.py:52 An unexpected error occurred during API call: 'SpotApi' object has no attribute 'api_client'        
+        await exch._sync_time()
+>       assert exch._time_offset == 2000 - int(exch._last_sync * 1000)
+E       assert 0 == (2000 - 1748186573366)
+E        +  where 0 = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>._time_offset
+E        +  and   1748186573366 = int((1748186573.366342 * 1000))
+E        +    where 1748186573.366342 = <exchange_gate.ExchangeAPI object at 0x0000016ED46CE590>._last_sync
+
+tests\test_exchange.py:115: AssertionError
 ________________________________________________ test_create_futures_order_property _________________________________________________ 
 
-E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_futures_order_property'
-    
-    Function-scoped fixtures are not reset between examples generated by
-    `@given(...)`, which is often surprising and can cause subtle test bugs.
-    
-    If you were expecting the fixture to run separately for each generated example,
-    then unfortunately you will need to find a different way to achieve your goal
-    (e.g. using a similar context manager instead of a fixture).
-    
-    If you are confident that your test will work correctly even though the
-    fixture is not reset between generated examples, you can suppress this health
-    check to assure Hypothesis that you understand what you are doing.
-    
-    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
-All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
-__________________________________________________ test_create_spot_order_property __________________________________________________ 
-
-E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_spot_order_property'
-    
-    Function-scoped fixtures are not reset between examples generated by
-    `@given(...)`, which is often surprising and can cause subtle test bugs.
-    
-    If you were expecting the fixture to run separately for each generated example,
-    then unfortunately you will need to find a different way to achieve your goal
-    (e.g. using a similar context manager instead of a fixture).
-    
-    If you are confident that your test will work correctly even though the
-    fixture is not reset between generated examples, you can suppress this health
-    check to assure Hypothesis that you understand what you are doing.
-    
-    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
-All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
-______________________________________________________ test_positions_property ______________________________________________________ 
-
-E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_positions_property'
-    
-    Function-scoped fixtures are not reset between examples generated by
-    `@given(...)`, which is often surprising and can cause subtle test bugs.
-    
-    If you were expecting the fixture to run separately for each generated example,
-    then unfortunately you will need to find a different way to achieve your goal
-    (e.g. using a similar context manager instead of a fixture).
-    
-    If you are confident that your test will work correctly even though the
-    fixture is not reset between generated examples, you can suppress this health
-    check to assure Hypothesis that you understand what you are doing.
-    
-    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
-All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
-_________________________________________________ test_get_value_distribution_usdt __________________________________________________ 
-
-mocker = <pytest_mock.plugin.MockerFixture object at 0x0000020E038D4A50>
+exch = <exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>
 
     @pytest.mark.asyncio
-    async def test_get_value_distribution_usdt(mocker):
-        spot_api = mocker.Mock()
-        fut_api = mocker.Mock()
-        spot_api.spot.get_account_detail = mocker.Mock(return_value=[
-            gate_api.SpotAccount(currency="BTC", available="0.1")
-        ])
-        fut_api.futures.list_positions = mocker.Mock(return_value=[
-            gate_api.Position(size="0.02", contract="BTC_USDT", unrealised_pnl="50", margin="500"),
-            gate_api.Position(size="-0.02", contract="BTC_USDT", unrealised_pnl="-20", margin="200")
-        ])
-        pm = PortfolioManager(spot_api, fut_api)
->       values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250)
-E       AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+>   @settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
 
-tests\test_portfolio.py:18: AttributeError
+tests\test_exchange_property.py:20:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:1069: in inner
+    _loop.run_until_complete(task)
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+exch = <exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>, qty = 1, side = 'long', reduce_only = False
+
+    @pytest.mark.asyncio
+    @settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
+    @given(qty=qty_st, side=side_st, reduce_only=ro_st)
+    async def test_create_futures_order_property(exch, mocker, qty, side, reduce_only):
+        expected_size = qty if side == "long" else -qty
+
+        # Mock for futures_api.create_futures_order
+        # It's called with (self, settle, futures_order_payload)
+        # It should return an object that simulates a FuturesOrder response
+        def _echo_futures(settle_param, order_obj_futures):
+            # order_obj_futures is the gate_api.FuturesOrder object created in ExchangeAPI.create_futures_order
+            returned_mock = UMMock(spec=gate_api.FuturesOrder) # Use spec for stricter mocking
+
+            # Copy attributes from the actual order_obj_futures that the test asserts
+            if hasattr(order_obj_futures, 'contract'):
+                returned_mock.contract = order_obj_futures.contract
+            if hasattr(order_obj_futures, 'size'):
+                returned_mock.size = order_obj_futures.size
+            if hasattr(order_obj_futures, 'reduce_only'):
+                returned_mock.reduce_only = order_obj_futures.reduce_only
+
+            # Set the 'settle' attribute on the mock, so 'assert res.settle' can pass
+            # Note: 'settle' is not a standard attribute of gate_api.FuturesOrder response.
+            # This is to satisfy the existing test assertion.
+            returned_mock.settle = settle_param
+
+            # Simulate other attributes if the real API response would have them and tests need them
+            # For example, an ID or status:
+            returned_mock.id = "mock_fut_id_123"
+            returned_mock.status = "open"
+
+            return returned_mock
+
+        mocker.patch.object(exch.futures_api, "create_futures_order", side_effect=_echo_futures)
+
+        # Act
+        res = await exch.create_futures_order("BTC_USDT", side, qty, reduce_only)
+
+        # Assert
+        assert res.contract == "BTC_USDT"
+>       assert res.size == expected_size
+E       AssertionError: assert '1' == 1
+E        +  where '1' = <Mock spec='FuturesOrder' id='1575521514512'>.size
+E       Falsifying example: test_create_futures_order_property(
+E           exch=<exchange_gate.ExchangeAPI object at 0x0000016ED5A27C10>,
+E           mocker=<pytest_mock.plugin.MockerFixture object at 0x0000016ED5A25DD0>,
+E           qty=1,
+E           side='long',
+E           reduce_only=False,
+E       )
+
+tests\test_exchange_property.py:59: AssertionError
+__________________________________________________ test_create_spot_order_property __________________________________________________ 
+
+exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>
+
+    @pytest.mark.asyncio
+>   @settings(max_examples=50, deadline=None)
+
+tests\test_exchange_property.py:64:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:1069: in inner
+    _loop.run_until_complete(task)
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+exch = <exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>, qty = 1, side = 'buy', price = None, post_only = False      
+
+    @pytest.mark.asyncio
+    @settings(max_examples=50, deadline=None)
+    @given(qty=qty_st, side=spot_side_st, price=price_st, post_only=post_only_st)
+    async def test_create_spot_order_property(exch, mocker, qty, side, price, post_only):
+        # Mock for spot_api.create_order
+        # It's called with (self, order_payload)
+        # It should return an object that simulates an Order response
+        def _echo_spot(order_obj_spot):
+            # order_obj_spot is the gate_api.Order object created in ExchangeAPI.create_spot_order
+            returned_mock = UMMock(spec=gate_api.Order) # Use spec for stricter mocking
+
+            # Copy attributes from the actual order_obj_spot that the test asserts
+            if hasattr(order_obj_spot, 'currency_pair'):
+                returned_mock.currency_pair = order_obj_spot.currency_pair
+            if hasattr(order_obj_spot, 'side'):
+                returned_mock.side = order_obj_spot.side
+            if hasattr(order_obj_spot, 'amount'):
+                returned_mock.amount = order_obj_spot.amount
+            if hasattr(order_obj_spot, 'type'):
+                returned_mock.type = order_obj_spot.type
+            if hasattr(order_obj_spot, 'time_in_force'):
+                returned_mock.time_in_force = order_obj_spot.time_in_force
+
+            # Handle optional price attribute
+            if hasattr(order_obj_spot, 'price') and order_obj_spot.price is not None:
+                returned_mock.price = order_obj_spot.price
+            else:
+                returned_mock.price = None # Ensure price attribute exists on mock even if None
+
+            # Set the 'id' attribute on the mock for the assertion
+            returned_mock.id = "spot123"
+
+            # Simulate other attributes like status
+            returned_mock.status = "filled" if price is None else "open" # Example status
+
+            return returned_mock
+
+        mocker.patch.object(exch.spot_api, "create_order", side_effect=_echo_spot)
+
+        # Act
+        res = await exch.create_spot_order("BTC_USDT", side, float(qty), price=price, post_only=post_only)
+
+        # Assert
+        assert res.id == "spot123"
+        assert res.currency_pair == "BTC_USDT"
+        assert res.side == side
+>       assert res.amount == str(qty) # Order amount is string
+E       AssertionError: assert '1.0' == '1'
+E
+E         - 1
+E         + 1.0
+E       Falsifying example: test_create_spot_order_property(
+E           exch=<exchange_gate.ExchangeAPI object at 0x0000016ED46B7950>,
+E           mocker=<pytest_mock.plugin.MockerFixture object at 0x0000016ED46B7DD0>,
+E           qty=1,
+E           side='buy',
+E           price=None,
+E           post_only=False,
+E       )
+
+tests\test_exchange_property.py:109: AssertionError
 ___________________________________________________ test_value_distribution_valid ___________________________________________________ 
 
     @given(
@@ -724,7 +275,7 @@ spot = 1.0, short = 1, long = 1, price = 10000.0
         )
         pm = PortfolioManager(spot_api, fut_api)
 >       values = asyncio.run(pm.get_value_distribution_usdt(price, 250))
-E       AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+E       TypeError: PortfolioManager.get_value_distribution_usdt() takes 1 positional argument but 3 were given
 E       Falsifying example: test_value_distribution_valid(
 E           spot=1.0,
 E           short=1,
@@ -732,35 +283,31 @@ E           long=1,
 E           price=10000.0,
 E       )
 
-tests\test_portfolio_property.py:27: AttributeError
+tests\test_portfolio_property.py:27: TypeError
+========================================================= warnings summary ========================================================== 
+src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value
+  C:\Python\prosperous_bot\.venv\Lib\site-packages\gate_api\rest.py:47: DeprecationWarning: HTTPResponse.getheader() is deprecated and will be removed in urllib3 v2.1.0. Instead use HTTPResponse.headers.get(name, default).
+    return self.urllib3_response.getheader(name, default)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 ========================================================== tests coverage =========================================================== 
 __________________________________________ coverage: platform win32, python 3.11.9-final-0 __________________________________________ 
 
 Name                       Stmts   Miss Branch BrPart  Cover   Missing
 ----------------------------------------------------------------------
-src\portfolio_manager.py      41     27     12      0    26%   24-46, 50-51, 55-59, 67-68
-src\rebalance_engine.py       40      2      8      1    94%   25-26, 55->57
+src\exchange_api.py           13      1      2      1    87%   17
+src\portfolio_manager.py      27      1     10      2    92%   17->16, 29->24, 41
+src\rebalance_engine.py       17      0      4      1    95%   20->17
 ----------------------------------------------------------------------
-TOTAL                         83     29     20      1    59%
-
-1 file skipped due to complete coverage.
-FAIL Required test coverage of 90% not reached. Total coverage: 59.22%
+TOTAL                         57      2     16      4    92%
+Required test coverage of 90% reached. Total coverage: 91.78%
 ====================================================== short test summary info ====================================================== 
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders - AttributeError: 'ExchangeAPI' object has no attribute 'cancel_all_open_orders'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders - AttributeError: 'ExchangeAPI' object has no attribute 'check_open_orders'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_get_wallet_balance - AttributeError: 'ExchangeAPI' object has no attribute 'get_wallet_balance'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order - AttributeError: 'ExchangeAPI' object has no attribute 'place_market_order'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value - AttributeError: 'ExchangeAPI' object has no attribute 'place_market_order'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_order - AttributeError: 'ExchangeAPI' object has no attribute 'place_order'
-FAILED src/test_exchange_api.py::TestExchangeAPI::test_update_time_offset - AttributeError: 'ExchangeAPI' object has no attribute 'update_time_offset'
-FAILED tests/test_exchange.py::test_create_futures_order - AttributeError: 'SpotApi' object has no attribute 'api_client'
-FAILED tests/test_exchange.py::test_create_spot_order - AttributeError: 'SpotApi' object has no attribute 'api_client'
-FAILED tests/test_exchange.py::test_positions - AttributeError: 'SpotApi' object has no attribute 'api_client'
-FAILED tests/test_exchange.py::test_create_spot_post_only - AttributeError: 'SpotApi' object has no attribute 'api_client'
-FAILED tests/test_exchange.py::test_create_spot_limit_post_only - AttributeError: 'SpotApi' object has no attribute 'api_client'      
-FAILED tests/test_exchange_property.py::test_create_futures_order_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_futures...
-FAILED tests/test_exchange_property.py::test_create_spot_order_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_spot_or...
-FAILED tests/test_exchange_property.py::test_positions_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_positions_prop...
-FAILED tests/test_portfolio.py::test_get_value_distribution_usdt - AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
-FAILED tests/test_portfolio_property.py::test_value_distribution_valid - AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders - AssertionError: 0 != 2
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders - AssertionError: False is not true
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value - AssertionError: '0.0009348231922155402' != '100'
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_update_time_offset - AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
+FAILED tests/test_exchange.py::test_sync_time - assert 0 == (2000 - 1748186573366)
+FAILED tests/test_exchange_property.py::test_create_futures_order_property - AssertionError: assert '1' == 1
+FAILED tests/test_exchange_property.py::test_create_spot_order_property - AssertionError: assert '1.0' == '1'
+FAILED tests/test_portfolio_property.py::test_value_distribution_valid - TypeError: PortfolioManager.get_value_distribution_usdt() takes 1 positional argument but 3 were given
 (.venv) (base) PS C:\Python\prosperous_bot> 

@@ -1,3 +1,3 @@
-# exchange_api.py  (корень проекта)
-from src.exchange_api import ExchangeAPI
+
+from src.exchange_api import ExchangeAPI  # type: ignore
 __all__ = ["ExchangeAPI"]

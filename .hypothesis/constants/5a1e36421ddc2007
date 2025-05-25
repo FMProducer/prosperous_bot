@@ -1,0 +1,4 @@
+# file: C:\Python\prosperous_bot\src\exchange_gate.py
+# hypothesis_version: 6.131.21
+
+[0.0, 0.2, 429, 1000, 'ExchangeAPI', 'RATE_LIMIT', 'api_client', 'ci', 'contract', 'ioc', 'label', 'limit', 'locked', 'long', 'market', 'max retries exceeded', 'new', 'open', 'poc', 'status', 'usdt']
