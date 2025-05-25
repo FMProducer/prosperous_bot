@@ -1,3 +1,2 @@
-
-from src.exchange_api import ExchangeAPI  # type: ignore
-__all__ = ["ExchangeAPI"]
+from src.exchange_gate import ExchangeAPI
+__all__=['ExchangeAPI']
