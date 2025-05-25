@@ -1,7 +1,7 @@
 
 import logging
 from typing import Dict
-from adaptive_agent.portfolio_manager import PortfolioManager
+from portfolio_manager import PortfolioManager
 
 TARGET_WEIGHTS = {
     "BTC_SPOT": 0.65,

@@ -1,9 +1,9 @@
-# c:\Python\Prosperous_Bot\adaptive_agent\portfolio_manager.py
+# c:\Python\Prosperous_Bot\src\portfolio_manager.py
 
 from __future__ import annotations
 import asyncio, time, logging
 from typing import Dict
-from adaptive_agent.exchange_api import ExchangeAPI
+from exchange_api import ExchangeAPI
 
 _LOG = logging.getLogger(__name__)
 

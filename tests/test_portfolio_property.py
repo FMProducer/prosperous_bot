@@ -1,6 +1,6 @@
 
 import pytest, gate_api
-from adaptive_agent.portfolio_manager import PortfolioManager
+from portfolio_manager import PortfolioManager
 from unittest.mock import Mock
 import asyncio
 from hypothesis import given, strategies as st

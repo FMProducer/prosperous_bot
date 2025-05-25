@@ -1,6 +1,6 @@
 
 import pytest, gate_api
-from adaptive_agent.rebalance_engine import RebalanceEngine
+from rebalance_engine import RebalanceEngine
 
 class MockPortfolio:
     def __init__(self, values: dict):

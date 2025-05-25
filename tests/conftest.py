@@ -1,6 +1,6 @@
 # tests/conftest.py
 import pytest_asyncio, pytest, os, asyncio, contextlib
-from adaptive_agent.exchange_api import ExchangeAPI
+from exchange_api import ExchangeAPI
 from unittest import mock
 
 # фикстура теперь async: создаём объект внутри работающего цикла

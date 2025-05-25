@@ -3,7 +3,7 @@
 import pytest, gate_api
 from unittest import mock
 import gate_api
-from adaptive_agent.exchange_api import ExchangeAPI
+from exchange_api import ExchangeAPI
 import asyncio
 import time
 from gate_api import ApiException
