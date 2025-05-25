@@ -1,25 +1,51 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+backend-path = ["."]
 
 [project]
-name = "adaptive_agent"
+name = "Prosperous_Bot"
 version = "0.1.0"
-description = "Trading AI Agent prototype"
-authors = [{ name = "FMProducer", email = "dev@example.com" }]
+authors = [
+    { name = "Your Name", email = "you@example.com" }, # Замени на свои данные
+]
+description = "Prosperous trading bot application"
+readme = "README.md" # Если у тебя есть README.md
 requires-python = ">=3.11"
-
+license = { text = "MIT" } # Или другая лицензия по твоему выбору
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+]
 dependencies = [
-    "aiohttp>=3.9",
-    "gate-api>=6.23",
+    "aiohttp>=3.9.3",
+    "gate-api>=4.48.0", # Убедись, что версия актуальна
+    "loguru>=0.7.2",
+    "numpy>=1.26.4",
+    "pandas>=2.2.1",
     "pydantic>=2.7",
+    # Добавь другие основные зависимости здесь
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0", # Используй актуальные версии
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.12.0",
+    "hypothesis>=6.90.0",
+    "coverage[toml]>=7.4.0", # [toml] для чтения конфигурации из pyproject.toml
+    # Другие dev-зависимости, например, линтеры, форматтеры
+    # "ruff",
+    # "mypy",
 ]
 
 [tool.setuptools]
-# Укажи здесь все имена .py файлов (без расширения .py),
-# которые ты переместил из src/adaptive_agent/ в src/
 py-modules = [
-    "__init__",
+    # Перечисли здесь все твои .py файлы из src/ без расширения .py
+    # Например:
+    "__init__", # Если у тебя есть src/__init__.py
     "config_loader",
     "data_processor",
     "exchange_api",
@@ -28,24 +54,34 @@ py-modules = [
     "monitoring_module",
     "order_manager",
     "portfolio_manager",
+    "rebalance_engine",
     "signal_generator",
     "telegram_bot",
     "utils"
 ]
-package-dir = {"" = "src"} # Сообщает setuptools, что корневые модули находятся в 'src'
+package-dir = {"" = "src"} # Указывает, что модули находятся в 'src'
 
 [tool.pytest.ini_options]
-addopts = "-q --cov=exchange_api --cov=portfolio_manager --cov-fail-under=90" # Обнови пути и добавь другие модули из src/ для покрытия
-asyncio_default_fixture_loop_scope = "session"
+pythonpath = ["src"] # Помогает pytest находить модули в src/
+# -q для тихого режима, --cov для указания модулей для покрытия
+# --cov-fail-under для установки порога покрытия
+addopts = "-q --cov=exchange_api --cov=portfolio_manager --cov=rebalance_engine --cov-fail-under=90"
+asyncio_default_fixture_loop_scope = "session" # Убирает предупреждение pytest-asyncio
 filterwarnings = [
     "ignore::pytest.PytestDeprecationWarning",
+    # Можно добавить другие предупреждения для игнорирования, если необходимо
+    "ignore::DeprecationWarning:distutils Version classes are deprecated. Use packaging.version instead.",
 ]
+# testpaths = ["tests"] # Можно явно указать папку с тестами
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-asyncio",
-    "pytest-mock",
-    "hypothesis",
-]
+[tool.coverage.run]
+source = ["src"] # Указывает coverage.py, где искать исходный код
+branch = true # Включает анализ покрытия веток (if/else и т.д.)
+# omit = [ # Файлы или папки для исключения из отчета о покрытии
+#     "src/__init__.py", # Например
+# ]
+
+[tool.coverage.report]
+# fail_under = 90 # Можно также здесь указать порог, но addopts в pytest уже это делает
+show_missing = true
+skip_covered = true # Не показывать полностью покрытые файлы в консольном отчете

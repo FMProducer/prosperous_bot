@@ -1,0 +1,4 @@
+# file: C:\Python\Prosperous_Bot\src\portfolio_manager.py
+# hypothesis_version: 6.131.21
+
+[0.0, 'BTC', 'BTC_LONG5X', 'BTC_SHORT5X', 'BTC_SPOT', 'BTC_USDT', 'Weights %%: %s', 'long_qty', 'short_qty', 'spot_qty', 'upl', 'usdt']

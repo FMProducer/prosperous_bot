@@ -1,0 +1,1009 @@
+        mock_cancel_order.return_value = None
+>       await self.exchange_api.cancel_all_open_orders(['BTC_USDT'])
+
+src\test_exchange_api.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:157: in cancel_all_open_orders
+    open_orders = await self._safe_call(self.spot_api.list_orders, currency_pair=symbol, status='open')
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='list_orders' id='1770692128208'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:162 Error cancelling orders: __name__
+______________________________________________ TestExchangeAPI.test_check_open_orders _______________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_check_open_orders>
+mock_list_orders = <MagicMock name='list_orders' id='1770693662800'>
+
+    @patch('gate_api.SpotApi.list_orders')
+    async def test_check_open_orders(self, mock_list_orders):
+        mock_order1 = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
+        mock_order2 = create_mock_order('2', 'sell', 'BTC_USDT', 2.0)
+        mock_list_orders.return_value = [mock_order1, mock_order2]
+>       has_open_orders = await self.exchange_api.check_open_orders('BTC_USDT', 'buy')
+
+src\test_exchange_api.py:66:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:148: in check_open_orders
+    open_orders = await self._safe_call(self.spot_api.list_orders, currency_pair=symbol, status='open')
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='list_orders' id='1770693662800'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:151 Error checking open orders for BTC_USDT: __name__
+______________________________________________ TestExchangeAPI.test_get_current_price _______________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_get_current_price>
+mock_list_tickers = <MagicMock name='list_tickers' id='1770693074832'>
+
+    @patch('gate_api.SpotApi.list_tickers')
+    async def test_get_current_price(self, mock_list_tickers):
+        mock_ticker = create_mock_ticker('BTC_USDT', '50000')
+        mock_list_tickers.return_value = [mock_ticker]
+        price = await self.exchange_api.get_current_price('BTC_USDT')
+>       self.assertEqual(price, 50000.0)
+E       AssertionError: None != 50000.0
+
+src\test_exchange_api.py:55: AssertionError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:143 Error getting current price for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 136, in get_current_price
+    tickers = await self._safe_call(self.spot_api.list_tickers, currency_pair=symbol)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+_______________________________________________ TestExchangeAPI.test_get_system_time ________________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_get_system_time>
+mock_get_system_time = <MagicMock name='get_system_time' id='1770692738256'>
+
+    @patch('gate_api.SpotApi.get_system_time')
+    async def test_get_system_time(self, mock_get_system_time):
+        mock_result = Mock()
+        mock_result.server_time = 1000000000000
+        mock_get_system_time.return_value = mock_result
+>       server_time = await self.exchange_api.get_system_time()
+
+src\test_exchange_api.py:29:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:110: in get_system_time
+    result = await self._safe_call(self.spot_api.get_system_time)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='get_system_time' id='1770692738256'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:113 Error getting system time: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 110, in get_system_time
+    result = await self._safe_call(self.spot_api.get_system_time)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________ TestExchangeAPI.test_get_wallet_balance ______________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_get_wallet_balance>
+mock_list_spot_accounts = <MagicMock name='list_spot_accounts' id='1770690960848'>
+
+    @patch('gate_api.SpotApi.list_spot_accounts')
+    async def test_get_wallet_balance(self, mock_list_spot_accounts):
+        mock_balance = create_mock_balance('BTC', '1.0', '0.5')
+        mock_list_spot_accounts.return_value = [mock_balance]
+>       balance = await self.exchange_api.get_wallet_balance('BTC')
+
+src\test_exchange_api.py:45:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:126: in get_wallet_balance
+    balances = await self._safe_call(self.spot_api.list_spot_accounts, currency=currency)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='list_spot_accounts' id='1770690960848'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:131 Error fetching wallet balance: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 126, in get_wallet_balance
+    balances = await self._safe_call(self.spot_api.list_spot_accounts, currency=currency)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________ TestExchangeAPI.test_place_market_order ______________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_market_order>
+mock_create_order = <MagicMock name='create_order' id='1770686230544'>
+
+    @patch('gate_api.SpotApi.create_order')
+    async def test_place_market_order(self, mock_create_order):
+        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
+        mock_result.status = 'closed'
+        mock_create_order.return_value = mock_result
+        result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 1)
+>       self.assertTrue(result)
+E       AssertionError: False is not true
+
+src\test_exchange_api.py:94: AssertionError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:240 Error placing market order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 236, in place_market_order
+    result = await self._safe_call(self.spot_api.create_order, order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+________________________________________ TestExchangeAPI.test_place_market_order_with_value _________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_market_order_with_value>
+mock_create_order = <MagicMock name='create_order' id='1770686656656'>
+
+    @patch('gate_api.SpotApi.create_order')
+    async def test_place_market_order_with_value(self, mock_create_order):
+        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 100)
+        mock_result.status = 'closed'
+        mock_create_order.return_value = mock_result
+        result = await self.exchange_api.place_market_order('BTC_USDT', 'buy', 100, is_value=True)
+>       self.assertTrue(result)
+E       AssertionError: False is not true
+
+src\test_exchange_api.py:107: AssertionError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:240 Error placing market order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 236, in place_market_order
+    result = await self._safe_call(self.spot_api.create_order, order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+_________________________________________________ TestExchangeAPI.test_place_order __________________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_place_order>
+mock_create_order = <MagicMock name='create_order' id='1770693198160'>
+
+    @patch('gate_api.SpotApi.create_order')
+    async def test_place_order(self, mock_create_order):
+        mock_result = create_mock_order('1', 'buy', 'BTC_USDT', 1.0)
+        mock_result.status = 'open'
+        mock_create_order.return_value = mock_result
+>       result = await self.exchange_api.place_order('BTC_USDT', 'buy', 1, 50000)
+
+src\test_exchange_api.py:84:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:168: in place_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create_order' id='1770693198160'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:172 Error placing order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 168, in place_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________ TestExchangeAPI.test_update_time_offset ______________________________________________ 
+
+self = <src.test_exchange_api.TestExchangeAPI testMethod=test_update_time_offset>
+mock_get_system_time = <MagicMock name='get_system_time' id='1770693935568'>
+
+    @patch('gate_api.SpotApi.get_system_time')
+    async def test_update_time_offset(self, mock_get_system_time):
+        mock_result = Mock()
+        mock_result.server_time = int(time.time() * 1000) + 5000  # Simulate server time 5 seconds ahead
+        mock_get_system_time.return_value = mock_result
+        await self.exchange_api.update_time_offset()
+>       self.assertNotEqual(self.exchange_api.time_offset, 0)
+E       AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
+
+src\test_exchange_api.py:38: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:31 Error updating time offset: __name__
+_______________________________________________________ test_get_system_time ________________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C45262DD0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C41A8F390>
+
+    @pytest.mark.asyncio
+    async def test_get_system_time(exch, mocker):
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "get_system_time",
+            return_value=gate_api.SystemTime(server_time=123_456_789),
+        )
+>       assert await exch.get_system_time() == 123_456_789
+
+tests\test_exchange.py:18:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:110: in get_system_time
+    result = await self._safe_call(self.spot_api.get_system_time)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='get_system_time' id='1770692130064'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:113 Error getting system time: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 110, in get_system_time
+    result = await self._safe_call(self.spot_api.get_system_time)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________________ test_get_current_price _______________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C456944D0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C45263D50>
+
+    @pytest.mark.asyncio
+    async def test_get_current_price(exch, mocker):
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "list_tickers",
+            return_value=[gate_api.Ticker(currency_pair="BTC_USDT", last="42000")]
+        )
+>       assert await exch.get_current_price("BTC_USDT") == 42_000.0
+E       assert None == 42000.0
+
+tests\test_exchange.py:27: AssertionError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:143 Error getting current price for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 136, in get_current_price
+    tickers = await self._safe_call(self.spot_api.list_tickers, currency_pair=symbol)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+_____________________________________________________ test_create_futures_order _____________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C45937FD0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C45939550>
+
+    @pytest.mark.asyncio
+    async def test_create_futures_order(exch, mocker):
+        # мок: FuturesApi.create_futures_order должен просто вернуть echo-dict
+        mock_create = mocker.patch.object(
+            gate_api.FuturesApi,
+            "create_futures_order",
+            return_value={"status": "open", "size": "1"},
+        )
+>       res = await exch.create_futures_order(
+            contract="BTC_USDT",
+            side="long",
+            qty=1,
+            reduce_only=False,
+        )
+
+tests\test_exchange.py:37:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:260: in create_futures_order
+    result = await self._safe_call(self.futures_api.create_futures_order, settle='usdt', futures_order=futures_order)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create_futures_order' id='1770693641488'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:264 Error creating futures order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 260, in create_futures_order
+    result = await self._safe_call(self.futures_api.create_futures_order, settle='usdt', futures_order=futures_order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________________ test_create_spot_order _______________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C4579B710>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C4590F950>
+
+    @pytest.mark.asyncio
+    async def test_create_spot_order(exch, mocker):
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "create_order",
+            return_value={"id": "123", "side": "buy"},
+        )
+>       res = await exch.create_spot_order(
+            pair="BTC_USDT", side="buy", qty=0.01, price=None, post_only=False
+        )
+
+tests\test_exchange.py:55:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\exchange_api.py:202: in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create_order' id='1770693833872'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:206 Error creating spot order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 202, in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+__________________________________________________________ test_positions ___________________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C458A02D0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C45939310>
+
+    @pytest.mark.asyncio
+    async def test_positions(exch, mocker):
+        mocker.patch.object(
+            gate_api.FuturesApi,
+            "list_positions",
+            return_value=[{"size": "1", "contract": "BTC_USDT"}],
+        )
+>       pos = await exch.positions()
+
+tests\test_exchange.py:68:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:270: in positions
+    return await self._safe_call(self.futures_api.list_positions, settle='usdt', contract=contract)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='list_positions' id='1770693925456'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+______________________________________________________ test_safe_call_retries _______________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C45954F90>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C45954750>
+
+    @pytest.mark.asyncio
+    async def test_safe_call_retries(exch, mocker):
+        # заставляем первый вызов кидать 429, второй — успешный
+        err = ApiException(status=429, reason="too many requests")
+        mock_fn = mocker.Mock(side_effect=[err, "ok"])
+>       out = await exch._safe_call(mock_fn)
+
+tests\test_exchange.py:77:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Mock id='1770693757456'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+____________________________________________________ test_create_spot_post_only _____________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C45957610>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C45955290>
+
+    @pytest.mark.asyncio
+    async def test_create_spot_post_only(exch, mocker):
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "create_order",
+            return_value={"id": "999", "iceberg": "0"},
+        )
+>       res = await exch.create_spot_order(
+            pair="BTC_USDT", side="sell", qty=0.02, price=50_000, post_only=True
+        )
+
+tests\test_exchange.py:89:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\exchange_api.py:202: in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create_order' id='1770692129424'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:206 Error creating spot order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 202, in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+_______________________________________________________ test_safe_call_raises _______________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C4567F5D0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C4579A550>
+
+    @pytest.mark.asyncio
+    async def test_safe_call_raises(exch, mocker):
+        # GateApiException в рантайме имеет .message, добавим его вручную
+        err = ApiException(status=400, reason="bad req")
+        err.message = "bad req"
+        mock_fn = mocker.Mock(side_effect=err)
+        with pytest.raises(ApiException):
+>           await exch._safe_call(mock_fn)
+
+tests\test_exchange.py:102:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Mock id='1770693680016'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+__________________________________________________________ test_sync_time ___________________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C458E82D0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C458EB2D0>
+
+    @pytest.mark.asyncio
+    async def test_sync_time(exch, mocker):
+        # time before call = 0  ➜  заставим функции думать, что прошло 1 ч.
+        exch._last_sync = 0
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "get_system_time",
+            return_value=gate_api.SystemTime(server_time=2000),
+        )
+        await exch._sync_time()
+>       assert exch._time_offset == 2000 - int(exch._last_sync * 1000)
+E       assert 0 == (2000 - 0)
+E        +  where 0 = <exchange_api.ExchangeAPI object at 0x0000019C458E82D0>._time_offset
+E        +  and   0 = int((0 * 1000))
+E        +    where 0 = <exchange_api.ExchangeAPI object at 0x0000019C458E82D0>._last_sync
+
+tests\test_exchange.py:115: AssertionError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:44 Error during _sync_time: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 39, in _sync_time
+    system_time_obj = await self._safe_call(self.spot_api.get_system_time)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+_________________________________________________ test_create_spot_limit_post_only __________________________________________________ 
+
+exch = <exchange_api.ExchangeAPI object at 0x0000019C4592AF10>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C4592CA90>
+
+    @pytest.mark.asyncio
+    async def test_create_spot_limit_post_only(exch, mocker):
+        mocker.patch.object(
+            gate_api.SpotApi,
+            "create_order",
+            return_value={"id": "321", "iceberg": "0"},
+        )
+>       res = await exch.create_spot_order(
+            pair="BTC_USDT",
+            side="buy",
+            qty=0.03,
+            price=48_000,    # limit-price → post_only проверка
+            post_only=True,
+        )
+
+tests\test_exchange.py:133:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src\exchange_api.py:202: in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+src\exchange_api.py:62: in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create_order' id='1770693418576'>, name = '__name__'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+                raise AttributeError("Mock object has no attribute %r" % name)
+        elif _is_magic(name):
+>           raise AttributeError(name)
+E           AttributeError: __name__
+
+C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:655: AttributeError
+--------------------------------------------------------- Captured log call --------------------------------------------------------- 
+ERROR    root:exchange_api.py:91 Unexpected error in _safe_call (attempt 1): __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+ERROR    root:exchange_api.py:206 Error creating spot order for BTC_USDT: __name__
+Traceback (most recent call last):
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 202, in create_spot_order
+    result = await self._safe_call(self.spot_api.create_order, order=order)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python\Prosperous_Bot\src\exchange_api.py", line 62, in _safe_call
+    logging.info(f"Making request (attempt {retries + 1}): method={api_method.__name__}, args={args}, kwargs={kwargs}")
+                                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\svsma\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 655, in __getattr__
+    raise AttributeError(name)
+AttributeError: __name__
+________________________________________________ test_create_futures_order_property _________________________________________________ 
+
+E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_futures_order_property'
+    
+    Function-scoped fixtures are not reset between examples generated by
+    `@given(...)`, which is often surprising and can cause subtle test bugs.
+    
+    If you were expecting the fixture to run separately for each generated example,
+    then unfortunately you will need to find a different way to achieve your goal
+    (e.g. using a similar context manager instead of a fixture).
+    
+    If you are confident that your test will work correctly even though the
+    fixture is not reset between generated examples, you can suppress this health
+    check to assure Hypothesis that you understand what you are doing.
+    
+    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
+All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
+__________________________________________________ test_create_spot_order_property __________________________________________________ 
+
+E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_spot_order_property'
+    
+    Function-scoped fixtures are not reset between examples generated by
+    `@given(...)`, which is often surprising and can cause subtle test bugs.
+    
+    If you were expecting the fixture to run separately for each generated example,
+    then unfortunately you will need to find a different way to achieve your goal
+    (e.g. using a similar context manager instead of a fixture).
+    
+    If you are confident that your test will work correctly even though the
+    fixture is not reset between generated examples, you can suppress this health
+    check to assure Hypothesis that you understand what you are doing.
+    
+    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
+All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
+______________________________________________________ test_positions_property ______________________________________________________ 
+
+E   hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_positions_property'
+    
+    Function-scoped fixtures are not reset between examples generated by
+    `@given(...)`, which is often surprising and can cause subtle test bugs.
+    
+    If you were expecting the fixture to run separately for each generated example,
+    then unfortunately you will need to find a different way to achieve your goal
+    (e.g. using a similar context manager instead of a fixture).
+    
+    If you are confident that your test will work correctly even though the
+    fixture is not reset between generated examples, you can suppress this health
+    check to assure Hypothesis that you understand what you are doing.
+    
+    See https://hypothesis.readthedocs.io/en/latest/reference/api.html#health-checks for more information about this. If you want to disable just this health check, add HealthCheck.function_scoped_fixture to the suppress_health_check settings for this test.
+All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
+_________________________________________________ test_get_value_distribution_usdt __________________________________________________ 
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000019C458A05D0>
+
+    @pytest.mark.asyncio
+    async def test_get_value_distribution_usdt(mocker):
+        spot_api = mocker.Mock()
+        fut_api = mocker.Mock()
+        spot_api.spot.get_account_detail = mocker.Mock(return_value=[
+            gate_api.SpotAccount(currency="BTC", available="0.1")
+        ])
+        fut_api.futures.list_positions = mocker.Mock(return_value=[
+            gate_api.Position(size="0.02", contract="BTC_USDT", unrealised_pnl="50", margin="500"),
+            gate_api.Position(size="-0.02", contract="BTC_USDT", unrealised_pnl="-20", margin="200")
+        ])
+        pm = PortfolioManager(spot_api, fut_api)
+>       values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250)
+E       AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+
+tests\test_portfolio.py:18: AttributeError
+___________________________________________________ test_value_distribution_valid ___________________________________________________ 
+
+    @given(
+>       spot=st.floats(0.01, 1),
+        short=st.integers(1, 10),
+        long=st.integers(1, 10),
+        price=st.floats(10000, 60000)
+    )
+
+tests\test_portfolio_property.py:9:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spot = 1.0, short = 1, long = 1, price = 10000.0
+
+    @given(
+        spot=st.floats(0.01, 1),
+        short=st.integers(1, 10),
+        long=st.integers(1, 10),
+        price=st.floats(10000, 60000)
+    )
+    def test_value_distribution_valid(spot, short, long, price):
+        spot_api = Mock()
+        fut_api = Mock()
+        spot_api.spot.get_account_detail = Mock(
+            return_value=[gate_api.SpotAccount(currency="BTC", available=str(spot))]
+        )
+        fut_api.futures.list_positions = Mock(
+            return_value=[
+                gate_api.Position(size=str(long), contract="BTC_USDT", unrealised_pnl="0", margin="1000"),
+                gate_api.Position(size=str(-short), contract="BTC_USDT", unrealised_pnl="0", margin="1000")
+            ]
+        )
+        pm = PortfolioManager(spot_api, fut_api)
+>       values = asyncio.run(pm.get_value_distribution_usdt(price, 250))
+E       AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+E       Falsifying example: test_value_distribution_valid(
+E           spot=1.0,
+E           short=1,
+E           long=1,
+E           price=10000.0,
+E       )
+
+tests\test_portfolio_property.py:27: AttributeError
+========================================================== tests coverage =========================================================== 
+__________________________________________ coverage: platform win32, python 3.11.9-final-0 __________________________________________ 
+
+Name                       Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------
+src\exchange_api.py          167     52     22      3    66%   28-29, 40-42, 64-65, 67-79, 81-89, 93-96, 103, 111, 117-122, 127-129, 137-141, 149, 156->exit, 158-160, 169-170, 196, 203-204, 237-238, 261-262
+src\portfolio_manager.py      41     27     12      0    26%   24-46, 50-51, 55-59, 67-68
+src\rebalance_engine.py       40      2      8      1    94%   25-26, 55->57
+----------------------------------------------------------------------
+TOTAL                        248     81     42      4    63%
+FAIL Required test coverage of 90% not reached. Total coverage: 63.10%
+====================================================== short test summary info ====================================================== 
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_cancel_all_open_orders - AttributeError: __name__
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_check_open_orders - AttributeError: __name__
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_get_current_price - AssertionError: None != 50000.0
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_get_system_time - AttributeError: __name__
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_get_wallet_balance - AttributeError: __name__
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order - AssertionError: False is not true
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_market_order_with_value - AssertionError: False is not true
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_place_order - AttributeError: __name__
+FAILED src/test_exchange_api.py::TestExchangeAPI::test_update_time_offset - AttributeError: 'ExchangeAPI' object has no attribute 'time_offset'
+FAILED tests/test_exchange.py::test_get_system_time - AttributeError: __name__
+FAILED tests/test_exchange.py::test_get_current_price - assert None == 42000.0
+FAILED tests/test_exchange.py::test_create_futures_order - AttributeError: __name__
+FAILED tests/test_exchange.py::test_create_spot_order - AttributeError: __name__
+FAILED tests/test_exchange.py::test_positions - AttributeError: __name__
+FAILED tests/test_exchange.py::test_safe_call_retries - AttributeError: __name__
+FAILED tests/test_exchange.py::test_create_spot_post_only - AttributeError: __name__
+FAILED tests/test_exchange.py::test_safe_call_raises - AttributeError: __name__
+FAILED tests/test_exchange.py::test_sync_time - assert 0 == (2000 - 0)
+FAILED tests/test_exchange.py::test_create_spot_limit_post_only - AttributeError: __name__
+FAILED tests/test_exchange_property.py::test_create_futures_order_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_futures...
+FAILED tests/test_exchange_property.py::test_create_spot_order_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_create_spot_or...
+FAILED tests/test_exchange_property.py::test_positions_property - hypothesis.errors.FailedHealthCheck: Function-scoped fixture 'exch' used by 'tests/test_exchange_property.py::test_positions_prop...
+FAILED tests/test_portfolio.py::test_get_value_distribution_usdt - AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
+FAILED tests/test_portfolio_property.py::test_value_distribution_valid - AttributeError: 'PortfolioManager' object has no attribute 'get_value_distribution_usdt'
