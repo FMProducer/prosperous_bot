@@ -1,6 +1,6 @@
 
 import pytest, gate_api
-from rebalance_engine import RebalanceEngine
+from prosperous_bot.rebalance_engine import RebalanceEngine
 
 class MockPortfolio:
     def __init__(self, values: dict):

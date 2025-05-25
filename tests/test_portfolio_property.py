@@ -1,6 +1,6 @@
 
 import pytest, gate_api
-from portfolio_manager import PortfolioManager
+from prosperous_bot.portfolio_manager import PortfolioManager
 from unittest.mock import Mock
 import asyncio
 from hypothesis import given, strategies as st

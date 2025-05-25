@@ -6,7 +6,7 @@ import gate_api
 from hypothesis import given, settings, strategies as st
 
 # Assuming ExchangeAPI is correctly importable due to pythonpath settings
-# from src.exchange_api import ExchangeAPI # Not needed if exch fixture provides it
+# from prosperous_bot.exchange_gate import ExchangeAPI # Not needed if exch fixture provides it
 
 # Strategies (assuming these are defined as they were previously)
 qty_st = st.integers(min_value=1, max_value=100_000)

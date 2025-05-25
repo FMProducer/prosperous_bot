@@ -1,9 +1,9 @@
 import pytest
 import pytest_asyncio
 import os
-from exchange_api import ExchangeAPI
+from prosperous_bot.exchange_gate import ExchangeAPI
 # Assuming your PortfolioManager is in a file named portfolio_manager.py in src
-# from portfolio_manager import PortfolioManager # Uncomment if you have this and need it in conftest
+# from prosperous_bot.portfolio_manager import PortfolioManager # Uncomment if you have this and need it in conftest
 
 # Фикстура для PortfolioManager, если она нужна глобально
 # @pytest_asyncio.fixture
