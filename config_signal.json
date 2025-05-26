@@ -21,16 +21,16 @@
         "ETHFIUSDT"
     ],
     "binance_pairs": [
-        "DOGEUSDT",
         "SUIUSDT",
-        "AAVEUSDT",
-        "WIFUSDT",
+        "DOGEUSDT",
         "TRUMPUSDT",
-        "WLDUSDT",
-        "NXPCUSDT",
-        "ALPACAUSDT",
+        "WIFUSDT",
+        "HUMAUSDT",
         "NEIROUSDT",
-        "ADAUSDT"
+        "VIRTUALUSDT",
+        "WLDUSDT",
+        "ADAUSDT",
+        "UNIUSDT"
     ],
     "ema1_window": 20,
     "ema2_window": 30,
@@ -109,28 +109,28 @@
             "time": "2025-05-24T02:18:38.035918"
         },
         "ADAUSDT": {
-            "signal": "buy",
-            "time": "2025-05-25T15:07:35.995566"
+            "signal": "sell",
+            "time": "2025-05-26T18:55:08.854132"
         },
         "WLDUSDT": {
             "signal": "sell",
             "time": "2025-05-25T15:57:46.072523"
         },
         "NEIROUSDT": {
-            "signal": "buy",
-            "time": "2025-05-25T15:07:35.995566"
-        },
-        "AAVEUSDT": {
             "signal": "sell",
-            "time": "2025-05-24T23:10:05.031225"
+            "time": "2025-05-26T18:55:08.853129"
         },
-        "ALPACAUSDT": {
-            "signal": "sell",
-            "time": "2025-05-24T22:27:01.226042"
+        "HUMAUSDT": {
+            "signal": null,
+            "time": null
         },
-        "NXPCUSDT": {
+        "VIRTUALUSDT": {
             "signal": "sell",
-            "time": "2025-05-25T15:07:35.994467"
+            "time": "2025-05-26T18:55:08.853129"
+        },
+        "UNIUSDT": {
+            "signal": "sell",
+            "time": "2025-05-26T18:55:08.854132"
         }
     },
     "asset_distributions": {
