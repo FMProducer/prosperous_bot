@@ -20,16 +20,16 @@
         "ETHFIUSDT"
     ],
     "binance_pairs": [
+        "BTCUSDT",
         "SUIUSDT",
         "DOGEUSDT",
+        "HUMAUSDT",
         "TRUMPUSDT",
         "WIFUSDT",
-        "HUMAUSDT",
-        "NEIROUSDT",
         "VIRTUALUSDT",
+        "NEIROUSDT",
         "WLDUSDT",
-        "ADAUSDT",
-        "UNIUSDT"
+        "ADAUSDT"
     ],
     "ema1_window": 20,
     "ema2_window": 30,
@@ -127,9 +127,9 @@
             "signal": "sell",
             "time": "2025-05-26T18:55:08.853129"
         },
-        "UNIUSDT": {
-            "signal": "sell",
-            "time": "2025-05-26T18:55:08.854132"
+        "BTCUSDT": {
+            "signal": "buy",
+            "time": "2025-05-26T21:01:05.875600"
         }
     },
     "asset_distributions": {
