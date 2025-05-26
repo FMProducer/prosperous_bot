@@ -28,8 +28,8 @@
         "time": "2025-05-26T18:55:08.853129"
     },
     "HUMAUSDT": {
-        "signal": null,
-        "time": null
+        "signal": "sell",
+        "time": "2025-05-26T22:47:42.617456"
     },
     "VIRTUALUSDT": {
         "signal": "sell",
