@@ -22,13 +22,16 @@
       {
         "path": "data_settings.price_col_for_rebalance",
         "type": "categorical",
-        "choices": ["open", "close"]
+        "choices": [
+          "open",
+          "close"
+        ]
       },
       {
         "path": "target_weights_normal.BTC_SPOT",
         "type": "float",
         "low": 0.1,
-        "high": 0.8 
+        "high": 0.8
       },
       {
         "path": "slippage_percent",
@@ -45,14 +48,14 @@
     ]
   },
   "backtest_settings": {
-    "initial_capital": 10000.0,
+    "initial_capital": 1000.0,
     "commission_taker": 0.0005,
     "commission_maker": 0.0002,
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 60,
-    "rebalance_threshold": 0.02,
+    "min_rebalance_interval_minutes": 5,
+    "rebalance_threshold": 0.01,
     "target_weights_normal": {
       "BTC_SPOT": 0.65,
       "BTC_LONG5X": 0.11,
@@ -89,8 +92,8 @@
       "price_col_for_rebalance": "close"
     },
     "date_range": {
-      "start_date": "2022-01-01T00:00:00Z",
-      "end_date": "2023-12-31T23:59:59Z"
+      "start_date": "2025-04-26T22:45:00Z",
+      "end_date": "2025-05-26T22:40:59Z"
     },
     "logging_level": "INFO",
     "report_path_prefix": "./reports/"
