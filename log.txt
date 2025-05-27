@@ -1,0 +1,847 @@
+(.venv) (base) PS C:\Python\Prosperous_Bot> python -m src.prosperous_bot.rebalance_backtester --config_file config/unified_config.example.json
+2025-05-27 21:50:00,493 - INFO - Loaded backtest settings from 'config/unified_config.example.json' (using 'backtest_settings' section).
+2025-05-27 21:50:00,493 - INFO - Running standalone backtest with data from: graphs/BTCUSDT_data.csv
+2025-05-27 21:50:00,493 - INFO - Output reports for this run will be saved to: ./reports\backtest_20250527_215000
+2025-05-27 21:50:00,493 - INFO - Loading data from graphs/BTCUSDT_data.csv...
+2025-05-27 21:50:00,524 - INFO - Data loaded successfully. Shape: (8640, 18)
+2025-05-27 21:50:00,524 - INFO - Market data 'timestamp' column is tz-naive. Localizing to UTC.
+2025-05-27 21:50:00,534 - INFO - Config start_date '2025-04-26T22:45:00Z' is tz-aware (UTC). Converting to UTC.
+2025-05-27 21:50:00,535 - INFO - Config end_date '2025-05-26T22:40:59Z' is tz-aware (UTC). Converting to UTC.
+2025-05-27 21:50:00,536 - INFO - Starting backtest with initial portfolio: 1000.00 USDT.
+2025-05-27 21:50:00,537 - INFO - Normal Target Weights: {'BTC_SPOT': 0.65, 'BTC_LONG5X': 0.11, 'BTC_SHORT5X': 0.24}
+2025-05-27 21:50:00,537 - INFO - Safe Mode Target Weights: {'BTC_SPOT': 0.65, 'BTC_LONG5X': 0.11, 'BTC_SHORT5X': 0.24}
+2025-05-27 21:50:00,537 - INFO - Rebalance Threshold: 1.00%
+2025-05-27 21:50:00,537 - INFO - Min Rebalance Interval (minutes): 5
+2025-05-27 21:50:00,543 - INFO - Initial rebalance triggered at 2025-04-26 22:45:00+00:00 (Price: 94753.26) to establish target weights: {'BTC_SPOT': 0.65, 'BTC_LONG5X': 0.11, 'BTC_SHORT5X': 0.24}.
+2025-05-27 21:50:00,543 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 1000.00 USDT. Current Price: 94753.26
+2025-05-27 21:50:00,543 - INFO -   TRADE: BUY 0.006856 BTC_SPOT @ MktPx 94753.26, Val: 650.00, Comm: 0.46, SlipCost: 0.33, NetPnL_Trade: -0.46
+2025-05-27 21:50:00,543 - INFO -   TRADE: BUY 110.000000 BTC_LONG5X @ MktPx 94753.26, Val: 110.00, Comm: 0.08, SlipCost: 0.06, NetPnL_Trade: -0.08        
+2025-05-27 21:50:00,543 - INFO -   TRADE: BUY 240.000000 BTC_SHORT5X @ MktPx 94753.26, Val: 240.00, Comm: 0.17, SlipCost: 0.12, NetPnL_Trade: -0.17       
+2025-05-27 21:50:00,543 - INFO -   Post-Rebalance Portfolio: USDT: -0.88, SPOT_QTY: 0.006856, LONG_VAL: 110.00, SHORT_VAL: 240.00
+2025-05-27 21:50:00,543 - INFO -   New Total Value after rebalance: 998.80 USDT
+2025-05-27 21:50:00,551 - INFO - Rebalance threshold triggered at 2025-04-27 05:20:00+00:00 (Price: 93954.00). Asset BTC_SHORT5X current weight 0.2504, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,552 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.70 USDT. Current Price: 93954.00
+2025-05-27 21:50:00,552 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 93954.00, Val: 4.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,552 - INFO -   TRADE: BUY 4.516369 BTC_LONG5X @ MktPx 93954.00, Val: 4.52, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,552 - INFO -   TRADE: SELL 10.350855 BTC_SHORT5X @ MktPx 93954.00, Val: 10.35, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,552 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006909, LONG_VAL: 109.86, SHORT_VAL: 239.69
+2025-05-27 21:50:00,552 - INFO -   New Total Value after rebalance: 998.68 USDT
+2025-05-27 21:50:00,559 - INFO - Rebalance threshold triggered at 2025-04-28 01:20:00+00:00 (Price: 93008.01). Asset BTC_SHORT5X current weight 0.2520, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,559 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.53 USDT. Current Price: 93008.01
+2025-05-27 21:50:00,559 - INFO -   TRADE: BUY 0.000069 BTC_SPOT @ MktPx 93008.01, Val: 6.43, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,559 - INFO -   TRADE: BUY 5.537968 BTC_LONG5X @ MktPx 93008.01, Val: 5.54, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,567 - INFO -   TRADE: SELL 11.988823 BTC_SHORT5X @ MktPx 93008.01, Val: 11.99, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,567 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006978, LONG_VAL: 109.84, SHORT_VAL: 239.65
+2025-05-27 21:50:00,567 - INFO -   New Total Value after rebalance: 998.50 USDT
+2025-05-27 21:50:00,569 - INFO - Rebalance threshold triggered at 2025-04-28 03:20:00+00:00 (Price: 93806.16). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,570 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.74 USDT. Current Price: 93806.16
+2025-05-27 21:50:00,570 - INFO -   TRADE: SELL 0.000058 BTC_SPOT @ MktPx 93806.16, Val: 5.43, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.06
+2025-05-27 21:50:00,570 - INFO -   TRADE: SELL 4.745120 BTC_LONG5X @ MktPx 93806.16, Val: 4.75, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,570 - INFO -   TRADE: BUY 10.153478 BTC_SHORT5X @ MktPx 93806.16, Val: 10.15, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,570 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006920, LONG_VAL: 109.86, SHORT_VAL: 239.70
+2025-05-27 21:50:00,570 - INFO -   New Total Value after rebalance: 998.71 USDT
+2025-05-27 21:50:00,573 - INFO - Rebalance threshold triggered at 2025-04-28 07:20:00+00:00 (Price: 94630.01). Asset BTC_SHORT5X current weight 0.2296, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,573 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.95 USDT. Current Price: 94630.01
+2025-05-27 21:50:00,573 - INFO -   TRADE: SELL 0.000059 BTC_SPOT @ MktPx 94630.01, Val: 5.56, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.02
+2025-05-27 21:50:00,573 - INFO -   TRADE: SELL 4.856221 BTC_LONG5X @ MktPx 94630.01, Val: 4.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,573 - INFO -   TRADE: BUY 10.395732 BTC_SHORT5X @ MktPx 94630.01, Val: 10.40, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,573 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006862, LONG_VAL: 109.88, SHORT_VAL: 239.75
+2025-05-27 21:50:00,573 - INFO -   New Total Value after rebalance: 998.92 USDT
+2025-05-27 21:50:00,574 - INFO - Rebalance threshold triggered at 2025-04-28 11:05:00+00:00 (Price: 95452.58). Asset BTC_SHORT5X current weight 0.2296, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,574 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.99 USDT. Current Price: 95452.58
+2025-05-27 21:50:00,574 - INFO -   TRADE: SELL 0.000059 BTC_SPOT @ MktPx 95452.58, Val: 5.62, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.03
+2025-05-27 21:50:00,574 - INFO -   TRADE: SELL 4.784471 BTC_LONG5X @ MktPx 95452.58, Val: 4.78, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,574 - INFO -   TRADE: BUY 10.377346 BTC_SHORT5X @ MktPx 95452.58, Val: 10.38, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,574 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006803, LONG_VAL: 109.89, SHORT_VAL: 239.76
+2025-05-27 21:50:00,574 - INFO -   New Total Value after rebalance: 998.96 USDT
+2025-05-27 21:50:00,580 - INFO - Rebalance threshold triggered at 2025-04-28 13:35:00+00:00 (Price: 94607.27). Asset BTC_SHORT5X current weight 0.2507, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,580 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 999.16 USDT. Current Price: 94607.27
+2025-05-27 21:50:00,580 - INFO -   TRADE: BUY 0.000062 BTC_SPOT @ MktPx 94607.27, Val: 5.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,580 - INFO -   TRADE: BUY 4.838470 BTC_LONG5X @ MktPx 94607.27, Val: 4.84, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,580 - INFO -   TRADE: SELL 10.723353 BTC_SHORT5X @ MktPx 94607.27, Val: 10.72, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,580 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006865, LONG_VAL: 109.91, SHORT_VAL: 239.80
+2025-05-27 21:50:00,581 - INFO -   New Total Value after rebalance: 999.13 USDT
+2025-05-27 21:50:00,582 - INFO - Rebalance threshold triggered at 2025-04-28 15:25:00+00:00 (Price: 93751.00). Asset BTC_SHORT5X current weight 0.2509, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,582 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 999.12 USDT. Current Price: 93751.00
+2025-05-27 21:50:00,583 - INFO -   TRADE: BUY 0.000062 BTC_SPOT @ MktPx 93751.00, Val: 5.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,583 - INFO -   TRADE: BUY 4.968433 BTC_LONG5X @ MktPx 93751.00, Val: 4.97, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,583 - INFO -   TRADE: SELL 10.848128 BTC_SHORT5X @ MktPx 93751.00, Val: 10.85, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,584 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006927, LONG_VAL: 109.90, SHORT_VAL: 239.79
+2025-05-27 21:50:00,584 - INFO -   New Total Value after rebalance: 999.09 USDT
+2025-05-27 21:50:00,586 - INFO - Rebalance threshold triggered at 2025-04-28 19:00:00+00:00 (Price: 94594.50). Asset BTC_SHORT5X current weight 0.2293, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,586 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 999.17 USDT. Current Price: 94594.50
+2025-05-27 21:50:00,586 - INFO -   TRADE: SELL 0.000061 BTC_SPOT @ MktPx 94594.50, Val: 5.81, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.02
+2025-05-27 21:50:00,586 - INFO -   TRADE: SELL 4.954645 BTC_LONG5X @ MktPx 94594.50, Val: 4.95, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,586 - INFO -   TRADE: BUY 10.736803 BTC_SHORT5X @ MktPx 94594.50, Val: 10.74, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,586 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006866, LONG_VAL: 109.91, SHORT_VAL: 239.80
+2025-05-27 21:50:00,586 - INFO -   New Total Value after rebalance: 999.15 USDT
+2025-05-27 21:50:00,601 - INFO - Rebalance threshold triggered at 2025-04-29 16:30:00+00:00 (Price: 95365.96). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,601 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.41 USDT. Current Price: 95365.96
+2025-05-27 21:50:00,602 - INFO -   TRADE: SELL 0.000061 BTC_SPOT @ MktPx 95365.96, Val: 5.79, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.03
+2025-05-27 21:50:00,602 - INFO -   TRADE: SELL 4.378968 BTC_LONG5X @ MktPx 95365.96, Val: 4.38, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,602 - INFO -   TRADE: BUY 10.147372 BTC_SHORT5X @ MktPx 95365.96, Val: 10.15, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,602 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006805, LONG_VAL: 109.82, SHORT_VAL: 239.62
+2025-05-27 21:50:00,602 - INFO -   New Total Value after rebalance: 998.38 USDT
+2025-05-27 21:50:00,605 - INFO - Rebalance threshold triggered at 2025-04-29 21:20:00+00:00 (Price: 94432.46). Asset BTC_SHORT5X current weight 0.2518, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,605 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.51 USDT. Current Price: 94432.46
+2025-05-27 21:50:00,605 - INFO -   TRADE: BUY 0.000068 BTC_SPOT @ MktPx 94432.46, Val: 6.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,605 - INFO -   TRADE: BUY 5.353690 BTC_LONG5X @ MktPx 94432.46, Val: 5.35, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,605 - INFO -   TRADE: SELL 11.799780 BTC_SHORT5X @ MktPx 94432.46, Val: 11.80, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,605 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006873, LONG_VAL: 109.84, SHORT_VAL: 239.64
+2025-05-27 21:50:00,605 - INFO -   New Total Value after rebalance: 998.49 USDT
+2025-05-27 21:50:00,618 - INFO - Rebalance threshold triggered at 2025-04-30 13:50:00+00:00 (Price: 93413.32). Asset BTC_SHORT5X current weight 0.2527, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,618 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.10 USDT. Current Price: 93413.32
+2025-05-27 21:50:00,618 - INFO -   TRADE: BUY 0.000072 BTC_SPOT @ MktPx 93413.32, Val: 6.74, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,619 - INFO -   TRADE: BUY 5.958308 BTC_LONG5X @ MktPx 93413.32, Val: 5.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,619 - INFO -   TRADE: SELL 12.724186 BTC_SHORT5X @ MktPx 93413.32, Val: 12.72, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,619 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006945, LONG_VAL: 109.79, SHORT_VAL: 239.54
+2025-05-27 21:50:00,619 - INFO -   New Total Value after rebalance: 998.07 USDT
+2025-05-27 21:50:00,620 - INFO - Rebalance threshold triggered at 2025-04-30 14:30:00+00:00 (Price: 94288.01). Asset BTC_SHORT5X current weight 0.2288, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,620 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.17 USDT. Current Price: 94288.01
+2025-05-27 21:50:00,620 - INFO -   TRADE: SELL 0.000064 BTC_SPOT @ MktPx 94288.01, Val: 6.03, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.04
+2025-05-27 21:50:00,621 - INFO -   TRADE: SELL 5.153095 BTC_LONG5X @ MktPx 94288.01, Val: 5.15, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,621 - INFO -   TRADE: BUY 11.156419 BTC_SHORT5X @ MktPx 94288.01, Val: 11.16, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,621 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006881, LONG_VAL: 109.80, SHORT_VAL: 239.56
+2025-05-27 21:50:00,621 - INFO -   New Total Value after rebalance: 998.14 USDT
+2025-05-27 21:50:00,626 - INFO - Rebalance threshold triggered at 2025-05-01 05:40:00+00:00 (Price: 95114.46). Asset BTC_SHORT5X current weight 0.2293, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,626 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 997.80 USDT. Current Price: 95114.46
+2025-05-27 21:50:00,626 - INFO -   TRADE: SELL 0.000062 BTC_SPOT @ MktPx 95114.46, Val: 5.92, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.01
+2025-05-27 21:50:00,626 - INFO -   TRADE: SELL 4.763676 BTC_LONG5X @ MktPx 95114.46, Val: 4.76, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,626 - INFO -   TRADE: BUY 10.661174 BTC_SHORT5X @ MktPx 95114.46, Val: 10.66, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,626 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006819, LONG_VAL: 109.76, SHORT_VAL: 239.47
+2025-05-27 21:50:00,626 - INFO -   New Total Value after rebalance: 997.78 USDT
+2025-05-27 21:50:00,635 - INFO - Rebalance threshold triggered at 2025-05-01 10:15:00+00:00 (Price: 96214.00). Asset BTC_SHORT5X current weight 0.2263, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,635 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.16 USDT. Current Price: 96214.00
+2025-05-27 21:50:00,635 - INFO -   TRADE: SELL 0.000076 BTC_SPOT @ MktPx 96214.00, Val: 7.26, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 0.10
+2025-05-27 21:50:00,635 - INFO -   TRADE: SELL 6.394745 BTC_LONG5X @ MktPx 96214.00, Val: 6.39, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,636 - INFO -   TRADE: BUY 13.633648 BTC_SHORT5X @ MktPx 96214.00, Val: 13.63, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,636 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006743, LONG_VAL: 109.80, SHORT_VAL: 239.56
+2025-05-27 21:50:00,636 - INFO -   New Total Value after rebalance: 998.13 USDT
+2025-05-27 21:50:00,639 - INFO - Rebalance threshold triggered at 2025-05-01 15:05:00+00:00 (Price: 97014.56). Asset BTC_SHORT5X current weight 0.2300, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,639 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 998.06 USDT. Current Price: 97014.56
+2025-05-27 21:50:00,639 - INFO -   TRADE: SELL 0.000056 BTC_SPOT @ MktPx 97014.56, Val: 5.46, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.12
+2025-05-27 21:50:00,639 - INFO -   TRADE: SELL 4.558875 BTC_LONG5X @ MktPx 97014.56, Val: 4.56, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,639 - INFO -   TRADE: BUY 9.989110 BTC_SHORT5X @ MktPx 97014.56, Val: 9.99, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,639 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006687, LONG_VAL: 109.79, SHORT_VAL: 239.53
+2025-05-27 21:50:00,641 - INFO -   New Total Value after rebalance: 998.04 USDT
+2025-05-27 21:50:00,668 - INFO - Rebalance threshold triggered at 2025-05-03 10:30:00+00:00 (Price: 96110.66). Asset BTC_SHORT5X current weight 0.2503, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,668 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.41 USDT. Current Price: 96110.66
+2025-05-27 21:50:00,668 - INFO -   TRADE: BUY 0.000052 BTC_SPOT @ MktPx 96110.66, Val: 4.97, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,668 - INFO -   TRADE: BUY 5.281724 BTC_LONG5X @ MktPx 96110.66, Val: 5.28, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,669 - INFO -   TRADE: SELL 10.280369 BTC_SHORT5X @ MktPx 96110.66, Val: 10.28, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,669 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006739, LONG_VAL: 109.61, SHORT_VAL: 239.14
+2025-05-27 21:50:00,669 - INFO -   New Total Value after rebalance: 996.39 USDT
+2025-05-27 21:50:00,684 - INFO - Rebalance threshold triggered at 2025-05-04 10:15:00+00:00 (Price: 95300.00). Asset BTC_SHORT5X current weight 0.2500, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,685 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.20 USDT. Current Price: 95300.00
+2025-05-27 21:50:00,685 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 95300.00, Val: 5.33, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,685 - INFO -   TRADE: BUY 4.636893 BTC_LONG5X @ MktPx 95300.00, Val: 4.64, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,685 - INFO -   TRADE: SELL 9.986299 BTC_SHORT5X @ MktPx 95300.00, Val: 9.99, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,685 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006795, LONG_VAL: 109.58, SHORT_VAL: 239.09
+2025-05-27 21:50:00,686 - INFO -   New Total Value after rebalance: 996.18 USDT
+2025-05-27 21:50:00,693 - INFO - Rebalance threshold triggered at 2025-05-04 23:25:00+00:00 (Price: 94430.46). Asset BTC_SHORT5X current weight 0.2509, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,693 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.07 USDT. Current Price: 94430.46
+2025-05-27 21:50:00,693 - INFO -   TRADE: BUY 0.000062 BTC_SPOT @ MktPx 94430.46, Val: 5.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,693 - INFO -   TRADE: BUY 5.005938 BTC_LONG5X @ MktPx 94430.46, Val: 5.01, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,693 - INFO -   TRADE: SELL 10.849309 BTC_SHORT5X @ MktPx 94430.46, Val: 10.85, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,693 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006856, LONG_VAL: 109.57, SHORT_VAL: 239.06
+2025-05-27 21:50:00,697 - INFO -   New Total Value after rebalance: 996.04 USDT
+2025-05-27 21:50:00,699 - INFO - Rebalance threshold triggered at 2025-05-05 02:05:00+00:00 (Price: 93646.20). Asset BTC_SHORT5X current weight 0.2500, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,699 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.13 USDT. Current Price: 93646.20
+2025-05-27 21:50:00,699 - INFO -   TRADE: BUY 0.000058 BTC_SPOT @ MktPx 93646.20, Val: 5.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,699 - INFO -   TRADE: BUY 4.533849 BTC_LONG5X @ MktPx 93646.20, Val: 4.53, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,699 - INFO -   TRADE: SELL 9.981874 BTC_SHORT5X @ MktPx 93646.20, Val: 9.98, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,700 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006914, LONG_VAL: 109.57, SHORT_VAL: 239.07
+2025-05-27 21:50:00,700 - INFO -   New Total Value after rebalance: 996.11 USDT
+2025-05-27 21:50:00,703 - INFO - Rebalance threshold triggered at 2025-05-05 05:35:00+00:00 (Price: 94510.25). Asset BTC_SHORT5X current weight 0.2290, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,704 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.30 USDT. Current Price: 94510.25
+2025-05-27 21:50:00,704 - INFO -   TRADE: SELL 0.000062 BTC_SPOT @ MktPx 94510.25, Val: 5.87, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.03
+2025-05-27 21:50:00,704 - INFO -   TRADE: SELL 5.079931 BTC_LONG5X @ MktPx 94510.25, Val: 5.08, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,704 - INFO -   TRADE: BUY 10.925376 BTC_SHORT5X @ MktPx 94510.25, Val: 10.93, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,704 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006852, LONG_VAL: 109.59, SHORT_VAL: 239.11
+2025-05-27 21:50:00,704 - INFO -   New Total Value after rebalance: 996.27 USDT
+2025-05-27 21:50:00,709 - INFO - Rebalance threshold triggered at 2025-05-05 15:05:00+00:00 (Price: 93656.99). Asset BTC_SHORT5X current weight 0.2508, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,709 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.11 USDT. Current Price: 93656.99
+2025-05-27 21:50:00,709 - INFO -   TRADE: BUY 0.000061 BTC_SPOT @ MktPx 93656.99, Val: 5.73, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,709 - INFO -   TRADE: BUY 4.956978 BTC_LONG5X @ MktPx 93656.99, Val: 4.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,709 - INFO -   TRADE: SELL 10.710323 BTC_SHORT5X @ MktPx 93656.99, Val: 10.71, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,709 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006913, LONG_VAL: 109.57, SHORT_VAL: 239.07
+2025-05-27 21:50:00,709 - INFO -   New Total Value after rebalance: 996.09 USDT
+2025-05-27 21:50:00,713 - INFO - Rebalance threshold triggered at 2025-05-05 17:30:00+00:00 (Price: 94459.99). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,713 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.33 USDT. Current Price: 94459.99
+2025-05-27 21:50:00,714 - INFO -   TRADE: SELL 0.000057 BTC_SPOT @ MktPx 94459.99, Val: 5.41, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.03
+2025-05-27 21:50:00,714 - INFO -   TRADE: SELL 4.730065 BTC_LONG5X @ MktPx 94459.99, Val: 4.73, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,714 - INFO -   TRADE: BUY 10.116861 BTC_SHORT5X @ MktPx 94459.99, Val: 10.12, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,714 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006856, LONG_VAL: 109.60, SHORT_VAL: 239.12
+2025-05-27 21:50:00,714 - INFO -   New Total Value after rebalance: 996.30 USDT
+2025-05-27 21:50:00,725 - INFO - Rebalance threshold triggered at 2025-05-06 13:50:00+00:00 (Price: 93465.62). Asset BTC_SHORT5X current weight 0.2525, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,725 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.09 USDT. Current Price: 93465.62
+2025-05-27 21:50:00,725 - INFO -   TRADE: BUY 0.000071 BTC_SPOT @ MktPx 93465.62, Val: 6.66, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,725 - INFO -   TRADE: BUY 5.782104 BTC_LONG5X @ MktPx 93465.62, Val: 5.78, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,725 - INFO -   TRADE: SELL 12.470956 BTC_SHORT5X @ MktPx 93465.62, Val: 12.47, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,725 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006927, LONG_VAL: 109.57, SHORT_VAL: 239.06
+2025-05-27 21:50:00,729 - INFO -   New Total Value after rebalance: 996.06 USDT
+2025-05-27 21:50:00,729 - INFO - Rebalance threshold triggered at 2025-05-06 14:15:00+00:00 (Price: 94383.37). Asset BTC_SHORT5X current weight 0.2284, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,729 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.37 USDT. Current Price: 94383.37
+2025-05-27 21:50:00,730 - INFO -   TRADE: SELL 0.000065 BTC_SPOT @ MktPx 94383.37, Val: 6.17, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.03
+2025-05-27 21:50:00,730 - INFO -   TRADE: SELL 5.421326 BTC_LONG5X @ MktPx 94383.37, Val: 5.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,730 - INFO -   TRADE: BUY 11.569512 BTC_SHORT5X @ MktPx 94383.37, Val: 11.57, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,730 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006862, LONG_VAL: 109.60, SHORT_VAL: 239.13
+2025-05-27 21:50:00,730 - INFO -   New Total Value after rebalance: 996.34 USDT
+2025-05-27 21:50:00,735 - INFO - Rebalance threshold triggered at 2025-05-06 22:00:00+00:00 (Price: 95260.01). Asset BTC_SHORT5X current weight 0.2287, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,735 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.06 USDT. Current Price: 95260.01
+2025-05-27 21:50:00,736 - INFO -   TRADE: SELL 0.000065 BTC_SPOT @ MktPx 95260.01, Val: 6.21, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.02
+2025-05-27 21:50:00,736 - INFO -   TRADE: SELL 5.051047 BTC_LONG5X @ MktPx 95260.01, Val: 5.05, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,736 - INFO -   TRADE: BUY 11.236631 BTC_SHORT5X @ MktPx 95260.01, Val: 11.24, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,736 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006797, LONG_VAL: 109.57, SHORT_VAL: 239.05
+2025-05-27 21:50:00,736 - INFO -   New Total Value after rebalance: 996.03 USDT
+2025-05-27 21:50:00,737 - INFO - Rebalance threshold triggered at 2025-05-06 22:45:00+00:00 (Price: 96101.58). Asset BTC_SHORT5X current weight 0.2295, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,738 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.26 USDT. Current Price: 96101.58
+2025-05-27 21:50:00,738 - INFO -   TRADE: SELL 0.000058 BTC_SPOT @ MktPx 96101.58, Val: 5.59, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.07
+2025-05-27 21:50:00,738 - INFO -   TRADE: SELL 4.871557 BTC_LONG5X @ MktPx 96101.58, Val: 4.87, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,738 - INFO -   TRADE: BUY 10.432650 BTC_SHORT5X @ MktPx 96101.58, Val: 10.43, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,738 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006738, LONG_VAL: 109.59, SHORT_VAL: 239.10
+2025-05-27 21:50:00,738 - INFO -   New Total Value after rebalance: 996.24 USDT
+2025-05-27 21:50:00,739 - INFO - Rebalance threshold triggered at 2025-05-07 00:10:00+00:00 (Price: 97010.93). Asset BTC_SHORT5X current weight 0.2288, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,740 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.47 USDT. Current Price: 97010.93
+2025-05-27 21:50:00,740 - INFO -   TRADE: SELL 0.000062 BTC_SPOT @ MktPx 97010.93, Val: 5.99, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.13
+2025-05-27 21:50:00,740 - INFO -   TRADE: SELL 5.216010 BTC_LONG5X @ MktPx 97010.93, Val: 5.22, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,740 - INFO -   TRADE: BUY 11.184521 BTC_SHORT5X @ MktPx 97010.93, Val: 11.18, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,740 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006677, LONG_VAL: 109.61, SHORT_VAL: 239.15
+2025-05-27 21:50:00,740 - INFO -   New Total Value after rebalance: 996.44 USDT
+2025-05-27 21:50:00,751 - INFO - Rebalance threshold triggered at 2025-05-07 18:05:00+00:00 (Price: 95969.10). Asset BTC_SHORT5X current weight 0.2526, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,751 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.92 USDT. Current Price: 95969.10
+2025-05-27 21:50:00,752 - INFO -   TRADE: BUY 0.000069 BTC_SPOT @ MktPx 95969.10, Val: 6.60, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,752 - INFO -   TRADE: BUY 5.933140 BTC_LONG5X @ MktPx 95969.10, Val: 5.93, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,752 - INFO -   TRADE: SELL 12.557289 BTC_SHORT5X @ MktPx 95969.10, Val: 12.56, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,753 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006745, LONG_VAL: 109.55, SHORT_VAL: 239.02
+2025-05-27 21:50:00,753 - INFO -   New Total Value after rebalance: 995.89 USDT
+2025-05-27 21:50:00,755 - INFO - Rebalance threshold triggered at 2025-05-07 20:55:00+00:00 (Price: 96766.80). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,756 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.68 USDT. Current Price: 96766.80
+2025-05-27 21:50:00,756 - INFO -   TRADE: SELL 0.000057 BTC_SPOT @ MktPx 96766.80, Val: 5.53, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.11
+2025-05-27 21:50:00,756 - INFO -   TRADE: SELL 4.525325 BTC_LONG5X @ MktPx 96766.80, Val: 4.53, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,756 - INFO -   TRADE: BUY 10.028909 BTC_SHORT5X @ MktPx 96766.80, Val: 10.03, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,756 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006688, LONG_VAL: 109.53, SHORT_VAL: 238.96
+2025-05-27 21:50:00,756 - INFO -   New Total Value after rebalance: 995.66 USDT
+2025-05-27 21:50:00,759 - INFO - Rebalance threshold triggered at 2025-05-08 00:55:00+00:00 (Price: 97770.01). Asset BTC_SHORT5X current weight 0.2276, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,759 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.81 USDT. Current Price: 97770.01
+2025-05-27 21:50:00,760 - INFO -   TRADE: SELL 0.000068 BTC_SPOT @ MktPx 97770.01, Val: 6.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.19
+2025-05-27 21:50:00,760 - INFO -   TRADE: SELL 5.696147 BTC_LONG5X @ MktPx 97770.01, Val: 5.70, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,760 - INFO -   TRADE: BUY 12.301893 BTC_SHORT5X @ MktPx 97770.01, Val: 12.30, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,760 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006620, LONG_VAL: 109.54, SHORT_VAL: 238.99
+2025-05-27 21:50:00,760 - INFO -   New Total Value after rebalance: 995.78 USDT
+2025-05-27 21:50:00,763 - INFO - Rebalance threshold triggered at 2025-05-08 02:30:00+00:00 (Price: 98637.40). Asset BTC_SHORT5X current weight 0.2295, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,763 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.02 USDT. Current Price: 98637.40
+2025-05-27 21:50:00,763 - INFO -   TRADE: SELL 0.000057 BTC_SPOT @ MktPx 98637.40, Val: 5.60, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.21
+2025-05-27 21:50:00,763 - INFO -   TRADE: SELL 4.893086 BTC_LONG5X @ MktPx 98637.40, Val: 4.89, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,763 - INFO -   TRADE: BUY 10.464937 BTC_SHORT5X @ MktPx 98637.40, Val: 10.46, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,763 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006564, LONG_VAL: 109.56, SHORT_VAL: 239.05
+2025-05-27 21:50:00,764 - INFO -   New Total Value after rebalance: 996.00 USDT
+2025-05-27 21:50:00,767 - INFO - Rebalance threshold triggered at 2025-05-08 08:05:00+00:00 (Price: 99468.67). Asset BTC_SHORT5X current weight 0.2300, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,767 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.12 USDT. Current Price: 99468.67
+2025-05-27 21:50:00,767 - INFO -   TRADE: SELL 0.000054 BTC_SPOT @ MktPx 99468.67, Val: 5.39, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.25
+2025-05-27 21:50:00,767 - INFO -   TRADE: SELL 4.633041 BTC_LONG5X @ MktPx 99468.67, Val: 4.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,768 - INFO -   TRADE: BUY 10.002521 BTC_SHORT5X @ MktPx 99468.67, Val: 10.00, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,768 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006509, LONG_VAL: 109.57, SHORT_VAL: 239.07
+2025-05-27 21:50:00,768 - INFO -   New Total Value after rebalance: 996.09 USDT
+2025-05-27 21:50:00,773 - INFO - Rebalance threshold triggered at 2025-05-08 15:20:00+00:00 (Price: 100470.59). Asset BTC_SHORT5X current weight 0.2279, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,773 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.97 USDT. Current Price: 100470.59
+2025-05-27 21:50:00,773 - INFO -   TRADE: SELL 0.000066 BTC_SPOT @ MktPx 100470.59, Val: 6.62, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.37
+2025-05-27 21:50:00,773 - INFO -   TRADE: SELL 5.500356 BTC_LONG5X @ MktPx 100470.59, Val: 5.50, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,773 - INFO -   TRADE: BUY 12.091358 BTC_SHORT5X @ MktPx 100470.59, Val: 12.09, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,773 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006444, LONG_VAL: 109.56, SHORT_VAL: 239.03
+2025-05-27 21:50:00,773 - INFO -   New Total Value after rebalance: 995.95 USDT
+2025-05-27 21:50:00,775 - INFO - Rebalance threshold triggered at 2025-05-08 15:45:00+00:00 (Price: 101333.35). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,775 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.17 USDT. Current Price: 101333.35
+2025-05-27 21:50:00,775 - INFO -   TRADE: SELL 0.000054 BTC_SPOT @ MktPx 101333.35, Val: 5.43, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.34
+2025-05-27 21:50:00,775 - INFO -   TRADE: SELL 4.735902 BTC_LONG5X @ MktPx 101333.35, Val: 4.74, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,775 - INFO -   TRADE: BUY 10.136465 BTC_SHORT5X @ MktPx 101333.35, Val: 10.14, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,775 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006390, LONG_VAL: 109.58, SHORT_VAL: 239.08
+2025-05-27 21:50:00,776 - INFO -   New Total Value after rebalance: 996.15 USDT
+2025-05-27 21:50:00,779 - INFO - Rebalance threshold triggered at 2025-05-08 20:35:00+00:00 (Price: 102191.28). Asset BTC_SHORT5X current weight 0.2297, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,779 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.95 USDT. Current Price: 102191.28
+2025-05-27 21:50:00,781 - INFO -   TRADE: SELL 0.000055 BTC_SPOT @ MktPx 102191.28, Val: 5.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.40
+2025-05-27 21:50:00,781 - INFO -   TRADE: SELL 4.609745 BTC_LONG5X @ MktPx 102191.28, Val: 4.61, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,781 - INFO -   TRADE: BUY 10.214911 BTC_SHORT5X @ MktPx 102191.28, Val: 10.21, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,781 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006335, LONG_VAL: 109.55, SHORT_VAL: 239.03
+2025-05-27 21:50:00,781 - INFO -   New Total Value after rebalance: 995.92 USDT
+2025-05-27 21:50:00,782 - INFO - Rebalance threshold triggered at 2025-05-08 21:20:00+00:00 (Price: 103670.86). Asset BTC_SHORT5X current weight 0.2229, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,783 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.47 USDT. Current Price: 103670.86
+2025-05-27 21:50:00,783 - INFO -   TRADE: SELL 0.000087 BTC_SPOT @ MktPx 103670.86, Val: 9.03, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 0.76
+2025-05-27 21:50:00,783 - INFO -   TRADE: SELL 8.001050 BTC_LONG5X @ MktPx 103670.86, Val: 8.00, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,783 - INFO -   TRADE: BUY 17.010487 BTC_SHORT5X @ MktPx 103670.86, Val: 17.01, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,783 - INFO -   Post-Rebalance Portfolio: USDT: -0.04, SPOT_QTY: 0.006248, LONG_VAL: 109.61, SHORT_VAL: 239.15
+2025-05-27 21:50:00,783 - INFO -   New Total Value after rebalance: 996.43 USDT
+2025-05-27 21:50:00,784 - INFO - Rebalance threshold triggered at 2025-05-08 21:50:00+00:00 (Price: 102630.21). Asset BTC_SHORT5X current weight 0.2522, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,784 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.73 USDT. Current Price: 102630.21
+2025-05-27 21:50:00,784 - INFO -   TRADE: BUY 0.000065 BTC_SPOT @ MktPx 102630.21, Val: 6.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,784 - INFO -   TRADE: BUY 5.459928 BTC_LONG5X @ MktPx 102630.21, Val: 5.46, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,785 - INFO -   TRADE: SELL 12.172003 BTC_SHORT5X @ MktPx 102630.21, Val: 12.17, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,785 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006313, LONG_VAL: 109.64, SHORT_VAL: 239.22
+2025-05-27 21:50:00,785 - INFO -   New Total Value after rebalance: 996.70 USDT
+2025-05-27 21:50:00,791 - INFO - Rebalance threshold triggered at 2025-05-09 07:10:00+00:00 (Price: 103511.52). Asset BTC_SHORT5X current weight 0.2296, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,791 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.49 USDT. Current Price: 103511.52
+2025-05-27 21:50:00,792 - INFO -   TRADE: SELL 0.000055 BTC_SPOT @ MktPx 103511.52, Val: 5.72, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.47
+2025-05-27 21:50:00,792 - INFO -   TRADE: SELL 4.678035 BTC_LONG5X @ MktPx 103511.52, Val: 4.68, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,792 - INFO -   TRADE: BUY 10.369289 BTC_SHORT5X @ MktPx 103511.52, Val: 10.37, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,792 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006257, LONG_VAL: 109.61, SHORT_VAL: 239.16
+2025-05-27 21:50:00,792 - INFO -   New Total Value after rebalance: 996.46 USDT
+2025-05-27 21:50:00,794 - INFO - Rebalance threshold triggered at 2025-05-09 09:10:00+00:00 (Price: 102638.22). Asset BTC_SHORT5X current weight 0.2500, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,794 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.25 USDT. Current Price: 102638.22
+2025-05-27 21:50:00,794 - INFO -   TRADE: BUY 0.000052 BTC_SPOT @ MktPx 102638.22, Val: 5.31, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,794 - INFO -   TRADE: BUY 4.642281 BTC_LONG5X @ MktPx 102638.22, Val: 4.64, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,794 - INFO -   TRADE: SELL 9.980098 BTC_SHORT5X @ MktPx 102638.22, Val: 9.98, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,794 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006309, LONG_VAL: 109.59, SHORT_VAL: 239.10
+2025-05-27 21:50:00,795 - INFO -   New Total Value after rebalance: 996.23 USDT
+2025-05-27 21:50:00,798 - INFO - Rebalance threshold triggered at 2025-05-09 13:45:00+00:00 (Price: 103710.00). Asset BTC_SHORT5X current weight 0.2275, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,798 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.32 USDT. Current Price: 103710.00
+2025-05-27 21:50:00,798 - INFO -   TRADE: SELL 0.000065 BTC_SPOT @ MktPx 103710.00, Val: 6.72, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.57
+2025-05-27 21:50:00,798 - INFO -   TRADE: SELL 5.730695 BTC_LONG5X @ MktPx 103710.00, Val: 5.73, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,799 - INFO -   TRADE: BUY 12.428046 BTC_SHORT5X @ MktPx 103710.00, Val: 12.43, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,799 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006244, LONG_VAL: 109.59, SHORT_VAL: 239.12
+2025-05-27 21:50:00,799 - INFO -   New Total Value after rebalance: 996.29 USDT
+2025-05-27 21:50:00,800 - INFO - Rebalance threshold triggered at 2025-05-09 14:25:00+00:00 (Price: 102658.94). Asset BTC_SHORT5X current weight 0.2523, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,800 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.62 USDT. Current Price: 102658.94
+2025-05-27 21:50:00,800 - INFO -   TRADE: BUY 0.000066 BTC_SPOT @ MktPx 102658.94, Val: 6.76, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,801 - INFO -   TRADE: BUY 5.509817 BTC_LONG5X @ MktPx 102658.94, Val: 5.51, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,801 - INFO -   TRADE: SELL 12.298658 BTC_SHORT5X @ MktPx 102658.94, Val: 12.30, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,801 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006310, LONG_VAL: 109.63, SHORT_VAL: 239.19
+2025-05-27 21:50:00,801 - INFO -   New Total Value after rebalance: 996.59 USDT
+2025-05-27 21:50:00,813 - INFO - Rebalance threshold triggered at 2025-05-10 06:15:00+00:00 (Price: 103507.94). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,815 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.24 USDT. Current Price: 103507.94
+2025-05-27 21:50:00,815 - INFO -   TRADE: SELL 0.000054 BTC_SPOT @ MktPx 103507.94, Val: 5.60, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.46
+2025-05-27 21:50:00,815 - INFO -   TRADE: SELL 4.484772 BTC_LONG5X @ MktPx 103507.94, Val: 4.48, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,815 - INFO -   TRADE: BUY 10.059560 BTC_SHORT5X @ MktPx 103507.94, Val: 10.06, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,815 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006256, LONG_VAL: 109.59, SHORT_VAL: 239.10
+2025-05-27 21:50:00,815 - INFO -   New Total Value after rebalance: 996.21 USDT
+2025-05-27 21:50:00,820 - INFO - Rebalance threshold triggered at 2025-05-10 23:15:00+00:00 (Price: 104724.00). Asset BTC_SHORT5X current weight 0.2259, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,820 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.16 USDT. Current Price: 104724.00
+2025-05-27 21:50:00,820 - INFO -   TRADE: SELL 0.000073 BTC_SPOT @ MktPx 104724.00, Val: 7.66, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 0.72
+2025-05-27 21:50:00,820 - INFO -   TRADE: SELL 6.424835 BTC_LONG5X @ MktPx 104724.00, Val: 6.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,820 - INFO -   TRADE: BUY 14.060684 BTC_SHORT5X @ MktPx 104724.00, Val: 14.06, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,820 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006183, LONG_VAL: 109.58, SHORT_VAL: 239.08
+2025-05-27 21:50:00,820 - INFO -   New Total Value after rebalance: 996.12 USDT
+2025-05-27 21:50:00,837 - INFO - Rebalance threshold triggered at 2025-05-11 02:50:00+00:00 (Price: 103576.46). Asset BTC_SHORT5X current weight 0.2531, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,837 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 996.05 USDT. Current Price: 103576.46
+2025-05-27 21:50:00,837 - INFO -   TRADE: BUY 0.000068 BTC_SPOT @ MktPx 103576.46, Val: 7.02, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,837 - INFO -   TRADE: BUY 6.002110 BTC_LONG5X @ MktPx 103576.46, Val: 6.00, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,837 - INFO -   TRADE: SELL 13.058480 BTC_SHORT5X @ MktPx 103576.46, Val: 13.06, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,837 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006251, LONG_VAL: 109.57, SHORT_VAL: 239.05
+2025-05-27 21:50:00,837 - INFO -   New Total Value after rebalance: 996.01 USDT
+2025-05-27 21:50:00,837 - INFO - Rebalance threshold triggered at 2025-05-11 10:20:00+00:00 (Price: 104460.32). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,837 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.98 USDT. Current Price: 104460.32
+2025-05-27 21:50:00,837 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 104460.32, Val: 5.57, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.51
+2025-05-27 21:50:00,837 - INFO -   TRADE: SELL 4.669710 BTC_LONG5X @ MktPx 104460.32, Val: 4.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,837 - INFO -   TRADE: BUY 10.208591 BTC_SHORT5X @ MktPx 104460.32, Val: 10.21, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,837 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006197, LONG_VAL: 109.56, SHORT_VAL: 239.03
+2025-05-27 21:50:00,837 - INFO -   New Total Value after rebalance: 995.95 USDT
+2025-05-27 21:50:00,858 - INFO - Rebalance threshold triggered at 2025-05-12 07:00:00+00:00 (Price: 105639.99). Asset BTC_SHORT5X current weight 0.2258, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,858 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.68 USDT. Current Price: 105639.99
+2025-05-27 21:50:00,858 - INFO -   TRADE: SELL 0.000077 BTC_SPOT @ MktPx 105639.99, Val: 8.15, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 0.83
+2025-05-27 21:50:00,858 - INFO -   TRADE: SELL 6.006365 BTC_LONG5X @ MktPx 105639.99, Val: 6.01, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,858 - INFO -   TRADE: BUY 14.133314 BTC_SHORT5X @ MktPx 105639.99, Val: 14.13, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,858 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006120, LONG_VAL: 109.42, SHORT_VAL: 238.72
+2025-05-27 21:50:00,858 - INFO -   New Total Value after rebalance: 994.65 USDT
+2025-05-27 21:50:00,858 - INFO - Rebalance threshold triggered at 2025-05-12 07:40:00+00:00 (Price: 104727.97). Asset BTC_SHORT5X current weight 0.2504, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,858 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.75 USDT. Current Price: 104727.97
+2025-05-27 21:50:00,863 - INFO -   TRADE: BUY 0.000054 BTC_SPOT @ MktPx 104727.97, Val: 5.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,863 - INFO -   TRADE: BUY 4.705010 BTC_LONG5X @ MktPx 104727.97, Val: 4.71, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,863 - INFO -   TRADE: SELL 10.366855 BTC_SHORT5X @ MktPx 104727.97, Val: 10.37, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,863 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006174, LONG_VAL: 109.42, SHORT_VAL: 238.74
+2025-05-27 21:50:00,863 - INFO -   New Total Value after rebalance: 994.73 USDT
+2025-05-27 21:50:00,864 - INFO - Rebalance threshold triggered at 2025-05-12 11:55:00+00:00 (Price: 103762.90). Asset BTC_SHORT5X current weight 0.2512, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,864 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.92 USDT. Current Price: 103762.90
+2025-05-27 21:50:00,864 - INFO -   TRADE: BUY 0.000058 BTC_SPOT @ MktPx 103762.90, Val: 6.07, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,864 - INFO -   TRADE: BUY 5.014514 BTC_LONG5X @ MktPx 103762.90, Val: 5.01, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,864 - INFO -   TRADE: SELL 11.103972 BTC_SHORT5X @ MktPx 103762.90, Val: 11.10, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,864 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006232, LONG_VAL: 109.44, SHORT_VAL: 238.78
+2025-05-27 21:50:00,864 - INFO -   New Total Value after rebalance: 994.89 USDT
+2025-05-27 21:50:00,868 - INFO - Rebalance threshold triggered at 2025-05-12 14:50:00+00:00 (Price: 102802.04). Asset BTC_SHORT5X current weight 0.2510, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,868 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.58 USDT. Current Price: 102802.04
+2025-05-27 21:50:00,868 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 102802.04, Val: 5.77, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,869 - INFO -   TRADE: BUY 5.095621 BTC_LONG5X @ MktPx 102802.04, Val: 5.10, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,869 - INFO -   TRADE: SELL 10.893407 BTC_SHORT5X @ MktPx 102802.04, Val: 10.89, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,869 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006289, LONG_VAL: 109.40, SHORT_VAL: 238.70
+2025-05-27 21:50:00,869 - INFO -   New Total Value after rebalance: 994.56 USDT
+2025-05-27 21:50:00,871 - INFO - Rebalance threshold triggered at 2025-05-12 18:05:00+00:00 (Price: 101876.67). Asset BTC_SHORT5X current weight 0.2507, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,872 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.41 USDT. Current Price: 101876.67
+2025-05-27 21:50:00,872 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 101876.67, Val: 5.71, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,872 - INFO -   TRADE: BUY 4.935495 BTC_LONG5X @ MktPx 101876.67, Val: 4.94, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,872 - INFO -   TRADE: SELL 10.665605 BTC_SHORT5X @ MktPx 101876.67, Val: 10.67, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,872 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006345, LONG_VAL: 109.38, SHORT_VAL: 238.66
+2025-05-27 21:50:00,872 - INFO -   New Total Value after rebalance: 994.38 USDT
+2025-05-27 21:50:00,873 - INFO - Rebalance threshold triggered at 2025-05-12 18:45:00+00:00 (Price: 100766.79). Asset BTC_SHORT5X current weight 0.2532, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,873 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.65 USDT. Current Price: 100766.79
+2025-05-27 21:50:00,873 - INFO -   TRADE: BUY 0.000071 BTC_SPOT @ MktPx 100766.79, Val: 7.20, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,873 - INFO -   TRADE: BUY 5.921174 BTC_LONG5X @ MktPx 100766.79, Val: 5.92, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,874 - INFO -   TRADE: SELL 13.147477 BTC_SHORT5X @ MktPx 100766.79, Val: 13.15, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,874 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006416, LONG_VAL: 109.41, SHORT_VAL: 238.72
+2025-05-27 21:50:00,874 - INFO -   New Total Value after rebalance: 994.62 USDT
+2025-05-27 21:50:00,874 - INFO - Rebalance threshold triggered at 2025-05-12 18:55:00+00:00 (Price: 101630.59). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,874 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.73 USDT. Current Price: 101630.59
+2025-05-27 21:50:00,874 - INFO -   TRADE: SELL 0.000054 BTC_SPOT @ MktPx 101630.59, Val: 5.49, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.36
+2025-05-27 21:50:00,875 - INFO -   TRADE: SELL 4.706736 BTC_LONG5X @ MktPx 101630.59, Val: 4.71, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,875 - INFO -   TRADE: BUY 10.165872 BTC_SHORT5X @ MktPx 101630.59, Val: 10.17, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,875 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006362, LONG_VAL: 109.42, SHORT_VAL: 238.74
+2025-05-27 21:50:00,875 - INFO -   New Total Value after rebalance: 994.71 USDT
+2025-05-27 21:50:00,876 - INFO - Rebalance threshold triggered at 2025-05-12 20:35:00+00:00 (Price: 102551.79). Asset BTC_SHORT5X current weight 0.2292, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,876 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.88 USDT. Current Price: 102551.79
+2025-05-27 21:50:00,876 - INFO -   TRADE: SELL 0.000056 BTC_SPOT @ MktPx 102551.79, Val: 5.76, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.43
+2025-05-27 21:50:00,877 - INFO -   TRADE: SELL 4.982939 BTC_LONG5X @ MktPx 102551.79, Val: 4.98, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,877 - INFO -   TRADE: BUY 10.719483 BTC_SHORT5X @ MktPx 102551.79, Val: 10.72, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,877 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006306, LONG_VAL: 109.44, SHORT_VAL: 238.77
+2025-05-27 21:50:00,878 - INFO -   New Total Value after rebalance: 994.86 USDT
+2025-05-27 21:50:00,878 - INFO - Rebalance threshold triggered at 2025-05-13 03:25:00+00:00 (Price: 101602.31). Asset BTC_SHORT5X current weight 0.2510, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,878 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.62 USDT. Current Price: 101602.31
+2025-05-27 21:50:00,878 - INFO -   TRADE: BUY 0.000057 BTC_SPOT @ MktPx 101602.31, Val: 5.81, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,878 - INFO -   TRADE: BUY 5.085303 BTC_LONG5X @ MktPx 101602.31, Val: 5.09, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,878 - INFO -   TRADE: SELL 10.924718 BTC_SHORT5X @ MktPx 101602.31, Val: 10.92, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,878 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006363, LONG_VAL: 109.41, SHORT_VAL: 238.71
+2025-05-27 21:50:00,878 - INFO -   New Total Value after rebalance: 994.59 USDT
+2025-05-27 21:50:00,885 - INFO - Rebalance threshold triggered at 2025-05-13 04:30:00+00:00 (Price: 102555.73). Asset BTC_SHORT5X current weight 0.2289, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,885 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.92 USDT. Current Price: 102555.73
+2025-05-27 21:50:00,885 - INFO -   TRADE: SELL 0.000057 BTC_SPOT @ MktPx 102555.73, Val: 5.87, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.44
+2025-05-27 21:50:00,886 - INFO -   TRADE: SELL 5.178114 BTC_LONG5X @ MktPx 102555.73, Val: 5.18, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,886 - INFO -   TRADE: BUY 11.021874 BTC_SHORT5X @ MktPx 102555.73, Val: 11.02, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,886 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006306, LONG_VAL: 109.44, SHORT_VAL: 238.78
+2025-05-27 21:50:00,886 - INFO -   New Total Value after rebalance: 994.89 USDT
+2025-05-27 21:50:00,889 - INFO - Rebalance threshold triggered at 2025-05-13 09:45:00+00:00 (Price: 103457.03). Asset BTC_SHORT5X current weight 0.2295, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,889 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.99 USDT. Current Price: 103457.03
+2025-05-27 21:50:00,889 - INFO -   TRADE: SELL 0.000054 BTC_SPOT @ MktPx 103457.03, Val: 5.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.46
+2025-05-27 21:50:00,889 - INFO -   TRADE: SELL 4.822500 BTC_LONG5X @ MktPx 103457.03, Val: 4.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,889 - INFO -   TRADE: BUY 10.430473 BTC_SHORT5X @ MktPx 103457.03, Val: 10.43, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,889 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006251, LONG_VAL: 109.45, SHORT_VAL: 238.80
+2025-05-27 21:50:00,889 - INFO -   New Total Value after rebalance: 994.97 USDT
+2025-05-27 21:50:00,895 - INFO - Rebalance threshold triggered at 2025-05-13 16:10:00+00:00 (Price: 104314.44). Asset BTC_SHORT5X current weight 0.2300, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,895 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.78 USDT. Current Price: 104314.44
+2025-05-27 21:50:00,896 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 104314.44, Val: 5.50, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.49
+2025-05-27 21:50:00,896 - INFO -   TRADE: SELL 4.509555 BTC_LONG5X @ MktPx 104314.44, Val: 4.51, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,896 - INFO -   TRADE: BUY 9.981846 BTC_SHORT5X @ MktPx 104314.44, Val: 9.98, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,896 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006199, LONG_VAL: 109.43, SHORT_VAL: 238.75
+2025-05-27 21:50:00,897 - INFO -   New Total Value after rebalance: 994.76 USDT
+2025-05-27 21:50:00,907 - INFO - Rebalance threshold triggered at 2025-05-14 07:20:00+00:00 (Price: 103391.36). Asset BTC_SHORT5X current weight 0.2505, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,908 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.49 USDT. Current Price: 103391.36
+2025-05-27 21:50:00,908 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 103391.36, Val: 5.53, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,908 - INFO -   TRADE: BUY 4.864865 BTC_LONG5X @ MktPx 103391.36, Val: 4.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,909 - INFO -   TRADE: SELL 10.417238 BTC_SHORT5X @ MktPx 103391.36, Val: 10.42, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,909 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006252, LONG_VAL: 109.39, SHORT_VAL: 238.68
+2025-05-27 21:50:00,909 - INFO -   New Total Value after rebalance: 994.46 USDT
+2025-05-27 21:50:00,913 - INFO - Rebalance threshold triggered at 2025-05-14 13:30:00+00:00 (Price: 104264.88). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,913 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.54 USDT. Current Price: 104264.88
+2025-05-27 21:50:00,914 - INFO -   TRADE: SELL 0.000052 BTC_SPOT @ MktPx 104264.88, Val: 5.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.49
+2025-05-27 21:50:00,914 - INFO -   TRADE: SELL 4.631200 BTC_LONG5X @ MktPx 104264.88, Val: 4.63, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,914 - INFO -   TRADE: BUY 10.033844 BTC_SHORT5X @ MktPx 104264.88, Val: 10.03, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,914 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006200, LONG_VAL: 109.40, SHORT_VAL: 238.69
+2025-05-27 21:50:00,914 - INFO -   New Total Value after rebalance: 994.51 USDT
+2025-05-27 21:50:00,915 - INFO - Rebalance threshold triggered at 2025-05-14 14:15:00+00:00 (Price: 103248.40). Asset BTC_SHORT5X current weight 0.2518, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,915 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.77 USDT. Current Price: 103248.40
+2025-05-27 21:50:00,915 - INFO -   TRADE: BUY 0.000062 BTC_SPOT @ MktPx 103248.40, Val: 6.45, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,915 - INFO -   TRADE: BUY 5.298270 BTC_LONG5X @ MktPx 103248.40, Val: 5.30, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,916 - INFO -   TRADE: SELL 11.774639 BTC_SHORT5X @ MktPx 103248.40, Val: 11.77, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,916 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006263, LONG_VAL: 109.42, SHORT_VAL: 238.74
+2025-05-27 21:50:00,916 - INFO -   New Total Value after rebalance: 994.74 USDT
+2025-05-27 21:50:00,926 - INFO - Rebalance threshold triggered at 2025-05-15 05:50:00+00:00 (Price: 102350.00). Asset BTC_SHORT5X current weight 0.2503, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,926 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.41 USDT. Current Price: 102350.00
+2025-05-27 21:50:00,926 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 102350.00, Val: 5.40, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,926 - INFO -   TRADE: BUY 4.789884 BTC_LONG5X @ MktPx 102350.00, Val: 4.79, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,926 - INFO -   TRADE: SELL 10.212473 BTC_SHORT5X @ MktPx 102350.00, Val: 10.21, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,926 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006315, LONG_VAL: 109.39, SHORT_VAL: 238.66
+2025-05-27 21:50:00,926 - INFO -   New Total Value after rebalance: 994.39 USDT
+2025-05-27 21:50:00,934 - INFO - Rebalance threshold triggered at 2025-05-15 15:50:00+00:00 (Price: 103262.11). Asset BTC_SHORT5X current weight 0.2290, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,934 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.72 USDT. Current Price: 103262.11
+2025-05-27 21:50:00,934 - INFO -   TRADE: SELL 0.000060 BTC_SPOT @ MktPx 103262.11, Val: 6.21, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.50
+2025-05-27 21:50:00,934 - INFO -   TRADE: SELL 4.777594 BTC_LONG5X @ MktPx 103262.11, Val: 4.78, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,934 - INFO -   TRADE: BUY 10.964982 BTC_SHORT5X @ MktPx 103262.11, Val: 10.96, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,935 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006255, LONG_VAL: 109.31, SHORT_VAL: 238.49
+2025-05-27 21:50:00,935 - INFO -   New Total Value after rebalance: 993.69 USDT
+2025-05-27 21:50:00,942 - INFO - Rebalance threshold triggered at 2025-05-16 02:00:00+00:00 (Price: 104336.00). Asset BTC_SHORT5X current weight 0.2273, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,942 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.19 USDT. Current Price: 104336.00
+2025-05-27 21:50:00,942 - INFO -   TRADE: SELL 0.000068 BTC_SPOT @ MktPx 104336.00, Val: 7.06, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.64
+2025-05-27 21:50:00,943 - INFO -   TRADE: SELL 5.608538 BTC_LONG5X @ MktPx 104336.00, Val: 5.61, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,943 - INFO -   TRADE: BUY 12.643100 BTC_SHORT5X @ MktPx 104336.00, Val: 12.64, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,943 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006187, LONG_VAL: 109.25, SHORT_VAL: 238.37
+2025-05-27 21:50:00,943 - INFO -   New Total Value after rebalance: 993.16 USDT
+2025-05-27 21:50:00,947 - INFO - Rebalance threshold triggered at 2025-05-16 08:15:00+00:00 (Price: 103369.88). Asset BTC_SHORT5X current weight 0.2512, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,947 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.35 USDT. Current Price: 103369.88
+2025-05-27 21:50:00,948 - INFO -   TRADE: BUY 0.000059 BTC_SPOT @ MktPx 103369.88, Val: 6.08, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,948 - INFO -   TRADE: BUY 5.029569 BTC_LONG5X @ MktPx 103369.88, Val: 5.03, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,948 - INFO -   TRADE: SELL 11.144305 BTC_SHORT5X @ MktPx 103369.88, Val: 11.14, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,949 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006246, LONG_VAL: 109.27, SHORT_VAL: 238.40
+2025-05-27 21:50:00,949 - INFO -   New Total Value after rebalance: 993.32 USDT
+2025-05-27 21:50:00,955 - INFO - Rebalance threshold triggered at 2025-05-16 16:00:00+00:00 (Price: 104480.00). Asset BTC_SHORT5X current weight 0.2271, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,955 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.33 USDT. Current Price: 104480.00
+2025-05-27 21:50:00,955 - INFO -   TRADE: SELL 0.000066 BTC_SPOT @ MktPx 104480.00, Val: 6.95, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.64
+2025-05-27 21:50:00,955 - INFO -   TRADE: SELL 5.864008 BTC_LONG5X @ MktPx 104480.00, Val: 5.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,955 - INFO -   TRADE: BUY 12.788031 BTC_SHORT5X @ MktPx 104480.00, Val: 12.79, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,956 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006180, LONG_VAL: 109.27, SHORT_VAL: 238.40
+2025-05-27 21:50:00,956 - INFO -   New Total Value after rebalance: 993.30 USDT
+2025-05-27 21:50:00,958 - INFO - Rebalance threshold triggered at 2025-05-16 19:15:00+00:00 (Price: 103613.07). Asset BTC_SHORT5X current weight 0.2500, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,958 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.46 USDT. Current Price: 103613.07
+2025-05-27 21:50:00,958 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 103613.07, Val: 5.44, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,959 - INFO -   TRADE: BUY 4.508844 BTC_LONG5X @ MktPx 103613.07, Val: 4.51, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,959 - INFO -   TRADE: SELL 9.983785 BTC_SHORT5X @ MktPx 103613.07, Val: 9.98, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:00,959 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006232, LONG_VAL: 109.28, SHORT_VAL: 238.43
+2025-05-27 21:50:00,959 - INFO -   New Total Value after rebalance: 993.44 USDT
+2025-05-27 21:50:00,962 - INFO - Rebalance threshold triggered at 2025-05-17 01:45:00+00:00 (Price: 102688.94). Asset BTC_SHORT5X current weight 0.2508, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,962 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.52 USDT. Current Price: 102688.94
+2025-05-27 21:50:00,962 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 102688.94, Val: 5.80, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,962 - INFO -   TRADE: BUY 4.857514 BTC_LONG5X @ MktPx 102688.94, Val: 4.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,962 - INFO -   TRADE: SELL 10.682904 BTC_SHORT5X @ MktPx 102688.94, Val: 10.68, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,962 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006289, LONG_VAL: 109.29, SHORT_VAL: 238.45
+2025-05-27 21:50:00,964 - INFO -   New Total Value after rebalance: 993.50 USDT
+2025-05-27 21:50:00,966 - INFO - Rebalance threshold triggered at 2025-05-17 04:15:00+00:00 (Price: 103587.68). Asset BTC_SHORT5X current weight 0.2296, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,966 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.75 USDT. Current Price: 103587.68
+2025-05-27 21:50:00,966 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 103587.68, Val: 5.50, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.46
+2025-05-27 21:50:00,967 - INFO -   TRADE: SELL 4.816745 BTC_LONG5X @ MktPx 103587.68, Val: 4.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,967 - INFO -   TRADE: BUY 10.296296 BTC_SHORT5X @ MktPx 103587.68, Val: 10.30, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,967 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006236, LONG_VAL: 109.31, SHORT_VAL: 238.50
+2025-05-27 21:50:00,967 - INFO -   New Total Value after rebalance: 993.73 USDT
+2025-05-27 21:50:00,974 - INFO - Rebalance threshold triggered at 2025-05-17 13:45:00+00:00 (Price: 102719.99). Asset BTC_SHORT5X current weight 0.2501, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,974 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.83 USDT. Current Price: 102719.99
+2025-05-27 21:50:00,975 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 102719.99, Val: 5.46, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,975 - INFO -   TRADE: BUY 4.560912 BTC_LONG5X @ MktPx 102719.99, Val: 4.56, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,975 - INFO -   TRADE: SELL 10.047406 BTC_SHORT5X @ MktPx 102719.99, Val: 10.05, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,975 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006289, LONG_VAL: 109.32, SHORT_VAL: 238.52
+2025-05-27 21:50:00,975 - INFO -   New Total Value after rebalance: 993.80 USDT
+2025-05-27 21:50:00,984 - INFO - Rebalance threshold triggered at 2025-05-18 05:45:00+00:00 (Price: 103608.81). Asset BTC_SHORT5X current weight 0.2297, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,985 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.91 USDT. Current Price: 103608.81
+2025-05-27 21:50:00,985 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 103608.81, Val: 5.54, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.46
+2025-05-27 21:50:00,985 - INFO -   TRADE: SELL 4.742982 BTC_LONG5X @ MktPx 103608.81, Val: 4.74, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,985 - INFO -   TRADE: BUY 10.257650 BTC_SHORT5X @ MktPx 103608.81, Val: 10.26, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,986 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006235, LONG_VAL: 109.33, SHORT_VAL: 238.54
+2025-05-27 21:50:00,986 - INFO -   New Total Value after rebalance: 993.88 USDT
+2025-05-27 21:50:00,991 - INFO - Rebalance threshold triggered at 2025-05-18 13:55:00+00:00 (Price: 104740.00). Asset BTC_SHORT5X current weight 0.2271, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,991 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.19 USDT. Current Price: 104740.00
+2025-05-27 21:50:00,993 - INFO -   TRADE: SELL 0.000066 BTC_SPOT @ MktPx 104740.00, Val: 6.87, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.64
+2025-05-27 21:50:00,993 - INFO -   TRADE: SELL 6.008504 BTC_LONG5X @ MktPx 104740.00, Val: 6.01, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,993 - INFO -   TRADE: BUY 12.853337 BTC_SHORT5X @ MktPx 104740.00, Val: 12.85, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,993 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006170, LONG_VAL: 109.36, SHORT_VAL: 238.61
+2025-05-27 21:50:00,993 - INFO -   New Total Value after rebalance: 994.16 USDT
+2025-05-27 21:50:00,995 - INFO - Rebalance threshold triggered at 2025-05-18 16:55:00+00:00 (Price: 105822.22). Asset BTC_SHORT5X current weight 0.2277, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,995 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.34 USDT. Current Price: 105822.22
+2025-05-27 21:50:00,995 - INFO -   TRADE: SELL 0.000062 BTC_SPOT @ MktPx 105822.22, Val: 6.58, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.68
+2025-05-27 21:50:00,995 - INFO -   TRADE: SELL 5.672955 BTC_LONG5X @ MktPx 105822.22, Val: 5.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,995 - INFO -   TRADE: BUY 12.223449 BTC_SHORT5X @ MktPx 105822.22, Val: 12.22, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:00,996 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006108, LONG_VAL: 109.38, SHORT_VAL: 238.64
+2025-05-27 21:50:00,996 - INFO -   New Total Value after rebalance: 994.31 USDT
+2025-05-27 21:50:00,997 - INFO - Rebalance threshold triggered at 2025-05-18 17:55:00+00:00 (Price: 104836.67). Asset BTC_SHORT5X current weight 0.2513, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,997 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.60 USDT. Current Price: 104836.67
+2025-05-27 21:50:00,997 - INFO -   TRADE: BUY 0.000059 BTC_SPOT @ MktPx 104836.67, Val: 6.19, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,997 - INFO -   TRADE: BUY 5.054675 BTC_LONG5X @ MktPx 104836.67, Val: 5.05, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,997 - INFO -   TRADE: SELL 11.272243 BTC_SHORT5X @ MktPx 104836.67, Val: 11.27, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:00,997 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006167, LONG_VAL: 109.41, SHORT_VAL: 238.70
+2025-05-27 21:50:00,998 - INFO -   New Total Value after rebalance: 994.57 USDT
+2025-05-27 21:50:00,999 - INFO - Rebalance threshold triggered at 2025-05-18 19:55:00+00:00 (Price: 103883.97). Asset BTC_SHORT5X current weight 0.2509, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:00,999 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.61 USDT. Current Price: 103883.97
+2025-05-27 21:50:00,999 - INFO -   TRADE: BUY 0.000057 BTC_SPOT @ MktPx 103883.97, Val: 5.89, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,999 - INFO -   TRADE: BUY 4.959884 BTC_LONG5X @ MktPx 103883.97, Val: 4.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:00,999 - INFO -   TRADE: SELL 10.872140 BTC_SHORT5X @ MktPx 103883.97, Val: 10.87, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,000 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006223, LONG_VAL: 109.41, SHORT_VAL: 238.71
+2025-05-27 21:50:01,000 - INFO -   New Total Value after rebalance: 994.59 USDT
+2025-05-27 21:50:01,001 - INFO - Rebalance threshold triggered at 2025-05-18 22:25:00+00:00 (Price: 105051.87). Asset BTC_SHORT5X current weight 0.2267, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,002 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.87 USDT. Current Price: 105051.87
+2025-05-27 21:50:01,002 - INFO -   TRADE: SELL 0.000068 BTC_SPOT @ MktPx 105051.87, Val: 7.10, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.68
+2025-05-27 21:50:01,003 - INFO -   TRADE: SELL 6.185997 BTC_LONG5X @ MktPx 105051.87, Val: 6.19, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,003 - INFO -   TRADE: BUY 13.262749 BTC_SHORT5X @ MktPx 105051.87, Val: 13.26, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,003 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006156, LONG_VAL: 109.44, SHORT_VAL: 238.77
+2025-05-27 21:50:01,003 - INFO -   New Total Value after rebalance: 994.84 USDT
+2025-05-27 21:50:01,004 - INFO - Rebalance threshold triggered at 2025-05-18 23:50:00+00:00 (Price: 106434.02). Asset BTC_SHORT5X current weight 0.2245, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,005 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.33 USDT. Current Price: 106434.02
+2025-05-27 21:50:01,005 - INFO -   TRADE: SELL 0.000077 BTC_SPOT @ MktPx 106434.02, Val: 8.21, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 0.89
+2025-05-27 21:50:01,005 - INFO -   TRADE: SELL 7.263322 BTC_LONG5X @ MktPx 106434.02, Val: 7.26, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:01,005 - INFO -   TRADE: BUY 15.441621 BTC_SHORT5X @ MktPx 106434.02, Val: 15.44, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,005 - INFO -   Post-Rebalance Portfolio: USDT: -0.04, SPOT_QTY: 0.006079, LONG_VAL: 109.49, SHORT_VAL: 238.88
+2025-05-27 21:50:01,005 - INFO -   New Total Value after rebalance: 995.29 USDT
+2025-05-27 21:50:01,006 - INFO - Rebalance threshold triggered at 2025-05-19 00:40:00+00:00 (Price: 105521.73). Asset BTC_SHORT5X current weight 0.2504, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,006 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.44 USDT. Current Price: 105521.73
+2025-05-27 21:50:01,006 - INFO -   TRADE: BUY 0.000053 BTC_SPOT @ MktPx 105521.73, Val: 5.62, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,006 - INFO -   TRADE: BUY 4.669006 BTC_LONG5X @ MktPx 105521.73, Val: 4.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,007 - INFO -   TRADE: SELL 10.323736 BTC_SHORT5X @ MktPx 105521.73, Val: 10.32, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,007 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006132, LONG_VAL: 109.50, SHORT_VAL: 238.90
+2025-05-27 21:50:01,007 - INFO -   New Total Value after rebalance: 995.41 USDT
+2025-05-27 21:50:01,008 - INFO - Rebalance threshold triggered at 2025-05-19 02:10:00+00:00 (Price: 104590.02). Asset BTC_SHORT5X current weight 0.2506, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,008 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.51 USDT. Current Price: 104590.02
+2025-05-27 21:50:01,008 - INFO -   TRADE: BUY 0.000055 BTC_SPOT @ MktPx 104590.02, Val: 5.76, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,009 - INFO -   TRADE: BUY 4.817770 BTC_LONG5X @ MktPx 104590.02, Val: 4.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,009 - INFO -   TRADE: SELL 10.600453 BTC_SHORT5X @ MktPx 104590.02, Val: 10.60, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,009 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006187, LONG_VAL: 109.51, SHORT_VAL: 238.92
+2025-05-27 21:50:01,009 - INFO -   New Total Value after rebalance: 995.48 USDT
+2025-05-27 21:50:01,010 - INFO - Rebalance threshold triggered at 2025-05-19 03:50:00+00:00 (Price: 103616.47). Asset BTC_SHORT5X current weight 0.2513, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,010 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.71 USDT. Current Price: 103616.47
+2025-05-27 21:50:01,011 - INFO -   TRADE: BUY 0.000059 BTC_SPOT @ MktPx 103616.47, Val: 6.16, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,011 - INFO -   TRADE: BUY 5.065364 BTC_LONG5X @ MktPx 103616.47, Val: 5.07, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,011 - INFO -   TRADE: SELL 11.243738 BTC_SHORT5X @ MktPx 103616.47, Val: 11.24, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,011 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006246, LONG_VAL: 109.53, SHORT_VAL: 238.97
+2025-05-27 21:50:01,011 - INFO -   New Total Value after rebalance: 995.68 USDT
+2025-05-27 21:50:01,012 - INFO - Rebalance threshold triggered at 2025-05-19 05:00:00+00:00 (Price: 102700.53). Asset BTC_SHORT5X current weight 0.2507, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,012 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.78 USDT. Current Price: 102700.53
+2025-05-27 21:50:01,012 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 102700.53, Val: 5.77, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,012 - INFO -   TRADE: BUY 4.823126 BTC_LONG5X @ MktPx 102700.53, Val: 4.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,012 - INFO -   TRADE: SELL 10.621078 BTC_SHORT5X @ MktPx 102700.53, Val: 10.62, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,013 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006302, LONG_VAL: 109.54, SHORT_VAL: 238.99
+2025-05-27 21:50:01,013 - INFO -   New Total Value after rebalance: 995.76 USDT
+2025-05-27 21:50:01,019 - INFO - Rebalance threshold triggered at 2025-05-19 14:05:00+00:00 (Price: 103546.08). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,019 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.28 USDT. Current Price: 103546.08
+2025-05-27 21:50:01,019 - INFO -   TRADE: SELL 0.000055 BTC_SPOT @ MktPx 103546.08, Val: 5.66, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.47
+2025-05-27 21:50:01,019 - INFO -   TRADE: SELL 4.441864 BTC_LONG5X @ MktPx 103546.08, Val: 4.44, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,019 - INFO -   TRADE: BUY 10.074966 BTC_SHORT5X @ MktPx 103546.08, Val: 10.07, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,020 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006248, LONG_VAL: 109.48, SHORT_VAL: 238.87
+2025-05-27 21:50:01,020 - INFO -   New Total Value after rebalance: 995.25 USDT
+2025-05-27 21:50:01,022 - INFO - Rebalance threshold triggered at 2025-05-19 15:00:00+00:00 (Price: 104434.78). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,022 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.44 USDT. Current Price: 104434.78
+2025-05-27 21:50:01,022 - INFO -   TRADE: SELL 0.000052 BTC_SPOT @ MktPx 104434.78, Val: 5.44, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.50
+2025-05-27 21:50:01,022 - INFO -   TRADE: SELL 4.724467 BTC_LONG5X @ MktPx 104434.78, Val: 4.72, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,022 - INFO -   TRADE: BUY 10.143360 BTC_SHORT5X @ MktPx 104434.78, Val: 10.14, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,022 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006196, LONG_VAL: 109.50, SHORT_VAL: 238.91
+2025-05-27 21:50:01,022 - INFO -   New Total Value after rebalance: 995.42 USDT
+2025-05-27 21:50:01,024 - INFO - Rebalance threshold triggered at 2025-05-19 16:55:00+00:00 (Price: 105356.44). Asset BTC_SHORT5X current weight 0.2295, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,024 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.59 USDT. Current Price: 105356.44
+2025-05-27 21:50:01,024 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 105356.44, Val: 5.61, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.56
+2025-05-27 21:50:01,025 - INFO -   TRADE: SELL 4.855331 BTC_LONG5X @ MktPx 105356.44, Val: 4.86, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,025 - INFO -   TRADE: BUY 10.442859 BTC_SHORT5X @ MktPx 105356.44, Val: 10.44, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,025 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006142, LONG_VAL: 109.52, SHORT_VAL: 238.94
+2025-05-27 21:50:01,025 - INFO -   New Total Value after rebalance: 995.57 USDT
+2025-05-27 21:50:01,025 - INFO - Rebalance threshold triggered at 2025-05-20 00:15:00+00:00 (Price: 106495.32). Asset BTC_SHORT5X current weight 0.2269, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,025 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.38 USDT. Current Price: 106495.32
+2025-05-27 21:50:01,025 - INFO -   TRADE: SELL 0.000067 BTC_SPOT @ MktPx 106495.32, Val: 7.13, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.77
+2025-05-27 21:50:01,025 - INFO -   TRADE: SELL 5.888289 BTC_LONG5X @ MktPx 106495.32, Val: 5.89, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,025 - INFO -   TRADE: BUY 12.995249 BTC_SHORT5X @ MktPx 106495.32, Val: 13.00, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,025 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006075, LONG_VAL: 109.49, SHORT_VAL: 238.89
+2025-05-27 21:50:01,032 - INFO -   New Total Value after rebalance: 995.35 USDT
+2025-05-27 21:50:01,034 - INFO - Rebalance threshold triggered at 2025-05-20 03:45:00+00:00 (Price: 105553.32). Asset BTC_SHORT5X current weight 0.2504, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,035 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 995.00 USDT. Current Price: 105553.32
+2025-05-27 21:50:01,035 - INFO -   TRADE: BUY 0.000052 BTC_SPOT @ MktPx 105553.32, Val: 5.47, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,035 - INFO -   TRADE: BUY 4.874278 BTC_LONG5X @ MktPx 105553.32, Val: 4.87, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,035 - INFO -   TRADE: SELL 10.377854 BTC_SHORT5X @ MktPx 105553.32, Val: 10.38, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,035 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006127, LONG_VAL: 109.45, SHORT_VAL: 238.80
+2025-05-27 21:50:01,035 - INFO -   New Total Value after rebalance: 994.97 USDT
+2025-05-27 21:50:01,041 - INFO - Rebalance threshold triggered at 2025-05-20 13:05:00+00:00 (Price: 104660.03). Asset BTC_SHORT5X current weight 0.2501, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,041 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.87 USDT. Current Price: 104660.03
+2025-05-27 21:50:01,043 - INFO -   TRADE: BUY 0.000052 BTC_SPOT @ MktPx 104660.03, Val: 5.39, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,043 - INFO -   TRADE: BUY 4.636396 BTC_LONG5X @ MktPx 104660.03, Val: 4.64, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,043 - INFO -   TRADE: SELL 10.052806 BTC_SHORT5X @ MktPx 104660.03, Val: 10.05, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,043 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006179, LONG_VAL: 109.44, SHORT_VAL: 238.77
+2025-05-27 21:50:01,043 - INFO -   New Total Value after rebalance: 994.85 USDT
+2025-05-27 21:50:01,043 - INFO - Rebalance threshold triggered at 2025-05-20 17:05:00+00:00 (Price: 105745.41). Asset BTC_SHORT5X current weight 0.2276, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,043 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.92 USDT. Current Price: 105745.41
+2025-05-27 21:50:01,043 - INFO -   TRADE: SELL 0.000063 BTC_SPOT @ MktPx 105745.41, Val: 6.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.68
+2025-05-27 21:50:01,043 - INFO -   TRADE: SELL 5.681423 BTC_LONG5X @ MktPx 105745.41, Val: 5.68, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,043 - INFO -   TRADE: BUY 12.333741 BTC_SHORT5X @ MktPx 105745.41, Val: 12.33, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,043 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006116, LONG_VAL: 109.44, SHORT_VAL: 238.78
+2025-05-27 21:50:01,043 - INFO -   New Total Value after rebalance: 994.89 USDT
+2025-05-27 21:50:01,050 - INFO - Rebalance threshold triggered at 2025-05-20 19:45:00+00:00 (Price: 106735.86). Asset BTC_SHORT5X current weight 0.2288, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,050 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.91 USDT. Current Price: 106735.86
+2025-05-27 21:50:01,050 - INFO -   TRADE: SELL 0.000057 BTC_SPOT @ MktPx 106735.86, Val: 6.06, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.67
+2025-05-27 21:50:01,050 - INFO -   TRADE: SELL 5.126989 BTC_LONG5X @ MktPx 106735.86, Val: 5.13, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,051 - INFO -   TRADE: BUY 11.161153 BTC_SHORT5X @ MktPx 106735.86, Val: 11.16, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,051 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006059, LONG_VAL: 109.44, SHORT_VAL: 238.78
+2025-05-27 21:50:01,051 - INFO -   New Total Value after rebalance: 994.88 USDT
+2025-05-27 21:50:01,058 - INFO - Rebalance threshold triggered at 2025-05-21 05:15:00+00:00 (Price: 107624.68). Asset BTC_SHORT5X current weight 0.2296, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,059 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.06 USDT. Current Price: 107624.68
+2025-05-27 21:50:01,059 - INFO -   TRADE: SELL 0.000055 BTC_SPOT @ MktPx 107624.68, Val: 5.94, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.70
+2025-05-27 21:50:01,059 - INFO -   TRADE: SELL 4.441989 BTC_LONG5X @ MktPx 107624.68, Val: 4.44, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,060 - INFO -   TRADE: BUY 10.354735 BTC_SHORT5X @ MktPx 107624.68, Val: 10.35, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,060 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006004, LONG_VAL: 109.35, SHORT_VAL: 238.57
+2025-05-27 21:50:01,060 - INFO -   New Total Value after rebalance: 994.03 USDT
+2025-05-27 21:50:01,062 - INFO - Rebalance threshold triggered at 2025-05-21 07:35:00+00:00 (Price: 106533.00). Asset BTC_SHORT5X current weight 0.2523, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,062 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.19 USDT. Current Price: 106533.00
+2025-05-27 21:50:01,062 - INFO -   TRADE: BUY 0.000062 BTC_SPOT @ MktPx 106533.00, Val: 6.64, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,062 - INFO -   TRADE: BUY 5.520783 BTC_LONG5X @ MktPx 106533.00, Val: 5.52, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,062 - INFO -   TRADE: SELL 12.187571 BTC_SHORT5X @ MktPx 106533.00, Val: 12.19, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,062 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006066, LONG_VAL: 109.36, SHORT_VAL: 238.61
+2025-05-27 21:50:01,062 - INFO -   New Total Value after rebalance: 994.16 USDT
+2025-05-27 21:50:01,067 - INFO - Rebalance threshold triggered at 2025-05-21 14:05:00+00:00 (Price: 107429.88). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,067 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.12 USDT. Current Price: 107429.88
+2025-05-27 21:50:01,067 - INFO -   TRADE: SELL 0.000051 BTC_SPOT @ MktPx 107429.88, Val: 5.48, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.64
+2025-05-27 21:50:01,067 - INFO -   TRADE: SELL 4.597563 BTC_LONG5X @ MktPx 107429.88, Val: 4.60, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,067 - INFO -   TRADE: BUY 10.055547 BTC_SHORT5X @ MktPx 107429.88, Val: 10.06, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,067 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006015, LONG_VAL: 109.35, SHORT_VAL: 238.59
+2025-05-27 21:50:01,067 - INFO -   New Total Value after rebalance: 994.09 USDT
+2025-05-27 21:50:01,068 - INFO - Rebalance threshold triggered at 2025-05-21 14:50:00+00:00 (Price: 108404.55). Asset BTC_SHORT5X current weight 0.2292, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,068 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.22 USDT. Current Price: 108404.55
+2025-05-27 21:50:01,069 - INFO -   TRADE: SELL 0.000053 BTC_SPOT @ MktPx 108404.55, Val: 5.80, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.72
+2025-05-27 21:50:01,069 - INFO -   TRADE: SELL 4.977408 BTC_LONG5X @ MktPx 108404.55, Val: 4.98, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,069 - INFO -   TRADE: BUY 10.749264 BTC_SHORT5X @ MktPx 108404.55, Val: 10.75, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,069 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005961, LONG_VAL: 109.36, SHORT_VAL: 238.61
+2025-05-27 21:50:01,069 - INFO -   New Total Value after rebalance: 994.20 USDT
+2025-05-27 21:50:01,071 - INFO - Rebalance threshold triggered at 2025-05-21 16:30:00+00:00 (Price: 109579.38). Asset BTC_SHORT5X current weight 0.2270, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,071 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.10 USDT. Current Price: 109579.38
+2025-05-27 21:50:01,071 - INFO -   TRADE: SELL 0.000065 BTC_SPOT @ MktPx 109579.38, Val: 7.08, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.95
+2025-05-27 21:50:01,071 - INFO -   TRADE: SELL 5.910144 BTC_LONG5X @ MktPx 109579.38, Val: 5.91, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,072 - INFO -   TRADE: BUY 12.965446 BTC_SHORT5X @ MktPx 109579.38, Val: 12.97, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,072 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005897, LONG_VAL: 109.35, SHORT_VAL: 238.58
+2025-05-27 21:50:01,072 - INFO -   New Total Value after rebalance: 994.07 USDT
+2025-05-27 21:50:01,072 - INFO - Rebalance threshold triggered at 2025-05-21 17:15:00+00:00 (Price: 108562.95). Asset BTC_SHORT5X current weight 0.2512, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,073 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.27 USDT. Current Price: 108562.95
+2025-05-27 21:50:01,073 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 108562.95, Val: 6.11, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,073 - INFO -   TRADE: BUY 5.042690 BTC_LONG5X @ MktPx 108562.95, Val: 5.04, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,073 - INFO -   TRADE: SELL 11.179192 BTC_SHORT5X @ MktPx 108562.95, Val: 11.18, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,073 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005953, LONG_VAL: 109.37, SHORT_VAL: 238.63
+2025-05-27 21:50:01,073 - INFO -   New Total Value after rebalance: 994.25 USDT
+2025-05-27 21:50:01,073 - INFO - Rebalance threshold triggered at 2025-05-21 17:25:00+00:00 (Price: 106975.90). Asset BTC_SHORT5X current weight 0.2578, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,073 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.71 USDT. Current Price: 106975.90
+2025-05-27 21:50:01,073 - INFO -   TRADE: BUY 0.000091 BTC_SPOT @ MktPx 106975.90, Val: 9.74, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:01,073 - INFO -   TRADE: BUY 7.933418 BTC_LONG5X @ MktPx 106975.90, Val: 7.93, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: -0.01
+2025-05-27 21:50:01,074 - INFO -   TRADE: SELL 17.693870 BTC_SHORT5X @ MktPx 106975.90, Val: 17.69, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,074 - INFO -   Post-Rebalance Portfolio: USDT: -0.04, SPOT_QTY: 0.006044, LONG_VAL: 109.42, SHORT_VAL: 238.73
+2025-05-27 21:50:01,074 - INFO -   New Total Value after rebalance: 994.67 USDT
+2025-05-27 21:50:01,076 - INFO - Rebalance threshold triggered at 2025-05-21 19:35:00+00:00 (Price: 108346.01). Asset BTC_SHORT5X current weight 0.2244, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,076 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.09 USDT. Current Price: 108346.01
+2025-05-27 21:50:01,076 - INFO -   TRADE: SELL 0.000080 BTC_SPOT @ MktPx 108346.01, Val: 8.68, Comm: 0.01, SlipCost: 0.00, NetPnL_Trade: 1.07
+2025-05-27 21:50:01,076 - INFO -   TRADE: SELL 6.912416 BTC_LONG5X @ MktPx 108346.01, Val: 6.91, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,076 - INFO -   TRADE: BUY 15.554989 BTC_SHORT5X @ MktPx 108346.01, Val: 15.55, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,076 - INFO -   Post-Rebalance Portfolio: USDT: -0.04, SPOT_QTY: 0.005964, LONG_VAL: 109.35, SHORT_VAL: 238.58
+2025-05-27 21:50:01,076 - INFO -   New Total Value after rebalance: 994.05 USDT
+2025-05-27 21:50:01,076 - INFO - Rebalance threshold triggered at 2025-05-21 23:10:00+00:00 (Price: 109368.43). Asset BTC_SHORT5X current weight 0.2287, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,076 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.08 USDT. Current Price: 109368.43
+2025-05-27 21:50:01,076 - INFO -   TRADE: SELL 0.000056 BTC_SPOT @ MktPx 109368.43, Val: 6.11, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.81
+2025-05-27 21:50:01,076 - INFO -   TRADE: SELL 5.163046 BTC_LONG5X @ MktPx 109368.43, Val: 5.16, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,076 - INFO -   TRADE: BUY 11.230909 BTC_SHORT5X @ MktPx 109368.43, Val: 11.23, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,076 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005908, LONG_VAL: 109.35, SHORT_VAL: 238.58
+2025-05-27 21:50:01,076 - INFO -   New Total Value after rebalance: 994.05 USDT
+2025-05-27 21:50:01,082 - INFO - Rebalance threshold triggered at 2025-05-22 01:00:00+00:00 (Price: 110524.49). Asset BTC_SHORT5X current weight 0.2274, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,082 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.21 USDT. Current Price: 110524.49
+2025-05-27 21:50:01,082 - INFO -   TRADE: SELL 0.000061 BTC_SPOT @ MktPx 110524.49, Val: 6.75, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.95
+2025-05-27 21:50:01,082 - INFO -   TRADE: SELL 5.798821 BTC_LONG5X @ MktPx 110524.49, Val: 5.80, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,082 - INFO -   TRADE: BUY 12.518547 BTC_SHORT5X @ MktPx 110524.49, Val: 12.52, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,083 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005847, LONG_VAL: 109.36, SHORT_VAL: 238.61
+2025-05-27 21:50:01,083 - INFO -   New Total Value after rebalance: 994.18 USDT
+2025-05-27 21:50:01,085 - INFO - Rebalance threshold triggered at 2025-05-22 03:45:00+00:00 (Price: 111718.00). Asset BTC_SHORT5X current weight 0.2271, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,086 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.23 USDT. Current Price: 111718.00
+2025-05-27 21:50:01,086 - INFO -   TRADE: SELL 0.000062 BTC_SPOT @ MktPx 111718.00, Val: 6.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 1.05
+2025-05-27 21:50:01,086 - INFO -   TRADE: SELL 5.909763 BTC_LONG5X @ MktPx 111718.00, Val: 5.91, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,086 - INFO -   TRADE: BUY 12.842120 BTC_SHORT5X @ MktPx 111718.00, Val: 12.84, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,086 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005785, LONG_VAL: 109.37, SHORT_VAL: 238.62
+2025-05-27 21:50:01,086 - INFO -   New Total Value after rebalance: 994.20 USDT
+2025-05-27 21:50:01,089 - INFO - Rebalance threshold triggered at 2025-05-22 06:35:00+00:00 (Price: 110743.44). Asset BTC_SHORT5X current weight 0.2505, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,089 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.28 USDT. Current Price: 110743.44
+2025-05-27 21:50:01,089 - INFO -   TRADE: BUY 0.000051 BTC_SPOT @ MktPx 110743.44, Val: 5.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,089 - INFO -   TRADE: BUY 4.755134 BTC_LONG5X @ MktPx 110743.44, Val: 4.76, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,090 - INFO -   TRADE: SELL 10.453925 BTC_SHORT5X @ MktPx 110743.44, Val: 10.45, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,090 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005836, LONG_VAL: 109.37, SHORT_VAL: 238.63
+2025-05-27 21:50:01,090 - INFO -   New Total Value after rebalance: 994.25 USDT
+2025-05-27 21:50:01,093 - INFO - Rebalance threshold triggered at 2025-05-22 17:20:00+00:00 (Price: 111912.02). Asset BTC_SHORT5X current weight 0.2271, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,093 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.86 USDT. Current Price: 111912.02
+2025-05-27 21:50:01,093 - INFO -   TRADE: SELL 0.000063 BTC_SPOT @ MktPx 111912.02, Val: 7.09, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 1.08
+2025-05-27 21:50:01,093 - INFO -   TRADE: SELL 5.709971 BTC_LONG5X @ MktPx 111912.02, Val: 5.71, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,093 - INFO -   TRADE: BUY 12.776779 BTC_SHORT5X @ MktPx 111912.02, Val: 12.78, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,093 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005772, LONG_VAL: 109.32, SHORT_VAL: 238.53
+2025-05-27 21:50:01,093 - INFO -   New Total Value after rebalance: 993.83 USDT
+2025-05-27 21:50:01,099 - INFO - Rebalance threshold triggered at 2025-05-22 20:30:00+00:00 (Price: 110843.57). Asset BTC_SHORT5X current weight 0.2515, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,101 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.99 USDT. Current Price: 110843.57
+2025-05-27 21:50:01,101 - INFO -   TRADE: BUY 0.000056 BTC_SPOT @ MktPx 110843.57, Val: 6.25, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,101 - INFO -   TRADE: BUY 5.193261 BTC_LONG5X @ MktPx 110843.57, Val: 5.19, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,101 - INFO -   TRADE: SELL 11.478115 BTC_SHORT5X @ MktPx 110843.57, Val: 11.48, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,101 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005829, LONG_VAL: 109.34, SHORT_VAL: 238.56
+2025-05-27 21:50:01,101 - INFO -   New Total Value after rebalance: 993.97 USDT
+2025-05-27 21:50:01,104 - INFO - Rebalance threshold triggered at 2025-05-23 00:10:00+00:00 (Price: 111783.37). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,104 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.13 USDT. Current Price: 111783.37
+2025-05-27 21:50:01,104 - INFO -   TRADE: SELL 0.000048 BTC_SPOT @ MktPx 111783.37, Val: 5.38, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.81
+2025-05-27 21:50:01,104 - INFO -   TRADE: SELL 4.658296 BTC_LONG5X @ MktPx 111783.37, Val: 4.66, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,104 - INFO -   TRADE: BUY 10.017658 BTC_SHORT5X @ MktPx 111783.37, Val: 10.02, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,105 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005781, LONG_VAL: 109.35, SHORT_VAL: 238.59
+2025-05-27 21:50:01,105 - INFO -   New Total Value after rebalance: 994.11 USDT
+2025-05-27 21:50:01,108 - INFO - Rebalance threshold triggered at 2025-05-23 04:20:00+00:00 (Price: 110766.65). Asset BTC_SHORT5X current weight 0.2510, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,108 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.35 USDT. Current Price: 110766.65
+2025-05-27 21:50:01,108 - INFO -   TRADE: BUY 0.000054 BTC_SPOT @ MktPx 110766.65, Val: 6.02, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,108 - INFO -   TRADE: BUY 4.940693 BTC_LONG5X @ MktPx 110766.65, Val: 4.94, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,109 - INFO -   TRADE: SELL 10.981525 BTC_SHORT5X @ MktPx 110766.65, Val: 10.98, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,109 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005835, LONG_VAL: 109.38, SHORT_VAL: 238.64
+2025-05-27 21:50:01,109 - INFO -   New Total Value after rebalance: 994.32 USDT
+2025-05-27 21:50:01,114 - INFO - Rebalance threshold triggered at 2025-05-23 11:45:00+00:00 (Price: 109746.39). Asset BTC_SHORT5X current weight 0.2510, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,115 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.28 USDT. Current Price: 109746.39
+2025-05-27 21:50:01,115 - INFO -   TRADE: BUY 0.000054 BTC_SPOT @ MktPx 109746.39, Val: 5.91, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,115 - INFO -   TRADE: BUY 5.036241 BTC_LONG5X @ MktPx 109746.39, Val: 5.04, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,115 - INFO -   TRADE: SELL 10.971134 BTC_SHORT5X @ MktPx 109746.39, Val: 10.97, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,116 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005889, LONG_VAL: 109.37, SHORT_VAL: 238.63
+2025-05-27 21:50:01,116 - INFO -   New Total Value after rebalance: 994.25 USDT
+2025-05-27 21:50:01,116 - INFO - Rebalance threshold triggered at 2025-05-23 12:00:00+00:00 (Price: 108642.30). Asset BTC_SHORT5X current weight 0.2522, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,117 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.55 USDT. Current Price: 108642.30
+2025-05-27 21:50:01,117 - INFO -   TRADE: BUY 0.000061 BTC_SPOT @ MktPx 108642.30, Val: 6.68, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,117 - INFO -   TRADE: BUY 5.462187 BTC_LONG5X @ MktPx 108642.30, Val: 5.46, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,117 - INFO -   TRADE: SELL 12.167014 BTC_SHORT5X @ MktPx 108642.30, Val: 12.17, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,117 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005950, LONG_VAL: 109.40, SHORT_VAL: 238.69
+2025-05-27 21:50:01,117 - INFO -   New Total Value after rebalance: 994.52 USDT
+2025-05-27 21:50:01,119 - INFO - Rebalance threshold triggered at 2025-05-23 13:55:00+00:00 (Price: 109634.99). Asset BTC_SHORT5X current weight 0.2289, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,119 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.24 USDT. Current Price: 109634.99
+2025-05-27 21:50:01,120 - INFO -   TRADE: SELL 0.000056 BTC_SPOT @ MktPx 109634.99, Val: 6.10, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.82
+2025-05-27 21:50:01,120 - INFO -   TRADE: SELL 4.958748 BTC_LONG5X @ MktPx 109634.99, Val: 4.96, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,120 - INFO -   TRADE: BUY 11.036909 BTC_SHORT5X @ MktPx 109634.99, Val: 11.04, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,120 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005895, LONG_VAL: 109.37, SHORT_VAL: 238.62
+2025-05-27 21:50:01,120 - INFO -   New Total Value after rebalance: 994.22 USDT
+2025-05-27 21:50:01,121 - INFO - Rebalance threshold triggered at 2025-05-23 16:05:00+00:00 (Price: 108633.09). Asset BTC_SHORT5X current weight 0.2509, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,121 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.16 USDT. Current Price: 108633.09
+2025-05-27 21:50:01,121 - INFO -   TRADE: BUY 0.000054 BTC_SPOT @ MktPx 108633.09, Val: 5.85, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,121 - INFO -   TRADE: BUY 4.996533 BTC_LONG5X @ MktPx 108633.09, Val: 5.00, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,121 - INFO -   TRADE: SELL 10.874906 BTC_SHORT5X @ MktPx 108633.09, Val: 10.87, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,121 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005948, LONG_VAL: 109.36, SHORT_VAL: 238.60
+2025-05-27 21:50:01,121 - INFO -   New Total Value after rebalance: 994.13 USDT
+2025-05-27 21:50:01,121 - INFO - Rebalance threshold triggered at 2025-05-23 17:20:00+00:00 (Price: 109809.53). Asset BTC_SHORT5X current weight 0.2271, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,121 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.30 USDT. Current Price: 109809.53
+2025-05-27 21:50:01,121 - INFO -   TRADE: SELL 0.000063 BTC_SPOT @ MktPx 109809.53, Val: 6.90, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.94
+2025-05-27 21:50:01,121 - INFO -   TRADE: SELL 5.941488 BTC_LONG5X @ MktPx 109809.53, Val: 5.94, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,121 - INFO -   TRADE: BUY 12.820621 BTC_SHORT5X @ MktPx 109809.53, Val: 12.82, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,121 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005886, LONG_VAL: 109.37, SHORT_VAL: 238.63
+2025-05-27 21:50:01,121 - INFO -   New Total Value after rebalance: 994.27 USDT
+2025-05-27 21:50:01,127 - INFO - Rebalance threshold triggered at 2025-05-23 18:45:00+00:00 (Price: 108871.20). Asset BTC_SHORT5X current weight 0.2504, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,127 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.54 USDT. Current Price: 108871.20
+2025-05-27 21:50:01,127 - INFO -   TRADE: BUY 0.000052 BTC_SPOT @ MktPx 108871.20, Val: 5.67, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,127 - INFO -   TRADE: BUY 4.637639 BTC_LONG5X @ MktPx 108871.20, Val: 4.64, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,127 - INFO -   TRADE: SELL 10.341990 BTC_SHORT5X @ MktPx 108871.20, Val: 10.34, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,128 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005938, LONG_VAL: 109.40, SHORT_VAL: 238.69
+2025-05-27 21:50:01,128 - INFO -   New Total Value after rebalance: 994.51 USDT
+2025-05-27 21:50:01,131 - INFO - Rebalance threshold triggered at 2025-05-23 22:45:00+00:00 (Price: 107731.12). Asset BTC_SHORT5X current weight 0.2527, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,131 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.73 USDT. Current Price: 107731.12
+2025-05-27 21:50:01,131 - INFO -   TRADE: BUY 0.000064 BTC_SPOT @ MktPx 107731.12, Val: 6.90, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,131 - INFO -   TRADE: BUY 5.696219 BTC_LONG5X @ MktPx 107731.12, Val: 5.70, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,131 - INFO -   TRADE: SELL 12.616473 BTC_SHORT5X @ MktPx 107731.12, Val: 12.62, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,132 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.006002, LONG_VAL: 109.42, SHORT_VAL: 238.74
+2025-05-27 21:50:01,132 - INFO -   New Total Value after rebalance: 994.70 USDT
+2025-05-27 21:50:01,139 - INFO - Rebalance threshold triggered at 2025-05-24 10:35:00+00:00 (Price: 108710.02). Asset BTC_SHORT5X current weight 0.2289, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,139 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.31 USDT. Current Price: 108710.02
+2025-05-27 21:50:01,139 - INFO -   TRADE: SELL 0.000056 BTC_SPOT @ MktPx 108710.02, Val: 6.14, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.78
+2025-05-27 21:50:01,139 - INFO -   TRADE: SELL 4.916232 BTC_LONG5X @ MktPx 108710.02, Val: 4.92, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,139 - INFO -   TRADE: BUY 11.030391 BTC_SHORT5X @ MktPx 108710.02, Val: 11.03, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,141 - INFO -   Post-Rebalance Portfolio: USDT: -0.03, SPOT_QTY: 0.005945, LONG_VAL: 109.37, SHORT_VAL: 238.64
+2025-05-27 21:50:01,141 - INFO -   New Total Value after rebalance: 994.29 USDT
+2025-05-27 21:50:01,146 - INFO - Rebalance threshold triggered at 2025-05-24 23:05:00+00:00 (Price: 107720.01). Asset BTC_SHORT5X current weight 0.2509, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,146 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 994.21 USDT. Current Price: 107720.01
+2025-05-27 21:50:01,146 - INFO -   TRADE: BUY 0.000054 BTC_SPOT @ MktPx 107720.01, Val: 5.82, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,151 - INFO -   TRADE: BUY 4.982347 BTC_LONG5X @ MktPx 107720.01, Val: 4.98, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,151 - INFO -   TRADE: SELL 10.824116 BTC_SHORT5X @ MktPx 107720.01, Val: 10.82, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,151 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005999, LONG_VAL: 109.36, SHORT_VAL: 238.61
+2025-05-27 21:50:01,151 - INFO -   New Total Value after rebalance: 994.18 USDT
+2025-05-27 21:50:01,159 - INFO - Rebalance threshold triggered at 2025-05-25 16:15:00+00:00 (Price: 106781.69). Asset BTC_SHORT5X current weight 0.2501, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,159 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.50 USDT. Current Price: 106781.69
+2025-05-27 21:50:01,159 - INFO -   TRADE: BUY 0.000048 BTC_SPOT @ MktPx 106781.69, Val: 5.17, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,159 - INFO -   TRADE: BUY 4.831496 BTC_LONG5X @ MktPx 106781.69, Val: 4.83, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,159 - INFO -   TRADE: SELL 10.026440 BTC_SHORT5X @ MktPx 106781.69, Val: 10.03, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01       
+2025-05-27 21:50:01,159 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.006048, LONG_VAL: 109.28, SHORT_VAL: 238.44
+2025-05-27 21:50:01,159 - INFO -   New Total Value after rebalance: 993.47 USDT
+2025-05-27 21:50:01,167 - INFO - Rebalance threshold triggered at 2025-05-25 19:35:00+00:00 (Price: 107698.90). Asset BTC_SHORT5X current weight 0.2298, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,168 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.75 USDT. Current Price: 107698.90
+2025-05-27 21:50:01,168 - INFO -   TRADE: SELL 0.000050 BTC_SPOT @ MktPx 107698.90, Val: 5.38, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.64
+2025-05-27 21:50:01,168 - INFO -   TRADE: SELL 4.730902 BTC_LONG5X @ MktPx 107698.90, Val: 4.73, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,168 - INFO -   TRADE: BUY 10.091558 BTC_SHORT5X @ MktPx 107698.90, Val: 10.09, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,168 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005998, LONG_VAL: 109.31, SHORT_VAL: 238.50
+2025-05-27 21:50:01,168 - INFO -   New Total Value after rebalance: 993.72 USDT
+2025-05-27 21:50:01,170 - INFO - Rebalance threshold triggered at 2025-05-25 22:40:00+00:00 (Price: 108630.35). Asset BTC_SHORT5X current weight 0.2297, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,170 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.82 USDT. Current Price: 108630.35
+2025-05-27 21:50:01,170 - INFO -   TRADE: SELL 0.000051 BTC_SPOT @ MktPx 108630.35, Val: 5.54, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.70
+2025-05-27 21:50:01,171 - INFO -   TRADE: SELL 4.739567 BTC_LONG5X @ MktPx 108630.35, Val: 4.74, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,171 - INFO -   TRADE: BUY 10.257663 BTC_SHORT5X @ MktPx 108630.35, Val: 10.26, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,171 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005947, LONG_VAL: 109.32, SHORT_VAL: 238.52
+2025-05-27 21:50:01,171 - INFO -   New Total Value after rebalance: 993.79 USDT
+2025-05-27 21:50:01,173 - INFO - Rebalance threshold triggered at 2025-05-26 01:00:00+00:00 (Price: 109557.01). Asset BTC_SHORT5X current weight 0.2299, target 0.2400 (Mode: NORMAL_MODE)
+2025-05-27 21:50:01,173 - INFO - Rebalancing portfolio (Mode: NORMAL_MODE). Total Value: 993.96 USDT. Current Price: 109557.01
+2025-05-27 21:50:01,173 - INFO -   TRADE: SELL 0.000049 BTC_SPOT @ MktPx 109557.01, Val: 5.42, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: 0.72
+2025-05-27 21:50:01,173 - INFO -   TRADE: SELL 4.685532 BTC_LONG5X @ MktPx 109557.01, Val: 4.69, Comm: 0.00, SlipCost: 0.00, NetPnL_Trade: -0.00
+2025-05-27 21:50:01,173 - INFO -   TRADE: BUY 10.078526 BTC_SHORT5X @ MktPx 109557.01, Val: 10.08, Comm: 0.01, SlipCost: 0.01, NetPnL_Trade: -0.01        
+2025-05-27 21:50:01,174 - INFO -   Post-Rebalance Portfolio: USDT: -0.02, SPOT_QTY: 0.005897, LONG_VAL: 109.34, SHORT_VAL: 238.55
+2025-05-27 21:50:01,174 - INFO -   New Total Value after rebalance: 993.93 USDT
+2025-05-27 21:50:01,188 - INFO - Backtest finished.
+2025-05-27 21:50:01,193 - INFO - Generating reports in ./reports\backtest_20250527_215000...
+2025-05-27 21:50:01,208 - INFO - Trades report saved to ./reports\backtest_20250527_215000\trades.csv
+2025-05-27 21:50:01,211 - INFO - Summary report saved to ./reports\backtest_20250527_215000\summary.csv
+2025-05-27 21:50:01,334 - INFO - Equity curve saved to ./reports\backtest_20250527_215000\equity.html
+2025-05-27 21:50:01,334 - INFO - All reports for this run generated.
+(.venv) (base) PS C:\Python\Prosperous_Bot> 
