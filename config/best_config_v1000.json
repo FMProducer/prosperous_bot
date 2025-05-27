@@ -1,6 +1,6 @@
 {
   "optimizer_settings": {
-    "n_trials": 1000,
+    "n_trials": 100,
     "metric_to_optimize": "sharpe_ratio",
     "direction": "maximize",
     "sampler_type": "TPE",
@@ -49,34 +49,33 @@
   },
   "backtest_settings": {
     "initial_capital": 1000.0,
-    "initial_portfolio_value_usdt": 1000,
     "commission_taker": 0.0005,
     "commission_maker": 0.0002,
     "use_maker_fees_in_backtest": false,
-    "slippage_percent": 0.0005,
+    "slippage_percent": 0.000121,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 10,
-    "rebalance_threshold": 0.01,
+    "min_rebalance_interval_minutes": 5,
+    "rebalance_threshold": 0.014,
     "target_weights_normal": {
-      "BTC_SPOT": 0.65,
-      "BTC_LONG5X": 0.11,
-      "BTC_SHORT5X": 0.24
+      "BTC_SPOT": 0.75,
+      "BTC_LONG5X": 0.05,
+      "BTC_SHORT5X": 0.20
     },
     "circuit_breaker_config": {
       "enabled": true,
-      "threshold_percentage": 0.07,
+      "threshold_percentage": 0.061487,
       "lookback_candles": 1,
       "movement_calc_type": "(high-low)/open"
     },
     "safe_mode_config": {
       "enabled": true,
       "metric_to_monitor": "margin_usage",
-      "entry_threshold": 0.70,
-      "exit_threshold": 0.60,
+      "entry_threshold": 0.851505,
+      "exit_threshold": 0.6,
       "target_weights_safe": {
-        "BTC_SPOT": 0.75,
-        "BTC_LONG5X": 0.05,
-        "BTC_SHORT5X": 0.05,
+        "BTC_SPOT": 0.80,
+        "BTC_LONG5X": 0.02,
+        "BTC_SHORT5X": 0.18,
         "USDT": 0.15
       }
     },
@@ -90,7 +89,7 @@
         "close": "close"
       },
       "volume_col": "volume",
-      "price_col_for_rebalance": "close"
+      "price_col_for_rebalance": "open"
     },
     "date_range": {
       "start_date": "2025-04-26T22:45:00Z",
