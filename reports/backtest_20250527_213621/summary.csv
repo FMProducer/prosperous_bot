@@ -1,0 +1,43 @@
+Metric,Value
+run_id,backtest_20250527_213621
+strategy_name,Rebalancing Strategy
+date_range_start,2025-04-26 22:45:00
+date_range_end,2025-05-26 22:40:00
+initial_portfolio_value_usdt,10000
+final_portfolio_value_usdt,9928.817708233386
+total_net_pnl_usdt,-71.18229176661407
+total_net_pnl_percent,-0.7118229176661407
+max_drawdown_percent,-0.6443512297816034
+sharpe_ratio,-0.28700227342010504
+sortino_ratio,-0.34892812057468386
+total_trades,354
+winning_trades,59
+losing_trades,59
+win_rate_percent,50.0
+profit_factor,35.660547712735145
+average_trade_pnl_usdt,2.633560102432379
+average_winning_trade_usdt,5.419083187346119
+average_losing_trade_usdt,-0.15196298248136128
+ratio_avg_win_avg_loss,35.660547712735145
+average_trade_duration_hours,N/A
+longest_trade_duration_hours,N/A
+total_commissions_usdt,25.506749115493886
+total_slippage_usdt,18.219106511067064
+config_target_weights_normal,"{'BTC_SPOT': 0.65, 'BTC_LONG5X': 0.11, 'BTC_SHORT5X': 0.24}"
+config_target_weights_safe,"{'BTC_SPOT': 0.65, 'BTC_LONG5X': 0.11, 'BTC_SHORT5X': 0.24}"
+config_rebalance_threshold,0.01
+config_taker_commission_rate,0.0007
+config_maker_commission_rate,0.0002
+config_used_maker_fees,False
+config_slippage_percentage,0.0005
+config_price_source,close
+config_slippage_model,percentage
+config_risk_free_rate_annual,0.0
+config_annualization_factor,252.0
+config_circuit_breaker_threshold_percent,0.1
+config_margin_usage_safe_mode_enter_threshold,0.7
+config_margin_usage_safe_mode_exit_threshold,0.5
+config_min_rebalance_interval_minutes,5
+num_circuit_breaker_triggers,0
+num_safe_mode_entries,0
+time_steps_in_safe_mode,0

@@ -49,6 +49,7 @@
   },
   "backtest_settings": {
     "initial_capital": 1000.0,
+    "initial_portfolio_value_usdt": 1000,
     "commission_taker": 0.0005,
     "commission_maker": 0.0002,
     "use_maker_fees_in_backtest": false,
@@ -80,7 +81,7 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "data/BTCUSDT_default_1h.csv",
+      "csv_file_path": "graphs/BTCUSDT_data.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",
