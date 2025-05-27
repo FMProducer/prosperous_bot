@@ -230,7 +230,7 @@ Scripts should generally be run from the root of the `prosperous_bot_project` di
 
 ### 5.1. `rebalance_backtester.py`
 
-This script runs a single backtest using settings from the `backtest_settings` section of a unified configuration file. All parameters for the backtest, **including the path to the input CSV data file** (specified within the `data_settings` of the configuration), are sourced from this file.
+This script runs a single backtest using settings from the `backtest_settings` section of a unified configuration file.
 
 **Command-line Arguments:**
 *   `--config_file`: Path to the unified JSON configuration file.
