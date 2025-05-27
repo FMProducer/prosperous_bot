@@ -1,6 +1,6 @@
 {
   "optimizer_settings": {
-    "n_trials": 100,
+    "n_trials": 1000,
     "metric_to_optimize": "sharpe_ratio",
     "direction": "maximize",
     "sampler_type": "TPE",
@@ -55,7 +55,7 @@
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 5,
+    "min_rebalance_interval_minutes": 10,
     "rebalance_threshold": 0.01,
     "target_weights_normal": {
       "BTC_SPOT": 0.65,
