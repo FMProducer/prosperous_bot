@@ -1,7 +1,7 @@
 {
     "target_weights": {
-        "GALA_USDT": 0.35715,
-        "GALA5L_USDT": 0.237139,
-        "GALA5S_USDT": 0.405711
+        "BTC_SPOT": 0.65,
+        "BTC_LONG5X": 0.11,
+        "BTC_SHORT5X": 0.24
     }
 }

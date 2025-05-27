@@ -1,0 +1,22 @@
+{
+  "target_weights": {
+    "BTC_SPOT": 0.6,
+    "BTC_LONG5X": 0.2,
+    "BTC_SHORT5X": 0.2
+  },
+  "rebalance_threshold": 0.01,
+  "initial_portfolio_value_usdt": 10000.0,
+  "taker_commission_rate": 0.0007,
+  "maker_commission_rate": 0.0002,
+  "use_maker_fees_in_backtest": false,
+  "slippage_percentage": 0.0005,
+  "report_path_prefix": "./reports/backtest_",
+  "circuit_breaker_threshold_percent": 0.1,
+  "margin_usage_safe_mode_enter_threshold": 0.7,
+  "margin_usage_safe_mode_exit_threshold": 0.5,
+  "safe_mode_target_weights": {
+    "BTC_SPOT": 0.8,
+    "BTC_LONG5X": 0.05,
+    "BTC_SHORT5X": 0.15
+  }
+}
