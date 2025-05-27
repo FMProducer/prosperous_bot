@@ -95,6 +95,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     margin_usage_safe_mode_enter_threshold = params.get('margin_usage_safe_mode_enter_threshold', 0.70) # Default 70%
     margin_usage_safe_mode_exit_threshold = params.get('margin_usage_safe_mode_exit_threshold', 0.50) # Default 50%
     safe_mode_target_weights = params.get('safe_mode_target_weights', target_weights) # Default to normal weights if not specified
+    min_rebalance_interval_minutes = params.get('min_rebalance_interval_minutes', 0)
+
 
     # Determine actual commission rate to use for this backtest run
     current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
@@ -152,6 +154,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'num_circuit_breaker_triggers': 0,
         'num_safe_mode_entries': 0,
         'time_steps_in_safe_mode': 0,
+        'last_rebalance_attempt_timestamp': None, # For min_rebalance_interval_minutes
     }
 
     logging.info(f"Starting backtest with initial portfolio: {portfolio['usdt_balance']:.2f} USDT.")
@@ -299,10 +302,27 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 "status": "Portfolio wiped out"
             }
 
-        # --- Rebalancing Check ---
-        current_weights = {
-            "USDT": portfolio['usdt_balance'] / total_portfolio_value if total_portfolio_value else 1,
-            "BTC_SPOT": (portfolio['btc_spot_qty'] * current_btc_price) / total_portfolio_value if total_portfolio_value else 0,
+        # --- Min Rebalance Interval Check ---
+        # This check must happen BEFORE the decision to rebalance (needs_rebalance=True)
+        # and BEFORE last_rebalance_attempt_timestamp is updated for the current check.
+        can_check_rebalance_now = True
+        if min_rebalance_interval_minutes > 0 and portfolio['last_rebalance_attempt_timestamp'] is not None:
+            time_since_last_attempt = current_timestamp - portfolio['last_rebalance_attempt_timestamp']
+            if time_since_last_attempt < pd.Timedelta(minutes=min_rebalance_interval_minutes):
+                logging.debug(f"Rebalance check skipped at {current_timestamp} due to min_rebalance_interval_minutes. "
+                             f"Time since last attempt: {time_since_last_attempt}. Required: {min_rebalance_interval_minutes} min.")
+                can_check_rebalance_now = False
+        
+        # Always update the last attempt timestamp for the current candle *before* deciding if we need to rebalance.
+        # This means the interval starts from the last time we *could* have rebalanced.
+        portfolio['last_rebalance_attempt_timestamp'] = current_timestamp
+
+        needs_rebalance = False # Default to false for this candle
+        if can_check_rebalance_now:
+            # --- Rebalancing Check ---
+            current_weights = {
+                "USDT": portfolio['usdt_balance'] / total_portfolio_value if total_portfolio_value else 1,
+                "BTC_SPOT": (portfolio['btc_spot_qty'] * current_btc_price) / total_portfolio_value if total_portfolio_value else 0,
             "BTC_LONG5X": portfolio['btc_long_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
             "BTC_SHORT5X": portfolio['btc_short_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
         }
@@ -318,14 +338,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 logging.info(f"Mode changed to {portfolio['current_operational_mode']}. Forcing rebalance check against new weights: {active_target_weights}.")
         else:
             # Normal rebalance check based on threshold against current active_target_weights
-            for asset_key, target_w in active_target_weights.items(): # Use active_target_weights
+            for asset_key, target_w in active_target_weights.items(): 
                 current_w = current_weights.get(asset_key, 0)
                 if abs(current_w - target_w) > rebalance_threshold:
-                    needs_rebalance = True
+                    needs_rebalance = True # Set to true if threshold met
                     logging.info(f"Rebalance threshold triggered at {current_timestamp} (Price: {current_btc_price:.2f}). Asset {asset_key} current weight {current_w:.4f}, target {target_w:.4f} (Mode: {portfolio['current_operational_mode']})")
                     break
         
-        if needs_rebalance:
+        if needs_rebalance: # This 'needs_rebalance' is now conditional on can_check_rebalance_now
             logging.info(f"Rebalancing portfolio (Mode: {portfolio['current_operational_mode']}). Total Value: {total_portfolio_value:.2f} USDT. Current Price: {current_btc_price:.2f}")
             logging.debug(f"  Current Weights before rebalance: {current_weights}")
             logging.debug(f"  Target Weights for rebalance: {active_target_weights}")
@@ -573,6 +593,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["config_circuit_breaker_threshold_percent"] = circuit_breaker_threshold_percent
     metrics["config_margin_usage_safe_mode_enter_threshold"] = margin_usage_safe_mode_enter_threshold
     metrics["config_margin_usage_safe_mode_exit_threshold"] = margin_usage_safe_mode_exit_threshold
+    metrics["config_min_rebalance_interval_minutes"] = min_rebalance_interval_minutes
     
     # New operational stats
     metrics["num_circuit_breaker_triggers"] = portfolio['num_circuit_breaker_triggers']
@@ -622,6 +643,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     results_for_optimizer["num_circuit_breaker_triggers"] = metrics["num_circuit_breaker_triggers"]
     results_for_optimizer["num_safe_mode_entries"] = metrics["num_safe_mode_entries"]
     results_for_optimizer["time_steps_in_safe_mode"] = metrics["time_steps_in_safe_mode"]
+    # results_for_optimizer["config_min_rebalance_interval_minutes"] = metrics["config_min_rebalance_interval_minutes"] # Already part of metrics copy
     
     return results_for_optimizer
 
