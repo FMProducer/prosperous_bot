@@ -63,6 +63,6 @@ graphs/
 # Reports folder
 reports/
 
+# Specific files to ignore
 add.txt
-
 log.txt
