@@ -60,4 +60,9 @@ graphs/
 
 .hypothesis/
 
-.coverage
+# Reports folder
+reports/
+
+add.txt
+
+log.txt
