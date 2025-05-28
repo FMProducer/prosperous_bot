@@ -11,32 +11,32 @@
         "signal": "sell",
         "time": "2025-05-25T15:07:35.994467"
     },
-    "WIFUSDT": {
-        "signal": "sell",
-        "time": "2025-05-24T02:18:38.035918"
-    },
-    "ADAUSDT": {
-        "signal": "sell",
-        "time": "2025-05-26T18:55:08.854132"
-    },
-    "WLDUSDT": {
-        "signal": "sell",
-        "time": "2025-05-25T15:57:46.072523"
-    },
-    "NEIROUSDT": {
-        "signal": "sell",
-        "time": "2025-05-26T18:55:08.853129"
-    },
-    "HUMAUSDT": {
-        "signal": "sell",
-        "time": "2025-05-26T22:47:42.617456"
-    },
     "VIRTUALUSDT": {
         "signal": "sell",
         "time": "2025-05-26T18:55:08.853129"
     },
     "BTCUSDT": {
+        "signal": "sell",
+        "time": "2025-05-28T17:38:52.236775"
+    },
+    "TRBUSDT": {
+        "signal": "sell",
+        "time": "2025-05-28T17:38:52.236775"
+    },
+    "TONUSDT": {
         "signal": "buy",
-        "time": "2025-05-26T21:01:05.875600"
+        "time": "2025-05-28T17:38:52.236775"
+    },
+    "UNIUSDT": {
+        "signal": "sell",
+        "time": "2025-05-28T17:38:52.236775"
+    },
+    "SOPHUSDT": {
+        "signal": null,
+        "time": null
+    },
+    "WIFUSDT": {
+        "signal": "buy",
+        "time": "2025-05-28T20:23:02.044715"
     }
 }
