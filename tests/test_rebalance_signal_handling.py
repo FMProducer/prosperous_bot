@@ -101,6 +101,13 @@ class TestSignalHandling(unittest.TestCase):
             df_signals = load_signal_data(str(signal_file_path))
             self.assertIsNone(df_signals) 
             self.assertTrue(any("empty" in message.lower() for message in log.output))
+        # Test for file that is just headers (e.g. from empty DataFrame save)
+        signal_file_path_headers = self.test_data_dir / "headers_only_signals.csv"
+        create_dummy_csv(signal_file_path_headers, pd.DataFrame(columns=['timestamp', 'signal']))
+        with self.assertLogs(level='WARNING') as log_headers:
+            df_signals_headers = load_signal_data(str(signal_file_path_headers))
+            self.assertIsNone(df_signals_headers)
+            self.assertTrue(any("empty" in message.lower() for message in log_headers.output))
 
 
     def test_load_signal_data_missing_timestamp_column(self):
@@ -128,18 +135,19 @@ class TestSignalHandling(unittest.TestCase):
             self.assertTrue(any("Error loading or processing signal data" in message for message in log.output))
 
     # --- Tests for run_backtest signal-based holding logic ---
-    def _get_base_params(self, main_asset="TESTASSET"):
-        self.temp_reports_dir = self.test_data_dir / f"temp_reports_{main_asset}"
+    def _get_base_params(self, main_asset="TESTASSET", apply_signal_logic_value="OMIT_KEY"):
+        # apply_signal_logic_value: True, False, or "OMIT_KEY"
+        self.temp_reports_dir = self.test_data_dir / f"temp_reports_{main_asset}_{str(apply_signal_logic_value)}"
         if self.temp_reports_dir.exists(): # Clean up from previous identical test case if any
              shutil.rmtree(self.temp_reports_dir)
         self.temp_reports_dir.mkdir(parents=True, exist_ok=True)
 
-        return {
+        params = {
             'main_asset_symbol': main_asset,
             'initial_portfolio_value_usdt': 10000.0,
             'target_weights_normal': { 
                 f"{main_asset}_SPOT": 0.5, 
-                # "USDT": 0.5 # USDT is often implicit, but can be explicit if needed by strategy
+                "USDT": 0.5 # Explicitly including USDT for predictable initial rebalance
             },
             'rebalance_threshold': 0.01, 
             'taker_commission_rate': 0.0,
@@ -157,20 +165,21 @@ class TestSignalHandling(unittest.TestCase):
                 'volume_col': "volume",
                 'price_col_for_rebalance': "close"
             },
-            'logging_level': "INFO", # Set to INFO to catch prevention logs
-            'generate_reports_for_optimizer_trial': False, # No reports for unit tests
+            'logging_level': "INFO", 
+            'generate_reports_for_optimizer_trial': False, 
             'report_path_prefix': str(self.temp_reports_dir / "test_run_") 
         }
+        if apply_signal_logic_value != "OMIT_KEY":
+            params['apply_signal_logic'] = apply_signal_logic_value
+        return params
 
-    def test_buy_signal_prevents_spot_sell(self):
-        asset_symbol = "TBUY"
-        params = self._get_base_params(main_asset=asset_symbol)
+    def test_buy_signal_prevents_spot_sell_logic_enabled(self):
+        asset_symbol = "TBUY_ENABLED"
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value=True)
         spot_key = f"{asset_symbol}_SPOT"
-        params['target_weights_normal'] = {spot_key: 0.5, "USDT": 0.5}
-
+        # params['target_weights_normal'] already set in _get_base_params correctly
 
         # Market data: SPOT becomes overweight
-        # Timestamps ensure signals align correctly.
         ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
 
@@ -202,14 +211,13 @@ class TestSignalHandling(unittest.TestCase):
                         "Log message for BUY signal preventing SPOT sell not found.")
         
         # Check that only the initial rebalance trade occurred
-        self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades.")
+        self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades when logic is enabled and signal active.")
 
 
-    def test_sell_signal_prevents_spot_buy(self):
-        asset_symbol = "TSELL"
-        params = self._get_base_params(main_asset=asset_symbol)
+    def test_sell_signal_prevents_spot_buy_logic_enabled(self):
+        asset_symbol = "TSELL_ENABLED"
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value=True)
         spot_key = f"{asset_symbol}_SPOT"
-        params['target_weights_normal'] = {spot_key: 0.5, "USDT": 0.5}
 
         ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
@@ -229,18 +237,84 @@ class TestSignalHandling(unittest.TestCase):
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
         
-        # Expected behavior:
-        # 1. Initial rebalance at ts_initial: Buys SPOT to reach 0.5 weight. 1 trade.
-        # 2. At ts_signal_active: Price down to 90. SPOT value 50*90 = 4500. USDT 5000. Total 9500.
-        #    SPOT weight = 4500/9500 = ~0.4737 (Target 0.5). Underweight.
-        #    Normally, would buy SPOT. SELL signal should prevent this.
-
         with self.assertLogs(level='INFO') as log:
             results = run_backtest(params, market_file, is_optimizer_call=False)
 
         self.assertTrue(any(f"Signal SELL for {asset_symbol}: Preventing BUY of {spot_key}" in message for message in log.output),
                         "Log message for SELL signal preventing SPOT buy not found.")
-        self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades.")
+        self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades when logic is enabled and signal active.")
+
+    def test_buy_signal_allows_spot_sell_logic_disabled(self):
+        asset_symbol = "TBUY_DISABLED"
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value=False)
+        spot_key = f"{asset_symbol}_SPOT"
+
+        ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
+        ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
+        market_file = create_dummy_csv(
+            self.test_data_dir / f"market_{asset_symbol}_allows_sell.csv", 
+            {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110], 'volume': [10,10]}
+        )
+        signal_file = create_dummy_csv(
+            self.test_data_dir / f"signal_{asset_symbol}_buy_allows.csv", 
+            {'timestamp': [ts_signal_active.isoformat()], 'signal': ['BUY']}
+        )
+        params['data_settings']['csv_file_path'] = market_file
+        params['data_settings']['signals_csv_path'] = signal_file
+
+        # Expected: Initial rebalance (1 trade) + SPOT sell at ts_signal_active (1 trade) = 2 trades
+        results = run_backtest(params, market_file, is_optimizer_call=False)
+        self.assertEqual(results['total_trades'], 2, "Expected rebalance sell trade to occur when signal logic is disabled.")
+
+    def test_sell_signal_allows_spot_buy_logic_disabled(self):
+        asset_symbol = "TSELL_DISABLED"
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value=False)
+        spot_key = f"{asset_symbol}_SPOT"
+
+        ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
+        ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
+        market_file = create_dummy_csv(
+            self.test_data_dir / f"market_{asset_symbol}_allows_buy.csv", 
+            {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 90], 'high': [100, 90], 'low': [100, 90], 'close': [100, 90], 'volume': [10,10]}
+        )
+        signal_file = create_dummy_csv(
+            self.test_data_dir / f"signal_{asset_symbol}_sell_allows.csv", 
+            {'timestamp': [ts_signal_active.isoformat()], 'signal': ['SELL']}
+        )
+        params['data_settings']['csv_file_path'] = market_file
+        params['data_settings']['signals_csv_path'] = signal_file
+
+        # Expected: Initial rebalance (1 trade) + SPOT buy at ts_signal_active (1 trade) = 2 trades
+        results = run_backtest(params, market_file, is_optimizer_call=False)
+        self.assertEqual(results['total_trades'], 2, "Expected rebalance buy trade to occur when signal logic is disabled.")
+
+    def test_buy_signal_prevents_spot_sell_flag_missing(self):
+        asset_symbol = "TBUY_FLAG_MISSING"
+        # Pass "OMIT_KEY" (or whatever sentinel you chose) to _get_base_params
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value="OMIT_KEY") 
+        spot_key = f"{asset_symbol}_SPOT"
+
+        ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
+        ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
+        market_file = create_dummy_csv(
+            self.test_data_dir / f"market_{asset_symbol}_flag_missing.csv", 
+            {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110], 'volume': [10,10]}
+        )
+        signal_file = create_dummy_csv(
+            self.test_data_dir / f"signal_{asset_symbol}_buy_flag_missing.csv", 
+            {'timestamp': [ts_signal_active.isoformat()], 'signal': ['BUY']}
+        )
+        params['data_settings']['csv_file_path'] = market_file
+        params['data_settings']['signals_csv_path'] = signal_file
+
+        with self.assertLogs(level='INFO') as log: # Check for both WARNING (missing flag) and INFO (prevention)
+            results = run_backtest(params, market_file, is_optimizer_call=False)
+        
+        self.assertTrue(any("'apply_signal_logic' not found" in message for message in log.output),
+                        "Warning for missing 'apply_signal_logic' flag not found.")
+        self.assertTrue(any(f"Signal BUY for {asset_symbol}: Preventing SELL of {spot_key}" in message for message in log.output),
+                        "Log message for BUY signal preventing SPOT sell not found (flag missing case).")
+        self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades when flag is missing (defaults to True).")
 
 
 if __name__ == '__main__':
