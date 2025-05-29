@@ -262,9 +262,18 @@ class TestSignalHandling(unittest.TestCase):
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
 
-        # Expected: Initial rebalance (1 trade) + SPOT sell at ts_signal_active (1 trade) = 2 trades
-        results = run_backtest(params, market_file, is_optimizer_call=False)
+        # Expected: Initial rebalance (1 trade for SPOT) + SPOT sell at ts_signal_active (1 trade) = 2 trades
+        # Note: If USDT were also in target_weights, initial rebalance might be 2 trades (sell USDT, buy SPOT).
+        # Since USDT is explicitly in target_weights in _get_base_params, initial rebalance is 1 trade (buy SPOT, usdt implicitly adjusts).
+        
+        # Capture logs to check what IS there, and ensure prevention log is NOT there.
+        with self.assertLogs(level='INFO') as log_check: 
+            results = run_backtest(params, market_file, is_optimizer_call=False) 
+            prevent_log_present = any(f"Preventing SELL of {spot_key}" in message.getMessage() for message in log_check.records)
+            self.assertFalse(prevent_log_present, "Trade prevention log appeared even when signal logic was disabled.")
+        
         self.assertEqual(results['total_trades'], 2, "Expected rebalance sell trade to occur when signal logic is disabled.")
+
 
     def test_sell_signal_allows_spot_buy_logic_disabled(self):
         asset_symbol = "TSELL_DISABLED"
@@ -284,8 +293,11 @@ class TestSignalHandling(unittest.TestCase):
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
 
-        # Expected: Initial rebalance (1 trade) + SPOT buy at ts_signal_active (1 trade) = 2 trades
-        results = run_backtest(params, market_file, is_optimizer_call=False)
+        with self.assertLogs(level='INFO') as log_check:
+            results = run_backtest(params, market_file, is_optimizer_call=False) 
+            prevent_log_present = any(f"Preventing BUY of {spot_key}" in message.getMessage() for message in log_check.records)
+            self.assertFalse(prevent_log_present, "Trade prevention log appeared even when signal logic was disabled.")
+
         self.assertEqual(results['total_trades'], 2, "Expected rebalance buy trade to occur when signal logic is disabled.")
 
     def test_buy_signal_prevents_spot_sell_flag_missing(self):
