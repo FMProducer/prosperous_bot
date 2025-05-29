@@ -142,6 +142,15 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     long_asset_key = f"{main_asset_symbol}_LONG5X" # Assuming fixed leverage suffix for now
     short_asset_key = f"{main_asset_symbol}_SHORT5X" # Assuming fixed leverage suffix for now
 
+    apply_signal_logic = params.get('apply_signal_logic', True) # Default to True
+    if 'apply_signal_logic' not in params:
+        logging.warning("'apply_signal_logic' not found in config's backtest_settings. Defaulting to True (signal logic will be applied).")
+
+    if apply_signal_logic:
+        logging.info("Signal-based trading logic is ENABLED.")
+    else:
+        logging.info("Signal-based trading logic is DISABLED. Rebalancing will be purely weight-based.")
+
     current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
     
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
@@ -445,26 +454,26 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 
                 adjustment_usdt = target_value_usdt - current_value_usdt
                 
-                # Apply signal-based logic
-                original_adjustment_usdt = adjustment_usdt # For logging
-                if current_signal == "BUY":
-                    if asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key:
-                        if adjustment_usdt < 0: # Would normally sell SPOT or LONG
-                            logging.info(f"  Signal BUY for {main_asset_symbol}: Preventing SELL of {asset_key_loop}. Original adjustment: {original_adjustment_usdt:.2f} USDT")
-                            adjustment_usdt = 0
-                    elif asset_key_loop == short_asset_key:
-                        if adjustment_usdt > 0: # Would normally buy SHORT (i.e. increase short exposure)
-                            logging.info(f"  Signal BUY for {main_asset_symbol}: Preventing BUY of {asset_key_loop} (increase short exposure). Original adjustment: {original_adjustment_usdt:.2f} USDT")
-                            adjustment_usdt = 0
-                elif current_signal == "SELL":
-                    if asset_key_loop == short_asset_key:
-                        if adjustment_usdt < 0: # Would normally sell SHORT (i.e. reduce short exposure by buying back)
-                            logging.info(f"  Signal SELL for {main_asset_symbol}: Preventing SELL of {asset_key_loop} (reduce short exposure). Original adjustment: {original_adjustment_usdt:.2f} USDT")
-                            adjustment_usdt = 0
-                    elif asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key:
-                        if adjustment_usdt > 0: # Would normally buy SPOT or LONG
-                            logging.info(f"  Signal SELL for {main_asset_symbol}: Preventing BUY of {asset_key_loop}. Original adjustment: {original_adjustment_usdt:.2f} USDT")
-                            adjustment_usdt = 0
+                if apply_signal_logic:
+                    original_adjustment_usdt = adjustment_usdt # For logging
+                    if current_signal == "BUY":
+                        if asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key:
+                            if adjustment_usdt < 0: # Would normally sell SPOT or LONG
+                                logging.info(f"  Signal BUY for {main_asset_symbol}: Preventing SELL of {asset_key_loop}. Original adjustment: {original_adjustment_usdt:.2f} USDT")
+                                adjustment_usdt = 0
+                        elif asset_key_loop == short_asset_key:
+                            if adjustment_usdt > 0: # Would normally buy SHORT (i.e. increase short exposure)
+                                logging.info(f"  Signal BUY for {main_asset_symbol}: Preventing BUY of {asset_key_loop} (increase short exposure). Original adjustment: {original_adjustment_usdt:.2f} USDT")
+                                adjustment_usdt = 0
+                    elif current_signal == "SELL":
+                        if asset_key_loop == short_asset_key:
+                            if adjustment_usdt < 0: # Would normally sell SHORT (i.e. reduce short exposure by buying back)
+                                logging.info(f"  Signal SELL for {main_asset_symbol}: Preventing SELL of {asset_key_loop} (reduce short exposure). Original adjustment: {original_adjustment_usdt:.2f} USDT")
+                                adjustment_usdt = 0
+                        elif asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key:
+                            if adjustment_usdt > 0: # Would normally buy SPOT or LONG
+                                logging.info(f"  Signal SELL for {main_asset_symbol}: Preventing BUY of {asset_key_loop}. Original adjustment: {original_adjustment_usdt:.2f} USDT")
+                                adjustment_usdt = 0
                 
                 adjustments[asset_key_loop] = adjustment_usdt
 
@@ -748,7 +757,8 @@ def main():
 
         # Define a minimal but complete backtest_settings structure for the dummy
         dummy_backtest_settings_content = {
-          "main_asset_symbol": "BTC", # Added main_asset_symbol
+          "main_asset_symbol": "BTC",
+          "apply_signal_logic": True, # Added apply_signal_logic
           "initial_capital": 10000.0,
           "commission_taker": 0.0007,
           "commission_maker": 0.0002,
