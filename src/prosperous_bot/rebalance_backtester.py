@@ -50,18 +50,19 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
     - realized_pnl_spot_usdt: The portion of pnl_net_quote that is from realized SPOT gains/losses.
     """
     trade = {
-        "timestamp_open": timestamp, 
-        "timestamp_close": timestamp, 
+        "timestamp_open": timestamp, # For now, all trades are "opened" and "closed" instantly in rebalancing
+        "timestamp_close": timestamp, # For PnL calc, this is the time of realization
         "asset_type": asset_type,
-        "action": action, 
+        "action": action, # BUY or SELL
         "quantity_asset": quantity_asset, 
-        "quantity_quote": quantity_quote, 
-        "entry_price": market_price, 
-        "exit_price": market_price, 
+        "quantity_quote": quantity_quote, # Gross value of asset moved, at market_price
+        "entry_price": market_price, # Market price at time of trade
+        "exit_price": market_price, # For rebalancing trades, entry and exit are effectively at the same time
         "commission_quote": commission_usdt,
-        "slippage_quote": slippage_usdt, 
-        "pnl_gross_quote": realized_pnl_spot_usdt, 
-        "pnl_net_quote": realized_pnl_spot_usdt - commission_usdt, 
+        "slippage_quote": slippage_usdt, # Total slippage cost for this trade event
+        "pnl_gross_quote": realized_pnl_spot_usdt, # PnL before commission for this trade (primarily for SPOT)
+        "pnl_net_quote": realized_pnl_spot_usdt - commission_usdt, # PnL after commission (slippage already in execution)
+        # "duration_hours": 0 # Duration can be complex for rebalancing trades.
     }
     trades_list.append(trade)
     logging.info(
@@ -71,44 +72,80 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
     )
 
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
-    params = params_dict 
+    """
+    Main backtesting logic for Part 1.
+    Accepts a parameters dictionary and the data path.
+    If is_optimizer_call is True, report generation can be conditional.
+    trial_id_for_reports can be used to create unique report subfolders for optimizer trials if needed.
+    """
+    params = params_dict # Parameters are now passed as a dictionary
+    
+    # --- Core Parameters ---
+    # Normal mode target weights (mandatory from config structure)
+    normal_target_weights = params.get('target_weights_normal')
+    if normal_target_weights is None:
+        logging.error("FATAL: 'target_weights_normal' not found in backtest_settings. Exiting.")
+        initial_val = params.get('initial_portfolio_value_usdt', 0)
+        return { # Return structure indicating failure
+            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_val,
+            "total_net_pnl_percent": -100.0 if initial_val != 0 else 0.0, "total_trades": 0,
+            "output_dir": None, "status": "Config error: target_weights_normal missing"
+        }
 
-    target_weights_normal = params.get('target_weights_normal', {}) 
-    if not target_weights_normal:
-        target_weights_normal = params.get('target_weights', {})
-        if target_weights_normal:
-            logging.warning("'target_weights_normal' not found in config, falling back to 'target_weights'. "
-                            "Please update your config to use 'target_weights_normal'.")
-        else:
-            logging.error("FATAL: 'target_weights_normal' (or legacy 'target_weights') is missing in config. Cannot proceed.")
-            return {"status": "Configuration error: Target weights missing."}
+    # These are assumed to be present at the top level of backtest_settings from unified_config.example.json
+    rebalance_threshold = params.get('rebalance_threshold')
+    initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt')
 
-    rebalance_threshold = params['rebalance_threshold']
-    initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000) # Default to 10000 if not found
-    if 'initial_portfolio_value_usdt' not in params:
-        logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
-    taker_commission_rate = params.get('taker_commission_rate', params.get('commission_rate', 0.0007)) 
-    maker_commission_rate = params.get('maker_commission_rate', 0.0002) 
+    if rebalance_threshold is None or initial_portfolio_value_usdt is None:
+        missing_keys = []
+        if rebalance_threshold is None: missing_keys.append("'rebalance_threshold'")
+        if initial_portfolio_value_usdt is None: missing_keys.append("'initial_portfolio_value_usdt'")
+        logging.error(f"FATAL: Core parameters {', '.join(missing_keys)} not found in backtest_settings. Exiting.")
+        initial_val = initial_portfolio_value_usdt if initial_portfolio_value_usdt is not None else 0
+        return { # Return structure indicating failure
+            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_val,
+            "total_net_pnl_percent": -100.0 if initial_val != 0 else 0.0, "total_trades": 0,
+            "output_dir": None, "status": f"Config error: {', '.join(missing_keys)} missing"
+        }
+
+    # Fees and Slippage from unified_config.example.json (e.g., "commission_taker", "slippage_percent")
+    taker_commission_rate = params.get('commission_taker', 0.0007) 
+    maker_commission_rate = params.get('commission_maker', 0.0002) 
     use_maker_fees_in_backtest = params.get('use_maker_fees_in_backtest', False)
-    slippage_percentage = params.get('slippage_percentage', 0.0005) 
-    circuit_breaker_threshold_percent = params.get('circuit_breaker_threshold_percent', 0.10) 
-    margin_usage_safe_mode_enter_threshold = params.get('margin_usage_safe_mode_enter_threshold', 0.70) 
-    margin_usage_safe_mode_exit_threshold = params.get('margin_usage_safe_mode_exit_threshold', 0.50) 
-    safe_mode_target_weights = params.get('safe_mode_target_weights', target_weights_normal) 
+    slippage_percentage = params.get('slippage_percent', 0.0005) 
+    
+    # --- Risk Control Parameters ---
+    # Circuit Breaker (from 'circuit_breaker_config' in JSON)
+    circuit_breaker_config = params.get('circuit_breaker_config', {})
+    circuit_breaker_threshold_percent = circuit_breaker_config.get('threshold_percentage', 0.10) 
+
+    # Safe Mode (from 'safe_mode_config' in JSON)
+    safe_mode_config = params.get('safe_mode_config', {})
+    margin_usage_safe_mode_enter_threshold = safe_mode_config.get('entry_threshold', 0.70)
+    margin_usage_safe_mode_exit_threshold = safe_mode_config.get('exit_threshold', 0.50)
+    # 'target_weights_safe' is nested; defaults to normal_target_weights if not found or safe_mode_config is empty
+    safe_mode_target_weights = safe_mode_config.get('target_weights_safe', normal_target_weights) 
+    
     min_rebalance_interval_minutes = params.get('min_rebalance_interval_minutes', 0)
 
+
+    # Determine actual commission rate to use for this backtest run
     current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
     
+    # Determine if reports should be generated for this specific run
+    # For optimizer calls, this might be False to save time/space, unless explicitly requested for debugging.
+    # For standalone runs (is_optimizer_call=False), reports are usually desired.
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
     output_dir = None
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S") # Define timestamp_str here for general use
 
     if generate_reports:
-        report_path_prefix = params.get('report_path_prefix', './reports/') # Ensure trailing slash for consistency
+        report_path_prefix = params.get('report_path_prefix', './reports/backtest_')
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         if is_optimizer_call and trial_id_for_reports is not None:
-            output_dir = os.path.join(report_path_prefix.rstrip('/'), "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
-        else: # Standalone backtest run
-            output_dir = os.path.join(report_path_prefix.rstrip('/'), f"backtest_{timestamp_str}")
+            # Create a specific subdirectory for this trial's reports if requested
+            output_dir = os.path.join(report_path_prefix + "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
+        else:
+            output_dir = f"{report_path_prefix}{timestamp_str}"
         os.makedirs(output_dir, exist_ok=True)
         logging.info(f"Output reports for this run will be saved to: {output_dir}")
     else:
@@ -118,104 +155,66 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     df_market = load_data(data_path)
     if df_market is None or df_market.empty:
         logging.error("Market data is empty or could not be loaded. Cannot run backtest.")
+        # Return a structure indicating failure, which optimizer can use
         return {
-            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
-            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": None,
+            "final_portfolio_value_usdt": 0,
+            "total_net_pnl_usdt": -initial_portfolio_value_usdt,
+            "total_net_pnl_percent": -100.0,
+            "total_trades": 0,
+            "output_dir": None,
             "status": "Market data error"
         }
     
-    # Standardize 'timestamp' column to UTC.
-    # Assumes naive timestamps from load_data are intended to be UTC.
-    if df_market['timestamp'].dt.tz is None:
-        logging.info("Market data 'timestamp' column is tz-naive. Localizing to UTC.")
-        df_market['timestamp'] = df_market['timestamp'].dt.tz_localize('UTC')
-    else:
-        # If already tz-aware (e.g., if load_data changes), convert to UTC for consistency.
-        logging.info(f"Market data 'timestamp' column is already tz-aware ({df_market['timestamp'].dt.tz}). Converting to UTC.")
-        df_market['timestamp'] = df_market['timestamp'].dt.tz_convert('UTC')
-
-    # Filter data by date range if specified
-    if "date_range" in params and isinstance(params["date_range"], dict):
-        start_date_str = params["date_range"].get("start_date")
-        if start_date_str:
-            try:
-                start_date_dt = pd.to_datetime(start_date_str)
-                # Ensure start_date_dt is UTC
-                if start_date_dt.tzinfo is None or start_date_dt.tzinfo.utcoffset(start_date_dt) is None: # Check if naive
-                    logging.info(f"Config start_date '{start_date_str}' is tz-naive. Localizing to UTC.")
-                    start_date_dt = start_date_dt.tz_localize('UTC')
-                else: # It's tz-aware, convert to UTC
-                    logging.info(f"Config start_date '{start_date_str}' is tz-aware ({start_date_dt.tzinfo}). Converting to UTC.")
-                    start_date_dt = start_date_dt.tz_convert('UTC')
-                
-                df_market = df_market[df_market['timestamp'] >= start_date_dt]
-            except ValueError as e:
-                logging.error(f"Could not parse start_date '{start_date_str}': {e}. Skipping start date filter.")
-            except Exception as e: # Catch any other unexpected errors
-                logging.error(f"Unexpected error processing start_date '{start_date_str}': {e}. Skipping start date filter.")
-
-        end_date_str = params["date_range"].get("end_date")
-        if end_date_str:
-            try:
-                end_date_dt = pd.to_datetime(end_date_str)
-                # Ensure end_date_dt is UTC
-                if end_date_dt.tzinfo is None or end_date_dt.tzinfo.utcoffset(end_date_dt) is None: # Check if naive
-                    logging.info(f"Config end_date '{end_date_str}' is tz-naive. Localizing to UTC.")
-                    end_date_dt = end_date_dt.tz_localize('UTC')
-                else: # It's tz-aware, convert to UTC
-                    logging.info(f"Config end_date '{end_date_str}' is tz-aware ({end_date_dt.tzinfo}). Converting to UTC.")
-                    end_date_dt = end_date_dt.tz_convert('UTC')
-                df_market = df_market[df_market['timestamp'] <= end_date_dt]
-            except ValueError as e:
-                logging.error(f"Could not parse end_date '{end_date_str}': {e}. Skipping end date filter.")
-            except Exception as e:
-                logging.error(f"Unexpected error processing end_date '{end_date_str}': {e}. Skipping end date filter.")
-    else:
-        logging.info("No date_range specified, or 'date_range' is not a dictionary, or 'start_date'/'end_date' missing. Using full dataset or partially filtered dataset.")
-    
-    if df_market.empty:
-        logging.error("Market data is empty after applying date range filters. Cannot run backtest.")
-        return {
-            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
-            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": None,
-            "status": "Market data empty after date filter"
-        }
-
     trades_list = []
-    equity_over_time = [] 
+    equity_over_time = [] # To store {'timestamp': ts, 'portfolio_value_usdt': val}
+
+    # Portfolio State for Part 1:
+    # 'btc_long_value_usdt' and 'btc_short_value_usdt' represent the USDT capital
+    # allocated to these strategies, including their P&L. They are not contract counts.
     portfolio = {
-        'usdt_balance': initial_portfolio_value_usdt, 'btc_spot_qty': 0.0,
-        'btc_spot_lots': [], 'btc_long_value_usdt': 0.0, 'btc_short_value_usdt': 0.0,
-        'prev_btc_price': None, 'total_commissions_usdt': 0.0, 'total_slippage_usdt': 0.0,
-        'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
-        'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
-        'last_rebalance_attempt_timestamp': None, 
+        'usdt_balance': initial_portfolio_value_usdt,
+        'btc_spot_qty': 0.0,
+        'btc_spot_lots': [], # For FIFO PnL calculation: list of {'qty': float, 'price_per_unit': float}
+        'btc_long_value_usdt': 0.0,
+        'btc_short_value_usdt': 0.0,
+        'prev_btc_price': None,
+        'total_commissions_usdt': 0.0,
+        'total_slippage_usdt': 0.0,
+        # New state variables
+        'current_operational_mode': 'NORMAL_MODE', # NORMAL_MODE or SAFE_MODE
+        'num_circuit_breaker_triggers': 0,
+        'num_safe_mode_entries': 0,
+        'time_steps_in_safe_mode': 0,
+        'last_rebalance_attempt_timestamp': None, # For min_rebalance_interval_minutes
     }
 
     logging.info(f"Starting backtest with initial portfolio: {portfolio['usdt_balance']:.2f} USDT.")
-    logging.info(f"Normal Target Weights: {target_weights_normal}")
-    logging.info(f"Safe Mode Target Weights: {safe_mode_target_weights}")
+    logging.info(f"Target Weights (Normal Mode): {normal_target_weights}")
+    if safe_mode_target_weights is not normal_target_weights:
+        logging.info(f"Target Weights (Safe Mode): {safe_mode_target_weights}")
     logging.info(f"Rebalance Threshold: {rebalance_threshold*100:.2f}%")
-    logging.info(f"Min Rebalance Interval (minutes): {min_rebalance_interval_minutes}")
 
+    # Set initial prev_btc_price for the first iteration's P&L calculation.
+    # If df_market is not empty, this will be the first closing price.
     portfolio['prev_btc_price'] = df_market['close'].iloc[0]
 
     for index, row in df_market.iterrows():
         current_timestamp = row['timestamp']
         current_btc_price = row['close']
-        current_open_price = row.get('open', current_btc_price) # Fallback if 'open' is not in data
-        current_high_price = row.get('high', current_btc_price) # Fallback
-        current_low_price = row.get('low', current_btc_price)   # Fallback
+        current_open_price = row['open']
+        current_high_price = row['high']
+        current_low_price = row['low']
 
         # --- 1. Circuit Breaker Check ---
-        if circuit_breaker_threshold_percent > 0 and current_open_price > 0: # Check if enabled
+        if current_open_price > 0:
             candle_movement_percent = (current_high_price - current_low_price) / current_open_price
             if candle_movement_percent > circuit_breaker_threshold_percent:
                 portfolio['num_circuit_breaker_triggers'] += 1
                 logging.warning(f"CIRCUIT BREAKER TRIGGERED at {current_timestamp}: "
-                                f"Movement {candle_movement_percent*100:.2f}% (O:{current_open_price:.2f} H:{current_high_price:.2f} L:{current_low_price:.2f}) "
-                                f"> threshold {circuit_breaker_threshold_percent*100:.2f}%. "
+                                f"Movement {candle_movement_percent*100:.2f}% > threshold {circuit_breaker_threshold_percent*100:.2f}%. "
                                 f"Skipping rebalancing for this candle.")
+                # Still need to update P&L and prev_btc_price, but skip rebalancing and mode checks for this candle
+                # P&L Update for Leveraged Positions (copied from below, simplified for skip)
                 if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
                     price_change_ratio = current_btc_price / portfolio['prev_btc_price']
                     if portfolio['btc_long_value_usdt'] > 0:
@@ -223,136 +222,171 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     if portfolio['btc_short_value_usdt'] > 0:
                         portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * 5 * (1 - price_change_ratio)
                 
+                # Update total portfolio value for equity curve
                 total_portfolio_value_cb = calculate_portfolio_value(
                     portfolio['usdt_balance'], portfolio['btc_spot_qty'],
-                    portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_btc_price)
+                    portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'],
+                    current_btc_price
+                )
                 equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value_cb})
                 if total_portfolio_value_cb <= 0:
                     logging.warning(f"Portfolio value is {total_portfolio_value_cb:.2f} at {current_timestamp} after CB. Stopping backtest.")
+                    # Return structure indicating failure
+                    # (Copying the structure from the main portfolio wipeout condition)
                     final_val_cb = total_portfolio_value_cb if total_portfolio_value_cb is not None else 0
                     pnl_usdt_cb = final_val_cb - initial_portfolio_value_usdt
                     pnl_pct_cb = (pnl_usdt_cb / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
-                    # Populate all metrics for consistent return structure
-                    metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]}
-                    metrics_cb_fail.update({
+                    return {
                         "final_portfolio_value_usdt": final_val_cb, "total_net_pnl_usdt": pnl_usdt_cb,
                         "total_net_pnl_percent": pnl_pct_cb, "total_trades": len(trades_list),
-                        "max_drawdown_percent": -100.0,
                         "output_dir": output_dir, "status": "Portfolio wiped out post-CB",
-                        **portfolio
-                    })
-                    return metrics_cb_fail
-                portfolio['prev_btc_price'] = current_btc_price
-                if portfolio['current_operational_mode'] == 'SAFE_MODE': 
-                    portfolio['time_steps_in_safe_mode'] +=1
-                continue 
-        elif circuit_breaker_threshold_percent > 0 and current_open_price <= 0:
-             logging.warning(f"Candle open price is 0 or invalid at {current_timestamp}, cannot calculate movement for circuit breaker.")
+                        **portfolio # Include all portfolio state for debugging
+                    }
 
+                portfolio['prev_btc_price'] = current_btc_price
+                if portfolio['current_operational_mode'] == 'SAFE_MODE': # Count time in safe mode even if CB triggered
+                    portfolio['time_steps_in_safe_mode'] +=1
+                continue # Skip to the next candle
+        else: # Handle open_price == 0 if it can occur
+            logging.warning(f"Candle open price is 0 at {current_timestamp}, cannot calculate movement for circuit breaker.")
+
+
+        # --- 2. P&L Update for Leveraged Positions (Part 1 Simplification) ---
+        # P&L is calculated based on the change in BTC price from the previous bar,
+        # applied to the current value of the leveraged segments.
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
-            price_change_ratio = current_btc_price / portfolio['prev_btc_price']
+            price_change_ratio = current_btc_price / portfolio['prev_btc_price'] # e.g., 1.01 for 1% rise
+            
             if portfolio['btc_long_value_usdt'] > 0:
-                portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * 5 * (price_change_ratio - 1)
+                # Change in value = Current Value * Leverage * (Price Ratio - 1)
+                pnl_long = portfolio['btc_long_value_usdt'] * 5 * (price_change_ratio - 1)
+                portfolio['btc_long_value_usdt'] += pnl_long
+            
             if portfolio['btc_short_value_usdt'] > 0:
-                portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * 5 * (1 - price_change_ratio)
+                # Change in value = Current Value * Leverage * (1 - Price Ratio)
+                pnl_short = portfolio['btc_short_value_usdt'] * 5 * (1 - price_change_ratio)
+                portfolio['btc_short_value_usdt'] += pnl_short
         
+        # --- Portfolio Valuation ---
         total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],
-            portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_btc_price)
+            portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'],
+            current_btc_price
+        )
+        # equity_over_time is appended after mode checks and potential rebalancing for the current bar
 
-        nav = total_portfolio_value 
+        # --- 3. Margin Usage & Safe Mode Check ---
+        nav = total_portfolio_value # Net Asset Value
         used_margin_usdt = 0
-        if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False) : # Check if safe_mode is enabled
+        if nav > 0: # Proceed only if portfolio has value
+            # Margin for leveraged positions (assuming 5x leverage for both as per current model)
+            # This is a simplified view; real margin depends on exchange rules, entry prices, etc.
             margin_for_long = portfolio['btc_long_value_usdt'] / 5.0 
             margin_for_short = portfolio['btc_short_value_usdt'] / 5.0
             used_margin_usdt = margin_for_long + margin_for_short
             margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
         else:
-            margin_usage_ratio = 0.0 
+            margin_usage_ratio = 0.0 # No value, no margin usage meaningful
 
-        active_target_weights = target_weights_normal # Default to normal
+        active_target_weights = None # Will be set based on mode
         previous_mode = portfolio['current_operational_mode']
+
+        if portfolio['current_operational_mode'] == 'NORMAL_MODE':
+            if margin_usage_ratio > margin_usage_safe_mode_enter_threshold:
+                portfolio['current_operational_mode'] = 'SAFE_MODE'
+                portfolio['num_safe_mode_entries'] += 1
+                logging.info(f"ENTERING SAFE MODE at {current_timestamp} due to margin usage: {margin_usage_ratio*100:.2f}% "
+                             f"(Threshold: {margin_usage_safe_mode_enter_threshold*100:.2f}%)")
+            # active_target_weights will be set below
+        elif portfolio['current_operational_mode'] == 'SAFE_MODE':
+            if margin_usage_ratio < margin_usage_safe_mode_exit_threshold:
+                portfolio['current_operational_mode'] = 'NORMAL_MODE'
+                logging.info(f"EXITING SAFE MODE at {current_timestamp}, margin usage: {margin_usage_ratio*100:.2f}% "
+                             f"(Threshold: {margin_usage_safe_mode_exit_threshold*100:.2f}%)")
+            # active_target_weights will be set below
         
-        if params.get("safe_mode_config", {}).get("enabled", False):
-            if portfolio['current_operational_mode'] == 'NORMAL_MODE':
-                if margin_usage_ratio > margin_usage_safe_mode_enter_threshold:
-                    portfolio['current_operational_mode'] = 'SAFE_MODE'
-                    portfolio['num_safe_mode_entries'] += 1
-                    logging.info(f"ENTERING SAFE MODE at {current_timestamp} due to margin usage: {margin_usage_ratio*100:.2f}% "
-                                 f"(Threshold: {margin_usage_safe_mode_enter_threshold*100:.2f}%)")
-            elif portfolio['current_operational_mode'] == 'SAFE_MODE':
-                if margin_usage_ratio < margin_usage_safe_mode_exit_threshold:
-                    portfolio['current_operational_mode'] = 'NORMAL_MODE'
-                    logging.info(f"EXITING SAFE MODE at {current_timestamp}, margin usage: {margin_usage_ratio*100:.2f}% "
-                                 f"(Threshold: {margin_usage_safe_mode_exit_threshold*100:.2f}%)")
-            
-            if portfolio['current_operational_mode'] == 'SAFE_MODE':
-                active_target_weights = safe_mode_target_weights
-                portfolio['time_steps_in_safe_mode'] += 1
-            else: 
-                active_target_weights = target_weights_normal
-        else: # Safe mode not enabled, always use normal weights
-            active_target_weights = target_weights_normal
+        if portfolio['current_operational_mode'] == 'SAFE_MODE':
+            active_target_weights = safe_mode_target_weights
+            portfolio['time_steps_in_safe_mode'] += 1
+        else: # NORMAL_MODE
+            active_target_weights = normal_target_weights # Use normal_target_weights
 
-
+        # If mode changed, it might trigger an immediate rebalance to new targets
         mode_changed_this_step = previous_mode != portfolio['current_operational_mode']
+
+        # Append equity AFTER potential mode changes but BEFORE rebalancing for this bar
         equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value})
 
-        if total_portfolio_value <= 0: 
+        if total_portfolio_value <= 0: # Check again after P&L and before rebalancing
             logging.warning(f"Portfolio value is {total_portfolio_value:.2f} at {current_timestamp} before rebalance. Stopping backtest.")
+            # Ensure equity_over_time has the last value if it's not the first bar
             if not equity_over_time or equity_over_time[-1]['timestamp'] != current_timestamp:
                  equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value})
+            # Return structure indicating failure/poor result for optimizer
             final_val = total_portfolio_value if total_portfolio_value is not None else 0
             pnl_usdt = final_val - initial_portfolio_value_usdt
             pnl_pct = (pnl_usdt / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
-            metrics_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]}
-            metrics_fail.update({
-                "final_portfolio_value_usdt": final_val, "total_net_pnl_usdt": pnl_usdt,
-                "total_net_pnl_percent": pnl_pct, "total_trades": len(trades_list),
-                "max_drawdown_percent": -100.0, "output_dir": output_dir, "status": "Portfolio wiped out",
-                **portfolio
-            })
-            return metrics_fail
+            return {
+                "final_portfolio_value_usdt": final_val,
+                "total_net_pnl_usdt": pnl_usdt,
+                "total_net_pnl_percent": pnl_pct,
+                "total_trades": len(trades_list),
+                "output_dir": output_dir, # output_dir might be None
+                "status": "Portfolio wiped out"
+            }
 
+        # --- Min Rebalance Interval Check ---
+        # This check must happen BEFORE the decision to rebalance (needs_rebalance=True)
+        # and BEFORE last_rebalance_attempt_timestamp is updated for the current check.
         can_check_rebalance_now = True
         if min_rebalance_interval_minutes > 0 and portfolio['last_rebalance_attempt_timestamp'] is not None:
             time_since_last_attempt = current_timestamp - portfolio['last_rebalance_attempt_timestamp']
-            if time_since_last_attempt < pd.Timedelta(minutes=min_rebalance_interval_minutes) and not mode_changed_this_step and index !=0 : # Allow rebalance if mode changed or first run
+            if time_since_last_attempt < pd.Timedelta(minutes=min_rebalance_interval_minutes):
                 logging.debug(f"Rebalance check skipped at {current_timestamp} due to min_rebalance_interval_minutes. "
                              f"Time since last attempt: {time_since_last_attempt}. Required: {min_rebalance_interval_minutes} min.")
                 can_check_rebalance_now = False
         
-        needs_rebalance = False 
+        # Always update the last attempt timestamp for the current candle *before* deciding if we need to rebalance.
+        # This means the interval starts from the last time we *could* have rebalanced.
+        portfolio['last_rebalance_attempt_timestamp'] = current_timestamp
+
+        needs_rebalance = False # Default to false for this candle
         if can_check_rebalance_now:
-            portfolio['last_rebalance_attempt_timestamp'] = current_timestamp # Update only if check is permitted
+            # --- Rebalancing Check ---
             current_weights = {
                 "USDT": portfolio['usdt_balance'] / total_portfolio_value if total_portfolio_value else 1,
                 "BTC_SPOT": (portfolio['btc_spot_qty'] * current_btc_price) / total_portfolio_value if total_portfolio_value else 0,
-                "BTC_LONG5X": portfolio['btc_long_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
-                "BTC_SHORT5X": portfolio['btc_short_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
-            }
+            "BTC_LONG5X": portfolio['btc_long_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
+            "BTC_SHORT5X": portfolio['btc_short_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
+        }
         
-            if index == 0 or mode_changed_this_step:
-                needs_rebalance = True
-                if index == 0:
-                    logging.info(f"Initial rebalance triggered at {current_timestamp} (Price: {current_btc_price:.2f}) to establish target weights: {active_target_weights}.")
-                if mode_changed_this_step:
-                    logging.info(f"Mode changed to {portfolio['current_operational_mode']}. Forcing rebalance check against new weights: {active_target_weights}.")
-            else:
-                for asset_key, target_w in active_target_weights.items(): 
-                    current_w = current_weights.get(asset_key, 0)
-                    if abs(current_w - target_w) > rebalance_threshold:
-                        needs_rebalance = True 
-                        logging.info(f"Rebalance threshold triggered at {current_timestamp} (Price: {current_btc_price:.2f}). Asset {asset_key} current weight {current_w:.4f}, target {target_w:.4f} (Mode: {portfolio['current_operational_mode']})")
-                        break
+        needs_rebalance = False
+        # First bar always rebalances to establish initial positions from 100% USDT.
+        # Also, if mode changed, force a rebalance check against the new active_target_weights.
+        if index == 0 or mode_changed_this_step:
+            needs_rebalance = True
+            if index == 0:
+                logging.info(f"Initial rebalance triggered at {current_timestamp} (Price: {current_btc_price:.2f}) to establish target weights: {active_target_weights}.")
+            if mode_changed_this_step:
+                logging.info(f"Mode changed to {portfolio['current_operational_mode']}. Forcing rebalance check against new weights: {active_target_weights}.")
+        else:
+            # Normal rebalance check based on threshold against current active_target_weights
+            for asset_key, target_w in active_target_weights.items(): 
+                current_w = current_weights.get(asset_key, 0)
+                if abs(current_w - target_w) > rebalance_threshold:
+                    needs_rebalance = True # Set to true if threshold met
+                    logging.info(f"Rebalance threshold triggered at {current_timestamp} (Price: {current_btc_price:.2f}). Asset {asset_key} current weight {current_w:.4f}, target {target_w:.4f} (Mode: {portfolio['current_operational_mode']})")
+                    break
         
-        if needs_rebalance: 
+        if needs_rebalance: # This 'needs_rebalance' is now conditional on can_check_rebalance_now
             logging.info(f"Rebalancing portfolio (Mode: {portfolio['current_operational_mode']}). Total Value: {total_portfolio_value:.2f} USDT. Current Price: {current_btc_price:.2f}")
             logging.debug(f"  Current Weights before rebalance: {current_weights}")
             logging.debug(f"  Target Weights for rebalance: {active_target_weights}")
 
-            adjustments = {} 
-            for asset_key, target_w in active_target_weights.items(): 
+            # Store desired changes before applying them to avoid using post-trade values mid-rebalance
+            adjustments = {} # Stores the DELTA in USDT value for each asset class
+
+            for asset_key, target_w in active_target_weights.items(): # Use active_target_weights
                 target_value_usdt = total_portfolio_value * target_w
                 current_value_usdt = 0
                 if asset_key == "BTC_SPOT":
@@ -361,82 +395,104 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     current_value_usdt = portfolio['btc_long_value_usdt']
                 elif asset_key == "BTC_SHORT5X":
                     current_value_usdt = portfolio['btc_short_value_usdt']
-                elif asset_key == "USDT": # Handle USDT if explicitly in target_weights
-                    current_value_usdt = portfolio['usdt_balance']
                 
                 adjustments[asset_key] = target_value_usdt - current_value_usdt
-            
-            # Note: USDT adjustments are handled implicitly by spot/leveraged trades.
-            # If USDT is explicitly in target_weights, its adjustment might be used for fine-tuning or complex logic later.
-            # For now, we primarily act on non-USDT assets and let USDT balance absorb the changes.
 
+            # Execute trades based on adjustments
             for asset_key, usdt_value_to_trade in adjustments.items():
-                if asset_key == "USDT": # Skip explicit USDT trading; it's a balancing account
-                    continue
-                if abs(usdt_value_to_trade) < 1.0: 
+                if abs(usdt_value_to_trade) < 1.0: # Minimum trade value (e.g., 1 USDT)
                     continue
 
                 action = "BUY" if usdt_value_to_trade > 0 else "SELL"
                 abs_usdt_value_of_trade = abs(usdt_value_to_trade) 
 
+                # Apply Commission: Subtracted from USDT balance for all trades
+                # Use current_commission_rate determined at the start of run_backtest
                 commission_usdt = abs_usdt_value_of_trade * current_commission_rate 
                 portfolio['usdt_balance'] -= commission_usdt
                 portfolio['total_commissions_usdt'] += commission_usdt
                 
                 quantity_asset_traded_final = 0
                 slippage_cost_this_trade_usdt = 0
-                realized_pnl_this_spot_trade = 0.0 
+                realized_pnl_this_spot_trade = 0.0 # For SPOT PnL
 
                 if asset_key == "BTC_SPOT":
                     if action == "BUY":
                         price_after_slippage = current_btc_price * (1 + slippage_percentage)
-                        slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percentage 
+                        slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percentage # Cost of slippage
                         portfolio['total_slippage_usdt'] += slippage_cost_this_trade_usdt
+                        
+                        # Amount of BTC we can buy with the allocated USDT value (abs_usdt_value_of_trade is the value at market price)
                         quantity_asset_traded_final = abs_usdt_value_of_trade / price_after_slippage
+                        
                         portfolio['btc_spot_qty'] += quantity_asset_traded_final
-                        portfolio['usdt_balance'] -= abs_usdt_value_of_trade 
-                        portfolio['btc_spot_lots'].append({'qty': quantity_asset_traded_final, 'price_per_unit': price_after_slippage})
-                    else: 
+                        portfolio['usdt_balance'] -= abs_usdt_value_of_trade # Cost of BTC (commission already deducted from USDT)
+                        
+                        # Add to lots for FIFO PnL tracking
+                        # Cost per unit for this lot includes slippage effect.
+                        # The 'value' of BTC bought (abs_usdt_value_of_trade) at market price, 
+                        # but we paid abs_usdt_value_of_trade * (1+slippage_percentage) effectively.
+                        # So, effective price per unit is current_btc_price * (1+slippage_percentage)
+                        portfolio['btc_spot_lots'].append({'qty': quantity_asset_traded_final, 
+                                                           'price_per_unit': price_after_slippage})
+                    else: # SELL SPOT
                         price_after_slippage = current_btc_price * (1 - slippage_percentage)
-                        slippage_value_impact_usdt = abs_usdt_value_of_trade * slippage_percentage 
+                        slippage_value_impact_usdt = abs_usdt_value_of_trade * slippage_percentage # Value lost to slippage
                         portfolio['total_slippage_usdt'] += slippage_value_impact_usdt
+
+                        # We want to sell 'abs_usdt_value_of_trade' worth of BTC (at current market price)
                         btc_to_sell_nominal = abs_usdt_value_of_trade / current_btc_price
                         actual_btc_sold = min(btc_to_sell_nominal, portfolio['btc_spot_qty'])
                         quantity_asset_traded_final = actual_btc_sold
+                        
                         usdt_received_after_slippage_and_commission = actual_btc_sold * price_after_slippage
                         portfolio['btc_spot_qty'] -= actual_btc_sold
-                        portfolio['usdt_balance'] += usdt_received_after_slippage_and_commission 
+                        portfolio['usdt_balance'] += usdt_received_after_slippage_and_commission # Add proceeds
+                        
+                        # FIFO PnL Calculation for SPOT SELL
                         temp_qty_to_sell = actual_btc_sold
                         realized_pnl_this_spot_trade = 0
+                        
                         new_lots = []
                         for lot in portfolio['btc_spot_lots']:
                             if temp_qty_to_sell <= 0:
                                 new_lots.append(lot)
                                 continue
+                            
                             qty_from_lot = min(lot['qty'], temp_qty_to_sell)
                             realized_pnl_this_spot_trade += qty_from_lot * (price_after_slippage - lot['price_per_unit'])
+                            
                             lot['qty'] -= qty_from_lot
                             temp_qty_to_sell -= qty_from_lot
-                            if lot['qty'] > 1e-9: 
+                            
+                            if lot['qty'] > 1e-9: # Avoid floating point residuals for qty
                                 new_lots.append(lot)
                         portfolio['btc_spot_lots'] = new_lots
+                        
+                        # If we sold less than intended due to insufficient BTC, adjust abs_usdt_value_of_trade for record
                         abs_usdt_value_of_trade = actual_btc_sold * current_btc_price
+
+
                 elif asset_key == "BTC_LONG5X" or asset_key == "BTC_SHORT5X":
                     slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percentage
-                    portfolio['usdt_balance'] -= slippage_cost_this_trade_usdt 
+                    portfolio['usdt_balance'] -= slippage_cost_this_trade_usdt # Slippage as extra cost from USDT
                     portfolio['total_slippage_usdt'] += slippage_cost_this_trade_usdt
+
                     target_value_var = 'btc_long_value_usdt' if asset_key == "BTC_LONG5X" else 'btc_short_value_usdt'
                     quantity_asset_traded_final = abs_usdt_value_of_trade 
+
                     if action == "BUY": 
                         portfolio[target_value_var] += abs_usdt_value_of_trade
                         portfolio['usdt_balance'] -= abs_usdt_value_of_trade 
                     else: 
                         actual_decrease_usdt = min(abs_usdt_value_of_trade, portfolio[target_value_var])
                         quantity_asset_traded_final = actual_decrease_usdt
+                        
                         portfolio[target_value_var] -= actual_decrease_usdt
                         portfolio['usdt_balance'] += actual_decrease_usdt 
                         abs_usdt_value_of_trade = actual_decrease_usdt 
                 
+                # PnL for non-spot "trades" in trades.csv is the direct cost (comm+slip) as value change PnL is in equity curve
                 pnl_for_this_trade_record = realized_pnl_this_spot_trade if asset_key == "BTC_SPOT" else 0
                 
                 record_trade(current_timestamp, asset_key, action, quantity_asset_traded_final, 
@@ -444,34 +500,46 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                              slippage_cost_this_trade_usdt, pnl_for_this_trade_record, trades_list,
                              realized_pnl_spot_usdt=realized_pnl_this_spot_trade)
             
+            # --- Post-Rebalance Values Update ---
+            # Recalculate total portfolio value after rebalancing for accurate equity curve update
             total_portfolio_value_after_rebalance = calculate_portfolio_value(
                 portfolio['usdt_balance'], portfolio['btc_spot_qty'],
-                portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_btc_price)
+                portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'],
+                current_btc_price
+            )
+            # Update the last entry in equity_over_time for this timestamp
             if equity_over_time and equity_over_time[-1]['timestamp'] == current_timestamp:
                 equity_over_time[-1]['portfolio_value_usdt'] = total_portfolio_value_after_rebalance
             
             logging.info(f"  Post-Rebalance Portfolio: USDT: {portfolio['usdt_balance']:.2f}, SPOT_QTY: {portfolio['btc_spot_qty']:.6f}, LONG_VAL: {portfolio['btc_long_value_usdt']:.2f}, SHORT_VAL: {portfolio['btc_short_value_usdt']:.2f}")
             logging.info(f"  New Total Value after rebalance: {total_portfolio_value_after_rebalance:.2f} USDT")
 
-        portfolio['prev_btc_price'] = current_btc_price 
+        portfolio['prev_btc_price'] = current_btc_price # Update for next iteration's P&L
 
+    # --- Reporting ---
     logging.info("Backtest finished.")
+    
     df_equity = pd.DataFrame(equity_over_time)
     df_trades = pd.DataFrame(trades_list)
 
+    # Calculate Advanced KPIs
     metrics = {}
+    # Ensure timestamp_str is available or generate if not (e.g. if generate_reports was false)
     current_timestamp_str = timestamp_str if generate_reports and 'timestamp_str' in locals() else datetime.now().strftime("%Y%m%d_%H%M%S")
     metrics["run_id"] = f"backtest_{current_timestamp_str}"
-    metrics["strategy_name"] = "Rebalancing Strategy" 
+    metrics["strategy_name"] = "Rebalancing Strategy" # Placeholder
     metrics["date_range_start"] = df_equity['timestamp'].iloc[0].strftime('%Y-%m-%d %H:%M:%S') if not df_equity.empty else "N/A"
     metrics["date_range_end"] = df_equity['timestamp'].iloc[-1].strftime('%Y-%m-%d %H:%M:%S') if not df_equity.empty else "N/A"
     metrics["initial_portfolio_value_usdt"] = initial_portfolio_value_usdt
+    
     final_portfolio_value = df_equity['portfolio_value_usdt'].iloc[-1] if not df_equity.empty else initial_portfolio_value_usdt
     metrics["final_portfolio_value_usdt"] = final_portfolio_value
+    
     total_net_pnl_usdt = final_portfolio_value - initial_portfolio_value_usdt
     metrics["total_net_pnl_usdt"] = total_net_pnl_usdt
     metrics["total_net_pnl_percent"] = (total_net_pnl_usdt / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
 
+    # Max Drawdown
     if not df_equity.empty:
         roll_max = df_equity['portfolio_value_usdt'].cummax()
         drawdown = df_equity['portfolio_value_usdt'] / roll_max - 1.0
@@ -479,38 +547,48 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         metrics["max_drawdown_percent"] = 0
 
-    risk_free_rate_per_period = params.get("risk_free_rate_annual", 0.0) / 252 
-    annualization_factor_val = params.get("annualization_factor", 252) # Renamed to avoid conflict
+    # Sharpe & Sortino Ratios (assuming daily returns for annualization, adjust if data is different)
+    # For simplicity, let's assume data frequency implies periods for return calculation.
+    # If data is hourly, these are hourly returns. Annualization factor needs care.
+    # Defaulting risk_free_rate to 0, annualization_factor to sqrt(252) for daily-like returns.
+    risk_free_rate_per_period = params.get("risk_free_rate_annual", 0.0) / 252 # Example: daily risk-free
+    annualization_factor = params.get("annualization_factor", 252) # sqrt(252) for Sharpe/Sortino std dev
     
     if not df_equity.empty and len(df_equity) > 1:
         df_equity['returns'] = df_equity['portfolio_value_usdt'].pct_change().fillna(0)
         mean_return = df_equity['returns'].mean()
         std_return = df_equity['returns'].std()
+        
         if std_return != 0:
-            metrics["sharpe_ratio"] = ((mean_return - risk_free_rate_per_period) / std_return) * (annualization_factor_val**0.5)
+            metrics["sharpe_ratio"] = ((mean_return - risk_free_rate_per_period) / std_return) * (annualization_factor**0.5)
         else:
             metrics["sharpe_ratio"] = 0.0
+            
         downside_returns = df_equity['returns'][df_equity['returns'] < 0]
-        std_downside_return = downside_returns.std(ddof=0) 
+        std_downside_return = downside_returns.std(ddof=0) # ddof=0 for population std dev if using all returns as population
         if std_downside_return != 0 and not pd.isna(std_downside_return):
-            metrics["sortino_ratio"] = ((mean_return - risk_free_rate_per_period) / std_downside_return) * (annualization_factor_val**0.5)
+            metrics["sortino_ratio"] = ((mean_return - risk_free_rate_per_period) / std_downside_return) * (annualization_factor**0.5)
         else:
             metrics["sortino_ratio"] = 0.0
     else:
         metrics["sharpe_ratio"] = 0.0
         metrics["sortino_ratio"] = 0.0
 
+    # Trade-based metrics
     metrics["total_trades"] = len(df_trades)
     if not df_trades.empty:
         spot_trades_pnl = df_trades[df_trades['asset_type'] == 'BTC_SPOT']['pnl_net_quote']
         winning_trades_spot = spot_trades_pnl[spot_trades_pnl > 0]
         losing_trades_spot = spot_trades_pnl[spot_trades_pnl < 0]
+
         metrics["winning_trades"] = len(winning_trades_spot)
         metrics["losing_trades"] = len(losing_trades_spot)
         metrics["win_rate_percent"] = (metrics["winning_trades"] / len(spot_trades_pnl)) * 100 if len(spot_trades_pnl) > 0 else 0
+        
         gross_profit = winning_trades_spot.sum()
         gross_loss = abs(losing_trades_spot.sum())
         metrics["profit_factor"] = gross_profit / gross_loss if gross_loss != 0 else float('inf')
+
         metrics["average_trade_pnl_usdt"] = spot_trades_pnl.mean() if not spot_trades_pnl.empty else 0.0
         metrics["average_winning_trade_usdt"] = winning_trades_spot.mean() if not winning_trades_spot.empty else 0.0
         metrics["average_losing_trade_usdt"] = losing_trades_spot.mean() if not losing_trades_spot.empty else 0.0
@@ -518,18 +596,25 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         avg_loss_val = abs(metrics["average_losing_trade_usdt"])
         metrics["ratio_avg_win_avg_loss"] = avg_win_val / avg_loss_val if avg_loss_val != 0 else float('inf')
     else:
-        metrics["winning_trades"] = 0; metrics["losing_trades"] = 0; metrics["win_rate_percent"] = 0.0
-        metrics["profit_factor"] = 0.0; metrics["average_trade_pnl_usdt"] = 0.0
-        metrics["average_winning_trade_usdt"] = 0.0; metrics["average_losing_trade_usdt"] = 0.0
+        metrics["winning_trades"] = 0
+        metrics["losing_trades"] = 0
+        metrics["win_rate_percent"] = 0.0
+        metrics["profit_factor"] = 0.0
+        metrics["average_trade_pnl_usdt"] = 0.0
+        metrics["average_winning_trade_usdt"] = 0.0
+        metrics["average_losing_trade_usdt"] = 0.0
         metrics["ratio_avg_win_avg_loss"] = 0.0
 
     metrics["average_trade_duration_hours"] = "N/A" 
     metrics["longest_trade_duration_hours"] = "N/A" 
+
     metrics["total_commissions_usdt"] = portfolio['total_commissions_usdt']
     metrics["total_slippage_usdt"] = portfolio['total_slippage_usdt'] 
-    metrics["config_target_weights_normal"] = str(target_weights_normal) 
-    metrics["config_target_weights_safe"] = str(safe_mode_target_weights)
-    metrics["config_rebalance_threshold"] = rebalance_threshold 
+
+    # Config parameters for reference in summary (ensure all new ones are included)
+    metrics["config_target_weights_normal"] = str(normal_target_weights) 
+    metrics["config_target_weights_safe"] = str(params.get('safe_mode_target_weights', {}))
+    metrics["config_rebalance_threshold"] = params.get('rebalance_threshold')
     metrics["config_taker_commission_rate"] = taker_commission_rate
     metrics["config_maker_commission_rate"] = maker_commission_rate
     metrics["config_used_maker_fees"] = use_maker_fees_in_backtest
@@ -537,24 +622,30 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["config_price_source"] = "close" 
     metrics["config_slippage_model"] = "percentage" 
     metrics["config_risk_free_rate_annual"] = params.get("risk_free_rate_annual", 0.0)
-    metrics["config_annualization_factor"] = annualization_factor_val # Use renamed variable
+    metrics["config_annualization_factor"] = annualization_factor
     metrics["config_circuit_breaker_threshold_percent"] = circuit_breaker_threshold_percent
     metrics["config_margin_usage_safe_mode_enter_threshold"] = margin_usage_safe_mode_enter_threshold
     metrics["config_margin_usage_safe_mode_exit_threshold"] = margin_usage_safe_mode_exit_threshold
     metrics["config_min_rebalance_interval_minutes"] = min_rebalance_interval_minutes
+    
+    # New operational stats
     metrics["num_circuit_breaker_triggers"] = portfolio['num_circuit_breaker_triggers']
     metrics["num_safe_mode_entries"] = portfolio['num_safe_mode_entries']
     metrics["time_steps_in_safe_mode"] = portfolio['time_steps_in_safe_mode']
+
 
     if generate_reports and output_dir:
         logging.info(f"Generating reports in {output_dir}...")
         trades_csv_path = os.path.join(output_dir, "trades.csv")
         df_trades.to_csv(trades_csv_path, index=False)
         logging.info(f"Trades report saved to {trades_csv_path}")
+
+        # Create Summary DataFrame from metrics dictionary
         df_summary = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
         summary_csv_path = os.path.join(output_dir, "summary.csv")
         df_summary.to_csv(summary_csv_path, index=False)
         logging.info(f"Summary report saved to {summary_csv_path}")
+
         if not df_equity.empty:
             fig = go.Figure(data=[go.Scatter(x=df_equity['timestamp'], y=df_equity['portfolio_value_usdt'], mode='lines')])
             fig.update_layout(title='Portfolio Equity Over Time', xaxis_title='Timestamp', yaxis_title='Portfolio Value (USDT)')
@@ -565,150 +656,90 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             logging.warning("Equity data is empty. Skipping equity curve generation.")
         logging.info("All reports for this run generated.")
     
-    results_for_optimizer = metrics.copy() 
-    results_for_optimizer["output_dir"] = output_dir 
-    results_for_optimizer["status"] = "Completed" 
+    # The 'results_for_optimizer' dictionary should directly use the snake_case keys from 'metrics'
+    results_for_optimizer = metrics.copy() # Start with all metrics
+    results_for_optimizer["output_dir"] = output_dir # Add output_dir if generated
+    results_for_optimizer["status"] = "Completed" # Add status
     
-    # Ensure primary metrics are present, even if some calculations resulted in NaN (convert to 0 for optimizer)
-    for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent", "max_drawdown_percent"]:
-        if pd.isna(results_for_optimizer.get(key)):
-            results_for_optimizer[key] = 0.0
-            logging.warning(f"Metric {key} was NaN, converted to 0.0 for optimizer.")
+    # Ensure the primary metrics used by optimizer are definitely there and correctly named
+    results_for_optimizer["final_portfolio_value_usdt"] = metrics["final_portfolio_value_usdt"]
+    results_for_optimizer["total_net_pnl_usdt"] = metrics["total_net_pnl_usdt"]
+    results_for_optimizer["total_net_pnl_percent"] = metrics["total_net_pnl_percent"]
+    results_for_optimizer["total_trades"] = metrics["total_trades"]
+    results_for_optimizer["max_drawdown_percent"] = metrics["max_drawdown_percent"]
+    results_for_optimizer["sharpe_ratio"] = metrics["sharpe_ratio"]
+    results_for_optimizer["sortino_ratio"] = metrics["sortino_ratio"]
+    results_for_optimizer["profit_factor"] = metrics["profit_factor"]
+    results_for_optimizer["win_rate_percent"] = metrics["win_rate_percent"]
+    results_for_optimizer["total_commissions_usdt"] = metrics["total_commissions_usdt"]
+    results_for_optimizer["total_slippage_usdt"] = metrics["total_slippage_usdt"]
+    results_for_optimizer["num_circuit_breaker_triggers"] = metrics["num_circuit_breaker_triggers"]
+    results_for_optimizer["num_safe_mode_entries"] = metrics["num_safe_mode_entries"]
+    results_for_optimizer["time_steps_in_safe_mode"] = metrics["time_steps_in_safe_mode"]
+    # results_for_optimizer["config_min_rebalance_interval_minutes"] = metrics["config_min_rebalance_interval_minutes"] # Already part of metrics copy
+    
     return results_for_optimizer
 
-def run_standalone_backtest(backtest_settings_dict, data_file_path):
+def run_backtest_from_config_file(params_file_path, data_file_path):
     """
-    Wrapper to run a single backtest using a backtest_settings dictionary and data file path.
+    Wrapper to run a single backtest using file paths for parameters and data.
     This is primarily for CLI execution of the backtester itself.
     """
-    logging.info(f"Running standalone backtest with data from: {data_file_path}")
-    # Standalone runs should always generate full reports, so is_optimizer_call=False.
-    # The run_backtest function's default for generate_reports handles this.
-    return run_backtest(backtest_settings_dict, data_file_path, is_optimizer_call=False)
+    logging.info(f"Attempting to load parameters from: {params_file_path}")
+    try:
+        with open(params_file_path, 'r') as f:
+            params_config = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"FATAL: Parameters file not found at {params_file_path}. Exiting.")
+        return None
+    except json.JSONDecodeError:
+        logging.error(f"FATAL: Could not decode JSON from parameters file: {params_file_path}. Exiting.")
+        return None
+    
+    # Standalone runs should always generate reports.
+    return run_backtest(params_config, data_file_path, is_optimizer_call=False)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prosperous Bot Rebalance Backtester (CLI - Unified Config)")
-    parser.add_argument("--config_file", type=str, required=True, 
-                        help="Path to the unified JSON configuration file (e.g., config/unified_config.json). "
-                             "The backtester will use the 'backtest_settings' section.")
+    parser = argparse.ArgumentParser(description="Prosperous Bot Rebalance Backtester (CLI)")
+    parser.add_argument("--config_file", type=str, required=True, help="Path to the unified JSON configuration file.")
     args = parser.parse_args()
 
-    backtest_params = None
-    data_file_path = None
-
+    # Load the unified config
     try:
         with open(args.config_file, 'r') as f:
             unified_config = json.load(f)
-        
-        if "backtest_settings" in unified_config:
-            backtest_params = unified_config["backtest_settings"]
-            logging.info(f"Loaded backtest settings from '{args.config_file}' (using 'backtest_settings' section).")
-        else:
-            logging.error(f"FATAL: Unified config '{args.config_file}' does not contain a 'backtest_settings' section. "
-                          "This section is required for standalone backtester runs. Please use/create a config based on "
-                          "'config/unified_config.example.json'. Exiting.")
-            return
-
-        data_file_path = backtest_params.get("data_settings", {}).get("csv_file_path")
-        if not data_file_path:
-            logging.error("FATAL: 'data_settings.csv_file_path' not found in the 'backtest_settings' section of the config. Exiting.")
-            return
-
     except FileNotFoundError:
-        logging.warning(f"Configuration file '{args.config_file}' not found. "
-                        "A dummy configuration will be created at 'config/dummy_unified_config_for_backtester.json' for demonstration.")
-        
-        dummy_config_filename = "dummy_unified_config_for_backtester.json"
-        dummy_config_path = os.path.join("config", dummy_config_filename) 
-        dummy_data_filename = "dummy_BTCUSDT_1h_for_backtester.csv" # Changed GALA to BTC
-        dummy_data_path = os.path.join("data", dummy_data_filename) 
-
-        os.makedirs(os.path.dirname(dummy_config_path), exist_ok=True)
-        os.makedirs(os.path.dirname(dummy_data_path), exist_ok=True)
-
-        # Define a minimal but complete backtest_settings structure for the dummy
-        dummy_backtest_settings_content = {
-          "initial_capital": 10000.0,
-          "commission_taker": 0.0007,
-          "commission_maker": 0.0002,
-          "use_maker_fees_in_backtest": False,
-          "slippage_percent": 0.0005,
-          "annualization_factor": 252.0,
-          "min_rebalance_interval_minutes": 60, # Example: check no more than once per hour
-          "rebalance_threshold": 0.02,
-          "target_weights_normal": { # BTC examples
-              "BTC_SPOT": 0.65, 
-              "BTC_LONG5X": 0.11,
-              "BTC_SHORT5X": 0.24
-          },
-          "circuit_breaker_config": {
-            "enabled": True, "threshold_percentage": 0.10, 
-            "lookback_candles": 1, "movement_calc_type": "(high-low)/open"
-          },
-          "safe_mode_config": {
-            "enabled": True, "metric_to_monitor": "margin_usage", 
-            "entry_threshold": 0.70, "exit_threshold": 0.50,
-            "target_weights_safe": { # BTC examples
-                "BTC_SPOT": 0.75, 
-                "BTC_LONG5X": 0.05, 
-                "BTC_SHORT5X": 0.05, 
-                "USDT": 0.15 
-            } 
-          },
-          "data_settings": {
-            "csv_file_path": dummy_data_path, # Points to the dummy BTC data file
-            "timestamp_col": "timestamp",
-            "ohlc_cols": {"open": "open", "high": "high", "low": "low", "close": "close"},
-            "volume_col": "volume",
-            "price_col_for_rebalance": "close"
-          },
-          "date_range": { 
-              "start_date": "2023-01-01T00:00:00Z", "end_date": "2023-01-05T23:59:59Z"
-          },
-          "logging_level": "INFO",
-          "report_path_prefix": "./reports/backtest_" 
-        }
-        dummy_unified_config_content = {"backtest_settings": dummy_backtest_settings_content}
-        
-        try:
-            with open(dummy_config_path, 'w') as f: 
-                json.dump(dummy_unified_config_content, f, indent=2)
-            logging.info(f"Dummy unified config for backtester created at '{dummy_config_path}'. You should run with this path next time.")
-            
-            backtest_params = dummy_backtest_settings_content
-            data_file_path = dummy_data_path
-
-            if not os.path.exists(dummy_data_path):
-                timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=120, freq='h') # 5 days
-                prices = [20000 + (i*2) + (100 * ((i//24)%5)) - (80 * (i % 3)) for i in range(120)]
-                df_dummy_data = pd.DataFrame({
-                    'timestamp': timestamps, 'open': [p - 5 for p in prices], 'high': [p + 10 for p in prices],
-                    'low': [p - 10 for p in prices], 'close': prices, 'volume': [50 + i for i in range(120)]
-                })
-                df_dummy_data.to_csv(dummy_data_path, index=False)
-                logging.info(f"Dummy data file created at '{dummy_data_path}'")
-            
-            logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
-                         f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
-            return 
-
-        except Exception as e:
-            logging.error(f"Could not create dummy unified config or data file: {e}", exc_info=True)
-            return
-
+        logging.error(f"FATAL: Unified configuration file not found at {args.config_file}. Exiting.")
+        return
     except json.JSONDecodeError:
-        logging.error(f"FATAL: Could not decode JSON from config file: {args.config_file}. Exiting.")
-        return
-    except Exception as e: 
-        logging.error(f"FATAL: An unexpected error occurred while loading the configuration: {e}", exc_info=True)
+        logging.error(f"FATAL: Could not decode JSON from unified configuration file: {args.config_file}. Exiting.")
         return
 
-    if backtest_params and data_file_path:
-        run_standalone_backtest(backtest_params, data_file_path)
-    else:
-        # This state should ideally not be reached if the above logic is correct.
-        logging.error("Critical error: Parameters or data file path could not be determined. Backtest aborted.")
+    params_for_backtest = unified_config.get("backtest_settings", {})
+    data_file_path = params_for_backtest.get("data_settings", {}).get("csv_file_path")
+
+    if not data_file_path:
+        logging.error(f"FATAL: 'csv_file_path' not found in data_settings within the configuration file {args.config_file}. Exiting.")
+        return
+
+    # Ensure the data file exists, otherwise log an error.
+    # The dummy file creation logic is removed as we now expect a valid config file
+    # that points to an existing data file.
+    if not os.path.exists(data_file_path):
+        logging.error(f"FATAL: Data file specified in config ('{data_file_path}') not found. Exiting.")
+        # You might want to create a dummy data file here if args.config_file exists but data_file_path does not
+        # For now, we'll just exit.
+        return
+
+    logging.info(f"Using unified configuration from: {args.config_file}")
+    logging.info(f"Data file path from config: {data_file_path}")
+
+    # Call run_backtest directly, as run_backtest_from_config_file expects separate param and data file paths
+    run_backtest(params_dict=params_for_backtest,
+                 data_path=data_file_path,
+                 is_optimizer_call=False, # This is a standalone CLI run
+                 trial_id_for_reports=None)
 
 if __name__ == "__main__":
     main()

@@ -28,7 +28,7 @@
         ]
       },
       {
-        "path": "target_weights_normal.BTC_SPOT",
+        "path": "target_weights_normal.WIF_SPOT",
         "type": "float",
         "low": 0.1,
         "high": 0.8
@@ -58,9 +58,9 @@
     "min_rebalance_interval_minutes": 10,
     "rebalance_threshold": 0.01,
     "target_weights_normal": {
-      "BTC_SPOT": 0.65,
-      "BTC_LONG5X": 0.11,
-      "BTC_SHORT5X": 0.24
+      "WIF_SPOT": 0.65,
+      "WIF_LONG5X": 0.11,
+      "WIF_SHORT5X": 0.24
     },
     "circuit_breaker_config": {
       "enabled": true,
@@ -71,17 +71,17 @@
     "safe_mode_config": {
       "enabled": true,
       "metric_to_monitor": "margin_usage",
-      "entry_threshold": 0.70,
-      "exit_threshold": 0.60,
+      "entry_threshold": 0.7,
+      "exit_threshold": 0.6,
       "target_weights_safe": {
-        "BTC_SPOT": 0.75,
-        "BTC_LONG5X": 0.05,
-        "BTC_SHORT5X": 0.05,
+        "WIF_SPOT": 0.75,
+        "WIF_LONG5X": 0.05,
+        "WIF_SHORT5X": 0.05,
         "USDT": 0.15
       }
     },
     "data_settings": {
-      "csv_file_path": "graphs/BTCUSDT_data.csv",
+      "csv_file_path": "graphs/WIFUSDT_data.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",
@@ -97,6 +97,10 @@
       "end_date": "2025-05-26T22:40:59Z"
     },
     "logging_level": "INFO",
-    "report_path_prefix": "./reports/"
+    "report_path_prefix": "./reports/",
+    "symbol": "WIFUSDT",
+    "data_file_path": "graphs/WIFUSDT_data.csv",
+    "signal_file_path": "graphs/WIFUSDT_signals.csv",
+    "enable_signal_delay": true
   }
 }
