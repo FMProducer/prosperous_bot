@@ -28,10 +28,22 @@
         ]
       },
       {
-        "path": "target_weights_normal.BTC_SPOT",
+        "path": "target_weights_normal.{main_asset_symbol}_SPOT",
         "type": "float",
         "low": 0.1,
         "high": 0.8
+      },
+      {
+        "path": "target_weights_normal.{main_asset_symbol}_LONG5X",
+        "type": "float",
+        "low": 0.0,
+        "high": 0.4
+      },
+      {
+        "path": "target_weights_normal.{main_asset_symbol}_SHORT5X",
+        "type": "float",
+        "low": 0.0,
+        "high": 0.4
       },
       {
         "path": "slippage_percent",
@@ -48,6 +60,7 @@
     ]
   },
   "backtest_settings": {
+    "main_asset_symbol": "BTC",
     "initial_capital": 1000.0,
     "initial_portfolio_value_usdt": 1000,
     "commission_taker": 0.0005,
@@ -81,7 +94,8 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "graphs/BTCUSDT_data.csv",
+      "csv_file_path": "C:/Python/Prosperous_Bot/graphs/BTCUSDT_data.csv",
+      "signals_csv_path": "C:/Python/Prosperous_Bot/graphs/BTCUSDT_signals.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",
