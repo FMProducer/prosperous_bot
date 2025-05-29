@@ -80,13 +80,25 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
     # Create a deep copy of the base backtest settings for this trial
     current_backtest_params = copy.deepcopy(base_backtest_settings)
     
+    # Get main_asset_symbol from the base settings to format paths
+    main_asset_symbol = base_backtest_settings.get('main_asset_symbol', 'BTC')
+    if 'main_asset_symbol' not in base_backtest_settings:
+        logging.warning(f"Optimizer: 'main_asset_symbol' not found in base_backtest_settings, defaulting to '{main_asset_symbol}'. "
+                        "Ensure it's defined in unified_config.json's backtest_settings section.")
+
     # Store suggested params separately for logging/best_params.json
     suggested_params_for_log = {}
 
     # Suggest parameters based on the optimization_space configuration
     for p_config in optimization_space:
-        param_path = p_config['path']
-        param_name_for_trial = param_path # Optuna uses this name for its internal storage of suggested params
+        original_param_path = p_config['path']
+        # Substitute {main_asset_symbol} placeholder in the path
+        param_path_substituted = original_param_path.format(main_asset_symbol=main_asset_symbol)
+        
+        # Optuna uses this name for its internal storage of suggested params.
+        # Using the substituted path ensures Optuna correctly tracks params if main_asset_symbol changes,
+        # though typically it's fixed for one optimization study.
+        param_name_for_trial = param_path_substituted 
         
         suggested_value = None
         if p_config['type'] == 'float':
@@ -108,13 +120,13 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         elif p_config['type'] == 'categorical':
             suggested_value = trial.suggest_categorical(param_name_for_trial, p_config['choices'])
         else:
-            logging.warning(f"Unsupported parameter type '{p_config['type']}' for path '{param_path}'. Skipping suggestion.")
+            logging.warning(f"Unsupported parameter type '{p_config['type']}' for original path '{original_param_path}' (substituted: '{param_path_substituted}'). Skipping suggestion.")
             continue
         
-        set_nested_value(current_backtest_params, param_path, suggested_value)
-        suggested_params_for_log[param_path] = suggested_value
+        set_nested_value(current_backtest_params, param_path_substituted, suggested_value)
+        suggested_params_for_log[param_path_substituted] = suggested_value # Log with the substituted path
 
-    logging.info(f"Trial {trial.number}: Testing with suggested params: {suggested_params_for_log}")
+    logging.info(f"Trial {trial.number}: Testing with suggested params for {main_asset_symbol}: {suggested_params_for_log}")
 
     try:
         # Determine if individual trial reports should be generated
@@ -260,14 +272,14 @@ def main():
             # Remove the specific path for trial reports from the final best config
             best_backtest_config_final['report_path_prefix'] = report_path_prefix 
             
-            # Optuna's study.best_params contains flat keys like "rebalance_threshold", "circuit_breaker_config.threshold_percentage"
-            # These are the same names used when suggesting, so we can iterate through them.
-            for param_path, value in study.best_params.items():
-                set_nested_value(best_backtest_config_final, param_path, value)
+            # Optuna's study.best_params contains keys that are the param_name_for_trial (substituted paths).
+            for param_path_substituted, value in study.best_params.items():
+                # We need to ensure set_nested_value uses the same substituted path
+                set_nested_value(best_backtest_config_final, param_path_substituted, value)
 
             best_params_data = {
                 "best_value": study.best_value,
-                "best_optuna_params": study.best_params, 
+                "best_optuna_params_substituted": study.best_params, # These keys include the substituted main_asset_symbol
                 "best_backtest_config": best_backtest_config_final,
                 "best_trial_number": study.best_trial.number
             }
