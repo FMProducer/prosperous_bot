@@ -78,3 +78,13 @@
 2025-05-30 23:07:03.213760 - Saved: C:\Python\Prosperous_Bot\graphs\ADAUSDT_signals.csv
 2025-05-30 23:07:03.218762 - Saved: C:\Python\Prosperous_Bot\graphs\ENAUSDT_signals.csv
 2025-05-30 23:07:03.218762 - Saved: C:\Python\Prosperous_Bot\graphs\UNIUSDT_signals.csv
+2025-05-30 23:17:54.418166 - Saved: C:\Python\Prosperous_Bot\graphs\BTCUSDT_signals.csv
+2025-05-30 23:17:54.428336 - Saved: C:\Python\Prosperous_Bot\graphs\DOGEUSDT_signals.csv
+2025-05-30 23:17:54.433133 - Saved: C:\Python\Prosperous_Bot\graphs\SUIUSDT_signals.csv
+2025-05-30 23:17:54.438712 - Saved: C:\Python\Prosperous_Bot\graphs\LPTUSDT_signals.csv
+2025-05-30 23:17:54.438712 - Saved: C:\Python\Prosperous_Bot\graphs\WCTUSDT_signals.csv
+2025-05-30 23:17:54.450301 - Saved: C:\Python\Prosperous_Bot\graphs\TRBUSDT_signals.csv
+2025-05-30 23:17:54.456496 - Saved: C:\Python\Prosperous_Bot\graphs\TRUMPUSDT_signals.csv
+2025-05-30 23:17:54.461567 - Saved: C:\Python\Prosperous_Bot\graphs\ADAUSDT_signals.csv
+2025-05-30 23:17:54.468813 - Saved: C:\Python\Prosperous_Bot\graphs\ENAUSDT_signals.csv
+2025-05-30 23:17:54.473587 - Saved: C:\Python\Prosperous_Bot\graphs\UNIUSDT_signals.csv
