@@ -1,0 +1,7 @@
+Metric,Value
+run_id,backtest_20250530_214049
+initial_portfolio_value_usdt,1000
+final_portfolio_value_usdt,58.496187737342545
+total_net_pnl_usdt,-941.5038122626574
+total_net_pnl_percent,-94.15038122626575
+total_trades,12165
