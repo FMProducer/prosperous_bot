@@ -56,21 +56,21 @@ class TestSignalHandling(unittest.TestCase):
             'extra_col': [1, 2, 3]
         }
         create_dummy_csv(signal_file_path, data)
-        
+
         df_signals = load_signal_data(str(signal_file_path))
-        
+
         self.assertIsNotNone(df_signals)
         self.assertEqual(list(df_signals.columns), ['timestamp', 'signal'])
         self.assertEqual(len(df_signals), 3)
-        
+
         # Check timestamp conversion to UTC and sorting
-        # Timestamps: 2023-01-01T09:00:00 (naive, becomes UTC), 
-        #             2023-01-01T10:00:00Z (UTC), 
+        # Timestamps: 2023-01-01T09:00:00 (naive, becomes UTC),
+        #             2023-01-01T10:00:00Z (UTC),
         #             2023-01-01T11:00:00+01:00 (is 2023-01-01T10:00:00 UTC)
         # Expected sorted distinct UTC timestamps:
         ts1 = pd.Timestamp('2023-01-01T09:00:00Z')
         ts2 = pd.Timestamp('2023-01-01T10:00:00Z')
-        
+
         self.assertEqual(df_signals['timestamp'].iloc[0], ts1)
         self.assertEqual(df_signals['timestamp'].iloc[1], ts2) # Second 10:00Z entry
         self.assertEqual(df_signals['timestamp'].iloc[2], ts2) # Could be the other 10:00Z entry
@@ -96,10 +96,10 @@ class TestSignalHandling(unittest.TestCase):
         signal_file_path = self.test_data_dir / "empty_signals.csv"
         with open(signal_file_path, 'w') as f:
             f.write("") # Truly empty
-        
+
         with self.assertLogs(level='WARNING') as log:
             df_signals = load_signal_data(str(signal_file_path))
-            self.assertIsNone(df_signals) 
+            self.assertIsNone(df_signals)
             self.assertTrue(any("empty" in message.lower() for message in log.output))
         # Test for file that is just headers (e.g. from empty DataFrame save)
         signal_file_path_headers = self.test_data_dir / "headers_only_signals.csv"
@@ -129,9 +129,9 @@ class TestSignalHandling(unittest.TestCase):
     def test_load_signal_data_invalid_timestamp_format(self):
         signal_file_path = self.test_data_dir / "invalid_ts_format.csv"
         create_dummy_csv(signal_file_path, {'timestamp': ['not-a-date'], 'signal': ['BUY']})
-        with self.assertLogs(level='ERROR') as log: 
+        with self.assertLogs(level='ERROR') as log:
             df_signals = load_signal_data(str(signal_file_path))
-            self.assertIsNone(df_signals) 
+            self.assertIsNone(df_signals)
             self.assertTrue(any("Error loading or processing signal data" in message for message in log.output))
 
     # --- Tests for run_backtest signal-based holding logic ---
@@ -145,29 +145,29 @@ class TestSignalHandling(unittest.TestCase):
         params = {
             'main_asset_symbol': main_asset,
             'initial_portfolio_value_usdt': 10000.0,
-            'target_weights_normal': { 
-                f"{main_asset}_SPOT": 0.5, 
+            'target_weights_normal': {
+                f"{main_asset}_SPOT": 0.5,
                 "USDT": 0.5 # Explicitly including USDT for predictable initial rebalance
             },
-            'rebalance_threshold': 0.01, 
+            'rebalance_threshold': 0.01,
             'taker_commission_rate': 0.0,
             'maker_commission_rate': 0.0,
             'use_maker_fees_in_backtest': False,
             'slippage_percentage': 0.0,
-            'circuit_breaker_threshold_percent': 0.0, 
+            'circuit_breaker_threshold_percent': 0.0,
             'safe_mode_config': {"enabled": False},
             'min_rebalance_interval_minutes': 0,
             'data_settings': {
-                'csv_file_path': '', 
-                'signals_csv_path': '', 
+                'csv_file_path': '',
+                'signals_csv_path': '',
                 'timestamp_col': "timestamp",
                 'ohlc_cols': {"open": "open", "high": "high", "low": "low", "close": "close"},
                 'volume_col': "volume",
                 'price_col_for_rebalance': "close"
             },
-            'logging_level': "INFO", 
-            'generate_reports_for_optimizer_trial': False, 
-            'report_path_prefix': str(self.temp_reports_dir / "test_run_") 
+            'logging_level': "INFO",
+            'generate_reports_for_optimizer_trial': False,
+            'report_path_prefix': str(self.temp_reports_dir / "test_run_")
         }
         if apply_signal_logic_value != "OMIT_KEY":
             params['apply_signal_logic'] = apply_signal_logic_value
@@ -184,32 +184,32 @@ class TestSignalHandling(unittest.TestCase):
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
 
         market_file = create_dummy_csv(
-            self.test_data_dir / f"market_{asset_symbol}_prev_sell.csv", 
+            self.test_data_dir / f"market_{asset_symbol}_prev_sell.csv",
             {
                 'timestamp': [ts_initial, ts_signal_active],
-                'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110], 
+                'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110],
                 'volume': [10,10]
             }
         )
         signal_file = create_dummy_csv(
-            self.test_data_dir / f"signal_{asset_symbol}_buy.csv", 
+            self.test_data_dir / f"signal_{asset_symbol}_buy.csv",
             {'timestamp': [ts_signal_active.isoformat()], 'signal': ['BUY']}
         )
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
-        
+
         # Expected behavior:
         # 1. Initial rebalance at ts_initial: Buys SPOT to reach 0.5 weight (50 SPOT if price is 100). This is 1 trade.
         # 2. At ts_signal_active: Price up to 110. SPOT value 50*110 = 5500. USDT 5000. Total 10500.
         #    SPOT weight = 5500/10500 = ~0.5238 (Target 0.5). Overweight.
         #    Normally, would sell SPOT. BUY signal should prevent this.
-        
+
         with self.assertLogs(level='INFO') as log:
             results = run_backtest(params, market_file, is_optimizer_call=False)
-        
+
         self.assertTrue(any(f"Signal BUY for {asset_symbol}: Preventing SELL of {spot_key}" in message for message in log.output),
                         "Log message for BUY signal preventing SPOT sell not found.")
-        
+
         # Check that only the initial rebalance trade occurred
         self.assertEqual(results['total_trades'], 1, "Expected only initial rebalance trades when logic is enabled and signal active.")
 
@@ -223,20 +223,20 @@ class TestSignalHandling(unittest.TestCase):
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
 
         market_file = create_dummy_csv(
-            self.test_data_dir / f"market_{asset_symbol}_prev_buy.csv", 
+            self.test_data_dir / f"market_{asset_symbol}_prev_buy.csv",
             {
                 'timestamp': [ts_initial, ts_signal_active],
-                'open': [100, 90], 'high': [100, 90], 'low': [100, 90], 'close': [100, 90], 
+                'open': [100, 90], 'high': [100, 90], 'low': [100, 90], 'close': [100, 90],
                 'volume': [10,10]
             }
         )
         signal_file = create_dummy_csv(
-            self.test_data_dir / f"signal_{asset_symbol}_sell.csv", 
+            self.test_data_dir / f"signal_{asset_symbol}_sell.csv",
             {'timestamp': [ts_signal_active.isoformat()], 'signal': ['SELL']}
         )
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
-        
+
         with self.assertLogs(level='INFO') as log:
             results = run_backtest(params, market_file, is_optimizer_call=False)
 
@@ -252,11 +252,11 @@ class TestSignalHandling(unittest.TestCase):
         ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
         market_file = create_dummy_csv(
-            self.test_data_dir / f"market_{asset_symbol}_allows_sell.csv", 
+            self.test_data_dir / f"market_{asset_symbol}_allows_sell.csv",
             {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110], 'volume': [10,10]}
         )
         signal_file = create_dummy_csv(
-            self.test_data_dir / f"signal_{asset_symbol}_buy_allows.csv", 
+            self.test_data_dir / f"signal_{asset_symbol}_buy_allows.csv",
             {'timestamp': [ts_signal_active.isoformat()], 'signal': ['BUY']}
         )
         params['data_settings']['csv_file_path'] = market_file
@@ -265,13 +265,13 @@ class TestSignalHandling(unittest.TestCase):
         # Expected: Initial rebalance (1 trade for SPOT) + SPOT sell at ts_signal_active (1 trade) = 2 trades
         # Note: If USDT were also in target_weights, initial rebalance might be 2 trades (sell USDT, buy SPOT).
         # Since USDT is explicitly in target_weights in _get_base_params, initial rebalance is 1 trade (buy SPOT, usdt implicitly adjusts).
-        
+
         # Capture logs to check what IS there, and ensure prevention log is NOT there.
-        with self.assertLogs(level='INFO') as log_check: 
-            results = run_backtest(params, market_file, is_optimizer_call=False) 
+        with self.assertLogs(level='INFO') as log_check:
+            results = run_backtest(params, market_file, is_optimizer_call=False)
             prevent_log_present = any(f"Preventing SELL of {spot_key}" in message.getMessage() for message in log_check.records)
             self.assertFalse(prevent_log_present, "Trade prevention log appeared even when signal logic was disabled.")
-        
+
         self.assertEqual(results['total_trades'], 2, "Expected rebalance sell trade to occur when signal logic is disabled.")
 
 
@@ -283,18 +283,18 @@ class TestSignalHandling(unittest.TestCase):
         ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
         market_file = create_dummy_csv(
-            self.test_data_dir / f"market_{asset_symbol}_allows_buy.csv", 
+            self.test_data_dir / f"market_{asset_symbol}_allows_buy.csv",
             {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 90], 'high': [100, 90], 'low': [100, 90], 'close': [100, 90], 'volume': [10,10]}
         )
         signal_file = create_dummy_csv(
-            self.test_data_dir / f"signal_{asset_symbol}_sell_allows.csv", 
+            self.test_data_dir / f"signal_{asset_symbol}_sell_allows.csv",
             {'timestamp': [ts_signal_active.isoformat()], 'signal': ['SELL']}
         )
         params['data_settings']['csv_file_path'] = market_file
         params['data_settings']['signals_csv_path'] = signal_file
 
         with self.assertLogs(level='INFO') as log_check:
-            results = run_backtest(params, market_file, is_optimizer_call=False) 
+            results = run_backtest(params, market_file, is_optimizer_call=False)
             prevent_log_present = any(f"Preventing BUY of {spot_key}" in message.getMessage() for message in log_check.records)
             self.assertFalse(prevent_log_present, "Trade prevention log appeared even when signal logic was disabled.")
 
@@ -303,17 +303,17 @@ class TestSignalHandling(unittest.TestCase):
     def test_buy_signal_prevents_spot_sell_flag_missing(self):
         asset_symbol = "TBUY_FLAG_MISSING"
         # Pass "OMIT_KEY" (or whatever sentinel you chose) to _get_base_params
-        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value="OMIT_KEY") 
+        params = self._get_base_params(main_asset=asset_symbol, apply_signal_logic_value="OMIT_KEY")
         spot_key = f"{asset_symbol}_SPOT"
 
         ts_initial = pd.Timestamp('2023-01-01T00:00:00Z')
         ts_signal_active = pd.Timestamp('2023-01-01T00:01:00Z')
         market_file = create_dummy_csv(
-            self.test_data_dir / f"market_{asset_symbol}_flag_missing.csv", 
+            self.test_data_dir / f"market_{asset_symbol}_flag_missing.csv",
             {'timestamp': [ts_initial, ts_signal_active], 'open': [100, 110], 'high': [100, 110], 'low': [100, 110], 'close': [100, 110], 'volume': [10,10]}
         )
         signal_file = create_dummy_csv(
-            self.test_data_dir / f"signal_{asset_symbol}_buy_flag_missing.csv", 
+            self.test_data_dir / f"signal_{asset_symbol}_buy_flag_missing.csv",
             {'timestamp': [ts_signal_active.isoformat()], 'signal': ['BUY']}
         )
         params['data_settings']['csv_file_path'] = market_file
@@ -321,7 +321,7 @@ class TestSignalHandling(unittest.TestCase):
 
         with self.assertLogs(level='INFO') as log: # Check for both WARNING (missing flag) and INFO (prevention)
             results = run_backtest(params, market_file, is_optimizer_call=False)
-        
+
         self.assertTrue(any("'apply_signal_logic' not found" in message for message in log.output),
                         "Warning for missing 'apply_signal_logic' flag not found.")
         self.assertTrue(any(f"Signal BUY for {asset_symbol}: Preventing SELL of {spot_key}" in message for message in log.output),
