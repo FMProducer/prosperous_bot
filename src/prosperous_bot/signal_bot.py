@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+import pandas as pd
 
 from .data_loader import DataLoader
 from .signal_generator import process_all_data
@@ -118,8 +119,32 @@ class SignalBot:
         tasks = []
         state_dirty = False  # Новый флаг для отслеживания изменений
         config_dirty = False  # Новый флаг для отслеживания изменений
-        for symbol, (df, new_signal, signals) in results.items():
-            tasks.append(asyncio.create_task(self.process_single_symbol(symbol, df, signals)))
+        for symbol, (df, new_signal, specific_signals_for_symbol) in results.items():
+
+            # --- Export signals to CSV and log for the current 'symbol' ---
+            signal_records_for_this_symbol = []
+            if specific_signals_for_symbol:  # Check if there are any signals
+                for sig_type, ts_val in specific_signals_for_symbol:
+                    signal_records_for_this_symbol.append({
+                        "timestamp": ts_val,
+                        "symbol": symbol,  # Current symbol from outer loop
+                        "signal": sig_type
+                    })
+
+            if signal_records_for_this_symbol:  # Only create DataFrame and save if there are records
+                signals_df = pd.DataFrame(signal_records_for_this_symbol)
+                signals_df.sort_values("timestamp", inplace=True)  # Sort by timestamp
+
+                signals_path = Path(GRAPH_DIR) / f"{symbol}_signals.csv"
+                print(f"[SIGNAL EXPORT] Saving to: {signals_path}") # Можно оставить для отладки или убрать
+                print(signals_df.head()) # Можно оставить для отладки или убрать
+                signals_df[["timestamp", "symbol", "signal"]].to_csv(signals_path, index=False)
+
+                with open(Path(GRAPH_DIR) / "log_signals.txt", "a", encoding="utf-8") as logf:
+                    logf.write(f"{datetime.now()} - Saved: {signals_path}\n")
+            # --------------------------------------
+
+            tasks.append(asyncio.create_task(self.process_single_symbol(symbol, df, specific_signals_for_symbol)))
             if new_signal and new_signal != self.config["last_signals"][symbol]["signal"]:
                 self.config["last_signals"][symbol] = {"signal": new_signal, "time": datetime.now().isoformat()}
                 state_dirty = True  # Устанавливаем флаг, если есть изменения

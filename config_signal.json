@@ -21,15 +21,15 @@
     ],
     "binance_pairs": [
         "BTCUSDT",
-        "SUIUSDT",
         "DOGEUSDT",
-        "TONUSDT",
-        "SOPHUSDT",
-        "UNIUSDT",
+        "SUIUSDT",
+        "LPTUSDT",
+        "WCTUSDT",
         "TRBUSDT",
         "TRUMPUSDT",
-        "WIFUSDT",
-        "VIRTUALUSDT"
+        "ADAUSDT",
+        "ENAUSDT",
+        "UNIUSDT"
     ],
     "ema1_window": 20,
     "ema2_window": 30,
@@ -103,10 +103,6 @@
             "signal": "sell",
             "time": "2025-05-25T15:07:35.994467"
         },
-        "VIRTUALUSDT": {
-            "signal": "sell",
-            "time": "2025-05-26T18:55:08.853129"
-        },
         "BTCUSDT": {
             "signal": "sell",
             "time": "2025-05-28T17:38:52.236775"
@@ -115,21 +111,25 @@
             "signal": "sell",
             "time": "2025-05-28T17:38:52.236775"
         },
-        "TONUSDT": {
-            "signal": "buy",
-            "time": "2025-05-28T17:38:52.236775"
-        },
         "UNIUSDT": {
             "signal": "sell",
             "time": "2025-05-28T17:38:52.236775"
         },
-        "SOPHUSDT": {
-            "signal": null,
-            "time": null
+        "LPTUSDT": {
+            "signal": "sell",
+            "time": "2025-05-30T21:56:51.463463"
         },
-        "WIFUSDT": {
+        "WCTUSDT": {
             "signal": "buy",
-            "time": "2025-05-28T20:23:02.044715"
+            "time": "2025-05-30T21:56:51.463463"
+        },
+        "ADAUSDT": {
+            "signal": "buy",
+            "time": "2025-05-30T21:56:51.463463"
+        },
+        "ENAUSDT": {
+            "signal": "sell",
+            "time": "2025-05-30T21:56:51.463463"
         }
     },
     "asset_distributions": {
