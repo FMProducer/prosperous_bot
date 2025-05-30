@@ -61,7 +61,8 @@ graphs/
 .hypothesis/
 
 # Reports folder
-reports/
+reports/*
+!reports/last_report/
 
 # Specific files to ignore
 add.txt
