@@ -33,10 +33,10 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
         else:
             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
-        
+
         # Keep only relevant columns and sort
         df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
-        
+
         logging.info(f"Signal data loaded and processed successfully from {signal_csv_path}. Shape: {df_signals.shape}")
         return df_signals
 
@@ -123,7 +123,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             return {"status": "Configuration error: Target weights missing."}
 
     rebalance_threshold = params['rebalance_threshold']
-    initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000) 
+    initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000)
     if 'initial_portfolio_value_usdt' not in params:
         logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
     taker_commission_rate = params.get('taker_commission_rate', params.get('commission_rate', 0.0007)) 
@@ -141,10 +141,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.warning(f"Parameter 'main_asset_symbol' not found in config. Using default value: '{main_asset_symbol}'.")
 
     spot_asset_key = f"{main_asset_symbol}_SPOT"
-    long_asset_key = f"{main_asset_symbol}_LONG5X" 
+    long_asset_key = f"{main_asset_symbol}_LONG5X"
     short_asset_key = f"{main_asset_symbol}_SHORT5X"
 
-    apply_signal_logic = params.get('apply_signal_logic', True) 
+    apply_signal_logic = params.get('apply_signal_logic', True)
     if 'apply_signal_logic' not in params:
         logging.warning("'apply_signal_logic' not found in config's backtest_settings. Defaulting to True (signal logic will be applied).")
 
@@ -157,13 +157,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
     output_dir = None
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S") 
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if generate_reports:
-        report_path_prefix = params.get('report_path_prefix', './reports/') 
+        report_path_prefix = params.get('report_path_prefix', './reports/')
         if is_optimizer_call and trial_id_for_reports is not None:
             output_dir = os.path.join(report_path_prefix.rstrip('/'), "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
-        else: 
+        else:
             output_dir = os.path.join(report_path_prefix.rstrip('/'), f"backtest_{timestamp_str}")
         os.makedirs(output_dir, exist_ok=True)
         logging.info(f"Output reports for this run will be saved to: {output_dir}")
@@ -188,7 +188,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         logging.info(f"Market data 'timestamp' column is already tz-aware ({df_market['timestamp'].dt.tz}). Converting to UTC for consistency.")
         df_market['timestamp'] = df_market['timestamp'].dt.tz_convert('UTC')
-    
+
     df_market = df_market.sort_values(by='timestamp', ascending=True)
 
     signals_csv_path = params.get("data_settings", {}).get("signals_csv_path")
@@ -198,7 +198,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     if df_signals is not None and not df_signals.empty:
         logging.info("Merging signal data with market data using merge_asof (backward)...")
-        df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']], 
+        df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']],
                                   on='timestamp', direction='backward')
         df_market['signal'] = df_market['signal'].fillna('NEUTRAL')
         logging.info("Signal data merged. 'signal' column is now available in market data.")
@@ -206,7 +206,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         logging.warning("No signal data loaded or signals file was empty/invalid. Proceeding with 'NEUTRAL' signals for all timestamps.")
         df_market['signal'] = 'NEUTRAL'
-        
+
     if "date_range" in params and isinstance(params["date_range"], dict):
         start_date_str = params["date_range"].get("start_date")
         if start_date_str:
@@ -236,7 +236,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.error("Market data is empty after applying date range filters. Cannot run backtest.")
         return {
             "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
-            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir, 
+            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir,
             "status": "Market data empty after date filter"
         }
 
@@ -250,7 +250,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
         'last_rebalance_attempt_timestamp': None,
     }
-    blocked_trades_list = [] 
+    blocked_trades_list = []
 
     logging.info(f"Starting backtest for asset: {main_asset_symbol} with initial portfolio: {portfolio['usdt_balance']:.2f} USDT.")
     logging.info(f"Normal Target Weights ({main_asset_symbol}): {target_weights_normal}")
@@ -258,7 +258,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     logging.info(f"Rebalance Threshold: {rebalance_threshold*100:.2f}%")
     logging.info(f"Min Rebalance Interval (minutes): {min_rebalance_interval_minutes}")
 
-    if df_market.empty: 
+    if df_market.empty:
         logging.error("Market data is empty before starting main loop. Cannot run backtest.")
         # Return structure consistent with other error returns
         return {
@@ -266,18 +266,18 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir,
             "status": "Market data empty before loop"
         }
-        
+
     portfolio['prev_btc_price'] = df_market['close'].iloc[0]
 
     for index, row in df_market.iterrows():
         current_timestamp = row['timestamp']
-        current_price = row['close'] 
-        current_signal = row['signal'] 
+        current_price = row['close']
+        current_signal = row['signal']
         current_open_price = row.get('open', current_price)
         current_high_price = row.get('high', current_price)
         current_low_price = row.get('low', current_price)
 
-        if circuit_breaker_threshold_percent > 0 and current_open_price > 0: 
+        if circuit_breaker_threshold_percent > 0 and current_open_price > 0:
             candle_movement_percent = (current_high_price - current_low_price) / current_open_price
             if candle_movement_percent > circuit_breaker_threshold_percent:
                 portfolio['num_circuit_breaker_triggers'] += 1
@@ -286,12 +286,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                 f"Skipping rebalancing for this candle.")
                 if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
                     price_change_ratio = current_price / portfolio['prev_btc_price']
-                    if portfolio['btc_long_value_usdt'] > 0: 
+                    if portfolio['btc_long_value_usdt'] > 0:
                         portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * 5 * (price_change_ratio - 1)
-                    if portfolio['btc_short_value_usdt'] > 0: 
+                    if portfolio['btc_short_value_usdt'] > 0:
                         portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * 5 * (1 - price_change_ratio)
                 
-                total_portfolio_value_cb = calculate_portfolio_value( 
+                total_portfolio_value_cb = calculate_portfolio_value(
                     portfolio['usdt_balance'], portfolio['btc_spot_qty'],
                     portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_price)
                 equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value_cb})
@@ -309,7 +309,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         **portfolio # Spread existing portfolio state
                     })
                     return metrics_cb_fail
-                portfolio['prev_btc_price'] = current_price 
+                portfolio['prev_btc_price'] = current_price
                 if portfolio['current_operational_mode'] == 'SAFE_MODE':
                     portfolio['time_steps_in_safe_mode'] +=1
                 continue 
@@ -318,18 +318,18 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
             price_change_ratio = current_price / portfolio['prev_btc_price']
-            if portfolio['btc_long_value_usdt'] > 0: 
+            if portfolio['btc_long_value_usdt'] > 0:
                 portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * 5 * (price_change_ratio - 1)
-            if portfolio['btc_short_value_usdt'] > 0: 
+            if portfolio['btc_short_value_usdt'] > 0:
                 portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * 5 * (1 - price_change_ratio)
         
-        total_portfolio_value = calculate_portfolio_value( 
+        total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],
             portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_price)
-        
+
         nav = total_portfolio_value
         used_margin_usdt = 0
-        if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False) : 
+        if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False) :
             margin_for_long = portfolio['btc_long_value_usdt'] / 5.0 
             margin_for_short = portfolio['btc_short_value_usdt'] / 5.0
             used_margin_usdt = margin_for_long + margin_for_short
@@ -337,7 +337,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         else:
             margin_usage_ratio = 0.0 
 
-        active_target_weights = target_weights_normal 
+        active_target_weights = target_weights_normal
         previous_mode = portfolio['current_operational_mode']
         
         if params.get("safe_mode_config", {}).get("enabled", False):
@@ -358,7 +358,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 portfolio['time_steps_in_safe_mode'] += 1
             else: 
                 active_target_weights = target_weights_normal
-        else: 
+        else:
             active_target_weights = target_weights_normal
 
         mode_changed_this_step = previous_mode != portfolio['current_operational_mode']
@@ -388,7 +388,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 can_check_rebalance_now = False
         
         needs_rebalance = False
-        current_weights = {} 
+        current_weights = {}
         if can_check_rebalance_now:
             portfolio['last_rebalance_attempt_timestamp'] = current_timestamp
             current_weights = {
@@ -406,7 +406,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if index == 0: logging.info(f"Initial rebalance for {main_asset_symbol} triggered at {current_timestamp} (Price: {current_price:.2f}) to establish target weights: {active_target_weights}.")
                 if mode_changed_this_step: logging.info(f"Mode changed to {portfolio['current_operational_mode']} for {main_asset_symbol}. Forcing rebalance check against new weights: {active_target_weights}.")
             else:
-                for asset_key_loop, target_w_loop in active_target_weights.items(): 
+                for asset_key_loop, target_w_loop in active_target_weights.items():
                     current_w = current_weights.get(asset_key_loop, 0)
                     if abs(current_w - target_w_loop) > rebalance_threshold:
                         needs_rebalance = True 
@@ -425,24 +425,24 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 elif asset_key_loop == "USDT": current_value_usdt = portfolio['usdt_balance']
                 
                 adjustment_usdt = target_value_usdt - current_value_usdt
-                
+
                 if apply_signal_logic:
-                    original_proposed_adjustment_usdt = adjustment_usdt 
+                    original_proposed_adjustment_usdt = adjustment_usdt
                     trade_blocked_by_signal = False
-                    if current_signal == "BUY": 
+                    if current_signal == "BUY":
                         if (asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt < 0:
                             trade_blocked_by_signal = True
                         elif asset_key_loop == short_asset_key and original_proposed_adjustment_usdt > 0:
                             trade_blocked_by_signal = True
-                    elif current_signal == "SELL": 
+                    elif current_signal == "SELL":
                         if asset_key_loop == short_asset_key and original_proposed_adjustment_usdt < 0:
                             trade_blocked_by_signal = True
                         elif (asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt > 0:
                             trade_blocked_by_signal = True
-                    
+
                     if trade_blocked_by_signal:
                         current_weight_for_log = current_weights.get(asset_key_loop, 0.0)
-                        target_weight_for_log = target_w_loop 
+                        target_weight_for_log = target_w_loop
                         logging.info(
                             f"  Signal '{current_signal}' on {asset_key_loop}: Trade BLOCKED by signal. "
                             f"Original Prop. Adjust USDT: {original_proposed_adjustment_usdt:.2f}, "
@@ -451,15 +451,15 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         )
                         blocked_trade_info = {
                             "timestamp": current_timestamp, "main_asset_symbol": main_asset_symbol,
-                            "asset_key": asset_key_loop, 
+                            "asset_key": asset_key_loop,
                             "intended_action": "BUY" if original_proposed_adjustment_usdt > 0 else "SELL",
                             "proposed_adjustment_usdt": original_proposed_adjustment_usdt,
                             "active_signal": current_signal, "current_weight": current_weight_for_log,
                             "target_weight": target_weight_for_log
                         }
                         blocked_trades_list.append(blocked_trade_info)
-                        adjustment_usdt = 0 
-                
+                        adjustment_usdt = 0
+
                 adjustments[asset_key_loop] = adjustment_usdt
 
             for asset_key_trade, usdt_value_to_trade in adjustments.items():
@@ -488,20 +488,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 # The key part is that 'usdt_value_to_trade' (derived from 'adjustments') is used.
                 # The record_trade call below is also simplified.
 
-                record_trade(current_timestamp, asset_key_trade, action, quantity_asset_traded_final, 
-                             abs_usdt_value_of_trade, current_price, commission_usdt, 
+                record_trade(current_timestamp, asset_key_trade, action, quantity_asset_traded_final,
+                             abs_usdt_value_of_trade, current_price, commission_usdt,
                              slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list,
                              realized_pnl_spot_usdt=realized_pnl_this_spot_trade) # Simplified call
             
             # ... (logging post-rebalance portfolio) ...
 
-        portfolio['prev_btc_price'] = current_price 
+        portfolio['prev_btc_price'] = current_price
 
     logging.info("Backtest finished.")
     df_equity = pd.DataFrame(equity_over_time)
     df_trades = pd.DataFrame(trades_list)
-    
-    metrics = {} 
+
+    metrics = {}
     metrics["run_id"] = f"backtest_{timestamp_str}"
     # ... (ALL ORIGINAL METRICS CALCULATIONS MUST BE PRESERVED HERE) ...
     metrics["initial_portfolio_value_usdt"] = initial_portfolio_value_usdt
@@ -518,7 +518,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         trades_csv_path = os.path.join(output_dir, "trades.csv")
         df_trades.to_csv(trades_csv_path, index=False)
         logging.info(f"Trades report saved to {trades_csv_path}")
-        
+
         df_summary = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
         summary_csv_path = os.path.join(output_dir, "summary.csv")
         df_summary.to_csv(summary_csv_path, index=False)
@@ -532,7 +532,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             )
             fig.add_trace(
                 go.Scatter(
-                    x=df_market['timestamp'], y=df_market['close'], mode='lines', 
+                    x=df_market['timestamp'], y=df_market['close'], mode='lines',
                     name=f"{main_asset_symbol} Price", line=dict(color='rgba(255,165,0,0.6)')),
                 secondary_y=True,
             )
@@ -558,7 +558,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         if not trades_to_plot.empty:
                             color_map_plot = asset_colors.get(asset_name_key_plot, {})
                             symbol_map_plot = asset_symbols.get(asset_name_key_plot, {})
-                            
+
                             fig.add_trace(go.Scatter(
                                 x=trades_to_plot['timestamp_open'],
                                 y=trades_to_plot['entry_price'],
@@ -570,7 +570,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                     line=dict(width=1, color='DarkSlateGrey')
                                 ),
                                 name=f'{asset_name_key_plot} {action_str_plot}',
-                                yaxis="y2", 
+                                yaxis="y2",
                                 hoverinfo='text',
                                 text=[
                                     (f"Asset: {trade_row['asset_type']}<br>Action: {trade_row['action']}<br>"
@@ -580,7 +580,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                     for _, trade_row in trades_to_plot.iterrows()
                                 ]
                             ), secondary_y=True)
-            
+
             fig.update_layout(
                 title_text=f'Portfolio Equity Over Time vs {main_asset_symbol} Price',
                 xaxis_title='Timestamp',
@@ -593,14 +593,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             equity_html_path = os.path.join(output_dir, "equity.html")
             fig.write_html(equity_html_path)
             logging.info(f"Enhanced equity curve saved to {equity_html_path}")
-            
-            equity_csv_path = os.path.join(output_dir, "equity.csv") 
+
+            equity_csv_path = os.path.join(output_dir, "equity.csv")
             df_equity.to_csv(equity_csv_path, index=False)
             logging.info(f"Equity curve data saved to {equity_csv_path}")
         else:
             logging.warning("Equity data is empty. Skipping equity curve generation and equity.csv saving.")
 
-        if blocked_trades_list: 
+        if blocked_trades_list:
             df_blocked_trades = pd.DataFrame(blocked_trades_list)
             if not df_blocked_trades.empty: # Check if DataFrame is non-empty after creation
                 blocked_trades_csv_path = os.path.join(output_dir, "blocked_trades_log.csv")
@@ -743,7 +743,7 @@ def main():
             # Create dummy signals CSV if path is specified and file doesn't exist
             dummy_signals_path = dummy_backtest_settings_content["data_settings"]["signals_csv_path"]
             if dummy_signals_path and not os.path.exists(dummy_signals_path):
-                signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z', 
+                signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z',
                                                     '2023-01-02T05:00:00Z', '2023-01-03T15:00:00Z',
                                                     '2023-01-04T20:00:00Z'])
                 signals = ['NEUTRAL', 'BUY', 'NEUTRAL', 'SELL', 'BUY']

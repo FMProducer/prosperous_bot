@@ -94,11 +94,11 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         original_param_path = p_config['path']
         # Substitute {main_asset_symbol} placeholder in the path
         param_path_substituted = original_param_path.format(main_asset_symbol=main_asset_symbol)
-        
+
         # Optuna uses this name for its internal storage of suggested params.
         # Using the substituted path ensures Optuna correctly tracks params if main_asset_symbol changes,
         # though typically it's fixed for one optimization study.
-        param_name_for_trial = param_path_substituted 
+        param_name_for_trial = param_path_substituted
         
         suggested_value = None
         if p_config['type'] == 'float':
