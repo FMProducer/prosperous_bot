@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots # ADDED IMPORT
 from datetime import datetime
@@ -126,10 +127,17 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000)
     if 'initial_portfolio_value_usdt' not in params:
         logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
-    taker_commission_rate = params.get('taker_commission_rate', params.get('commission_rate', 0.0007)) 
-    maker_commission_rate = params.get('maker_commission_rate', 0.0002) 
+    # Принимаем как новые, так и legacy-поля конфигурации
+    taker_commission_rate = params.get(
+        "taker_commission_rate",
+        params.get("commission_taker", params.get("commission_rate", 0.0007)),
+    )
+    maker_commission_rate = params.get(
+        "maker_commission_rate",
+        params.get("commission_maker", 0.0002),
+    )
     use_maker_fees_in_backtest = params.get('use_maker_fees_in_backtest', False)
-    slippage_percentage = params.get('slippage_percentage', 0.0005) 
+    slippage_percent = params.get('slippage_percent', params.get('slippage_percentage', 0.0005))
     circuit_breaker_threshold_percent = params.get('circuit_breaker_threshold_percent', 0.10) 
     margin_usage_safe_mode_enter_threshold = params.get('margin_usage_safe_mode_enter_threshold', 0.70) 
     margin_usage_safe_mode_exit_threshold = params.get('margin_usage_safe_mode_exit_threshold', 0.50)
@@ -468,19 +476,54 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
                 action = "BUY" if usdt_value_to_trade > 0 else "SELL"
                 abs_usdt_value_of_trade = abs(usdt_value_to_trade) 
-                commission_usdt = abs_usdt_value_of_trade * current_commission_rate 
-                portfolio['usdt_balance'] -= commission_usdt
-                portfolio['total_commissions_usdt'] += commission_usdt
-                quantity_asset_traded_final = 0
-                slippage_cost_this_trade_usdt = 0
-                realized_pnl_this_spot_trade = 0.0 
 
+                commission_usdt = abs_usdt_value_of_trade * current_commission_rate
+                portfolio["usdt_balance"] -= commission_usdt
+                portfolio["total_commissions_usdt"] += commission_usdt
+
+                # -------- prоскальзывание ----------
+                slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
+                portfolio["usdt_balance"] -= slippage_cost_this_trade_usdt
+                portfolio["total_slippage_usdt"] += slippage_cost_this_trade_usdt
+
+                # -------- торговая логика ----------
+                quantity_asset_traded_final = 0.0
+                realized_pnl_this_spot_trade = 0.0
+
+                # ---------- SPOT BTC ----------
                 if asset_key_trade == spot_asset_key:
-                    # ... (SPOT trade logic as before, using current_price) ...
-                    pass # Placeholder
-                elif asset_key_trade == long_asset_key or asset_key_trade == short_asset_key:
-                    # ... (Leveraged trade logic as before) ...
-                    pass # Placeholder
+                    qty_btc = abs_usdt_value_of_trade / current_price
+                    quantity_asset_traded_final = qty_btc
+                    if action == "BUY":
+                        portfolio["btc_spot_qty"] = portfolio.get("btc_spot_qty", 0.0) + qty_btc
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade
+                    else:  # SELL
+                        qty_close = min(qty_btc, portfolio.get("btc_spot_qty", 0.0))
+                        portfolio["btc_spot_qty"] -= qty_close
+                        portfolio["usdt_balance"] += qty_close * current_price
+                        realized_pnl_this_spot_trade = (current_price - portfolio.get("prev_btc_price", current_price)) * qty_close
+
+                # ---------- 5× LONG ----------
+                elif asset_key_trade == long_asset_key:
+                    quantity_asset_traded_final = abs_usdt_value_of_trade
+                    if action == "BUY":
+                        portfolio["btc_long_value_usdt"] = portfolio.get("btc_long_value_usdt", 0.0) + abs_usdt_value_of_trade
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade
+                    else:
+                        close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_long_value_usdt", 0.0))
+                        portfolio["btc_long_value_usdt"] -= close_val
+                        portfolio["usdt_balance"] += close_val
+
+                # ---------- 5× SHORT ----------
+                elif asset_key_trade == short_asset_key:
+                    quantity_asset_traded_final = abs_usdt_value_of_trade
+                    if action == "SELL":          # открытие/наращивание шорта
+                        portfolio["btc_short_value_usdt"] = portfolio.get("btc_short_value_usdt", 0.0) + abs_usdt_value_of_trade
+                        portfolio["usdt_balance"] += abs_usdt_value_of_trade
+                    else:                         # BUY → закрытие
+                        close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_short_value_usdt", 0.0))
+                        portfolio["btc_short_value_usdt"] -= close_val
+                        portfolio["usdt_balance"] -= close_val
                 
                 # Ensure full trade execution logic is preserved as in original file
                 # For brevity in this prompt, the detailed execution for SPOT/LONG/SHORT is not repeated
@@ -501,6 +544,37 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     df_equity = pd.DataFrame(equity_over_time)
     df_trades = pd.DataFrame(trades_list)
 
+    # ---------- PERFORMANCE METRICS ----------
+    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
+        out: dict[str, float] = {}
+        if df_eq.empty:
+            return {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio", "max_drawdown_percent", "profit_factor", "win_rate_percent")}
+
+        rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
+        if not rets.empty and rets.std():
+            out["sharpe_ratio"] = rets.mean() / rets.std() * np.sqrt(ann_factor)
+            downside = rets[rets < 0]
+            out["sortino_ratio"] = rets.mean() / downside.std() * np.sqrt(ann_factor) if not downside.empty and downside.std() else 0.0
+        else:
+            out["sharpe_ratio"] = 0.0
+            out["sortino_ratio"] = 0.0
+
+        rolling_max = df_eq["portfolio_value_usdt"].cummax()
+        drawdown = (df_eq["portfolio_value_usdt"] - rolling_max) / rolling_max
+        out["max_drawdown_percent"] = drawdown.min() * 100 if not drawdown.empty else 0.0
+
+        if trades:
+            pnl_list = [t.get("pnl_net_quote", 0.0) for t in trades]
+            wins = [p for p in pnl_list if p > 0]
+            losses = [-p for p in pnl_list if p < 0]
+            out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
+            out["win_rate_percent"] = (len(wins) / len(pnl_list)) * 100 if pnl_list else 0.0
+        else:
+            out["profit_factor"] = 0.0
+            out["win_rate_percent"] = 0.0
+
+        return out
+
     metrics = {}
     metrics["run_id"] = f"backtest_{timestamp_str}"
     # ... (ALL ORIGINAL METRICS CALCULATIONS MUST BE PRESERVED HERE) ...
@@ -508,6 +582,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     final_portfolio_value = df_equity['portfolio_value_usdt'].iloc[-1] if not df_equity.empty else initial_portfolio_value_usdt
     metrics["final_portfolio_value_usdt"] = final_portfolio_value
     metrics["total_net_pnl_usdt"] = final_portfolio_value - initial_portfolio_value_usdt
+
+    # Calculate additional performance metrics
+    extra_metrics = compute_metrics(df_equity, trades_list,
+                                    initial_portfolio_value_usdt,
+                                    params.get("annualization_factor", 252))
+    metrics.update(extra_metrics)
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
     # (And many more metrics from the original file)
@@ -617,7 +697,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     results_for_optimizer["output_dir"] = output_dir 
     results_for_optimizer["status"] = "Completed" 
     
-    for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent", "max_drawdown_percent"]:
+    for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor",
+                       "win_rate_percent", "max_drawdown_percent"]:
         if pd.isna(results_for_optimizer.get(key_metric)):
             results_for_optimizer[key_metric] = 0.0
             logging.warning(f"Metric {key_metric} was NaN, converted to 0.0 for optimizer.")
