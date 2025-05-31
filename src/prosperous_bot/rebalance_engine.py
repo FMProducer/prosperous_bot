@@ -19,13 +19,15 @@ class RebalanceEngine:
         futures_contract_symbol_base: str,
         *,
         base_threshold_pct: float = 0.005,
+        threshold_pct: float | None = None,     # ← 兼容 старых тестов
         exchange_client=None,
     ):
         self.portfolio = portfolio
         self.target_weights = target_weights
         self.spot_asset_symbol = spot_asset_symbol
         self.futures_contract_symbol_base = futures_contract_symbol_base
-        self.base_threshold_pct = base_threshold_pct
+        # Если передан legacy-аргумент threshold_pct, используем его в качестве base
+        self.base_threshold_pct = threshold_pct if threshold_pct is not None else base_threshold_pct
         self.exchange = exchange_client
 
     # ---------- helpers -------------------------------------------------
