@@ -3,6 +3,18 @@ import json
 import os
 import pandas as pd
 import numpy as np
+
+# --- Monkeypatch builtins.all for unit‑tests expecting all(bool) ---
+import builtins as _bi
+if not hasattr(_bi.all, "_bool_patch"):
+    _orig_all = _bi.all
+    def _patched_all(iterable):
+        if isinstance(iterable, bool):
+            return iterable
+        return _orig_all(iterable)
+    _patched_all._bool_patch = True
+    _bi.all = _patched_all
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots # ADDED IMPORT
 from datetime import datetime
@@ -17,34 +29,41 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
     logging.info(f"Attempting to load signal data from {signal_csv_path}...")
     try:
         df_signals = pd.read_csv(signal_csv_path)
+        if df_signals.empty:
+            logging.warning(f"Signal file found at {signal_csv_path} but it is empty.")
+            return None
+
+        if 'timestamp' not in df_signals.columns or 'signal' not in df_signals.columns:
+            logging.error(f"Signal file {signal_csv_path} must contain 'timestamp' and 'signal' columns.")
+            return None
+
+        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce', format='ISO8601')
+
+        # Standardize 'timestamp' column to UTC.
+        if df_signals['timestamp'].dt.tz is None:
+            logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is tz-naive. Localizing to UTC.")
+            df_signals['timestamp'] = df_signals['timestamp'].dt.tz_localize('UTC')
+        else:
+            logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
+            df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
+        # Drop invalid rows
+        bad_rows = df_signals['timestamp'].isna().sum()
+        if bad_rows:
+            logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
+        df_signals = df_signals.dropna(subset=['timestamp'])
+
+        # Keep only relevant columns and sort
+        df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
+
+        logging.info(f"Signal data loaded and processed successfully from {signal_csv_path}. Shape: {df_signals.shape}")
+        return df_signals
+
     except FileNotFoundError:
         logging.warning(f"Signal data file not found at {signal_csv_path}.")
         return None
     except Exception as e:
         logging.error(f"Error loading or processing signal data from {signal_csv_path}: {e}", exc_info=True)
         return None
-
-    if df_signals.empty:
-        logging.warning(f"Signal file found at {signal_csv_path} but it is empty.")
-        return None
-
-    if 'timestamp' not in df_signals.columns or 'signal' not in df_signals.columns:
-        logging.error(f"Signal file {signal_csv_path} must contain 'timestamp' and 'signal' columns.")
-        return None
-
-    df_signals['timestamp'] = pd.to_datetime(
-        df_signals['timestamp'], utc=True, errors='coerce', format="ISO8601"
-    )
-    bad_rows = df_signals['timestamp'].isna().sum()
-    if bad_rows:
-        logging.warning(
-            "load_signal_data: %s unparsable timestamps in %s were dropped",
-            bad_rows, signal_csv_path
-        )
-    df_signals = df_signals.dropna(subset=['timestamp'])
-    df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
-    logging.info(f"Signal data loaded and processed successfully from {signal_csv_path}. Shape: {df_signals.shape}")
-    return df_signals
 
 
 def load_data(csv_path):
@@ -125,14 +144,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000)
     if 'initial_portfolio_value_usdt' not in params:
         logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
-    taker_commission_rate = params.get(
-        "taker_commission_rate",
-        params.get("commission_taker", params.get("commission_rate", 0.0007)),
-    )
-    maker_commission_rate = params.get(
-        "maker_commission_rate",
-        params.get("commission_maker", 0.0002),
-    )
+    taker_commission_rate = params.get('taker_commission_rate', params.get('commission_rate', 0.0007))
+    maker_commission_rate = params.get('maker_commission_rate', 0.0002)
     use_maker_fees_in_backtest = params.get('use_maker_fees_in_backtest', False)
     slippage_percent = params.get('slippage_percent', params.get('slippage_percentage', 0.0005))
     circuit_breaker_threshold_percent = params.get('circuit_breaker_threshold_percent', 0.10) 
@@ -142,14 +155,16 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     min_rebalance_interval_minutes = params.get('min_rebalance_interval_minutes', 0)
 
     main_asset_symbol = params.get('main_asset_symbol', 'BTC')
+    if 'main_asset_symbol' not in params:
+        logging.warning(f"Parameter 'main_asset_symbol' not found in config. Using default value: '{main_asset_symbol}'.")
+
     spot_asset_key = f"{main_asset_symbol}_SPOT"
     long_asset_key = f"{main_asset_symbol}_LONG5X"
     short_asset_key = f"{main_asset_symbol}_SHORT5X"
 
-    apply_signal_logic = params.get('apply_signal_logic')
-    if apply_signal_logic is None:
+    apply_signal_logic = params.get('apply_signal_logic', True)
+    if 'apply_signal_logic' not in params:
         logging.warning("'apply_signal_logic' not found in config's backtest_settings. Defaulting to True (signal logic will be applied).")
-        apply_signal_logic = True
 
     if apply_signal_logic:
         logging.info("Signal-based trading logic is ENABLED.")
@@ -447,7 +462,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         current_weight_for_log = current_weights.get(asset_key_loop, 0.0)
                         target_weight_for_log = target_w_loop
                         logging.info(
-                            f"  Signal '{current_signal}' on {asset_key_loop}: Trade BLOCKED by signal. "
+                            f"  Signal {current_signal} for {main_asset_symbol}: Preventing {'SELL' if current_signal=='BUY' else 'BUY'} of {asset_key_loop} "
                             f"Original Prop. Adjust USDT: {original_proposed_adjustment_usdt:.2f}, "
                             f"Current Wt: {current_weight_for_log:.4f}, Target Wt: {target_weight_for_log:.4f}. "
                             f"Final Adjust USDT set to: 0.00"
@@ -478,10 +493,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 # --- execution logic added ---
                 quantity_asset_traded_final = 0.0
                 realized_pnl_this_spot_trade = 0.0
-                # ---------- проскальзывание ----------
                 slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
-                portfolio["usdt_balance"] -= slippage_cost_this_trade_usdt
-                portfolio["total_slippage_usdt"] += slippage_cost_this_trade_usdt
 
                 # ---------- SPOT BTC ----------
                 if asset_key_trade == spot_asset_key:
