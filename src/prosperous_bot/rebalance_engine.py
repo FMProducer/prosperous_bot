@@ -1,4 +1,3 @@
-```python
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -136,4 +135,3 @@ class RebalanceEngine:
                 dict(symbol=symbol, side=side, qty=qty, price_exec=price_exec, commission=commission, status=status)
             )
         return exec_log
-```
