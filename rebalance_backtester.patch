@@ -1,0 +1,109 @@
+--- a/src/prosperous_bot/rebalance_backtester.py
++++ b/src/prosperous_bot/rebalance_backtester.py
+@@
+-import pandas as pd
++import pandas as pd
++import numpy as np
+@@
+-    slippage_percentage = params.get('slippage_percentage', 0.0005) 
++    # unified naming -----------------------------
++    slippage_percent = params.get('slippage_percent',
++                                  params.get('slippage_percentage', 0.0005))
+@@
+-                commission_usdt = abs_usdt_value_of_trade * current_commission_rate 
++                commission_usdt = abs_usdt_value_of_trade * current_commission_rate
++                slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
+@@
+-                quantity_asset_traded_final = 0
+-                slippage_cost_this_trade_usdt = 0
+-                realized_pnl_this_spot_trade = 0.0 
+-
+-                if asset_key_trade == spot_asset_key:
+-                    # ... (SPOT trade logic as before, using current_price) ...
+-                    pass # Placeholder
+-                elif asset_key_trade == long_asset_key or asset_key_trade == short_asset_key:
+-                    # ... (Leveraged trade logic as before) ...
+-                    pass # Placeholder
++                quantity_asset_traded_final = 0.0
++                realized_pnl_this_spot_trade = 0.0
++
++                # ---------- SPOT BTC ------------------------------------
++                if asset_key_trade == spot_asset_key:
++                    qty_btc = abs_usdt_value_of_trade / current_price
++                    quantity_asset_traded_final = qty_btc
++
++                    if action == "BUY":
++                        portfolio['btc_spot_qty'] += qty_btc
++                        portfolio['usdt_balance'] -= abs_usdt_value_of_trade
++                    else:  # SELL
++                        qty_btc = min(qty_btc, portfolio['btc_spot_qty'])
++                        portfolio['btc_spot_qty'] -= qty_btc
++                        portfolio['usdt_balance'] += abs_usdt_value_of_trade
++                        realized_pnl_this_spot_trade = (current_price - portfolio['prev_btc_price']) * qty_btc
++
++                # ---------- 5× LONG -------------------------------------
++                elif asset_key_trade == long_asset_key:
++                    quantity_asset_traded_final = abs_usdt_value_of_trade
++                    if action == "BUY":
++                        portfolio['btc_long_value_usdt'] += abs_usdt_value_of_trade
++                        portfolio['usdt_balance'] -= abs_usdt_value_of_trade
++                    else:
++                        close_val = min(abs_usdt_value_of_trade, portfolio['btc_long_value_usdt'])
++                        portfolio['btc_long_value_usdt'] -= close_val
++                        portfolio['usdt_balance'] += close_val
++
++                # ---------- 5× SHORT ------------------------------------
++                elif asset_key_trade == short_asset_key:
++                    quantity_asset_traded_final = abs_usdt_value_of_trade
++                    if action == "SELL":          # открытие/наращивание шорта
++                        portfolio['btc_short_value_usdt'] += abs_usdt_value_of_trade
++                        portfolio['usdt_balance'] += abs_usdt_value_of_trade
++                    else:                         # BUY → закрытие
++                        close_val = min(abs_usdt_value_of_trade, portfolio['btc_short_value_usdt'])
++                        portfolio['btc_short_value_usdt'] -= close_val
++                        portfolio['usdt_balance'] -= close_val
+@@
+-            # ... (logging post-rebalance portfolio) ...
++            # --- end rebalance loop -----------------------------------
+@@
+-    metrics = {}
++    # ---------- PERFORMANCE METRICS -----------------------------------
++    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict],
++                        init_cap: float, ann_factor: float):
++        out = {}
++        if df_eq.empty:
++            return {k: 0 for k in ["sharpe_ratio", "sortino_ratio",
++                                   "max_drawdown_percent", "profit_factor",
++                                   "win_rate_percent"]}
++        ret = df_eq['portfolio_value_usdt'].pct_change().dropna()
++        if not ret.empty:
++            out["sharpe_ratio"] = ret.mean()/ret.std()*np.sqrt(ann_factor) if ret.std() else 0
++            downside = ret[ret<0]
++            out["sortino_ratio"] = (ret.mean() / downside.std()*np.sqrt(ann_factor)) if not downside.empty and downside.std() else 0
++        roll_max = df_eq['portfolio_value_usdt'].cummax()
++        drawdown = (df_eq['portfolio_value_usdt']-roll_max)/roll_max
++        out["max_drawdown_percent"] = drawdown.min()*100
++        if trades:
++            pnl_list = [t["pnl_net_quote"] for t in trades]
++            wins = [p for p in pnl_list if p>0]
++            losses = [-p for p in pnl_list if p<0]
++            out["profit_factor"] = (sum(wins)/sum(losses)) if losses else 0
++            out["win_rate_percent"] = (len(wins)/len(pnl_list))*100 if pnl_list else 0
++        else:
++            out.update({"profit_factor":0,"win_rate_percent":0})
++        return out
++
++    metrics = {}
+@@
+-    # (And many more metrics from the original file)
++    metrics.update(compute_metrics(df_equity, trades_list,
++                                   initial_portfolio_value_usdt,
++                                   params.get("annualization_factor",252)))
++    metrics["max_drawdown_percent"] = metrics.get("max_drawdown_percent", 0)
++    metrics.setdefault("sharpe_ratio", 0)
+@@
+-    for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent", "max_drawdown_percent"]:
++    for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor",
++                       "win_rate_percent", "max_drawdown_percent"]:
+         if pd.isna(results_for_optimizer.get(key_metric)):
+             results_for_optimizer[key_metric] = 0.0
