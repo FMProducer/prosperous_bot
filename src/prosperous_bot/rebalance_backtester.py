@@ -839,8 +839,9 @@ def main():
 
                 # Assign to backtest_params and data_file_path so script can continue if needed,
                 # though typically user will re-run with the dummy.
-                # backtest_params = dummy_backtest_settings_content # Not strictly needed if exiting
-                # data_file_path = dummy_data_path                 # Not strictly needed if exiting
+                backtest_params = dummy_backtest_settings_content
+                data_file_path = dummy_data_path
+                chosen_config_path = dummy_config_path # Use dummy config
 
                 if not os.path.exists(dummy_data_path):
                     timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=120, freq='h')
@@ -862,9 +863,9 @@ def main():
                     df_dummy_signals.to_csv(dummy_signals_path, index=False)
                     logging.info(f"Dummy signal data file created at '{dummy_signals_path}'")
 
-                logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
-                             f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
-                return
+                # logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
+                #              f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
+                # return # Continue with dummy config
             except Exception as e:
                 logging.error(f"Could not create dummy unified config or data file: {e}", exc_info=True)
                 return
