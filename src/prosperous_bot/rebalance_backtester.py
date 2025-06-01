@@ -50,11 +50,13 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
         bad_rows = df_signals['timestamp'].isna().sum()
         if bad_rows:
             logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
-        df_signals = df_signals.dropna(subset=['timestamp'])
-        if df_signals.empty:
-            logging.error("Error loading or processing signal data from %s: "
-                          "DataFrame empty after cleaning", signal_csv_path)
+
+        df = df_signals.dropna(subset=['timestamp']) # Changed df_signals to df
+        if df.empty:
+            logging.error("Error loading or processing signal data from %s", signal_csv_path) # Modified logging message
             return None
+
+        df_signals = df # Assign df back to df_signals if further processing uses df_signals
         # Keep only relevant columns and sort
         df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
 
@@ -695,26 +697,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 df_sig_plot = (df_signals
                                .merge(df_market[['timestamp', 'close']], on='timestamp', how='left')
                                .fillna(method='ffill'))
-                for sig_type, col, sym in [("BUY",  'rgba(0,200,0,0.85)', 'triangle-up'),
-                                            ("SELL", 'rgba(200,0,0,0.85)', 'triangle-down')]:
-                    sub = df_sig_plot[df_sig_plot['signal'] == sig_type]
-                    if sub.empty:            # нет такого типа – пропускаем
-                        continue
-                    fig.add_trace(
-                        go.Scatter(
-                            x=sub['timestamp'], y=sub['close'],
-                            mode='markers',
-                            marker=dict(size=10, symbol=sym,
-                                        color=col,
-                                        line=dict(width=1.2, color='DarkSlateGrey')),
-                            name=f"{sig_type} signal",
-                            yaxis="y2",
-                            hovertemplate=("Signal: "+sig_type+"<br>"
-                                           "Price: %{y:.2f}<extra></extra>"),
-                            legendgroup="signals"        # сгруппированы в легенде
-                        ),
-                        secondary_y=True
-                    )
+                for sig, color, sym in [("BUY","rgba(0,200,0,.85)",'triangle-up'), ("SELL","rgba(200,0,0,.85)",'triangle-down')]: # Variable names changed
+                    sub = df_sig_plot[df_sig_plot.signal==sig] # Adjusted access to 'signal' column
+                    if sub.empty: continue
+                    fig.add_trace(go.Scatter(x=sub.timestamp, y=sub.close, mode='markers',
+                              marker=dict(size=10, symbol=sym, color=color, line=dict(width=1.2,color='DarkSlateGrey')),
+                              name=f"{sig} signal", legendgroup="signals", yaxis='y2', showlegend=True)) # Added showlegend=True and adjusted access to columns
             # --------------- ▲▲  END NEW  ▲▲ ------------------------------------------
 
             equity_html_path = os.path.join(output_dir, "equity.html")
