@@ -37,6 +37,7 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
             logging.error(f"Signal file {signal_csv_path} must contain 'timestamp' and 'signal' columns.")
             return None
 
+        df_signals['signal'] = df_signals['signal'].astype(str).str.upper().str.strip()
         df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce', format='ISO8601')
 
         # Standardize 'timestamp' column to UTC.
@@ -53,7 +54,7 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
 
         df = df_signals.dropna(subset=['timestamp']) # Changed df_signals to df
         if df.empty:
-            logging.error("Error loading or processing signal data from %s", signal_csv_path) # Modified logging message
+            logging.error("Error loading or processing signal data from %s: empty after clean", signal_csv_path)
             return None
 
         df_signals = df # Assign df back to df_signals if further processing uses df_signals
