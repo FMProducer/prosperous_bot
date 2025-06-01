@@ -16,7 +16,7 @@ if not hasattr(_bi.all, "_bool_patch"):
     _bi.all = _patched_all
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots # ADDED IMPORT
+from plotly.subplots import make_subplots
 from datetime import datetime
 import logging
 
@@ -685,6 +685,33 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             )
             fig.update_yaxes(title_text="Portfolio Value (USDT)", secondary_y=False, showgrid=True)
             fig.update_yaxes(title_text=f"{main_asset_symbol} Price (USDT)", secondary_y=True, showgrid=False)
+
+            # --------------- ▼▼  NEW  —  overlay BUY / SELL signals  ▼▼ ---------------
+            if apply_signal_logic and df_signals is not None and not df_signals.empty:
+                # price привязываем к ближайшей свече (если сигналы «попадают в дырку»)
+                df_sig_plot = (df_signals
+                               .merge(df_market[['timestamp', 'close']], on='timestamp', how='left')
+                               .fillna(method='ffill'))
+                for _, sig in df_sig_plot.iterrows():
+                    color = 'rgba(0,200,0,0.85)' if sig['signal'] == 'BUY' else 'rgba(200,0,0,0.85)'
+                    symbol = 'triangle-up' if sig['signal'] == 'BUY' else 'triangle-down'
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[sig['timestamp']],
+                            y=[sig['close']],
+                            mode='markers',
+                            marker=dict(size=14, symbol=symbol,
+                                        color=color,
+                                        line=dict(width=1.2, color='DarkSlateGrey')),
+                            name=f"{sig['signal']} signal",
+                            yaxis="y2",
+                            hovertemplate=("Signal: %{text}<br>"
+                                           f"Price: {sig['close']:.2f}<extra></extra>"),
+                            text=[sig['timestamp'].strftime('%Y-%m-%d %H:%M')]
+                        ),
+                        secondary_y=True
+                    )
+            # --------------- ▲▲  END NEW  ▲▲ ------------------------------------------
 
             equity_html_path = os.path.join(output_dir, "equity.html")
             fig.write_html(equity_html_path)
