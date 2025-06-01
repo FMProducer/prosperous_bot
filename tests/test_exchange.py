@@ -36,9 +36,8 @@ async def test_create_futures_order(exch, mocker):
     )
     res = await exch.create_futures_order(
         contract="BTC_USDT",
-        side="long",
+        order_type="OPEN_LONG",
         qty=1,
-        reduce_only=False,
     )
     assert res["status"] == "open"
     # убедимся, что вызвали API ровно один раз

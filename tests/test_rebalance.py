@@ -18,8 +18,8 @@ class MockPortfolio:
 async def test_build_orders_pct_logic():
     portfolio = MockPortfolio({
         "BTC_SPOT": 6400,      # ~62.14%
-        "BTC_SHORT5X": 2700,   # ~26.22%
-        "BTC_LONG5X": 1200     # ~11.65%
+        "BTC_PERP_SHORT": 2700,   # ~26.22%
+        "BTC_PERP_LONG": 1200     # ~11.65%
     })
 
     engine = RebalanceEngine(portfolio, threshold_pct=0.01)
