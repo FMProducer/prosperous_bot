@@ -32,7 +32,7 @@ async def test_create_futures_order(exch, mocker):
     mock_create = mocker.patch.object(
         gate_api.FuturesApi,
         "create_futures_order",
-        return_value={"status": "open", "size": "1"},
+        return_value={"status": "open", "size": "1", "order_type": "OPEN_LONG"},
     )
     res = await exch.create_futures_order(
         contract="BTC_USDT",
@@ -40,6 +40,7 @@ async def test_create_futures_order(exch, mocker):
         qty=1,
     )
     assert res["status"] == "open"
+    assert res["order_type"] == "OPEN_LONG"
     # убедимся, что вызвали API ровно один раз
     mock_create.assert_called_once()
 
