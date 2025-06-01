@@ -51,9 +51,10 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
         if bad_rows:
             logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
         df_signals = df_signals.dropna(subset=['timestamp'])
-        if df_signals.empty: # Add this check
+        if df_signals.empty:
+            logging.error("Error loading or processing signal data from %s: "
+                          "DataFrame empty after cleaning", signal_csv_path)
             return None
-
         # Keep only relevant columns and sort
         df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
 
@@ -694,24 +695,23 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 df_sig_plot = (df_signals
                                .merge(df_market[['timestamp', 'close']], on='timestamp', how='left')
                                .fillna(method='ffill'))
-                for _, sig in df_sig_plot.iterrows():
-                    color = 'rgba(0,200,0,0.85)' if sig['signal'] == 'BUY' else 'rgba(200,0,0,0.85)'
-                    symbol = 'triangle-up' if sig['signal'] == 'BUY' else 'triangle-down'
+                for sig_type, col, sym in [("BUY",  'rgba(0,200,0,0.85)', 'triangle-up'),
+                                            ("SELL", 'rgba(200,0,0,0.85)', 'triangle-down')]:
+                    sub = df_sig_plot[df_sig_plot['signal'] == sig_type]
+                    if sub.empty:            # нет такого типа – пропускаем
+                        continue
                     fig.add_trace(
                         go.Scatter(
-                            x=[sig['timestamp']],
-                            y=[sig['close']],
+                            x=sub['timestamp'], y=sub['close'],
                             mode='markers',
-                            marker=dict(size=10, symbol=symbol, # Changed size from 14 to 10
-                                        color=color,
+                            marker=dict(size=10, symbol=sym,
+                                        color=col,
                                         line=dict(width=1.2, color='DarkSlateGrey')),
-                            name=f"{sig['signal']} signal",
+                            name=f"{sig_type} signal",
                             yaxis="y2",
-                            hovertemplate=("Signal: %{text}<br>"
-                                           f"Price: {sig['close']:.2f}<extra></extra>"),
-                            text=[sig['timestamp'].strftime('%Y-%m-%d %H:%M')],
-                            showlegend=False, # Added showlegend=False
-                            legendgroup="signals" # Added legendgroup
+                            hovertemplate=("Signal: "+sig_type+"<br>"
+                                           "Price: %{y:.2f}<extra></extra>"),
+                            legendgroup="signals"        # сгруппированы в легенде
                         ),
                         secondary_y=True
                     )
