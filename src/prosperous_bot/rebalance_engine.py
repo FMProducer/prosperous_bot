@@ -57,13 +57,11 @@ class RebalanceEngine:
         Формирует список словарей-ордеров:
           {symbol, side, qty, notional_usdt, asset_key}
         """
-        # Не все тестовые портфели реализуют get_nav_usdt → fallback
         if hasattr(self.portfolio, "get_nav_usdt"):
             nav = await self.portfolio.get_nav_usdt(p_spot=p_spot, p_contract=p_contract)
-        else:
-            dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot,
-                                                                        p_contract=p_contract)
-            nav = sum(dist_abs.values()) if dist_abs else 0.0
+        else:  # stub-портфели в tests
+            dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract)
+            nav = sum(dist_abs.values())
         dist = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract)
         thr = self._dynamic_threshold(self.base_threshold_pct, atr_24h_pct)
 
