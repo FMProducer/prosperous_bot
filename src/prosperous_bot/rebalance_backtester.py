@@ -18,10 +18,11 @@ if not hasattr(_bi.all, "_bool_patch"):
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+from prosperous_bot.logging_config import configure_root # This will be adjusted by hand later if patch fails
+configure_root()
 import logging
 
 # Basic logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
@@ -697,7 +698,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 # price привязываем к ближайшей свече (если сигналы «попадают в дырку»)
                 df_sig_plot = (df_signals
                                .merge(df_market[['timestamp', 'close']], on='timestamp', how='left')
-                               .fillna(method='ffill'))
+                               .ffill())
                 for sig, color, sym in [("BUY","rgba(0,200,0,.85)",'triangle-up'), ("SELL","rgba(200,0,0,.85)",'triangle-down')]: # Variable names changed
                     sub = df_sig_plot[df_sig_plot.signal==sig] # Adjusted access to 'signal' column
                     if sub.empty: continue
