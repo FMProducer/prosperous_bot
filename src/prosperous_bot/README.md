@@ -1,4 +1,4 @@
-# Prosperous Bot: BTC-Neutral Rebalancer Tools
+# Prosperous Bot: BTC-Neutral Rebalancer Tools ![coverage](https://img.shields.io/endpoint?url=https://sonarcloud.io/api/project_badges/measure?project=trading-ai-agent&metric=coverage)
 
 ## 1. Overview
 

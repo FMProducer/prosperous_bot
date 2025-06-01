@@ -14,7 +14,7 @@ import pandas as pd
 
 # === Импорт run_backtest ===
 try:
-    from src.prosperous_bot.rebalance_backtester import run_backtest
+    from prosperous_bot.rebalance_backtester import run_backtest
 except ImportError:
     try:
         from rebalance_backtester import run_backtest

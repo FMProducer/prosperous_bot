@@ -9,7 +9,7 @@ import copy # For deep copying params
 
 # Attempt to import the backtester; handle potential ImportError if structure changes
 try:
-    from src.prosperous_bot.rebalance_backtester import run_backtest
+    from prosperous_bot.rebalance_backtester import run_backtest
 except ImportError:
     # Fallback if the script is run from a different relative path or package structure issues
     # This assumes rebalance_backtester.py is in the same directory for a simple fallback
