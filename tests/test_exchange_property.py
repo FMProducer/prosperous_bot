@@ -27,27 +27,23 @@ async def test_create_futures_order_property(exch, mocker, qty, order_type):
     # It should return an object that simulates a FuturesOrder response
     def _echo_futures(settle_param, order_obj_futures):
         # order_obj_futures is the gate_api.FuturesOrder object created in ExchangeAPI.create_futures_order
-        returned_mock = UMMock(spec=gate_api.FuturesOrder) # Use spec for stricter mocking
+        # Now returns a dictionary instead of a mock object
+        returned_dict = {
+            "id": "mock_fut_id_123",
+            "status": "open",
+            "settle": settle_param, # From settle_param
+            "order_type": order_type # From test function parameter
+        }
 
-        # Copy attributes from the actual order_obj_futures that the test asserts
+        # Copy attributes from the actual order_obj_futures
         if hasattr(order_obj_futures, 'contract'):
-            returned_mock.contract = order_obj_futures.contract
+            returned_dict["contract"] = order_obj_futures.contract
         if hasattr(order_obj_futures, 'size'):
-            returned_mock.size = order_obj_futures.size
+            returned_dict["size"] = order_obj_futures.size
         if hasattr(order_obj_futures, 'reduce_only'):
-            returned_mock.reduce_only = order_obj_futures.reduce_only
+            returned_dict["reduce_only"] = order_obj_futures.reduce_only
         
-        # Set the 'settle' attribute on the mock, so 'assert res.settle' can pass
-        # Note: 'settle' is not a standard attribute of gate_api.FuturesOrder response.
-        # This is to satisfy the existing test assertion.
-        returned_mock.settle = settle_param
-        
-        # Simulate other attributes if the real API response would have them and tests need them
-        # For example, an ID or status:
-        returned_mock.id = "mock_fut_id_123"
-        returned_mock.status = "open"
-        
-        return returned_mock
+        return returned_dict
 
     mocker.patch.object(exch.futures_api, "create_futures_order", side_effect=_echo_futures)
 
@@ -55,10 +51,11 @@ async def test_create_futures_order_property(exch, mocker, qty, order_type):
     res = await exch.create_futures_order("BTC_USDT", order_type, qty)
 
     # Assert
-    assert res.contract == "BTC_USDT"
-    assert res.size == expected_size
-    assert res.reduce_only == expected_reduce_only
-    assert res.settle == "usdt" # This assertion relies on _echo_futures setting this attribute
+    assert res["contract"] == "BTC_USDT"
+    assert res["size"] == expected_size
+    assert res["reduce_only"] == expected_reduce_only
+    assert res["settle"] == "usdt" # This assertion relies on _echo_futures setting this attribute
+    assert res["order_type"] == order_type
 
 @pytest.mark.asyncio
 @settings(max_examples=50, deadline=None)
