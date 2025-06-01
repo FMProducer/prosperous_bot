@@ -1,4 +1,5 @@
 {
+    "apply_signal_logic": true,
     "interval": "5m",
     "lookback_period": 720,
     "visualization_interval": 60,
@@ -135,18 +136,18 @@
     "asset_distributions": {
         "BUY": {
             "GALA_USDT": 0.35715,
-            "GALA5L_USDT": 0.334281,
-            "GALA5S_USDT": 0.308569
+            "GALA_PERP_LONG_USDT": 0.334281,
+            "GALA_PERP_SHORT_USDT": 0.308569
         },
         "SELL": {
             "GALA_USDT": 0.35715,
-            "GALA5L_USDT": 0.237139,
-            "GALA5S_USDT": 0.405711
+            "GALA_PERP_LONG_USDT": 0.237139,
+            "GALA_PERP_SHORT_USDT": 0.405711
         },
         "NEUTRAL": {
             "GALA_USDT": 0.35715,
-            "GALA5L_USDT": 0.28571,
-            "GALA5S_USDT": 0.35714
+            "GALA_PERP_LONG_USDT": 0.28571,
+            "GALA_PERP_SHORT_USDT": 0.35714
         }
     }
 }
