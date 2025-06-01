@@ -1,0 +1,12 @@
+Metric,Value
+run_id,backtest_20250601_022218
+initial_portfolio_value_usdt,1000
+final_portfolio_value_usdt,631.97249446826
+total_net_pnl_usdt,-368.02750553173996
+sharpe_ratio,-0.6859977462462369
+sortino_ratio,-0.9688166797807483
+max_drawdown_percent,-37.928111896396146
+profit_factor,1.683975933444774e-05
+win_rate_percent,0.30742204655248134
+total_net_pnl_percent,-36.80275055317399
+total_trades,4554
