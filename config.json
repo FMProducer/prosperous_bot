@@ -1,7 +1,7 @@
 {
     "target_weights": {
         "BTC_SPOT": 0.65,
-        "BTC_LONG5X": 0.11,
-        "BTC_SHORT5X": 0.24
+        "BTC_PERP_LONG": 0.11,
+        "BTC_PERP_SHORT": 0.24
     }
 }

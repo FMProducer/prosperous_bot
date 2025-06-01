@@ -10,17 +10,17 @@ from hypothesis import given, settings, strategies as st
 
 # Strategies (assuming these are defined as they were previously)
 qty_st = st.integers(min_value=1, max_value=100_000)
-side_st = st.sampled_from(["long", "short"]) # For futures
+order_type_st = st.sampled_from(["OPEN_LONG", "CLOSE_LONG", "OPEN_SHORT", "CLOSE_SHORT"]) # For futures
 spot_side_st = st.sampled_from(["buy", "sell"]) # For spot
-ro_st = st.booleans() # reduce_only
 price_st = st.one_of(st.none(), st.floats(min_value=0.01, max_value=1_000_000, allow_nan=False, allow_infinity=False))
 post_only_st = st.booleans()
 
 @pytest.mark.asyncio
 @settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
-@given(qty=qty_st, side=side_st, reduce_only=ro_st)
-async def test_create_futures_order_property(exch, mocker, qty, side, reduce_only):
-    expected_size = qty if side == "long" else -qty
+@given(qty=qty_st, order_type=order_type_st)
+async def test_create_futures_order_property(exch, mocker, qty, order_type):
+    expected_size = qty if order_type.endswith("_LONG") else -qty
+    expected_reduce_only = order_type.startswith("CLOSE_")
 
     # Mock for futures_api.create_futures_order
     # It's called with (self, settle, futures_order_payload)
@@ -52,12 +52,12 @@ async def test_create_futures_order_property(exch, mocker, qty, side, reduce_onl
     mocker.patch.object(exch.futures_api, "create_futures_order", side_effect=_echo_futures)
 
     # Act
-    res = await exch.create_futures_order("BTC_USDT", side, qty, reduce_only)
+    res = await exch.create_futures_order("BTC_USDT", order_type, qty)
 
     # Assert
     assert res.contract == "BTC_USDT"
     assert res.size == expected_size
-    assert res.reduce_only == reduce_only
+    assert res.reduce_only == expected_reduce_only
     assert res.settle == "usdt" # This assertion relies on _echo_futures setting this attribute
 
 @pytest.mark.asyncio
