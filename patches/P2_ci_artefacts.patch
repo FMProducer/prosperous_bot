@@ -1,0 +1,22 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -22,3 +22,15 @@
+     - name: Run tests with coverage
+       run: |
+         pytest -q --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
++
++    - name: Upload coverage artefact
++      uses: actions/upload-artifact@v4
++      with:
++        name: coverage-xml
++        path: coverage.xml
++
++    - name: Upload backtest artefacts
++      if: always()
++      uses: actions/upload-artifact@v4
++      with:
++        name: backtest-reports
++        path: |
++          reports/**/summary.csv
++          reports/**/equity.html
++          reports/**/blocked_trades_log.csv
