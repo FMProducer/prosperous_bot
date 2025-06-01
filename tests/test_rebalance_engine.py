@@ -49,8 +49,8 @@ class DummyExchange:
 @pytest.mark.asyncio
 async def test_build_orders_threshold():
     """RebalanceEngine should create orders only when diff exceeds threshold"""
-    target = {"BTC_SPOT": 0.65, "BTC_SHORT5X": 0.24, "BTC_LONG5X": 0.11}
-    current = {"BTC_SPOT": 0.60, "BTC_SHORT5X": 0.25, "BTC_LONG5X": 0.15}
+    target = {"BTC_SPOT": 0.65, "BTC_PERP_SHORT": 0.24, "BTC_PERP_LONG": 0.11}
+    current = {"BTC_SPOT": 0.60, "BTC_PERP_SHORT": 0.25, "BTC_PERP_LONG": 0.15}
     port = DummyPortfolio(current, nav=1000)
     engine = RebalanceEngine(
         portfolio=port,

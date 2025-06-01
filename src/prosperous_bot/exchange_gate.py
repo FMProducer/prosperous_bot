@@ -75,11 +75,22 @@ class ExchangeAPI:
         )
         return await self._safe_call(self.spot_api.create_order, order)
 
-    async def create_futures_order(self, contract, side, qty, reduce_only=False):
+    async def create_futures_order(
+        self,
+        contract: str,
+        order_type: str,           # OPEN_LONG, CLOSE_LONG, OPEN_SHORT, CLOSE_SHORT
+        qty: float,
+    ):
+        if order_type not in {"OPEN_LONG", "CLOSE_LONG", "OPEN_SHORT", "CLOSE_SHORT"}:
+            raise ValueError(f"Unsupported order_type {order_type}")
+
+        size        =  qty if order_type.endswith("_LONG")  else -qty
+        reduce_only =  order_type.startswith("CLOSE_")
+
         fut = gate_api.FuturesOrder(
-            contract=contract,
-            size=qty if side == "long" else -qty,
-            reduce_only=bool(reduce_only),
+            contract    = contract,
+            size        = size,
+            reduce_only = reduce_only,
         )
         return await self._safe_call(self.futures_api.create_futures_order, "usdt", fut)
 

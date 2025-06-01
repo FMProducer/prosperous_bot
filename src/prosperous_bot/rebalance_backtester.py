@@ -159,8 +159,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.warning(f"Parameter 'main_asset_symbol' not found in config. Using default value: '{main_asset_symbol}'.")
 
     spot_asset_key = f"{main_asset_symbol}_SPOT"
-    long_asset_key = f"{main_asset_symbol}_LONG5X"
-    short_asset_key = f"{main_asset_symbol}_SHORT5X"
+    long_asset_key = f"{main_asset_symbol}_PERP_LONG"
+    short_asset_key = f"{main_asset_symbol}_PERP_SHORT"
 
     apply_signal_logic = params.get('apply_signal_logic', True)
     if 'apply_signal_logic' not in params:
@@ -440,7 +440,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_loop == spot_asset_key: current_value_usdt = portfolio['btc_spot_qty'] * current_price
                 elif asset_key_loop == long_asset_key: current_value_usdt = portfolio['btc_long_value_usdt']
                 elif asset_key_loop == short_asset_key: current_value_usdt = portfolio['btc_short_value_usdt']
-                elif asset_key_loop == "USDT": current_value_usdt = portfolio['usdt_balance']
+                elif asset_key_trade == "USDT": current_value_usdt = portfolio['usdt_balance']
                 
                 adjustment_usdt = target_value_usdt - current_value_usdt
 
@@ -485,6 +485,15 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if abs(usdt_value_to_trade) < 1.0: continue
 
                 action = "BUY" if usdt_value_to_trade > 0 else "SELL"
+
+                # ---- Gate hedged futures mapping ----
+                if asset_key_trade == long_asset_key:
+                    order_type = "OPEN_LONG"  if action == "BUY"  else "CLOSE_LONG"
+                elif asset_key_trade == short_asset_key:
+                    order_type = "OPEN_SHORT" if action == "SELL" else "CLOSE_SHORT"
+                else:                              # spot leg
+                    order_type = action            # BUY/SELL
+
                 abs_usdt_value_of_trade = abs(usdt_value_to_trade) 
                 commission_usdt = abs_usdt_value_of_trade * current_commission_rate
                 portfolio['usdt_balance'] -= commission_usdt
@@ -499,47 +508,49 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_trade == spot_asset_key:
                     qty_btc = abs_usdt_value_of_trade / current_price
                     quantity_asset_traded_final = qty_btc
-                    if action == "BUY":
+                    if order_type == "BUY": # Spot BUY
                         portfolio["btc_spot_qty"] = portfolio.get("btc_spot_qty", 0.0) + qty_btc
                         portfolio["usdt_balance"] -= abs_usdt_value_of_trade
-                    else:  # SELL
+                    else: # Spot SELL
                         qty_close = min(qty_btc, portfolio.get("btc_spot_qty", 0.0))
                         portfolio["btc_spot_qty"] -= qty_close
                         portfolio["usdt_balance"] += qty_close * current_price
                         realized_pnl_this_spot_trade = (current_price - portfolio.get("prev_btc_price", current_price)) * qty_close
 
-                # ---------- 5× LONG ----------
+                # ---------- PERP LONG ----------
                 elif asset_key_trade == long_asset_key:
-                    quantity_asset_traded_final = abs_usdt_value_of_trade
-                    if action == "BUY":
+                    quantity_asset_traded_final = abs_usdt_value_of_trade # For futures, asset quantity is the quote value
+                    if order_type == "OPEN_LONG":
                         portfolio["btc_long_value_usdt"] = portfolio.get("btc_long_value_usdt", 0.0) + abs_usdt_value_of_trade
-                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade
-                    else:
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Margin used
+                    elif order_type == "CLOSE_LONG":
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_long_value_usdt", 0.0))
                         portfolio["btc_long_value_usdt"] -= close_val
-                        portfolio["usdt_balance"] += close_val
+                        portfolio["usdt_balance"] += close_val # Margin returned
 
-                # ---------- 5× SHORT ----------
+                # ---------- PERP SHORT ----------
                 elif asset_key_trade == short_asset_key:
-                    quantity_asset_traded_final = abs_usdt_value_of_trade
-                    if action == "SELL":          # открытие/наращивание шорта
+                    quantity_asset_traded_final = abs_usdt_value_of_trade # For futures, asset quantity is the quote value
+                    if order_type == "OPEN_SHORT": # Opening/increasing a short position
                         portfolio["btc_short_value_usdt"] = portfolio.get("btc_short_value_usdt", 0.0) + abs_usdt_value_of_trade
-                        portfolio["usdt_balance"] += abs_usdt_value_of_trade
-                    else:                         # BUY → закрытие
+                        # USDT balance increases because we are effectively borrowing to sell, or margin is allocated
+                        # This depends on exact accounting, but for value_usdt based, it's adding to the short value.
+                        # The key is that `btc_short_value_usdt` represents the magnitude of the short.
+                        # Let's assume for this model, opening short *increases* USDT available if it's collateral based,
+                        # or if `btc_short_value_usdt` is tracking the notional value *exposed* to short.
+                        # Given the PnL calculations later, `btc_short_value_usdt` is treated as a positive value
+                        # representing the size of the short position.
+                        # For consistency with LONG, let's assume opening a short also "uses" USDT from balance for margin.
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Margin used for opening short
+                    elif order_type == "CLOSE_SHORT": # Closing a short position (buying back)
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_short_value_usdt", 0.0))
                         portfolio["btc_short_value_usdt"] -= close_val
-                        portfolio["usdt_balance"] -= close_val
-                
-                # Ensure full trade execution logic is preserved as in original file
-                # For brevity in this prompt, the detailed execution for SPOT/LONG/SHORT is not repeated
-                # but it should be taken from the original file content.
-                # The key part is that 'usdt_value_to_trade' (derived from 'adjustments') is used.
-                # The record_trade call below is also simplified.
+                        portfolio["usdt_balance"] += close_val # Margin returned
 
-                record_trade(current_timestamp, asset_key_trade, action, quantity_asset_traded_final,
+                record_trade(current_timestamp, asset_key_trade, order_type, quantity_asset_traded_final,
                              abs_usdt_value_of_trade, current_price, commission_usdt,
                              slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list,
-                             realized_pnl_spot_usdt=realized_pnl_this_spot_trade) # Simplified call
+                             realized_pnl_spot_usdt=realized_pnl_this_spot_trade)
             
             # ... (logging post-rebalance portfolio) ...
 
