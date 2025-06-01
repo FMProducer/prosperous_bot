@@ -20,17 +20,22 @@ class PortfolioManager:
         long_val = short_val = 0.0
         for p in positions:
             size = float(p.size)
-            margin = float(getattr(p, "margin", 0.0))
+            # notional = abs(size) × contract-price (fallback→margin)
+            notional = abs(size) * p_contract if p_contract else float(getattr(p, "margin", 0.0))
             if size > 0:
-                long_val += margin
+                long_val += notional
             elif size < 0:
-                short_val += margin
+                short_val += notional
 
-        total = spot_val + long_val + short_val or 1.0
+        # Recalculate total based on new notional values for accurate weighting
+        total = spot_val + long_val + short_val
+        if total == 0:  # Avoid division by zero
+            return {"BTC_SPOT": 0.0, "BTC_PERP_LONG": 0.0, "BTC_PERP_SHORT": 0.0}
+
         return {
-            "BTC_SPOT": spot_val / total,
-            "BTC_LONG5X": long_val / total,
-            "BTC_SHORT5X": short_val / total,
+            "BTC_SPOT":       spot_val / total,
+            "BTC_PERP_LONG":  long_val / total,
+            "BTC_PERP_SHORT": short_val / total,
         }
 
     def get_value_distribution_sync(self, p_spot: float, p_contract: float):

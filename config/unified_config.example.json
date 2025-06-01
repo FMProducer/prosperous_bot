@@ -34,13 +34,13 @@
         "high": 0.8
       },
       {
-        "path": "target_weights_normal.{main_asset_symbol}_LONG5X",
+        "path": "target_weights_normal.{main_asset_symbol}_PERP_LONG",
         "type": "float",
         "low": 0.0,
         "high": 0.4
       },
       {
-        "path": "target_weights_normal.{main_asset_symbol}_SHORT5X",
+        "path": "target_weights_normal.{main_asset_symbol}_PERP_SHORT",
         "type": "float",
         "low": 0.0,
         "high": 0.4
@@ -73,8 +73,8 @@
     "rebalance_threshold": 0.02,
     "target_weights_normal": {
       "BTC_SPOT": 0.65,
-      "BTC_LONG5X": 0.11,
-      "BTC_SHORT5X": 0.24
+      "BTC_PERP_LONG": 0.11,
+      "BTC_PERP_SHORT": 0.24
     },
     "circuit_breaker_config": {
       "enabled": true,
@@ -89,8 +89,8 @@
       "exit_threshold": 0.60,
       "target_weights_safe": {
         "BTC_SPOT": 0.75,
-        "BTC_LONG5X": 0.05,
-        "BTC_SHORT5X": 0.05,
+        "BTC_PERP_LONG": 0.05,
+        "BTC_PERP_SHORT": 0.05,
         "USDT": 0.15
       }
     },

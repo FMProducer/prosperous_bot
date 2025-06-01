@@ -1,8 +1,8 @@
 {
   "target_weights": {
     "BTC_SPOT": 0.65,
-    "BTC_LONG5X": 0.11,
-    "BTC_SHORT5X": 0.24
+    "BTC_PERP_LONG": 0.11,
+    "BTC_PERP_SHORT": 0.24
   },
   "rebalance_threshold": 0.01,
   "initial_portfolio_value_usdt": 1000.0,
@@ -16,7 +16,7 @@
   "margin_usage_safe_mode_exit_threshold": 0.5,
   "safe_mode_target_weights": {
     "BTC_SPOT": 0.8,
-    "BTC_LONG5X": 0.05,
-    "BTC_SHORT5X": 0.15
+    "BTC_PERP_LONG": 0.05,
+    "BTC_PERP_SHORT": 0.15
   }
 }

@@ -17,5 +17,5 @@ async def test_get_value_distribution_usdt(mocker):
     pm = PortfolioManager(spot_api, fut_api)
     values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250)
     assert isinstance(values, dict)
-    assert all(k in values for k in ("BTC_SPOT", "BTC_SHORT5X", "BTC_LONG5X"))
+    assert all(k in values for k in ("BTC_SPOT", "BTC_PERP_SHORT", "BTC_PERP_LONG"))
     assert all(isinstance(v, float) for v in values.values())
