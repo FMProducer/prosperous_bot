@@ -22,7 +22,12 @@ async def test_build_orders_pct_logic():
         "BTC_PERP_LONG": 1200     # ~11.65%
     })
 
-    engine = RebalanceEngine(portfolio, threshold_pct=0.01)
+    target_weights = {
+        "BTC_SPOT": 0.5,
+        "BTC_PERP_SHORT": 0.3,
+        "BTC_PERP_LONG": 0.2
+    }
+    engine = RebalanceEngine(portfolio, target_weights=target_weights, threshold_pct=0.01)
     orders = await engine.build_orders(p_spot=20000)
 
     assert isinstance(orders, list)
