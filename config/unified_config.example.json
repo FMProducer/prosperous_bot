@@ -69,7 +69,7 @@
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 10,
+    "min_rebalance_interval_minutes": 60,
     "rebalance_threshold": 0.01,
     "target_weights_normal": {
       "BTC_SPOT": 0.65,
