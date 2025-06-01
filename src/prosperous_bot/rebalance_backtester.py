@@ -723,23 +723,47 @@ def run_standalone_backtest(backtest_settings_dict, data_file_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Prosperous Bot Rebalance Backtester (CLI - Unified Config)")
-    parser.add_argument("--config_file", type=str, required=True, 
+    parser.add_argument("--config_file", type=str, default=None,
                         help="Path to the unified JSON configuration file (e.g., config/unified_config.json). "
-                             "The backtester will use the 'backtest_settings' section.")
+                             "If not provided, defaults will be tried. The backtester will use the 'backtest_settings' section.")
     args = parser.parse_args()
 
     backtest_params = None
     data_file_path = None
 
+    chosen_config_path = None
+    user_provided_config_path = args.config_file
+
+    if user_provided_config_path:
+        chosen_config_path = user_provided_config_path
+        logging.info(f"User specified configuration file: {chosen_config_path}")
+    else:
+        logging.info("No configuration file specified by user. Attempting default paths...")
+        default_paths = ["config/unified_config.json", "config/unified_config.example.json"]
+        for path in default_paths:
+            if os.path.exists(path):
+                chosen_config_path = path
+                logging.info(f"Found configuration file at default path: {chosen_config_path}")
+                break
+        if not chosen_config_path:
+            logging.error("FATAL: No configuration file provided and no default configuration file found at "
+                          "'config/unified_config.json' or 'config/unified_config.example.json'. Exiting.")
+            return # Exit the main function
+
     try:
-        with open(args.config_file, 'r') as f:
+        if not chosen_config_path: # Should not happen due to the check above, but as a safeguard
+            logging.error("FATAL: Configuration path determination failed unexpectedly. Exiting.")
+            return
+
+        logging.info(f"Attempting to load configuration from: {chosen_config_path}")
+        with open(chosen_config_path, 'r') as f:
             unified_config = json.load(f)
         
         if "backtest_settings" in unified_config:
             backtest_params = unified_config["backtest_settings"]
-            logging.info(f"Loaded backtest settings from '{args.config_file}' (using 'backtest_settings' section).")
+            logging.info(f"Loaded backtest settings from '{chosen_config_path}' (using 'backtest_settings' section).")
         else:
-            logging.error(f"FATAL: Unified config '{args.config_file}' does not contain a 'backtest_settings' section. "
+            logging.error(f"FATAL: Unified config '{chosen_config_path}' does not contain a 'backtest_settings' section. "
                           "This section is required for standalone backtester runs. Please use/create a config based on "
                           "'config/unified_config.example.json'. Exiting.")
             return
@@ -750,106 +774,111 @@ def main():
             return
 
     except FileNotFoundError:
-        logging.warning(f"Configuration file '{args.config_file}' not found. "
-                        "A dummy configuration will be created at 'config/dummy_unified_config_for_backtester.json' for demonstration.")
-        
-        dummy_config_filename = "dummy_unified_config_for_backtester.json"
-        dummy_config_path = os.path.join("config", dummy_config_filename) 
-        dummy_data_filename = "dummy_BTCUSDT_1h_for_backtester.csv" # Changed GALA to BTC
-        dummy_data_path = os.path.join("data", dummy_data_filename) 
+        if user_provided_config_path and chosen_config_path == user_provided_config_path:
+            logging.warning(f"User-specified configuration file '{user_provided_config_path}' not found. "
+                            "A dummy configuration will be created at 'config/dummy_unified_config_for_backtester.json' for demonstration.")
+            
+            dummy_config_filename = "dummy_unified_config_for_backtester.json"
+            dummy_config_path = os.path.join("config", dummy_config_filename)
+            dummy_data_filename = "dummy_BTCUSDT_1h_for_backtester.csv"
+            dummy_data_path = os.path.join("data", dummy_data_filename)
 
-        os.makedirs(os.path.dirname(dummy_config_path), exist_ok=True)
-        os.makedirs(os.path.dirname(dummy_data_path), exist_ok=True)
+            os.makedirs(os.path.dirname(dummy_config_path), exist_ok=True)
+            os.makedirs(os.path.dirname(dummy_data_path), exist_ok=True)
 
-        # Define a minimal but complete backtest_settings structure for the dummy
-        dummy_backtest_settings_content = {
-          "main_asset_symbol": "BTC",
-          "apply_signal_logic": True, # Added apply_signal_logic
-          "initial_capital": 10000.0,
-          "commission_taker": 0.0007,
-          "commission_maker": 0.0002,
-          "use_maker_fees_in_backtest": False,
-          "slippage_percent": 0.0005,
-          "annualization_factor": 252.0,
-          "min_rebalance_interval_minutes": 60,
-          "rebalance_threshold": 0.02,
-          "target_weights_normal": {
-              "BTC_SPOT": 0.65,
-              "BTC_LONG5X": 0.11,
-              "BTC_SHORT5X": 0.24
-          },
-          "circuit_breaker_config": {
-            "enabled": True, "threshold_percentage": 0.10,
-            "lookback_candles": 1, "movement_calc_type": "(high-low)/open"
-          },
-          "safe_mode_config": {
-            "enabled": True, "metric_to_monitor": "margin_usage",
-            "entry_threshold": 0.70, "exit_threshold": 0.50,
-            "target_weights_safe": {
-                "BTC_SPOT": 0.75,
-                "BTC_LONG5X": 0.05,
-                "BTC_SHORT5X": 0.05,
-                "USDT": 0.15
+            dummy_backtest_settings_content = {
+              "main_asset_symbol": "BTC",
+              "apply_signal_logic": True,
+              "initial_capital": 10000.0,
+              "commission_taker": 0.0007,
+              "commission_maker": 0.0002,
+              "use_maker_fees_in_backtest": False,
+              "slippage_percent": 0.0005,
+              "annualization_factor": 252.0,
+              "min_rebalance_interval_minutes": 60,
+              "rebalance_threshold": 0.02,
+              "target_weights_normal": {
+                  "BTC_SPOT": 0.65,
+                  "BTC_LONG5X": 0.11,
+                  "BTC_SHORT5X": 0.24
+              },
+              "circuit_breaker_config": {
+                "enabled": True, "threshold_percentage": 0.10,
+                "lookback_candles": 1, "movement_calc_type": "(high-low)/open"
+              },
+              "safe_mode_config": {
+                "enabled": True, "metric_to_monitor": "margin_usage",
+                "entry_threshold": 0.70, "exit_threshold": 0.50,
+                "target_weights_safe": {
+                    "BTC_SPOT": 0.75,
+                    "BTC_LONG5X": 0.05,
+                    "BTC_SHORT5X": 0.05,
+                    "USDT": 0.15
+                }
+              },
+              "data_settings": {
+                "csv_file_path": dummy_data_path,
+                "signals_csv_path": os.path.join("data", "dummy_BTCUSDT_signals_for_backtester.csv"),
+                "timestamp_col": "timestamp",
+                "ohlc_cols": {"open": "open", "high": "high", "low": "low", "close": "close"},
+                "volume_col": "volume",
+                "price_col_for_rebalance": "close"
+              },
+              "date_range": {
+                  "start_date": "2023-01-01T00:00:00Z", "end_date": "2023-01-05T23:59:59Z"
+              },
+              "logging_level": "INFO",
+              "report_path_prefix": "./reports/backtest_"
             }
-          },
-          "data_settings": {
-            "csv_file_path": dummy_data_path,
-            "signals_csv_path": os.path.join("data", "dummy_BTCUSDT_signals_for_backtester.csv"),
-            "timestamp_col": "timestamp",
-            "ohlc_cols": {"open": "open", "high": "high", "low": "low", "close": "close"},
-            "volume_col": "volume",
-            "price_col_for_rebalance": "close"
-          },
-          "date_range": {
-              "start_date": "2023-01-01T00:00:00Z", "end_date": "2023-01-05T23:59:59Z"
-          },
-          "logging_level": "INFO",
-          "report_path_prefix": "./reports/backtest_"
-        }
-        dummy_unified_config_content = {"backtest_settings": dummy_backtest_settings_content}
+            dummy_unified_config_content = {"backtest_settings": dummy_backtest_settings_content}
 
-        try:
-            with open(dummy_config_path, 'w') as f: 
-                json.dump(dummy_unified_config_content, f, indent=2)
-            logging.info(f"Dummy unified config for backtester created at '{dummy_config_path}'. You should run with this path next time.")
-            
-            backtest_params = dummy_backtest_settings_content
-            data_file_path = dummy_data_path
+            try:
+                with open(dummy_config_path, 'w') as f:
+                    json.dump(dummy_unified_config_content, f, indent=2)
+                logging.info(f"Dummy unified config for backtester created at '{dummy_config_path}'.")
 
-            if not os.path.exists(dummy_data_path):
-                timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=120, freq='h') # 5 days
-                prices = [20000 + (i*2) + (100 * ((i//24)%5)) - (80 * (i % 3)) for i in range(120)]
-                df_dummy_data = pd.DataFrame({
-                    'timestamp': timestamps, 'open': [p - 5 for p in prices], 'high': [p + 10 for p in prices],
-                    'low': [p - 10 for p in prices], 'close': prices, 'volume': [50 + i for i in range(120)]
-                })
-                df_dummy_data.to_csv(dummy_data_path, index=False)
-                logging.info(f"Dummy market data file created at '{dummy_data_path}'")
+                # Assign to backtest_params and data_file_path so script can continue if needed,
+                # though typically user will re-run with the dummy.
+                # backtest_params = dummy_backtest_settings_content # Not strictly needed if exiting
+                # data_file_path = dummy_data_path                 # Not strictly needed if exiting
 
-            # Create dummy signals CSV if path is specified and file doesn't exist
-            dummy_signals_path = dummy_backtest_settings_content["data_settings"]["signals_csv_path"]
-            if dummy_signals_path and not os.path.exists(dummy_signals_path):
-                signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z',
-                                                    '2023-01-02T05:00:00Z', '2023-01-03T15:00:00Z',
-                                                    '2023-01-04T20:00:00Z'])
-                signals = ['NEUTRAL', 'BUY', 'NEUTRAL', 'SELL', 'BUY']
-                df_dummy_signals = pd.DataFrame({'timestamp': signal_timestamps, 'signal': signals})
-                df_dummy_signals.to_csv(dummy_signals_path, index=False)
-                logging.info(f"Dummy signal data file created at '{dummy_signals_path}'")
-            
-            logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
-                         f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
-            return
+                if not os.path.exists(dummy_data_path):
+                    timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=120, freq='h')
+                    prices = [20000 + (i*2) + (100 * ((i//24)%5)) - (80 * (i % 3)) for i in range(120)]
+                    df_dummy_data = pd.DataFrame({
+                        'timestamp': timestamps, 'open': [p - 5 for p in prices], 'high': [p + 10 for p in prices],
+                        'low': [p - 10 for p in prices], 'close': prices, 'volume': [50 + i for i in range(120)]
+                    })
+                    df_dummy_data.to_csv(dummy_data_path, index=False)
+                    logging.info(f"Dummy market data file created at '{dummy_data_path}'")
 
-        except Exception as e:
-            logging.error(f"Could not create dummy unified config or data file: {e}", exc_info=True)
+                dummy_signals_path = dummy_backtest_settings_content["data_settings"]["signals_csv_path"]
+                if dummy_signals_path and not os.path.exists(dummy_signals_path):
+                    signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z',
+                                                        '2023-01-02T05:00:00Z', '2023-01-03T15:00:00Z',
+                                                        '2023-01-04T20:00:00Z'])
+                    signals = ['NEUTRAL', 'BUY', 'NEUTRAL', 'SELL', 'BUY']
+                    df_dummy_signals = pd.DataFrame({'timestamp': signal_timestamps, 'signal': signals})
+                    df_dummy_signals.to_csv(dummy_signals_path, index=False)
+                    logging.info(f"Dummy signal data file created at '{dummy_signals_path}'")
+
+                logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
+                             f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
+                return
+            except Exception as e:
+                logging.error(f"Could not create dummy unified config or data file: {e}", exc_info=True)
+                return
+        else:
+            # Handles cases where chosen_config_path was a default that existed but couldn't be opened,
+            # or chosen_config_path is None (though prior checks should prevent this).
+            logging.error(f"FATAL: Configuration file '{chosen_config_path}' could not be opened or was not found (and was not user-specified for dummy creation). Exiting.")
             return
 
     except json.JSONDecodeError:
-        logging.error(f"FATAL: Could not decode JSON from config file: {args.config_file}. Exiting.")
+        logging.error(f"FATAL: Could not decode JSON from config file: {chosen_config_path}. Exiting.")
         return
     except Exception as e: 
-        logging.error(f"FATAL: An unexpected error occurred while loading the configuration: {e}", exc_info=True)
+        logging.error(f"FATAL: An unexpected error occurred while loading the configuration from '{chosen_config_path}': {e}", exc_info=True)
         return
 
     if backtest_params and data_file_path:

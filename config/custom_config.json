@@ -1,0 +1,12 @@
+{
+  "backtest_settings": {
+    "main_asset_symbol": "ETH",
+    "data_settings": {
+      "csv_file_path": "data/simulated_custom_data.csv"
+    },
+    "target_weights_normal": {
+        "ETH_SPOT": 1.0
+    },
+    "rebalance_threshold": 0.03
+  }
+}
