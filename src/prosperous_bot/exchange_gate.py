@@ -29,6 +29,11 @@ class ExchangeAPI:
                     await asyncio.sleep(0.2 * 2 ** n)
                     continue
                 raise
+            except Exception as e:  # Catch other exceptions
+                if n < 2:  # Retry for generic exceptions fewer times
+                    await asyncio.sleep(0.1 * 2 ** n)
+                    continue
+                raise  # Re-raise the exception if all retries fail
         raise RuntimeError("max retries exceeded")
 
     # ---------------------------------------------------------------------
