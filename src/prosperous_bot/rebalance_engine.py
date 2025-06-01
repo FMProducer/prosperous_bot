@@ -12,27 +12,27 @@ class RebalanceEngine:
     Двухшаговое исполнение: PostOnly-limit (t seconds) -> Market fallback
     """
 
-def __init__(
-    self,
-    portfolio,
-    target_weights: dict | None = None,
-    spot_asset_symbol: str = "",
-    futures_contract_symbol_base: str = "",
-    *,
-    base_threshold_pct: float = 0.005,
-    threshold_pct: float | None = None,
-    exchange_client=None,
-):
-    if target_weights is None:
-        target_weights = {}
-    self.portfolio = portfolio
-    self.target_weights = target_weights
-    self.spot_asset_symbol = spot_asset_symbol
-    self.futures_contract_symbol_base = futures_contract_symbol_base
-    self.exchange = exchange_client
-    # If legacy threshold_pct provided, override base_threshold_pct
-    self.base_threshold_pct = threshold_pct if threshold_pct is not None else base_threshold_pct
-    # ---------- helpers -------------------------------------------------
+    def __init__(
+        self,
+        portfolio,
+        target_weights: dict | None = None,
+        spot_asset_symbol: str = "",
+        futures_contract_symbol_base: str = "",
+        *,
+        base_threshold_pct: float = 0.005,
+        threshold_pct: float | None = None,
+        exchange_client=None,
+    ):
+        if target_weights is None:
+            target_weights = {}
+        self.portfolio = portfolio
+        self.target_weights = target_weights
+        self.spot_asset_symbol = spot_asset_symbol
+        self.futures_contract_symbol_base = futures_contract_symbol_base
+        self.exchange = exchange_client
+        # If legacy threshold_pct provided, override base_threshold_pct
+        self.base_threshold_pct = threshold_pct if threshold_pct is not None else base_threshold_pct
+        # ---------- helpers -------------------------------------------------
 
     @staticmethod
     def _dynamic_threshold(base_thr: float, atr_24h_pct: Optional[float]) -> float:
