@@ -51,6 +51,8 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
         if bad_rows:
             logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
         df_signals = df_signals.dropna(subset=['timestamp'])
+        if df_signals.empty: # Add this check
+            return None
 
         # Keep only relevant columns and sort
         df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
@@ -484,15 +486,15 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_trade == "USDT": continue
                 if abs(usdt_value_to_trade) < 1.0: continue
 
-                action = "BUY" if usdt_value_to_trade > 0 else "SELL"
+                action_dir = "BUY" if usdt_value_to_trade > 0 else "SELL"
 
                 # ---- Gate hedged futures mapping ----
                 if asset_key_trade == long_asset_key:
-                    order_type = "OPEN_LONG"  if action == "BUY"  else "CLOSE_LONG"
+                    order_type = "OPEN_LONG"  if action_dir == "BUY"  else "CLOSE_LONG"
                 elif asset_key_trade == short_asset_key:
-                    order_type = "OPEN_SHORT" if action == "BUY"  else "CLOSE_SHORT" # Changed "SELL" to "BUY" for OPEN_SHORT
+                    order_type = "OPEN_SHORT" if action_dir == "BUY"  else "CLOSE_SHORT"
                 else:                              # spot leg
-                    order_type = action            # BUY/SELL
+                    order_type = action_dir            # BUY/SELL
 
                 abs_usdt_value_of_trade = abs(usdt_value_to_trade) 
                 commission_usdt = abs_usdt_value_of_trade * current_commission_rate
@@ -546,8 +548,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_short_value_usdt", 0.0))
                         portfolio["btc_short_value_usdt"] -= close_val
                         portfolio["usdt_balance"] += close_val # Margin returned
-
-                record_trade(current_timestamp, asset_key_trade, order_type, quantity_asset_traded_final,
+                # Pass action_dir (BUY/SELL) as the 'action' for the trade record
+                record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
                              abs_usdt_value_of_trade, current_price, commission_usdt,
                              slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list,
                              realized_pnl_spot_usdt=realized_pnl_this_spot_trade)
@@ -700,14 +702,16 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                             x=[sig['timestamp']],
                             y=[sig['close']],
                             mode='markers',
-                            marker=dict(size=14, symbol=symbol,
+                            marker=dict(size=10, symbol=symbol, # Changed size from 14 to 10
                                         color=color,
                                         line=dict(width=1.2, color='DarkSlateGrey')),
                             name=f"{sig['signal']} signal",
                             yaxis="y2",
                             hovertemplate=("Signal: %{text}<br>"
                                            f"Price: {sig['close']:.2f}<extra></extra>"),
-                            text=[sig['timestamp'].strftime('%Y-%m-%d %H:%M')]
+                            text=[sig['timestamp'].strftime('%Y-%m-%d %H:%M')],
+                            showlegend=False, # Added showlegend=False
+                            legendgroup="signals" # Added legendgroup
                         ),
                         secondary_y=True
                     )
