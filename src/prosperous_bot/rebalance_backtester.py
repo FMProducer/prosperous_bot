@@ -440,7 +440,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_loop == spot_asset_key: current_value_usdt = portfolio['btc_spot_qty'] * current_price
                 elif asset_key_loop == long_asset_key: current_value_usdt = portfolio['btc_long_value_usdt']
                 elif asset_key_loop == short_asset_key: current_value_usdt = portfolio['btc_short_value_usdt']
-                elif asset_key_trade == "USDT": current_value_usdt = portfolio['usdt_balance']
+                elif asset_key_loop == "USDT": current_value_usdt = portfolio['usdt_balance']
                 
                 adjustment_usdt = target_value_usdt - current_value_usdt
 
@@ -490,7 +490,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_trade == long_asset_key:
                     order_type = "OPEN_LONG"  if action == "BUY"  else "CLOSE_LONG"
                 elif asset_key_trade == short_asset_key:
-                    order_type = "OPEN_SHORT" if action == "SELL" else "CLOSE_SHORT"
+                    order_type = "OPEN_SHORT" if action == "BUY"  else "CLOSE_SHORT" # Changed "SELL" to "BUY" for OPEN_SHORT
                 else:                              # spot leg
                     order_type = action            # BUY/SELL
 
