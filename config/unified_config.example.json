@@ -95,8 +95,8 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "C:/Python/Prosperous_Bot/graphs/BTCUSDT_data.csv",
-      "signals_csv_path": "C:/Python/Prosperous_Bot/graphs/BTCUSDT_signals.csv",
+      "csv_file_path": "graphs/BTCUSDT_data.csv",
+      "signals_csv_path": "graphs/BTCUSDT_signals.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",
