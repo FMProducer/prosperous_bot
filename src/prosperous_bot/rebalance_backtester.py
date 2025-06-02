@@ -525,13 +525,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_trade == "USDT": continue
                 if abs(usdt_value_to_trade) < 1.0: continue
 
-                action_dir = "BUY" if usdt_value_to_trade > 0 else "SELL"
+                # ── direction depends on asset type ────────────
+                if asset_key_trade == short_asset_key:
+                    # увеличиваем шорт → SELL, уменьшаем → BUY
+                    action_dir = "SELL" if usdt_value_to_trade > 0 else "BUY"
+                else:   # spot / long
+                    action_dir = "BUY"  if usdt_value_to_trade > 0 else "SELL"
 
                 # ---- Gate hedged futures mapping ----
                 if asset_key_trade == long_asset_key:
                     order_type = "OPEN_LONG"  if action_dir == "BUY"  else "CLOSE_LONG"
                 elif asset_key_trade == short_asset_key:
-                    order_type = "OPEN_SHORT" if action_dir == "BUY"  else "CLOSE_SHORT"
+                    # OPEN_SHORT ⇔ SELL,   CLOSE_SHORT ⇔ BUY
+                    order_type = "OPEN_SHORT" if action_dir == "SELL" else "CLOSE_SHORT"
                 else:                              # spot leg
                     order_type = action_dir            # BUY/SELL
 
@@ -738,7 +744,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     if sub.empty: continue
                     fig.add_trace(go.Scatter(x=sub.timestamp, y=sub.close, mode='markers',
                               marker=dict(size=10, symbol=sym, color=color, line=dict(width=1.2,color='DarkSlateGrey')),
-                              name=f"{sig} signal", legendgroup="signals", yaxis='y2', showlegend=True)) # Added showlegend=True and adjusted access to columns
+                              name=f"{sig} signal",   # своя трасса
+                              legendgroup=f"{sig}_signal",  # отдельная группа
+                              yaxis='y2',
+                              showlegend=True))
             # --------------- ▲▲  END NEW  ▲▲ ------------------------------------------
 
             equity_html_path = os.path.join(output_dir, "equity.html")
