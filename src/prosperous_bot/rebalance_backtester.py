@@ -792,11 +792,12 @@ def main():
     parser.add_argument("--config_file", type=str, required=True, 
                         help="Path to the unified JSON configuration file (e.g., config/unified_config.json). "
                              "The backtester will use the 'backtest_settings' section.")
+    parser.add_argument("--override", type=str, help="JSON string to override config parameters, e.g., '{\"main_asset_symbol\":\"DOGE\"}'")
     args = parser.parse_args()
 
     backtest_params = None
-    data_file_path = None
-
+    # data_file_path will be resolved later
+    
     try:
         with open(args.config_file, 'r') as f:
             unified_config = json.load(f)
@@ -810,10 +811,33 @@ def main():
                           "'config/unified_config.example.json'. Exiting.")
             return
 
-        data_file_path = backtest_params.get("data_settings", {}).get("csv_file_path")
-        if not data_file_path:
+        # Determine actual_main_asset_symbol and update backtest_params if override is present
+        actual_main_asset_symbol = backtest_params.get("main_asset_symbol", "BTC") # Default from config or BTC
+
+        if args.override:
+            try:
+                override_dict = json.loads(args.override)
+                if "main_asset_symbol" in override_dict:
+                    actual_main_asset_symbol = override_dict["main_asset_symbol"]
+                    backtest_params["main_asset_symbol"] = actual_main_asset_symbol # Update for run_backtest internal use
+                    logging.info(f"Override: main_asset_symbol set to '{actual_main_asset_symbol}'.")
+                # Potentially merge other overrides into backtest_params here if needed for run_standalone_backtest
+                # For now, only main_asset_symbol is critical for path resolution before run_backtest
+            except json.JSONDecodeError as e:
+                logging.error(f"Error decoding --override JSON '{args.override}': {e}. Using symbol from config or default.")
+
+        csv_path_template = backtest_params.get("data_settings", {}).get("csv_file_path")
+        if not csv_path_template:
             logging.error("FATAL: 'data_settings.csv_file_path' not found in the 'backtest_settings' section of the config. Exiting.")
             return
+        
+        resolved_data_file_path = _subst_symbol(csv_path_template, actual_main_asset_symbol)
+        if not resolved_data_file_path: # Should not happen if template and symbol are valid
+            logging.error(f"FATAL: Could not resolve data_file_path from template '{csv_path_template}' with symbol '{actual_main_asset_symbol}'. Exiting.")
+            return
+        
+        # The signals_csv_path is resolved inside run_backtest using the (potentially overridden)
+        # main_asset_symbol in backtest_params, so no need to resolve it here for the main function's direct use.
 
     except FileNotFoundError:
         logging.warning(f"Configuration file '{args.config_file}' not found. "
@@ -880,31 +904,44 @@ def main():
             logging.info(f"Dummy unified config for backtester created at '{dummy_config_path}'. You should run with this path next time.")
             
             backtest_params = dummy_backtest_settings_content
-            data_file_path = dummy_data_path
+            # This dummy logic needs to be careful about resolved_data_file_path vs data_file_path
+            # For simplicity, if config is not found, we'll use the dummy paths directly without substitution for now.
+            # A more robust dummy creation would also consider the override for symbol.
+            dummy_data_path_val = dummy_data_path # Store the original dummy path template
 
-            if not os.path.exists(dummy_data_path):
+            if not os.path.exists(dummy_data_path_val): # Check existence of template path
                 timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=120, freq='h') # 5 days
                 prices = [20000 + (i*2) + (100 * ((i//24)%5)) - (80 * (i % 3)) for i in range(120)]
                 df_dummy_data = pd.DataFrame({
                     'timestamp': timestamps, 'open': [p - 5 for p in prices], 'high': [p + 10 for p in prices],
                     'low': [p - 10 for p in prices], 'close': prices, 'volume': [50 + i for i in range(120)]
                 })
-                df_dummy_data.to_csv(dummy_data_path, index=False)
-                logging.info(f"Dummy market data file created at '{dummy_data_path}'")
+                df_dummy_data.to_csv(dummy_data_path_val, index=False)
+                logging.info(f"Dummy market data file created at '{dummy_data_path_val}'")
 
             # Create dummy signals CSV if path is specified and file doesn't exist
-            dummy_signals_path = dummy_backtest_settings_content["data_settings"]["signals_csv_path"]
-            if dummy_signals_path and not os.path.exists(dummy_signals_path):
-                signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z',
-                                                    '2023-01-02T05:00:00Z', '2023-01-03T15:00:00Z',
+            # This part also needs care if we want dummy signals to match a potentially overridden symbol.
+            # For now, dummy signals path is hardcoded or uses BTC.
+            dummy_signals_path_template = dummy_backtest_settings_content["data_settings"]["signals_csv_path"]
+            # actual_main_asset_symbol for dummy case would default to BTC or from override if provided.
+            # This is getting complex for dummy section, ideally dummy config has fixed names.
+            # Let's assume dummy config uses fixed names for now.
+            if dummy_signals_path_template and not os.path.exists(dummy_signals_path_template):
+                signal_timestamps = pd.to_datetime(['2023-01-01T00:00:00Z', '2023-01-01T10:00:00Z', # Using dummy_signals_path_template directly
+                                                    '2023-01-02T05:00:00Z', '2023-01-03T15:00:00Z', # as it might not have placeholders
                                                     '2023-01-04T20:00:00Z'])
                 signals = ['NEUTRAL', 'BUY', 'NEUTRAL', 'SELL', 'BUY']
                 df_dummy_signals = pd.DataFrame({'timestamp': signal_timestamps, 'signal': signals})
-                df_dummy_signals.to_csv(dummy_signals_path, index=False)
-                logging.info(f"Dummy signal data file created at '{dummy_signals_path}'")
+                df_dummy_signals.to_csv(dummy_signals_path_template, index=False)
+                logging.info(f"Dummy signal data file created at '{dummy_signals_path_template}'")
             
+            # If config not found, we are in dummy mode.
+            # resolved_data_file_path should be set to the dummy path.
+            resolved_data_file_path = dummy_data_path # Use the variable holding the actual dummy path string.
+            # backtest_params is already set to dummy_backtest_settings_content
             logging.info("Exiting after creating dummy files. Please re-run with the dummy config: "
-                         f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}`")
+                         f"`python -m src.prosperous_bot.rebalance_backtester --config_file {dummy_config_path}` "
+                         f" (and optionally --override if testing that feature with dummy data).")
             return
 
         except Exception as e:
@@ -918,10 +955,11 @@ def main():
         logging.error(f"FATAL: An unexpected error occurred while loading the configuration: {e}", exc_info=True)
         return
 
-    if backtest_params and data_file_path:
-        run_standalone_backtest(backtest_params, data_file_path)
+    if backtest_params and resolved_data_file_path: # Check resolved_data_file_path
+        run_standalone_backtest(backtest_params, resolved_data_file_path)
     else:
-        # This state should ideally not be reached if the above logic is correct.
+        # This state should ideally not be reached if the above logic is correct,
+        # especially with the new checks for csv_path_template and resolved_data_file_path.
         logging.error("Critical error: Parameters or data file path could not be determined. Backtest aborted.")
 
 if __name__ == "__main__":
