@@ -61,7 +61,7 @@
   },
   "backtest_settings": {
     "main_asset_symbol": "BTC",
-    "apply_signal_logic": true,
+    "apply_signal_logic": false,
     "initial_capital": 1000.0,
     "initial_portfolio_value_usdt": 1000,
     "commission_taker": 0.0005,
@@ -69,12 +69,12 @@
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 5,
-    "rebalance_threshold": 0.005,
+    "min_rebalance_interval_minutes": 10,
+    "rebalance_threshold": 0.03,
     "target_weights_normal": {
-      "{main_asset_symbol}_SPOT": 0.65,
-      "{main_asset_symbol}_PERP_LONG": 0.11,
-      "{main_asset_symbol}_PERP_SHORT": 0.24
+      "{main_asset_symbol}_SPOT": 0.80,
+      "{main_asset_symbol}_PERP_LONG": 0.02,
+      "{main_asset_symbol}_PERP_SHORT": 0.18
     },
     "circuit_breaker_config": {
       "enabled": true,
@@ -88,10 +88,10 @@
       "entry_threshold": 0.70,
       "exit_threshold": 0.60,
       "target_weights_safe": {
-        "{main_asset_symbol}_SPOT": 0.75,
-        "{main_asset_symbol}_PERP_LONG": 0.05,
-        "{main_asset_symbol}_PERP_SHORT": 0.05,
-        "USDT": 0.15
+        "{main_asset_symbol}_SPOT": 0.80,
+        "{main_asset_symbol}_PERP_LONG": 0.02,
+        "{main_asset_symbol}_PERP_SHORT": 0.18,
+        "USDT": 0.0
       }
     },
     "data_settings": {
