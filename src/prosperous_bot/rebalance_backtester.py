@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import os
 import pandas as pd
@@ -23,6 +24,16 @@ configure_root()
 import logging
 
 # Basic logging configuration
+
+# ── Helper: substitute {main_asset_symbol} recursively ──────────────
+def _subst_symbol(obj, sym):
+    if isinstance(obj, dict):
+        return { _subst_symbol(k, sym): _subst_symbol(v, sym) for k, v in obj.items() }
+    if isinstance(obj, list):
+        return [ _subst_symbol(x, sym) for x in obj ]
+    if isinstance(obj, str) and "{main_asset_symbol}" in obj:
+        return obj.replace("{main_asset_symbol}", sym)
+    return obj
 
 
 def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
@@ -135,7 +146,10 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
 
 # --- START OF REPLACEMENT FUNCTION ---
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
-    params = params_dict 
+    # deep-copy → подстановка плейс-холдеров не изменит исходный dict
+    params = copy.deepcopy(params_dict)
+    main_symbol = params.get("main_asset_symbol", "BTC").upper()
+    params = _subst_symbol(params, main_symbol)
 
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:

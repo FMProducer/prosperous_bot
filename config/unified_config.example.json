@@ -72,9 +72,9 @@
     "min_rebalance_interval_minutes": 5,
     "rebalance_threshold": 0.005,
     "target_weights_normal": {
-      "BTC_SPOT": 0.65,
-      "BTC_PERP_LONG": 0.11,
-      "BTC_PERP_SHORT": 0.24
+      "{main_asset_symbol}_SPOT": 0.65,
+      "{main_asset_symbol}_PERP_LONG": 0.11,
+      "{main_asset_symbol}_PERP_SHORT": 0.24
     },
     "circuit_breaker_config": {
       "enabled": true,
@@ -88,9 +88,9 @@
       "entry_threshold": 0.70,
       "exit_threshold": 0.60,
       "target_weights_safe": {
-        "BTC_SPOT": 0.75,
-        "BTC_PERP_LONG": 0.05,
-        "BTC_PERP_SHORT": 0.05,
+        "{main_asset_symbol}_SPOT": 0.75,
+        "{main_asset_symbol}_PERP_LONG": 0.05,
+        "{main_asset_symbol}_PERP_SHORT": 0.05,
         "USDT": 0.15
       }
     },
