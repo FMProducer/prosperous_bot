@@ -1,10 +1,20 @@
 import asyncio
+import copy
 from prosperous_bot.logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
+# ── Helper: substitute {main_asset_symbol} recursively ──────────────
+def _subst_symbol(obj, sym):
+    if isinstance(obj, dict):
+        return { _subst_symbol(k, sym): _subst_symbol(v, sym) for k, v in obj.items() }
+    if isinstance(obj, list):
+        return [ _subst_symbol(x, sym) for x in obj ]
+    if isinstance(obj, str) and "{main_asset_symbol}" in obj:
+        return obj.replace("{main_asset_symbol}", sym)
+    return obj
 
 class RebalanceEngine:
     """
@@ -24,16 +34,60 @@ class RebalanceEngine:
         base_threshold_pct: float = 0.005,
         threshold_pct: float | None = None,
         exchange_client=None,
+        params: Optional[dict] = None, # Added params
     ):
-        if target_weights is None:
+        if target_weights is None: # Keep this for backward compatibility if needed
             target_weights = {}
-        self.portfolio = portfolio
-        self.target_weights = target_weights
-        self.spot_asset_symbol = spot_asset_symbol
-        self.futures_contract_symbol_base = futures_contract_symbol_base
-        self.exchange = exchange_client
-        # If legacy threshold_pct provided, override base_threshold_pct
-        self.base_threshold_pct = threshold_pct if threshold_pct is not None else base_threshold_pct
+
+        # Process params with _subst_symbol first
+        if params is None:
+            # Fallback or error if params is critical and not provided
+            # For now, let's assume it might be optional or handled later if None
+            # Or, initialize a default minimal structure if appropriate
+            _params = {}
+            logging.warning("RebalanceEngine initialized without 'params'. Using default empty dict.")
+        else:
+            sym = params.get("main_asset_symbol", "BTC").upper()
+            _params = _subst_symbol(copy.deepcopy(params), sym)
+
+        self.params = _params # Store processed params
+
+        # Initialize attributes from processed self.params
+        # Ensure default values are applied if keys are missing from self.params
+        self.portfolio = portfolio # portfolio is passed directly, not from params
+        self.exchange = exchange_client # exchange_client is passed directly
+
+        # Target weights can come from params or direct argument
+        # Direct argument target_weights takes precedence if provided for flexibility
+        self.target_weights = target_weights if target_weights else self.params.get('target_weights_normal', {})
+        if not self.target_weights: # Further fallback or error for target_weights
+             self.target_weights = self.params.get('target_weights', {}) # Legacy fallback
+             if self.target_weights:
+                 logging.warning("Using legacy 'target_weights' from params for RebalanceEngine.")
+             else:
+                 # Decide if this is a critical error or if empty target_weights is acceptable
+                 logging.warning("RebalanceEngine: 'target_weights_normal' (or 'target_weights') not found in params or direct args. Using empty target_weights.")
+                 self.target_weights = {}
+
+
+        # Spot and futures symbols from params, with fallbacks if needed
+        self.spot_asset_symbol = self.params.get('spot_asset_symbol', spot_asset_symbol if spot_asset_symbol else "BTCUSDT") # Example default
+        self.futures_contract_symbol_base = self.params.get('futures_contract_symbol_base',
+                                                        futures_contract_symbol_base if futures_contract_symbol_base else "BTCUSDT_PERP") # Example default
+
+        # Threshold from params or direct argument
+        # Direct threshold_pct (legacy) or base_threshold_pct argument takes precedence
+        if threshold_pct is not None:
+             self.base_threshold_pct = threshold_pct
+             logging.info(f"RebalanceEngine: Using direct legacy 'threshold_pct': {threshold_pct}")
+        elif base_threshold_pct is not None and 'base_threshold_pct' not in self.params: # direct base_threshold_pct but not in params
+            self.base_threshold_pct = base_threshold_pct
+            logging.info(f"RebalanceEngine: Using direct 'base_threshold_pct': {base_threshold_pct}")
+        else: # Fallback to params or the default of the direct argument if not in params
+            self.base_threshold_pct = self.params.get('rebalance_threshold', base_threshold_pct)
+            logging.info(f"RebalanceEngine: Using 'rebalance_threshold' from params or default: {self.base_threshold_pct}")
+
+
         # ---------- helpers -------------------------------------------------
 
     @staticmethod
