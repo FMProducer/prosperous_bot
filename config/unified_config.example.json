@@ -95,8 +95,8 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "graphs/BTCUSDT_data.csv",
-      "signals_csv_path": "graphs/BTCUSDT_signals.csv",
+      "csv_file_path": "graphs/{main_asset_symbol}USDT_data.csv",
+      "signals_csv_path": "graphs/{main_asset_symbol}USDT_signals.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",
@@ -108,8 +108,8 @@
       "price_col_for_rebalance": "close"
     },
     "date_range": {
-      "start_date": "2025-04-26T22:45:00Z",
-      "end_date": "2025-05-26T22:40:59Z"
+      "start_date": "auto",
+      "end_date": "auto"
     },
     "logging_level": "INFO",
     "report_path_prefix": "./reports/"

@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import pandas as pd
 import numpy as np
 
@@ -31,8 +32,12 @@ def _subst_symbol(obj, sym):
         return { _subst_symbol(k, sym): _subst_symbol(v, sym) for k, v in obj.items() }
     if isinstance(obj, list):
         return [ _subst_symbol(x, sym) for x in obj ]
-    if isinstance(obj, str) and "{main_asset_symbol}" in obj:
-        return obj.replace("{main_asset_symbol}", sym)
+    if isinstance(obj, str):
+        if "{main_asset_symbol}" in obj:
+            obj = obj.replace("{main_asset_symbol}", sym)
+        # заменяем *USDT  →  <SYM>USDT_
+        obj = re.sub(r"\*USDT", f"{sym}USDT", obj)
+        return obj
     return obj
 
 
@@ -227,6 +232,21 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         logging.info(f"Market data 'timestamp' column is already tz-aware ({df_market['timestamp'].dt.tz}). Converting to UTC for consistency.")
         df_market['timestamp'] = df_market['timestamp'].dt.tz_convert('UTC')
+
+    # ── auto-range: если "auto" или дата вне диапазона файла ────────────
+    min_ts, max_ts = df_market['timestamp'].min(), df_market['timestamp'].max()
+    dr = params.setdefault("date_range", {}) # Get or create 'date_range' dict
+    for edge, value in (("start_date", dr.get("start_date")), ("end_date", dr.get("end_date"))):
+        if value in (None, "auto"):
+            dr[edge] = (min_ts if edge == "start_date" else max_ts).isoformat()
+            logging.info(f"Date range: '{edge}' set to '{dr[edge]}' (auto from data).") # Added logging
+        else:   # дата в конфиге → убеждаемся, что попадает в файл
+            dt = pd.to_datetime(value, utc=True, errors="coerce")
+            if dt is pd.NaT or dt < min_ts or dt > max_ts:
+                original_value = value # Store original value for logging
+                dr[edge] = (min_ts if edge == "start_date" else max_ts).isoformat()
+                logging.warning(f"Date range: '{edge}' was '{original_value}', adjusted to '{dr[edge]}' (out of data range or invalid).") # Enhanced logging
+            # else: # If date is valid and within range, keep it as is from config. No change needed to dr[edge].
 
     df_market = df_market.sort_values(by='timestamp', ascending=True)
 
