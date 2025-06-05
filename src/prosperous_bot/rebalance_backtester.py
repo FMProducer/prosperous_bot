@@ -168,7 +168,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
         'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
         'last_rebalance_attempt_timestamp': None,
-        'effective_leverage': leverage  # ← добавлено сюда
+        'effective_leverage': leverage
     }
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:
@@ -393,6 +393,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
             price_change_ratio = current_price / portfolio['prev_btc_price']
             lev = portfolio.get("effective_leverage", 5.0)
+            if lev <= 0:
+                logging.warning("Invalid leverage found during PnL update, using fallback 1e-9.")
+                lev = 1e-9
             portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * lev * (price_change_ratio - 1)
             portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * lev * (1 - price_change_ratio)
         
