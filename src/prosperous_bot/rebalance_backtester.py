@@ -407,6 +407,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
             lev = portfolio.get("effective_leverage", 5.0)
+    if lev <= 0:
+        lev = 1e-9
             margin_for_long = portfolio['btc_long_value_usdt'] / lev
             margin_for_short = portfolio['btc_short_value_usdt'] / lev
             used_margin_usdt = margin_for_long + margin_for_short
