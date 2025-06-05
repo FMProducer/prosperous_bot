@@ -3,7 +3,7 @@ import pandas as pd
 import copy
 import tempfile
 import os
-from src.prosperous_bot.rebalance_backtester import run_backtest
+from prosperous_bot.rebalance_backtester import run_backtest
 
 # Minimal CSV market data
 # Timestamp, Open, High, Low, Close, Volume
@@ -224,4 +224,3 @@ def test_backtest_leverage_triggers_safe_mode(market_data_file):
     assert results_zero_leverage["total_net_pnl_usdt"] == pytest.approx(-20.0, abs=1.0), \
         f"PNL with 0x leverage should be spot PNL only. Got: {results_zero_leverage['total_net_pnl_usdt']}"
 
-```
