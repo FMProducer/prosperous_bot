@@ -24,10 +24,13 @@ async def metrics(p_spot: float):
     leverage = 5.0  # Default leverage
     values = await portfolio.get_value_distribution_usdt(p_spot, p_contract=None, leverage=leverage)
     positions = await portfolio.get_positions_with_margin()
-    try:
-        pos = next(p for p in positions if p.contract == "BTC_USDT" and abs(float(p.size)) >= 1)
-        p_contract = float(pos.margin) / abs(float(pos.size))
-    except StopIteration:
+    if positions: # Проверяем, есть ли позиции
+        try:
+            pos = next(p for p in positions if p.contract == "BTC_USDT" and abs(float(p.size)) >= 1)
+            p_contract = float(pos.margin) / abs(float(pos.size))
+        except StopIteration: # Если нужная позиция не найдена в непустом списке positions
+            p_contract = p_spot
+    else: # Если список positions пуст
         p_contract = p_spot
 
     total = sum(values.values())

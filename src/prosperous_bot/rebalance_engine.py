@@ -150,6 +150,8 @@ class RebalanceEngine:
 
             side = "buy" if qty_float > 0 else "sell"
             qty_lot = self._round_lot(abs(qty_float))
+            if abs(delta_usdt) < 1.0: # Проверяем абсолютное значение delta_usdt
+                continue
 
             orders.append(
                 dict(
