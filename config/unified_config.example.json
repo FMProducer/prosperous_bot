@@ -60,6 +60,7 @@
     ]
   },
   "backtest_settings": {
+    "futures_leverage": 5.0,
     "main_asset_symbol": "BTC",
     "apply_signal_logic": false,
     "initial_capital": 1000.0,
@@ -68,7 +69,6 @@
     "commission_maker": 0.0002,
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
-+    "futures_leverage": 5,
     "annualization_factor": 252.0,
     "min_rebalance_interval_minutes": 10,
     "rebalance_threshold": 0.03,
