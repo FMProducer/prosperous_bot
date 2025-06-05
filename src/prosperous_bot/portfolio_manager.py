@@ -12,7 +12,7 @@ class PortfolioManager:
         acc_raw = self.spot_api.spot.get_account_detail()
         accounts = await acc_raw if asyncio.iscoroutine(acc_raw) else acc_raw
 
-        spot_qty = sum(float(a.available) for a in accounts if getattr(a, "currency", "") == self._base)
+        spot_qty = sum(float(a.available or 0) for a in accounts if getattr(a, "currency", "") == self._base)
         spot_val = spot_qty * p_spot
 
         pos_raw = self.futures_api.futures.list_positions()
