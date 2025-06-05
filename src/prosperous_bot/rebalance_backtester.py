@@ -156,8 +156,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     main_symbol = params.get("main_asset_symbol", "BTC").upper()
     params = _subst_symbol(params, main_symbol)
 
-    leverage = params.get("futures_leverage", 5.0)
-    leverage = leverage if leverage > 0 else 1e-9
+    leverage = float(params.get("futures_leverage", 5.0))
+    if leverage <= 0:
+        logging.warning("Invalid 'futures_leverage' <= 0 found in config. Using fallback leverage = 1e-9.")
+        leverage = 1e-9
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:
         target_weights_normal = params.get('target_weights', {})
@@ -347,10 +349,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                 f"Skipping rebalancing for this candle.")
                 if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
                     price_change_ratio = current_price / portfolio['prev_btc_price']
-                    if portfolio['btc_long_value_usdt'] > 0:
-                        portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * leverage * (price_change_ratio - 1)
-                    if portfolio['btc_short_value_usdt'] > 0:
-                        portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * leverage * (1 - price_change_ratio)
+                    long_usdt = portfolio['btc_long_value_usdt']
+                    short_usdt = portfolio['btc_short_value_usdt']
+                    portfolio['btc_long_value_usdt'] = long_usdt + long_usdt * leverage * (price_change_ratio - 1)
+                    portfolio['btc_short_value_usdt'] = short_usdt + short_usdt * leverage * (1 - price_change_ratio)
                 
                 total_portfolio_value_cb = calculate_portfolio_value(
                     portfolio['usdt_balance'], portfolio['btc_spot_qty'],
@@ -379,10 +381,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
             price_change_ratio = current_price / portfolio['prev_btc_price']
-            if portfolio['btc_long_value_usdt'] > 0:
-                portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * leverage * (price_change_ratio - 1)
-            if portfolio['btc_short_value_usdt'] > 0:
-                portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * leverage * (1 - price_change_ratio)
+            portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * leverage * (price_change_ratio - 1)
+            portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * leverage * (1 - price_change_ratio)
         
         total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],
@@ -390,14 +390,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         nav = total_portfolio_value
         used_margin_usdt = 0
-        if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False) :
+        if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False):
             # Ensure leverage is not zero before division, though typical leverage values are > 0
             # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
-            effective_leverage_for_margin = leverage
-            margin_for_long = portfolio['btc_long_value_usdt'] / effective_leverage_for_margin
-            margin_for_short = portfolio['btc_short_value_usdt'] / effective_leverage_for_margin
+            margin_for_long = portfolio['btc_long_value_usdt'] / leverage
+            margin_for_short = portfolio['btc_short_value_usdt'] / leverage
             used_margin_usdt = margin_for_long + margin_for_short
             margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
         else:
