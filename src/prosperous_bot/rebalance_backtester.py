@@ -157,6 +157,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     params = _subst_symbol(params, main_symbol)
 
     leverage = params.get("futures_leverage", 5.0)
+    leverage = leverage if leverage > 0 else 1e-9
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:
         target_weights_normal = params.get('target_weights', {})
@@ -394,7 +395,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
-            effective_leverage_for_margin = leverage if leverage > 0 else 1e-9
+            effective_leverage_for_margin = leverage
             margin_for_long = portfolio['btc_long_value_usdt'] / effective_leverage_for_margin
             margin_for_short = portfolio['btc_short_value_usdt'] / effective_leverage_for_margin
             used_margin_usdt = margin_for_long + margin_for_short

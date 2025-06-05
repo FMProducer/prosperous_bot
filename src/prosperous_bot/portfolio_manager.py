@@ -23,7 +23,7 @@ class PortfolioManager:
             size = float(p.size)
             # notional = abs(size) × contract-price (fallback→margin)
             margin = float(getattr(p, "margin", 0.0))
-            notional = abs(margin * leverage)
+            notional = abs(size) * p_contract if p_contract is not None else abs(float(getattr(p, "margin", 0.0)) * leverage)
             if size > 0:
                 long_val += notional
             elif size < 0:
