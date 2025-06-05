@@ -322,6 +322,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
         'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
         'last_rebalance_attempt_timestamp': None,
+        'effective_leverage': leverage
     }
     blocked_trades_list = []
 
@@ -406,11 +407,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
-            lev = portfolio.get("effective_leverage", 5.0)
-    if lev <= 0:
-        lev = 1e-9
-            margin_for_long = portfolio['btc_long_value_usdt'] / lev
-            margin_for_short = portfolio['btc_short_value_usdt'] / lev
+            lev_for_margin = portfolio.get("effective_leverage", 5.0)
+            if lev_for_margin <= 0:
+                logging.warning(f"Backtester: Invalid effective_leverage {lev_for_margin} for margin calculation. Using 1e-9.")
+                lev_for_margin = 1e-9
+            margin_for_long = portfolio['btc_long_value_usdt'] / lev_for_margin
+            margin_for_short = portfolio['btc_short_value_usdt'] / lev_for_margin
             used_margin_usdt = margin_for_long + margin_for_short
             margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
         else:
