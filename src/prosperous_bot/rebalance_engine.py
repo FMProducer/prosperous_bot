@@ -61,25 +61,25 @@ class RebalanceEngine:
         # Direct argument target_weights takes precedence if provided for flexibility
         self.target_weights = target_weights if target_weights else self.params.get('target_weights_normal', {})
         if not self.target_weights: # Further fallback or error for target_weights
-             self.target_weights = self.params.get('target_weights', {}) # Legacy fallback
-             if self.target_weights:
-                 logging.warning("Using legacy 'target_weights' from params for RebalanceEngine.")
-             else:
-                 # Decide if this is a critical error or if empty target_weights is acceptable
-                 logging.warning("RebalanceEngine: 'target_weights_normal' (or 'target_weights') not found in params or direct args. Using empty target_weights.")
-                 self.target_weights = {}
+            self.target_weights = self.params.get('target_weights', {}) # Legacy fallback
+            if self.target_weights:
+                logging.warning("Using legacy 'target_weights' from params for RebalanceEngine.")
+            else:
+                # Decide if this is a critical error or if empty target_weights is acceptable
+                logging.warning("RebalanceEngine: 'target_weights_normal' (or 'target_weights') not found in params or direct args. Using empty target_weights.")
+                self.target_weights = {}
 
 
         # Spot and futures symbols from params, with fallbacks if needed
         self.spot_asset_symbol = self.params.get('spot_asset_symbol', spot_asset_symbol if spot_asset_symbol else "BTCUSDT") # Example default
         self.futures_contract_symbol_base = self.params.get('futures_contract_symbol_base',
-                                                        futures_contract_symbol_base if futures_contract_symbol_base else "BTCUSDT_PERP") # Example default
+            futures_contract_symbol_base if futures_contract_symbol_base else "BTCUSDT_PERP") # Example default
 
         # Threshold from params or direct argument
         # Direct threshold_pct (legacy) or base_threshold_pct argument takes precedence
         if threshold_pct is not None:
-             self.base_threshold_pct = threshold_pct
-             logging.info(f"RebalanceEngine: Using direct legacy 'threshold_pct': {threshold_pct}")
+            self.base_threshold_pct = threshold_pct
+            logging.info(f"RebalanceEngine: Using direct legacy 'threshold_pct': {threshold_pct}")
         elif base_threshold_pct is not None and 'base_threshold_pct' not in self.params: # direct base_threshold_pct but not in params
             self.base_threshold_pct = base_threshold_pct
             logging.info(f"RebalanceEngine: Using direct 'base_threshold_pct': {base_threshold_pct}")
@@ -119,9 +119,15 @@ class RebalanceEngine:
         if hasattr(self.portfolio, "get_nav_usdt"):
             nav = await self.portfolio.get_nav_usdt(p_spot=p_spot, p_contract=p_contract)
         else:  # stub-портфели в tests
-            dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
-            nav = sum(dist_abs.values())
-        dist = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
+            try:
+                dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
+            except TypeError:
+                dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted)
+                nav = sum(dist_abs.values())
+        try:
+            dist = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
+        except TypeError:
+            dist = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted)
         thr = self._dynamic_threshold(self.base_threshold_pct, atr_24h_pct)
 
         orders = []

@@ -157,19 +157,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     params = _subst_symbol(params, main_symbol)
 
     leverage = float(params.get("futures_leverage", 5.0))
+    initial_portfolio_value_usdt = float(params.get("initial_portfolio_value_usdt", 10000.0))
     if leverage <= 0:
         logging.warning("Invalid 'futures_leverage' <= 0 found in config. Using fallback leverage = 1e-9.")
         leverage = 1e-9
-
-    portfolio = {
-        'usdt_balance': initial_portfolio_value_usdt, 'btc_spot_qty': 0.0,
-        'btc_spot_lots': [], 'btc_long_value_usdt': 0.0, 'btc_short_value_usdt': 0.0,
-        'prev_btc_price': None, 'total_commissions_usdt': 0.0, 'total_slippage_usdt': 0.0,
-        'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
-        'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
-        'last_rebalance_attempt_timestamp': None,
-        'effective_leverage': leverage
-    }
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:
         target_weights_normal = params.get('target_weights', {})
@@ -215,7 +206,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
     output_dir = None
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
     if generate_reports:
         report_path_prefix = params.get('report_path_prefix', './reports/')
@@ -322,7 +313,6 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
         'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
         'last_rebalance_attempt_timestamp': None,
-        'effective_leverage': leverage
     }
     blocked_trades_list = []
 
@@ -392,12 +382,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
             price_change_ratio = current_price / portfolio['prev_btc_price']
-            lev = portfolio.get("effective_leverage", 5.0)
-            if lev <= 0:
-                logging.warning("Invalid leverage found during PnL update, using fallback 1e-9.")
-                lev = 1e-9
-            portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * lev * (price_change_ratio - 1)
-            portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * lev * (1 - price_change_ratio)
+            portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * leverage * (price_change_ratio - 1)
+            portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * leverage * (1 - price_change_ratio)
         
         total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],
@@ -410,12 +396,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
-            lev_for_margin = portfolio.get("effective_leverage", 5.0)
-            if lev_for_margin <= 0:
-                logging.warning(f"Backtester: Invalid effective_leverage {lev_for_margin} for margin calculation. Using 1e-9.")
-                lev_for_margin = 1e-9
-            margin_for_long = portfolio['btc_long_value_usdt'] / lev_for_margin
-            margin_for_short = portfolio['btc_short_value_usdt'] / lev_for_margin
+            margin_for_long = portfolio['btc_long_value_usdt'] / leverage
+            margin_for_short = portfolio['btc_short_value_usdt'] / leverage
             used_margin_usdt = margin_for_long + margin_for_short
             margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
         else:
@@ -678,7 +660,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics.update(extra_metrics)
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
-    metrics["used_leverage"] = leverage
+    # Add relevant portfolio state counters to metrics
+    metrics["num_safe_mode_entries"] = portfolio.get('num_safe_mode_entries', 0)
+    metrics["num_circuit_breaker_triggers"] = portfolio.get('num_circuit_breaker_triggers', 0)
+    metrics["time_steps_in_safe_mode"] = portfolio.get('time_steps_in_safe_mode', 0)
+
     # (And many more metrics from the original file)
 
 
