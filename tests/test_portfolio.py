@@ -96,7 +96,7 @@ async def test_get_value_distribution_with_leverage(mocker):
         assert actual_values_async_spot_only[key] == pytest.approx(expected_distribution_spot_only[key]), \
             f"Async mismatch for {key} (spot only)"
 
-    actual_values_sync_spot_only = pm.get_value_distribution_sync(p_spot=p_spot, p_contract=p_contract, leverage=leverage)
+    actual_values_sync_spot_only = await pm.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract, leverage=leverage)
     assert actual_values_sync_spot_only.keys() == expected_distribution_spot_only.keys()
     for key in expected_distribution_spot_only:
         assert actual_values_sync_spot_only[key] == pytest.approx(expected_distribution_spot_only[key]), \

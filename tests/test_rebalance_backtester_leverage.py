@@ -163,7 +163,7 @@ def test_backtest_leverage_triggers_safe_mode(market_data_file):
         "BTC_PERP_SHORT": 0.4
     }
     config_safe_mode_low_leverage["safe_mode_config"]["enabled"] = True
-    config_safe_mode_low_leverage["safe_mode_config"]["entry_threshold"] = 0.70
+    config_safe_mode_low_leverage["safe_mode_config"]["entry_threshold"] = 0.65
     # With 1000 USD capital, 400 LONG, 400 SHORT.
     # Margin with 2x leverage: (400/2) + (400/2) = 200 + 200 = 400.
     # Initial NAV is 1000. Margin Usage: 400 / 1000 = 0.4. This should NOT trigger safe mode.
@@ -189,6 +189,7 @@ def test_backtest_leverage_triggers_safe_mode(market_data_file):
     # And leverage of 2.0 (as above) should not.
 
     config_safe_mode_high_leverage["futures_leverage"] = 1.1
+    config_safe_mode_high_leverage["safe_mode_config"]["entry_threshold"] = 0.65 # This line was missing in the previous diff
 
     results_high_leverage = run_backtest(config_safe_mode_high_leverage, data_path=market_data_file, is_optimizer_call=True)
 
