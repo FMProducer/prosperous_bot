@@ -61,6 +61,7 @@ def test_backtest_with_different_leverages(market_data_file):
     # Test Case 1: Leverage 5x (default behavior if not specified, but we specify for clarity)
     config_5x = copy.deepcopy(BASE_CONFIG)
     config_5x["futures_leverage"] = 5.0
+    config_5x["report_path_prefix"] = "./reports_test_leverage/5x"
     # Disable safe mode for these P&L comparison tests to isolate leverage effect on P&L
     config_5x["safe_mode_config"]["enabled"] = False
     results["5x"] = run_backtest(config_5x, data_path=market_data_file, is_optimizer_call=True)
@@ -68,12 +69,14 @@ def test_backtest_with_different_leverages(market_data_file):
     # Test Case 2: Leverage 10x
     config_10x = copy.deepcopy(BASE_CONFIG)
     config_10x["futures_leverage"] = 10.0
+    config_10x["report_path_prefix"] = "./reports_test_leverage/10x"
     config_10x["safe_mode_config"]["enabled"] = False
     results["10x"] = run_backtest(config_10x, data_path=market_data_file, is_optimizer_call=True)
 
     # Test Case 3: Leverage 1x
     config_1x = copy.deepcopy(BASE_CONFIG)
     config_1x["futures_leverage"] = 1.0
+    config_1x["report_path_prefix"] = "./reports_test_leverage/1x"
     config_1x["safe_mode_config"]["enabled"] = False
     results["1x"] = run_backtest(config_1x, data_path=market_data_file, is_optimizer_call=True)
 
