@@ -8,7 +8,7 @@ class PortfolioManager:
         self.futures_api = futures_api
         self._base = base_currency
 
-    async def get_value_distribution_usdt(self, p_spot: float, p_contract: float | None = None):
+    async def get_value_distribution_usdt(self, p_spot: float, p_contract: float | None = None, leverage: float = 5.0):
         acc_raw = self.spot_api.spot.get_account_detail()
         accounts = await acc_raw if asyncio.iscoroutine(acc_raw) else acc_raw
 
@@ -22,7 +22,8 @@ class PortfolioManager:
         for p in positions:
             size = float(p.size)
             # notional = abs(size) × contract-price (fallback→margin)
-            notional = abs(size) * p_contract if p_contract else float(getattr(p, "margin", 0.0))
+            margin = float(getattr(p, "margin", 0.0))
+            notional = abs(margin * leverage)
             if size > 0:
                 long_val += notional
             elif size < 0:
@@ -39,5 +40,5 @@ class PortfolioManager:
             f"{self._base}_PERP_SHORT" : short_val / total,
         }
 
-    def get_value_distribution_sync(self, p_spot: float, p_contract: float):
-        return asyncio.run(self.get_value_distribution_usdt(p_spot, p_contract))
+    def get_value_distribution_sync(self, p_spot: float, p_contract: float, leverage: float = 5.0):
+        return asyncio.run(self.get_value_distribution_usdt(p_spot, p_contract, leverage))
