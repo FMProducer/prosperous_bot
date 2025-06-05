@@ -224,3 +224,19 @@ def test_backtest_leverage_triggers_safe_mode(market_data_file):
     assert results_zero_leverage["total_net_pnl_usdt"] == pytest.approx(-20.0, abs=1.0), \
         f"PNL with 0x leverage should be spot PNL only. Got: {results_zero_leverage['total_net_pnl_usdt']}"
 
+def test_trade_quantity_scaling_with_leverage(mocker):
+    from prosperous_bot.portfolio_manager import PortfolioManager
+    spot_api = mocker.Mock()
+    futures_api = mocker.Mock()
+    pm = PortfolioManager(spot_api, futures_api)
+    price_spot = 50000
+    p_contract = 250.0
+    nav_leverage = 15000
+    nav_no_leverage = 3000
+    leverage = 5.0
+    diff = 0.1
+    delta_usdt_leverage = diff * nav_leverage
+    delta_usdt_noleverage = diff * nav_no_leverage
+    qty_with_leverage = delta_usdt_leverage / p_contract
+    qty_without_leverage = delta_usdt_noleverage / (p_contract * leverage)
+    assert qty_with_leverage == pytest.approx(qty_without_leverage * leverage)
