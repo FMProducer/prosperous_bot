@@ -15,7 +15,8 @@ async def test_get_value_distribution_usdt(mocker):
         gate_api.Position(size="-0.02", contract="BTC_USDT", unrealised_pnl="-20", margin="200")
     ])
     pm = PortfolioManager(spot_api, fut_api)
-    values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250)
+    leverage = 5.0  # Default leverage
+    values = await pm.get_value_distribution_usdt(p_spot=50000, p_contract=250, leverage=leverage)
     assert isinstance(values, dict)
     assert all(k in values for k in ("BTC_SPOT", "BTC_PERP_SHORT", "BTC_PERP_LONG"))
     assert all(isinstance(v, float) for v in values.values())
