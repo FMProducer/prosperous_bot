@@ -24,7 +24,8 @@ def test_value_distribution_valid(spot, short, long, price):
         ]
     )
     pm = PortfolioManager(spot_api, fut_api)
-    values = asyncio.run(pm.get_value_distribution_usdt(price, 250))
+    leverage = 5.0  # Default leverage
+    values = asyncio.run(pm.get_value_distribution_usdt(price, 250, leverage=leverage))
     total = sum(values.values())
     assert all(v >= 0 for v in values.values())
     assert total > 0
