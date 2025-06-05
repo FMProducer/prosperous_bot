@@ -21,9 +21,11 @@ class PortfolioManager:
         long_val = short_val = 0.0                      # notional in USDT
         for p in positions:
             size = float(p.size)
-            # notional = abs(size) × contract-price (fallback→margin)
             margin = float(getattr(p, "margin", 0.0))
-            notional = abs(size) * p_contract if p_contract is not None else abs(float(getattr(p, "margin", 0.0)) * leverage)
+            if p_contract is not None:
+                notional = abs(size) * p_contract
+            else:
+                notional = margin * leverage  # fallback if contract price not given
             if size > 0:
                 long_val += notional
             elif size < 0:

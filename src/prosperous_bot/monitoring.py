@@ -21,7 +21,8 @@ async def startup():
 
 @app.get("/metrics")
 async def metrics(p_spot: float):
-    values = await portfolio.get_value_distribution_usdt(p_spot, p_contract=None)
+    leverage = 5.0  # Default leverage
+    values = await portfolio.get_value_distribution_usdt(p_spot, p_contract=None, leverage=leverage)
     positions = await portfolio.get_positions_with_margin()
     try:
         pos = next(p for p in positions if p.contract == "BTC_USDT" and abs(float(p.size)) >= 1)

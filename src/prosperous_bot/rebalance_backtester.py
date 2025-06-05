@@ -160,6 +160,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     if leverage <= 0:
         logging.warning("Invalid 'futures_leverage' <= 0 found in config. Using fallback leverage = 1e-9.")
         leverage = 1e-9
+    portfolio['effective_leverage'] = leverage
     target_weights_normal = params.get('target_weights_normal', {}) 
     if not target_weights_normal:
         target_weights_normal = params.get('target_weights', {})
@@ -659,6 +660,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics.update(extra_metrics)
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
+    metrics["used_leverage"] = leverage
     # (And many more metrics from the original file)
 
 
