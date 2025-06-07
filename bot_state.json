@@ -4,39 +4,39 @@
         "time": "2025-06-02T16:53:48.924862"
     },
     "SUIUSDT": {
-        "signal": "buy",
-        "time": "2025-06-02T16:59:09.630823"
+        "signal": "sell",
+        "time": "2025-06-07T21:42:42.281757"
     },
     "BTCUSDT": {
-        "signal": "sell",
-        "time": "2025-06-02T16:43:05.445436"
-    },
-    "WCTUSDT": {
-        "signal": "sell",
-        "time": "2025-06-02T00:41:02.976931"
-    },
-    "ADAUSDT": {
-        "signal": "sell",
-        "time": "2025-06-02T16:43:05.477522"
+        "signal": "buy",
+        "time": "2025-06-07T21:42:42.250188"
     },
     "MASKUSDT": {
         "signal": "sell",
         "time": "2025-06-02T16:59:09.630823"
     },
-    "WIFUSDT": {
+    "HUMAUSDT": {
         "signal": "buy",
-        "time": "2025-06-02T00:41:03.017322"
+        "time": "2025-06-07T21:42:42.260754"
     },
-    "SOPHUSDT": {
-        "signal": "buy",
-        "time": "2025-06-02T16:43:05.490125"
-    },
-    "AUSDT": {
+    "TRUMPUSDT": {
         "signal": "sell",
-        "time": "2025-06-02T17:15:14.197728"
+        "time": "2025-06-07T21:42:42.290872"
     },
-    "AAVEUSDT": {
+    "ANIMEUSDT": {
+        "signal": "sell",
+        "time": "2025-06-07T21:42:42.308349"
+    },
+    "ENAUSDT": {
         "signal": "buy",
-        "time": "2025-06-02T17:53:48.602511"
+        "time": "2025-06-07T21:42:42.315921"
+    },
+    "VIRTUALUSDT": {
+        "signal": "buy",
+        "time": "2025-06-07T21:42:42.325750"
+    },
+    "TRBUSDT": {
+        "signal": "buy",
+        "time": "2025-06-07T21:42:42.333893"
     }
 }
