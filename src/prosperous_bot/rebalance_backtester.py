@@ -282,17 +282,28 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     output_dir = None
     timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
+    actual_reports_dir = None
     if generate_reports:
         report_path_prefix = params.get('report_path_prefix', './reports/')
         if is_optimizer_call and trial_id_for_reports is not None:
+            # Specific path for optimizer trials
             output_dir = os.path.join(report_path_prefix.rstrip('/'), "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
-        else:
+        elif params.get('report_path_prefix'): # User specified a prefix
             output_dir = os.path.join(report_path_prefix.rstrip('/'), f"backtest_{timestamp_str}")
-        os.makedirs(output_dir, exist_ok=True)
-        logging.info(f"Output reports for this run will be saved to: {output_dir}")
+        # If no report_path_prefix is in params, output_dir remains None here.
+
+        if output_dir:
+            actual_reports_dir = output_dir
+        else:
+            # Default to "reports" if output_dir wasn't set (e.g. no prefix and not an optimizer trial needing specific path)
+            # This ensures actual_reports_dir is always set if generate_reports is True
+            actual_reports_dir = "reports"
+
+        os.makedirs(actual_reports_dir, exist_ok=True)
+        logging.info(f"Report generation is ON. Output directory: {actual_reports_dir}")
     else:
-        if is_optimizer_call:
-            logging.debug("Optimizer call: Individual trial report generation is skipped by default for this trial.")
+        logging.info("Report generation is OFF. No reports will be saved.")
+        # output_dir remains None as it's not used when reports are off.
 
     df_market_original = load_data(data_path) # Keep original for plotting price
     if df_market_original is None or df_market_original.empty:
@@ -709,30 +720,26 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         # 'df_market' is the correct DataFrame containing all candles for the backtest period
         simulated_trade_log = simulate_rebalance(df_market, orders_by_step, leverage)
 
-        # Определяем путь для rebalance_trades.csv (логика из оригинального кода, но выполняется один раз)
-        if generate_reports and output_dir:
-            rebalance_trades_csv_path = os.path.join(output_dir, "rebalance_trades.csv")
-        else:
-            # Запасной путь, если отчеты не генерируются или output_dir не установлен (согласовано с исходным поведением)
-            os.makedirs("reports", exist_ok=True) # Убедимся, что директория 'reports' существует
-            rebalance_trades_csv_path = "reports/rebalance_trades.csv"
-
-        # Сохраняем лог сделок ребалансировки (структура адаптирована из патча)
-        if simulated_trade_log:  # если список не пуст
-            df_trades = pd.DataFrame(simulated_trade_log)
-            df_trades.to_csv(rebalance_trades_csv_path, index=False)
-            logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
-        else:
-            logging.info("simulate_rebalance did not return any trades.")
-            # даже при пустом логе создаём CSV с заголовками (согласно патчу и исходной логике)
-            empty_df = pd.DataFrame(columns=[
-                "asset_key", "entry_price", "exit_price", "qty",
-                "pnl_gross_quote", "leverage"
-            ])
-            empty_df.to_csv(rebalance_trades_csv_path, index=False)
-            logging.info(f"Empty simulated rebalance trades file still saved to {rebalance_trades_csv_path}")
+        if generate_reports and actual_reports_dir:
+            rebalance_trades_csv_path = os.path.join(actual_reports_dir, "rebalance_trades.csv")
+            if simulated_trade_log:  # если список не пуст
+                df_sim_trades = pd.DataFrame(simulated_trade_log)
+                df_sim_trades.to_csv(rebalance_trades_csv_path, index=False)
+                logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
+            else:
+                logging.info("simulate_rebalance did not return any trades. Saving empty rebalance_trades.csv.")
+                empty_df = pd.DataFrame(columns=[
+                    "asset_key", "entry_price", "exit_price", "qty",
+                    "pnl_gross_quote", "leverage"
+                ])
+                empty_df.to_csv(rebalance_trades_csv_path, index=False)
+                logging.info(f"Empty simulated rebalance trades file saved to {rebalance_trades_csv_path}")
+        elif generate_reports: # actual_reports_dir was somehow not set, which shouldn't happen with new logic
+            logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping saving rebalance_trades.csv.")
+        else: # generate_reports is False
+            logging.info("Report generation is OFF. Skipping saving rebalance_trades.csv.")
     else:
-        logging.info("No orders were generated by the main rebalancing logic; skipping simulate_rebalance call.")
+        logging.info("No orders were generated by the main rebalancing logic; skipping simulate_rebalance call and rebalance_trades.csv generation.")
 
     logging.info("Backtest finished.")
     df_equity = pd.DataFrame(equity_over_time)
@@ -792,14 +799,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     # (And many more metrics from the original file)
 
 
-    if generate_reports and output_dir:
-        logging.info(f"Generating reports in {output_dir}...")
-        trades_csv_path = os.path.join(output_dir, "trades.csv")
+    if generate_reports and actual_reports_dir:
+        logging.info(f"Generating reports in {actual_reports_dir}...")
+        trades_csv_path = os.path.join(actual_reports_dir, "trades.csv")
         df_trades.to_csv(trades_csv_path, index=False)
         logging.info(f"Trades report saved to {trades_csv_path}")
 
         df_summary = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
-        summary_csv_path = os.path.join(output_dir, "summary.csv")
+        summary_csv_path = os.path.join(actual_reports_dir, "summary.csv")
         df_summary.to_csv(summary_csv_path, index=False)
         logging.info(f"Summary report saved to {summary_csv_path}")
 
@@ -886,11 +893,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                               showlegend=True))
             # --------------- ▲▲  END NEW  ▲▲ ------------------------------------------
 
-            equity_html_path = os.path.join(output_dir, "equity.html")
+            equity_html_path = os.path.join(actual_reports_dir, "equity.html")
             fig.write_html(equity_html_path)
             logging.info(f"Enhanced equity curve saved to {equity_html_path}")
 
-            equity_csv_path = os.path.join(output_dir, "equity.csv")
+            equity_csv_path = os.path.join(actual_reports_dir, "equity.csv")
             df_equity.to_csv(equity_csv_path, index=False)
             logging.info(f"Equity curve data saved to {equity_csv_path}")
         else:
@@ -899,7 +906,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         if blocked_trades_list:
             df_blocked_trades = pd.DataFrame(blocked_trades_list)
             if not df_blocked_trades.empty: # Check if DataFrame is non-empty after creation
-                blocked_trades_csv_path = os.path.join(output_dir, "blocked_trades_log.csv")
+                blocked_trades_csv_path = os.path.join(actual_reports_dir, "blocked_trades_log.csv")
                 df_blocked_trades.to_csv(blocked_trades_csv_path, index=False)
                 logging.info(f"Blocked trades log saved to {blocked_trades_csv_path}")
             else: # This case might occur if blocked_trades_list was empty
@@ -907,10 +914,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         else: # This case for if the list itself was empty
             logging.info("No trades were blocked by signals during this backtest run (list was empty).")
 
-        logging.info("All reports for this run generated.")
+        logging.info(f"All reports for this run generated in {actual_reports_dir}.")
+    elif generate_reports: # actual_reports_dir was somehow not set
+        logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping main report generation block.")
+    else: # generate_reports is False
+        logging.info("Report generation is OFF. Skipping main report generation block.")
     
     results_for_optimizer = metrics.copy()
-    results_for_optimizer["output_dir"] = output_dir 
+    results_for_optimizer["output_dir"] = actual_reports_dir # Store the actual_reports_dir, which could be None if reports are off
     results_for_optimizer["status"] = "Completed" 
     
     for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor",
