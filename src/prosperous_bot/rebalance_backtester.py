@@ -335,7 +335,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.info("Merging signal data with market data using merge_asof (backward)...")
         df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']],
                                   on='timestamp', direction='backward')
-        df_market['signal'] = df_market['signal'].fillna('NEUTRAL')
+        df_market['signal'] = df_market['signal'].ffill()
         logging.info("Signal data merged. 'signal' column is now available in market data.")
         logging.info(f"Signal distribution in market data: \n{df_market['signal'].value_counts(dropna=False)}")
     else:
@@ -664,8 +664,6 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         # The key is that `btc_short_value_usdt` represents the magnitude of the short.
                         # Let's assume for this model, opening short *increases* USDT available if it's collateral based,
                         # or if `btc_short_value_usdt` is tracking the notional value *exposed* to short.
-                        # Given the PnL calculations later, `btc_short_value_usdt` is treated as a positive value
-                        # representing the size of the short position.
                         # For consistency with LONG, let's assume opening a short also "uses" USDT from balance for margin.
                         portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Margin used for opening short
                     elif order_type == "CLOSE_SHORT": # Closing a short position (buying back)
