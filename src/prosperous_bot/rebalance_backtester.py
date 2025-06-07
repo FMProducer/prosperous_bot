@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 
 
+import logging
+
 def simulate_rebalance(data, orders_by_step, leverage=5.0):
     open_positions = {}
     trade_log = []
@@ -75,6 +77,7 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0):
                 else: # No existing position, so this 'sell' opens a new short position
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
 
+    logging.info(f"[simulate_rebalance] Завершено. Сделок: {len(trade_log)}, Активных позиций: {len(open_positions)}")
     return trade_log
 
 # --- Monkeypatch builtins.all for unit‑tests expecting all(bool) ---
