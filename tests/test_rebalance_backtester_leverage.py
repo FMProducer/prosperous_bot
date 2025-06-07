@@ -242,3 +242,59 @@ def test_trade_quantity_scaling_with_leverage(mocker):
     qty_with_leverage = delta_usdt_leverage / p_contract
     qty_without_leverage = delta_usdt_noleverage / (p_contract * leverage)
     assert qty_with_leverage == pytest.approx(qty_with_leverage)
+
+def test_empty_rebalance_trades_csv_created_when_sim_log_empty(market_data_file, tmp_path):
+    """
+    Tests that an empty rebalance_trades.csv (with headers) is created when
+    simulate_rebalance returns an empty log, typically because initial positions
+    were opened but not closed.
+    """
+    config_for_empty_sim_log = copy.deepcopy(BASE_CONFIG)
+    config_for_empty_sim_log["initial_portfolio_value_usdt"] = 10000
+    # This setup should create initial orders for BTC_PERP_LONG
+    config_for_empty_sim_log["target_weights_normal"] = {"BTC_PERP_LONG": 0.5, "USDT": 0.5}
+    # High threshold to prevent closing the position with the short market data
+    config_for_empty_sim_log["rebalance_threshold"] = 0.8
+    config_for_empty_sim_log["apply_signal_logic"] = False
+
+    # Configure report generation into tmp_path
+    report_path_prefix_str = str(tmp_path / "reports_test_empty_sim_log")
+    config_for_empty_sim_log["report_path_prefix"] = report_path_prefix_str
+    config_for_empty_sim_log["is_optimizer_call"] = True # To use the specific optimizer path structure
+    config_for_empty_sim_log["generate_reports_for_optimizer_trial"] = True # Ensure reports are made
+
+    trial_id = "empty_sim_log_test"
+
+    # Run the backtest
+    # is_optimizer_call and trial_id_for_reports are passed here to match how run_backtest constructs its output path
+    run_backtest(
+        config_for_empty_sim_log,
+        data_path=market_data_file,
+        is_optimizer_call=True,
+        trial_id_for_reports=trial_id
+    )
+
+    # Determine the output directory
+    # Path structure: {report_path_prefix}/optimizer_trials/trial_{trial_id}_{timestamp_str}
+    base_optimizer_reports_dir = tmp_path / "reports_test_empty_sim_log" / "optimizer_trials"
+    assert base_optimizer_reports_dir.exists(), f"Base optimizer reports directory not found: {base_optimizer_reports_dir}"
+
+    # Find the specific trial directory (timestamp makes it dynamic)
+    found_trial_dirs = [d for d in os.listdir(base_optimizer_reports_dir) if d.startswith(f"trial_{trial_id}_")]
+    assert len(found_trial_dirs) == 1, f"Expected 1 trial directory for '{trial_id}', found {len(found_trial_dirs)}: {found_trial_dirs}"
+    output_dir = base_optimizer_reports_dir / found_trial_dirs[0]
+
+    rebalance_trades_csv_path = output_dir / "rebalance_trades.csv"
+
+    assert os.path.exists(rebalance_trades_csv_path), \
+        f"Expected rebalance_trades.csv to be created at {rebalance_trades_csv_path}, but it wasn't."
+
+    # Read the CSV and check its properties
+    df_rebalance_trades = pd.read_csv(rebalance_trades_csv_path)
+
+    assert df_rebalance_trades.empty, \
+        f"The rebalance_trades.csv should be empty (no data rows), but it has {len(df_rebalance_trades)} rows."
+
+    expected_columns = ["asset_key", "entry_price", "exit_price", "qty", "pnl_gross_quote", "leverage"]
+    assert list(df_rebalance_trades.columns) == expected_columns, \
+        f"Columns in rebalance_trades.csv do not match expected. Got: {list(df_rebalance_trades.columns)}, Expected: {expected_columns}"
