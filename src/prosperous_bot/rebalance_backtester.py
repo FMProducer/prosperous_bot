@@ -284,23 +284,45 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     actual_reports_dir = None
     if generate_reports:
-        report_path_prefix = params.get('report_path_prefix', './reports/')
-        if is_optimizer_call and trial_id_for_reports is not None:
-            # Specific path for optimizer trials
-            output_dir = os.path.join(report_path_prefix.rstrip('/'), "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
-        elif params.get('report_path_prefix'): # User specified a prefix
-            output_dir = os.path.join(report_path_prefix.rstrip('/'), f"backtest_{timestamp_str}")
-        # If no report_path_prefix is in params, output_dir remains None here.
+        report_path_prefix = params.get('report_path_prefix', './reports/').rstrip('/')
+        use_fixed_report_path = params.get("use_fixed_report_path", False)
 
+        if use_fixed_report_path:
+            output_dir = report_path_prefix
+            if not output_dir: # If prefix was empty or just "/"
+                output_dir = "reports" # Default to "reports" to be safe for tests
+            logging.info(f"Using fixed report path: {output_dir} (due to 'use_fixed_report_path' setting).")
+        else:
+            # Existing logic for timestamped/optimizer paths
+            if is_optimizer_call and trial_id_for_reports is not None:
+                output_dir = os.path.join(report_path_prefix, "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
+            else:
+                output_dir = os.path.join(report_path_prefix, f"backtest_{timestamp_str}")
+
+        os.makedirs(output_dir, exist_ok=True) # Ensure this is after output_dir is fully determined
+        logging.info(f"Output reports for this run will be saved to: {output_dir}")
+
+        # The 'actual_reports_dir' logic from previous commit then correctly uses this 'output_dir'.
         if output_dir:
             actual_reports_dir = output_dir
         else:
-            # Default to "reports" if output_dir wasn't set (e.g. no prefix and not an optimizer trial needing specific path)
-            # This ensures actual_reports_dir is always set if generate_reports is True
+            # This case should be less likely now if generate_reports is True,
+            # as output_dir will be set by either fixed or timestamped logic.
+            # However, keeping a fallback for robustness.
             actual_reports_dir = "reports"
 
+        # This second os.makedirs on actual_reports_dir might be redundant if actual_reports_dir is always output_dir
+        # when output_dir is set. However, it's harmless.
         os.makedirs(actual_reports_dir, exist_ok=True)
-        logging.info(f"Report generation is ON. Output directory: {actual_reports_dir}")
+        # Logging for actual_reports_dir happens later in the original actual_reports_dir block,
+        # but we already logged for output_dir. If they are the same, it's fine.
+        # If different (e.g. output_dir was None and actual_reports_dir defaulted to "reports"),
+        # then the original logging for actual_reports_dir is still valuable.
+        # For clarity, let's ensure the primary logging for the *final* report destination is clear.
+        # The original logging inside the actual_reports_dir determination block:
+        #   logging.info(f"Report generation is ON. Output directory: {actual_reports_dir}")
+        # This will correctly reflect the final path.
+        # The logging.info for output_dir above shows the intermediate step or final if they are same.
     else:
         logging.info("Report generation is OFF. No reports will be saved.")
         # output_dir remains None as it's not used when reports are off.
