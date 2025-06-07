@@ -13,30 +13,68 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0):
     for idx, row in data.iterrows():
         price = row['close']
         step_orders = orders_by_step.get(idx, [])
+
         for order in step_orders:
             key = order['asset_key']
             side = order['side']
             qty = order['qty']
-            direction = 1 if side == 'buy' else -1
-            if key not in open_positions:
-                open_positions[key] = {
-                    'entry_price': price,
-                    'qty': qty,
-                    'direction': direction
-                }
-            else:
-                entry = open_positions.pop(key)
-                entry_price = entry['entry_price']
-                entry_qty = entry['qty']
-                pnl = (price - entry_price) * entry_qty * entry['direction'] * leverage
-                trade_log.append({
-                    'asset_key': key,
-                    'entry_price': entry_price,
-                    'exit_price': price,
-                    'qty': entry_qty,
-                    'pnl_gross_quote': pnl,
-                    'leverage': leverage
-                })
+
+            if side == 'buy':
+                if key in open_positions:
+                    pos = open_positions[key]
+                    if pos['direction'] == 1: # Adding to an existing long position
+                        total_qty = pos['qty'] + qty
+                        avg_price = (pos['entry_price'] * pos['qty'] + price * qty) / total_qty
+                        open_positions[key] = {'entry_price': avg_price, 'qty': total_qty, 'direction': 1}
+                    elif pos['direction'] == -1: # Buying to close an existing short position
+                        entry = open_positions[key]
+                        entry_qty = entry['qty']
+                        qty_to_close = min(qty, entry_qty)
+
+                        pnl = (price - entry['entry_price']) * qty_to_close * entry['direction'] * leverage
+                        trade_log.append({
+                            'asset_key': key,
+                            'entry_price': entry['entry_price'],
+                            'exit_price': price,
+                            'qty': qty_to_close,
+                            'pnl_gross_quote': pnl,
+                            'leverage': leverage
+                        })
+                        if qty_to_close < entry_qty:
+                            open_positions[key]['qty'] -= qty_to_close
+                        else:
+                            del open_positions[key]
+                else: # No existing position, so this 'buy' opens a new long position
+                    open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': 1}
+
+            elif side == 'sell':
+                if key in open_positions: # Selling against an existing position
+                    pos = open_positions[key]
+                    if pos['direction'] == 1: # Selling to close an existing long position
+                        entry = open_positions[key]
+                        entry_qty = entry['qty']
+                        qty_to_close = min(qty, entry_qty)
+
+                        pnl = (price - entry['entry_price']) * qty_to_close * entry['direction'] * leverage
+                        trade_log.append({
+                            'asset_key': key,
+                            'entry_price': entry['entry_price'],
+                            'exit_price': price,
+                            'qty': qty_to_close,
+                            'pnl_gross_quote': pnl,
+                            'leverage': leverage
+                        })
+                        if qty_to_close < entry_qty:
+                            open_positions[key]['qty'] -= qty_to_close
+                        else:
+                            del open_positions[key]
+                    elif pos['direction'] == -1: # Adding to an existing short position
+                        total_qty = pos['qty'] + qty
+                        avg_price = (pos['entry_price'] * pos['qty'] + price * qty) / total_qty
+                        open_positions[key] = {'entry_price': avg_price, 'qty': total_qty, 'direction': -1}
+                else: # No existing position, so this 'sell' opens a new short position
+                    open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
+
     return trade_log
 
 # --- Monkeypatch builtins.all for unit‑tests expecting all(bool) ---
