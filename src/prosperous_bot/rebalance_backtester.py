@@ -6,6 +6,39 @@ import re
 import pandas as pd
 import numpy as np
 
+
+def simulate_rebalance(data, orders_by_step, leverage=5.0):
+    open_positions = {}
+    trade_log = []
+    for idx, row in data.iterrows():
+        price = row['close']
+        step_orders = orders_by_step.get(idx, [])
+        for order in step_orders:
+            key = order['asset_key']
+            side = order['side']
+            qty = order['qty']
+            direction = 1 if side == 'buy' else -1
+            if key not in open_positions:
+                open_positions[key] = {
+                    'entry_price': price,
+                    'qty': qty,
+                    'direction': direction
+                }
+            else:
+                entry = open_positions.pop(key)
+                entry_price = entry['entry_price']
+                entry_qty = entry['qty']
+                pnl = (price - entry_price) * entry_qty * entry['direction'] * leverage
+                trade_log.append({
+                    'asset_key': key,
+                    'entry_price': entry_price,
+                    'exit_price': price,
+                    'qty': entry_qty,
+                    'pnl_gross_quote': pnl,
+                    'leverage': leverage
+                })
+    return trade_log
+
 # --- Monkeypatch builtins.all for unit‑tests expecting all(bool) ---
 import builtins as _bi
 if not hasattr(_bi.all, "_bool_patch"):
@@ -315,6 +348,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         'last_rebalance_attempt_timestamp': None,
     }
     blocked_trades_list = []
+    orders_by_step = {}
 
     logging.info(f"Starting backtest for asset: {main_asset_symbol} with initial portfolio: {portfolio['usdt_balance']:.2f} USDT.")
     logging.info(f"Normal Target Weights ({main_asset_symbol}): {target_weights_normal}")
@@ -600,6 +634,25 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_short_value_usdt", 0.0))
                         portfolio["btc_short_value_usdt"] -= close_val
                         portfolio["usdt_balance"] += close_val # Margin returned
+                # Determine quantity for orders_by_step, should be in asset terms
+                qty_for_orders = 0
+                if current_price > 0: # Avoid division by zero if price is somehow zero
+                    if asset_key_trade == spot_asset_key:
+                        qty_for_orders = abs(usdt_value_to_trade) / current_price
+                    elif asset_key_trade == long_asset_key or asset_key_trade == short_asset_key:
+                        # For leveraged assets, qty should also be in base asset terms for simulate_rebalance
+                        qty_for_orders = abs(usdt_value_to_trade) / current_price
+                        # Note: simulate_rebalance applies leverage, so qty here is pre-leverage asset qty
+
+                if qty_for_orders > 0:
+                    idx_for_orders = index # Current index from df_market.iterrows()
+                    # action_dir is 'BUY' or 'SELL', already determined in the loop
+                    orders_by_step.setdefault(idx_for_orders, []).append({
+                        'asset_key': asset_key_trade,
+                        'side': action_dir,
+                        'qty': qty_for_orders
+                    })
+
                 # Pass action_dir (BUY/SELL) as the 'action' for the trade record
                 record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
                              abs_usdt_value_of_trade, current_price, commission_usdt,
@@ -609,6 +662,30 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # ... (logging post-rebalance portfolio) ...
 
         portfolio['prev_btc_price'] = current_price
+
+    # Simulate rebalance based on collected orders and calculate PnL
+    if orders_by_step: # Only run if there were orders to simulate
+        logging.info(f"Calling simulate_rebalance with {len(orders_by_step)} steps having orders.")
+        # 'leverage' variable should already be defined from params_dict
+        # 'df_market' is the correct DataFrame containing all candles for the backtest period
+        simulated_trade_log = simulate_rebalance(df_market, orders_by_step, leverage)
+
+        if simulated_trade_log:
+            trades_sim_df = pd.DataFrame(simulated_trade_log)
+            # Use output_dir if available and reports are being generated
+            if generate_reports and output_dir:
+                rebalance_trades_csv_path = os.path.join(output_dir, "rebalance_trades.csv")
+            else:
+                # Fallback path, ensure 'reports' directory exists
+                os.makedirs("reports", exist_ok=True)
+                rebalance_trades_csv_path = "reports/rebalance_trades.csv"
+
+            trades_sim_df.to_csv(rebalance_trades_csv_path, index=False)
+            logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
+        else:
+            logging.info("simulate_rebalance did not return any trades.")
+    else:
+        logging.info("No orders were generated by the main rebalancing logic; skipping simulate_rebalance call.")
 
     logging.info("Backtest finished.")
     df_equity = pd.DataFrame(equity_over_time)
