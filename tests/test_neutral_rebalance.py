@@ -35,10 +35,11 @@ def test_btc_neutral_rebalance_zero_pnl(tmp_path):
         "initial_portfolio_value_usdt": init_nav,
         "report_path_prefix": str(tmp_path),
         # Target weights for perfect neutrality (x5 leverage)
+        # 0.35 + 5 × (0.29 − 0.36) = 0  → рыночно-нейтрально
         "target_weights_normal": {
             "BTC_SPOT": 0.35,
-            "BTC_PERP_LONG": 0.36,
-            "BTC_PERP_SHORT": 0.29,
+            "BTC_PERP_LONG": 0.29,
+            "BTC_PERP_SHORT": 0.36,
         },
         # Switch off extra logic
         "safe_mode_config": {"enabled": False},
@@ -56,8 +57,9 @@ def test_btc_neutral_rebalance_zero_pnl(tmp_path):
             "price_col_for_rebalance": "close",
         },
     }
-
-    results = run_backtest(params, str(DATA_FILE), is_optimizer_call=True)
+    # Генерируем полный отчёт; не режим оптимизатора
+    params["generate_reports"] = True
+    results = run_backtest(params, str(DATA_FILE), is_optimizer_call=False)
 
     assert results["status"] == "Completed"
     assert results["total_net_pnl_usdt"] == pytest.approx(0.0, abs=1e-6)

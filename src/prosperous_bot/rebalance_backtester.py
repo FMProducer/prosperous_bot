@@ -18,7 +18,8 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0):
 
         for order in step_orders:
             key = order['asset_key']
-            side = order['side']
+            # допускаем 'BUY' / 'SELL' в верхнем регистре
+            side = order['side'].lower()
             qty = order['qty']
 
             if side == 'buy':
