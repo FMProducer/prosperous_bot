@@ -640,6 +640,21 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             for asset_key_trade, usdt_value_to_trade in adjustments.items():
                 if asset_key_trade == "USDT": continue
                 if abs(usdt_value_to_trade) < 1.0: continue
+                # Patch for dust minimization: Start
+                if current_price > 0:
+                    asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
+                    rounded_asset_qty = round(asset_qty_unrounded) # Rounds to nearest integer asset units
+                    value_of_rounded_asset_qty = rounded_asset_qty * current_price
+
+                    if abs(value_of_rounded_asset_qty) < 1e-6:
+                        logging.info(f"  Skipping micro-order (dust) for {asset_key_trade} due to new patch logic: "
+                                     f"Value of rounded Qty ({rounded_asset_qty}) * Price ({current_price}) "
+                                     f"= {value_of_rounded_asset_qty:.8f} USDT, which is < 1e-6 USDT. "
+                                     f"Original usdt_value_to_trade: {usdt_value_to_trade:.8f}")
+                        continue
+                else:
+                    logging.warning(f"  Skipping dust check for {asset_key_trade} due to non-positive current_price: {current_price}")
+                # Patch for dust minimization: End
 
                 # ── direction depends on asset type ────────────
                 if asset_key_trade == short_asset_key:
