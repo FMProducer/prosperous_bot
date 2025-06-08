@@ -25,12 +25,12 @@
         "HUMAUSDT",
         "DOGEUSDT",
         "SUIUSDT",
-        "TRUMPUSDT",
-        "MASKUSDT",
         "ANIMEUSDT",
+        "ADAUSDT",
         "ENAUSDT",
-        "VIRTUALUSDT",
-        "TRBUSDT"
+        "LPTUSDT",
+        "TRBUSDT",
+        "AVAXUSDT"
     ],
     "ema1_window": 20,
     "ema2_window": 30,
@@ -93,44 +93,44 @@
     },
     "last_signals": {
         "DOGEUSDT": {
-            "signal": "sell",
-            "time": "2025-06-02T16:53:48.924862"
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.270591"
         },
         "SUIUSDT": {
-            "signal": "sell",
-            "time": "2025-06-07T21:42:42.281757"
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.278851"
         },
         "BTCUSDT": {
             "signal": "buy",
             "time": "2025-06-07T21:42:42.250188"
         },
-        "MASKUSDT": {
-            "signal": "sell",
-            "time": "2025-06-02T16:59:09.630823"
-        },
         "HUMAUSDT": {
             "signal": "buy",
             "time": "2025-06-07T21:42:42.260754"
         },
-        "TRUMPUSDT": {
-            "signal": "sell",
-            "time": "2025-06-07T21:42:42.290872"
-        },
         "ANIMEUSDT": {
-            "signal": "sell",
-            "time": "2025-06-07T21:42:42.308349"
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.289495"
         },
         "ENAUSDT": {
             "signal": "buy",
             "time": "2025-06-07T21:42:42.315921"
         },
-        "VIRTUALUSDT": {
-            "signal": "buy",
-            "time": "2025-06-07T21:42:42.325750"
-        },
         "TRBUSDT": {
             "signal": "buy",
             "time": "2025-06-07T21:42:42.333893"
+        },
+        "ADAUSDT": {
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.301074"
+        },
+        "LPTUSDT": {
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.327999"
+        },
+        "AVAXUSDT": {
+            "signal": "buy",
+            "time": "2025-06-08T21:30:14.361146"
         }
     },
     "asset_distributions": {
