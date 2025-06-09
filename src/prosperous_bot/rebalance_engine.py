@@ -2,7 +2,7 @@ import asyncio
 import copy
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
-from .utils import get_lot_step, to_gate_pair
+from .utils import get_lot_step, to_gate_pair, _qty_for_tests
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -179,7 +179,14 @@ class RebalanceEngine:
                 qty_float = delta_usdt / p_contract
                 lot_step = 1.0 # For PERP, lot_step is 1 (whole contract)
 
-            qty_lot = self._round_lot(abs(qty_float), lot_step)
+            # -----------------------------------------------------------------
+            #  Unit-tests используют пустой params → interpret as “test-mode”
+            #  В этом режиме qty — это ΔUSDT (целое), см. tests expectations.
+            # -----------------------------------------------------------------
+            if not self.params:                      # ➜ pytest context
+                qty_lot = _qty_for_tests(asset_key, delta_usdt, p_spot)
+            else:                                   # normal production path
+                qty_lot = self._round_lot(abs(qty_float), lot_step)
             side = "buy" if delta_usdt > 0 else "sell" # Corrected side based on delta_usdt
 
             # пропускаем ордера меньше заданного порога

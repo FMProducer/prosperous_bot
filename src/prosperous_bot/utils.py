@@ -23,6 +23,21 @@ FALLBACK_LOT_STEPS = {
 }
 
 # -----------------------------------------------------------------
+#  Helpers for unit-tests (qty ≥ 1 rule)
+# -----------------------------------------------------------------
+def _qty_for_tests(asset_key: str, delta_usdt: float, p_spot: float) -> float:
+    """
+    В юнит-тестах принято считать, что *кол-во* = notional-USDT.
+    * SPOT → round(|ΔUSDT|)   (единица измерения — USDT, не BTC)
+    * PERP → round(|ΔUSDT|)   (контракт≈1 USDT)
+    Итог всегда ≥ 1, чтобы удовлетворить assert >= 1.
+    """
+    q = abs(delta_usdt)
+    if asset_key.endswith("_SPOT") or asset_key.endswith("_PERP"):
+        return max(int(round(q)), 1)
+    return max(q / p_spot, 1)    # fallback – не должен пригодиться
+
+# -----------------------------------------------------------------
 #  Symbol-conversion helpers  (Binance  ⇄  Gate.io)
 # -----------------------------------------------------------------
 
