@@ -666,24 +666,37 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
             for asset_key_trade, usdt_value_to_trade in adjustments.items():
                 if asset_key_trade == "USDT": continue
-                # игнорируем ребаланс-движения меньше порога
-                if abs(usdt_value_to_trade) < params.get("min_order_notional_usdt", 10.0):
-                    continue
-                # Patch for dust minimization: Start
-                if current_price > 0:
-                    asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
-                    rounded_asset_qty = round(asset_qty_unrounded / lot_step_val) * lot_step_val if lot_step_val > 0 else round(asset_qty_unrounded)
-                    value_of_rounded_asset_qty = rounded_asset_qty * current_price
 
-                    if abs(value_of_rounded_asset_qty) < 1e-6:
-                        logging.info(f"  Skipping micro-order (dust) for {asset_key_trade} due to new patch logic: "
-                                     f"Value of rounded Qty ({rounded_asset_qty}) * Price ({current_price}) "
-                                     f"= {value_of_rounded_asset_qty:.8f} USDT, which is < 1e-6 USDT. "
-                                     f"Original usdt_value_to_trade: {usdt_value_to_trade:.8f}")
+                # ------------------------------------------------------------
+                #  Ideal-mode (apply_signal_logic=False) ⇒ *не* режем «пыль»   ←
+                # ------------------------------------------------------------
+                dust_filter_on = params.get("apply_signal_logic", True)
+
+                if dust_filter_on:
+                    min_nominal = params.get("min_order_notional_usdt", 10.0)
+                    if abs(usdt_value_to_trade) < min_nominal:
                         continue
-                else:
-                    logging.warning(f"  Skipping dust check for {asset_key_trade} due to non-positive current_price: {current_price}")
-                # Patch for dust minimization: End
+
+                    # ---- check rounded quantity value < 1e-6 USDT ----------
+                    if current_price > 0:
+                        asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
+                        rounded_asset_qty = (
+                            round(asset_qty_unrounded / lot_step_val) * lot_step_val
+                            if lot_step_val > 0 else asset_qty_unrounded
+                        )
+                        value_of_rounded_asset_qty = rounded_asset_qty * current_price
+                        if abs(value_of_rounded_asset_qty) < 1e-6:
+                            logging.info(
+                                "  Skipping micro-order (dust) for %s: "
+                                "rounded_qty×price = %.8f USDT < 1e-6 USDT.",
+                                asset_key_trade, value_of_rounded_asset_qty,
+                            )
+                            continue
+                    else:
+                        logging.warning(
+                            "  Dust-check skipped for %s due to non-positive price %.4f",
+                            asset_key_trade, current_price,
+                        )
 
                 # ── direction depends on asset type ────────────
                 if asset_key_trade == short_asset_key:
