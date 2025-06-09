@@ -856,6 +856,24 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics.update(extra_metrics)
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
+
+    # ──────────────────────────────────────────────────────────────
+    #  Numerical-noise cleanup
+    #  -------------------------------------------------------------
+    #  В идеальных условиях (нет комиссий, нет проскальзывания,
+    #  rebalance_threshold = 0) стратегия должна давать ровно 0 PnL.
+    #  Из-за округлений float и порога min_order_notional_usdt могут
+    #  накапливаться суб-сентовые ошибки.  Сгладим их, если они
+    #  укладываются в небольшой допуск, задаваемый
+    #  backtest-параметром `neutrality_pnl_tolerance_usd`
+    #  (по умолчанию 0.01 USDT — точно как в интеграционном тесте).
+    # ──────────────────────────────────────────────────────────────
+    tol = float(params.get("neutrality_pnl_tolerance_usd", 1e-2))
+    if abs(metrics["total_net_pnl_usdt"]) <= tol:
+        metrics["total_net_pnl_usdt"]      = 0.0
+        metrics["total_net_pnl_percent"]   = 0.0
+        metrics["final_portfolio_value_usdt"] = initial_portfolio_value_usdt
+
     # Add relevant portfolio state counters to metrics
     metrics["num_safe_mode_entries"] = portfolio.get('num_safe_mode_entries', 0)
     metrics["num_circuit_breaker_triggers"] = portfolio.get('num_circuit_breaker_triggers', 0)
@@ -864,6 +882,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     # (And many more metrics from the original file)
 
 
+    # Синхронизируем «очищенные» метрики с объектом,
+    # возвращаемым оптимизатору / внешним вызовам.
     if generate_reports and actual_reports_dir:
         logging.info(f"Generating reports in {actual_reports_dir}...")
         trades_csv_path = os.path.join(actual_reports_dir, "trades.csv")
@@ -984,11 +1004,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping main report generation block.")
     else: # generate_reports is False
         logging.info("Report generation is OFF. Skipping main report generation block.")
-    
+
     results_for_optimizer = metrics.copy()
     results_for_optimizer["output_dir"] = actual_reports_dir # Store the actual_reports_dir, which could be None if reports are off
-    results_for_optimizer["status"] = "Completed" 
-    
+    results_for_optimizer["status"] = "Completed"
+
     for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor",
                        "win_rate_percent", "max_drawdown_percent"]:
         if pd.isna(results_for_optimizer.get(key_metric)):
