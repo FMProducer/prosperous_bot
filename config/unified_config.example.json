@@ -73,6 +73,7 @@
     "annualization_factor": 252.0,
     "min_rebalance_interval_minutes": 30,
     "rebalance_threshold": 0.03,
+    "neutrality_pnl_tolerance_usd": 0.005,
     "target_weights_normal": {
       "{main_asset_symbol}_SPOT": 0.80,
       "{main_asset_symbol}_PERP_LONG": 0.02,
