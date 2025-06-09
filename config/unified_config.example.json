@@ -71,7 +71,8 @@
     "use_maker_fees_in_backtest": false,
     "slippage_percent": 0.0005,
     "annualization_factor": 252.0,
-    "min_rebalance_interval_minutes": 10,
+    // минимальный интервал (мин) между проверками ребаланса
+    "min_rebalance_interval_minutes": 30,
     "rebalance_threshold": 0.03,
     "target_weights_normal": {
       "{main_asset_symbol}_SPOT": 0.80,
