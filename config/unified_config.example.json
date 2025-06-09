@@ -60,7 +60,6 @@
     ]
   },
   "backtest_settings": {
-    // минимальный объём ордера (SPOT и PERP) в USDT; ордера меньше не создаются
     "min_order_notional_usdt": 10.0,
     "futures_leverage": 5.0,
     "main_asset_symbol": "BTC",
