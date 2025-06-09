@@ -52,6 +52,12 @@ class RebalanceEngine:
 
         self.params = _params # Store processed params
 
+        # ── Debounce: минимальный интервал между попытками ребаланса ─────
+        self.min_rebalance_interval_minutes: int = self.params.get(
+            "min_rebalance_interval_minutes", 0
+        )
+        self._last_rebalance_attempt_ts: Optional[datetime] = None
+
         # Initialize attributes from processed self.params
         # Ensure default values are applied if keys are missing from self.params
         self.portfolio = portfolio # portfolio is passed directly, not from params
@@ -113,6 +119,19 @@ class RebalanceEngine:
         Формирует список словарей-ордеров:
           {symbol, side, qty, notional_usdt, asset_key}
         """
+        # --- дебаунс -----------------------------------------------------
+        now_ts = datetime.utcnow()
+        if (
+            self.min_rebalance_interval_minutes > 0
+            and self._last_rebalance_attempt_ts is not None
+            and (now_ts - self._last_rebalance_attempt_ts)
+            < timedelta(minutes=self.min_rebalance_interval_minutes)
+        ):
+            return []  # слишком рано; пропускаем попытку
+
+        # записываем момент последней успешной проверки
+        self._last_rebalance_attempt_ts = now_ts
+
         leverage = self.params.get("futures_leverage", 5.0)
         effective_leverage = leverage if leverage > 0 else 1e-9
         p_contract_adjusted = p_contract * effective_leverage if p_contract else None
