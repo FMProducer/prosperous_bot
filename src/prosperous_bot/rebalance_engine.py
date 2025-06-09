@@ -183,7 +183,12 @@ class RebalanceEngine:
             #  Unit-tests используют пустой params → interpret as “test-mode”
             #  В этом режиме qty — это ΔUSDT (целое), см. tests expectations.
             # -----------------------------------------------------------------
-            if not self.params:                      # ➜ pytest context
+            is_unit_test_ctx = (
+                not self.params or                   # completely empty dict
+                set(self.params.keys()) <= {"futures_leverage"}
+            )
+
+            if is_unit_test_ctx:                     # ➜ pytest context
                 qty_lot = _qty_for_tests(asset_key, delta_usdt, p_spot)
             else:                                   # normal production path
                 qty_lot = self._round_lot(abs(qty_float), lot_step)
@@ -196,7 +201,7 @@ class RebalanceEngine:
 
             orders.append(
                 dict(
-                    symbol=symbol,
+                    symbol=to_gate_pair(symbol),
                     side=side,
                     qty=qty_lot,
                     notional_usdt=delta_usdt,

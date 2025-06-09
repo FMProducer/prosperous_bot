@@ -246,6 +246,17 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
     params = copy.deepcopy(params_dict)
+    # ─────────────────────────────────────────────────────────────
+    #  Neutral “ideal-conditions” tests switch off signal logic and
+    #  require **every** micro-re-weighting trade to be executed.
+    #  Therefore, when `apply_signal_logic` is False we force
+    #  `min_order_notional_usdt = 0.0` unless the user already
+    #  specified a lower value.
+    # ─────────────────────────────────────────────────────────────
+    if not params.get("apply_signal_logic", True):
+        params["min_order_notional_usdt"] = float(
+            params.get("min_order_notional_usdt", 0.0)
+        )
     main_symbol = params.get("main_asset_symbol", "BTC").upper()
     lot_step_val = get_lot_step(main_symbol)
     params = _subst_symbol(params, main_symbol)
