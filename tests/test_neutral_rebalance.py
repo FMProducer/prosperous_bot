@@ -33,8 +33,9 @@ def test_btc_neutral_rebalance_zero_pnl(tmp_path):
         "slippage_percent": 0.0,
         # Capital & reports
         "initial_portfolio_value_usdt": init_nav,
-        "min_order_notional_usdt": 10.0,
-        "min_rebalance_interval_minutes": 30,
+        # тест обнуляет фильтры, но код дубляжно снимает их сам
+        "min_order_notional_usdt": 0.0,
+        "min_rebalance_interval_minutes": 0,
         "report_path_prefix": str(tmp_path),
         # Target weights for perfect neutrality (x5 leverage)
         # 0.35 + 5 × (0.29 − 0.36) = 0  → рыночно-нейтрально
