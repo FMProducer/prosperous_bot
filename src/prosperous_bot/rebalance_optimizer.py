@@ -488,7 +488,7 @@ if __name__ == "__main__":
               }
             },
             "data_settings": {
-              "csv_file_path": "data/BTCUSDT_default_1h_dummy.csv", 
+              "csv_file_path": "graphs/{main_asset_symbol}USDT_data.csv",
               "timestamp_col": "timestamp",
               "ohlc_cols": {"open": "open", "high": "high", "low": "low", "close": "close"},
               "volume_col": "volume",
@@ -511,8 +511,10 @@ if __name__ == "__main__":
 
     # Dummy data file for the dummy unified config, if it doesn't exist
     # Ensure this matches the csv_file_path in the dummy_unified_content
-    dummy_data_for_optimizer_path = "data/BTCUSDT_default_1h_dummy.csv" 
+    # Path changed to 'graphs/' directory and to reflect the {main_asset_symbol}USDT pattern (assuming BTC here for the dummy)
+    dummy_data_for_optimizer_path = "graphs/BTCUSDT_default_1h_dummy.csv"
     if not os.path.exists(dummy_data_for_optimizer_path):
+        # Ensure the directory exists before trying to create the file
         os.makedirs(os.path.dirname(dummy_data_for_optimizer_path), exist_ok=True)
         timestamps = pd.date_range(start='2023-01-01 00:00:00', periods=200, freq='h')
         prices = [20000 + (i*5) + (600 * (i % 7)) - (400 * (i % 4)) for i in range(200)] 

@@ -96,7 +96,7 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "graphs/{main_asset_symbol}_data.csv",
+      "csv_file_path": "graphs/{main_asset_symbol}USDT_data.csv",
       "signals_csv_path": "graphs/{main_asset_symbol}_signals.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
