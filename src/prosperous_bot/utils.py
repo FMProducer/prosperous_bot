@@ -22,6 +22,40 @@ FALLBACK_LOT_STEPS = {
     "SOL": 0.01,
 }
 
+# -----------------------------------------------------------------
+#  Symbol-conversion helpers  (Binance  ⇄  Gate.io)
+# -----------------------------------------------------------------
+
+def to_gate_pair(symbol: str) -> str:
+    """
+    Преобразует *symbol* в формат Gate.io «BASE_USDT».
+
+    * ``BTCUSDT`` → ``BTC_USDT``
+    * если уже «BASE_USDT» — возвращается как есть
+    * нечувствителен к регистру
+    """
+    if symbol is None:
+        return symbol
+    sym = symbol.upper()
+    if "_" in sym:
+        return sym                      # уже Gate-стиль
+    if sym.endswith("USDT"):
+        return f"{sym[:-4]}_USDT"
+    return sym
+
+
+def to_binance_symbol(pair: str) -> str:
+    """
+    Преобразует Gate-пару «BASE_USDT» в Binance-символ «BASEUSDT».
+    Оставляет строку без изменения, если она уже в Binance-формате.
+    """
+    if pair is None:
+        return pair
+    p = pair.upper()
+    if p.endswith("_USDT") and "_" in p:
+        return p.replace("_USDT", "USDT")
+    return p
+
 
 @lru_cache(maxsize=32)
 def get_lot_step(symbol: str) -> float:
@@ -34,7 +68,7 @@ def get_lot_step(symbol: str) -> float:
     """
     try:
         from exchange_gate import gate_client  # lazy import → no hard dep
-        info = gate_client.get_spot_pairs(pair=f"{symbol.upper()}_USDT")[0]
+        info = gate_client.get_spot_pairs(pair=to_gate_pair(symbol))[0]
         return float(info.min_base_amount)
     except Exception:
         return FALLBACK_LOT_STEPS.get(symbol.upper(), 1e-8)

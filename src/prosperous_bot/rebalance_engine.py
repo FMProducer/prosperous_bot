@@ -2,7 +2,7 @@ import asyncio
 import copy
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
-from .utils import get_lot_step
+from .utils import get_lot_step, to_gate_pair
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -76,11 +76,21 @@ class RebalanceEngine:
                 logging.warning("RebalanceEngine: 'target_weights_normal' (or 'target_weights') not found in params or direct args. Using empty target_weights.")
                 self.target_weights = {}
 
+        # --- Всегда храним тикеры в Gate-формате «BASE_USDT» ---
+        self.spot_asset_symbol = to_gate_pair(
+            self.params.get(
+                "spot_asset_symbol",
+                spot_asset_symbol if spot_asset_symbol else f"{sym}_USDT",
+            )
+        )
 
-        # Spot and futures symbols from params, with fallbacks if needed
-        self.spot_asset_symbol = self.params.get('spot_asset_symbol', spot_asset_symbol if spot_asset_symbol else "BTCUSDT") # Example default
-        self.futures_contract_symbol_base = self.params.get('futures_contract_symbol_base',
-            futures_contract_symbol_base if futures_contract_symbol_base else "BTCUSDT_PERP") # Example default
+        # для фьючерсов Gate использует тот же вид «BTC_USDT»
+        self.futures_contract_symbol_base = to_gate_pair(
+            self.params.get(
+                "futures_contract_symbol_base",
+                futures_contract_symbol_base if futures_contract_symbol_base else f"{sym}_USDT",
+            )
+        )
 
         # Threshold from params or direct argument
         # Direct threshold_pct (legacy) or base_threshold_pct argument takes precedence
