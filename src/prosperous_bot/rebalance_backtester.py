@@ -97,6 +97,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
+from .utils import get_lot_step
 import logging
 
 # Basic logging configuration
@@ -229,6 +230,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
     params = copy.deepcopy(params_dict)
     main_symbol = params.get("main_asset_symbol", "BTC").upper()
+    lot_step_val = get_lot_step(main_symbol)
     params = _subst_symbol(params, main_symbol)
 
     leverage = float(params.get("futures_leverage", 5.0))
@@ -645,7 +647,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 # Patch for dust minimization: Start
                 if current_price > 0:
                     asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
-                    rounded_asset_qty = round(asset_qty_unrounded) # Rounds to nearest integer asset units
+                    rounded_asset_qty = round(asset_qty_unrounded / lot_step_val) * lot_step_val if lot_step_val > 0 else round(asset_qty_unrounded)
                     value_of_rounded_asset_qty = rounded_asset_qty * current_price
 
                     if abs(value_of_rounded_asset_qty) < 1e-6:

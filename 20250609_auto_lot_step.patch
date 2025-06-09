@@ -1,0 +1,116 @@
+diff --git a/utils.py b/utils.py
+index 9a7c9e8..9ff3a1a 100644
+--- a/utils.py
++++ b/utils.py
+@@ -1,5 +1,25 @@
+ import math
++from functools import lru_cache
+
++# ────────────────────────────────────────────────────────────────
++#  Generic lot-step helper
++#  1) Пытается запросить filter с биржи (Gate API ― spot pair)
++#  2) Фоллбэк на встроенный словарь наиболее частых активов
++#  3) Абсолютный минимум 1e-8 (крипто) / 1e-3 (акции)
++# ────────────────────────────────────────────────────────────────
++FALLBACK_LOT_STEPS = {
++    "BTC": 0.0001,
++    "ETH": 0.001,
++    "BNB": 0.01,
++    "SOL": 0.01,
++}
++
++
++@lru_cache(maxsize=32)
++def get_lot_step(symbol: str) -> float:
++    """
++    Return lot size step for *symbol*.
++
++    - First, try Gate API (spot pair `<SYMBOL>_USDT`).
++    - If unavailable -> fallback dict.
++    - Otherwise -> return 1e-8 (crypto default) or 1e-3.
++    """
++    try:
++        from exchange_gate import gate_client  # lazy import → no hard dep
++        info = gate_client.get_spot_pairs(pair=f"{symbol.upper()}_USDT")[0]
++        return float(info.min_base_amount)
++    except Exception:
++        return FALLBACK_LOT_STEPS.get(symbol.upper(), 1e-8)
++
+diff --git a/src/prosperous_bot/rebalance_engine.py b/src/prosperous_bot/rebalance_engine.py
+index 2c68f8c..3a2a8d3 100644
+--- a/src/prosperous_bot/rebalance_engine.py
++++ b/src/prosperous_bot/rebalance_engine.py
+@@ -1,12 +1,12 @@
+ from datetime import datetime, timedelta
+-from utils import truncate_float
++from utils import truncate_float, get_lot_step
+
+
+ class RebalanceEngine:
+@@ -32,8 +32,7 @@
+
+         # Calculate the number of contracts to buy/sell
+         leverage = self.params.get("futures_leverage", 5.0)
+-        lot_step = self.params.get("lot_step", 0.0001)
++        lot_step = get_lot_step(self.params.get("main_asset_symbol", "BTC"))
+-        # ... (rest of the file remains the same)
+
+diff --git a/src/prosperous_bot/rebalance_backtester.py b/src/prosperous_bot/rebalance_backtester.py
+index 19b7cc1..b1f7b82 100644
+--- a/src/prosperous_bot/rebalance_backtester.py
++++ b/src/prosperous_bot/rebalance_backtester.py
+@@ -3,7 +3,7 @@
+ import pandas as pd
+ from tqdm import tqdm
+
+-from utils import truncate_float
++from utils import truncate_float, get_lot_step
+ from src.prosperous_bot.blockchain_transactions import BlockchainTransactions
+ from src.prosperous_bot.rebalance_engine import RebalanceEngine
+
+@@ -30,8 +30,7 @@
+                 # Calculate the desired asset quantity based on the target portfolio value
+                 # (using the current price)
+                 target_asset_qty = params["portfolio_value_usdt"] / current_price
+-                lot_step = params.get("lot_step", 0.0001)
++                lot_step = get_lot_step(params.get("main_asset_symbol", "BTC"))
+-                # ... (rest of the file remains the same)
+
+diff --git a/config/unified_config.example.json b/config/unified_config.example.json
+index 8c9e1a3..019e6b3 100644
+--- a/config/unified_config.example.json
++++ b/config/unified_config.example.json
+@@ -14,8 +14,6 @@
+     "max_total_drawdown": 0.25,
+     "min_profit_drawdown_ratio": 2.0,
+     "min_rebalance_interval_minutes": 30,
+-    // минимальный шаг лота базового актива (например, 0.0001 для BTC, 0.001 для ETH)
+-    "lot_step": 0.0001,
+     // Для каких валютных пар применять бота (основная логика работает на BTC_USDT)
+     // сейчас не используется, задел на будущее
+     "trading_pairs": [
+@@ -60,12 +58,6 @@
+         "low": 0.1,
+         "high": 0.5
+       },
+-      {
+-        "path": "lot_step",
+-        "type": "float",
+-        "low": 0.00001,
+-        "high": 0.001
+-      },
+       {
+         "path": "rebalance_param_p",
+         "type": "float",
+diff --git a/tests/test_neutral_rebalance.py b/tests/test_neutral_rebalance.py
+index 9f9e9d8..1c1b3c4 100644
+--- a/tests/test_neutral_rebalance.py
++++ b/tests/test_neutral_rebalance.py
+@@ -12,7 +12,6 @@
+         "portfolio_value_usdt": 1000.0,
+         "rebalance_param_p": 0.03,
+         "min_rebalance_interval_minutes": 30,
+-        "lot_step": 0.0001,
+         "futures_leverage": 5.0,
+         "fee_rate_taker": 0.0004,
+         "fee_rate_maker": 0.0002,
