@@ -12,8 +12,10 @@ import logging
 def simulate_rebalance(data, orders_by_step, leverage=5.0):
     open_positions = {}
     trade_log = []
+    last_price = None # Store the last price
     for idx, row in data.iterrows():
         price = row['close']
+        last_price = price # Update last_price in each iteration
         step_orders = orders_by_step.get(idx, [])
 
         for order in step_orders:
@@ -77,6 +79,21 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0):
                         open_positions[key] = {'entry_price': avg_price, 'qty': total_qty, 'direction': -1}
                 else: # No existing position, so this 'sell' opens a new short position
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
+
+    # Force-closure of any remaining open positions at the end of the data
+    if last_price is not None: # Ensure there was data
+        for key, pos in list(open_positions.items()): # Use list to allow modification
+            pnl = (last_price - pos['entry_price']) * pos['qty'] * pos['direction'] * leverage
+            trade_log.append({
+                'asset_key': key,
+                'entry_price': pos['entry_price'],
+                'exit_price': last_price, # Close at the last known price
+                'qty': pos['qty'],
+                'pnl_gross_quote': pnl,
+                'leverage': leverage,
+                'status': 'force_closed' # Add a status for these trades
+            })
+            del open_positions[key] # Remove position after logging PnL
 
     logging.info(f"[simulate_rebalance] Завершено. Сделок: {len(trade_log)}, Активных позиций: {len(open_positions)}")
     return trade_log

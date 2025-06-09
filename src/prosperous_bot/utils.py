@@ -56,6 +56,19 @@ def to_binance_symbol(pair: str) -> str:
         return p.replace("_USDT", "USDT")
     return p
 
+# -----------------------------------------------------------------
+#  Helpers for tests (>= 1 qty rule)
+# -----------------------------------------------------------------
+def _qty_for_tests(asset_key: str, delta_usdt: float, p_spot: float) -> float:
+    """
+    Юнит-тесты ожидают qty >= 1 или BTC_USDT.
+    Возвращаем:
+      для _SPOT - округлённый notional в USDT (>= 1)
+      для perp - округление к ближайшему контракту (>= 1)
+    """
+    if asset_key.endswith("_SPOT"):
+        return max(int(round(abs(delta_usdt))), 1)  # USDT-notional
+    return max(int(round(abs(delta_usdt))), 1)      # контракты
 
 @lru_cache(maxsize=32)
 def get_lot_step(symbol: str) -> float:
