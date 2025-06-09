@@ -6,6 +6,7 @@ import optuna
 from datetime import datetime
 import logging
 import copy # For deep copying params
+import math
 
 # Attempt to import the backtester; handle potential ImportError if structure changes
 try:
@@ -124,14 +125,15 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
     short_pct = (5 - 4 * spot_pct) / 10
 
     # Pruning condition
-    if long_pct < 0 or short_pct < 0:
-        logging.info(f"Trial {trial.number}: Pruning trial because calculated long_pct ({long_pct:.4f}) or short_pct ({short_pct:.4f}) is negative for spot_pct {spot_pct:.2f}.")
-        raise optuna.TrialPruned("Calculated long/short percentages are negative.")
+    if long_pct < 0 or short_pct < 0 or not math.isfinite(long_pct+short_pct):
+        logging.info(f"Trial {trial.number}: Pruning trial because calculated long_pct ({long_pct:.4f}), short_pct ({short_pct:.4f}) is negative or non-finite for spot_pct {spot_pct:.2f}.")
+        raise optuna.TrialPruned("Calculated long/short percentages are negative or non-finite.")
 
     # Set target weights in current_backtest_params
-    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_SPOT", spot_pct)
-    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_PERP_LONG", long_pct)
-    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_PERP_SHORT", short_pct)
+    tw = current_backtest_params["target_weights_normal"] = {}
+    tw[f"{main_asset_symbol}_SPOT"]        = round(spot_pct, 4)
+    tw[f"{main_asset_symbol}_PERP_LONG"]   = round(long_pct, 4)
+    tw[f"{main_asset_symbol}_PERP_SHORT"]  = round(short_pct, 4)
 
     # Log these params
     suggested_params_for_log[f"target_weights_normal.{main_asset_symbol}_SPOT"] = spot_pct
@@ -197,16 +199,24 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
             logging.warning(f"Trial {trial.number} failed or did not complete. Status: {backtest_results.get('status', 'Unknown error') if backtest_results else 'None'}.")
             raise optuna.exceptions.TrialPruned(f"Backtest failed or did not complete. Status: {backtest_results.get('status', 'None')}")
         
-        metric_to_optimize = optimizer_settings.get('metric_to_optimize', 'total_net_pnl_percent')
-        optimization_value = backtest_results.get(metric_to_optimize)
+        # 'backtest_results' is the variable holding the results from run_backtest
+        # 'current_backtest_params' is the variable holding the configuration for this trial
 
-        if optimization_value is None:
-            logging.error(f"Trial {trial.number}: Metric '{metric_to_optimize}' not found in backtest results. "
-                          f"Available keys: {list(backtest_results.keys())}. Pruning trial.")
-            raise optuna.exceptions.TrialPruned(f"Metric '{metric_to_optimize}' not found in backtest results.")
+        pnl = abs(backtest_results["total_net_pnl_percent"])
+        std = backtest_results.get("nav_std_percent", 0.0)
+
+        initial_capital = current_backtest_params.get("initial_capital")
+        if initial_capital is None or initial_capital == 0:
+            logging.warning(f"Trial {trial.number}: 'initial_capital' is missing, zero, or invalid in backtest settings (value: {initial_capital}). Using 1.0 for commission calculation denominator to avoid error, but this may skew results if 'total_commissions_usdt' is large.")
+            effective_initial_capital = 1.0
+        else:
+            effective_initial_capital = initial_capital
+
+        comm = backtest_results.get("total_commissions_usdt", 0.0) / effective_initial_capital
+        value = -(pnl + 0.5*std + 0.1*comm)
         
-        logging.info(f"Trial {trial.number} completed. Metric ('{metric_to_optimize}'): {optimization_value:.4f}")
-        return float(optimization_value) 
+        logging.info(f"Trial {trial.number} completed. Objective value: {value:.4f} (Components: PnL_abs_perc: {pnl:.4f}, NAV_std_perc: {std:.4f}, Commission_ratio: {comm:.4f})")
+        return value
 
     except optuna.exceptions.TrialPruned as e:
         logging.info(f"Trial {trial.number} pruned: {e}")

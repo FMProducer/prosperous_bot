@@ -878,6 +878,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
 
+    # Calculate NAV standard deviation percentage
+    if not df_equity.empty:
+        nav_series = df_equity['portfolio_value_usdt']
+        if initial_portfolio_value_usdt != 0:
+            metrics["nav_std_percent"] = nav_series.std() / initial_portfolio_value_usdt * 100
+        else:
+            # Handle case where initial_portfolio_value_usdt is zero to avoid division by zero
+            metrics["nav_std_percent"] = 0.0
+            logging.warning("initial_portfolio_value_usdt is 0. 'nav_std_percent' calculated as 0.0. This might affect optimization if NAV std is expected.")
+    else:
+        # Handle case where df_equity is empty (e.g., no trades or data)
+        metrics["nav_std_percent"] = 0.0
+
     # ─── Numerical-noise cleanup (≤ 1 cent) ───────────────────────
     tol = float(params.get("neutrality_pnl_tolerance_usd", 1e-2))
     if abs(metrics["total_net_pnl_usdt"]) <= tol:
