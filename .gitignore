@@ -56,7 +56,7 @@ dmypy.json
 miniconda3/
 
 # Custom application folders
-graphs/
+# graphs/
 
 .hypothesis/
 
