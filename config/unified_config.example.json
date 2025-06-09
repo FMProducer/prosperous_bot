@@ -1,6 +1,6 @@
 {
   "optimizer_settings": {
-    "n_trials": 3,
+    "n_trials": 200,
     "metric_to_optimize": "sharpe_ratio",
     "direction": "maximize",
     "sampler_type": "TPE",

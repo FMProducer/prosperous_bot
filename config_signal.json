@@ -25,12 +25,12 @@
         "HUMAUSDT",
         "DOGEUSDT",
         "SUIUSDT",
+        "WIFUSDT",
         "ANIMEUSDT",
         "ADAUSDT",
-        "ENAUSDT",
-        "LPTUSDT",
-        "TRBUSDT",
-        "AVAXUSDT"
+        "AVAXUSDT",
+        "VIRTUALUSDT",
+        "ENAUSDT"
     ],
     "ema1_window": 20,
     "ema2_window": 30,
@@ -109,28 +109,28 @@
             "time": "2025-06-07T21:42:42.260754"
         },
         "ANIMEUSDT": {
-            "signal": "buy",
-            "time": "2025-06-08T21:30:14.289495"
+            "signal": "sell",
+            "time": "2025-06-09T17:25:44.424504"
         },
         "ENAUSDT": {
             "signal": "buy",
             "time": "2025-06-07T21:42:42.315921"
         },
-        "TRBUSDT": {
-            "signal": "buy",
-            "time": "2025-06-07T21:42:42.333893"
-        },
         "ADAUSDT": {
             "signal": "buy",
             "time": "2025-06-08T21:30:14.301074"
         },
-        "LPTUSDT": {
-            "signal": "buy",
-            "time": "2025-06-08T21:30:14.327999"
-        },
         "AVAXUSDT": {
             "signal": "buy",
             "time": "2025-06-08T21:30:14.361146"
+        },
+        "WIFUSDT": {
+            "signal": "buy",
+            "time": "2025-06-09T17:25:44.418516"
+        },
+        "VIRTUALUSDT": {
+            "signal": "buy",
+            "time": "2025-06-09T17:25:44.441698"
         }
     },
     "asset_distributions": {
