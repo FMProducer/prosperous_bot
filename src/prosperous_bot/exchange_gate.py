@@ -1,5 +1,5 @@
 import asyncio, time
-from prosperous_bot.logging_config import configure_root # This will be adjusted by hand later if patch fails
+from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
 import gate_api
 from gate_api.exceptions import ApiException, GateApiException

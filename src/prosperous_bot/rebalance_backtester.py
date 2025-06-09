@@ -95,7 +95,7 @@ if not hasattr(_bi.all, "_bool_patch"):
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-from prosperous_bot.logging_config import configure_root # This will be adjusted by hand later if patch fails
+from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
 import logging
 
