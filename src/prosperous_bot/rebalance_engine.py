@@ -2,7 +2,7 @@ import asyncio
 import copy
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
-from .utils import get_lot_step, to_gate_pair, _qty_for_tests
+from prosperous_bot.utils import get_lot_step, to_gate_pair, _qty_for_tests
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -78,8 +78,12 @@ class RebalanceEngine:
 
         # --- Всегда храним тикеры в Gate-формате «BASE_USDT» ---
         # spot_asset_symbol always in Gate.io format, e.g. "BTC_USDT"
-        spot_asset_symbol_param = self.params.get("spot_asset_symbol", spot_asset_symbol if spot_asset_symbol else f"{sym}_USDT")
-        self.spot_asset_symbol = to_gate_pair(spot_asset_symbol_param)
+        self.spot_asset_symbol = to_gate_pair(
+            self.params.get(
+                "spot_asset_symbol",
+                spot_asset_symbol if spot_asset_symbol else "BTC_USDT",
+            )
+        )
 
         # для фьючерсов Gate использует тот же вид «BTC_USDT»
         self.futures_contract_symbol_base = to_gate_pair(

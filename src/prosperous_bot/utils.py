@@ -26,37 +26,23 @@ FALLBACK_LOT_STEPS = {
 #  Helpers for unit-tests (qty ≥ 1 rule)
 # -----------------------------------------------------------------
 def _qty_for_tests(asset_key: str, delta_usdt: float, p_spot: float) -> float:
-    """
-    В юнит-тестах принято считать, что *кол-во* = notional-USDT.
-    * SPOT → round(|ΔUSDT|)   (единица измерения — USDT, не BTC)
-    * PERP → round(|ΔUSDT|)   (контракт≈1 USDT)
-    Итог всегда ≥ 1, чтобы удовлетворить assert >= 1.
-    """
     q = abs(delta_usdt)
-    if asset_key.endswith("_SPOT") or asset_key.endswith("_PERP"):
-        return max(int(round(q)), 1)
-    return max(q / p_spot, 1)    # fallback – не должен пригодиться
+    if asset_key == "spot":
+        return q / p_spot
+    # фьючерсы BTCUSDT имеют размер контракта 0.001 BTC
+    if asset_key == "BTCUSDT":
+        return q / p_spot / 0.001
+    # print(f"Unknown asset_key: {asset_key}")
+    return max(q / p_spot, 1)    # fallback
 
-# -----------------------------------------------------------------
-#  Symbol-conversion helpers  (Binance  ⇄  Gate.io)
-# -----------------------------------------------------------------
-
+# ─────── NEW: convert helpers ───────────────────────────────────
 def to_gate_pair(symbol: str) -> str:
-    """
-    Преобразует *symbol* в формат Gate.io «BASE_USDT».
-
-    * ``BTCUSDT`` → ``BTC_USDT``
-    * если уже «BASE_USDT» — возвращается как есть
-    * нечувствителен к регистру
-    """
     if symbol is None:
         return symbol
-    sym = symbol.upper()
-    if "_" in sym:
-        return sym                      # уже Gate-стиль
-    if sym.endswith("USDT"):
-        return f"{sym[:-4]}_USDT"
-    return sym
+    s = symbol.upper()
+    if "_" in s:
+        return s
+    return f"{s[:-4]}_USDT" if s.endswith("USDT") else s
 
 
 def to_binance_symbol(pair: str) -> str:

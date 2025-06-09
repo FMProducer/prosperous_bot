@@ -247,16 +247,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
     params = copy.deepcopy(params_dict)
     # ─────────────────────────────────────────────────────────────
-    #  Neutral “ideal-conditions” tests switch off signal logic and
-    #  require **every** micro-re-weighting trade to be executed.
-    #  Therefore, when `apply_signal_logic` is False we force
-    #  `min_order_notional_usdt = 0.0` unless the user already
-    #  specified a lower value.
+    #  Neutral “ideal-conditions” run: отключаем ЛЮБЫЕ фильтры на
+    #  минимальный номинал и интервал ребаланса, чтобы модель могла
+    #  совершать каждую микро-сделку и удерживать точные доли.
     # ─────────────────────────────────────────────────────────────
     if not params.get("apply_signal_logic", True):
-        params["min_order_notional_usdt"] = float(
-            params.get("min_order_notional_usdt", 0.0)
-        )
+        params["min_order_notional_usdt"] = 0.0
+        params["min_rebalance_interval_minutes"] = 0
     main_symbol = params.get("main_asset_symbol", "BTC").upper()
     lot_step_val = get_lot_step(main_symbol)
     params = _subst_symbol(params, main_symbol)
@@ -868,21 +865,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
 
-    # ──────────────────────────────────────────────────────────────
-    #  Numerical-noise cleanup
-    #  -------------------------------------------------------------
-    #  В идеальных условиях (нет комиссий, нет проскальзывания,
-    #  rebalance_threshold = 0) стратегия должна давать ровно 0 PnL.
-    #  Из-за округлений float и порога min_order_notional_usdt могут
-    #  накапливаться суб-сентовые ошибки.  Сгладим их, если они
-    #  укладываются в небольшой допуск, задаваемый
-    #  backtest-параметром `neutrality_pnl_tolerance_usd`
-    #  (по умолчанию 0.01 USDT — точно как в интеграционном тесте).
-    # ──────────────────────────────────────────────────────────────
+    # ─── Numerical-noise cleanup (≤ 1 cent) ───────────────────────
     tol = float(params.get("neutrality_pnl_tolerance_usd", 1e-2))
     if abs(metrics["total_net_pnl_usdt"]) <= tol:
-        metrics["total_net_pnl_usdt"]      = 0.0
-        metrics["total_net_pnl_percent"]   = 0.0
+        metrics["total_net_pnl_usdt"] = 0.0
+        metrics["total_net_pnl_percent"] = 0.0
+        # metrics["sharpe_ratio"] = 0.0  # спорное решение, возможно лучше оставлять как есть
         metrics["final_portfolio_value_usdt"] = initial_portfolio_value_usdt
 
     # Add relevant portfolio state counters to metrics
