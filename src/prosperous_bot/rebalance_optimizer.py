@@ -19,15 +19,15 @@ except ImportError:
         logging.error("CRITICAL: Could not import 'run_backtest' from rebalance_backtester.py. Ensure it's accessible.")
         run_backtest = None # Ensure it's defined to avoid NameError later, but it will fail
 
-import functools
-import operator
-
 # Basic logging configuration for the optimizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
 
 # Optuna visualization imports - handled gracefully if not available
 try:
-    from optuna.visualization import plot_optimization_history, plot_param_importances, plot_slice, plot_contour
+    from optuna.visualization import (
+        plot_optimization_history, plot_param_importances, plot_slice, 
+        plot_contour, plot_parallel_coordinate
+    )
     optuna_visualization_available = True
 except ImportError:
     logging.warning("Optuna visualization modules not found. Plot generation will be skipped. "
@@ -306,21 +306,44 @@ def main():
                     slice_plot_path = os.path.join(optimizer_run_output_dir, "slice_plot.html")
                     slice_plot.write_html(slice_plot_path)
                     logging.info(f"Slice plot saved to {slice_plot_path}")
-                    
-                    # For contour plot, use the param names directly from optimization_space
-                    # as Optuna stores them with their full path in study.best_params
-                    param_paths_for_contour = [p['path'] for p in optimizer_settings.get("optimization_space", [])]
 
-                    if len(param_paths_for_contour) > 1:
+                    parallel_coordinate_plot = plot_parallel_coordinate(study)
+                    parallel_coordinate_plot_path = os.path.join(optimizer_run_output_dir, "parallel_coordinate.html")
+                    parallel_coordinate_plot.write_html(parallel_coordinate_plot_path)
+                    logging.info(f"Parallel coordinate plot saved to {parallel_coordinate_plot_path}")
+                    
+                    # Get main_asset_symbol for potential substitution in paths, consistent with 'objective'
+                    main_asset_symbol_for_plot = backtest_settings_template.get('main_asset_symbol', 'BTC')
+
+                    # Get all *substituted* parameter paths that were part of the optimization space
+                    all_substituted_param_paths_in_space = [
+                        p_config['path'].format(main_asset_symbol=main_asset_symbol_for_plot)
+                        for p_config in optimizer_settings.get("optimization_space", [])
+                    ]
+
+                    if len(all_substituted_param_paths_in_space) > 1:
+                        params_for_contour_plot = []
                         try:
-                            param_importances_data_tuples = optuna.importance.get_param_importances(study, normalizer=None) # Get raw importances
-                            # Sort params by importance (descending)
-                            sorted_important_param_paths = [item[0] for item in sorted(param_importances_data_tuples.items(), key=lambda x: x[1], reverse=True)]
-                            params_for_contour_plot = sorted_important_param_paths[:2]
+                            # get_param_importances returns a dict: {param_name_substituted: importance_value}
+                            param_importances_dict = optuna.importance.get_param_importances(study)
+                            
+                            sorted_important_params = sorted(
+                                param_importances_dict.items(), 
+                                key=lambda item: item[1], 
+                                reverse=True
+                            )
+                            # Take the names (substituted paths) of the top 2
+                            params_for_contour_plot = [param_name for param_name, importance in sorted_important_params[:2]]
+
+                            if len(params_for_contour_plot) < 2 and len(all_substituted_param_paths_in_space) >=2 :
+                                logging.warning(f"Could not get two important params from importances (got {len(params_for_contour_plot)}). "
+                                                f"Falling back to first two from defined optimization space (substituted).")
+                                params_for_contour_plot = all_substituted_param_paths_in_space[:2]
+
                         except Exception as e_imp:
                             logging.warning(f"Could not determine parameter importances for contour plot automatically, "
-                                            f"defaulting to first two from optimization_space. Error: {e_imp}")
-                            params_for_contour_plot = param_paths_for_contour[:2]
+                                            f"defaulting to first two from optimization_space (substituted). Error: {e_imp}")
+                            params_for_contour_plot = all_substituted_param_paths_in_space[:2]
                         
                         if len(params_for_contour_plot) == 2:
                             contour_plot_fig = plot_contour(study, params=params_for_contour_plot)
@@ -328,9 +351,9 @@ def main():
                             contour_plot_fig.write_html(contour_plot_path)
                             logging.info(f"Contour plot for params {params_for_contour_plot} saved to {contour_plot_path}")
                         else:
-                             logging.info("Contour plot requires at least two parameters. Skipping contour plot.")
+                             logging.info("Contour plot requires at least two parameters with importance or from space. Skipping contour plot.")
                     else:
-                        logging.info("Only one parameter was optimized or available. Skipping contour plot.")
+                        logging.info("Fewer than two parameters were optimized or available in space. Skipping contour plot.")
 
                 except Exception as e:
                     logging.error(f"Error generating Optuna plots: {e}", exc_info=True)
@@ -341,8 +364,8 @@ def main():
         
         logging.info(f"All optimizer outputs saved in {optimizer_run_output_dir}")
         logging.info(f"To run the backtester with the best found parameters, create a new JSON config file "
-                     f"using the 'best_backtest_config' section from '{best_params_path}' "
-                     f"and run: python src/prosperous_bot/rebalance_backtester.py <your_new_config.json> {data_file_path}")
+                     f"using the 'best_backtest_config' section from '{best_params_path}', then run: \n"
+                     f"python -m prosperous_bot.rebalance_backtester --config_file <your_new_config.json>")
 
 
 if __name__ == "__main__":
@@ -370,21 +393,21 @@ if __name__ == "__main__":
                 "type": "float", "low": 0.05, "high": 0.15
               },
               {
-                "path": "target_weights_normal.BTC_SPOT", 
+                "path": "target_weights_normal.{main_asset_symbol}_SPOT",
                 "type": "float", "low": 0.1, "high": 0.8 
               },
               {
-                "path": "target_weights_normal.BTC_LONG5X",
+                "path": "target_weights_normal.{main_asset_symbol}_PERP_LONG",
                 "type": "float", "low": 0.0, "high": 0.4
               },
               {
-                "path": "target_weights_normal.BTC_SHORT5X",
+                "path": "target_weights_normal.{main_asset_symbol}_PERP_SHORT",
                 "type": "float", "low": 0.0, "high": 0.4
               }
-              // Add other parameters like slippage_percent, commission rates etc. as needed
             ]
           },
           "backtest_settings": { 
+            "main_asset_symbol": "BTC",
             "initial_capital": 10000.0,
             "commission_taker": 0.0007,
             "commission_maker": 0.0002,
@@ -394,9 +417,9 @@ if __name__ == "__main__":
             "min_rebalance_interval_minutes": 60, 
             "rebalance_threshold": 0.02, 
             "target_weights_normal": {
-              "BTC_SPOT": 0.65, 
-              "BTC_LONG5X": 0.11,
-              "BTC_SHORT5X": 0.24 
+              "BTC_SPOT": 0.65,
+              "BTC_PERP_LONG": 0.11,
+              "BTC_PERP_SHORT": 0.24
             },
             "circuit_breaker_config": {
               "enabled": True,
@@ -409,7 +432,12 @@ if __name__ == "__main__":
               "metric_to_monitor": "margin_usage",
               "entry_threshold": 0.70,
               "exit_threshold": 0.50,
-              "target_weights_safe": { "BTC_SPOT": 0.75, "BTC_LONG5X": 0.05, "BTC_SHORT5X": 0.05, "USDT": 0.15 }
+              "target_weights_safe": {
+                "BTC_SPOT": 0.75,
+                "BTC_PERP_LONG": 0.05,
+                "BTC_PERP_SHORT": 0.05,
+                "USDT": 0.15
+              }
             },
             "data_settings": {
               "csv_file_path": "data/BTCUSDT_default_1h_dummy.csv", 
