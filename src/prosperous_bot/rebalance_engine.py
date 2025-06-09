@@ -150,7 +150,9 @@ class RebalanceEngine:
 
             side = "buy" if qty_float > 0 else "sell"
             qty_lot = self._round_lot(abs(qty_float))
-            if abs(delta_usdt) < 1.0: # Проверяем абсолютное значение delta_usdt
+            # пропускаем ордера меньше заданного порога
+            min_ord = self.params.get("min_order_notional_usdt", 10.0)
+            if abs(delta_usdt) < min_ord:
                 continue
 
             orders.append(

@@ -639,7 +639,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
             for asset_key_trade, usdt_value_to_trade in adjustments.items():
                 if asset_key_trade == "USDT": continue
-                if abs(usdt_value_to_trade) < 1.0: continue
+                # игнорируем ребаланс-движения меньше порога
+                if abs(usdt_value_to_trade) < params.get("min_order_notional_usdt", 10.0):
+                    continue
                 # Patch for dust minimization: Start
                 if current_price > 0:
                     asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
