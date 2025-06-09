@@ -2,6 +2,7 @@ import asyncio
 import copy
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
+from .utils import get_lot_step
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -102,9 +103,9 @@ class RebalanceEngine:
         return max(base_thr, 0.2 * atr_24h_pct) if atr_24h_pct is not None else base_thr
 
     @staticmethod
-    def _round_lot(qty_float: float, min_qty: float = 1) -> int:
-        """Округление до целого числа контрактов (>= 1)."""
-        return max(int(round(qty_float)), int(min_qty))
+    def _round_lot(qty_float: float, lot_step: float) -> float:
+        """Округление до шага лота."""
+        return round(qty_float / lot_step) * lot_step
 
     # ---------- public API ---------------------------------------------
 
@@ -131,6 +132,7 @@ class RebalanceEngine:
 
         # записываем момент последней успешной проверки
         self._last_rebalance_attempt_ts = now_ts
+        lot_step = get_lot_step(self.params.get("main_asset_symbol", "BTC"))
 
         leverage = self.params.get("futures_leverage", 5.0)
         effective_leverage = leverage if leverage > 0 else 1e-9
@@ -168,7 +170,7 @@ class RebalanceEngine:
                 qty_float = delta_usdt / p_contract
 
             side = "buy" if qty_float > 0 else "sell"
-            qty_lot = self._round_lot(abs(qty_float))
+            qty_lot = self._round_lot(abs(qty_float), lot_step)
             # пропускаем ордера меньше заданного порога
             min_ord = self.params.get("min_order_notional_usdt", 10.0)
             if abs(delta_usdt) < min_ord:

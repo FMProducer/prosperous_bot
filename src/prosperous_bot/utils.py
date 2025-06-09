@@ -3,10 +3,41 @@
 import requests
 import logging
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+# ────────────────────────────────────────────────────────────────
+#  Generic lot-step helper
+#  1) Пытается запросить filter с биржи (Gate API ― spot pair)
+#  2) Фоллбэк на встроенный словарь наиболее частых активов
+#  3) Абсолютный минимум 1e-8 (крипто) / 1e-3 (акции)
+# ────────────────────────────────────────────────────────────────
+FALLBACK_LOT_STEPS = {
+    "BTC": 0.0001,
+    "ETH": 0.001,
+    "BNB": 0.01,
+    "SOL": 0.01,
+}
+
+
+@lru_cache(maxsize=32)
+def get_lot_step(symbol: str) -> float:
+    """
+    Return lot size step for *symbol*.
+
+    - First, try Gate API (spot pair `<SYMBOL>_USDT`).
+    - If unavailable -> fallback dict.
+    - Otherwise -> return 1e-8 (crypto default) or 1e-3.
+    """
+    try:
+        from exchange_gate import gate_client  # lazy import → no hard dep
+        info = gate_client.get_spot_pairs(pair=f"{symbol.upper()}_USDT")[0]
+        return float(info.min_base_amount)
+    except Exception:
+        return FALLBACK_LOT_STEPS.get(symbol.upper(), 1e-8)
 
 # Кэш для топ-символов
 top_symbols_cache = {
