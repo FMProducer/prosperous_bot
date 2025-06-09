@@ -28,24 +28,6 @@
         ]
       },
       {
-        "path": "target_weights_normal.{main_asset_symbol}_SPOT",
-        "type": "float",
-        "low": 0.1,
-        "high": 0.8
-      },
-      {
-        "path": "target_weights_normal.{main_asset_symbol}_PERP_LONG",
-        "type": "float",
-        "low": 0.0,
-        "high": 0.4
-      },
-      {
-        "path": "target_weights_normal.{main_asset_symbol}_PERP_SHORT",
-        "type": "float",
-        "low": 0.0,
-        "high": 0.4
-      },
-      {
         "path": "slippage_percent",
         "type": "float",
         "low": 0.0001,
@@ -56,6 +38,28 @@
         "type": "float",
         "low": 0.5,
         "high": 0.9
+      },
+      {
+        "path": "spot_pct",
+        "type": "categorical",
+        "choices": [
+          0.8,
+          0.75,
+          0.7,
+          0.65,
+          0.6,
+          0.55,
+          0.5,
+          0.45,
+          0.4,
+          0.35,
+          0.3,
+          0.25,
+          0.2,
+          0.15,
+          0.1,
+          0.05
+        ]
       }
     ]
   },
@@ -75,7 +79,7 @@
     "rebalance_threshold": 0.03,
     "neutrality_pnl_tolerance_usd": 0.005,
     "target_weights_normal": {
-      "{main_asset_symbol}_SPOT": 0.80,
+      "{main_asset_symbol}_SPOT": 0.8,
       "{main_asset_symbol}_PERP_LONG": 0.02,
       "{main_asset_symbol}_PERP_SHORT": 0.18
     },
@@ -88,10 +92,10 @@
     "safe_mode_config": {
       "enabled": true,
       "metric_to_monitor": "margin_usage",
-      "entry_threshold": 0.70,
-      "exit_threshold": 0.60,
+      "entry_threshold": 0.7,
+      "exit_threshold": 0.6,
       "target_weights_safe": {
-        "{main_asset_symbol}_SPOT": 0.80,
+        "{main_asset_symbol}_SPOT": 0.8,
         "{main_asset_symbol}_PERP_LONG": 0.02,
         "{main_asset_symbol}_PERP_SHORT": 0.18,
         "USDT": 0.0

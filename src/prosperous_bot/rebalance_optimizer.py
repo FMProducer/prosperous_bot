@@ -105,10 +105,48 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
     # Store suggested params separately for logging/best_params.json
     suggested_params_for_log = {}
 
+    # Get main_asset_symbol from base_backtest_settings
+    main_asset_symbol = base_backtest_settings.get('main_asset_symbol', 'BTC')
+
+    # Define choices for spot_pct
+    spot_pct_choices = [0.80,0.75,0.70,0.65,0.60,0.55,0.50,0.45,0.40,0.35,0.30,0.25,0.20,0.15,0.10,0.05]
+    spot_pct = trial.suggest_categorical("spot_pct", spot_pct_choices)
+
+    # Calculate long_pct and short_pct based on spot_pct
+    # spot + long + short = 1
+    # spot * 1 + long * 5 - short * 5 = 0 (delta neutral)
+    # spot + long * 5 - (1 - spot - long) * 5 = 0
+    # spot + 5long - 5 + 5spot + 5long = 0
+    # 6spot + 10long - 5 = 0
+    # 10long = 5 - 6spot => long = (5 - 6spot) / 10
+    # short = 1 - spot - long = 1 - spot - (5 - 6spot)/10 = (10 - 10spot - 5 + 6spot)/10 = (5 - 4spot)/10
+    long_pct = (5 - 6 * spot_pct) / 10
+    short_pct = (5 - 4 * spot_pct) / 10
+
+    # Pruning condition
+    if long_pct < 0 or short_pct < 0:
+        logging.info(f"Trial {trial.number}: Pruning trial because calculated long_pct ({long_pct:.4f}) or short_pct ({short_pct:.4f}) is negative for spot_pct {spot_pct:.2f}.")
+        raise optuna.TrialPruned("Calculated long/short percentages are negative.")
+
+    # Set target weights in current_backtest_params
+    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_SPOT", spot_pct)
+    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_PERP_LONG", long_pct)
+    set_nested_value(current_backtest_params, f"target_weights_normal.{main_asset_symbol}_PERP_SHORT", short_pct)
+
+    # Log these params
+    suggested_params_for_log[f"target_weights_normal.{main_asset_symbol}_SPOT"] = spot_pct
+    suggested_params_for_log[f"target_weights_normal.{main_asset_symbol}_PERP_LONG"] = long_pct
+    suggested_params_for_log[f"target_weights_normal.{main_asset_symbol}_PERP_SHORT"] = short_pct
+    suggested_params_for_log["spot_pct"] = spot_pct # Log the primary suggested param
+
     # Suggest parameters based on the optimization_space configuration
     for p_config in optimization_space:
+        if p_config['path'] == "spot_pct":
+            continue
+
         original_param_path = p_config['path']
         # Substitute {main_asset_symbol} placeholder in the path
+        # Ensure main_asset_symbol is available (defined above from base_backtest_settings)
         param_path_substituted = original_param_path.format(main_asset_symbol=main_asset_symbol)
 
         # Optuna uses this name for its internal storage of suggested params.
