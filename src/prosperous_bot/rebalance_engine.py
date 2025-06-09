@@ -2,7 +2,7 @@ import asyncio
 import copy
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
-from .utils import get_lot_step, to_gate_pair, _qty_for_tests
+from .utils import get_lot_step, to_gate_pair
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -167,18 +167,19 @@ class RebalanceEngine:
 
             delta_usdt = diff * nav
             if asset_key.endswith("_SPOT"):
-                # Ensure symbol is already in "BTC_USDT" format for spot assets
-                symbol = self.spot_asset_symbol # Already in Gate.io format
-                # qty_float = delta_usdt / p_spot # Original calculation
-            else:
+                symbol = self.spot_asset_symbol
+                qty_float = delta_usdt / p_spot
+                base_asset_spot = symbol.split('_')[0]
+                lot_step = get_lot_step(base_asset_spot)
+            else: # PERP
                 if p_contract is None or p_contract <= 0:
                     logging.warning("p_contract not provided — пропуск %s", asset_key)
                     continue
                 symbol = self.futures_contract_symbol_base
-                # qty_float = delta_usdt / p_contract # Original calculation
+                qty_float = delta_usdt / p_contract
+                lot_step = 1.0 # For PERP, lot_step is 1 (whole contract)
 
-            # Use _qty_for_tests for qty_lot calculation for test compatibility
-            qty_lot = _qty_for_tests(asset_key, delta_usdt, p_spot if asset_key.endswith("_SPOT") else p_contract)
+            qty_lot = self._round_lot(abs(qty_float), lot_step)
             side = "buy" if delta_usdt > 0 else "sell" # Corrected side based on delta_usdt
 
             # пропускаем ордера меньше заданного порога

@@ -9,7 +9,7 @@ import numpy as np
 
 import logging
 
-def simulate_rebalance(data, orders_by_step, leverage=5.0):
+def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_positions=False):
     open_positions = {}
     trade_log = []
     last_price = None # Store the last price
@@ -81,7 +81,7 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0):
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
 
     # Force-closure of any remaining open positions at the end of the data
-    if last_price is not None: # Ensure there was data
+    if force_close_open_positions and open_positions and last_price is not None: # Ensure there was data
         for key, pos in list(open_positions.items()): # Use list to allow modification
             pnl = (last_price - pos['entry_price']) * pos['qty'] * pos['direction'] * leverage
             trade_log.append({
@@ -777,7 +777,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.info(f"Calling simulate_rebalance with {len(orders_by_step)} steps having orders.")
         # 'leverage' variable should already be defined from params_dict
         # 'df_market' is the correct DataFrame containing all candles for the backtest period
-        simulated_trade_log = simulate_rebalance(df_market, orders_by_step, leverage)
+        # закрываем хвосты только если это обычный бэктест, а не оптимизатор
+        simulated_trade_log = simulate_rebalance(
+            df_market,
+            orders_by_step,
+            leverage=leverage,
+            force_close_open_positions=not is_optimizer_call
+        )
 
         if generate_reports and actual_reports_dir:
             rebalance_trades_csv_path = os.path.join(actual_reports_dir, "rebalance_trades.csv")
