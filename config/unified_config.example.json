@@ -1,6 +1,6 @@
 {
   "optimizer_settings": {
-    "n_trials": 200,
+    "n_trials": 3,
     "metric_to_optimize": "sharpe_ratio",
     "direction": "maximize",
     "sampler_type": "TPE",
@@ -96,8 +96,8 @@
       }
     },
     "data_settings": {
-      "csv_file_path": "graphs/{main_asset_symbol}USDT_data.csv",
-      "signals_csv_path": "graphs/{main_asset_symbol}USDT_signals.csv",
+      "csv_file_path": "graphs/{main_asset_symbol}_data.csv",
+      "signals_csv_path": "graphs/{main_asset_symbol}_signals.csv",
       "timestamp_col": "timestamp",
       "ohlc_cols": {
         "open": "open",

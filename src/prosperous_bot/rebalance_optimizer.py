@@ -9,15 +9,21 @@ import copy # For deep copying params
 
 # Attempt to import the backtester; handle potential ImportError if structure changes
 try:
-    from prosperous_bot.rebalance_backtester import run_backtest
-except ImportError:
-    # Fallback if the script is run from a different relative path or package structure issues
-    # This assumes rebalance_backtester.py is in the same directory for a simple fallback
+    # Explicit relative import for files within the same package
+    from .rebalance_backtester import run_backtest
+except ImportError as e1:
+    logging.warning(f"Relative import '.rebalance_backtester' failed: {e1}. Trying original fallbacks.")
     try:
-        from rebalance_backtester import run_backtest
-    except ImportError:
-        logging.error("CRITICAL: Could not import 'run_backtest' from rebalance_backtester.py. Ensure it's accessible.")
-        run_backtest = None # Ensure it's defined to avoid NameError later, but it will fail
+        from prosperous_bot.rebalance_backtester import run_backtest
+    except ImportError as e2:
+        logging.warning(f"Absolute import 'prosperous_bot.rebalance_backtester' failed: {e2}. Trying direct import.")
+        # Fallback if the script is run from a different relative path or package structure issues
+        # This assumes rebalance_backtester.py is in the same directory for a simple fallback
+        try:
+            from rebalance_backtester import run_backtest # This would only work if src/prosperous_bot was directly on PYTHONPATH
+        except ImportError as e3:
+            logging.error(f"CRITICAL: Could not import 'run_backtest' from rebalance_backtester.py. All attempts failed. Last error: {e3}", exc_info=True)
+            run_backtest = None # Ensure it's defined to avoid NameError later, but it will fail
 
 # Basic logging configuration for the optimizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
@@ -86,6 +92,16 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         logging.warning(f"Optimizer: 'main_asset_symbol' not found in base_backtest_settings, defaulting to '{main_asset_symbol}'. "
                         "Ensure it's defined in unified_config.json's backtest_settings section.")
 
+    # --- START MODIFICATIONS ---
+    data_path_resolved = data_file_path.format(main_asset_symbol=main_asset_symbol)
+    logging.info(f"Trial {trial.number}: Raw data_file_path from config/CLI: '{data_file_path}', "
+                 f"Resolved to: '{data_path_resolved}' using main_asset_symbol: '{main_asset_symbol}'.")
+
+    if not os.path.exists(data_path_resolved):
+        logging.warning(f"Trial {trial.number}: Data file not found at {data_path_resolved}. Pruning trial.")
+        raise optuna.exceptions.TrialPruned(f"Data file not found: {data_path_resolved}")
+    # --- END MODIFICATIONS ---
+
     # Store suggested params separately for logging/best_params.json
     suggested_params_for_log = {}
 
@@ -134,7 +150,7 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         # For this refactor, we assume it's part of the backtest_settings if desired.
         backtest_results = run_backtest(
             params_dict=current_backtest_params, 
-            data_path=data_file_path, 
+            data_path=data_path_resolved, # MODIFIED HERE
             is_optimizer_call=True, # Ensures it knows it's part of an optimization
             trial_id_for_reports=trial.number # For unique report subfolders if reports are generated
         )
@@ -261,111 +277,143 @@ def main():
         logging.info("Optimization finished or stopped.")
 
         if study.trials:
+            # Save trials_df_sorted to optimization_log.csv first
             trials_df = study.trials_dataframe()
-            trials_df = trials_df.sort_values(by="value", ascending=(study_direction == "minimize"))
+            # Ensure 'study_direction' string is used for sorting direction
+            is_minimization = (study_direction.lower() == "minimize")
+            trials_df_sorted = trials_df.sort_values(by="value", ascending=is_minimization)
             optimization_log_path = os.path.join(optimizer_run_output_dir, "optimization_log.csv")
-            trials_df.to_csv(optimization_log_path, index=False)
+            trials_df_sorted.to_csv(optimization_log_path, index=False)
             logging.info(f"Optimization log saved to {optimization_log_path}")
 
-            # Create the best_backtest_config by applying best Optuna params to the template
-            best_backtest_config_final = copy.deepcopy(backtest_settings_template)
-            # Remove the specific path for trial reports from the final best config
-            best_backtest_config_final['report_path_prefix'] = report_path_prefix 
-            
-            # Optuna's study.best_params contains keys that are the param_name_for_trial (substituted paths).
-            for param_path_substituted, value in study.best_params.items():
-                # We need to ensure set_nested_value uses the same substituted path
-                set_nested_value(best_backtest_config_final, param_path_substituted, value)
+            try:
+                # Attempt to access best_trial, which can raise ValueError if no trials completed successfully
+                _ = study.best_trial  # Access to check for ValueError
 
-            best_params_data = {
-                "best_value": study.best_value,
-                "best_optuna_params_substituted": study.best_params, # These keys include the substituted main_asset_symbol
-                "best_backtest_config": best_backtest_config_final,
-                "best_trial_number": study.best_trial.number
-            }
-            best_params_path = os.path.join(optimizer_run_output_dir, "best_params.json")
-            with open(best_params_path, 'w') as f:
-                json.dump(best_params_data, f, indent=2)
-            logging.info(f"Best parameters and full backtest config saved to {best_params_path}")
-            logging.info(f"Best trial ({study.best_trial.number}): Value = {study.best_value:.4f}, Optuna Params = {study.best_params}")
+                logging.info(f"Best trial found: Trial {study.best_trial.number}, Value: {study.best_value:.4f}")
 
-            if optuna_visualization_available:
-                logging.info("Generating Optuna visualization plots...")
-                try:
-                    history_plot = plot_optimization_history(study)
-                    history_plot_path = os.path.join(optimizer_run_output_dir, "optimization_history.html")
-                    history_plot.write_html(history_plot_path)
-                    logging.info(f"Optimization history plot saved to {history_plot_path}")
+                # Create the best_backtest_config by applying best Optuna params to the template
+                best_backtest_config_final = copy.deepcopy(backtest_settings_template)
+                # Remove the specific path for trial reports from the final best config
+                best_backtest_config_final['report_path_prefix'] = report_path_prefix
 
-                    importances_plot = plot_param_importances(study)
-                    importances_plot_path = os.path.join(optimizer_run_output_dir, "param_importances.html")
-                    importances_plot.write_html(importances_plot_path)
-                    logging.info(f"Parameter importances plot saved to {importances_plot_path}")
+                # Optuna's study.best_params contains keys that are the param_name_for_trial (substituted paths).
+                for param_path_substituted, value in study.best_params.items():
+                    # We need to ensure set_nested_value uses the same substituted path
+                    set_nested_value(best_backtest_config_final, param_path_substituted, value)
 
-                    slice_plot = plot_slice(study)
-                    slice_plot_path = os.path.join(optimizer_run_output_dir, "slice_plot.html")
-                    slice_plot.write_html(slice_plot_path)
-                    logging.info(f"Slice plot saved to {slice_plot_path}")
+                best_params_data = {
+                    "best_value": study.best_value,
+                    "best_optuna_params_substituted": study.best_params, # These keys include the substituted main_asset_symbol
+                    "best_backtest_config": best_backtest_config_final,
+                    "best_trial_number": study.best_trial.number
+                }
+                best_params_path = os.path.join(optimizer_run_output_dir, "best_params.json")
+                with open(best_params_path, 'w') as f:
+                    json.dump(best_params_data, f, indent=2)
+                logging.info(f"Best parameters and full backtest config saved to {best_params_path}")
+                logging.info(f"Best trial ({study.best_trial.number}): Value = {study.best_value:.4f}, Optuna Params = {study.best_params}")
 
-                    parallel_coordinate_plot = plot_parallel_coordinate(study)
-                    parallel_coordinate_plot_path = os.path.join(optimizer_run_output_dir, "parallel_coordinate.html")
-                    parallel_coordinate_plot.write_html(parallel_coordinate_plot_path)
-                    logging.info(f"Parallel coordinate plot saved to {parallel_coordinate_plot_path}")
-                    
-                    # Get main_asset_symbol for potential substitution in paths, consistent with 'objective'
-                    main_asset_symbol_for_plot = backtest_settings_template.get('main_asset_symbol', 'BTC')
+                if optuna_visualization_available:
+                    logging.info("Generating Optuna visualization plots...")
+                    try: # INNER TRY for plots - ALL plotting logic should be inside this try
+                        history_plot = plot_optimization_history(study)
+                        history_plot_path = os.path.join(optimizer_run_output_dir, "optimization_history.html")
+                        history_plot.write_html(history_plot_path)
+                        logging.info(f"Optimization history plot saved to {history_plot_path}")
 
-                    # Get all *substituted* parameter paths that were part of the optimization space
-                    all_substituted_param_paths_in_space = [
-                        p_config['path'].format(main_asset_symbol=main_asset_symbol_for_plot)
-                        for p_config in optimizer_settings.get("optimization_space", [])
-                    ]
+                        importances_plot = plot_param_importances(study)
+                        importances_plot_path = os.path.join(optimizer_run_output_dir, "param_importances.html")
+                        importances_plot.write_html(importances_plot_path)
+                        logging.info(f"Parameter importances plot saved to {importances_plot_path}")
 
-                    if len(all_substituted_param_paths_in_space) > 1:
-                        params_for_contour_plot = []
-                        try:
-                            # get_param_importances returns a dict: {param_name_substituted: importance_value}
-                            param_importances_dict = optuna.importance.get_param_importances(study)
-                            
-                            sorted_important_params = sorted(
-                                param_importances_dict.items(), 
-                                key=lambda item: item[1], 
-                                reverse=True
-                            )
-                            # Take the names (substituted paths) of the top 2
-                            params_for_contour_plot = [param_name for param_name, importance in sorted_important_params[:2]]
+                        slice_plot = plot_slice(study)
+                        slice_plot_path = os.path.join(optimizer_run_output_dir, "slice_plot.html")
+                        slice_plot.write_html(slice_plot_path)
+                        logging.info(f"Slice plot saved to {slice_plot_path}")
 
-                            if len(params_for_contour_plot) < 2 and len(all_substituted_param_paths_in_space) >=2 :
-                                logging.warning(f"Could not get two important params from importances (got {len(params_for_contour_plot)}). "
-                                                f"Falling back to first two from defined optimization space (substituted).")
+                        parallel_coordinate_plot = plot_parallel_coordinate(study)
+                        parallel_coordinate_plot_path = os.path.join(optimizer_run_output_dir, "parallel_coordinate.html")
+                        parallel_coordinate_plot.write_html(parallel_coordinate_plot_path)
+                        logging.info(f"Parallel coordinate plot saved to {parallel_coordinate_plot_path}")
+                        
+                        # Get main_asset_symbol for potential substitution in paths, consistent with 'objective'
+                        main_asset_symbol_for_plot = backtest_settings_template.get('main_asset_symbol', 'BTC')
+
+                        # Get all *substituted* parameter paths that were part of the optimization space
+                        all_substituted_param_paths_in_space = [
+                            p_config['path'].format(main_asset_symbol=main_asset_symbol_for_plot)
+                            for p_config in optimizer_settings.get("optimization_space", [])
+                        ]
+
+                        if len(all_substituted_param_paths_in_space) > 1:
+                            params_for_contour_plot = []
+                            try:
+                                # get_param_importances returns a dict: {param_name_substituted: importance_value}
+                                param_importances_dict = optuna.importance.get_param_importances(study)
+
+                                sorted_important_params = sorted(
+                                    param_importances_dict.items(),
+                                    key=lambda item: item[1],
+                                    reverse=True
+                                )
+                                # Take the names (substituted paths) of the top 2
+                                params_for_contour_plot = [param_name for param_name, importance in sorted_important_params[:2]]
+
+                                if len(params_for_contour_plot) < 2 and len(all_substituted_param_paths_in_space) >=2 :
+                                    logging.warning(f"Could not get two important params from importances (got {len(params_for_contour_plot)}). "
+                                                    f"Falling back to first two from defined optimization space (substituted).")
+                                    params_for_contour_plot = all_substituted_param_paths_in_space[:2]
+
+                            except Exception as e_imp:
+                                logging.warning(f"Could not determine parameter importances for contour plot automatically, "
+                                                f"defaulting to first two from optimization_space (substituted). Error: {e_imp}")
                                 params_for_contour_plot = all_substituted_param_paths_in_space[:2]
 
-                        except Exception as e_imp:
-                            logging.warning(f"Could not determine parameter importances for contour plot automatically, "
-                                            f"defaulting to first two from optimization_space (substituted). Error: {e_imp}")
-                            params_for_contour_plot = all_substituted_param_paths_in_space[:2]
-                        
-                        if len(params_for_contour_plot) == 2:
-                            contour_plot_fig = plot_contour(study, params=params_for_contour_plot)
-                            contour_plot_path = os.path.join(optimizer_run_output_dir, "contour_plot.html")
-                            contour_plot_fig.write_html(contour_plot_path)
-                            logging.info(f"Contour plot for params {params_for_contour_plot} saved to {contour_plot_path}")
+                            if len(params_for_contour_plot) == 2:
+                                contour_plot_fig = plot_contour(study, params=params_for_contour_plot)
+                                contour_plot_path = os.path.join(optimizer_run_output_dir, "contour_plot.html")
+                                contour_plot_fig.write_html(contour_plot_path)
+                                logging.info(f"Contour plot for params {params_for_contour_plot} saved to {contour_plot_path}")
+                            else:
+                                 logging.info("Contour plot requires at least two parameters with importance or from space. Skipping contour plot.")
                         else:
-                             logging.info("Contour plot requires at least two parameters with importance or from space. Skipping contour plot.")
-                    else:
-                        logging.info("Fewer than two parameters were optimized or available in space. Skipping contour plot.")
+                            logging.info("Fewer than two parameters were optimized or available in space. Skipping contour plot.")
 
-                except Exception as e:
-                    logging.error(f"Error generating Optuna plots: {e}", exc_info=True)
-            else:
-                logging.info("Optuna visualization plots skipped as plotly is not available.")
-        else:
-            logging.warning("No trials were completed. Reports and plots cannot be generated.")
+                    except Exception as e: # INNER EXCEPT for plots
+                        logging.error(f"Error generating Optuna plots: {e}", exc_info=True)
+                # This 'else' correctly corresponds to 'if optuna_visualization_available:'
+                else:
+                    logging.info("Optuna visualization plots skipped as plotly is not available.")
+
+            # This 'except ValueError' correctly corresponds to the OUTER TRY
+            except ValueError:
+                logging.warning("Could not determine best parameters (e.g., all trials pruned or failed). "
+                                "Skipping generation of best_params.json and visualization plots. "
+                                f"Check '{optimization_log_path}' for trial details.")
+        else: # This is the else for 'if study.trials:'
+            logging.warning("No trials were recorded in the study. Reports and plots cannot be generated.")
         
-        logging.info(f"All optimizer outputs saved in {optimizer_run_output_dir}")
-        logging.info(f"To run the backtester with the best found parameters, create a new JSON config file "
-                     f"using the 'best_backtest_config' section from '{best_params_path}', then run: \n"
-                     f"python -m prosperous_bot.rebalance_backtester --config_file <your_new_config.json>")
+        # These messages should be at the end of the 'finally' block
+        logging.info(f"All optimizer outputs for this run are in {optimizer_run_output_dir}")
+        # The message below might rely on 'best_params_path' which is defined inside the try block.
+        # It's safer to make it more general if best_params.json might not exist.
+        # Or, ensure best_params_path is defined (e.g. as None) outside the try if used here.
+        # For now, let's assume it's okay if this message is not shown when ValueError occurs.
+        # A better approach might be to conditionally phrase this last message.
+        try:
+            # Attempt to reference best_params_path only if it was likely created.
+            # This is a bit of a workaround. A cleaner way would be to set best_params_path = None earlier.
+            if 'best_params_path' in locals() and os.path.exists(best_params_path):
+                 logging.info(f"To run the backtester with the best found parameters, create a new JSON config file "
+                              f"using the 'best_backtest_config' section from '{best_params_path}', then run: \n"
+                              f"python -m prosperous_bot.rebalance_backtester --config_file <your_new_config.json>")
+            elif not study.trials: # If no trials, best_params_path won't exist.
+                pass # Message already logged about no trials.
+            else: # Trials exist, but ValueError likely occurred.
+                 logging.info("If best parameters were found, 'best_params.json' in the output directory can be used to run the backtester.")
+        except NameError: # best_params_path might not be defined if all trials failed.
+            logging.info("Check 'optimization_log.csv' for trial details. If successful trials exist, 'best_params.json' may be available.")
 
 
 if __name__ == "__main__":

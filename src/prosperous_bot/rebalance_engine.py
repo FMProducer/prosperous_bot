@@ -1,6 +1,6 @@
 import asyncio
 import copy
-from prosperous_bot.logging_config import configure_root # This will be adjusted by hand later if patch fails
+from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
 import logging
 from datetime import datetime, timedelta
