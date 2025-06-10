@@ -881,12 +881,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     # Calculate NAV standard deviation percentage
     if not df_equity.empty:
         nav_series = df_equity['portfolio_value_usdt']
-        if initial_portfolio_value_usdt != 0:
-            metrics["nav_std_percent"] = nav_series.std() / initial_portfolio_value_usdt * 100
-        else:
-            # Handle case where initial_portfolio_value_usdt is zero to avoid division by zero
-            metrics["nav_std_percent"] = 0.0
-            logging.warning("initial_portfolio_value_usdt is 0. 'nav_std_percent' calculated as 0.0. This might affect optimization if NAV std is expected.")
+        # New calculation based on percentage changes, does not require initial_portfolio_value_usdt for scaling here.
+        metrics["nav_std_percent"] = nav_series.pct_change().fillna(0).std() * 100
     else:
         # Handle case where df_equity is empty (e.g., no trades or data)
         metrics["nav_std_percent"] = 0.0
