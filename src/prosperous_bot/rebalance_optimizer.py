@@ -130,7 +130,7 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         raise optuna.TrialPruned("Calculated long/short percentages are negative or non-finite.")
 
     # Set target weights in current_backtest_params
-    tw = current_backtest_params["target_weights_normal"] = {}
+    tw = current_backtest_params.setdefault("target_weights_normal", {})
     tw[f"{main_asset_symbol}_SPOT"]        = round(spot_pct, 4)
     tw[f"{main_asset_symbol}_PERP_LONG"]   = round(long_pct, 4)
     tw[f"{main_asset_symbol}_PERP_SHORT"]  = round(short_pct, 4)
@@ -143,7 +143,16 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
 
     # Suggest parameters based on the optimization_space configuration
     for p_config in optimization_space:
+        # spot_pct уже обработали
         if p_config['path'] == "spot_pct":
+            continue
+
+        # сигнальные / safe_mode параметры игнорируем в neutral-режиме
+        # Assuming apply_signal_logic is available in current_backtest_params
+        apply_signal_logic = current_backtest_params.get('apply_signal_logic', False) # Default to False for neutral assumption
+        if not apply_signal_logic and (
+            ".signal" in p_config["path"] or "safe_mode" in p_config["path"]
+        ):
             continue
 
         original_param_path = p_config['path']
@@ -202,18 +211,19 @@ def objective(trial, base_backtest_settings, optimization_space, data_file_path,
         # 'backtest_results' is the variable holding the results from run_backtest
         # 'current_backtest_params' is the variable holding the configuration for this trial
 
-        pnl = abs(backtest_results["total_net_pnl_percent"])
-        std = backtest_results.get("nav_std_percent", 0.0)
+        pnl = abs(backtest_results["total_net_pnl_percent"]) # Renamed from pnl_abs for consistency with existing code
+        std = backtest_results.get("nav_std_percent", 0.0) # Renamed from std_nav for consistency
 
-        initial_capital = current_backtest_params.get("initial_capital")
-        if initial_capital is None or initial_capital == 0:
-            logging.warning(f"Trial {trial.number}: 'initial_capital' is missing, zero, or invalid in backtest settings (value: {initial_capital}). Using 1.0 for commission calculation denominator to avoid error, but this may skew results if 'total_commissions_usdt' is large.")
-            effective_initial_capital = 1.0
+        # Use initial_portfolio_value_usdt as per patch for commission calculation's denominator
+        initial_portfolio_value = current_backtest_params.get("initial_portfolio_value_usdt")
+        if initial_portfolio_value is None or initial_portfolio_value == 0:
+            logging.warning(f"Trial {trial.number}: 'initial_portfolio_value_usdt' is missing, zero, or invalid in backtest settings (value: {initial_portfolio_value}). Using 1.0 for commission calculation denominator to avoid error, but this may skew results if 'total_commissions_usdt' is large.")
+            effective_denominator_for_commission = 1.0
         else:
-            effective_initial_capital = initial_capital
+            effective_denominator_for_commission = initial_portfolio_value
 
-        comm = backtest_results.get("total_commissions_usdt", 0.0) / effective_initial_capital
-        value = -(pnl + 0.5*std + 0.1*comm)
+        comm = backtest_results.get("total_commissions_usdt", 0.0) / effective_denominator_for_commission
+        value = -(pnl + 0.5*std + 0.1*comm) # pnl, std names kept as per surrounding code
         
         logging.info(f"Trial {trial.number} completed. Objective value: {value:.4f} (Components: PnL_abs_perc: {pnl:.4f}, NAV_std_perc: {std:.4f}, Commission_ratio: {comm:.4f})")
         return value
@@ -349,6 +359,16 @@ def main():
                 for param_path_substituted, value in study.best_params.items():
                     # We need to ensure set_nested_value uses the same substituted path
                     set_nested_value(best_backtest_config_final, param_path_substituted, value)
+
+                # --- Start of patch addition: Clean up placeholder keys ---
+                # From patch: # — удаляем placeholder-ключи (если вдруг остались) —
+                if "target_weights_normal" in best_backtest_config_final and \
+                   isinstance(best_backtest_config_final["target_weights_normal"], dict):
+                    best_backtest_config_final["target_weights_normal"] = {
+                        k: v for k, v in best_backtest_config_final["target_weights_normal"].items()
+                        if "{" not in k
+                    }
+                # --- End of patch addition ---
 
                 best_params_data = {
                     "best_value": study.best_value,
