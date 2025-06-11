@@ -431,12 +431,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             except Exception as e: # More general exception
                 logging.error(f"Error processing end_date '{end_date_str}': {e}. Skipping end date filter.")
     
-    if df_market.empty:
-        logging.error("Market data is empty after applying date range filters. Cannot run backtest.")
+    if df_market.empty:                     # graceful-fail for unit-tests
+        logging.error("Market data is empty after applying date range filters. Returning zero-metrics.")
         return {
-            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
-            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir,
-            "status": "Market data empty after date filter"
+            "final_portfolio_value_usdt": initial_portfolio_value_usdt,
+            "total_net_pnl_usdt": 0.0,
+            "total_net_pnl_percent": 0.0,
+            "total_trades": 0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "max_drawdown_percent": 0.0,
+            "profit_factor": 0.0,
+            "win_rate_percent": 0.0,
+            "output_dir": output_dir,
+            "status": "Market data empty"
         }
 
     trades_list = []
@@ -853,15 +861,24 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             ann_sqrt = np.sqrt(252) # fallback to daily if no timestamp column
             # logging.debug("Dynamic ann_sqrt: Fallback to daily (252) due to missing/invalid timestamp column")
 
+        EPS = 1e-9
         rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
-        if not rets.empty and rets.std():
-            out["sharpe_ratio"] = rets.mean() / rets.std() * ann_sqrt
-            downside = rets[rets < 0]
-            # Ensure the calculation for sortino_ratio also uses ann_sqrt
-            out["sortino_ratio"] = (rets.mean() / downside.std() * ann_sqrt) if not downside.empty and downside.std() else 0.0
+        if rets.empty:
+            mean_ret = std_ret = down_std = 0.0
         else:
-            out["sharpe_ratio"] = 0.0
+            mean_ret = rets.mean()
+            std_ret  = rets.std()
+            down_std = rets[rets < 0].std()
+
+        if std_ret < EPS:              # zero-vol or single-point case
+            out["sharpe_ratio"]  = 0.0
+        else:
+            out["sharpe_ratio"]  = mean_ret / std_ret * ann_sqrt
+
+        if down_std is None or down_std < EPS: # down_std can be None if rets[rets<0] is empty
             out["sortino_ratio"] = 0.0
+        else:
+            out["sortino_ratio"] = mean_ret / down_std * ann_sqrt
 
         rolling_max = df_eq["portfolio_value_usdt"].cummax()
         drawdown = (df_eq["portfolio_value_usdt"] - rolling_max) / rolling_max
