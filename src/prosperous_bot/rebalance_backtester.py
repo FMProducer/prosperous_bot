@@ -242,6 +242,13 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
         f"NetPnL_Trade: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
     )
 
+def _get_commission_rate(p: dict) -> float:
+    """Derive commission for this back-test run.
+    Priority: maker / taker → default 0."""
+    if p.get("use_maker_fees_in_backtest", False):
+        return float(p.get("commission_maker", 0))
+    return float(p.get("commission_taker", 0))
+
 # --- START OF REPLACEMENT FUNCTION ---
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
@@ -304,7 +311,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         logging.info("Signal-based trading logic is DISABLED. Rebalancing will be purely weight-based.")
 
-    current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
+    current_commission_rate = _get_commission_rate(params)
     
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
     output_dir = None
