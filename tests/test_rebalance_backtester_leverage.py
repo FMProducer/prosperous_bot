@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+import numpy as np # Added numpy
 import copy
 import tempfile
 import os
@@ -54,6 +55,302 @@ def market_data_file():
         filepath = tmp_file.name
     yield filepath
     os.remove(filepath)
+
+# --- New Fixtures for annualization tests ---
+@pytest.fixture
+def base_config_factory():
+    """Returns a deep copy of BASE_CONFIG for modification in tests."""
+    return copy.deepcopy(BASE_CONFIG)
+
+@pytest.fixture
+def market_data_file_factory():
+    """
+    Factory fixture to create a temporary CSV market data file.
+    Usage: market_data_file = market_data_file_factory("csv,content\n1,2")
+    """
+    created_files = []
+    def _market_data_file_factory(csv_content_str):
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as tmp_file:
+            tmp_file.write(csv_content_str)
+            filepath = tmp_file.name
+        created_files.append(filepath)
+        return filepath
+
+    yield _market_data_file_factory
+
+    for f_path in created_files:
+        os.remove(f_path)
+# --- End New Fixtures ---
+
+# --- Tests for Dynamic Annualization Factor ---
+
+def test_compute_metrics_5min_frequency(base_config_factory, market_data_file_factory):
+    """Tests Sharpe/Sortino with 5-minute data frequency."""
+    csv_content = """timestamp,open,high,low,close,volume
+2023-01-01T00:00:00Z,100,100,100,100,10
+2023-01-01T00:05:00Z,100,100.1,100,100.1,10
+2023-01-01T00:10:00Z,100.1,100.1,100,100,10
+2023-01-01T00:15:00Z,100,100,99.9,99.9,10
+2023-01-01T00:20:00Z,99.9,100.05,99.9,100.05,10
+"""
+    data_file = market_data_file_factory(csv_content)
+    prices = [100.0, 100.1, 100.0, 99.9, 100.05]
+    initial_price = prices[0]
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = initial_price # Buy 1 unit of asset
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["rebalance_threshold"] = 2.0 # Effectively initial rebalance only
+    config["apply_signal_logic"] = False
+    config["min_rebalance_interval_minutes"] = 0
+    config["slippage_percent"] = 0
+    config["taker_commission_rate"] = 0 # Ensure commission_taker is also 0
+    config["futures_leverage"] = 1.0 # Not used but good to set
+    config["circuit_breaker_config"]["enabled"] = False
+    config["safe_mode_config"]["enabled"] = False
+    config["report_path_prefix"] = "./reports_test_ann_factor/5min/"
+    config["generate_reports_for_optimizer_trial"] = False
+    config["annualization_factor"] = 252 # This will be ignored by new logic if timestamp works
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    # Calculate expected values
+    initial_capital = config["initial_portfolio_value_usdt"]
+    asset_qty = initial_capital / initial_price
+    portfolio_values = pd.Series([p * asset_qty for p in prices])
+    rets = portfolio_values.pct_change().dropna().reset_index(drop=True)
+
+    expected_sharpe = 0.0
+    expected_sortino = 0.0
+
+    if not rets.empty and rets.std() != 0:
+        mean_ret = rets.mean()
+        std_ret = rets.std() # pandas default ddof=1
+        downside_rets = rets[rets < 0]
+
+        std_downside_ret = 0.0
+        if not downside_rets.empty:
+            temp_std_downside = downside_rets.std() # ddof=1
+            if pd.notna(temp_std_downside) and temp_std_downside > 0:
+                std_downside_ret = temp_std_downside
+            elif mean_ret > 0:
+                std_downside_ret = 1e-9
+            else:
+                std_downside_ret = 1e9
+        elif mean_ret > 0:
+            std_downside_ret = 1e-9
+        else:
+            std_downside_ret = 1e9
+
+        ann_sqrt_5min = np.sqrt((365 * 24 * 60 * 60) / (5 * 60))
+
+        expected_sharpe = (mean_ret / std_ret) * ann_sqrt_5min if std_ret > 1e-9 else 0.0
+        expected_sortino = (mean_ret / std_downside_ret) * ann_sqrt_5min if std_downside_ret > 1e-9 else 0.0
+        if mean_ret <= 0 and std_downside_ret < 1e-8 :
+             expected_sortino = 0.0
+
+    assert results["sharpe_ratio"] == pytest.approx(expected_sharpe, abs=1e-2)
+    assert results["sortino_ratio"] == pytest.approx(expected_sortino, abs=1e-2)
+
+
+def test_compute_metrics_hourly_frequency(base_config_factory, market_data_file_factory):
+    """Tests Sharpe/Sortino with 1-hour data frequency."""
+    csv_content = """timestamp,open,high,low,close,volume
+2023-01-01T00:00:00Z,100,100,100,100,10
+2023-01-01T01:00:00Z,100,100.1,100,100.1,10
+2023-01-01T02:00:00Z,100.1,100.1,100,100,10
+2023-01-01T03:00:00Z,100,100,99.9,99.9,10
+2023-01-01T04:00:00Z,99.9,100.05,99.9,100.05,10
+"""
+    data_file = market_data_file_factory(csv_content)
+    prices = [100.0, 100.1, 100.0, 99.9, 100.05]
+    initial_price = prices[0]
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = initial_price
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["rebalance_threshold"] = 2.0
+    config["apply_signal_logic"] = False
+    config["min_rebalance_interval_minutes"] = 0
+    config["slippage_percent"] = 0
+    config["taker_commission_rate"] = 0
+    config["report_path_prefix"] = "./reports_test_ann_factor/hourly/"
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    initial_capital = config["initial_portfolio_value_usdt"]
+    asset_qty = initial_capital / initial_price
+    portfolio_values = pd.Series([p * asset_qty for p in prices])
+    rets = portfolio_values.pct_change().dropna().reset_index(drop=True)
+    expected_sharpe, expected_sortino = 0.0, 0.0
+
+    if not rets.empty and rets.std() != 0:
+        mean_ret = rets.mean()
+        std_ret = rets.std()
+        downside_rets = rets[rets < 0]
+        std_downside_ret = downside_rets.std() if not downside_rets.empty and downside_rets.std() > 0 else (1e-9 if mean_ret > 0 else 1e9)
+        if downside_rets.empty and mean_ret > 0 : std_downside_ret = 1e-9
+
+
+        ann_sqrt_hourly = np.sqrt((365 * 24 * 60 * 60) / (60 * 60))
+        expected_sharpe = (mean_ret / std_ret) * ann_sqrt_hourly if std_ret > 1e-9 else 0.0
+        expected_sortino = (mean_ret / std_downside_ret) * ann_sqrt_hourly if std_downside_ret > 1e-9 else 0.0
+        if mean_ret <= 0 and std_downside_ret < 1e-8 : expected_sortino = 0.0
+
+    assert results["sharpe_ratio"] == pytest.approx(expected_sharpe, abs=1e-2)
+    assert results["sortino_ratio"] == pytest.approx(expected_sortino, abs=1e-2)
+
+
+def test_compute_metrics_daily_frequency_actual_data(base_config_factory, market_data_file_factory):
+    """Tests Sharpe/Sortino with daily data frequency (uses 365 day year)."""
+    csv_content = """timestamp,open,high,low,close,volume
+2023-01-01T00:00:00Z,100,100,100,100,10
+2023-01-02T00:00:00Z,100,100.1,100,100.1,10
+2023-01-03T00:00:00Z,100.1,100.1,100,100,10
+2023-01-04T00:00:00Z,100,100,99.9,99.9,10
+2023-01-05T00:00:00Z,99.9,100.05,99.9,100.05,10
+"""
+    data_file = market_data_file_factory(csv_content)
+    prices = [100.0, 100.1, 100.0, 99.9, 100.05]
+    initial_price = prices[0]
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = initial_price
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["report_path_prefix"] = "./reports_test_ann_factor/daily/"
+    # Keep other simple config settings
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    initial_capital = config["initial_portfolio_value_usdt"]
+    asset_qty = initial_capital / initial_price
+    portfolio_values = pd.Series([p * asset_qty for p in prices])
+    rets = portfolio_values.pct_change().dropna().reset_index(drop=True)
+    expected_sharpe, expected_sortino = 0.0, 0.0
+
+    if not rets.empty and rets.std() != 0:
+        mean_ret = rets.mean()
+        std_ret = rets.std()
+        downside_rets = rets[rets < 0]
+        std_downside_ret = downside_rets.std() if not downside_rets.empty and downside_rets.std() > 0 else (1e-9 if mean_ret > 0 else 1e9)
+        if downside_rets.empty and mean_ret > 0 : std_downside_ret = 1e-9
+
+        ann_sqrt_daily = np.sqrt((365 * 24 * 60 * 60) / (24 * 60 * 60)) # np.sqrt(365)
+        expected_sharpe = (mean_ret / std_ret) * ann_sqrt_daily if std_ret > 1e-9 else 0.0
+        expected_sortino = (mean_ret / std_downside_ret) * ann_sqrt_daily if std_downside_ret > 1e-9 else 0.0
+        if mean_ret <= 0 and std_downside_ret < 1e-8 : expected_sortino = 0.0
+
+    assert results["sharpe_ratio"] == pytest.approx(expected_sharpe, abs=1e-2)
+    assert results["sortino_ratio"] == pytest.approx(expected_sortino, abs=1e-2)
+
+
+def test_compute_metrics_fallback_invalid_timestamp(base_config_factory, market_data_file_factory):
+    """Tests fallback to ann_sqrt=sqrt(252) with invalid timestamps (all same)."""
+    csv_content = """timestamp,open,high,low,close,volume
+2023-01-01T00:00:00Z,100,100,100,100,10
+2023-01-01T00:00:00Z,100,100.1,100,100.1,10
+2023-01-01T00:00:00Z,100.1,100.1,100,100,10
+2023-01-01T00:00:00Z,100,100,99.9,99.9,10
+2023-01-01T00:00:00Z,99.9,100.05,99.9,100.05,10
+""" # Timestamps are identical, freq_sec will be 0 or NaN
+    data_file = market_data_file_factory(csv_content)
+    prices = [100.0, 100.1, 100.0, 99.9, 100.05] # prices from first row of each identical timestamp
+    initial_price = prices[0]
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = initial_price
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["report_path_prefix"] = "./reports_test_ann_factor/fallback_invalid_ts/"
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    # The backtester might use only the first entry for each identical timestamp,
+    # or it might process them sequentially. If it processes sequentially, equity curve will have these prices.
+    # If it groups by timestamp and takes first, then only one price point.
+    # Assuming it processes sequentially based on pandas read_csv behavior:
+    df_equity = pd.DataFrame({'portfolio_value_usdt': pd.Series([p * (initial_price/initial_price) for p in prices])})
+    rets = df_equity["portfolio_value_usdt"].pct_change().dropna().reset_index(drop=True)
+
+    expected_sharpe, expected_sortino = 0.0, 0.0
+
+    if not rets.empty and rets.std() != 0:
+        mean_ret = rets.mean()
+        std_ret = rets.std()
+        downside_rets = rets[rets < 0]
+        std_downside_ret = downside_rets.std() if not downside_rets.empty and downside_rets.std() > 0 else (1e-9 if mean_ret > 0 else 1e9)
+        if downside_rets.empty and mean_ret > 0 : std_downside_ret = 1e-9
+
+        ann_sqrt_fallback = np.sqrt(252) # Expected fallback
+        expected_sharpe = (mean_ret / std_ret) * ann_sqrt_fallback if std_ret > 1e-9 else 0.0
+        expected_sortino = (mean_ret / std_downside_ret) * ann_sqrt_fallback if std_downside_ret > 1e-9 else 0.0
+        if mean_ret <= 0 and std_downside_ret < 1e-8 : expected_sortino = 0.0
+
+    assert results["sharpe_ratio"] == pytest.approx(expected_sharpe, abs=1e-2)
+    assert results["sortino_ratio"] == pytest.approx(expected_sortino, abs=1e-2)
+
+
+def test_compute_metrics_fallback_single_timestamp(base_config_factory, market_data_file_factory):
+    """Tests fallback with a single data point (Sharpe/Sortino should be 0)."""
+    csv_content = "timestamp,open,high,low,close,volume\n2023-01-01T00:00:00Z,100,100,100,100,10"
+    data_file = market_data_file_factory(csv_content)
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = 100.0
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["report_path_prefix"] = "./reports_test_ann_factor/fallback_single_ts/"
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    # With a single data point, rets will be empty. Sharpe/Sortino should be 0.
+    # ann_sqrt calculation path should hit fallback but it won't matter for final metric.
+    assert results["sharpe_ratio"] == pytest.approx(0.0, abs=1e-9)
+    assert results["sortino_ratio"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_compute_metrics_empty_equity_input(base_config_factory, market_data_file_factory):
+    """Tests behavior with empty market data (Sharpe/Sortino should be 0)."""
+    csv_content = "timestamp,open,high,low,close,volume\n" # Empty data, only headers
+    data_file = market_data_file_factory(csv_content)
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = 10000.0
+    config["report_path_prefix"] = "./reports_test_ann_factor/empty_input/"
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    # run_backtest returns 0 for metrics if market data is empty or bad
+    assert results["sharpe_ratio"] == pytest.approx(0.0, abs=1e-9)
+    assert results["sortino_ratio"] == pytest.approx(0.0, abs=1e-9)
+    assert results["max_drawdown_percent"] == pytest.approx(0.0, abs=1e-9) # Or specific error value like -100
+    # Check status if possible, or rely on metric values for empty/error cases
+    # For instance, if df_equity is empty, compute_metrics returns all zeros.
+    # If market data load fails, run_backtest returns specific error structure.
+    # This test assumes it goes through compute_metrics with empty df_eq.
+
+
+def test_compute_metrics_zero_std_dev_returns(base_config_factory, market_data_file_factory):
+    """Tests Sharpe/Sortino when returns have zero standard deviation (should be 0)."""
+    csv_content = """timestamp,open,high,low,close,volume
+2023-01-01T00:00:00Z,100,100,100,100,10
+2023-01-01T00:05:00Z,100,100,100,100,10
+2023-01-01T00:10:00Z,100,100,100,100,10
+2023-01-01T00:15:00Z,100,100,100,100,10
+"""
+    data_file = market_data_file_factory(csv_content)
+
+    config = base_config_factory()
+    config["initial_portfolio_value_usdt"] = 100.0
+    config["target_weights_normal"] = {"BTC_SPOT": 1.0, "USDT": 0.0}
+    config["report_path_prefix"] = "./reports_test_ann_factor/zero_std/"
+
+    results = run_backtest(config, data_path=data_file, is_optimizer_call=False)
+
+    # Prices are constant, so rets are all 0. std_dev is 0.
+    # Sharpe/Sortino should be 0.
+    assert results["sharpe_ratio"] == pytest.approx(0.0, abs=1e-9)
+    assert results["sortino_ratio"] == pytest.approx(0.0, abs=1e-9)
+
+# --- End Tests for Dynamic Annualization Factor ---
 
 def test_backtest_with_different_leverages(market_data_file):
     results = {}
