@@ -59,8 +59,14 @@ def market_data_file():
 # --- New Fixtures for annualization tests ---
 @pytest.fixture
 def base_config_factory():
-    """Returns a deep copy of BASE_CONFIG for modification in tests."""
-    return copy.deepcopy(BASE_CONFIG)
+    """
+    Returns a **factory function**; в тестах вызываем:
+
+        config = base_config_factory()  # -> fresh deepcopy(dict)
+    """
+    def _factory():
+        return copy.deepcopy(BASE_CONFIG)
+    return _factory
 
 @pytest.fixture
 def market_data_file_factory():
