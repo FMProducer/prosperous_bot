@@ -837,11 +837,28 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         if df_eq.empty:
             return {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio", "max_drawdown_percent", "profit_factor", "win_rate_percent")}
 
+        # ---- Dynamic annualisation factor ---------------------------------
+        if "timestamp" in df_eq.columns and pd.api.types.is_datetime64_any_dtype(df_eq["timestamp"]):
+            # Ensure timestamp is sorted for diff to be meaningful - df_equity is typically sorted by timestamp already
+            # df_eq = df_eq.sort_values(by="timestamp") # Optional: uncomment if sorting is not guaranteed
+            freq_sec = df_eq["timestamp"].diff().dt.total_seconds().median()
+            if pd.notna(freq_sec) and freq_sec > 0:
+                periods_per_year = (365 * 24 * 60 * 60) / freq_sec  # e.g. 5-min → 105 120
+                ann_sqrt = np.sqrt(periods_per_year)
+                # logging.debug(f"Dynamic ann_sqrt: {ann_sqrt:.2f} (freq_sec: {freq_sec:.2f}s, periods_per_year: {periods_per_year:.2f})")
+            else:
+                ann_sqrt = np.sqrt(252)  # fallback to daily bars
+                # logging.debug(f"Dynamic ann_sqrt: Fallback to daily (252) due to freq_sec: {freq_sec}")
+        else:
+            ann_sqrt = np.sqrt(252) # fallback to daily if no timestamp column
+            # logging.debug("Dynamic ann_sqrt: Fallback to daily (252) due to missing/invalid timestamp column")
+
         rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
         if not rets.empty and rets.std():
-            out["sharpe_ratio"] = rets.mean() / rets.std() * np.sqrt(ann_factor)
+            out["sharpe_ratio"] = rets.mean() / rets.std() * ann_sqrt
             downside = rets[rets < 0]
-            out["sortino_ratio"] = rets.mean() / downside.std() * np.sqrt(ann_factor) if not downside.empty and downside.std() else 0.0
+            # Ensure the calculation for sortino_ratio also uses ann_sqrt
+            out["sortino_ratio"] = (rets.mean() / downside.std() * ann_sqrt) if not downside.empty and downside.std() else 0.0
         else:
             out["sharpe_ratio"] = 0.0
             out["sortino_ratio"] = 0.0
