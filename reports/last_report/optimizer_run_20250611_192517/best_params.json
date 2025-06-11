@@ -1,0 +1,65 @@
+{
+  "best_value": -0.05007218411015266,
+  "best_optuna_params_substituted": {
+    "spot_pct": 0.7,
+    "rebalance_threshold": 0.03262443547939195,
+    "min_order_notional_usdt": 29.595662691889046,
+    "min_rebalance_interval_minutes": 172
+  },
+  "best_backtest_config": {
+    "min_rebalance_interval_minutes": 172,
+    "min_order_notional_usdt": 29.595662691889046,
+    "rebalance_threshold": 0.03262443547939195,
+    "futures_leverage": 5.0,
+    "main_asset_symbol": "BTC",
+    "apply_signal_logic": true,
+    "initial_capital": 1000.0,
+    "initial_portfolio_value_usdt": 1000,
+    "commission_taker": 0.0005,
+    "commission_maker": 0.0002,
+    "use_maker_fees_in_backtest": false,
+    "slippage_percent": 0.0005,
+    "annualization_factor": 252.0,
+    "neutrality_pnl_tolerance_usd": 0.005,
+    "target_weights_normal": {},
+    "circuit_breaker_config": {
+      "enabled": true,
+      "threshold_percentage": 0.07,
+      "lookback_candles": 1,
+      "movement_calc_type": "(high-low)/open"
+    },
+    "safe_mode_config": {
+      "enabled": true,
+      "metric_to_monitor": "margin_usage",
+      "entry_threshold": 0.7,
+      "exit_threshold": 0.6,
+      "target_weights_safe": {
+        "{main_asset_symbol}_SPOT": 0.8,
+        "{main_asset_symbol}_PERP_LONG": 0.02,
+        "{main_asset_symbol}_PERP_SHORT": 0.18,
+        "USDT": 0.0
+      }
+    },
+    "data_settings": {
+      "csv_file_path": "graphs/{main_asset_symbol}USDT_data.csv",
+      "signals_csv_path": "graphs/{main_asset_symbol}_signals.csv",
+      "timestamp_col": "timestamp",
+      "ohlc_cols": {
+        "open": "open",
+        "high": "high",
+        "low": "low",
+        "close": "close"
+      },
+      "volume_col": "volume",
+      "price_col_for_rebalance": "close"
+    },
+    "date_range": {
+      "start_date": "auto",
+      "end_date": "auto"
+    },
+    "logging_level": "INFO",
+    "report_path_prefix": "./reports/",
+    "spot_pct": 0.7
+  },
+  "best_trial_number": 92
+}

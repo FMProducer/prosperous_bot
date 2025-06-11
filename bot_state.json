@@ -4,20 +4,12 @@
         "time": "2025-06-08T21:30:14.270591"
     },
     "SUIUSDT": {
-        "signal": "buy",
-        "time": "2025-06-08T21:30:14.278851"
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.463289"
     },
     "BTCUSDT": {
         "signal": "buy",
         "time": "2025-06-07T21:42:42.250188"
-    },
-    "HUMAUSDT": {
-        "signal": "buy",
-        "time": "2025-06-07T21:42:42.260754"
-    },
-    "ANIMEUSDT": {
-        "signal": "buy",
-        "time": "2025-06-09T18:51:19.975743"
     },
     "ENAUSDT": {
         "signal": "buy",
@@ -27,16 +19,24 @@
         "signal": "buy",
         "time": "2025-06-08T21:30:14.301074"
     },
-    "AVAXUSDT": {
-        "signal": "buy",
-        "time": "2025-06-08T21:30:14.361146"
-    },
     "WIFUSDT": {
-        "signal": "buy",
-        "time": "2025-06-09T17:25:44.418516"
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.487980"
     },
-    "VIRTUALUSDT": {
+    "UNIUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.456527"
+    },
+    "AAVEUSDT": {
         "signal": "buy",
-        "time": "2025-06-09T17:25:44.441698"
+        "time": "2025-06-11T16:45:15.482490"
+    },
+    "ANIMEUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T17:49:16.175597"
+    },
+    "NEIROUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T18:21:17.258028"
     }
 }
