@@ -548,9 +548,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
              logging.warning(f"Candle open price is 0 or invalid at {current_timestamp} for {main_asset_symbol}, cannot calculate movement for circuit breaker.")
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
+            # ---- Symmetric Δ-PNL so that LONG + SHORT = const ----
             price_change_ratio = current_price / portfolio['prev_btc_price']
-            portfolio['btc_long_value_usdt'] += portfolio['btc_long_value_usdt'] * leverage * (price_change_ratio - 1)
-            portfolio['btc_short_value_usdt'] += portfolio['btc_short_value_usdt'] * leverage * (1 - price_change_ratio)
+            # Determine the correct base for delta calculation. The diff uses 'base_long_margin'.
+            # Assuming 'portfolio['btc_long_value_usdt']' before this update is the intended base for the long leg's margin.
+            # Let's clarify if 'base_long_margin' should be 'portfolio['btc_long_value_usdt']' or if it implies sum of long and short, or total exposure.
+            # The issue states: delta = long_margin × L × (ΔP/P₀). This implies the margin allocated to the long position.
+            # The diff shows: base_long_margin = portfolio['btc_long_value_usdt']
+            # This seems to mean the PNL calculation is driven by the long leg's exposure, and the short leg mirrors it.
+            base_long_value_for_pnl_calc = portfolio['btc_long_value_usdt'] # Value before this PNL update
+
+            delta_pnl_usdt = base_long_value_for_pnl_calc * leverage * (price_change_ratio - 1)
+
+            portfolio['btc_long_value_usdt']  +=  delta_pnl_usdt      # LONG gains / losses
+            portfolio['btc_short_value_usdt'] -=  delta_pnl_usdt      # SHORT opposite
         
         total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],
@@ -563,8 +574,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
             # effectively making margin usage extremely high if leverage is misconfigured to 0.
             # A leverage of 0 for a leveraged position doesn't make practical sense.
-            margin_for_long = portfolio['btc_long_value_usdt'] / leverage
-            margin_for_short = portfolio['btc_short_value_usdt'] / leverage
+            margin_for_long  = abs(portfolio['btc_long_value_usdt'])  / leverage
+            margin_for_short = abs(portfolio['btc_short_value_usdt']) / leverage
             used_margin_usdt = margin_for_long + margin_for_short
             margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
         else:
@@ -829,38 +840,40 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         portfolio['prev_btc_price'] = current_price
 
     # Simulate rebalance based on collected orders and calculate PnL
-    if orders_by_step: # Only run if there were orders to simulate
+    simulated_trade_log = [] # Initialize as empty list
+    if orders_by_step:
         logging.info(f"Calling simulate_rebalance with {len(orders_by_step)} steps having orders.")
         # 'leverage' variable should already be defined from params_dict
         # 'df_market' is the correct DataFrame containing all candles for the backtest period
         # закрываем хвосты только если это обычный бэктест, а не оптимизатор
-        simulated_trade_log = simulate_rebalance(
+        simulated_trade_log = simulate_rebalance( # Assign to the already defined list
             df_market,
             orders_by_step,
             leverage=leverage,
             force_close_open_positions=not is_optimizer_call
         )
-
-        if generate_reports and actual_reports_dir:
-            rebalance_trades_csv_path = os.path.join(actual_reports_dir, "rebalance_trades.csv")
-            if simulated_trade_log:  # если список не пуст
-                df_sim_trades = pd.DataFrame(simulated_trade_log)
-                df_sim_trades.to_csv(rebalance_trades_csv_path, index=False)
-                logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
-            else:
-                logging.info("simulate_rebalance did not return any trades. Saving empty rebalance_trades.csv.")
-                empty_df = pd.DataFrame(columns=[
-                    "asset_key", "entry_price", "exit_price", "qty",
-                    "pnl_gross_quote", "leverage"
-                ])
-                empty_df.to_csv(rebalance_trades_csv_path, index=False)
-                logging.info(f"Empty simulated rebalance trades file saved to {rebalance_trades_csv_path}")
-        elif generate_reports: # actual_reports_dir was somehow not set, which shouldn't happen with new logic
-            logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping saving rebalance_trades.csv.")
-        else: # generate_reports is False
-            logging.info("Report generation is OFF. Skipping saving rebalance_trades.csv.")
     else:
-        logging.info("No orders were generated by the main rebalancing logic; skipping simulate_rebalance call and rebalance_trades.csv generation.")
+        logging.info("No orders were generated by the main rebalancing logic for simulate_rebalance.")
+
+    # This block will now always execute if generate_reports is true
+    if generate_reports and actual_reports_dir:
+        rebalance_trades_csv_path = os.path.join(actual_reports_dir, "rebalance_trades.csv")
+        if simulated_trade_log:  # if list is not empty (either from simulate_rebalance or if it was [] initially)
+            df_sim_trades = pd.DataFrame(simulated_trade_log)
+            df_sim_trades.to_csv(rebalance_trades_csv_path, index=False)
+            logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
+        else: # simulated_trade_log is empty (either from simulate_rebalance returning empty, or orders_by_step was empty)
+            logging.info("Simulated trade log is empty. Saving empty rebalance_trades.csv.")
+            empty_df = pd.DataFrame(columns=[
+                "asset_key", "entry_price", "exit_price", "qty",
+                "pnl_gross_quote", "leverage" # Ensure these columns match test expectations
+            ])
+            empty_df.to_csv(rebalance_trades_csv_path, index=False)
+            logging.info(f"Empty simulated rebalance trades file saved to {rebalance_trades_csv_path}")
+    elif generate_reports:
+        logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping saving rebalance_trades.csv.")
+    else:
+        logging.info("Report generation is OFF. Skipping saving rebalance_trades.csv.")
 
     logging.info("Backtest finished.")
     df_equity = pd.DataFrame(equity_over_time)
