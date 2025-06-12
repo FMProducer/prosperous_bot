@@ -242,13 +242,6 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
         f"NetPnL_Trade: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
     )
 
-def _get_commission_rate(p: dict) -> float:
-    """Derive commission for this back-test run.
-    Priority: maker / taker → default 0."""
-    if p.get("use_maker_fees_in_backtest", False):
-        return float(p.get("commission_maker", 0))
-    return float(p.get("commission_taker", 0))
-
 # --- START OF REPLACEMENT FUNCTION ---
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
@@ -284,9 +277,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000)
     if 'initial_portfolio_value_usdt' not in params:
         logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
-    taker_commission_rate = params.get('taker_commission_rate', params.get('commission_rate', 0.0007))
-    maker_commission_rate = params.get('maker_commission_rate', 0.0002)
-    use_maker_fees_in_backtest = params.get('use_maker_fees_in_backtest', False)
+    # ---- Commission helper -------------------------------------------------
+    def _get_commission_rate(p: dict, maker: bool = False) -> float:
+        keys = (
+            ('commission_maker', 'maker_commission_rate') if maker
+            else ('commission_taker', 'taker_commission_rate', 'commission_rate')
+        )
+        for k in keys:
+            if k in p:
+                return float(p[k])
+        return 0.0  # sensible default for unit-tests
+
+    maker_commission_rate = _get_commission_rate(params, maker=True)
+    taker_commission_rate = _get_commission_rate(params, maker=False)
+    use_maker_fees_in_backtest = bool(params.get('use_maker_fees_in_backtest', False))
     slippage_percent = params.get('slippage_percent', params.get('slippage_percentage', 0.0005))
     circuit_breaker_threshold_percent = params.get('circuit_breaker_threshold_percent', 0.10) 
     margin_usage_safe_mode_enter_threshold = params.get('margin_usage_safe_mode_enter_threshold', 0.70) 
@@ -311,7 +315,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     else:
         logging.info("Signal-based trading logic is DISABLED. Rebalancing will be purely weight-based.")
 
-    current_commission_rate = _get_commission_rate(params)
+    current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
     
     generate_reports = not is_optimizer_call or params.get('generate_reports_for_optimizer_trial', False)
     output_dir = None
@@ -365,11 +369,23 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     df_market_original = load_data(data_path) # Keep original for plotting price
     if df_market_original is None or df_market_original.empty:
         logging.error("Market data is empty or could not be loaded. Cannot run backtest.")
-        return {
-            "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
-            "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": None,
-            "status": "Market data error"
-        }
+        zeros = {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio",
+                                  "max_drawdown_percent", "profit_factor", "win_rate_percent",
+                                  "avg_trade_duration_candles", "avg_profit_per_trade_percent",
+                                  "avg_loss_per_trade_percent", "num_winning_trades", "num_losing_trades",
+                                  "longest_winning_streak", "longest_losing_streak", "max_portfolio_value_usdt",
+                                  "min_portfolio_value_usdt", "annual_return_percent", "calmar_ratio",
+                                  "kelly_criterion", "annualized_volatility_percent", "value_at_risk_var_percent",
+                                  "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Added more zeroed metrics
+        zeros.update({
+            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Corrected
+            "total_net_pnl_usdt": 0.0, # Corrected
+            "total_net_pnl_percent": 0.0, # Corrected
+            "total_trades": 0,
+            "output_dir": None, # output_dir determined later if reports are generated
+            "status": "Market data empty" # Corrected status message
+        })
+        return zeros
     
     df_market = df_market_original.copy() # Work with a copy for potential modifications
 
@@ -634,7 +650,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             logging.info(f"Rebalancing portfolio for {main_asset_symbol} (Mode: {portfolio['current_operational_mode']}, Signal: {current_signal}). Total Value: {total_portfolio_value:.2f} USDT. Current Price: {current_price:.2f}")
             adjustments = {}
             for asset_key_loop, target_w_loop in active_target_weights.items():
-                target_value_usdt = total_portfolio_value * target_w_loop
+                # scale PERP notional by leverage so that pnl ~ leverage
+                if asset_key_loop in (long_asset_key, short_asset_key):
+                    target_value_usdt = target_w_loop * total_portfolio_value * leverage
+                else:
+                    target_value_usdt = target_w_loop * total_portfolio_value
                 current_value_usdt = 0
                 if asset_key_loop == spot_asset_key: current_value_usdt = portfolio['btc_spot_qty'] * current_price
                 elif asset_key_loop == long_asset_key: current_value_usdt = portfolio['btc_long_value_usdt']
