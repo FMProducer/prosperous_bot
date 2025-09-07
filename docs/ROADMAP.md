@@ -1,32 +1,32 @@
-# Roadmap (aktualizirovannaya)
-**C\u0435l P0:** +3 000 000 USDT <= 7 mes pri **Max DD < 20%**  
-**KPI:** Sharpe >= 1.5; Profit Factor >= 1.3
+# Roadmap (актуализированная)
+**Цель P0:** +3 000 000 USDT ≤ 7 месяцев при **Max DD < 20 %**
+**KPI:** Sharpe ≥ 1,5; Profit Factor ≥ 1,3
 
-## Etapy (ISO-8601 UTC)
-| Shag | Zadacha | Moduli | Kriterii priyomki | Dedlayn (UTC) |
+## Этапы (ISO‑8601 UTC)
+| Шаг | Задача | Модули | Критерии приёмки | Дедлайн (UTC) |
 |---|---|---|---|---|
-| 1 | Dovesti backtester (pozicii/PNL/force_close); sinkhronizirovat' edinyy konfig | `rebalance_backtester.py`, `unified_config*.json` | Testy PASS; PnL != 0 pri dvizhenii; sovpadenie sim/real >= 95% | 2025-09-15 |
-| 2 | Optuna po porogu rebalansa, min notional, delta-neitral'nym dolyam, intervaly | `rebalance_optimizer*.py` | Valid: Sharpe >= 1.5; PF >= 1.3; komissii <= 0.2%/den' | 2025-09-30 |
-| 3 | HybridStrategy (Rule+ML); rasshirit' fichi (ob'yomy, OI, funding) | `strategy.py`, `ml_model.py`, `signal_generator.py` | WinRate >= 55%; Max DD < 15% v testakh; +0.1 k F1 vs rule-only | 2025-10-30 |
-| 4 | Avtomatizirovat' pereobuchenie i otchety po ML | `signal_bot.py`, `ml_model.py` | Ezhenedel'nyy retrain; stabil'nyy Sharpe >= 1.5 na 30-dn okne | 2025-11-30 |
-| 5 | Risk-menedzhment: CB urovnya DD, tral-portfelya, limity plech | `rebalance_engine.py` (risk layer) | Max DD < 20% v stress-testakh; Recovery Factor > 1.5 | 2025-12-31 |
-| 6 | Monitoring/alerty (Grafana/Telegram), ezhednevnye daydzhesty KPI | `exchange_gate.py`, `telegram_bot` | Alerty < 1 min; ezhednevnyy otchet; "tikhikh" sboev net | 2026-01-15 |
-| 7 | Masshtabirovanie kapitala, smart-ordera | vsya strategiya | KPI stabil'ny; itog >= +3M USDT | 2026-04-01 |
+| 1 | Довести бэктестер (позиции/PNL/force_close); синхронизировать единый конфиг | `rebalance_backtester.py`, `unified_config*.json` | Тесты PASS; PnL ≠ 0 при движении; совпадение симуляции и реала ≥ 95 % | 2025‑09‑15 |
+| 2 | Оптимизация (Optuna) порога ребаланса, min notional, δ‑нейтральных долей и интервала | `rebalance_optimizer*.py` | Sharpe ≥ 1,5; PF ≥ 1,3; комиссии ≤ 0,2 %/день | 2025‑09‑30 |
+| 3 | Гибридная стратегия (Rule + ML); расширить признаки (объёмы, open interest, funding) | `strategy.py`, `ml_model.py`, `signal_generator.py` | WinRate ≥ 55 %; Max DD < 15 % в тестах; +0,1 к F1 относительно rule‑only | 2025‑10‑30 |
+| 4 | Автоматизировать переобучение и отчёты по ML | `signal_bot.py`, `ml_model.py` | Еженедельный retrain; стабильный Sharpe ≥ 1,5 на 30‑дневном окне | 2025‑11‑30 |
+| 5 | Риск‑менеджмент: Circuit Breaker по просадке, трейлинг‑портфель, лимиты плеч | `rebalance_engine.py` (risk layer) | Max DD < 20 % в стресс‑тестах; Recovery Factor > 1,5 | 2025‑12‑31 |
+| 6 | Мониторинг/алерты (Grafana/Telegram), ежедневные KPI‑дайджесты | `exchange_gate.py`, `telegram_bot` | Алерты < 1 мин; ежедневный отчёт; отсутствие «тихих» сбоев | 2026‑01‑15 |
+| 7 | Масштабирование капитала, smart‑ордеры | вся стратегия | KPI стабильны; итог ≥ +3 М USDT | 2026‑04‑01 |
 
 ## Definition of Ready
-- Tsel' i vliyanie na KPI/riski opisany.
-- Dannye/period zafiksirovany; metriki/dopuski opredeleny.
+- Цель и влияние на KPI/риски описаны.
+- Данные и период зафиксированы; метрики и допуски определены.
 
 ## Definition of Done
-- Zelyonyy CI (`pytest --cov`, smouk-bektest).
-- Otchety v `reports/` prilozeny; dokumentatsiya obnovlena.
-- Riski i plan otkata zadokumentirovany.
+- Зелёный CI (`pytest --cov`, смоук‑бэктест).
+- Отчёты в `reports/` приложены; документация обновлена.
+- Риски и план отката задокументированы.
 
-## Riski i smyagchenie
-- Rost Max DD -> Safe-Mode, snizhenie plech/chastoty rebalansa.
-- Spayki funding -> fil'try/limity; pauza novykh vhodov.
-- Korr-sdvig -> peresmot pary long/short i ATR-porogov.
+## Риски и смягчение
+- Рост Max DD → включение Safe‑Mode, снижение плеча/частоты ребаланса.
+- Спайки funding → фильтры/лимиты; пауза открытия новых позиций.
+- Корреляционный сдвиг → пересмотр пары long/short и порогов ATR.
 
-## Primechaniya
-- Daty v UTC; opovescheniya — America/Phoenix.
-- Vse izmeneniya idut cherez PR i chek-listy (`CHECKLISTS.md`).
+## Примечания
+- Даты указываются в UTC; уведомления — в часовом поясе America/Phoenix.
+- Все изменения проходят через PR и чек‑листы (`CHECKLISTS.md`).
