@@ -57,6 +57,7 @@ miniconda3/
 
 # Custom application folders
 # graphs/
+data/
 
 .hypothesis/
 
