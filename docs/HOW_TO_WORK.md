@@ -22,11 +22,47 @@
 - Без асинхронных обещаний: результат — в текущем ответе.
 
 ## Jules и атомарность задач
-Если часть работы выполняется через Jules, код, скрипты и diff‑патчи должны быть подготовлены в удобном для него формате:
-- Делите изменения на небольшие атомарные задачи.
-- Готовьте единый unified diff для каждого логического изменения.
-- Формулируйте описания задач коротко и ясно, без лишнего контекста.
-- Указывайте необходимые шаги (команды) и ожидаемые артефакты.
+Если часть работы выполняется через Jules, код, скрипты и diff-патчи должны быть подготовлены в удобном для него формате:
+ - Делите изменения на небольшие атомарные задачи.
+ - Готовьте единый unified diff для каждого логического изменения.
+ - Формулируйте описания задач коротко и ясно, без лишнего контекста.
+ - Указывайте необходимые шаги (команды) и ожидаемые артефакты.
+
+### Шаблон задания для Jules (вставлять в сообщение модели)
+```
+[JULES_TASK]
+title: "feat: <module>: <short change>"
+branch: "feature/<slug>"
+scope:
+  files: ["path/to/a.py", "path/to/b.py"]
+  max_changed_files: 20
+  max_diff_lines: 300
+rules:
+  unified_diff_only: true
+  no_binaries_over_mb: 5
+  sequential_prs: true
+ci:
+  run_pytest_cov: "pytest -q --maxfail=1 --disable-warnings --cov=. --cov-report=term-missing"
+  run_smoke_backtest: true
+artifacts:
+  reports_dir: "reports/"
+  large_files_as_ci_artifacts_only: true
+kpi_impact:
+  metrics: ["sharpe_ratio","profit_factor","max_drawdown_percent","win_rate_percent"]
+  expectation: "не ухудшить, целью повысить Sharpe; Max DD в допусках"
+acceptance:
+  - "Открыт PR с описанием и списком файлов"
+  - "CI зелёный, отчёты в reports/"
+rollback: "revert PR / feature-flag / Safe-Mode при деградации KPI"
+deliverables:
+  - "unified diff в чате + команды применения"
+  - "PR description: цель, KPI, риски, откат, артефакты"
+[/JULES_TASK]
+```
+
+### Быстрый recovery при зависании UI
+- Перезагрузка вкладки/инкогнито; ориентир на GitHub PR/Actions.
+- Всегда дублировать дифф текстом и приложить команды `git apply`/`gh pr create`.
 
 ## Быстрые команды
 - pytest -q --maxfail=1 --disable-warnings --cov=. --cov-report=term-missing
