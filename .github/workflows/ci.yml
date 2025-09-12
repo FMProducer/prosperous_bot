@@ -32,6 +32,8 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
       MPLBACKEND: 'Agg'
       TZ: 'America/Phoenix'
+      # Ensure tests can import `src.*` and `prosperous_bot`:
+      PYTHONPATH: "${{ github.workspace }};${{ github.workspace }}\\src"
 
     steps:
       - name: Checkout
@@ -57,6 +59,10 @@ jobs:
           python -V
           pip -V
           pip list
+
+      - name: Show PYTHONPATH / sys.path (debug)
+        run: |
+          python -c "import os,sys; print('PYTHONPATH=', os.environ.get('PYTHONPATH')); print('sys.path[0:5]=', sys.path[:5])"
 
       - name: Run tests (smoke, with coverage)
         run: |
