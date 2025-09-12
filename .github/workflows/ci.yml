@@ -1,42 +1,70 @@
 name: Python CI
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'config/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'config/**'
+      - '.github/workflows/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: build (${{ matrix.python-version }})
+    runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11"]
 
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      MPLBACKEND: 'Agg'
+      TZ: 'America/Phoenix'
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-asyncio pandas
-    - name: Run tests with coverage
-      run: |
-        pytest -q --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
 
-    - name: Upload coverage artefact
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-xml
-        path: coverage.xml
+      - name: Upgrade pip/setuptools/wheel
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
 
-    - name: Upload backtest artefacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: backtest-reports
-        path: |
-          reports/**/summary.csv
-          reports/**/equity.html
-          reports/**/blocked_trades_log.csv
+      - name: Install requirements (if present) + test deps
+        run: |
+          if (Test-Path "requirements.txt") { pip install -r requirements.txt }
+          pip install pytest pytest-cov
+
+      - name: Show environment
+        run: |
+          python -V
+          pip -V
+          pip list
+
+      - name: Run tests (smoke, with coverage)
+        run: |
+          pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
