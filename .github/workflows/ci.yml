@@ -1,6 +1,7 @@
 name: Python CI
 
 on:
+  # уже включены path-фильтры: code/tests/config/workflows
   push:
     paths:
       - 'src/**'
@@ -18,6 +19,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Основной smoke-CI на Windows; матрица 3.10/3.11
 jobs:
   build:
     name: build (${{ matrix.python-version }})
@@ -32,7 +34,7 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
       MPLBACKEND: 'Agg'
       TZ: 'America/Phoenix'
-      # Ensure tests can import `src.*` and `prosperous_bot`:
+      # Импортируем src.* и корень проекта:
       PYTHONPATH: "${{ github.workspace }};${{ github.workspace }}\\src"
 
     steps:
@@ -64,7 +66,16 @@ jobs:
         run: |
           python -c "import os,sys; print('PYTHONPATH=', os.environ.get('PYTHONPATH')); print('sys.path[0:5]=', sys.path[:5])"
 
-      - name: Run tests (smoke, with coverage)
+      # PROBE: для веток feature/ci-* запускаем pytest без порога покрытия,
+      # чтобы быстро подтвердить окружение/раннер/зависимости.
+      - name: Run tests (probe branch, no coverage gate)
+        if: ${{ startsWith(github.ref, 'refs/heads/feature/ci-') || startsWith(github.head_ref, 'feature/ci-') }}
+        run: |
+          pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml
+
+      # STRICT: для всех остальных веток сохраняем требование покрытия ≥ 90%.
+      - name: Run tests (strict coverage gate)
+        if: ${{ !startsWith(github.ref, 'refs/heads/feature/ci-') && !startsWith(github.head_ref, 'feature/ci-') }}
         run: |
           pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
 
