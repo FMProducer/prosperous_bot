@@ -1,3 +1,37 @@
+## Initial setup (CI-first, cross-platform)
+
+**Цель:** среда разворачивается одинаково на Windows/macOS/Linux и не требует `source .venv/bin/activate`. Скрипты для людей:
+
+- POSIX: `scripts/init_env.sh`
+- Windows: `scripts/init_env.ps1`
+
+Оба скрипта используют `python -m …` с интерпретатором из `.venv`, а не активацию шелла. Это совпадает с тем, как запускается CI.
+
+### Политика тестов
+- **Источник истины — GitHub Actions.** Jules **не** запускает локальные тесты; он только применяет diff и открывает Draft PR (probe для `feature/ci-*` / strict для остальных).
+- **Probe (быстрый дым):** ветки `feature/ci-*` → `-m "not integration"`, без порога покрытия.
+- **Strict (боевой):** все прочие ветки → весь набор тестов + `--cov-fail-under=90`.
+
+### Быстрые команды для разработчика (локально)
+```bash
+# POSIX
+./scripts/init_env.sh
+.venv/bin/python -m pytest -q -m "not integration" --maxfail=1
+```
+```powershell
+# Windows
+pwsh -File .\scripts\init_env.ps1
+.\.venv\Scripts\python -m pytest -q -m "not integration" --maxfail=1
+```
+
+### Триггер CI без коммита в код
+- **Actions → Python CI → Run workflow** (если включён `workflow_dispatch`), либо
+- «пинг-коммит» в `tests/**` (с path-фильтрами это гарантированно запускает пайплайн).
+
+### Замечания
+- Никаких «зашитых» путей вида `C:\…` в тестах; для путей используем утилиты `pathlib`.
+- Все параметры — только через `unified_config*.json`; тесты не меняют логику и не вшивают значения.
+
 # How-to work (короткая памятка)
 **SoT:** весь код/конфиги/отчёты — только в GitHub (`FMProducer/prosperous_bot`). В «Файлах проекта» держим только метадокументы.
 
