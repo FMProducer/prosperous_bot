@@ -46,4 +46,36 @@
 - На вопрос о модели отвечай: **GPT‑5 Thinking**.
 
 ## GitHub и Jules
-Используй GitHub Connector для чтения кода. PR оформляй через web‑UI с подтверждением. Правки предоставляй в виде unified diff. Формулируй задачи кратко и атомарно; готовь понятные diff‑патчи: Jules автоматически создаёт ветки и PR, поэтому соблюдай правила оформления.
+Используй GitHub Connector для чтения кода. PR оформляй через web-UI с подтверждением. Правки предоставляй в виде unified diff. Формулируй задачи кратко и атомарно; готовь понятные diff-патчи: Jules автоматически создаёт ветки и PR, поэтому соблюдай правила оформления.
+
+### Обязательные правила подготовки заданий для Jules (для всех моделей)
+1. **1 задача = 1 логическое изменение = 1 PR.** Лимиты: ≤ **20** файлов, ≤ **300** строк diff.
+2. **Всегда возвращай unified diff в чате** + список затронутых файлов и **команды применения**:
+   - `git checkout -b feature/<slug>`
+   - `git apply --index changes.patch && git commit -m "<title>"`
+   - `git push -u origin feature/<slug>`
+   - `gh pr create -t "<title>" -b "<описание>"`
+3. **Без бинарей в диффе.** CSV/PNG/HTML > **5 MB** прилагать как артефакты CI; в репозитории — только агрегированные лёгкие отчёты в `reports/`.
+4. **Последовательные PR.** Серии задач запускаются по очереди (ожидаем зелёный CI перед следующей).
+5. **KPI/риски в каждом задании.** Указывать влияние на Sharpe, PF, Max DD, Win-Rate и допуски.
+6. **Единый конфиг.** Любые параметры — через `unified_config*.json`; «зашивок» в коде быть не должно.
+7. **Описание PR (шаблон):**
+   - Цель/контекст; файлы; команды; KPI/риски; отчёты; план отката (revert/feature-flag/Safe-Mode).
+8. **Recovery при сбое UI Jules.** Источник истины — GitHub. Модель обязана дублировать дифф текстом и команды, чтобы можно было применить патч вручную.
+9. **Именование веток/коммитов.** `feature/<slug>`; коммиты вида `feat: <module>: <short>` / `fix: ...`.
+10. **CI минимум:** `pytest --cov` + смоук-бэктест; артефакты — в `reports/` с коротким логом метрик.
+
+### Пример «шапки» задания (встраивать в ответ модели)
+```
+[JULES_TASK]
+title: "feat: rebalance_engine: threshold gating & min_notional guard"
+branch: "feature/rebalance-guard"
+scope: { files: ["src/prosperous_bot/rebalance_engine.py","tests/test_rebalance_engine.py"],
+         max_changed_files: 2, max_diff_lines: 180 }
+rules: { unified_diff_only: true, no_binaries_over_mb: 5, sequential_prs: true }
+ci: { run_pytest_cov: "pytest -q --maxfail=1 --disable-warnings --cov=.", run_smoke_backtest: true }
+kpi_impact: { metrics: ["sharpe_ratio","profit_factor","max_drawdown_percent"], expectation: "не ухудшить; Max DD < 20%" }
+acceptance: ["PR открыт, CI зелёный", "отчёты в reports/"]
+rollback: "revert / feature-flag / Safe-Mode"
+[/JULES_TASK]
+```
