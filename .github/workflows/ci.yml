@@ -57,12 +57,14 @@ jobs:
         run: |
           python -c "import os,sys; print('PYTHONPATH=', os.environ.get('PYTHONPATH')); print('sys.path[0:5]=', sys.path[:5])"
 
-      - name: Run tests (probe: unit-only, no coverage gate)
+      # PROBE: unit-only (без @integration), без порога покрытия
+      - name: "Run tests (probe: unit-only, no coverage gate)"
         if: ${{ startsWith(github.ref, 'refs/heads/feature/ci-') || startsWith(github.head_ref || '', 'feature/ci-') }}
         run: |
           pytest -q -m "not integration" --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml
 
-      - name: Run tests (strict: coverage >= 90)
+      # STRICT: все остальные ветки — полный набор и порог покрытия ≥ 90%
+      - name: "Run tests (strict: coverage >= 90)"
         if: ${{ !(startsWith(github.ref, 'refs/heads/feature/ci-') || startsWith(github.head_ref || '', 'feature/ci-')) }}
         run: |
           pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
