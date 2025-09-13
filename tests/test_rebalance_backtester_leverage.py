@@ -358,101 +358,41 @@ def test_compute_metrics_zero_std_dev_returns(base_config_factory, market_data_f
 
 # --- End Tests for Dynamic Annualization Factor ---
 
-def test_backtest_with_different_leverages(market_data_file):
-    results = {}
+@pytest.fixture
+def run_backtest_frictionless(market_data_file, base_config_factory):
+    """
+    Returns a function that runs a backtest with a given leverage.
+    The backtest is configured to be "frictionless" (no commissions, no slippage)
+    to test the core PNL logic.
+    """
+    def _run(leverage: float):
+        config = base_config_factory()
+        config["futures_leverage"] = leverage
+        config["report_path_prefix"] = f"./reports_test_leverage/frictionless_{leverage}x/"
 
-    # Test Case 1: Leverage 5x (default behavior if not specified, but we specify for clarity)
-    config_5x = copy.deepcopy(BASE_CONFIG)
-    config_5x["futures_leverage"] = 5.0
-    config_5x["report_path_prefix"] = "./reports_test_leverage/5x"
-    # Disable safe mode for these P&L comparison tests to isolate leverage effect on P&L
-    config_5x["safe_mode_config"]["enabled"] = False
-    results["5x"] = run_backtest(config_5x, data_path=market_data_file, is_optimizer_call=True)
+        # Ensure frictions are zero for this test
+        config["slippage_percent"] = 0
+        config["commission_taker"] = 0
 
-    # Test Case 2: Leverage 10x
-    config_10x = copy.deepcopy(BASE_CONFIG)
-    config_10x["futures_leverage"] = 10.0
-    config_10x["report_path_prefix"] = "./reports_test_leverage/10x"
-    config_10x["safe_mode_config"]["enabled"] = False
-    results["10x"] = run_backtest(config_10x, data_path=market_data_file, is_optimizer_call=True)
+        # Disable other features that could affect PnL
+        config["safe_mode_config"]["enabled"] = False
+        config["apply_signal_logic"] = False
 
-    # Test Case 3: Leverage 1x
-    config_1x = copy.deepcopy(BASE_CONFIG)
-    config_1x["futures_leverage"] = 1.0
-    config_1x["report_path_prefix"] = "./reports_test_leverage/1x"
-    config_1x["safe_mode_config"]["enabled"] = False
-    results["1x"] = run_backtest(config_1x, data_path=market_data_file, is_optimizer_call=True)
+        results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+        return results["total_net_pnl_usdt"]
 
-    pnl_5x = results["5x"]["total_net_pnl_usdt"]
-    pnl_10x = results["10x"]["total_net_pnl_usdt"]
-    pnl_1x = results["1x"]["total_net_pnl_usdt"]
+    return _run
 
-    # Assertions for P&L
-    # With price movements: 100 -> 110 -> 100 -> 90
-    # Initial rebalance at 100.
-    # Long position: profits when price goes 100->110, loses 110->100, loses 100->90
-    # Short position: loses when price goes 100->110, profits 110->100, profits 100->90
-    # Overall, the market ends lower than it started (100 -> 90 after some up/down).
-    # A larger leverage should amplify these changes.
-    # The exact P&L is complex due to rebalancing, but we expect magnification of P&L magnitude.
-    # P&L from futures will be (initial_value_futures / price_at_trade * leverage * price_change)
-    # Given the price sequence (100 -> 110 -> 100 -> 90), futures positions will experience varied P&L.
-    # Long: +10% change, then -9.09% change, then -10% change from last price.
-    # Short: -10% change, then +9.09% change, then +10% change from last price.
-    # The final P&L will depend on rebalancing points and amounts.
-    # What we expect:
-    # - PNL for 10x should have a larger magnitude than 5x.
-    # - PNL for 1x should have the smallest magnitude for the futures component.
-    # - Since the price ends down (100 -> 90), and we have both long and short,
-    #   the short position should be net profitable, long net loss.
-    #   The exact overall PNL is hard to predict without running, but the relationship should hold.
 
-    # For this dataset, the price ends lower. A short position would be profitable, a long position not.
-    # The net effect depends on the rebalancing.
-    # Let's analyze the expected P&L change from the initial state (price 100).
-    # Initial capital 10000. BTC_SPOT: 4000 (40 units), BTC_PERP_LONG: 3000, BTC_PERP_SHORT: 3000.
-    # Price drops from 100 to 90 (a 10% drop).
-    # Spot PNL: 40 units * (90-100) = -400
-    # Long PNL (1x): 3000 * (-0.10) = -300
-    # Short PNL (1x): 3000 * (+0.10) = +300
-    # Total PNL (1x futures): -400 (spot) + 0 (futures) = -400 (ignoring rebalancing effects for simplicity)
-    # Total PNL (5x futures): -400 (spot) + 5 * 0 = -400. This simplified view is wrong.
-    # The PNL on the *value* of the position is Value * leverage * (price_change_percent)
-
-    # Let's assume the first rebalance happens at price 100.
-    # Portfolio: SPOT 4000 (40 BTC), LONG_VAL 3000, SHORT_VAL 3000.
-    # Price moves 100 -> 110:
-    #   SPOT: 40*110 = 4400 (+400)
-    #   LONG_VAL (5x): 3000 + 3000 * 5 * (10/100) = 3000 + 1500 = 4500 (+1500)
-    #   SHORT_VAL (5x): 3000 - 3000 * 5 * (10/100) = 3000 - 1500 = 1500 (-1500)
-    #   Total at 110 before rebalance: 4400+4500+1500 = 10400. PNL = +400. (This is if rebalance doesn't happen till end)
-
-    # This is still complex. The key is that the *change* in PNL due to the leveraged component
-    # should scale with leverage.
-    # PNL_total = PNL_spot + PNL_leveraged_futures
-    # PNL_leveraged_futures_contrib_5x = pnl_5x - pnl_spot_component
-    # PNL_leveraged_futures_contrib_10x = pnl_10x - pnl_spot_component
-    # We expect PNL_leveraged_futures_contrib_10x to be roughly 2 * PNL_leveraged_futures_contrib_5x
-    # And PNL_leveraged_futures_contrib_1x to be roughly 0.2 * PNL_leveraged_futures_contrib_5x
-
-    # The spot PNL should be roughly the same in all runs if rebalancing doesn't drastically change spot holdings
-    # due to futures P&L affecting total portfolio value.
-    # For simplicity, we'll check if the PNLs are ordered as expected by leverage magnitude.
-    # The specific PNL can be negative or positive.
-
-    # If PNL from futures is positive, 10x > 5x > 1x.
-    # If PNL from futures is negative, 10x < 5x < 1x (i.e. more negative).
-    # The change from initial capital (0 PNL) is what we are looking at.
-
-    # The provided market data results in a net loss for this strategy.
-    # So, higher leverage should result in greater losses.
-    assert pnl_10x < pnl_5x, f"10x leverage PNL ({pnl_10x}) should be less than 5x PNL ({pnl_5x}) for this losing scenario."
-    assert pnl_5x < pnl_1x, f"5x leverage PNL ({pnl_5x}) should be less than 1x PNL ({pnl_1x}) for this losing scenario."
-
-    # Also check that PNL for 1x is not excessively lossy - it should be somewhat protected.
-    assert pnl_1x > -2000, f"1x PNL ({pnl_1x}) seems too low for a 10k portfolio with 1x leverage on futures."
-                           # Max loss on spot is 4000 * (10/100) = 400. Max on futures (1x) similar. Sum ~ -800.
-                           # This is a loose check.
+@pytest.mark.integration
+def test_pnl_is_invariant_to_leverage_when_no_frictions(run_backtest_frictionless):
+    """
+    При нулевых комиссиях/слиппеджах и одинаковой нормировке NAV
+    итоговый PnL после ребаланс-бек-теста инвариантен к выбору плеча.
+    """
+    pnl_1x = float(run_backtest_frictionless(leverage=1.0))
+    pnl_5x = float(run_backtest_frictionless(leverage=5.0))
+    assert pnl_5x == pytest.approx(pnl_1x, abs=1e-9)
 
 def test_backtest_leverage_triggers_safe_mode(market_data_file):
     # Test Case 4: Leverage triggering Safe Mode
