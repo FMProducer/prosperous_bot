@@ -1,6 +1,9 @@
 name: Python CI
 
 on:
+  # ручной запуск из UI/CLI
+  workflow_dispatch:
+    inputs: {}
   push:
     paths:
       - 'src/**'
