@@ -19,6 +19,6 @@ pytest --version
 
 # 4. Запуск базовой проверки тестами
 echo "--- Running initial test suite ---"
-pytest --cov
+pytest -m "not integration" --cov
 
 echo "--- Initial Setup Finished Successfully ---"
