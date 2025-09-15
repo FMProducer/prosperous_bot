@@ -1,0 +1,20 @@
+# Останавливаем выполнение при любой ошибке
+set -e
+
+echo "--- Starting Initial Setup ---"
+
+# 1. Установка зависимостей проекта
+echo "--- Installing Python dependencies ---"
+pip install -r requirements.txt
+
+# 2. Вывод ключевой информации о среде для логов
+echo "--- Environment Verification ---"
+python --version
+pip --version
+pytest --version
+
+# 3. Запуск базовой проверки тестами
+echo "--- Running initial test suite ---"
+pytest --cov
+
+echo "--- Initial Setup Finished Successfully ---"
