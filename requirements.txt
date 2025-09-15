@@ -16,3 +16,4 @@ scikit-learn
 ta
 uvicorn
 xgboost
+pytest-cov
