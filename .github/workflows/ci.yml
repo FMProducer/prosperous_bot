@@ -1,8 +1,13 @@
 name: Python CI
 
 on:
-  # ручной запуск из UI/CLI
+  # Ручной запуск из UI/CLI (явный input помогает избежать глюков UI и упрощает аудит)
   workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why run CI manually?"
+        required: false
+        default: "manual run"
   push:
     paths:
       - 'src/**'
@@ -73,10 +78,10 @@ jobs:
           pytest -q -m "not integration" --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml
 
       # STRICT: все ветки вне feature/ci-* — полный набор тестов и порог покрытия ≥ 90%
-      - name: "Run tests (strict: coverage >= 85)"
+      - name: "Run tests (strict: coverage >= 90)"
         if: ${{ !(startsWith(github.ref, 'refs/heads/feature/ci-') || startsWith(github.head_ref || '', 'feature/ci-')) }}
         run: |
-          pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=85
+          pytest -q --disable-warnings --maxfail=1 --cov=src/prosperous_bot --cov-report=xml --cov-fail-under=90
 
       - name: Upload coverage artifact
         if: ${{ always() && hashFiles('coverage.xml') != '' }}
