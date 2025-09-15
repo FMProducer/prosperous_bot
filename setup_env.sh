@@ -1,38 +1,100 @@
-#!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status.
+#!/usr/bin/env bash
+# Initial setup for Jules AI (Prosperous Bot)
+# Usage:
+#   bash setup_env.sh --probe   # быстрый прогон (unit-only)
+#   bash setup_env.sh --strict  # строгий прогон (coverage >= 90%, артефакты в ./reports)
+#   bash setup_env.sh --reinstall  # пересоздать venv
+set -Eeuo pipefail
 
-# --- Environment Setup for prosperous_bot ---
+# --- Guard: auto-fix CRLF and re-exec -----------------------------------------
+if grep -q $'\r' "$0" 2>/dev/null; then
+  echo "[setup] CRLF detected; re-executing sanitized script..."
+  exec /usr/bin/env bash <(tr -d '\r' < "$0") "$@"
+fi
 
-echo "Setting up Python environment..."
+# --- Repo-State Header ---------------------------------------------------------
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || echo "prosperous_bot")"
+  LAST_SHA="$(git rev-parse HEAD)"
+  LAST_MSG="$(git log -1 --pretty=%s)"
+  echo "=== Repo-State Header ==="
+  echo "Default branch: ${DEFAULT_BRANCH}"
+  echo "Last commit: ${LAST_SHA} — ${LAST_MSG}"
+  echo "Commit link: https://github.com/FMProducer/prosperous_bot/commit/${LAST_SHA}"
+  echo "========================="
+fi
 
-# 1. Create a virtual environment to isolate project dependencies.
-python3 -m venv .venv
+PROJECT_ROOT="$(pwd)"
+VENV_DIR="${PROJECT_ROOT}/.venv"
+REPORTS_DIR="${PROJECT_ROOT}/reports"
+CACHE_DIR="${PROJECT_ROOT}/.cache/pip"
+mkdir -p "${REPORTS_DIR}" "${CACHE_DIR}"
+export PIP_CACHE_DIR="${CACHE_DIR}"
+export PYTHONUTF8=1
 
-# 2. Activate the virtual environment.
-source .venv/bin/activate
+# Cross-platform path to python inside venv
+if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin || "$OSTYPE" == "win32" || "${OS:-}" == "Windows_NT" ]]; then
+  PYBIN="${VENV_DIR}/Scripts/python.exe"
+else
+  PYBIN="${VENV_DIR}/bin/python"
+fi
 
-# 3. Upgrade pip to the latest version.
-pip install --upgrade pip
+# Args
+MODE="probe"   # probe|strict
+REINSTALL=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --probe) MODE="probe"; shift;;
+    --strict) MODE="strict"; shift;;
+    --reinstall) REINSTALL=1; shift;;
+    *) echo "[setup] Unknown arg: $1"; exit 2;;
+  esac
+done
 
-# 4. Install the application's dependencies from requirements.txt.
-# This file has a UTF-16 encoding, but pip handles it correctly.
-pip install -r requirements.txt
+# Create/refresh venv
+echo "[setup] Creating/using virtualenv..."
+if [[ ! -x "${PYBIN}" || "${REINSTALL}" -eq 1 ]]; then
+  BASE_PY="${PYTHON:-python3}"
+  command -v "${BASE_PY}" >/dev/null 2>&1 || BASE_PY="python"
+  "${BASE_PY}" -m venv "${VENV_DIR}"
+fi
 
-# 5. Install additional dependencies for testing and static analysis,
-# as indicated by the CI workflow (.github/workflows/ci.yml) and the project roadmap.
-pip install pytest pytest-cov pytest-asyncio pandas ruff
+echo "[setup] Upgrading pip/setuptools/wheel..."
+"${PYBIN}" -m pip install --upgrade --disable-pip-version-check pip setuptools wheel
 
-# 6. Set the PYTHONPATH to include the project's root directory.
-# This is necessary because the project uses a `src` layout, and this
-# configuration is specified in `pytest.ini`.
-export PYTHONPATH=.
+echo "[setup] Installing dependencies..."
+"${PYBIN}" -m pip install --disable-pip-version-check -r "${PROJECT_ROOT}/requirements.txt"
 
-echo ""
-echo "✅ Environment setup complete."
-echo "A virtual environment has been created in the '.venv' directory."
-echo "To activate it in a new terminal, run: source .venv/bin/activate"
-echo ""
-echo "You can now run the following commands:"
-echo " - To run tests: pytest"
-echo " - To check code style: ruff check ."
-echo ""
+echo "[setup] Installing project (editable)..."
+"${PYBIN}" -m pip install --disable-pip-version-check -e "${PROJECT_ROOT}"
+
+echo "[setup] Environment verification..."
+"${PYBIN}" --version
+"${PYBIN}" -m pip --version
+"${PYBIN}" -m pytest --version || true
+"${PYBIN}" -m pip freeze > "${REPORTS_DIR}/pip_freeze.txt"
+
+COMMON_PYTEST="-q --maxfail=1 -ra"
+set +e
+if [[ "${MODE}" == "probe" ]]; then
+  echo "[setup] Running tests (probe: unit-only, no coverage)..."
+  "${PYBIN}" -m pytest ${COMMON_PYTEST} -m "not integration"
+elif [[ "${MODE}" == "strict" ]]; then
+  echo "[setup] Running tests (strict: coverage >= 90%)..."
+  "${PYBIN}" -m pytest ${COMMON_PYTEST} \
+    --cov=src/prosperous_bot \
+    --cov-report=xml:"${REPORTS_DIR}/coverage.xml" \
+    --junitxml="${REPORTS_DIR}/junit.xml" \
+    --cov-fail-under=90
+else
+  echo "[setup] Unknown MODE=${MODE}"; exit 2
+fi
+EXIT_CODE=$?
+set -e
+
+if [[ $EXIT_CODE -ne 0 ]]; then
+  echo "[setup] Tests failed with code ${EXIT_CODE}"
+  exit $EXIT_CODE
+fi
+
+echo "[setup] Initial Setup Finished Successfully"
