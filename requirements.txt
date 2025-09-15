@@ -9,6 +9,8 @@ numpy
 optuna
 pandas
 plotly
+pytest
+pytest-asyncio
 requests
 scikit-learn
 ta
