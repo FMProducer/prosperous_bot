@@ -663,7 +663,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             for asset_key_loop, target_w_loop in active_target_weights.items():
                 # scale PERP notional by leverage so that pnl ~ leverage
                 if asset_key_loop in (long_asset_key, short_asset_key):
-                    target_value_usdt = target_w_loop * total_portfolio_value * leverage
+                    target_value_usdt = target_w_loop * total_portfolio_value
                 else:
                     target_value_usdt = target_w_loop * total_portfolio_value
                 current_value_usdt = 0
