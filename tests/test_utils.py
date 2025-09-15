@@ -1,5 +1,5 @@
 import pytest
-from src.prosperous_bot.utils import to_gate_pair, to_binance_symbol
+from prosperous_bot.utils import to_gate_pair, to_binance_symbol
 
 # Tests for to_gate_pair
 @pytest.mark.parametrize("test_input, expected_output", [
