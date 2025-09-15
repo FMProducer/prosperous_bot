@@ -17,3 +17,4 @@ ta
 uvicorn
 xgboost
 pytest-cov
+pytest-mock
