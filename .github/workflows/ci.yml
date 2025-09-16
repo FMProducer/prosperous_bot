@@ -34,7 +34,7 @@ jobs:
       MPLBACKEND: 'Agg'
       TZ: 'America/Phoenix'
       # Ensure tests can import `src.*` and `prosperous_bot`:
-      PYTHONPATH: "${{ github.workspace }};${{ github.workspace }}\src"
+      PYTHONPATH: "${{ github.workspace }};${{ github.workspace }}/src"
 
     steps:
       - name: Checkout
