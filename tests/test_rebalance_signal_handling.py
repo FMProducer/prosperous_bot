@@ -19,6 +19,25 @@ def create_dummy_csv(filepath: Path, data_dict: dict):
     df.to_csv(filepath, index=False)
     return str(filepath)
 
+def _robust_rmtree(path, tries=5, delay=0.2):
+    """Best-effort removal tolerant to Windows locks (WinError 32)."""
+    def _onerror(func, p, _exc_info):
+        # try to drop read-only and retry the failed op
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+    for _ in range(tries):
+        try:
+            shutil.rmtree(path, onerror=_onerror)
+            return
+        except PermissionError:
+            gc.collect()
+            time.sleep(delay)
+    # final attempt
+    shutil.rmtree(path, onerror=_onerror)
+
 class TestSignalHandling(unittest.TestCase):
 
     @classmethod
@@ -33,8 +52,8 @@ class TestSignalHandling(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if cls.test_data_dir.exists():
-            shutil.rmtree(cls.test_data_dir)
+        if getattr(cls, "test_data_dir", None) and cls.test_data_dir.exists():
+            _robust_rmtree(cls.test_data_dir)
         logging.getLogger().setLevel(logging.WARNING) # Reset logger level
 
 
