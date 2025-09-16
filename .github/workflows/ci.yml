@@ -42,11 +42,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare pip cache dir
+        shell: bash
+        run: |
+          mkdir -p "${PIP_CACHE_DIR:-"$GITHUB_WORKSPACE/.cache/pip"}"
+
       - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          cache: pip
           cache-dependency-path: requirements.txt
 
       - name: Run strict tests (coverage >= 90%)
