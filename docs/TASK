@@ -1,0 +1,73 @@
+TL;DR
+
+Падение в --probe вызвано Windows-локом при удалении временной папки в tearDownClass. Даю минимальный патч к тесту: «робастный» rmtree с ретраями и снятием read-only, чтобы очистка каталога не валяла прогоны на Windows. После применения — запустите bash setup_env.sh --strict (порог 90% останется).
+
+*** Begin Patch
+*** Update File: tests/test_rebalance_signal_handling.py
+@@
+-import shutil
++import shutil, os, stat, time, gc
+@@
+-class TestSignalHandling:
++def _robust_rmtree(path, tries=5, delay=0.2):
++    """Best-effort removal tolerant to Windows locks (WinError 32)."""
++    def _onerror(func, p, _exc_info):
++        # try to drop read-only and retry the failed op
++        try:
++            os.chmod(p, stat.S_IWRITE)
++            func(p)
++        except Exception:
++            pass
++    for _ in range(tries):
++        try:
++            shutil.rmtree(path, onerror=_onerror)
++            return
++        except PermissionError:
++            gc.collect()
++            time.sleep(delay)
++    # final attempt
++    shutil.rmtree(path, onerror=_onerror)
++
++class TestSignalHandling:
+@@
+     @classmethod
+     def tearDownClass(cls):
+-        if cls.test_data_dir.exists():
+-            shutil.rmtree(cls.test_data_dir)
++        if getattr(cls, "test_data_dir", None) and cls.test_data_dir.exists():
++            _robust_rmtree(cls.test_data_dir)
+*** End Patch
+
+| Шаг | Действие                                                 | KPI/риск                                 |
+| --- | -------------------------------------------------------- | ---------------------------------------- |
+| 1   | Применить патч выше                                      | Фикс WinError 32 при `rmtree` на Windows |
+| 2   | Локально: `bash setup_env.sh --probe`                    | Проверка, что быстрые тесты проходят     |
+| 3   | В Actions: ручной запуск `--strict` (или `Run workflow`) | Покрытие ≥ 90%, артефакты в `reports/`   |
+| 4   | Закрыть задачу «Починить кнопку “Run workflow”…»         | Кнопка видна, CI стабилен                |
+
+
+Команды для PR
+git checkout -b feature/tests-windows-rmtree
+git apply --index changes.patch && git commit -m "tests: robust rmtree in teardown to avoid WinError 32 on Windows"
+git push -u origin feature/tests-windows-rmtree
+gh pr create -t "tests: fix Windows rmtree lock in teardown" -b "### 🎯 Goal
+Предотвратить падение тестов на Windows из-за WinError 32 при удалении временных каталогов.
+
+### 📝 Implementation Details
+- tests/test_rebalance_signal_handling.py: добавлен _robust_rmtree (retry + onerror + chmod + gc), tearDownClass использует его.
+
+### 📈 KPI/Risk Assessment
+- **Sharpe:** n/a
+- **Max DD:** n/a
+- **Profit Factor:** n/a
+
+### 롤백 계획 (Rollback Plan)
+Revert PR.
+
+---
+Default branch: prosperous_bot
+Last commit: b6532b144d4ae99875080960c31e4143e399278e — docs: setup_env.sh new
+Commit link: https://github.com/FMProducer/prosperous_bot/commit/b6532b144d4ae99875080960c31e4143e399278e
+"
+
+После мержа — ещё раз bash setup_env.sh --strict
