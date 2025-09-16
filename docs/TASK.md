@@ -1,34 +1,35 @@
-TL;DR
-
-Падение в --probe вызвано Windows-локом при удалении временной папки в tearDownClass. Даю минимальный патч к тесту: «робастный» rmtree с ретраями и снятием read-only, чтобы очистка каталога не валяла прогоны на Windows. После применения — запустите bash setup_env.sh --strict (порог 90% останется).
-
 *** Begin Patch
 *** Update File: tests/test_rebalance_signal_handling.py
 @@
 -import shutil
-+import shutil, os, stat, time, gc
-@@
--class TestSignalHandling:
-+def _robust_rmtree(path, tries=5, delay=0.2):
-+    """Best-effort removal tolerant to Windows locks (WinError 32)."""
++import shutil
++import os
++import stat
++import time
++import gc
++
++# Best-effort removal tolerant to Windows locks (WinError 32).
++# При ошибках удаления пробуем снять read-only и повторяем несколько раз.
++def _robust_rmtree(path, tries: int = 5, delay: float = 0.2) -> None:
 +    def _onerror(func, p, _exc_info):
-+        # try to drop read-only and retry the failed op
 +        try:
 +            os.chmod(p, stat.S_IWRITE)
 +            func(p)
 +        except Exception:
++            # Игнорируем вторичную ошибку — повторим удаление выше
 +            pass
 +    for _ in range(tries):
 +        try:
 +            shutil.rmtree(path, onerror=_onerror)
 +            return
 +        except PermissionError:
++            # Сборка мусора помогает освободить открытые дескрипторы на Windows
 +            gc.collect()
 +            time.sleep(delay)
-+    # final attempt
++    # Финальная попытка — если всё ещё занято, пусть бросит исключение
 +    shutil.rmtree(path, onerror=_onerror)
-+
-+class TestSignalHandling:
+@@
+ class TestSignalHandling:
 @@
      @classmethod
      def tearDownClass(cls):
