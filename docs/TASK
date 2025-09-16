@@ -37,37 +37,3 @@ TL;DR
 +        if getattr(cls, "test_data_dir", None) and cls.test_data_dir.exists():
 +            _robust_rmtree(cls.test_data_dir)
 *** End Patch
-
-| Шаг | Действие                                                 | KPI/риск                                 |
-| --- | -------------------------------------------------------- | ---------------------------------------- |
-| 1   | Применить патч выше                                      | Фикс WinError 32 при `rmtree` на Windows |
-| 2   | Локально: `bash setup_env.sh --probe`                    | Проверка, что быстрые тесты проходят     |
-| 3   | В Actions: ручной запуск `--strict` (или `Run workflow`) | Покрытие ≥ 90%, артефакты в `reports/`   |
-| 4   | Закрыть задачу «Починить кнопку “Run workflow”…»         | Кнопка видна, CI стабилен                |
-
-
-Команды для PR
-git checkout -b feature/tests-windows-rmtree
-git apply --index changes.patch && git commit -m "tests: robust rmtree in teardown to avoid WinError 32 on Windows"
-git push -u origin feature/tests-windows-rmtree
-gh pr create -t "tests: fix Windows rmtree lock in teardown" -b "### 🎯 Goal
-Предотвратить падение тестов на Windows из-за WinError 32 при удалении временных каталогов.
-
-### 📝 Implementation Details
-- tests/test_rebalance_signal_handling.py: добавлен _robust_rmtree (retry + onerror + chmod + gc), tearDownClass использует его.
-
-### 📈 KPI/Risk Assessment
-- **Sharpe:** n/a
-- **Max DD:** n/a
-- **Profit Factor:** n/a
-
-### 롤백 계획 (Rollback Plan)
-Revert PR.
-
----
-Default branch: prosperous_bot
-Last commit: b6532b144d4ae99875080960c31e4143e399278e — docs: setup_env.sh new
-Commit link: https://github.com/FMProducer/prosperous_bot/commit/b6532b144d4ae99875080960c31e4143e399278e
-"
-
-После мержа — ещё раз bash setup_env.sh --strict
