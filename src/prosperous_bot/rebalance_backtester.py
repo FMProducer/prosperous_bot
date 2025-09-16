@@ -548,20 +548,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
              logging.warning(f"Candle open price is 0 or invalid at {current_timestamp} for {main_asset_symbol}, cannot calculate movement for circuit breaker.")
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
-            # ---- Symmetric Δ-PNL so that LONG + SHORT = const ----
             price_change_ratio = current_price / portfolio['prev_btc_price']
-            # Determine the correct base for delta calculation. The diff uses 'base_long_margin'.
-            # Assuming 'portfolio['btc_long_value_usdt']' before this update is the intended base for the long leg's margin.
-            # Let's clarify if 'base_long_margin' should be 'portfolio['btc_long_value_usdt']' or if it implies sum of long and short, or total exposure.
-            # The issue states: delta = long_margin × L × (ΔP/P₀). This implies the margin allocated to the long position.
-            # The diff shows: base_long_margin = portfolio['btc_long_value_usdt']
-            # This seems to mean the PNL calculation is driven by the long leg's exposure, and the short leg mirrors it.
-            base_long_value_for_pnl_calc = portfolio['btc_long_value_usdt'] # Value before this PNL update
 
-            delta_pnl_usdt = base_long_value_for_pnl_calc * leverage * (price_change_ratio - 1)
+            # Store base values before PnL calculation
+            base_long_value = portfolio['btc_long_value_usdt']
+            base_short_value = portfolio['btc_short_value_usdt']
 
-            portfolio['btc_long_value_usdt']  +=  delta_pnl_usdt      # LONG gains / losses
-            portfolio['btc_short_value_usdt'] -=  delta_pnl_usdt      # SHORT opposite
+            # Calculate PnL for long and short positions independently
+            long_pnl = base_long_value * leverage * (price_change_ratio - 1)
+            short_pnl = base_short_value * leverage * (1 - price_change_ratio)
+
+            # Update portfolio with calculated PnL
+            portfolio['btc_long_value_usdt'] += long_pnl
+            portfolio['btc_short_value_usdt'] += short_pnl
         
         total_portfolio_value = calculate_portfolio_value(
             portfolio['usdt_balance'], portfolio['btc_spot_qty'],

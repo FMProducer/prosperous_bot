@@ -7,7 +7,7 @@
 set -Eeuo pipefail
 
 # --- Guard: auto-fix CRLF and re-exec -----------------------------------------
-if grep -q $'\r' "$0" 2>/dev/null; then
+if grep -q $'' "$0" 2>/dev/null; then
   echo "[setup] CRLF detected; re-executing sanitized script..."
   exec /usr/bin/env bash <(tr -d '\r' < "$0") "$@"
 fi
@@ -33,7 +33,7 @@ export PIP_CACHE_DIR="${CACHE_DIR}"
 export PYTHONUTF8=1
 
 # Cross-platform path to python inside venv
-if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin || "$OSTYPE" == "win32" || "${OS:-}" == "Windows_NT" ]]; then
+if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin || "$OSTYPE" == \"win32\" || "${OS:-}" == "Windows_NT" ]]; then
   PYBIN="${VENV_DIR}/Scripts/python.exe"
 else
   PYBIN="${VENV_DIR}/bin/python"
@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
     --probe) MODE="probe"; shift;;
     --strict) MODE="strict"; shift;;
     --reinstall) REINSTALL=1; shift;;
-    *) echo "[setup] Unknown arg: $1"; exit 2;;
+    *) echo "[setup] Unknown arg: $1"; exit 2;; 
   esac
 done
 
@@ -91,6 +91,8 @@ else
 fi
 EXIT_CODE=$?
 set -e
+
+
 
 if [[ $EXIT_CODE -ne 0 ]]; then
   echo "[setup] Tests failed with code ${EXIT_CODE}"

@@ -142,9 +142,6 @@ class ExchangeAPI:
         return value / price if price else 0.0
 
 
-# Hypothesis profile for CI
-from hypothesis import settings, HealthCheck
-settings.register_profile("ci", suppress_health_check=[HealthCheck.function_scoped_fixture])
-settings.load_profile("ci")
+gate_client = ExchangeAPI()
 
 __all__ = ["ExchangeAPI"]
