@@ -35,6 +35,8 @@ jobs:
       TZ: 'America/Phoenix'
       # Ensure tests can import `src.*` and `prosperous_bot`:
       PYTHONPATH: "${{ github.workspace }};${{ github.workspace }}/src"
+      # Align pip cache with setup_env.sh to fix post-job cleanup warning:
+      PIP_CACHE_DIR: "${{ github.workspace }}/.cache/pip"
 
     steps:
       - name: Checkout
