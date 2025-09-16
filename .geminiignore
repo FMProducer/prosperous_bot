@@ -1,0 +1,46 @@
+# Агенту сюда не загружать
+.venv/
+venv/
+env/
+__pycache__/
+.git/
+.git/*
+
+# Артефакты и большие данные
+reports/
+reports/**
+
+data/
+datasets/
+graphs/
+notebooks/
+*.ipynb
+*.csv
+*.parquet
+*.feather
+*.xlsx
+*.zip
+*.gz
+*.bz2
+*.xz
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.mp4
+*.wav
+*.m4a
+*.log
+
+# Билды/пакеты
+dist/
+build/
+*.whl
+*.egg-info/
+node_modules/
+
+# IDE/OS мусор
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
