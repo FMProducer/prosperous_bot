@@ -1,13 +1,7 @@
 name: Python CI
 
 on:
-  # Ручной запуск из UI/CLI (явный input помогает избежать глюков UI и упрощает аудит)
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: "Why run CI manually?"
-        required: false
-        default: "manual run"
+  workflow_dispatch: {} # Позволяет ручной запуск
   push:
     paths:
       - 'src/**'
@@ -52,7 +46,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Setup environment and run tests (strict)
+      - name: Run strict tests (coverage >= 90%)
         run: bash setup_env.sh --strict
 
       - name: Upload test reports artifact
