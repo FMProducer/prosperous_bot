@@ -4,6 +4,7 @@ from unittest.mock import Mock as UMMock # Using an alias to avoid potential con
 
 import gate_api
 from hypothesis import given, settings, strategies as st
+from hypothesis import settings, HealthCheck
 
 # Assuming ExchangeAPI is correctly importable due to pythonpath settings
 # from prosperous_bot.exchange_gate import ExchangeAPI # Not needed if exch fixture provides it
@@ -16,7 +17,7 @@ price_st = st.one_of(st.none(), st.floats(min_value=0.01, max_value=1_000_000, a
 post_only_st = st.booleans()
 
 @pytest.mark.asyncio
-@settings(max_examples=50, deadline=None) # Reduced max_examples for potentially faster runs during debugging
+@settings(max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]) # Reduced max_examples for potentially faster runs during debugging
 @given(qty=qty_st, order_type=order_type_st)
 async def test_create_futures_order_property(exch, mocker, qty, order_type):
     expected_size = qty if order_type.endswith("_LONG") else -qty
@@ -58,7 +59,7 @@ async def test_create_futures_order_property(exch, mocker, qty, order_type):
     assert res["order_type"] == order_type
 
 @pytest.mark.asyncio
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(qty=qty_st, side=spot_side_st, price=price_st, post_only=post_only_st)
 async def test_create_spot_order_property(exch, mocker, qty, side, price, post_only):
     # Mock for spot_api.create_order
@@ -114,7 +115,7 @@ async def test_create_spot_order_property(exch, mocker, qty, side, price, post_o
         assert res.price == str(price) # Order price is string
 
 @pytest.mark.asyncio
-@settings(max_examples=20, deadline=None)
+@settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(contract=st.sampled_from([None, "BTC_USDT", "ETH_USDT"]))
 async def test_positions_property(exch, mocker, contract):
     # Simulate API response for positions
