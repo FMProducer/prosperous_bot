@@ -68,3 +68,24 @@ def test_simulate_rebalance_pnl():
     assert short_close_trade['exit_price'] == 90  # Exit price for this closing trade
     assert short_close_trade['qty'] == 2          # Quantity closed
     assert short_close_trade['pnl_gross_quote'] == 100.0
+
+def test_simulate_rebalance_exact_close():
+    data = pd.DataFrame([
+        {"close": 100},
+        {"close": 110},
+    ])
+
+    orders_by_step = {
+        0: [{"asset_key": "BTC_PERP_LONG", "side": "buy", "qty": 1}],
+        1: [{"asset_key": "BTC_PERP_LONG", "side": "sell", "qty": 1}],
+    }
+
+    trades = simulate_rebalance(data, orders_by_step, leverage=5.0)
+
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade['pnl_gross_quote'] == 50.0
+    assert trade['asset_key'] == 'BTC_PERP_LONG'
+    assert trade['entry_price'] == 100
+    assert trade['exit_price'] == 110
+    assert trade['qty'] == 1

@@ -4,6 +4,7 @@ import numpy as np # Added numpy
 import copy
 import tempfile
 import os
+import shutil
 from prosperous_bot.rebalance_backtester import run_backtest
 
 # Minimal CSV market data
@@ -541,3 +542,115 @@ def test_empty_rebalance_trades_csv_created_when_sim_log_empty(market_data_file,
     expected_columns = ["asset_key", "entry_price", "exit_price", "qty", "pnl_gross_quote", "leverage"]
     assert list(df_rebalance_trades.columns) == expected_columns, \
         f"Columns in rebalance_trades.csv do not match expected. Got: {list(df_rebalance_trades.columns)}, Expected: {expected_columns}"
+
+def test_target_weights_fallback(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["target_weights_normal"]
+    config["target_weights"] = {
+        "BTC_SPOT": 0.5,
+        "BTC_PERP_LONG": 0.25,
+        "BTC_PERP_SHORT": 0.25
+    }
+
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_missing_target_weights(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["target_weights_normal"]
+
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Configuration error: Target weights missing."
+
+def test_missing_initial_portfolio_value(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["initial_portfolio_value_usdt"]
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_missing_main_asset_symbol(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["main_asset_symbol"]
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_fixed_report_path(market_data_file, base_config_factory):
+    config = base_config_factory()
+    report_path = "./reports_test_fixed_path/"
+    config["use_fixed_report_path"] = True
+    config["report_path_prefix"] = report_path
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=False)
+    assert os.path.exists(os.path.join(report_path, "summary.csv"))
+    shutil.rmtree(report_path)
+
+def test_fixed_report_path_empty_prefix(market_data_file, base_config_factory):
+    config = base_config_factory()
+    report_path = ""
+    config["use_fixed_report_path"] = True
+    config["report_path_prefix"] = report_path
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=False)
+    assert os.path.exists(os.path.join("reports", "summary.csv"))
+    shutil.rmtree("reports")
+
+def test_rebalance_logic(market_data_file, base_config_factory):
+    config = base_config_factory()
+    config["rebalance_threshold"] = 0.01
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["total_trades"] > 0
+    assert list(df_rebalance_trades.columns) == expected_columns, \
+        f"Columns in rebalance_trades.csv do not match expected. Got: {list(df_rebalance_trades.columns)}, Expected: {expected_columns}"
+
+def test_target_weights_fallback(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["target_weights_normal"]
+    config["target_weights"] = {
+        "BTC_SPOT": 0.5,
+        "BTC_PERP_LONG": 0.25,
+        "BTC_PERP_SHORT": 0.25
+    }
+
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_missing_target_weights(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["target_weights_normal"]
+
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Configuration error: Target weights missing."
+
+def test_missing_initial_portfolio_value(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["initial_portfolio_value_usdt"]
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_missing_main_asset_symbol(market_data_file, base_config_factory):
+    config = base_config_factory()
+    del config["main_asset_symbol"]
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["status"] == "Completed"
+
+def test_fixed_report_path(market_data_file, base_config_factory):
+    config = base_config_factory()
+    report_path = "./reports_test_fixed_path/"
+    config["use_fixed_report_path"] = True
+    config["report_path_prefix"] = report_path
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=False)
+    assert os.path.exists(os.path.join(report_path, "summary.csv"))
+    shutil.rmtree(report_path)
+
+def test_fixed_report_path_empty_prefix(market_data_file, base_config_factory):
+    config = base_config_factory()
+    report_path = ""
+    config["use_fixed_report_path"] = True
+    config["report_path_prefix"] = report_path
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=False)
+    assert os.path.exists(os.path.join("reports", "summary.csv"))
+    shutil.rmtree("reports")
+
+def test_rebalance_logic(market_data_file, base_config_factory):
+    config = base_config_factory()
+    config["rebalance_threshold"] = 0.01
+    results = run_backtest(config, data_path=market_data_file, is_optimizer_call=True)
+    assert results["total_trades"] > 0
