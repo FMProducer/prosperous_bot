@@ -972,6 +972,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["num_safe_mode_entries"] = portfolio.get('num_safe_mode_entries', 0)
     metrics["num_circuit_breaker_triggers"] = portfolio.get('num_circuit_breaker_triggers', 0)
     metrics["time_steps_in_safe_mode"] = portfolio.get('time_steps_in_safe_mode', 0)
+    metrics["num_blocked_trades"] = len(blocked_trades_list)
 
     # (And many more metrics from the original file)
 

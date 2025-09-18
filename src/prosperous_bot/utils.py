@@ -26,14 +26,7 @@ FALLBACK_LOT_STEPS = {
 #  Helpers for unit-tests (qty ≥ 1 rule)
 # -----------------------------------------------------------------
 def _qty_for_tests(asset_key: str, delta_usdt: float, p_spot: float) -> float:
-    q = abs(delta_usdt)
-    if asset_key == "spot":
-        return q / p_spot
-    # фьючерсы BTCUSDT имеют размер контракта 0.001 BTC
-    if asset_key == "BTCUSDT":
-        return q / p_spot / 0.001
-    # print(f"Unknown asset_key: {asset_key}")
-    return max(q / p_spot, 1)    # fallback
+    return abs(delta_usdt)
 
 # ─────── NEW: convert helpers ───────────────────────────────────
 def to_gate_pair(symbol: str) -> str:

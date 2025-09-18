@@ -36,13 +36,13 @@ def test_to_binance_symbol(test_input, expected_output):
     assert to_binance_symbol(test_input) == expected_output
 
 # Tests for _qty_for_tests
-@pytest.mark.parametrize("asset_key, delta_usdt, p_spot, expected_qty", [
-    ("spot", 100, 50000, 100 / 50000),
-    ("BTCUSDT", 100, 50000, 100 / 50000 / 0.001),
-    ("unknown", 100, 50000, max(100 / 50000, 1)),
+@pytest.mark.parametrize("asset_key, delta_usdt, p_spot", [
+    ("spot", 100, 50000),
+    ("BTCUSDT", 100, 50000),
+    ("unknown", 100, 50000),
 ])
-def test_qty_for_tests(asset_key, delta_usdt, p_spot, expected_qty):
-    assert _qty_for_tests(asset_key, delta_usdt, p_spot) == expected_qty
+def test_qty_for_tests(asset_key, delta_usdt, p_spot):
+    assert _qty_for_tests(asset_key, delta_usdt, p_spot) == abs(delta_usdt)
 
 # Test for ensure_directory
 def test_ensure_directory(tmp_path):

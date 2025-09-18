@@ -41,6 +41,7 @@ class RebalanceEngine:
             target_weights = {}
 
         # Process params with _subst_symbol first
+        sym = "BTC" # Default symbol
         if params is None:
             # Fallback or error if params is critical and not provided
             # For now, let's assume it might be optional or handled later if None

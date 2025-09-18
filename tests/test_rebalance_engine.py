@@ -1,7 +1,6 @@
-
 import asyncio
 import pytest
-from prosperous_bot.rebalance_engine import RebalanceEngine
+from prosperous_bot.rebalance_engine import RebalanceEngine, _subst_symbol
 
 class DummyPortfolio:
     """Minimal Portfolio stub for unit tests"""
@@ -84,3 +83,162 @@ async def test_execute_post_only_success():
     assert exec_log and exec_log[0]["status"].startswith("filled")
     # Portfolio should record execution
     assert port.executions, "Portfolio.apply_execution was not called"
+
+@pytest.mark.asyncio
+async def test_rebalance_engine_init_no_target_weights():
+    """Tests RebalanceEngine initialization without target_weights."""
+    portfolio = DummyPortfolio({})
+    params = {"main_asset_symbol": "BTC"}
+    engine = RebalanceEngine(portfolio=portfolio, params=params)
+    assert engine.target_weights == {}
+
+@pytest.mark.asyncio
+async def test_rebalance_engine_init_legacy_threshold():
+    """Tests RebalanceEngine initialization with legacy threshold_pct."""
+    portfolio = DummyPortfolio({})
+    engine = RebalanceEngine(portfolio=portfolio, threshold_pct=0.05)
+    assert engine.base_threshold_pct == 0.05
+
+def test_subst_symbol_recursive():
+    """Tests _subst_symbol with nested lists and dicts."""
+    obj = {
+        "a": "{main_asset_symbol}_A",
+        "b": ["{main_asset_symbol}_B", {"c": "{main_asset_symbol}_C"}]
+    }
+    result = _subst_symbol(obj, "BTC")
+    assert result["a"] == "BTC_A"
+    assert result["b"][0] == "BTC_B"
+    assert result["b"][1]["c"] == "BTC_C"
+
+def test_round_lot():
+    """Tests the _round_lot static method."""
+    assert RebalanceEngine._round_lot(12.345, 0.01) == 12.34
+    assert RebalanceEngine._round_lot(12.345, 0.1) == 12.3
+    assert RebalanceEngine._round_lot(12.345, 1) == 12.0
+
+@pytest.mark.asyncio
+async def test_build_orders_no_contract_price():
+    """Tests build_orders when p_contract is None or zero."""
+    target = {"BTC_PERP_LONG": 0.5}
+    current = {"BTC_PERP_LONG": 0.4}
+    port = DummyPortfolio(current, nav=1000)
+    engine = RebalanceEngine(portfolio=port, target_weights=target, base_threshold_pct=0.01)
+    
+    # Test with p_contract = None
+    orders_none = await engine.build_orders(p_spot=50000, p_contract=None)
+    assert not orders_none
+
+    # Test with p_contract = 0
+    orders_zero = await engine.build_orders(p_spot=50000, p_contract=0)
+    assert not orders_zero
+
+@pytest.mark.asyncio
+async def test_execute_no_exchange_client():
+    """Tests that execute raises RuntimeError if exchange_client is not set."""
+    engine = RebalanceEngine(portfolio=DummyPortfolio({}))
+    with pytest.raises(RuntimeError):
+        await engine.execute(orders=[])
+
+class MockExchangeFallback(DummyExchange):
+    async def post_only_limit(self, symbol, side, qty):
+        self.calls.append(("POL", symbol, side, qty))
+        # Simulate that the order is not filled immediately
+        return DummyOrder(filled=False, price=100.0)
+
+    async def get_order(self, _id):
+        # Simulate that the order is still not filled
+        return DummyOrder(filled=False, price=100.0)
+
+@pytest.mark.asyncio
+async def test_execute_fallback_to_market_order():
+    """Tests if execute falls back to a market order if post-only fails."""
+    port = DummyPortfolio({}, nav=1000)
+    exch = MockExchangeFallback()
+    engine = RebalanceEngine(portfolio=port, exchange_client=exch)
+    orders = [dict(symbol="BTCUSDT", side="buy", qty=1, notional_usdt=50, asset_key="BTC_SPOT")]
+    
+    exec_log = await engine.execute(orders=orders, timeout_sec=1)
+    
+    assert any(call[0] == "MKT" for call in exch.calls), "Market order was not placed"
+    assert any(call[0] == "CANCEL" for call in exch.calls), "Cancel order was not called"
+    assert exec_log[0]["status"] == "filled_market"
+
+class MockExchangeError(DummyExchange):
+    async def post_only_limit(self, symbol, side, qty):
+        raise ValueError("Exchange API Error")
+
+@pytest.mark.asyncio
+async def test_execute_error_handling():
+    """Tests error handling during order execution."""
+    port = DummyPortfolio({}, nav=1000)
+    exch = MockExchangeError()
+    engine = RebalanceEngine(portfolio=port, exchange_client=exch)
+    orders = [dict(symbol="BTCUSDT", side="buy", qty=1, notional_usdt=50, asset_key="BTC_SPOT")]
+    
+    exec_log = await engine.execute(orders=orders)
+    
+    assert exec_log[0]["status"] == "error"
+
+@pytest.mark.asyncio
+async def test_rebalance_engine_init_legacy_target_weights(caplog):
+    """Tests loading of legacy target_weights from params."""
+    portfolio = DummyPortfolio({})
+    params = {"target_weights": {"BTC_SPOT": 1.0}}
+    engine = RebalanceEngine(portfolio=portfolio, params=params)
+    assert engine.target_weights == {"BTC_SPOT": 1.0}
+    assert "Using legacy 'target_weights' from params" in caplog.text
+
+@pytest.mark.asyncio
+async def test_rebalance_engine_init_direct_base_threshold(caplog):
+    """Tests direct base_threshold_pct argument."""
+    portfolio = DummyPortfolio({})
+    engine = RebalanceEngine(portfolio=portfolio, base_threshold_pct=0.02)
+    assert engine.base_threshold_pct == 0.02
+    assert "Using direct 'base_threshold_pct'" in caplog.text
+
+class PortfolioNoNav(DummyPortfolio):
+    def __init__(self, dist, nav=1000):
+        super().__init__(dist, nav)
+    
+    # This portfolio does not have get_nav_usdt
+    async def get_value_distribution_usdt(self, *_, **__):
+        return self._dist
+
+@pytest.mark.asyncio
+async def test_build_orders_no_get_nav_usdt():
+    """Tests build_orders with a portfolio that doesn't have get_nav_usdt."""
+    target = {"BTC_SPOT": 0.6}
+    current = {"BTC_SPOT": 0.5}
+    # nav is implicitly calculated from the sum of values in the distribution
+    port = PortfolioNoNav(current, nav=1000)
+    engine = RebalanceEngine(portfolio=port, target_weights=target, base_threshold_pct=0.01)
+    orders = await engine.build_orders(p_spot=50000)
+    assert orders
+
+class LegacyPortfolio(DummyPortfolio):
+    async def get_value_distribution_usdt(self, p_spot, p_contract):
+        # Old signature without leverage
+        return self._dist
+
+@pytest.mark.asyncio
+async def test_build_orders_legacy_get_value_distribution():
+    """Tests build_orders with a portfolio using the old get_value_distribution_usdt signature."""
+    target = {"BTC_SPOT": 0.6}
+    current = {"BTC_SPOT": 0.5}
+    port = LegacyPortfolio(current, nav=1000)
+    engine = RebalanceEngine(portfolio=port, target_weights=target, base_threshold_pct=0.01)
+    orders = await engine.build_orders(p_spot=50000, p_contract=100)
+    assert orders
+
+@pytest.mark.asyncio
+async def test_build_orders_unit_test_ctx():
+    """Tests the is_unit_test_ctx logic."""
+    target = {"BTC_SPOT": 0.6}
+    current = {"BTC_SPOT": 0.5}
+    port = DummyPortfolio(current, nav=1000)
+    params = {"futures_leverage": 5.0}
+    engine = RebalanceEngine(portfolio=port, target_weights=target, base_threshold_pct=0.01, params=params)
+    orders = await engine.build_orders(p_spot=50000)
+    assert orders
+    # In test context, qty is the delta_usdt
+    assert orders[0]['qty'] == pytest.approx(100.0) # (0.6 - 0.5) * 1000
