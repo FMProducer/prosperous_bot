@@ -64,6 +64,7 @@ def test_save_to_csv(tmp_path):
 # Tests for get_lot_step
 @patch('prosperous_bot.exchange_gate.gate_client')
 def test_get_lot_step_api_success(mock_gate_client):
+    get_lot_step.cache_clear()
     mock_pair = MagicMock()
     mock_pair.min_base_amount = '0.001'
     mock_gate_client.get_spot_pairs.return_value = [mock_pair]
@@ -72,5 +73,6 @@ def test_get_lot_step_api_success(mock_gate_client):
 
 @patch('prosperous_bot.exchange_gate.gate_client', side_effect=Exception("API Error"))
 def test_get_lot_step_api_fail_fallback(mock_gate_client):
+    get_lot_step.cache_clear()
     assert get_lot_step("BTC") == 0.0001
     assert get_lot_step("UNKNOWN") == 1e-8
