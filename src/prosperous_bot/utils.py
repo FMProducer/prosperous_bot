@@ -67,8 +67,15 @@ def get_lot_step(symbol: str) -> float:
     - Otherwise -> return 1e-8 (crypto default) or 1e-3.
     """
     try:
-        from exchange_gate import gate_client  # lazy import → no hard dep
-        info = gate_client.get_spot_pairs(pair=to_gate_pair(symbol))[0]
+        from .exchange_gate import gate_client
+
+        sym = symbol.upper() if symbol else None
+        if sym and "_" not in sym and not sym.endswith("USDT"):
+            pair = f"{sym}_USDT"
+        else:
+            pair = to_gate_pair(sym)
+
+        info = gate_client.spot_api.list_spot_pairs(currency_pair=pair)[0]
         return float(info.min_base_amount)
     except Exception:
         return FALLBACK_LOT_STEPS.get(symbol.upper(), 1e-8)
