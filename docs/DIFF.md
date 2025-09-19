@@ -1,61 +1,101 @@
---- src/prosperous_bot/futures_rebalance_backtester.py
-+++ src/prosperous_bot/futures_rebalance_backtester.py
-@@ -293,12 +293,17 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_
-     taker_commission_rate = _get_commission_rate(params, maker=False)
-     use_maker_fees_in_backtest = bool(params.get('use_maker_fees_in_backtest', False))
-     slippage_percent = params.get('slippage_percent', params.get('slippage_percentage', 0.0005))
--    circuit_breaker_threshold_percent = params.get('circuit_breaker_threshold_percent', 0.10) 
--    margin_usage_safe_mode_enter_threshold = params.get('margin_usage_safe_mode_enter_threshold', 0.70) 
--    margin_usage_safe_mode_exit_threshold = params.get('margin_usage_safe_mode_exit_threshold', 0.50)
--    safe_mode_target_weights = params.get('safe_mode_target_weights', target_weights_normal)
-+    circuit_breaker_cfg = params.get('circuit_breaker_config', {})
-+    circuit_breaker_threshold_percent = circuit_breaker_cfg.get('threshold_percentage', 0.0)
-+    safe_mode_cfg = params.get('safe_mode_config', {})
-+    margin_usage_safe_mode_enter_threshold = safe_mode_cfg.get('entry_threshold', 0.0)
-+    margin_usage_safe_mode_exit_threshold = safe_mode_cfg.get('exit_threshold', 0.0)
-+    safe_mode_target_weights = safe_mode_cfg.get('target_weights_safe', target_weights_normal)
-     min_rebalance_interval_minutes = params.get('min_rebalance_interval_minutes', 0)
+@@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
+-        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce', format='ISO8601')
++        # Надёжный парсинг ISO-строк без явного format для совместимости версий pandas
++        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce')
+@@
+-        if df_signals['timestamp'].dt.tz is None:
++        if df_signals['timestamp'].dt.tz is None:
+             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is tz-naive. Localizing to UTC.")
+             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_localize('UTC')
+         else:
+             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
+             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
 
-     main_asset_symbol = params.get('main_asset_symbol', 'BTC')
-@@ -342,6 +347,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_
-         os.makedirs(actual_reports_dir, exist_ok=True)
-+        # Настройка логирования в файл в папке отчётов
+@@ def run_backtest(...):
+-    if df_signals is not None and not df_signals.empty:
+-        logging.info("Merging signal data with market data using merge_asof (backward)...")
+-        df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']],
+-                                  on='timestamp', direction='backward')
++    if df_signals is not None and not df_signals.empty:
++        logging.info("Merging signal data with market data using merge_asof (backward)...")
++        # merge_asof требует сортировку по ключу
++        df_market = df_market.sort_values('timestamp')
++        df_signals = df_signals.sort_values('timestamp')
++        df_market = pd.merge_asof(
++            df_market, df_signals[['timestamp', 'signal']],
++            on='timestamp', direction='backward'
++        )
+         df_market['signal'] = df_market['signal'].ffill()
+         logging.info("Signal data merged. 'signal' column is now available in market data.")
+
+@@ def run_backtest(...):
+-        log_file_path = os.path.join(actual_reports_dir, "backtest.log")
+-        file_handler = logging.FileHandler(log_file_path)
+-        file_handler.setLevel(logging.INFO)
+-        formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
+-        file_handler.setFormatter(formatter)
+-        logging.getLogger().addHandler(file_handler)
 +        log_file_path = os.path.join(actual_reports_dir, "backtest.log")
-+        file_handler = logging.FileHandler(log_file_path)
-+        file_handler.setLevel(logging.INFO)
-+        formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
-+        file_handler.setFormatter(formatter)
-+        logging.getLogger().addHandler(file_handler)
++        root_logger = logging.getLogger()
++        # Не добавляем повторно хендлер тот же файл
++        if not any(
++            isinstance(h, logging.FileHandler)
++            and getattr(h, "baseFilename", None) == os.path.abspath(log_file_path)
++            for h in root_logger.handlers
++        ):
++            file_handler = logging.FileHandler(log_file_path)
++            file_handler.setLevel(logging.INFO)
++            formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
++            file_handler.setFormatter(formatter)
++            root_logger.addHandler(file_handler)
 
-     df_market_original = load_data(data_path) # Keep original for plotting price
-     if df_market_original is None or df_market_original.empty:
-@@ -878,6 +891,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_
-     df_trades = pd.DataFrame(trades_list)
-+    # Округляем денежные параметры сделок до 2 знаков
-+    df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']] = \
-+        df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']].round(2)
+@@ def run_backtest(...):
+-    df_trades = pd.DataFrame(trades_list)
+-    # Округляем денежные параметры сделок до 2 знаков
+-    df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']] = \
+-        df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']].round(2)
++    df_trades = pd.DataFrame(trades_list)
++    # Округление безопасно, даже если часть колонок отсутствует или нет сделок
++    if not df_trades.empty:
++        cols_to_round = [
++            c for c in (
++                'quantity_quote','entry_price','exit_price',
++                'commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote'
++            ) if c in df_trades.columns
++        ]
++        if cols_to_round:
++            df_trades[cols_to_round] = df_trades[cols_to_round].round(2)
 
-     # ---------- PERFORMANCE METRICS ----------
-     def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
-@@ -970,6 +986,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_
-     metrics["num_blocked_trades"] = len(blocked_trades_list)
+@@ def run_backtest(...):
+-    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
++    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
+@@
+-        if trades:
+-            pnl_list = [t.get("pnl_net_quote", 0.0) for t in trades]
+-            wins = [p for p in pnl_list if p > 0]
+-            losses = [-p for p in pnl_list if p < 0]
+-            out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
+-            out["win_rate_percent"] = (len(wins) / len(pnl_list)) * 100 if pnl_list else 0.0
+-        else:
+-            out["profit_factor"] = 0.0
+-            out["win_rate_percent"] = 0.0
++        if trades:
++            pnl_list = [t.get("pnl_net_quote", 0.0) for t in trades]
++            wins = [p for p in pnl_list if p > 0]
++            losses = [-p for p in pnl_list if p < 0]
++            out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
++            out["win_rate_percent"] = (len(wins) / max(1, len(pnl_list))) * 100
++        else:
++            out["profit_factor"] = 0.0
++            out["win_rate_percent"] = 0.0
++        # Fallback: если в трейд-логе нет информативных pnl (например, только комиссии),
++        # оценим win-rate и PF по ряду доходностей equity
++        if out.get("profit_factor", 0.0) == 0.0 and out.get("win_rate_percent", 0.0) == 0.0 and not df_eq.empty:
++            rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
++            wins = (rets > 0).sum()
++            losses = (rets < 0).sum()
++            out["win_rate_percent"] = (wins / max(1, wins + losses)) * 100
++            out["profit_factor"] = (
++                rets[rets > 0].sum() / abs(rets[rets < 0].sum())
++            ) if losses else 0.0
 
-+    # Округляем итоговые метрики: деньги до 2 знаков, проценты до 3 знаков
-+    for k, v in metrics.items():
-+        if isinstance(v, float):
-+            if k.endswith('_usdt'):
-+                metrics[k] = round(v, 2)
-+            elif k.endswith('_percent'):
-+                metrics[k] = round(v, 3)
-
-     if generate_reports and actual_reports_dir:
-         logging.info(f"Generating reports in {actual_reports_dir}...")
-@@ -1073,6 +1095,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_
-             fig.write_html(equity_html_path)
-             logging.info(f"Enhanced equity curve saved to {equity_html_path}")
-+
-+            # Округляем кривую equity до 2 знаков перед сохранением
-+            df_equity['portfolio_value_usdt'] = df_equity['portfolio_value_usdt'].round(2)
-             equity_csv_path = os.path.join(actual_reports_dir, "equity.csv")
-             df_equity.to_csv(equity_csv_path, index=False)
-             logging.info(f"Equity curve data saved to {equity_csv_path}")
