@@ -148,7 +148,8 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
             return None
 
         df_signals['signal'] = df_signals['signal'].astype(str).str.upper().str.strip()
-        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce', format='ISO8601')
+        # Надёжный парсинг ISO-строк без явного format для совместимости версий pandas
+        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce')
 
         # Standardize 'timestamp' column to UTC.
         if df_signals['timestamp'].dt.tz is None:
@@ -355,11 +356,18 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         os.makedirs(actual_reports_dir, exist_ok=True)
         # Настройка логирования в файл в папке отчётов
         log_file_path = os.path.join(actual_reports_dir, "backtest.log")
-        file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
-        file_handler.setFormatter(formatter)
-        logging.getLogger().addHandler(file_handler)
+        root_logger = logging.getLogger()
+        # Не добавляем повторно хендлер тот же файл
+        if not any(
+            isinstance(h, logging.FileHandler)
+            and getattr(h, "baseFilename", None) == os.path.abspath(log_file_path)
+            for h in root_logger.handlers
+        ):
+            file_handler = logging.FileHandler(log_file_path)
+            file_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
     else:
         logging.info("Report generation is OFF. No reports will be saved.")
         # output_dir remains None as it's not used when reports are off.
@@ -418,8 +426,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     if df_signals is not None and not df_signals.empty:
         logging.info("Merging signal data with market data using merge_asof (backward)...")
-        df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']],
-                                  on='timestamp', direction='backward')
+        # merge_asof требует сортировку по ключу
+        df_market = df_market.sort_values('timestamp')
+        df_signals = df_signals.sort_values('timestamp')
+        df_market = pd.merge_asof(
+            df_market, df_signals[['timestamp', 'signal']],
+            on='timestamp', direction='backward'
+        )
         df_market['signal'] = df_market['signal'].ffill()
         logging.info("Signal data merged. 'signal' column is now available in market data.")
         logging.info(f"Signal distribution in market data: \n{df_market['signal'].value_counts(dropna=False)}")
@@ -875,9 +888,16 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     logging.info("Backtest finished.")
     df_equity = pd.DataFrame(equity_over_time)
     df_trades = pd.DataFrame(trades_list)
-    # Округляем денежные параметры сделок до 2 знаков
-    df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']] = \
-        df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']].round(2)
+    # Округление безопасно, даже если часть колонок отсутствует или нет сделок
+    if not df_trades.empty:
+        cols_to_round = [
+            c for c in (
+                'quantity_quote','entry_price','exit_price',
+                'commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote'
+            ) if c in df_trades.columns
+        ]
+        if cols_to_round:
+            df_trades[cols_to_round] = df_trades[cols_to_round].round(2)
 
     # ---------- PERFORMANCE METRICS ----------
     def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
@@ -929,10 +949,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             wins = [p for p in pnl_list if p > 0]
             losses = [-p for p in pnl_list if p < 0]
             out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
-            out["win_rate_percent"] = (len(wins) / len(pnl_list)) * 100 if pnl_list else 0.0
+            out["win_rate_percent"] = (len(wins) / max(1, len(pnl_list))) * 100
         else:
             out["profit_factor"] = 0.0
             out["win_rate_percent"] = 0.0
+        # Fallback: если в трейд-логе нет информативных pnl (например, только комиссии),
+        # оценим win-rate и PF по ряду доходностей equity
+        if out.get("profit_factor", 0.0) == 0.0 and out.get("win_rate_percent", 0.0) == 0.0 and not df_eq.empty:
+            rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
+            wins = (rets > 0).sum()
+            losses = (rets < 0).sum()
+            out["win_rate_percent"] = (wins / max(1, wins + losses)) * 100
+            out["profit_factor"] = (
+                rets[rets > 0].sum() / abs(rets[rets < 0].sum())
+            ) if losses else 0.0
 
         return out
 
