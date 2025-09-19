@@ -201,15 +201,15 @@ def test_safe_mode_activation_and_deactivation(tmp_path):
     data_csv = tmp_path / "data.csv"
     df_market.to_csv(data_csv, index=False)
 
-    # 2. Параметры: включаем Safe Mode с порогами и разными весами
+    # 2. Параметры: включаем Safe Mode, НЕЙТРАЛЬНАЯ стратегия, высокий порог ребаланса
     params = {
         "main_asset_symbol": "BTC",
         "initial_portfolio_value_usdt": 10000.0,
         "futures_leverage": 5.0,
-        "rebalance_threshold": 0.0, # Ребаланс на каждом шаге для чистоты теста
+        "rebalance_threshold": 1.0, # Отключаем ребаланс после входа
         "target_weights_normal": {
-            "BTC_PERP_LONG": 0.5,
-            "BTC_PERP_SHORT": 0.5,
+            "BTC_PERP_LONG": 0.8, # Не-нейтральная стратегия для генерации PnL
+            "USDT": 0.2,
         },
         "safe_mode_config": {
             "enabled": True,
@@ -217,8 +217,7 @@ def test_safe_mode_activation_and_deactivation(tmp_path):
             "exit_threshold": 0.20,  # Порог выхода 20%
             "target_weights_safe": {
                 "BTC_PERP_LONG": 0.1, # Снижаем риски
-                "BTC_PERP_SHORT": 0.1,
-                "USDT": 0.8
+                "USDT": 0.9
             }
         },
         "data_settings": {},
@@ -232,25 +231,22 @@ def test_safe_mode_activation_and_deactivation(tmp_path):
     metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
 
     # 4. Проверка
-    assert metrics["num_safe_mode_entries"] == 1
+    # В этом сценарии система будет входить в Safe Mode дважды
+    assert metrics["num_safe_mode_entries"] == 2
     assert metrics["time_steps_in_safe_mode"] > 0
 
-    # Проверяем, что были сделки, соответствующие переходу в/из Safe Mode
+    # Проверяем, что были сделки, соответствующие переходам
     out_dir = metrics["output_dir"]
     trades_log_path = os.path.join(out_dir, "trades.csv")
     df_trades = pd.read_csv(trades_log_path)
 
-    # Ожидаем увидеть ребалансировку к безопасным весам, а затем обратно к нормальным
-    # Это сложно проверить точно по сделкам, т.к. PnL влияет на размеры
-    # Но мы должны увидеть как минимум 3 сделки: initial, -> safe, -> normal
-    assert len(df_trades) >= 3
-
-    # Более точная проверка - через equity лог, где виден режим
-    equity_log_path = os.path.join(out_dir, "equity.csv")
-    df_equity = pd.read_csv(equity_log_path)
-    # Проверяем, что были оба режима. Для этого нужно добавить колонку режима в equity лог.
-    # Поскольку ее нет, ограничимся проверкой счетчиков и наличия сделок.
-    # В будущем, для более точного теста, нужно расширить лог.
+    # Ожидаем 5 сделок: 
+    # 1. Начальная закупка
+    # 2. Вход в Safe Mode (SELL)
+    # 3. Выход из Safe Mode (BUY)
+    # 4. Повторный вход в Safe Mode (SELL)
+    # 5. Повторный выход из Safe Mode (BUY)
+    assert len(df_trades) == 5
 
 def test_rebalance_threshold_and_interval(tmp_path):
     """Проверяет работу порога ребалансировки и минимального интервала."""

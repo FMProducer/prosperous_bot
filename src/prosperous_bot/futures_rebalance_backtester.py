@@ -580,14 +580,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         nav = total_portfolio_value
         used_margin_usdt = 0
         if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False):
-            # Ensure leverage is not zero before division, though typical leverage values are > 0
-            # Defaulting to a very small number if leverage is 0 to avoid ZeroDivisionError,
-            # effectively making margin usage extremely high if leverage is misconfigured to 0.
-            # A leverage of 0 for a leveraged position doesn't make practical sense.
-            margin_for_long  = abs(portfolio['btc_long_value_usdt'])  / leverage
-            margin_for_short = abs(portfolio['btc_short_value_usdt']) / leverage
-            used_margin_usdt = margin_for_long + margin_for_short
-            margin_usage_ratio = used_margin_usdt / nav if nav > 0 else 0.0
+            # --- CORRECTED MARGIN USAGE CALCULATION FOR SAFE MODE ---
+            # Correct NAV is previous NAV + PnL of current step
+            previous_nav = equity_over_time[-1]['portfolio_value_usdt'] if equity_over_time else initial_portfolio_value_usdt
+            current_step_pnl = (long_pnl + short_pnl) if 'long_pnl' in locals() and 'short_pnl' in locals() else 0.0
+            nav_for_margin_calc = previous_nav + current_step_pnl
+
+            # Correct used margin is based on position size BEFORE PnL was added
+            base_long = base_long_value if 'base_long_value' in locals() else portfolio['btc_long_value_usdt']
+            base_short = base_short_value if 'base_short_value' in locals() else portfolio['btc_short_value_usdt']
+            used_margin_for_margin_calc = (abs(base_long) + abs(base_short)) / leverage
+
+            margin_usage_ratio = used_margin_for_margin_calc / nav_for_margin_calc if nav_for_margin_calc > 0 else 0.0
+            # --- END OF CORRECTION ---
         else:
             margin_usage_ratio = 0.0 
 
