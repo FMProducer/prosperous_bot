@@ -5,7 +5,7 @@ from prosperous_bot.futures_rebalance_backtester import run_backtest
 
 def test_smoke_run_and_reports(tmp_path):
     # 1) Минимальные рыночные данные (UTC, 12 свечей, 1ч)
-    ts = pd.date_range("2024-01-01", periods=12, freq="H", tz="UTC")
+    ts = pd.date_range("2024-01-01", periods=12, freq="h", tz="UTC")
     df = pd.DataFrame({
         "timestamp": ts,
         "open": 100.0,
