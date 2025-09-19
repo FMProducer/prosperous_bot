@@ -1,9 +1,10 @@
 import os
 import copy
+import json
 import pandas as pd
 import pytest
 
-from prosperous_bot.futures_rebalance_backtester import run_backtest
+from prosperous_bot.futures_rebalance_backtester import run_backtest, main as backtester_main
 
 def test_smoke_run_and_reports(tmp_path):
     # 1) Минимальные рыночные данные (UTC, 12 свечей, 1ч)
@@ -439,3 +440,36 @@ def test_graceful_handling_of_empty_data(tmp_path):
     pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "price": [100]}).to_csv(invalid_data_csv, index=False)
     with pytest.raises(KeyError):
         run_backtest(base_params, str(invalid_data_csv))
+
+def test_main_cli_execution(tmp_path, monkeypatch):
+    """Проверяет запуск бэктестера из командной строки."""
+    # 1. Создаем базовые данные и конфиг
+    data_csv = tmp_path / "data.csv"
+    df = pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "close": [100]})
+    df.to_csv(data_csv, index=False)
+
+    config_path = tmp_path / "config.json"
+    config = {
+        "backtest_settings": {
+            "main_asset_symbol": "BTC",
+            "initial_portfolio_value_usdt": 1000.0,
+            "rebalance_threshold": 1.0,
+            "target_weights_normal": {"BTC_SPOT": 1.0},
+            "data_settings": {"csv_file_path": str(data_csv)},
+            "report_path_prefix": str(tmp_path / "cli_reports"),
+            "use_fixed_report_path": True
+        }
+    }
+    with open(config_path, 'w') as f:
+        json.dump(config, f)
+
+    # 2. Эмулируем аргументы командной строки и запускаем main
+    args = ["script_name", "--config_file", str(config_path)]
+    monkeypatch.setattr('sys.argv', args)
+
+    backtester_main()
+
+    # 3. Проверяем, что отчеты были созданы
+    report_dir = tmp_path / "cli_reports"
+    assert os.path.isdir(report_dir)
+    assert os.path.exists(report_dir / "summary.csv")
