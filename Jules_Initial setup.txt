@@ -1,24 +1,25 @@
-# Останавливаем выполнение при любой ошибке
-set -e
+set -euo pipefail
 
-echo "--- Starting Initial Setup ---"
+# 1) Изолированное окружение
+python3 -m venv .venv
+. .venv/bin/activate
 
-# 1. Установка зависимостей проекта
-echo "--- Installing Python dependencies ---"
-pip install -r requirements.txt
+# 2) Обновить установщик
+python -m pip install --upgrade pip
 
-# 2. Установка самого проекта в режиме редактирования (ВАЖНЫЙ ШАГ)
-echo "--- Installing project in editable mode ---"
-pip install -e .
+# 3) Установить зависимости проекта (предпочитать бинарные колёса)
+python -m pip install --prefer-binary -r requirements.txt
 
-# 3. Вывод ключевой информации о среде для логов
-echo "--- Environment Verification ---"
-python --version
-pip --version
-pytest --version
+# 4) Установить сам пакет из корня репозитория (PEP 621; src-layout)
+#    Это решает ModuleNotFoundError для 'prosperous_bot'
+python -m pip install -e .
 
-# 4. Запуск базовой проверки тестами
-echo "--- Running initial test suite ---"
-pytest -m "not integration" --cov
+# 5) Страховка для прямого запуска pytest из корня (src-layout)
+export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
 
-echo "--- Initial Setup Finished Successfully ---"
+# 6) Зафиксировать фактическое окружение для отладки снапшота
+mkdir -p reports
+python -m pip freeze > reports/pip-freeze.txt || true
+
+# 7) Быстрая валидация окружения перед Snapshot
+pytest -q --maxfail=1 --disable-warnings
