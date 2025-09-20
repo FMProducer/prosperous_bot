@@ -12,10 +12,10 @@ import logging
 def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_positions=False):
     open_positions = {}
     trade_log = []
-    last_price = None # Store the last price
+    last_price = None # Последняя цена
     for idx, row in data.iterrows():
         price = row['close']
-        last_price = price # Update last_price in each iteration
+        last_price = price # Обновление последней цены
         step_orders = orders_by_step.get(idx, [])
 
         for order in step_orders:
@@ -27,11 +27,11 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_posi
             if side == 'buy':
                 if key in open_positions:
                     pos = open_positions[key]
-                    if pos['direction'] == 1: # Adding to an existing long position
+                    if pos['direction'] == 1: # Увеличение длинной позиции
                         total_qty = pos['qty'] + qty
                         avg_price = (pos['entry_price'] * pos['qty'] + price * qty) / total_qty
                         open_positions[key] = {'entry_price': avg_price, 'qty': total_qty, 'direction': 1}
-                    elif pos['direction'] == -1: # Buying to close an existing short position
+                    elif pos['direction'] == -1: # Покупка для закрытия шорт-позиции
                         entry = open_positions[key]
                         entry_qty = entry['qty']
                         qty_to_close = min(qty, entry_qty)
@@ -49,13 +49,13 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_posi
                             open_positions[key]['qty'] -= qty_to_close
                         else:
                             del open_positions[key]
-                else: # No existing position, so this 'buy' opens a new long position
+                else: # Открытие новой длинной позиции
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': 1}
 
             elif side == 'sell':
-                if key in open_positions: # Selling against an existing position
+                if key in open_positions: # Продажа по существующей позиции
                     pos = open_positions[key]
-                    if pos['direction'] == 1: # Selling to close an existing long position
+                    if pos['direction'] == 1: # Продажа для закрытия длинной позиции
                         entry = open_positions[key]
                         entry_qty = entry['qty']
                         qty_to_close = min(qty, entry_qty)
@@ -73,25 +73,25 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_posi
                             open_positions[key]['qty'] -= qty_to_close
                         else:
                             del open_positions[key]
-                    elif pos['direction'] == -1: # Adding to an existing short position
+                    elif pos['direction'] == -1: # Увеличение шорт-позиции
                         total_qty = pos['qty'] + qty
                         avg_price = (pos['entry_price'] * pos['qty'] + price * qty) / total_qty
                         open_positions[key] = {'entry_price': avg_price, 'qty': total_qty, 'direction': -1}
-                else: # No existing position, so this 'sell' opens a new short position
+                else: # Открытие новой шорт-позиции
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
 
     # Force-closure of any remaining open positions at the end of the data
-    if force_close_open_positions and open_positions and last_price is not None: # Ensure there was data
+    if force_close_open_positions and open_positions and last_price is not None: # Убеждаемся, что данные непусты
         for key, pos in list(open_positions.items()): # Use list to allow modification
             pnl = (last_price - pos['entry_price']) * pos['qty'] * pos['direction'] * leverage
             trade_log.append({
                 'asset_key': key,
                 'entry_price': pos['entry_price'],
-                'exit_price': last_price, # Close at the last known price
+                'exit_price': last_price, # Закрытие по последней известной цене
                 'qty': pos['qty'],
                 'pnl_gross_quote': pnl,
                 'leverage': leverage,
-                'status': 'force_closed' # Add a status for these trades
+                'status': 'force_closed' # Статус принудительного закрытия позиции
             })
             del open_positions[key] # Remove position after logging PnL
 
@@ -112,12 +112,12 @@ if not hasattr(_bi.all, "_bool_patch"):
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-from .logging_config import configure_root # This will be adjusted by hand later if patch fails
+from .logging_config import configure_root # Настройка корневого логгера
 configure_root()
 from .utils import get_lot_step
 import logging
 
-# Basic logging configuration
+# Базовая конфигурация логирования
 
 # ── Helper: substitute {main_asset_symbol} recursively ──────────────
 def _subst_symbol(obj, sym):
@@ -151,26 +151,26 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
         # Надёжный парсинг ISO-строк без явного format для совместимости версий pandas
         df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce')
 
-        # Standardize 'timestamp' column to UTC.
+        # Стандартизация меток времени в UTC.
         if df_signals['timestamp'].dt.tz is None:
             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is tz-naive. Localizing to UTC.")
             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_localize('UTC')
         else:
             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
-        # Drop invalid rows
+        # Удаляем некорректные строки
         bad_rows = df_signals['timestamp'].isna().sum()
         if bad_rows:
             logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
 
-        df = df_signals.dropna(subset=['timestamp']) # Changed df_signals to df
+        df = df_signals.dropna(subset=['timestamp']) # Удаляем строки с некорректными метками времени
         if df.empty:
             logging.error("Error loading or processing signal data from %s: empty after clean", signal_csv_path)
             return None
 
         df_signals = df # Assign df back to df_signals if further processing uses df_signals
         # Keep only relevant columns and sort
-        df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
+        df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True) # Оставляем только нужные столбцы и сортируем
 
         logging.info(f"Signal data loaded and processed successfully from {signal_csv_path}. Shape: {df_signals.shape}")
         return df_signals
@@ -243,12 +243,12 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
         f"NetPnL_Trade: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
     )
 
-# --- START OF REPLACEMENT FUNCTION ---
+# --- Начало функции run_backtest ---
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
-    # deep-copy → подстановка плейс-холдеров не изменит исходный dict
+    # Глубокое копирование: замена плейсхолдеров не изменит исходный словарь
     params = copy.deepcopy(params_dict)
     # ─────────────────────────────────────────────────────────────
-    #  Neutral “ideal-conditions” run: отключаем ЛЮБЫЕ фильтры на
+    #  Нейтральный «идеальный» прогон: отключаем любые фильтры на
     #  минимальный номинал и интервал ребаланса, чтобы модель могла
     #  совершать каждую микро-сделку и удерживать точные доли.
     # ─────────────────────────────────────────────────────────────
