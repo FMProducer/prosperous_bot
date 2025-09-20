@@ -15,6 +15,6 @@ requests
 scikit-learn
 ta
 uvicorn
-xgboost
+xgboost-cpu
 pytest-cov
 pytest-mock
