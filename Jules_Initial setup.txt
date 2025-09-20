@@ -1,24 +1,24 @@
-# Останавливаем выполнение при любой ошибке
-set -e
+set -euo pipefail
 
-echo "--- Starting Initial Setup ---"
+# 1) Виртуальное окружение
+python3 -m venv .venv
+. .venv/bin/activate
 
-# 1. Установка зависимостей проекта
-echo "--- Installing Python dependencies ---"
-pip install -r requirements.txt
+# 2) Обновить pip
+python -m pip install --upgrade pip
 
-# 2. Установка самого проекта в режиме редактирования (ВАЖНЫЙ ШАГ)
-echo "--- Installing project in editable mode ---"
-pip install -e .
+# 3) Установить зависимости проекта (строго из requirements.txt)
+python -m pip install --prefer-binary -r requirements.txt
 
-# 3. Вывод ключевой информации о среде для логов
-echo "--- Environment Verification ---"
-python --version
-pip --version
-pytest --version
+# 4) Установить сам пакет в editable-режиме, чтобы import работал из src/
+python -m pip install -e .
 
-# 4. Запуск базовой проверки тестами
-echo "--- Running initial test suite ---"
-pytest -m "not integration" --cov
+# 5) Экспорт пути к исходникам пакета
+export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
 
-echo "--- Initial Setup Finished Successfully ---"
+# 6) Артефакты окружения и тестов
+mkdir -p reports
+python -m pip freeze > reports/pip-freeze.txt
+
+# 7) Быстрая валидация окружения перед Snapshot
+pytest -q --maxfail=1 --disable-warnings
