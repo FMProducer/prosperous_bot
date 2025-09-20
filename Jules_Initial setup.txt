@@ -1,25 +1,26 @@
 set -euo pipefail
 
-# 1) Изолированное окружение
+# 1) Виртуальное окружение
 python3 -m venv .venv
 . .venv/bin/activate
 
-# 2) Обновить установщик
+# 2) Обновить pip
 python -m pip install --upgrade pip
 
-# 3) Установить зависимости проекта (предпочитать бинарные колёса)
+# 3) Установить зависимости проекта (строго из requirements.txt)
 python -m pip install --prefer-binary -r requirements.txt
 
-# 4) Установить сам пакет из корня репозитория (PEP 621; src-layout)
-#    Это решает ModuleNotFoundError для 'prosperous_bot'
+# 4) Установить сам пакет в editable-режиме, чтобы import работал из src/
 python -m pip install -e .
 
-# 5) Страховка для прямого запуска pytest из корня (src-layout)
-export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
+# 5) Экспорт пути к исходникам пакета
+export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
 
-# 6) Зафиксировать фактическое окружение для отладки снапшота
+# 6) Артефакты окружения и тестов
 mkdir -p reports
-python -m pip freeze > reports/pip-freeze.txt || true
+python -m pip freeze > reports/pip-freeze.txt
 
-# 7) Быстрая валидация окружения перед Snapshot
-pytest -q --maxfail=1 --disable-warnings
+# 7) Тесты + покрытие (артефакты/вывод в reports/)
+pytest -q --maxfail=1 --disable-warnings \
+  --cov=src --cov-report=term-missing \
+  --cov-report=xml:reports/coverage.xml
