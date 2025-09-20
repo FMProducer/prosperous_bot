@@ -20,7 +20,5 @@ export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
 mkdir -p reports
 python -m pip freeze > reports/pip-freeze.txt
 
-# 7) Тесты + покрытие (артефакты/вывод в reports/)
-pytest -q --maxfail=1 --disable-warnings \
-  --cov=src --cov-report=term-missing \
-  --cov-report=xml:reports/coverage.xml
+# 7) Быстрая валидация окружения перед Snapshot
+pytest -q --maxfail=1 --disable-warnings
