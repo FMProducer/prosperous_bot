@@ -244,6 +244,22 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
 
 # --- START OF REPLACEMENT FUNCTION ---
 def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
+    """
+    Выполняет бэктест дельта-нейтральной стратегии ребаланса фьючерсов.
+    Параметры:
+        params_dict (dict): Настройки стратегии и бэктестера (комиссии, левередж, таргетные веса, пороги и т.д.).
+        data_path (str): Путь к CSV-файлу(ам) исторических рыночных данных.
+        is_optimizer_call (bool): Флаг режима оптимизации (True при вызове из оптимизатора, отчёты не сохраняются).
+        trial_id_for_reports (Optional[int]): Идентификатор прогона для формирования отчётов (используется при оптимизации).
+    Этапы работы:
+        1. Загрузка и предобработка данных рынка.
+        2. Применение сигналов (если включена соответствующая логика).
+        3. Моделирование сделок по целевым весам и ребалансировка портфеля.
+        4. Учет комиссий, проскальзывания (slippage), TP/SL, Safe Mode и Circuit Breaker.
+        5. Сбор метрик (KPI) и формирование equity-кривой и журнала сделок.
+    Возвращает:
+        dict: Результаты бэктеста, включая итоговую стоимость портфеля, PnL, статистические метрики и статус выполнения.
+    """
     # deep-copy → подстановка плейс-холдеров не изменит исходный dict
     params = copy.deepcopy(params_dict)
     # ─────────────────────────────────────────────────────────────
@@ -328,11 +344,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         if use_fixed_report_path:
             output_dir = report_path_prefix
-            if not output_dir: # If prefix was empty or just "/"
-                output_dir = "reports" # Default to "reports" to be safe for tests
+            if not output_dir: # Если префикс пустой или равен "/"
+                output_dir = "reports" # По умолчанию 'reports'
             logging.info(f"Using fixed report path: {output_dir} (due to 'use_fixed_report_path' setting).")
         else:
-            # Existing logic for timestamped/optimizer paths
+            # Логика формирования пути отчётов
             if is_optimizer_call and trial_id_for_reports is not None:
                 output_dir = os.path.join(report_path_prefix, "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
             else:
@@ -364,9 +380,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         # The logging.info for output_dir above shows the intermediate step or final if they are same.
     else:
         logging.info("Report generation is OFF. No reports will be saved.")
-        # output_dir remains None as it's not used when reports are off.
+        # output_dir остаётся None, поскольку при отключенных отчётах он не используется.
 
-    df_market_original = load_data(data_path) # Keep original for plotting price
+    df_market_original = load_data(data_path) # Оригинальные данные рынка для графика цены
     if df_market_original is None or df_market_original.empty:
         logging.error("Market data is empty or could not be loaded. Cannot run backtest.")
         zeros = {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio",
@@ -376,18 +392,18 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                   "longest_winning_streak", "longest_losing_streak", "max_portfolio_value_usdt",
                                   "min_portfolio_value_usdt", "annual_return_percent", "calmar_ratio",
                                   "kelly_criterion", "annualized_volatility_percent", "value_at_risk_var_percent",
-                                  "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Added more zeroed metrics
+                                  "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Добавлены новые метрики с нулевыми значениями
         zeros.update({
-            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Corrected
-            "total_net_pnl_usdt": 0.0, # Corrected
-            "total_net_pnl_percent": 0.0, # Corrected
+            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Исправлено
+            "total_net_pnl_usdt": 0.0, # Исправлено
+            "total_net_pnl_percent": 0.0, # Исправлено
             "total_trades": 0,
             "output_dir": None, # output_dir determined later if reports are generated
             "status": "Market data empty" # Corrected status message
         })
         return zeros
     
-    df_market = df_market_original.copy() # Work with a copy for potential modifications
+    df_market = df_market_original.copy() # Работаем с копией данных для изменений
 
     if df_market['timestamp'].dt.tz is None:
         logging.info("Market data 'timestamp' column is tz-naive. Localizing to UTC for consistency.")
@@ -396,9 +412,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         logging.info(f"Market data 'timestamp' column is already tz-aware ({df_market['timestamp'].dt.tz}). Converting to UTC for consistency.")
         df_market['timestamp'] = df_market['timestamp'].dt.tz_convert('UTC')
 
-    # ── auto-range: если "auto" или дата вне диапазона файла ────────────
+    # ── авто-диапазон: если "auto" или дата вне диапазона файла ────────────
     min_ts, max_ts = df_market['timestamp'].min(), df_market['timestamp'].max()
-    dr = params.setdefault("date_range", {}) # Get or create 'date_range' dict
+    dr = params.setdefault("date_range", {}) # Получаем или создаём словарь 'date_range'
     for edge, value in (("start_date", dr.get("start_date")), ("end_date", dr.get("end_date"))):
         if value in (None, "auto"):
             dr[edge] = (min_ts if edge == "start_date" else max_ts).isoformat()
@@ -439,7 +455,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 else:
                     start_date_dt = start_date_dt.tz_convert('UTC')
                 df_market = df_market[df_market['timestamp'] >= start_date_dt]
-            except Exception as e: # More general exception
+            except Exception as e: # Общий перехват исключений
                 logging.error(f"Error processing start_date '{start_date_str}': {e}. Skipping start date filter.")
 
         end_date_str = params["date_range"].get("end_date")
@@ -451,10 +467,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 else:
                     end_date_dt = end_date_dt.tz_convert('UTC')
                 df_market = df_market[df_market['timestamp'] <= end_date_dt]
-            except Exception as e: # More general exception
+            except Exception as e: # Общий перехват исключений
                 logging.error(f"Error processing end_date '{end_date_str}': {e}. Skipping end date filter.")
     
-    if df_market.empty:                     # graceful-fail for unit-tests
+    if df_market.empty:                     # Корректный выход для unit-тестов
         logging.error("Market data is empty after applying date range filters. Returning zero-metrics.")
         return {
             "final_portfolio_value_usdt": initial_portfolio_value_usdt,
@@ -491,7 +507,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     if df_market.empty:
         logging.error("Market data is empty before starting main loop. Cannot run backtest.")
-        # Return structure consistent with other error returns
+        # Структура ответа при ошибке (как и в других случаях)
         return {
             "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
             "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir,
@@ -531,13 +547,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     final_val_cb = total_portfolio_value_cb if total_portfolio_value_cb is not None else 0
                     pnl_usdt_cb = final_val_cb - initial_portfolio_value_usdt
                     pnl_pct_cb = (pnl_usdt_cb / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
-                    metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Initialize all expected keys
+                    metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Инициализируем все необходимые ключи
                     metrics_cb_fail.update({
                         "final_portfolio_value_usdt": final_val_cb, "total_net_pnl_usdt": pnl_usdt_cb,
                         "total_net_pnl_percent": pnl_pct_cb, "total_trades": len(trades_list),
-                        "max_drawdown_percent": -100.0, # Or calculate actual if possible
+                        "max_drawdown_percent": -100.0, # или вычислить реальный, если возможно
                         "output_dir": output_dir, "status": "Portfolio wiped out post-CB",
-                        **portfolio # Spread existing portfolio state
+                        **portfolio # Добавляем текущее состояние портфеля
                     })
                     return metrics_cb_fail
                 portfolio['prev_btc_price'] = current_price
