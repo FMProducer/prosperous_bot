@@ -1,101 +1,67 @@
-@@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
--        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce', format='ISO8601')
-+        # Надёжный парсинг ISO-строк без явного format для совместимости версий pandas
-+        df_signals['timestamp'] = pd.to_datetime(df_signals['timestamp'], utc=True, errors='coerce')
-@@
--        if df_signals['timestamp'].dt.tz is None:
-+        if df_signals['timestamp'].dt.tz is None:
-             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is tz-naive. Localizing to UTC.")
-             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_localize('UTC')
-         else:
-             logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
-             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
-
-@@ def run_backtest(...):
--    if df_signals is not None and not df_signals.empty:
--        logging.info("Merging signal data with market data using merge_asof (backward)...")
--        df_market = pd.merge_asof(df_market, df_signals[['timestamp', 'signal']],
--                                  on='timestamp', direction='backward')
-+    if df_signals is not None and not df_signals.empty:
-+        logging.info("Merging signal data with market data using merge_asof (backward)...")
-+        # merge_asof требует сортировку по ключу
-+        df_market = df_market.sort_values('timestamp')
-+        df_signals = df_signals.sort_values('timestamp')
-+        df_market = pd.merge_asof(
-+            df_market, df_signals[['timestamp', 'signal']],
-+            on='timestamp', direction='backward'
-+        )
-         df_market['signal'] = df_market['signal'].ffill()
-         logging.info("Signal data merged. 'signal' column is now available in market data.")
-
-@@ def run_backtest(...):
--        log_file_path = os.path.join(actual_reports_dir, "backtest.log")
--        file_handler = logging.FileHandler(log_file_path)
--        file_handler.setLevel(logging.INFO)
--        formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
--        file_handler.setFormatter(formatter)
--        logging.getLogger().addHandler(file_handler)
-+        log_file_path = os.path.join(actual_reports_dir, "backtest.log")
-+        root_logger = logging.getLogger()
-+        # Не добавляем повторно хендлер тот же файл
-+        if not any(
-+            isinstance(h, logging.FileHandler)
-+            and getattr(h, "baseFilename", None) == os.path.abspath(log_file_path)
-+            for h in root_logger.handlers
-+        ):
-+            file_handler = logging.FileHandler(log_file_path)
-+            file_handler.setLevel(logging.INFO)
-+            formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
-+            file_handler.setFormatter(formatter)
-+            root_logger.addHandler(file_handler)
-
-@@ def run_backtest(...):
--    df_trades = pd.DataFrame(trades_list)
--    # Округляем денежные параметры сделок до 2 знаков
--    df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']] = \
--        df_trades[['quantity_quote','entry_price','exit_price','commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote']].round(2)
-+    df_trades = pd.DataFrame(trades_list)
-+    # Округление безопасно, даже если часть колонок отсутствует или нет сделок
-+    if not df_trades.empty:
-+        cols_to_round = [
-+            c for c in (
-+                'quantity_quote','entry_price','exit_price',
-+                'commission_quote','slippage_quote','pnl_gross_quote','pnl_net_quote'
-+            ) if c in df_trades.columns
-+        ]
-+        if cols_to_round:
-+            df_trades[cols_to_round] = df_trades[cols_to_round].round(2)
-
-@@ def run_backtest(...):
--    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
-+    def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
-@@
--        if trades:
--            pnl_list = [t.get("pnl_net_quote", 0.0) for t in trades]
--            wins = [p for p in pnl_list if p > 0]
--            losses = [-p for p in pnl_list if p < 0]
--            out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
--            out["win_rate_percent"] = (len(wins) / len(pnl_list)) * 100 if pnl_list else 0.0
--        else:
--            out["profit_factor"] = 0.0
--            out["win_rate_percent"] = 0.0
-+        if trades:
-+            pnl_list = [t.get("pnl_net_quote", 0.0) for t in trades]
-+            wins = [p for p in pnl_list if p > 0]
-+            losses = [-p for p in pnl_list if p < 0]
-+            out["profit_factor"] = (sum(wins) / sum(losses)) if losses else 0.0
-+            out["win_rate_percent"] = (len(wins) / max(1, len(pnl_list))) * 100
-+        else:
-+            out["profit_factor"] = 0.0
-+            out["win_rate_percent"] = 0.0
-+        # Fallback: если в трейд-логе нет информативных pnl (например, только комиссии),
-+        # оценим win-rate и PF по ряду доходностей equity
-+        if out.get("profit_factor", 0.0) == 0.0 and out.get("win_rate_percent", 0.0) == 0.0 and not df_eq.empty:
-+            rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
-+            wins = (rets > 0).sum()
-+            losses = (rets < 0).sum()
-+            out["win_rate_percent"] = (wins / max(1, wins + losses)) * 100
-+            out["profit_factor"] = (
-+                rets[rets > 0].sum() / abs(rets[rets < 0].sum())
-+            ) if losses else 0.0
-
+diff --git a/src/prosperous_bot/futures_rebalance_backtester.py b/src/prosperous_bot/futures_rebalance_backtester.py
+index 69327d9..0000000 100644
+--- a/src/prosperous_bot/futures_rebalance_backtester.py
++++ b/src/prosperous_bot/futures_rebalance_backtester.py
+@@ -12,4 +12,4 @@
+     price = row['close']
+-    last_price = None # Store the last price
+-    last_price = price # Update last_price in each iteration
++    last_price = None # Последняя цена
++    last_price = price # Обновление последней цены
+@@ -29,2 +29,2 @@
+-                    if pos['direction'] == 1: # Adding to an existing long position
++                    if pos['direction'] == 1: # Увеличение длинной позиции
+@@ -33,2 +33,2 @@
+-                    elif pos['direction'] == -1: # Buying to close an existing short position
++                    elif pos['direction'] == -1: # Покупка для закрытия шорт-позиции
+@@ -51,2 +51,2 @@
+-                else: # No existing position, so this 'buy' opens a new long position
++                else: # Открытие новой длинной позиции
+@@ -55,2 +55,2 @@
+-                if key in open_positions: # Selling against an existing position
++                if key in open_positions: # Продажа по существующей позиции
+@@ -57,2 +57,2 @@
+-                    if pos['direction'] == 1: # Selling to close an existing long position
++                    if pos['direction'] == 1: # Продажа для закрытия длинной позиции
+@@ -75,2 +75,2 @@
+-                    elif pos['direction'] == -1: # Adding to an existing short position
++                    elif pos['direction'] == -1: # Увеличение шорт-позиции
+@@ -79,2 +79,2 @@
+-                else: # No existing position, so this 'sell' opens a new short position
++                else: # Открытие новой шорт-позиции
+@@ -84,2 +84,2 @@
+-    if force_close_open_positions and open_positions and last_price is not None: # Ensure there was data
++    if force_close_open_positions and open_positions and last_price is not None: # Убеждаемся, что данные непусты
+@@ -86,1 +86,1 @@
+-        'exit_price': last_price, # Close at the last known price
++        'exit_price': last_price, # Закрытие по последней известной цене
+@@ -93,1 +93,1 @@
+-        'status': 'force_closed' # Add a status for these trades
++        'status': 'force_closed' # Статус принудительного закрытия позиции
+@@ -113,1 +113,1 @@
+-from .logging_config import configure_root # This will be adjusted by hand later if patch fails
++from .logging_config import configure_root # Настройка корневого логгера
+@@ -119,1 +119,1 @@
+-# Basic logging configuration
++# Базовая конфигурация логирования
+@@ -153,1 +153,1 @@
+-        # Standardize 'timestamp' column to UTC.
++        # Стандартизация меток времени в UTC.
+@@ -159,1 +159,1 @@
+-        # Drop invalid rows
++        # Удаляем некорректные строки
+@@ -162,1 +162,1 @@
+-        df = df_signals.dropna(subset=['timestamp']) # Changed df_signals to df
++        df = df_signals.dropna(subset=['timestamp']) # Удаляем строки с некорректными метками времени
+@@ -169,1 +169,1 @@
+-        df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True)
++        df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True) # Оставляем только нужные столбцы и сортируем
+@@ -245,1 +245,1 @@
+-# --- START OF REPLACEMENT FUNCTION ---
++# --- Начало функции run_backtest ---
+@@ -247,1 +247,1 @@
+-    # deep-copy → подстановка плейс-холдеров не изменит исходный dict
++    # Глубокое копирование: замена плейсхолдеров не изменит исходный словарь
+@@ -250,1 +250,1 @@
+-    #  Neutral “ideal-conditions” run: отключаем ЛЮБЫЕ фильтры на
++    #  Нейтральный «идеальный» прогон: отключаем любые фильтры на
