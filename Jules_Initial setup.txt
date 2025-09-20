@@ -1,17 +1,4 @@
 set -euo pipefail
-
-# 1) Виртуальное окружение
-python3 -m venv .venv
-. .venv/bin/activate
-
-# 2) Обновить pip
-python -m pip install --upgrade pip
-
-# 3) Установить зависимости проекта (строго из requirements.txt)
-python -m pip install --prefer-binary -r requirements.txt
-
-# 4) Установить сам пакет в editable-режиме, чтобы import работал из src/
+bash setup_env.sh --strict
 python -m pip install -e .
-
-# 5) Экспорт пути к исходникам пакета
 export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
