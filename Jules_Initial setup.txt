@@ -15,10 +15,3 @@ python -m pip install -e .
 
 # 5) Экспорт пути к исходникам пакета
 export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
-
-# 6) Артефакты окружения и тестов
-mkdir -p reports
-python -m pip freeze > reports/pip-freeze.txt
-
-# 7) Быстрая валидация окружения перед Snapshot
-pytest -q --maxfail=1 --disable-warnings
