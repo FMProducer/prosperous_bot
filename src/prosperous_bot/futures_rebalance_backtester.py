@@ -211,16 +211,14 @@ def calculate_portfolio_value(usdt_balance, btc_spot_qty,
     return total_value
 
 def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, market_price, 
-                 commission_usdt, slippage_usdt, pnl_net_quote, trades_list, realized_pnl_spot_usdt=0.0):
-    """
-    Записывает симулированную сделку.
-    - quantity_asset: Для BTC_SPOT, это BTC. Для кредитного плеча, это значение USDT, которое выделяется/высвобождается.
-    - quantity_quote: Стоимость сделки в USDT *до* комиссии и проскальзывания.
-    - market_price: Цена BTC на момент принятия решения о сделке.
-    - commission_usdt: Уплаченная комиссия в USDT.
-    - slippage_usdt: Стоимость проскальзывания в USDT.
-    - pnl_net_quote: Чистый PnL этой сделки в USDT (в основном для SPOT, после затрат).
-    - realized_pnl_spot_usdt: Часть pnl_net_quote, которая является реализованной прибылью/убытком по SPOT.
+                 commission_usdt, slippage_usdt, pnl_net_quote, trades_list):
+    """Записывает информацию о сделке, симулированной в процессе бэктеста.
+    - quantity_asset: количество базового актива (например, BTC) в сделке.
+    - quantity_quote: стоимость сделки в USDT до учета комиссий и проскальзывания.
+    - market_price: цена актива в момент совершения сделки.
+    - commission_usdt: комиссия за сделку в USDT.
+    - slippage_usdt: стоимость проскальзывания в USDT.
+    - pnl_net_quote: чистая прибыль/убыток по сделке в USDT после учета комиссий и проскальзывания.
     """
     trade = {
         "timestamp_open": timestamp, 
@@ -233,14 +231,14 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
         "exit_price": market_price, 
         "commission_quote": commission_usdt,
         "slippage_quote": slippage_usdt, 
-        "pnl_gross_quote": realized_pnl_spot_usdt, 
-        "pnl_net_quote": realized_pnl_spot_usdt - commission_usdt, 
+        "pnl_gross_quote": pnl_net_quote, 
+        "pnl_net_quote": pnl_net_quote - commission_usdt, 
     }
     trades_list.append(trade)
     logging.info(
         f"  СДЕЛКА: {action} {quantity_asset:.6f} {asset_type} @ MktPx {market_price:.2f}, "
         f"Стоимость: {quantity_quote:.2f}, Комиссия: {commission_usdt:.2f}, Стоимость проскальзывания: {slippage_usdt:.2f}, "
-        f"Чистый PnL сделки: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
+        f"Чистый PnL сделки: {(pnl_net_quote - commission_usdt):.2f}"
     )
 
 # --- Начало функции run_backtest ---
@@ -845,8 +843,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 # Передаем action_dir (BUY/SELL) как 'action' для записи о сделке
                 record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
                              abs_usdt_value_of_trade, current_price, commission_usdt,
-                             slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list,
-                             realized_pnl_spot_usdt=realized_pnl_this_spot_trade)
+                             slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list)
             
             # ... (логирование портфеля после ребалансировки) ...
 
