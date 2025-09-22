@@ -10,6 +10,9 @@ import numpy as np
 import logging
 
 def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_positions=False):
+    """
+    Симулирует ребалансировку на основе набора ордеров и вычисляет PnL.
+    """
     open_positions = {}
     trade_log = []
     last_price = None # Последняя цена
@@ -80,9 +83,9 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_posi
                 else: # Открытие новой шорт-позиции
                     open_positions[key] = {'entry_price': price, 'qty': qty, 'direction': -1}
 
-    # Force-closure of any remaining open positions at the end of the data
+    # Принудительное закрытие всех оставшихся открытых позиций в конце исторических данных
     if force_close_open_positions and open_positions and last_price is not None: # Убеждаемся, что данные непусты
-        for key, pos in list(open_positions.items()): # Use list to allow modification
+        for key, pos in list(open_positions.items()): # Используем list для возможности модификации
             pnl = (last_price - pos['entry_price']) * pos['qty'] * pos['direction'] * leverage
             trade_log.append({
                 'asset_key': key,
@@ -93,12 +96,12 @@ def simulate_rebalance(data, orders_by_step, leverage=5.0, force_close_open_posi
                 'leverage': leverage,
                 'status': 'force_closed' # Статус принудительного закрытия позиции
             })
-            del open_positions[key] # Remove position after logging PnL
+            del open_positions[key] # Удаляем позицию после логирования PnL
 
     logging.info(f"[simulate_rebalance] Завершено. Сделок: {len(trade_log)}, Активных позиций: {len(open_positions)}")
     return trade_log
 
-# --- Monkeypatch builtins.all for unit‑tests expecting all(bool) ---
+# --- Monkeypatch для builtins.all для юнит-тестов, ожидающих all(bool) ---
 import builtins as _bi
 if not hasattr(_bi.all, "_bool_patch"):
     _orig_all = _bi.all
@@ -119,7 +122,7 @@ import logging
 
 # Базовая конфигурация логирования
 
-# ── Helper: substitute {main_asset_symbol} recursively ──────────────
+# ── Вспомогательная функция: рекурсивно подставляет {main_asset_symbol} ──────────────
 def _subst_symbol(obj, sym):
     if isinstance(obj, dict):
         return { _subst_symbol(k, sym): _subst_symbol(v, sym) for k, v in obj.items() }
@@ -135,16 +138,16 @@ def _subst_symbol(obj, sym):
 
 
 def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
-    """Loads and processes signal data from a CSV file."""
-    logging.info(f"Attempting to load signal data from {signal_csv_path}...")
+    """Загружает и обрабатывает данные сигналов из CSV-файла."""
+    logging.info(f"Попытка загрузки данных сигналов из {signal_csv_path}...")
     try:
         df_signals = pd.read_csv(signal_csv_path)
         if df_signals.empty:
-            logging.warning(f"Signal file found at {signal_csv_path} but it is empty.")
+            logging.warning(f"Файл сигналов найден по пути {signal_csv_path}, но он пуст.")
             return None
 
         if 'timestamp' not in df_signals.columns or 'signal' not in df_signals.columns:
-            logging.error(f"Signal file {signal_csv_path} must contain 'timestamp' and 'signal' columns.")
+            logging.error(f"Файл сигналов {signal_csv_path} должен содержать столбцы 'timestamp' и 'signal'.")
             return None
 
         df_signals['signal'] = df_signals['signal'].astype(str).str.upper().str.strip()
@@ -153,74 +156,71 @@ def load_signal_data(signal_csv_path: str) -> pd.DataFrame | None:
 
         # Стандартизация меток времени в UTC.
         if df_signals['timestamp'].dt.tz is None:
-            logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is tz-naive. Localizing to UTC.")
+            logging.info(f"Колонка 'timestamp' в файле сигналов {signal_csv_path} не имеет часового пояса. Локализуем в UTC.")
             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_localize('UTC')
         else:
-            logging.info(f"Signal data 'timestamp' column from {signal_csv_path} is already tz-aware ({df_signals['timestamp'].dt.tz}). Converting to UTC.")
+            logging.info(f"Колонка 'timestamp' в файле сигналов {signal_csv_path} уже имеет часовой пояс ({df_signals['timestamp'].dt.tz}). Конвертируем в UTC.")
             df_signals['timestamp'] = df_signals['timestamp'].dt.tz_convert('UTC')
         # Удаляем некорректные строки
         bad_rows = df_signals['timestamp'].isna().sum()
         if bad_rows:
-            logging.warning(f'Removed {bad_rows} rows with unparsable timestamps from {signal_csv_path}')
+            logging.warning(f'Удалено {bad_rows} строк с непарсируемыми метками времени из {signal_csv_path}')
 
         df = df_signals.dropna(subset=['timestamp']) # Удаляем строки с некорректными метками времени
         if df.empty:
-            logging.error("Error loading or processing signal data from %s: empty after clean", signal_csv_path)
+            logging.error("Ошибка загрузки или обработки данных сигналов из %s: пустой файл после очистки", signal_csv_path)
             return None
 
-        df_signals = df # Assign df back to df_signals if further processing uses df_signals
-        # Keep only relevant columns and sort
+        df_signals = df # Присваиваем df обратно df_signals, если дальнейшая обработка использует df_signals
+        # Оставляем только релевантные столбцы и сортируем
         df_signals = df_signals[['timestamp', 'signal']].sort_values(by='timestamp', ascending=True) # Оставляем только нужные столбцы и сортируем
 
-        logging.info(f"Signal data loaded and processed successfully from {signal_csv_path}. Shape: {df_signals.shape}")
+        logging.info(f"Данные сигналов успешно загружены и обработаны из {signal_csv_path}. Размер: {df_signals.shape}")
         return df_signals
 
     except FileNotFoundError:
-        logging.warning(f"Signal data file not found at {signal_csv_path}.")
+        logging.warning(f"Файл данных сигналов не найден по пути {signal_csv_path}.")
         return None
     except Exception as e:
-        logging.error(f"Error loading or processing signal data from {signal_csv_path}: {e}", exc_info=True)
+        logging.error(f"Ошибка загрузки или обработки данных сигналов из {signal_csv_path}: {e}", exc_info=True)
         return None
 
 
 def load_data(csv_path):
-    """Loads historical market data from CSV."""
-    logging.info(f"Loading data from {csv_path}...")
+    """Загружает исторические рыночные данные из CSV-файла."""
+    logging.info(f"Загрузка данных из {csv_path}...")
     try:
         df = pd.read_csv(csv_path)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
-        logging.info(f"Data loaded successfully. Shape: {df.shape}")
+        logging.info(f"Данные успешно загружены. Размер: {df.shape}")
         return df
     except FileNotFoundError:
-        logging.error(f"Error: Data file not found at {csv_path}")
+        logging.error(f"Ошибка: Файл данных не найден по пути {csv_path}")
         return None
     except Exception as e:
-        logging.error(f"Error loading data: {e}")
+        logging.error(f"Ошибка загрузки данных: {e}")
         return None
 
 def calculate_portfolio_value(usdt_balance, btc_spot_qty, 
                               btc_long_value_usdt, btc_short_value_usdt, 
                               current_btc_price):
+    """Вычисляет текущую стоимость портфеля в USDT (без учета спотового актива).
+    Для этого суммируется баланс USDT и значения фьючерсных позиций.
     """
-    Calculates the current total portfolio value in USDT.
-    For Part 1, btc_long_value_usdt and btc_short_value_usdt are the current market values
-    of the capital allocated to these leveraged strategies, including their P&L.
-    """
-    value_spot_btc = btc_spot_qty * current_btc_price
-    total_value = usdt_balance + value_spot_btc + btc_long_value_usdt + btc_short_value_usdt
+    total_value = usdt_balance + btc_long_value_usdt + btc_short_value_usdt
     return total_value
 
 def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, market_price, 
                  commission_usdt, slippage_usdt, pnl_net_quote, trades_list, realized_pnl_spot_usdt=0.0):
     """
-    Records a simulated trade.
-    - quantity_asset: For BTC_SPOT, this is BTC. For leveraged, this is the USDT value being allocated/deallocated.
-    - quantity_quote: USDT value of the trade *before* commission & slippage.
-    - market_price: Price of BTC at the time of trade decision.
-    - commission_usdt: Commission paid in USDT.
-    - slippage_usdt: Cost of slippage in USDT.
-    - pnl_net_quote: Net PnL of this trade in USDT (primarily for SPOT, after costs).
-    - realized_pnl_spot_usdt: The portion of pnl_net_quote that is from realized SPOT gains/losses.
+    Записывает симулированную сделку.
+    - quantity_asset: Для BTC_SPOT, это BTC. Для кредитного плеча, это значение USDT, которое выделяется/высвобождается.
+    - quantity_quote: Стоимость сделки в USDT *до* комиссии и проскальзывания.
+    - market_price: Цена BTC на момент принятия решения о сделке.
+    - commission_usdt: Уплаченная комиссия в USDT.
+    - slippage_usdt: Стоимость проскальзывания в USDT.
+    - pnl_net_quote: Чистый PnL этой сделки в USDT (в основном для SPOT, после затрат).
+    - realized_pnl_spot_usdt: Часть pnl_net_quote, которая является реализованной прибылью/убытком по SPOT.
     """
     trade = {
         "timestamp_open": timestamp, 
@@ -238,9 +238,9 @@ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, 
     }
     trades_list.append(trade)
     logging.info(
-        f"  TRADE: {action} {quantity_asset:.6f} {asset_type} @ MktPx {market_price:.2f}, "
-        f"Val: {quantity_quote:.2f}, Comm: {commission_usdt:.2f}, SlipCost: {slippage_usdt:.2f}, "
-        f"NetPnL_Trade: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
+        f"  СДЕЛКА: {action} {quantity_asset:.6f} {asset_type} @ MktPx {market_price:.2f}, "
+        f"Стоимость: {quantity_quote:.2f}, Комиссия: {commission_usdt:.2f}, Стоимость проскальзывания: {slippage_usdt:.2f}, "
+        f"Чистый PnL сделки: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
     )
 
 # --- Начало функции run_backtest ---
@@ -262,23 +262,23 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     leverage = float(params.get("futures_leverage", 5.0))
     initial_portfolio_value_usdt = float(params.get("initial_portfolio_value_usdt", 10000.0))
     if leverage <= 0:
-        logging.warning("Invalid 'futures_leverage' <= 0 found in config. Using fallback leverage = 1e-9.")
+        logging.warning("Недопустимое значение 'futures_leverage' <= 0 найдено в конфигурации. Используется резервное значение leverage = 1e-9.")
         leverage = 1e-9
-    target_weights_normal = params.get('target_weights_normal', {}) 
+    target_weights_normal = params.get('target_weights_normal', {})
     if not target_weights_normal:
         target_weights_normal = params.get('target_weights', {})
         if target_weights_normal:
-            logging.warning("'target_weights_normal' not found in config, falling back to 'target_weights'. "
-                            "Please update your config to use 'target_weights_normal'.")
+            logging.warning("'target_weights_normal' не найден в конфигурации, используется 'target_weights'. "
+                            "Пожалуйста, обновите вашу конфигурацию, чтобы использовать 'target_weights_normal'.")
         else:
-            logging.error("FATAL: 'target_weights_normal' (or legacy 'target_weights') is missing in config. Cannot proceed.")
-            return {"status": "Configuration error: Target weights missing."}
+            logging.error("КРИТИЧЕСКАЯ ОШИБКА: 'target_weights_normal' (или устаревший 'target_weights') отсутствует в конфигурации. Продолжение невозможно.")
+            return {"status": "Ошибка конфигурации: Отсутствуют целевые веса."}
 
     rebalance_threshold = params['rebalance_threshold']
     initial_portfolio_value_usdt = params.get('initial_portfolio_value_usdt', 10000)
     if 'initial_portfolio_value_usdt' not in params:
-        logging.warning("Parameter 'initial_portfolio_value_usdt' not found in config. Using default value: 10000 USDT.")
-    # ---- Commission helper -------------------------------------------------
+        logging.warning("Параметр 'initial_portfolio_value_usdt' не найден в конфигурации. Используется значение по умолчанию: 10000 USDT.")
+    # ---- Вспомогательная функция для комиссий -------------------------------------------------
     def _get_commission_rate(p: dict, maker: bool = False) -> float:
         keys = (
             ('commission_maker', 'maker_commission_rate') if maker
@@ -287,7 +287,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         for k in keys:
             if k in p:
                 return float(p[k])
-        return 0.0  # sensible default for unit-tests
+        return 0.0  # разумное значение по умолчанию для юнит-тестов
 
     maker_commission_rate = _get_commission_rate(params, maker=True)
     taker_commission_rate = _get_commission_rate(params, maker=False)
@@ -303,7 +303,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     main_asset_symbol = params.get('main_asset_symbol', 'BTC')
     if 'main_asset_symbol' not in params:
-        logging.warning(f"Parameter 'main_asset_symbol' not found in config. Using default value: '{main_asset_symbol}'.")
+        logging.warning(f"Параметр 'main_asset_symbol' не найден в конфигурации. Используется значение по умолчанию: '{main_asset_symbol}'.")
 
     spot_asset_key = f"{main_asset_symbol}_SPOT"
     long_asset_key = f"{main_asset_symbol}_PERP_LONG"
@@ -311,12 +311,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     apply_signal_logic = params.get('apply_signal_logic', True)
     if 'apply_signal_logic' not in params:
-        logging.warning("'apply_signal_logic' not found in config's backtest_settings. Defaulting to True (signal logic will be applied).")
+        logging.warning("'apply_signal_logic' не найден в backtest_settings конфигурации. По умолчанию используется True (логика сигналов будет применяться).")
 
     if apply_signal_logic:
-        logging.info("Signal-based trading logic is ENABLED.")
+        logging.info("Торговая логика на основе сигналов ВКЛЮЧЕНА.")
     else:
-        logging.info("Signal-based trading logic is DISABLED. Rebalancing will be purely weight-based.")
+        logging.info("Торговая логика на основе сигналов ВЫКЛЮЧЕНА. Ребалансировка будет осуществляться исключительно на основе весов.")
 
     current_commission_rate = maker_commission_rate if use_maker_fees_in_backtest else taker_commission_rate
     
@@ -331,26 +331,26 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
         if use_fixed_report_path:
             output_dir = report_path_prefix
-            if not output_dir: # If prefix was empty or just "/"
-                output_dir = "reports" # Default to "reports" to be safe for tests
-            logging.info(f"Using fixed report path: {output_dir} (due to 'use_fixed_report_path' setting).")
+            if not output_dir: # Если префикс пустой или просто "/"
+                output_dir = "reports" # Значение по умолчанию "reports" для безопасности тестов
+            logging.info(f"Используется фиксированный путь для отчетов: {output_dir} (из-за настройки 'use_fixed_report_path').")
         else:
-            # Existing logic for timestamped/optimizer paths
+            # Существующая логика для путей с метками времени/оптимизатора
             if is_optimizer_call and trial_id_for_reports is not None:
                 output_dir = os.path.join(report_path_prefix, "optimizer_trials", f"trial_{trial_id_for_reports}_{timestamp_str}")
             else:
                 output_dir = os.path.join(report_path_prefix, f"backtest_{timestamp_str}")
 
-        os.makedirs(output_dir, exist_ok=True) # Ensure this is after output_dir is fully determined
-        logging.info(f"Output reports for this run will be saved to: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True) # Убеждаемся, что это происходит после полного определения output_dir
+        logging.info(f"Отчеты для этого запуска будут сохранены в: {output_dir}")
 
-        # The 'actual_reports_dir' logic from previous commit then correctly uses this 'output_dir'.
+        # Логика 'actual_reports_dir' из предыдущего коммита затем корректно использует этот 'output_dir'.
         if output_dir:
             actual_reports_dir = output_dir
         else:
-            # This case should be less likely now if generate_reports is True,
-            # as output_dir will be set by either fixed or timestamped logic.
-            # However, keeping a fallback for robustness.
+            # Этот случай сейчас менее вероятен, если generate_reports равно True,
+            # так как output_dir будет установлен либо фиксированной, либо временной логикой.
+            # Однако, сохраняем запасной вариант для надежности.
             actual_reports_dir = "reports"
 
         os.makedirs(actual_reports_dir, exist_ok=True)
@@ -369,12 +369,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             file_handler.setFormatter(formatter)
             root_logger.addHandler(file_handler)
     else:
-        logging.info("Report generation is OFF. No reports will be saved.")
-        # output_dir remains None as it's not used when reports are off.
+        logging.info("Генерация отчетов ВЫКЛЮЧЕНА. Отчеты не будут сохранены.")
+        # output_dir остается None, так как отчеты выключены.
 
-    df_market_original = load_data(data_path) # Keep original for plotting price
+    df_market_original = load_data(data_path) # Сохраняем оригинал для построения графика цены
     if df_market_original is None or df_market_original.empty:
-        logging.error("Market data is empty or could not be loaded. Cannot run backtest.")
+        logging.error("Рыночные данные пусты или не могут быть загружены. Невозможно запустить бэктест.")
         zeros = {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio",
                                   "max_drawdown_percent", "profit_factor", "win_rate_percent",
                                   "avg_trade_duration_candles", "avg_profit_per_trade_percent",
@@ -382,40 +382,40 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                                   "longest_winning_streak", "longest_losing_streak", "max_portfolio_value_usdt",
                                   "min_portfolio_value_usdt", "annual_return_percent", "calmar_ratio",
                                   "kelly_criterion", "annualized_volatility_percent", "value_at_risk_var_percent",
-                                  "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Added more zeroed metrics
+                                  "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Добавлены дополнительные обнуленные метрики
         zeros.update({
-            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Corrected
-            "total_net_pnl_usdt": 0.0, # Corrected
-            "total_net_pnl_percent": 0.0, # Corrected
+            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Исправлено
+            "total_net_pnl_usdt": 0.0, # Исправлено
+            "total_net_pnl_percent": 0.0, # Исправлено
             "total_trades": 0,
-            "output_dir": None, # output_dir determined later if reports are generated
-            "status": "Market data empty" # Corrected status message
+            "output_dir": None, # output_dir определяется позже, если генерируются отчеты
+            "status": "Рыночные данные пусты" # Исправленное сообщение о статусе
         })
         return zeros
     
-    df_market = df_market_original.copy() # Work with a copy for potential modifications
+    df_market = df_market_original.copy() # Работаем с копией для возможных изменений
 
     if df_market['timestamp'].dt.tz is None:
-        logging.info("Market data 'timestamp' column is tz-naive. Localizing to UTC for consistency.")
+        logging.info("Колонка 'timestamp' в рыночных данных не имеет часового пояса. Локализуем в UTC для согласованности.")
         df_market['timestamp'] = df_market['timestamp'].dt.tz_localize('UTC')
     else:
-        logging.info(f"Market data 'timestamp' column is already tz-aware ({df_market['timestamp'].dt.tz}). Converting to UTC for consistency.")
+        logging.info(f"Колонка 'timestamp' в рыночных данных уже имеет часовой пояс ({df_market['timestamp'].dt.tz}). Конвертируем в UTC для согласованности.")
         df_market['timestamp'] = df_market['timestamp'].dt.tz_convert('UTC')
 
-    # ── auto-range: если "auto" или дата вне диапазона файла ────────────
+    # ── авто-range: если "auto" или дата вне диапазона файла ────────────
     min_ts, max_ts = df_market['timestamp'].min(), df_market['timestamp'].max()
-    dr = params.setdefault("date_range", {}) # Get or create 'date_range' dict
+    dr = params.setdefault("date_range", {}) # Получаем или создаем словарь 'date_range'
     for edge, value in (("start_date", dr.get("start_date")), ("end_date", dr.get("end_date"))):
         if value in (None, "auto"):
             dr[edge] = (min_ts if edge == "start_date" else max_ts).isoformat()
-            logging.info(f"Date range: '{edge}' set to '{dr[edge]}' (auto from data).") # Added logging
-        else:   # дата в конфиге → убеждаемся, что попадает в файл
+            logging.info(f"Диапазон дат: '{edge}' установлен в '{dr[edge]}' (автоматически из данных).") # Добавлено логирование
+        else:   # дата в конфиге → убеждаемся, что она попадает в файл
             dt = pd.to_datetime(value, utc=True, errors="coerce")
             if dt is pd.NaT or dt < min_ts or dt > max_ts:
-                original_value = value # Store original value for logging
+                original_value = value # Сохраняем исходное значение для логирования
                 dr[edge] = (min_ts if edge == "start_date" else max_ts).isoformat()
-                logging.warning(f"Date range: '{edge}' was '{original_value}', adjusted to '{dr[edge]}' (out of data range or invalid).") # Enhanced logging
-            # else: # If date is valid and within range, keep it as is from config. No change needed to dr[edge].
+                logging.warning(f"Диапазон дат: '{edge}' был '{original_value}', скорректирован до '{dr[edge]}' (вне диапазона данных или недействителен).") # Улучшенное логирование
+            # else: # Если дата действительна и находится в диапазоне, оставляем ее как есть из конфигурации. Изменений в dr[edge] не требуется.
 
     df_market = df_market.sort_values(by='timestamp', ascending=True)
 
@@ -425,7 +425,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         df_signals = load_signal_data(signals_csv_path)
 
     if df_signals is not None and not df_signals.empty:
-        logging.info("Merging signal data with market data using merge_asof (backward)...")
+        logging.info("Объединение данных сигналов с рыночными данными с помощью merge_asof (назад)...")
         # merge_asof требует сортировку по ключу
         df_market = df_market.sort_values('timestamp')
         df_signals = df_signals.sort_values('timestamp')
@@ -434,10 +434,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             on='timestamp', direction='backward'
         )
         df_market['signal'] = df_market['signal'].ffill()
-        logging.info("Signal data merged. 'signal' column is now available in market data.")
-        logging.info(f"Signal distribution in market data: \n{df_market['signal'].value_counts(dropna=False)}")
+        logging.info("Данные сигналов объединены. Колонка 'signal' теперь доступна в рыночных данных.")
+        logging.info(f"Распределение сигналов в рыночных данных: \n{df_market['signal'].value_counts(dropna=False)}")
     else:
-        logging.warning("No signal data loaded or signals file was empty/invalid. Proceeding with 'NEUTRAL' signals for all timestamps.")
+        logging.warning("Данные сигналов не загружены или файл сигналов пуст/недействителен. Продолжаем с сигналами 'NEUTRAL' для всех временных меток.")
         df_market['signal'] = 'NEUTRAL'
 
     if "date_range" in params and isinstance(params["date_range"], dict):
@@ -450,8 +450,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 else:
                     start_date_dt = start_date_dt.tz_convert('UTC')
                 df_market = df_market[df_market['timestamp'] >= start_date_dt]
-            except Exception as e: # More general exception
-                logging.error(f"Error processing start_date '{start_date_str}': {e}. Skipping start date filter.")
+            except Exception as e: # Более общее исключение
+                logging.error(f"Ошибка обработки start_date '{start_date_str}': {e}. Пропускаем фильтр по начальной дате.")
 
         end_date_str = params["date_range"].get("end_date")
         if end_date_str:
@@ -462,11 +462,11 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 else:
                     end_date_dt = end_date_dt.tz_convert('UTC')
                 df_market = df_market[df_market['timestamp'] <= end_date_dt]
-            except Exception as e: # More general exception
-                logging.error(f"Error processing end_date '{end_date_str}': {e}. Skipping end date filter.")
+            except Exception as e: # Более общее исключение
+                logging.error(f"Ошибка обработки end_date '{end_date_str}': {e}. Пропускаем фильтр по конечной дате.")
     
-    if df_market.empty:                     # graceful-fail for unit-tests
-        logging.error("Market data is empty after applying date range filters. Returning zero-metrics.")
+    if df_market.empty:                     # корректное завершение для юнит-тестов
+        logging.error("Рыночные данные пусты после применения фильтров диапазона дат. Возвращаются нулевые метрики.")
         return {
             "final_portfolio_value_usdt": initial_portfolio_value_usdt,
             "total_net_pnl_usdt": 0.0,
@@ -478,7 +478,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             "profit_factor": 0.0,
             "win_rate_percent": 0.0,
             "output_dir": output_dir,
-            "status": "Market data empty"
+            "status": "Рыночные данные пусты"
         }
 
     trades_list = []
@@ -494,19 +494,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     blocked_trades_list = []
     orders_by_step = {}
 
-    logging.info(f"Starting backtest for asset: {main_asset_symbol} with initial portfolio: {portfolio['usdt_balance']:.2f} USDT.")
-    logging.info(f"Normal Target Weights ({main_asset_symbol}): {target_weights_normal}")
-    logging.info(f"Safe Mode Target Weights ({main_asset_symbol}): {safe_mode_target_weights}")
-    logging.info(f"Rebalance Threshold: {rebalance_threshold*100:.2f}%")
-    logging.info(f"Min Rebalance Interval (minutes): {min_rebalance_interval_minutes}")
+    logging.info(f"Запуск бэктеста для актива: {main_asset_symbol} с начальным портфелем: {portfolio['usdt_balance']:.2f} USDT.")
+    logging.info(f"Нормальные целевые веса ({main_asset_symbol}): {target_weights_normal}")
+    logging.info(f"Целевые веса безопасного режима ({main_asset_symbol}): {safe_mode_target_weights}")
+    logging.info(f"Порог ребалансировки: {rebalance_threshold*100:.2f}%")
+    logging.info(f"Минимальный интервал ребалансировки (минуты): {min_rebalance_interval_minutes}")
 
     if df_market.empty:
-        logging.error("Market data is empty before starting main loop. Cannot run backtest.")
-        # Return structure consistent with other error returns
+        logging.error("Рыночные данные пусты перед началом основного цикла. Невозможно запустить бэктест.")
+        # Возвращаемая структура соответствует другим возвратам ошибок
         return {
             "final_portfolio_value_usdt": 0, "total_net_pnl_usdt": -initial_portfolio_value_usdt,
             "total_net_pnl_percent": -100.0, "total_trades": 0, "output_dir": output_dir,
-            "status": "Market data empty before loop"
+            "status": "Рыночные данные пусты перед циклом"
         }
 
     portfolio['prev_btc_price'] = df_market['close'].iloc[0]
@@ -523,9 +523,9 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             candle_movement_percent = (current_high_price - current_low_price) / current_open_price
             if candle_movement_percent > circuit_breaker_threshold_percent:
                 portfolio['num_circuit_breaker_triggers'] += 1
-                logging.warning(f"CIRCUIT BREAKER TRIGGERED at {current_timestamp} for {main_asset_symbol}: "
-                                f"Movement {candle_movement_percent*100:.2f}% > threshold {circuit_breaker_threshold_percent*100:.2f}%. "
-                                f"Skipping rebalancing for this candle.")
+                logging.warning(f"АВТОМАТИЧЕСКИЙ ВЫКЛЮЧАТЕЛЬ СРАБОТАЛ в {current_timestamp} для {main_asset_symbol}: "
+                                f"Движение {candle_movement_percent*100:.2f}% > порога {circuit_breaker_threshold_percent*100:.2f}%. "
+                                f"Пропускаем ребалансировку для этой свечи.")
                 if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
                     price_change_ratio = current_price / portfolio['prev_btc_price']
                     long_usdt = portfolio['btc_long_value_usdt']
@@ -538,17 +538,17 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_price)
                 equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value_cb})
                 if total_portfolio_value_cb <= 0:
-                    logging.warning(f"Portfolio value is {total_portfolio_value_cb:.2f} at {current_timestamp} after CB for {main_asset_symbol}. Stopping backtest.")
+                    logging.warning(f"Стоимость портфеля составляет {total_portfolio_value_cb:.2f} в {current_timestamp} после срабатывания АВ для {main_asset_symbol}. Остановка бэктеста.")
                     final_val_cb = total_portfolio_value_cb if total_portfolio_value_cb is not None else 0
                     pnl_usdt_cb = final_val_cb - initial_portfolio_value_usdt
                     pnl_pct_cb = (pnl_usdt_cb / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
-                    metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Initialize all expected keys
+                    metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Инициализируем все ожидаемые ключи
                     metrics_cb_fail.update({
                         "final_portfolio_value_usdt": final_val_cb, "total_net_pnl_usdt": pnl_usdt_cb,
                         "total_net_pnl_percent": pnl_pct_cb, "total_trades": len(trades_list),
-                        "max_drawdown_percent": -100.0, # Or calculate actual if possible
-                        "output_dir": output_dir, "status": "Portfolio wiped out post-CB",
-                        **portfolio # Spread existing portfolio state
+                        "max_drawdown_percent": -100.0, # Или вычисляем фактическое значение, если возможно
+                        "output_dir": output_dir, "status": "Портфель обнулен после АВ",
+                        **portfolio # Распаковываем существующее состояние портфеля
                     })
                     return metrics_cb_fail
                 portfolio['prev_btc_price'] = current_price
@@ -556,20 +556,20 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     portfolio['time_steps_in_safe_mode'] +=1
                 continue 
         elif circuit_breaker_threshold_percent > 0 and current_open_price <= 0:
-             logging.warning(f"Candle open price is 0 or invalid at {current_timestamp} for {main_asset_symbol}, cannot calculate movement for circuit breaker.")
+             logging.warning(f"Цена открытия свечи равна 0 или недействительна в {current_timestamp} для {main_asset_symbol}, невозможно рассчитать движение для автоматического выключателя.")
 
         if portfolio['prev_btc_price'] is not None and portfolio['prev_btc_price'] > 0:
             price_change_ratio = current_price / portfolio['prev_btc_price']
 
-            # Store base values before PnL calculation
+            # Сохраняем базовые значения перед расчетом PnL
             base_long_value = portfolio['btc_long_value_usdt']
             base_short_value = portfolio['btc_short_value_usdt']
 
-            # Calculate PnL for long and short positions independently
+            # Рассчитываем PnL для длинных и коротких позиций независимо
             long_pnl = base_long_value * leverage * (price_change_ratio - 1)
             short_pnl = base_short_value * leverage * (1 - price_change_ratio)
 
-            # Update portfolio with calculated PnL
+            # Обновляем портфель с рассчитанным PnL
             portfolio['btc_long_value_usdt'] += long_pnl
             portfolio['btc_short_value_usdt'] += short_pnl
         
@@ -580,19 +580,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         nav = total_portfolio_value
         used_margin_usdt = 0
         if nav > 0 and params.get("safe_mode_config", {}).get("enabled", False):
-            # --- CORRECTED MARGIN USAGE CALCULATION FOR SAFE MODE ---
-            # Correct NAV is previous NAV + PnL of current step
+            # --- ИСПРАВЛЕННЫЙ РАСЧЕТ ИСПОЛЬЗОВАНИЯ МАРЖИ ДЛЯ БЕЗОПАСНОГО РЕЖИМА ---
+            # Корректный NAV - это предыдущий NAV + PnL текущего шага
             previous_nav = equity_over_time[-1]['portfolio_value_usdt'] if equity_over_time else initial_portfolio_value_usdt
             current_step_pnl = (long_pnl + short_pnl) if 'long_pnl' in locals() and 'short_pnl' in locals() else 0.0
             nav_for_margin_calc = previous_nav + current_step_pnl
 
-            # Correct used margin is based on position size BEFORE PnL was added
+            # Корректная использованная маржа основана на размере позиции ДО добавления PnL
             base_long = base_long_value if 'base_long_value' in locals() else portfolio['btc_long_value_usdt']
             base_short = base_short_value if 'base_short_value' in locals() else portfolio['btc_short_value_usdt']
             used_margin_for_margin_calc = (abs(base_long) + abs(base_short)) / leverage
 
             margin_usage_ratio = used_margin_for_margin_calc / nav_for_margin_calc if nav_for_margin_calc > 0 else 0.0
-            # --- END OF CORRECTION ---
+            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         else:
             margin_usage_ratio = 0.0 
 
@@ -604,13 +604,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if margin_usage_ratio > margin_usage_safe_mode_enter_threshold:
                     portfolio['current_operational_mode'] = 'SAFE_MODE'
                     portfolio['num_safe_mode_entries'] += 1
-                    logging.info(f"ENTERING SAFE MODE at {current_timestamp} due to margin usage: {margin_usage_ratio*100:.2f}% "
-                                 f"(Threshold: {margin_usage_safe_mode_enter_threshold*100:.2f}%)")
+                    logging.info(f"ВХОД В БЕЗОПАСНЫЙ РЕЖИМ в {current_timestamp} из-за использования маржи: {margin_usage_ratio*100:.2f}% "
+                                 f"(Порог: {margin_usage_safe_mode_enter_threshold*100:.2f}%)")
             elif portfolio['current_operational_mode'] == 'SAFE_MODE':
                 if margin_usage_ratio < margin_usage_safe_mode_exit_threshold:
                     portfolio['current_operational_mode'] = 'NORMAL_MODE'
-                    logging.info(f"EXITING SAFE MODE at {current_timestamp}, margin usage: {margin_usage_ratio*100:.2f}% "
-                                 f"(Threshold: {margin_usage_safe_mode_exit_threshold*100:.2f}%)")
+                    logging.info(f"ВЫХОД ИЗ БЕЗОПАСНОГО РЕЖИМА в {current_timestamp}, использование маржи: {margin_usage_ratio*100:.2f}% "
+                                 f"(Порог: {margin_usage_safe_mode_exit_threshold*100:.2f}%)")
             
             if portfolio['current_operational_mode'] == 'SAFE_MODE':
                 active_target_weights = safe_mode_target_weights
@@ -624,18 +624,18 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value})
 
         if total_portfolio_value <= 0: 
-            logging.warning(f"Portfolio value is {total_portfolio_value:.2f} at {current_timestamp} before rebalance. Stopping backtest.")
+            logging.warning(f"Стоимость портфеля составляет {total_portfolio_value:.2f} в {current_timestamp} перед ребалансировкой. Остановка бэктеста.")
             if not equity_over_time or equity_over_time[-1]['timestamp'] != current_timestamp:
                  equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value})
             final_val = total_portfolio_value if total_portfolio_value is not None else 0
             pnl_usdt = final_val - initial_portfolio_value_usdt
             pnl_pct = (pnl_usdt / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
-            metrics_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Initialize all expected keys
+            metrics_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Инициализируем все ожидаемые ключи
             metrics_fail.update({
                 "final_portfolio_value_usdt": final_val, "total_net_pnl_usdt": pnl_usdt,
                 "total_net_pnl_percent": pnl_pct, "total_trades": len(trades_list),
-                "max_drawdown_percent": -100.0, # Or calculate actual
-                "output_dir": output_dir, "status": "Portfolio wiped out",
+                "max_drawdown_percent": -100.0, # Или вычисляем фактическое значение
+                "output_dir": output_dir, "status": "Портфель обнулен",
                 **portfolio
             })
             return metrics_fail
@@ -662,21 +662,21 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         
             if index == 0 or mode_changed_this_step:
                 needs_rebalance = True
-                if index == 0: logging.info(f"Initial rebalance for {main_asset_symbol} triggered at {current_timestamp} (Price: {current_price:.2f}) to establish target weights: {active_target_weights}.")
-                if mode_changed_this_step: logging.info(f"Mode changed to {portfolio['current_operational_mode']} for {main_asset_symbol}. Forcing rebalance check against new weights: {active_target_weights}.")
+                if index == 0: logging.info(f"Начальная ребалансировка для {main_asset_symbol} инициирована в {current_timestamp} (Цена: {current_price:.2f}) для установки целевых весов: {active_target_weights}.")
+                if mode_changed_this_step: logging.info(f"Режим изменен на {portfolio['current_operational_mode']} для {main_asset_symbol}. Принудительная проверка ребалансировки по новым весам: {active_target_weights}.")
             else:
                 for asset_key_loop, target_w_loop in active_target_weights.items():
                     current_w = current_weights.get(asset_key_loop, 0)
                     if abs(current_w - target_w_loop) > rebalance_threshold:
                         needs_rebalance = True 
-                        logging.info(f"Rebalance threshold triggered for {main_asset_symbol} at {current_timestamp} (Price: {current_price:.2f}). Asset {asset_key_loop} current weight {current_w:.4f}, target {target_w_loop:.4f} (Mode: {portfolio['current_operational_mode']})")
+                        logging.info(f"Порог ребалансировки сработал для {main_asset_symbol} в {current_timestamp} (Цена: {current_price:.2f}). Текущий вес актива {asset_key_loop} {current_w:.4f}, целевой {target_w_loop:.4f} (Режим: {portfolio['current_operational_mode']})")
                         break
         
         if needs_rebalance: 
-            logging.info(f"Rebalancing portfolio for {main_asset_symbol} (Mode: {portfolio['current_operational_mode']}, Signal: {current_signal}). Total Value: {total_portfolio_value:.2f} USDT. Current Price: {current_price:.2f}")
+            logging.info(f"Ребалансировка портфеля для {main_asset_symbol} (Режим: {portfolio['current_operational_mode']}, Сигнал: {current_signal}). Общая стоимость: {total_portfolio_value:.2f} USDT. Текущая цена: {current_price:.2f}")
             adjustments = {}
             for asset_key_loop, target_w_loop in active_target_weights.items():
-                # scale PERP notional by leverage so that pnl ~ leverage
+                # масштабируем номинал PERP по кредитному плечу, чтобы pnl ~ leverage
                 if asset_key_loop in (long_asset_key, short_asset_key):
                     target_value_usdt = target_w_loop * total_portfolio_value
                 else:
@@ -707,10 +707,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         current_weight_for_log = current_weights.get(asset_key_loop, 0.0)
                         target_weight_for_log = target_w_loop
                         logging.info(
-                            f"  Signal {current_signal} for {main_asset_symbol}: Preventing {'SELL' if current_signal=='BUY' else 'BUY'} of {asset_key_loop} "
-                            f"Original Prop. Adjust USDT: {original_proposed_adjustment_usdt:.2f}, "
-                            f"Current Wt: {current_weight_for_log:.4f}, Target Wt: {target_weight_for_log:.4f}. "
-                            f"Final Adjust USDT set to: 0.00"
+                            f"  Сигнал {current_signal} для {main_asset_symbol}: Предотвращение {'SELL' if current_signal=='BUY' else 'BUY'} {asset_key_loop} "
+                            f"Исходное предложенное изменение USDT: {original_proposed_adjustment_usdt:.2f}, "
+                            f"Текущий вес: {current_weight_for_log:.4f}, Целевой вес: {target_weight_for_log:.4f}. "
+                            f"Итоговое изменение USDT установлено в: 0.00"
                         )
                         blocked_trade_info = {
                             "timestamp": current_timestamp, "main_asset_symbol": main_asset_symbol,
@@ -729,7 +729,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 if asset_key_trade == "USDT": continue
 
                 # ------------------------------------------------------------
-                #  Ideal-mode (apply_signal_logic=False) ⇒ *не* режем «пыль»   ←
+                #  Идеальный режим (apply_signal_logic=False) ⇒ *не* режем «пыль»   ←
                 # ------------------------------------------------------------
                 dust_filter_on = params.get("apply_signal_logic", True)
 
@@ -738,7 +738,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     if abs(usdt_value_to_trade) < min_nominal:
                         continue
 
-                    # ---- check rounded quantity value < 1e-6 USDT ----------
+                    # ---- проверяем, что округленное значение < 1e-6 USDT ----------
                     if current_price > 0:
                         asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
                         rounded_asset_qty = (
@@ -748,31 +748,31 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                         value_of_rounded_asset_qty = rounded_asset_qty * current_price
                         if abs(value_of_rounded_asset_qty) < 1e-6:
                             logging.info(
-                                "  Skipping micro-order (dust) for %s: "
-                                "rounded_qty×price = %.8f USDT < 1e-6 USDT.",
+                                "  Пропускаем микро-ордер (пыль) для %s: "
+                                "округленное_кол-во×цена = %.8f USDT < 1e-6 USDT.",
                                 asset_key_trade, value_of_rounded_asset_qty,
                             )
                             continue
                     else:
                         logging.warning(
-                            "  Dust-check skipped for %s due to non-positive price %.4f",
+                            "  Проверка на пыль пропущена для %s из-за неположительной цены %.4f",
                             asset_key_trade, current_price,
                         )
 
-                # ── direction depends on asset type ────────────
+                # ── направление зависит от типа актива ────────────
                 if asset_key_trade == short_asset_key:
                     # увеличиваем шорт → SELL, уменьшаем → BUY
                     action_dir = "SELL" if usdt_value_to_trade > 0 else "BUY"
-                else:   # spot / long
+                else:   # спот / лонг
                     action_dir = "BUY"  if usdt_value_to_trade > 0 else "SELL"
 
-                # ---- Gate hedged futures mapping ----
+                # ---- Отображение хеджированных фьючерсов Gate ----
                 if asset_key_trade == long_asset_key:
                     order_type = "OPEN_LONG"  if action_dir == "BUY"  else "CLOSE_LONG"
                 elif asset_key_trade == short_asset_key:
                     # OPEN_SHORT ⇔ SELL,   CLOSE_SHORT ⇔ BUY
                     order_type = "OPEN_SHORT" if action_dir == "SELL" else "CLOSE_SHORT"
-                else:                              # spot leg
+                else:                              # спотовая нога
                     order_type = action_dir            # BUY/SELL
 
                 abs_usdt_value_of_trade = abs(usdt_value_to_trade) 
@@ -780,19 +780,19 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 portfolio['usdt_balance'] -= commission_usdt
                 portfolio['total_commissions_usdt'] += commission_usdt
 
-                # --- execution logic added ---
+                # --- добавлена логика исполнения ---
                 quantity_asset_traded_final = 0.0
                 realized_pnl_this_spot_trade = 0.0
                 slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
 
-                # ---------- SPOT BTC ----------
+                # ---------- СПОТ BTC ----------
                 if asset_key_trade == spot_asset_key:
                     qty_btc = abs_usdt_value_of_trade / current_price
                     quantity_asset_traded_final = qty_btc
-                    if order_type == "BUY": # Spot BUY
+                    if order_type == "BUY": # Покупка спот
                         portfolio["btc_spot_qty"] = portfolio.get("btc_spot_qty", 0.0) + qty_btc
                         portfolio["usdt_balance"] -= abs_usdt_value_of_trade
-                    else: # Spot SELL
+                    else: # Продажа спот
                         qty_close = min(qty_btc, portfolio.get("btc_spot_qty", 0.0))
                         portfolio["btc_spot_qty"] -= qty_close
                         portfolio["usdt_balance"] += qty_close * current_price
@@ -800,97 +800,95 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
                 # ---------- PERP LONG ----------
                 elif asset_key_trade == long_asset_key:
-                    quantity_asset_traded_final = abs_usdt_value_of_trade # For futures, asset quantity is the quote value
+                    quantity_asset_traded_final = abs_usdt_value_of_trade # Для фьючерсов количество актива - это котируемая стоимость
                     if order_type == "OPEN_LONG":
                         portfolio["btc_long_value_usdt"] = portfolio.get("btc_long_value_usdt", 0.0) + abs_usdt_value_of_trade
-                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Margin used
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Использованная маржа
                     elif order_type == "CLOSE_LONG":
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_long_value_usdt", 0.0))
                         portfolio["btc_long_value_usdt"] -= close_val
-                        portfolio["usdt_balance"] += close_val # Margin returned
+                        portfolio["usdt_balance"] += close_val # Возвращенная маржа
 
                 # ---------- PERP SHORT ----------
                 elif asset_key_trade == short_asset_key:
-                    quantity_asset_traded_final = abs_usdt_value_of_trade # For futures, asset quantity is the quote value
-                    if order_type == "OPEN_SHORT": # Opening/increasing a short position
+                    quantity_asset_traded_final = abs_usdt_value_of_trade # Для фьючерсов количество актива - это котируемая стоимость
+                    if order_type == "OPEN_SHORT": # Открытие/увеличение короткой позиции
                         portfolio["btc_short_value_usdt"] = portfolio.get("btc_short_value_usdt", 0.0) + abs_usdt_value_of_trade
-                        # USDT balance increases because we are effectively borrowing to sell, or margin is allocated
-                        # This depends on exact accounting, but for value_usdt based, it's adding to the short value.
-                        # The key is that `btc_short_value_usdt` represents the magnitude of the short.
-                        # Let's assume for this model, opening short *increases* USDT available if it's collateral based,
-                        # or if `btc_short_value_usdt` is tracking the notional value *exposed* to short.
-                        # For consistency with LONG, let's assume opening a short also "uses" USDT from balance for margin.
-                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Margin used for opening short
-                    elif order_type == "CLOSE_SHORT": # Closing a short position (buying back)
+                        # Баланс USDT увеличивается, потому что мы фактически заимствуем для продажи, или выделяется маржа
+                        # Это зависит от точного учета, но для value_usdt это добавление к короткой стоимости.
+                        # Ключевым моментом является то, что `btc_short_value_usdt` представляет величину короткой позиции.
+                        # Для согласованности с LONG, предположим, что открытие короткой позиции также "использует" USDT из баланса для маржи.
+                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade # Использованная маржа для открытия короткой позиции
+                    elif order_type == "CLOSE_SHORT": # Закрытие короткой позиции (выкуп)
                         close_val = min(abs_usdt_value_of_trade, portfolio.get("btc_short_value_usdt", 0.0))
                         portfolio["btc_short_value_usdt"] -= close_val
-                        portfolio["usdt_balance"] += close_val # Margin returned
-                # Determine quantity for orders_by_step, should be in asset terms
+                        portfolio["usdt_balance"] += close_val # Возвращенная маржа
+                # Определяем количество для orders_by_step, должно быть в терминах актива
                 qty_for_orders = 0
-                if current_price > 0: # Avoid division by zero if price is somehow zero
+                if current_price > 0: # Избегаем деления на ноль, если цена почему-то ноль
                     if asset_key_trade == spot_asset_key:
                         qty_for_orders = abs(usdt_value_to_trade) / current_price
                     elif asset_key_trade == long_asset_key or asset_key_trade == short_asset_key:
-                        # For leveraged assets, qty should also be in base asset terms for simulate_rebalance
+                        # Для активов с плечом кол-во также должно быть в базовом активе для simulate_rebalance
                         qty_for_orders = abs(usdt_value_to_trade) / current_price
-                        # Note: simulate_rebalance applies leverage, so qty here is pre-leverage asset qty
+                        # Примечание: simulate_rebalance применяет плечо, поэтому qty здесь - это кол-во актива до плеча
 
                 if qty_for_orders > 0:
-                    idx_for_orders = index # Current index from df_market.iterrows()
-                    # action_dir is 'BUY' or 'SELL', already determined in the loop
+                    idx_for_orders = index # Текущий индекс из df_market.iterrows()
+                    # action_dir - 'BUY' или 'SELL', уже определено в цикле
                     orders_by_step.setdefault(idx_for_orders, []).append({
                         'asset_key': asset_key_trade,
                         'side': action_dir,
                         'qty': qty_for_orders
                     })
 
-                # Pass action_dir (BUY/SELL) as the 'action' for the trade record
+                # Передаем action_dir (BUY/SELL) как 'action' для записи о сделке
                 record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
                              abs_usdt_value_of_trade, current_price, commission_usdt,
                              slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list,
                              realized_pnl_spot_usdt=realized_pnl_this_spot_trade)
             
-            # ... (logging post-rebalance portfolio) ...
+            # ... (логирование портфеля после ребалансировки) ...
 
         portfolio['prev_btc_price'] = current_price
 
-    # Simulate rebalance based on collected orders and calculate PnL
-    simulated_trade_log = [] # Initialize as empty list
+    # Симулируем ребалансировку на основе собранных ордеров и рассчитываем PnL
+    simulated_trade_log = [] # Инициализируем как пустой список
     if orders_by_step:
-        logging.info(f"Calling simulate_rebalance with {len(orders_by_step)} steps having orders.")
-        # 'leverage' variable should already be defined from params_dict
-        # 'df_market' is the correct DataFrame containing all candles for the backtest period
+        logging.info(f"Вызов simulate_rebalance с {len(orders_by_step)} шагами, имеющими ордера.")
+        # переменная 'leverage' уже должна быть определена из params_dict
+        # 'df_market' - правильный DataFrame, содержащий все свечи за период бэктеста
         # закрываем хвосты только если это обычный бэктест, а не оптимизатор
-        simulated_trade_log = simulate_rebalance( # Assign to the already defined list
+        simulated_trade_log = simulate_rebalance( # Присваиваем уже определенному списку
             df_market,
             orders_by_step,
             leverage=leverage,
             force_close_open_positions=not is_optimizer_call
         )
     else:
-        logging.info("No orders were generated by the main rebalancing logic for simulate_rebalance.")
+        logging.info("Основная логика ребалансировки не сгенерировала ордеров для simulate_rebalance.")
 
-    # This block will now always execute if generate_reports is true
+    # Этот блок теперь всегда будет выполняться, если generate_reports равно true
     if generate_reports and actual_reports_dir:
         rebalance_trades_csv_path = os.path.join(actual_reports_dir, "rebalance_trades.csv")
-        if simulated_trade_log:  # if list is not empty (either from simulate_rebalance or if it was [] initially)
+        if simulated_trade_log:  # если список не пуст (либо из simulate_rebalance, либо был [] изначально)
             df_sim_trades = pd.DataFrame(simulated_trade_log)
             df_sim_trades.to_csv(rebalance_trades_csv_path, index=False)
-            logging.info(f"Simulated rebalance trades PnL report saved to {rebalance_trades_csv_path}")
-        else: # simulated_trade_log is empty (either from simulate_rebalance returning empty, or orders_by_step was empty)
-            logging.info("Simulated trade log is empty. Saving empty rebalance_trades.csv.")
+            logging.info(f"Отчет о PnL симулированных сделок ребалансировки сохранен в {rebalance_trades_csv_path}")
+        else: # simulated_trade_log пуст (либо из simulate_rebalance, вернувшего пустоту, либо orders_by_step был пуст)
+            logging.info("Журнал симулированных сделок пуст. Сохраняется пустой rebalance_trades.csv.")
             empty_df = pd.DataFrame(columns=[
                 "asset_key", "entry_price", "exit_price", "qty",
-                "pnl_gross_quote", "leverage" # Ensure these columns match test expectations
+                "pnl_gross_quote", "leverage" # Убеждаемся, что эти столбцы соответствуют ожиданиям теста
             ])
             empty_df.to_csv(rebalance_trades_csv_path, index=False)
-            logging.info(f"Empty simulated rebalance trades file saved to {rebalance_trades_csv_path}")
+            logging.info(f"Пустой файл симулированных сделок ребалансировки сохранен в {rebalance_trades_csv_path}")
     elif generate_reports:
-        logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping saving rebalance_trades.csv.")
+        logging.warning("generate_reports равно True, но actual_reports_dir не установлен. Пропускаем сохранение rebalance_trades.csv.")
     else:
-        logging.info("Report generation is OFF. Skipping saving rebalance_trades.csv.")
+        logging.info("Генерация отчетов ВЫКЛЮЧЕНА. Пропускаем сохранение rebalance_trades.csv.")
 
-    logging.info("Backtest finished.")
+    logging.info("Бэктест завершен.")
     df_equity = pd.DataFrame(equity_over_time)
     df_trades = pd.DataFrame(trades_list)
     # Округление безопасно, даже если часть колонок отсутствует или нет сделок
@@ -904,27 +902,27 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         if cols_to_round:
             df_trades[cols_to_round] = df_trades[cols_to_round].round(2)
 
-    # ---------- PERFORMANCE METRICS ----------
+    # ---------- МЕТРИКИ ПРОИЗВОДИТЕЛЬНОСТИ ----------
     def compute_metrics(df_eq: pd.DataFrame, trades: list[dict], initial_nav: float, ann_factor: int = 252):
         out: dict[str, float] = {}
         if df_eq.empty:
             return {k: 0.0 for k in ("sharpe_ratio", "sortino_ratio", "max_drawdown_percent", "profit_factor", "win_rate_percent")}
 
-        # ---- Dynamic annualisation factor ---------------------------------
+        # ---- Динамический фактор аннуализации ---------------------------------
         if "timestamp" in df_eq.columns and pd.api.types.is_datetime64_any_dtype(df_eq["timestamp"]):
-            # Ensure timestamp is sorted for diff to be meaningful - df_equity is typically sorted by timestamp already
-            # df_eq = df_eq.sort_values(by="timestamp") # Optional: uncomment if sorting is not guaranteed
+            # Убеждаемся, что timestamp отсортирован, чтобы diff имел смысл - df_equity обычно уже отсортирован по времени
+            # df_eq = df_eq.sort_values(by="timestamp") # Опционально: раскомментируйте, если сортировка не гарантирована
             freq_sec = df_eq["timestamp"].diff().dt.total_seconds().median()
             if pd.notna(freq_sec) and freq_sec > 0:
-                periods_per_year = (365 * 24 * 60 * 60) / freq_sec  # e.g. 5-min → 105 120
+                periods_per_year = (365 * 24 * 60 * 60) / freq_sec  # например, 5-мин → 105 120
                 ann_sqrt = np.sqrt(periods_per_year)
-                # logging.debug(f"Dynamic ann_sqrt: {ann_sqrt:.2f} (freq_sec: {freq_sec:.2f}s, periods_per_year: {periods_per_year:.2f})")
+                # logging.debug(f"Динамический ann_sqrt: {ann_sqrt:.2f} (freq_sec: {freq_sec:.2f}s, периодов в году: {periods_per_year:.2f})")
             else:
-                ann_sqrt = np.sqrt(252)  # fallback to daily bars
-                # logging.debug(f"Dynamic ann_sqrt: Fallback to daily (252) due to freq_sec: {freq_sec}")
+                ann_sqrt = np.sqrt(252)  # фолбэк к дневным барам
+                # logging.debug(f"Динамический ann_sqrt: Фолбэк к дневному (252) из-за freq_sec: {freq_sec}")
         else:
-            ann_sqrt = np.sqrt(252) # fallback to daily if no timestamp column
-            # logging.debug("Dynamic ann_sqrt: Fallback to daily (252) due to missing/invalid timestamp column")
+            ann_sqrt = np.sqrt(252) # фолбэк к дневным барам, если нет колонки timestamp
+            # logging.debug("Динамический ann_sqrt: Фолбэк к дневному (252) из-за отсутствия/невалидной колонки timestamp")
 
         EPS = 1e-9
         rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
@@ -935,12 +933,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             std_ret  = rets.std()
             down_std = rets[rets < 0].std()
 
-        if std_ret < EPS:              # zero-vol or single-point case
+        if std_ret < EPS:              # случай нулевой волатильности или одной точки
             out["sharpe_ratio"]  = 0.0
         else:
             out["sharpe_ratio"]  = mean_ret / std_ret * ann_sqrt
 
-        if down_std is None or down_std < EPS: # down_std can be None if rets[rets<0] is empty
+        if down_std is None or down_std < EPS: # down_std может быть None, если rets[rets<0] пуст
             out["sortino_ratio"] = 0.0
         else:
             out["sortino_ratio"] = mean_ret / down_std * ann_sqrt
@@ -958,7 +956,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         else:
             out["profit_factor"] = 0.0
             out["win_rate_percent"] = 0.0
-        # Fallback: если в трейд-логе нет информативных pnl (например, только комиссии),
+        # Фолбэк: если в трейд-логе нет информативных pnl (например, только комиссии),
         # оценим win-rate и PF по ряду доходностей equity
         if out.get("profit_factor", 0.0) == 0.0 and out.get("win_rate_percent", 0.0) == 0.0 and not df_eq.empty:
             rets = df_eq["portfolio_value_usdt"].pct_change().dropna()
@@ -973,13 +971,13 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
     metrics = {}
     metrics["run_id"] = f"backtest_{timestamp_str}"
-    # ... (ALL ORIGINAL METRICS CALCULATIONS MUST BE PRESERVED HERE) ...
+    # ... (ЗДЕСЬ ДОЛЖНЫ БЫТЬ СОХРАНЕНЫ ВСЕ ОРИГИНАЛЬНЫЕ РАСЧЕТЫ МЕТРИК) ...
     metrics["initial_portfolio_value_usdt"] = initial_portfolio_value_usdt
     final_portfolio_value = df_equity['portfolio_value_usdt'].iloc[-1] if not df_equity.empty else initial_portfolio_value_usdt
     metrics["final_portfolio_value_usdt"] = final_portfolio_value
     metrics["total_net_pnl_usdt"] = final_portfolio_value - initial_portfolio_value_usdt
 
-    # Calculate additional performance metrics
+    # Расчет дополнительных метрик производительности
     extra_metrics = compute_metrics(df_equity, trades_list,
                                     initial_portfolio_value_usdt,
                                     params.get("annualization_factor", 252))
@@ -987,16 +985,16 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     metrics["total_net_pnl_percent"] = (metrics["total_net_pnl_usdt"] / initial_portfolio_value_usdt) * 100 if initial_portfolio_value_usdt != 0 else 0
     metrics["total_trades"] = len(df_trades)
 
-    # Calculate NAV standard deviation percentage
+    # Расчет стандартного отклонения NAV в процентах
     if not df_equity.empty:
         nav_series = df_equity['portfolio_value_usdt']
-        # New calculation based on percentage changes, does not require initial_portfolio_value_usdt for scaling here.
+        # Новый расчет на основе процентных изменений, не требует initial_portfolio_value_usdt для масштабирования здесь.
         metrics["nav_std_percent"] = nav_series.pct_change().fillna(0).std() * 100
     else:
-        # Handle case where df_equity is empty (e.g., no trades or data)
+        # Обработка случая, когда df_equity пуст (например, нет сделок или данных)
         metrics["nav_std_percent"] = 0.0
 
-    # ─── Numerical-noise cleanup (≤ 1 cent) ───────────────────────
+    # ─── Очистка от числового шума (≤ 1 цент) ───────────────────────
     tol = float(params.get("neutrality_pnl_tolerance_usd", 1e-2))
     if abs(metrics["total_net_pnl_usdt"]) <= tol:
         metrics["total_net_pnl_usdt"] = 0.0
@@ -1004,7 +1002,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
         # metrics["sharpe_ratio"] = 0.0  # спорное решение, возможно лучше оставлять как есть
         metrics["final_portfolio_value_usdt"] = initial_portfolio_value_usdt
 
-    # Add relevant portfolio state counters to metrics
+    # Добавляем соответствующие счетчики состояния портфеля в метрики
     metrics["num_safe_mode_entries"] = portfolio.get('num_safe_mode_entries', 0)
     metrics["num_circuit_breaker_triggers"] = portfolio.get('num_circuit_breaker_triggers', 0)
     metrics["time_steps_in_safe_mode"] = portfolio.get('time_steps_in_safe_mode', 0)
@@ -1018,21 +1016,21 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             elif k.endswith('_percent'):
                 metrics[k] = round(v, 3)
 
-    # (And many more metrics from the original file)
+    # (И много других метрик из оригинального файла)
 
 
     # Синхронизируем «очищенные» метрики с объектом,
     # возвращаемым оптимизатору / внешним вызовам.
     if generate_reports and actual_reports_dir:
-        logging.info(f"Generating reports in {actual_reports_dir}...")
+        logging.info(f"Генерация отчетов в {actual_reports_dir}...")
         trades_csv_path = os.path.join(actual_reports_dir, "trades.csv")
         df_trades.to_csv(trades_csv_path, index=False)
-        logging.info(f"Trades report saved to {trades_csv_path}")
+        logging.info(f"Отчет о сделках сохранен в {trades_csv_path}")
 
         df_summary = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
         summary_csv_path = os.path.join(actual_reports_dir, "summary.csv")
         df_summary.to_csv(summary_csv_path, index=False)
-        logging.info(f"Summary report saved to {summary_csv_path}")
+        logging.info(f"Сводный отчет сохранен в {summary_csv_path}")
 
         if not df_equity.empty:
             fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1092,69 +1090,69 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                             ), secondary_y=True)
 
             fig.update_layout(
-                title_text=f'Portfolio Equity Over Time vs {main_asset_symbol} Price',
-                xaxis_title='Timestamp',
+                title_text=f'Динамика капитала портфеля по сравнению с ценой {main_asset_symbol}',
+                xaxis_title='Временная метка',
                 hovermode="x unified",
                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
             )
-            fig.update_yaxes(title_text="Portfolio Value (USDT)", secondary_y=False, showgrid=True)
-            fig.update_yaxes(title_text=f"{main_asset_symbol} Price (USDT)", secondary_y=True, showgrid=False)
+            fig.update_yaxes(title_text="Стоимость портфеля (USDT)", secondary_y=False, showgrid=True)
+            fig.update_yaxes(title_text=f"Цена {main_asset_symbol} (USDT)", secondary_y=True, showgrid=False)
 
-            # --------------- ▼▼  NEW  —  overlay BUY / SELL signals  ▼▼ ---------------
+            # --------------- ▼▼  НОВОЕ — наложение сигналов BUY / SELL  ▼▼ ---------------
             if apply_signal_logic and df_signals is not None and not df_signals.empty:
                 # price привязываем к ближайшей свече (если сигналы «попадают в дырку»)
                 df_sig_plot = (df_signals
                                .merge(df_market[['timestamp', 'close']], on='timestamp', how='left')
                                .ffill())
-                for sig, color, sym in [("BUY","rgba(0,200,0,.85)",'triangle-up'), ("SELL","rgba(200,0,0,.85)",'triangle-down')]: # Variable names changed
-                    sub = df_sig_plot[df_sig_plot.signal==sig] # Adjusted access to 'signal' column
+                for sig, color, sym in [("BUY","rgba(0,200,0,.85)",'triangle-up'), ("SELL","rgba(200,0,0,.85)",'triangle-down')]: # Изменены имена переменных
+                    sub = df_sig_plot[df_sig_plot.signal==sig] # Изменен доступ к колонке 'signal'
                     if sub.empty: continue
                     fig.add_trace(go.Scatter(x=sub.timestamp, y=sub.close, mode='markers',
                               marker=dict(size=10, symbol=sym, color=color, line=dict(width=1.2,color='DarkSlateGrey')),
-                              name=f"{sig} signal",   # своя трасса
+                              name=f"сигнал {sig}",   # своя трасса
                               legendgroup=f"{sig}_signal",  # отдельная группа
                               yaxis='y2',
                               showlegend=True))
-            # --------------- ▲▲  END NEW  ▲▲ ------------------------------------------
+            # --------------- ▲▲  КОНЕЦ НОВОГО  ▲▲ ------------------------------------------
 
             equity_html_path = os.path.join(actual_reports_dir, "equity.html")
             fig.write_html(equity_html_path)
-            logging.info(f"Enhanced equity curve saved to {equity_html_path}")
+            logging.info(f"Улучшенная кривая капитала сохранена в {equity_html_path}")
 
             # Округляем кривую equity до 2 знаков перед сохранением
             df_equity['portfolio_value_usdt'] = df_equity['portfolio_value_usdt'].round(2)
             equity_csv_path = os.path.join(actual_reports_dir, "equity.csv")
             df_equity.to_csv(equity_csv_path, index=False)
-            logging.info(f"Equity curve data saved to {equity_csv_path}")
+            logging.info(f"Данные кривой капитала сохранены в {equity_csv_path}")
         else:
-            logging.warning("Equity data is empty. Skipping equity curve generation and equity.csv saving.")
+            logging.warning("Данные о капитале пусты. Пропускаем генерацию кривой капитала и сохранение equity.csv.")
 
         if blocked_trades_list:
             df_blocked_trades = pd.DataFrame(blocked_trades_list)
-            if not df_blocked_trades.empty: # Check if DataFrame is non-empty after creation
+            if not df_blocked_trades.empty: # Проверяем, не пуст ли DataFrame после создания
                 blocked_trades_csv_path = os.path.join(actual_reports_dir, "blocked_trades_log.csv")
                 df_blocked_trades.to_csv(blocked_trades_csv_path, index=False)
-                logging.info(f"Blocked trades log saved to {blocked_trades_csv_path}")
-            else: # This case might occur if blocked_trades_list was empty
-                logging.info("No trades were blocked by signals during this backtest run (DataFrame was empty).")
-        else: # This case for if the list itself was empty
-            logging.info("No trades were blocked by signals during this backtest run (list was empty).")
+                logging.info(f"Журнал заблокированных сделок сохранен в {blocked_trades_csv_path}")
+            else: # Этот случай может произойти, если blocked_trades_list был пуст
+                logging.info("Во время этого бэктеста сделки не были заблокированы сигналами (DataFrame был пуст).")
+        else: # Этот случай для пустого списка
+            logging.info("Во время этого бэктеста сделки не были заблокированы сигналами (список был пуст).")
 
-        logging.info(f"All reports for this run generated in {actual_reports_dir}.")
-    elif generate_reports: # actual_reports_dir was somehow not set
-        logging.warning("generate_reports is True, but actual_reports_dir is not set. Skipping main report generation block.")
-    else: # generate_reports is False
-        logging.info("Report generation is OFF. Skipping main report generation block.")
+        logging.info(f"Все отчеты для этого запуска сгенерированы в {actual_reports_dir}.")
+    elif generate_reports: # actual_reports_dir почему-то не был установлен
+        logging.warning("generate_reports равно True, но actual_reports_dir не установлен. Пропускаем блок генерации основных отчетов.")
+    else: # generate_reports равно False
+        logging.info("Генерация отчетов ВЫКЛЮЧЕНА. Пропускаем блок генерации основных отчетов.")
 
     results_for_optimizer = metrics.copy()
-    results_for_optimizer["output_dir"] = actual_reports_dir # Store the actual_reports_dir, which could be None if reports are off
-    results_for_optimizer["status"] = "Completed"
+    results_for_optimizer["output_dir"] = actual_reports_dir # Сохраняем actual_reports_dir, который может быть None, если отчеты выключены
+    results_for_optimizer["status"] = "Завершено"
 
     for key_metric in ["sharpe_ratio", "sortino_ratio", "profit_factor",
                        "win_rate_percent", "max_drawdown_percent"]:
         if pd.isna(results_for_optimizer.get(key_metric)):
             results_for_optimizer[key_metric] = 0.0
-            logging.warning(f"Metric {key_metric} was NaN, converted to 0.0 for optimizer.")
+            logging.warning(f"Метрика {key_metric} была NaN, преобразована в 0.0 для оптимизатора.")
     return results_for_optimizer
 # --- END OF REPLACEMENT FUNCTION ---
 
