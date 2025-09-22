@@ -707,10 +707,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                             f"Текущий вес: {current_weight_for_log:.4f}, Целевой вес: {target_weight_for_log:.4f}. "
                             f"Итоговое изменение USDT установлено в: 0.00"
                         )
+                        action_for_log = "BUY" if original_proposed_adjustment_usdt > 0 else "SELL"
+                        if asset_key_loop == short_asset_key:
+                            action_for_log = "SELL" if original_proposed_adjustment_usdt > 0 else "BUY"
+
                         blocked_trade_info = {
                             "timestamp": current_timestamp, "main_asset_symbol": main_asset_symbol,
                             "asset_key": asset_key_loop,
-                            "intended_action": "BUY" if original_proposed_adjustment_usdt > 0 else "SELL",
+                            "intended_action": action_for_log,
                             "proposed_adjustment_usdt": original_proposed_adjustment_usdt,
                             "active_signal": current_signal, "current_weight": current_weight_for_log,
                             "target_weight": target_weight_for_log
@@ -1005,7 +1009,14 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     if generate_reports and actual_reports_dir:
         logging.info(f"Генерация отчетов в {actual_reports_dir}...")
         trades_csv_path = os.path.join(actual_reports_dir, "trades.csv")
-        df_trades.to_csv(trades_csv_path, index=False)
+        if not df_trades.empty:
+            df_trades.to_csv(trades_csv_path, index=False)
+        else:
+            pd.DataFrame(columns=[
+                "timestamp_open", "timestamp_close", "asset_type", "action",
+                "quantity_asset", "quantity_quote", "entry_price", "exit_price",
+                "commission_quote", "slippage_quote", "pnl_gross_quote", "pnl_net_quote"
+            ]).to_csv(trades_csv_path, index=False)
         logging.info(f"Отчет о сделках сохранен в {trades_csv_path}")
 
         df_summary = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
