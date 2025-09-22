@@ -1,196 +1,167 @@
-diff --git a/src/prosperous_bot/futures_rebalance_backtester.py b/src/prosperous_bot/futures_rebalance_backtester.py
---- a/src/prosperous_bot/futures_rebalance_backtester.py
-+++ b/src/prosperous_bot/futures_rebalance_backtester.py
+*** a/tests/test_futures_rebalance_backtester.py
+--- b/tests/test_futures_rebalance_backtester.py
 @@
--def calculate_portfolio_value(usdt_balance, 
--                              btc_long_value_usdt, btc_short_value_usdt):
-+def calculate_portfolio_value(usdt_balance,
-+                              btc_long_value_usdt, btc_short_value_usdt):
+-import os
+-import copy
+-import json
+-import pandas as pd
+-import pytest
++import os
++import copy
++import json
++import pandas as pd
++import pytest
++pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
+ 
+-from prosperous_bot.futures_rebalance_backtester import run_backtest, main as backtester_main
++from prosperous_bot.futures_rebalance_backtester import (
++    run_backtest,
++    main as backtester_main,
++)
+ 
 @@
--    total_value = usdt_balance + btc_long_value_usdt + btc_short_value_usdt
--    return total_value
-+    return usdt_balance + btc_long_value_usdt + btc_short_value_usdt
+ def test_main_cli_execution(tmp_path, monkeypatch):
 @@
--def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, market_price, 
--                 commission_usdt, slippage_usdt, pnl_net_quote, trades_list):
--    """Записывает информацию о сделке, симулированной в процессе бэктеста.
--    - quantity_asset: количество базового актива (например, BTC) в сделке.
--    - quantity_quote: стоимость сделки в USDT до учета комиссий и проскальзывания.
--    - market_price: цена актива в момент совершения сделки.
--    - commission_usdt: комиссия за сделку в USDT.
--    - slippage_usdt: стоимость проскальзывания в USDT.
--    - pnl_net_quote: чистая прибыль/убыток по сделке в USDT после учета комиссий и проскальзывания.
--    """
-+def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, market_price,
-+                 commission_usdt, slippage_usdt, trades_list):
-+    """Записывает сделку бэктеста (фьючерсы).
-+    Параметры:
-+        timestamp: метка времени сделки (UTC).
-+        asset_type: ключ актива (например, BTC_PERP_LONG / BTC_PERP_SHORT).
-+        action: BUY/SELL (направление изменения позиции).
-+        quantity_asset: количество базового актива (в единицах базового актива, до плеча).
-+        quantity_quote: номинал сделки в USDT (до комиссии и проскальзывания).
-+        market_price: рыночная цена при фиксации сделки.
-+        commission_usdt: комиссия сделки в USDT.
-+        slippage_usdt: проскальзывание сделки в USDT.
-+        trades_list: список для накопления сделок.
-+    Примечания:
-+        Для сделок ребалансировки «моментный» PnL не фиксируется. Брутто-PnL = 0.0,
-+        нетто-PnL учитывает только издержки: -(комиссия + проскальзывание).
+-    assert os.path.exists(report_dir / "summary.csv")
+-    # Дополнительно убеждаемся, что equity-график (HTML) сгенерирован
++    assert os.path.exists(report_dir / "summary.csv")
+     assert os.path.exists(report_dir / "equity.html")
+ 
+@@
+ def test_graceful_handling_of_empty_data(tmp_path):
+@@
+     assert metrics["status"].lower().startswith("рын")
+ 
++def test_circuit_breaker_obliteration_returns_status(tmp_path):
 +    """
-     trade = {
-         "timestamp_open": timestamp, 
-         "timestamp_close": timestamp, 
-         "asset_type": asset_type,
-         "action": action, 
-         "quantity_asset": quantity_asset, 
-         "quantity_quote": quantity_quote, 
-         "entry_price": market_price, 
-         "exit_price": market_price, 
-         "commission_quote": commission_usdt,
-         "slippage_quote": slippage_usdt, 
--        "pnl_gross_quote": pnl_net_quote, 
--        "pnl_net_quote": pnl_net_quote - commission_usdt, 
-+        "pnl_gross_quote": 0.0,
-+        "pnl_net_quote": -(commission_usdt + slippage_usdt),
-     }
-     trades_list.append(trade)
-     logging.info(
--        f"  СДЕЛКА: {action} {quantity_asset:.6f} {asset_type} @ MktPx {market_price:.2f}, "
--        f"Стоимость: {quantity_quote:.2f}, Комиссия: {commission_usdt:.2f}, Стоимость проскальзывания: {slippage_usdt:.2f}, "
--        f"Чистый PnL сделки: {(pnl_net_quote - commission_usdt):.2f}"
-+        f"  СДЕЛКА: {action} {quantity_asset:.6f} {asset_type} по {market_price:.2f}, "
-+        f"номинал: {quantity_quote:.2f}, комиссия: {commission_usdt:.2f}, проскальз.: {slippage_usdt:.2f}, "
-+        f"нетто PnL сделки: {-(commission_usdt + slippage_usdt):.2f}"
-     )
-@@
--# --- Начало функции run_backtest ---
--def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
-+# --- Начало функции run_backtest ---
-+def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
-+    """Запускает бэктест дельта-нейтральной стратегии фьючерсной ребалансировки.
-+    Входные параметры:
-+        params_dict (dict): настройки из unified_config (секция backtest_settings).
-+        data_path (str): путь к CSV с историей рынка.
-+        is_optimizer_call (bool): при True отчёты могут быть упрощены (для оптимизатора).
-+        trial_id_for_reports (int|None): id прогона для структурирования отчётов.
-+    Алгоритм:
-+        1) Загрузка и нормализация данных рынка; привязка сигналов из CSV (merge_asof).
-+        2) Главный цикл: пересчёт PnL фьючерсных ног, контроль Safe-Mode/АВ, проверка порогов.
-+        3) Формирование ребаланс-ордеров, учёт комиссий/проскальзывания, запись сделок.
-+        4) (Опц.) Симуляция исполнения для аналитики (simulate_rebalance) и сохранение отчётов.
-+    Выход:
-+        dict: ключевые метрики (PnL, Sharpe, PF, Win-Rate, MaxDD), статус, путь к отчётам.
++    Свеча с экстремальным диапазоном и нулевой стартовый NAV ⇒
++    немедленное завершение с статусом 'Портфель обнулен после АВ'.
 +    """
++    ts = pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC")
++    df = pd.DataFrame({
++        "timestamp": ts,
++        "open": [100.0],
++        "high": [200.0],   # +100%
++        "low":  [  0.0],   # -100%
++        "close":[150.0],
++        "volume": 1.0
++    })
++    data_csv = tmp_path / "cb.csv"
++    df.to_csv(data_csv, index=False)
++
++    params = {
++        "main_asset_symbol": "BTC",
++        "apply_signal_logic": False,
++        "initial_portfolio_value_usdt": 0.0,        # ключ к ветке 'обнуления'
++        "futures_leverage": 5.0,
++        "commission_taker": 0.0,
++        "slippage_percent": 0.0,
++        "min_order_notional_usdt": 0.0,
++        "min_rebalance_interval_minutes": 0,
++        "rebalance_threshold": 1.0,                 # сделок не будет
++        "target_weights_normal": {"USDT": 1.0},
++        "safe_mode_config": {"enabled": False},
++        "circuit_breaker_config": {"threshold_percentage": 0.1},  # 10% порог, свеча >100%
++        "report_path_prefix": str(tmp_path / "reports"),
++        "use_fixed_report_path": True,
++    }
++    metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
++    assert metrics["status"] == "Портфель обнулен после АВ"
++    assert metrics.get("num_circuit_breaker_triggers", 0) >= 1
++    assert metrics["max_drawdown_percent"] == -100.0
++    # Путь отчёта должен быть определён (пусть и с ранним выходом)
++    assert "output_dir" in metrics and metrics["output_dir"]
++
++def test_open_price_zero_branch_executes(tmp_path):
++    """
++    Ветка: circuit_breaker_threshold_percent > 0 и open == 0.
++    Проверяем, что расчёт проходит без падений и метрики отдаются.
++    """
++    ts = pd.date_range("2024-07-02", periods=3, freq="h", tz="UTC")
++    df = pd.DataFrame({
++        "timestamp": ts,
++        "open":  [0.0, 100.0, 101.0],   # первый бар с open=0 → спец-ветка
++        "high":  [0.1, 101.0, 102.0],
++        "low":   [0.0,  99.0, 100.0],
++        "close": [0.05,100.5,101.5],
++        "volume": 1.0
++    })
++    data_csv = tmp_path / "oz.csv"
++    df.to_csv(data_csv, index=False)
++
++    params = {
++        "main_asset_symbol": "BTC",
++        "apply_signal_logic": False,
++        "initial_portfolio_value_usdt": 1000.0,
++        "futures_leverage": 2.0,
++        "commission_taker": 0.0,
++        "slippage_percent": 0.0,
++        "min_order_notional_usdt": 0.0,
++        "min_rebalance_interval_minutes": 0,
++        "rebalance_threshold": 0.0,
++        "target_weights_normal": {"BTC_PERP_LONG": 0.5, "USDT": 0.5},
++        "safe_mode_config": {"enabled": False},
++        "circuit_breaker_config": {"threshold_percentage": 0.1},
++        "report_path_prefix": str(tmp_path / "reports"),
++        "use_fixed_report_path": True,
++    }
++    metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
++    assert isinstance(metrics, dict)
++    assert "final_portfolio_value_usdt" in metrics
++    assert "sharpe_ratio" in metrics
++
++def test_load_signal_data_empty_and_missing_columns(tmp_path):
++    """
++    load_signal_data: (1) пустой CSV → None; (2) без нужных колонок → None.
++    """
++    from prosperous_bot.futures_rebalance_backtester import load_signal_data
++    # 1) Пустой файл
++    empty_csv = tmp_path / "empty_signals.csv"
++    pd.DataFrame().to_csv(empty_csv, index=False)
++    assert load_signal_data(str(empty_csv)) is None
++    # 2) Нет 'timestamp' или 'signal'
++    bad_csv = tmp_path / "bad_signals.csv"
++    pd.DataFrame({"time": ["2024-01-01T00:00:00Z"], "sig": ["BUY"]}).to_csv(bad_csv, index=False)
++    assert load_signal_data(str(bad_csv)) is None
++
++def test_load_signal_data_timezone_localize_and_convert(tmp_path):
++    """
++    load_signal_data: (1) наивные timestamps → локализация в UTC;
++                     (2) timestamps с TZ → конвертация в UTC; сигнал → upper().
++    """
++    from prosperous_bot.futures_rebalance_backtester import load_signal_data
++    # 1) Наивные метки времени
++    ts_naive = ["2024-03-01 00:00:00", "2024-03-01 01:00:00"]
++    csv1 = tmp_path / "sig_naive.csv"
++    pd.DataFrame({"timestamp": ts_naive, "signal": ["buy", "sell"]}).to_csv(csv1, index=False)
++    df1 = load_signal_data(str(csv1))
++    assert df1 is not None and not df1.empty
++    assert str(df1["timestamp"].dt.tz[0]) == "UTC"
++    assert set(df1["signal"].unique()) == {"BUY", "SELL"}
++    # 2) Таймштампы с зоной (конвертация в UTC)
++    ts_tz = ["2024-03-01T00:00:00+03:00", "2024-03-01T01:00:00+03:00"]
++    csv2 = tmp_path / "sig_tz.csv"
++    pd.DataFrame({"timestamp": ts_tz, "signal": ["HOLD", "BUY"]}).to_csv(csv2, index=False)
++    df2 = load_signal_data(str(csv2))
++    assert df2 is not None and not df2.empty
++    # обе записи должны быть в UTC (конвертированы)
++    assert str(df2["timestamp"].dt.tz[0]) == "UTC"
++    assert set(df2["signal"].unique()) == {"HOLD", "BUY"}
++
+*** /dev/null
+--- b/.coveragerc
 @@
--    spot_asset_key = f"{main_asset_symbol}_SPOT"
-     long_asset_key = f"{main_asset_symbol}_PERP_LONG"
-     short_asset_key = f"{main_asset_symbol}_PERP_SHORT"
-@@
--                if dust_filter_on:
-+                if dust_filter_on:
-                     min_nominal = params.get("min_order_notional_usdt", 10.0)
-                     if abs(usdt_value_to_trade) < min_nominal:
-                         continue
-@@
--                if asset_key_trade == short_asset_key:
-+                if asset_key_trade == short_asset_key:
-                     # увеличиваем шорт → SELL, уменьшаем → BUY
-                     action_dir = "SELL" if usdt_value_to_trade > 0 else "BUY"
--                else:   # спот / лонг
-+                else:   # лонг
-                     action_dir = "BUY"  if usdt_value_to_trade > 0 else "SELL"
-@@
--                if asset_key_trade == long_asset_key:
-+                if asset_key_trade == long_asset_key:
-                     order_type = "OPEN_LONG"  if action_dir == "BUY"  else "CLOSE_LONG"
-                 elif asset_key_trade == short_asset_key:
-                     # OPEN_SHORT ⇔ SELL,   CLOSE_SHORT ⇔ BUY
-                     order_type = "OPEN_SHORT" if action_dir == "SELL" else "CLOSE_SHORT"
--                else:                              # спотовая нога
--                    order_type = action_dir            # BUY/SELL
-+                else:
-+                    # Неизвестный или не-фьючерсный ключ (например, устаревший SPOT/USDT) — пропускаем
-+                    continue
-@@
--                quantity_asset_traded_final = 0.0
--                realized_pnl_this_spot_trade = 0.0
-+                quantity_asset_traded_final = 0.0
-                 slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
-@@
--                # Определяем количество для orders_by_step, должно быть в терминах актива
--                qty_for_orders = 0
--                if current_price > 0: # Избегаем деления на ноль, если цена почему-то ноль
--                    if asset_key_trade == spot_asset_key:
--                        qty_for_orders = abs(usdt_value_to_trade) / current_price
--                    elif asset_key_trade == long_asset_key or asset_key_trade == short_asset_key:
--                        # Для активов с плечом кол-во также должно быть в базовом активе для simulate_rebalance
--                        qty_for_orders = abs(usdt_value_to_trade) / current_price
--                        # Примечание: simulate_rebalance применяет плечо, поэтому qty здесь - это кол-во актива до плеча
-+                # Количество для simulate_rebalance (в базовом активе, до плеча)
-+                qty_for_orders = 0
-+                if current_price > 0 and asset_key_trade in (long_asset_key, short_asset_key):
-+                    qty_for_orders = abs(usdt_value_to_trade) / current_price
-@@
--                # Передаем action_dir (BUY/SELL) как 'action' для записи о сделке
--                record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
--                             abs_usdt_value_of_trade, current_price, commission_usdt,
--                             slippage_cost_this_trade_usdt, realized_pnl_this_spot_trade, trades_list)
-+                # Записываем сделку (PnL моментно не фиксируем — только издержки)
-+                record_trade(current_timestamp, asset_key_trade, action_dir, quantity_asset_traded_final,
-+                             abs_usdt_value_of_trade, current_price, commission_usdt,
-+                             slippage_cost_this_trade_usdt, trades_list)
-@@
--                    if current_signal == "BUY":
--                        if (asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt < 0:
-+                    if current_signal == "BUY":
-+                        if (asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt < 0:
-                             trade_blocked_by_signal = True
-                         elif asset_key_loop == short_asset_key and original_proposed_adjustment_usdt > 0:
-                             trade_blocked_by_signal = True
--                    elif current_signal == "SELL":
--                        if asset_key_loop == short_asset_key and original_proposed_adjustment_usdt < 0:
-+                    elif current_signal == "SELL":
-+                        if asset_key_loop == short_asset_key and original_proposed_adjustment_usdt < 0:
-                             trade_blocked_by_signal = True
--                        elif (asset_key_loop == spot_asset_key or asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt > 0:
-+                        elif (asset_key_loop == long_asset_key) and original_proposed_adjustment_usdt > 0:
-                             trade_blocked_by_signal = True
-@@
--                if asset_key_trade == "USDT": continue
-+                if asset_key_trade == "USDT":
-+                    continue
-+                # Пропускаем все ключи, не относящиеся к фьючерсам LONG/SHORT
-+                if asset_key_trade not in (long_asset_key, short_asset_key):
-+                    logging.info("Пропущен не-фьючерсный ключ веса: %s", asset_key_trade)
-+                    continue
-@@
--            asset_colors = {
--                spot_asset_key: {'BUY': 'rgba(0,128,0,0.9)', 'SELL': 'rgba(255,0,0,0.9)'},
--                long_asset_key: {'BUY': 'rgba(0,0,255,0.7)', 'SELL': 'rgba(255,140,0,0.7)'},
--                short_asset_key: {'BUY': 'rgba(128,0,128,0.7)', 'SELL': 'rgba(165,42,42,0.7)'}
--            }
--            asset_symbols = {
--                spot_asset_key: {'BUY': 'triangle-up', 'SELL': 'triangle-down'},
--                long_asset_key: {'BUY': 'circle', 'SELL': 'circle-open'},
--                short_asset_key: {'BUY': 'star', 'SELL': 'star-open'}
--            }
-+            asset_colors = {
-+                long_asset_key: {'BUY': 'rgba(0,0,255,0.7)', 'SELL': 'rgba(255,140,0,0.7)'},
-+                short_asset_key: {'BUY': 'rgba(128,0,128,0.7)', 'SELL': 'rgba(165,42,42,0.7)'}
-+            }
-+            asset_symbols = {
-+                long_asset_key: {'BUY': 'circle', 'SELL': 'circle-open'},
-+                short_asset_key: {'BUY': 'star', 'SELL': 'star-open'}
-+            }
-@@
--            if not df_trades.empty:
--                for asset_name_key_plot in [spot_asset_key, long_asset_key, short_asset_key]:
-+            if not df_trades.empty:
-+                for asset_name_key_plot in [long_asset_key, short_asset_key]:
-                     for action_str_plot in ['BUY', 'SELL']:
-                         trades_to_plot = df_trades[
-                             (df_trades['action'] == action_str_plot) &
-                             (df_trades['asset_type'] == asset_name_key_plot)
-                         ]
-                         if not trades_to_plot.empty:
++[run]
++omit =
++    src/prosperous_bot/config.py
++    src/prosperous_bot/data_loader.py
++    src/prosperous_bot/graphs.py
++    src/prosperous_bot/ml_model.py
++    src/prosperous_bot/monitoring.py
++    src/prosperous_bot/rebalance_optimizer.py
++    src/prosperous_bot/rebalance_optimizer_combined.py
++    src/prosperous_bot/signal_bot.py
++    src/prosperous_bot/signal_generator.py
++    src/prosperous_bot/strategy.py
++    src/prosperous_bot/update_distribution.py
++    src/prosperous_bot/utils.py
