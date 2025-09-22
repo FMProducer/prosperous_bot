@@ -3,10 +3,8 @@ import copy
 import json
 import pandas as pd
 import pytest
-pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
-import warnings
 
-# Подавляем известное предупреждение NumPy в сценариях с пустыми срезами
+# Подавляем известное предупреждение NumPy в сценариях с пустыми срезах
 pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
 
 from prosperous_bot.futures_rebalance_backtester import (
@@ -83,6 +81,46 @@ def test_graceful_handling_of_empty_data(tmp_path):
     assert isinstance(metrics, dict)
     assert "status" in metrics
     assert metrics["status"].lower().startswith("рын")
+
+def test_circuit_breaker_obliteration_returns_status(tmp_path):
+    """
+    Свеча с экстремальным диапазоном и нулевой стартовый NAV ⇒
+    немедленное завершение с статусом 'Портфель обнулен после АВ'.
+    """
+    ts = pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC")
+    df = pd.DataFrame({
+        "timestamp": ts,
+        "open": [100.0],
+        "high": [200.0],   # +100%
+        "low":  [  0.0],   # -100%
+        "close":[150.0],
+        "volume": 1.0
+    })
+    data_csv = tmp_path / "cb.csv"
+    df.to_csv(data_csv, index=False)
+
+    params = {
+        "main_asset_symbol": "BTC",
+        "apply_signal_logic": False,
+        "initial_portfolio_value_usdt": 0.0,        # ключ к ветке 'обнуления'
+        "futures_leverage": 5.0,
+        "commission_taker": 0.0,
+        "slippage_percent": 0.0,
+        "min_order_notional_usdt": 0.0,
+        "min_rebalance_interval_minutes": 0,
+        "rebalance_threshold": 1.0,                 # сделок не будет
+        "target_weights_normal": {"USDT": 1.0},
+        "safe_mode_config": {"enabled": False},
+        "circuit_breaker_config": {"threshold_percentage": 0.1},  # 10% порог, свеча >100%
+        "report_path_prefix": str(tmp_path / "reports"),
+        "use_fixed_report_path": True,
+    }
+    metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
+    assert metrics["status"] == "Портфель обнулен после АВ"
+    assert metrics.get("num_circuit_breaker_triggers", 0) >= 1
+    assert metrics["max_drawdown_percent"] == -100.0
+    # Путь отчёта должен быть определён (пусть и с ранним выходом)
+    assert "output_dir" in metrics and metrics["output_dir"]
 
 def test_circuit_breaker_obliteration_returns_status(tmp_path):
     """
