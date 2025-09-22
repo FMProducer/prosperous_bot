@@ -201,9 +201,8 @@ def load_data(csv_path):
         logging.error(f"Ошибка загрузки данных: {e}")
         return None
 
-def calculate_portfolio_value(usdt_balance, btc_spot_qty, 
-                              btc_long_value_usdt, btc_short_value_usdt, 
-                              current_btc_price):
+def calculate_portfolio_value(usdt_balance, 
+                              btc_long_value_usdt, btc_short_value_usdt):
     """Вычисляет текущую стоимость портфеля в USDT (без учета спотового актива).
     Для этого суммируется баланс USDT и значения фьючерсных позиций.
     """
@@ -482,8 +481,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
     trades_list = []
     equity_over_time = [] 
     portfolio = {
-        'usdt_balance': initial_portfolio_value_usdt, 'btc_spot_qty': 0.0,
-        'btc_spot_lots': [], 'btc_long_value_usdt': 0.0, 'btc_short_value_usdt': 0.0,
+        'usdt_balance': initial_portfolio_value_usdt,
+        'btc_long_value_usdt': 0.0, 'btc_short_value_usdt': 0.0,
         'prev_btc_price': None, 'total_commissions_usdt': 0.0, 'total_slippage_usdt': 0.0,
         'current_operational_mode': 'NORMAL_MODE', 'num_circuit_breaker_triggers': 0,
         'num_safe_mode_entries': 0, 'time_steps_in_safe_mode': 0,
@@ -532,8 +531,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                     portfolio['btc_short_value_usdt'] = short_usdt + short_usdt * leverage * (1 - price_change_ratio)
                 
                 total_portfolio_value_cb = calculate_portfolio_value(
-                    portfolio['usdt_balance'], portfolio['btc_spot_qty'],
-                    portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_price)
+                    portfolio['usdt_balance'],
+                    portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'])
                 equity_over_time.append({'timestamp': current_timestamp, 'portfolio_value_usdt': total_portfolio_value_cb})
                 if total_portfolio_value_cb <= 0:
                     logging.warning(f"Стоимость портфеля составляет {total_portfolio_value_cb:.2f} в {current_timestamp} после срабатывания АВ для {main_asset_symbol}. Остановка бэктеста.")
@@ -572,8 +571,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             portfolio['btc_short_value_usdt'] += short_pnl
         
         total_portfolio_value = calculate_portfolio_value(
-            portfolio['usdt_balance'], portfolio['btc_spot_qty'],
-            portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'], current_price)
+            portfolio['usdt_balance'],
+            portfolio['btc_long_value_usdt'], portfolio['btc_short_value_usdt'])
 
         nav = total_portfolio_value
         used_margin_usdt = 0
@@ -650,7 +649,6 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
             portfolio['last_rebalance_attempt_timestamp'] = current_timestamp
             current_weights = {
                 "USDT": portfolio['usdt_balance'] / total_portfolio_value if total_portfolio_value else 1,
-                spot_asset_key: (portfolio['btc_spot_qty'] * current_price) / total_portfolio_value if total_portfolio_value else 0,
                 long_asset_key: portfolio['btc_long_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
                 short_asset_key: portfolio['btc_short_value_usdt'] / total_portfolio_value if total_portfolio_value else 0,
             }
@@ -680,8 +678,7 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 else:
                     target_value_usdt = target_w_loop * total_portfolio_value
                 current_value_usdt = 0
-                if asset_key_loop == spot_asset_key: current_value_usdt = portfolio['btc_spot_qty'] * current_price
-                elif asset_key_loop == long_asset_key: current_value_usdt = portfolio['btc_long_value_usdt']
+                if asset_key_loop == long_asset_key: current_value_usdt = portfolio['btc_long_value_usdt']
                 elif asset_key_loop == short_asset_key: current_value_usdt = portfolio['btc_short_value_usdt']
                 elif asset_key_loop == "USDT": current_value_usdt = portfolio['usdt_balance']
                 
@@ -783,21 +780,8 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
                 realized_pnl_this_spot_trade = 0.0
                 slippage_cost_this_trade_usdt = abs_usdt_value_of_trade * slippage_percent
 
-                # ---------- СПОТ BTC ----------
-                if asset_key_trade == spot_asset_key:
-                    qty_btc = abs_usdt_value_of_trade / current_price
-                    quantity_asset_traded_final = qty_btc
-                    if order_type == "BUY": # Покупка спот
-                        portfolio["btc_spot_qty"] = portfolio.get("btc_spot_qty", 0.0) + qty_btc
-                        portfolio["usdt_balance"] -= abs_usdt_value_of_trade
-                    else: # Продажа спот
-                        qty_close = min(qty_btc, portfolio.get("btc_spot_qty", 0.0))
-                        portfolio["btc_spot_qty"] -= qty_close
-                        portfolio["usdt_balance"] += qty_close * current_price
-                        realized_pnl_this_spot_trade = (current_price - portfolio.get("prev_btc_price", current_price)) * qty_close
-
                 # ---------- PERP LONG ----------
-                elif asset_key_trade == long_asset_key:
+                if asset_key_trade == long_asset_key:
                     quantity_asset_traded_final = abs_usdt_value_of_trade # Для фьючерсов количество актива - это котируемая стоимость
                     if order_type == "OPEN_LONG":
                         portfolio["btc_long_value_usdt"] = portfolio.get("btc_long_value_usdt", 0.0) + abs_usdt_value_of_trade
