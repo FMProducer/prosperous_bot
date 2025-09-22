@@ -3,10 +3,8 @@ import copy
 import json
 import pandas as pd
 import pytest
-pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
-import warnings
 
-# Подавляем известное предупреждение NumPy в сценариях с пустыми срезами
+# Подавляем известное предупреждение NumPy в сценариях с пустыми срезах
 pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
 
 from prosperous_bot.futures_rebalance_backtester import (
