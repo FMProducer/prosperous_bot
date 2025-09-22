@@ -473,3 +473,122 @@ def test_main_cli_execution(tmp_path, monkeypatch):
     report_dir = tmp_path / "cli_reports"
     assert os.path.isdir(report_dir)
     assert os.path.exists(report_dir / "summary.csv")
+
+def test_simulate_rebalance_short_logic(tmp_path):
+    """
+    Tests the logic for opening, increasing, and closing short positions in simulate_rebalance.
+    """
+    # 1. Data: A simple price series
+    ts = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    df_market = pd.DataFrame({
+        "timestamp": ts,
+        "open": [100, 105, 95, 90, 95],
+        "high": [105, 105, 98, 92, 98],
+        "low": [98, 102, 94, 88, 92],
+        "close": [105, 95, 90, 92, 88],
+        "volume": 1.0
+    })
+    data_csv = tmp_path / "data.csv"
+    df_market.to_csv(data_csv, index=False)
+
+    # 2. Orders: Open, increase, and close a short position
+    orders_by_step = {
+        0: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 1.0}],  # Open short at 105
+        1: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 0.5}],  # Increase short at 95
+        3: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'buy', 'qty': 2.0}],   # Close short at 92
+    }
+
+    # 3. Run simulate_rebalance
+    from prosperous_bot.futures_rebalance_backtester import simulate_rebalance
+    trade_log = simulate_rebalance(df_market, orders_by_step, leverage=2.0)
+
+    # 4. Assertions
+    assert len(trade_log) == 1
+    trade = trade_log[0]
+    assert trade['asset_key'] == 'BTC_PERP_SHORT'
+    
+    # Total quantity closed is min(total_open_qty, close_order_qty)
+    # Here, total open is 1.0 + 0.5 = 1.5. Close order is 2.0. So 1.5 is closed.
+    assert trade['qty'] == 1.5
+    
+    # Entry price is the weighted average of the open and increase trades
+    # (1.0 * 105 + 0.5 * 95) / 1.5 = (105 + 47.5) / 1.5 = 152.5 / 1.5 = 101.666...
+    expected_entry_price = (1.0 * 105 + 0.5 * 95) / 1.5
+    assert trade['entry_price'] == pytest.approx(expected_entry_price)
+    
+    # Exit price is the close price at step 3
+    assert trade['exit_price'] == 92
+    
+    # PnL for short = (entry_price - exit_price) * quantity * leverage
+    expected_pnl = (expected_entry_price - 92) * 1.5 * 2.0
+    assert trade['pnl_gross_quote'] == pytest.approx(expected_pnl)
+
+def test_simulate_rebalance_long_logic(tmp_path):
+    """
+    Tests the logic for opening, increasing, and closing long positions in simulate_rebalance.
+    """
+    # 1. Data: A simple price series
+    ts = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    df_market = pd.DataFrame({
+        "timestamp": ts,
+        "open": [100, 105, 110, 108, 112],
+        "high": [102, 108, 112, 110, 115],
+        "low": [99, 103, 108, 106, 110],
+        "close": [101, 107, 109, 108, 114],
+        "volume": 1.0
+    })
+    data_csv = tmp_path / "data.csv"
+    df_market.to_csv(data_csv, index=False)
+
+    # 2. Orders: Open, increase, and close a long position
+    orders_by_step = {
+        0: [{'asset_key': 'BTC_PERP_LONG', 'side': 'buy', 'qty': 1.0}],  # Open long at 101
+        1: [{'asset_key': 'BTC_PERP_LONG', 'side': 'buy', 'qty': 0.5}],  # Increase long at 107
+        3: [{'asset_key': 'BTC_PERP_LONG', 'side': 'sell', 'qty': 0.8}], # Partially close long at 108
+        4: [{'asset_key': 'BTC_PERP_LONG', 'side': 'sell', 'qty': 1.0}],   # Close remaining long at 114
+    }
+
+    # 3. Run simulate_rebalance
+    from prosperous_bot.futures_rebalance_backtester import simulate_rebalance
+    trade_log = simulate_rebalance(df_market, orders_by_step, leverage=3.0)
+
+    # 4. Assertions
+    assert len(trade_log) == 2
+    
+    # First trade (partial close)
+    trade1 = trade_log[0]
+    assert trade1['asset_key'] == 'BTC_PERP_LONG'
+    assert trade1['qty'] == 0.8
+    
+    expected_entry_price1 = (1.0 * 101 + 0.5 * 107) / 1.5
+    assert trade1['entry_price'] == pytest.approx(expected_entry_price1)
+    assert trade1['exit_price'] == 108
+    
+    expected_pnl1 = (108 - expected_entry_price1) * 0.8 * 3.0
+    assert trade1['pnl_gross_quote'] == pytest.approx(expected_pnl1)
+
+    # Second trade (closing the rest)
+    trade2 = trade_log[1]
+    assert trade2['asset_key'] == 'BTC_PERP_LONG'
+    assert trade2['qty'] == 0.7 # 1.5 - 0.8 = 0.7
+    assert trade2['entry_price'] == pytest.approx(expected_entry_price1) # Entry price is the same
+    assert trade2['exit_price'] == 114
+
+    expected_pnl2 = (114 - expected_entry_price1) * 0.7 * 3.0
+    assert trade2['pnl_gross_quote'] == pytest.approx(expected_pnl2)
+
+def test_load_data_errors(tmp_path, mocker):
+    """
+    Tests error handling in load_data for missing files and other exceptions.
+    """
+    from prosperous_bot.futures_rebalance_backtester import load_data
+
+    # 1. Test non-existent file
+    non_existent_path = tmp_path / "non_existent.csv"
+    assert load_data(str(non_existent_path)) is None
+
+    # 2. Test other exception
+    mocker.patch('pandas.read_csv', side_effect=Exception("Test error"))
+    dummy_path = tmp_path / "dummy.csv"
+    dummy_path.touch()
+    assert load_data(str(dummy_path)) is None
