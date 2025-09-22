@@ -159,7 +159,7 @@ def test_circuit_breaker_trigger(tmp_path):
         "main_asset_symbol": "BTC",
         "initial_portfolio_value_usdt": 10000.0,
         "rebalance_threshold": 0.01, # Низкий порог, чтобы ребаланс точно требовался
-        "target_weights_normal": {"BTC_SPOT": 1.0}, # Простая стратегия для чистоты теста
+        "target_weights_normal": {"BTC_PERP_LONG": 1.0}, # Простая стратегия для чистоты теста
         "circuit_breaker_config": {
             "enabled": True, 
             "threshold_percentage": 0.20 # 20% порог
@@ -422,7 +422,7 @@ def test_graceful_handling_of_empty_data(tmp_path):
     empty_data_csv = tmp_path / "empty_data.csv"
     empty_data_csv.touch()
     metrics_empty = run_backtest(base_params, str(empty_data_csv))
-    assert metrics_empty["status"] == "Market data empty"
+    assert metrics_empty["status"] == "Рыночные данные пусты"
     assert metrics_empty["total_net_pnl_usdt"] == 0.0
 
     # Сценарий 2: Пустой CSV-файл с сигналами
@@ -433,7 +433,7 @@ def test_graceful_handling_of_empty_data(tmp_path):
     params_empty_signals = copy.deepcopy(base_params)
     params_empty_signals["data_settings"]["signals_csv_path"] = str(empty_signals_csv)
     metrics_empty_signals = run_backtest(params_empty_signals, str(valid_data_csv))
-    assert metrics_empty_signals["status"] == "Completed"
+    assert metrics_empty_signals["status"] == "Завершено"
 
     # Сценарий 3: Отсутствует колонка 'close'
     invalid_data_csv = tmp_path / "invalid_data.csv"
