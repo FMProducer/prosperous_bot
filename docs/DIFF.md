@@ -1,73 +1,46 @@
-@@ -246,0 +247,10 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_reports=None):
+--- futures_rebalance_backtester.py
++++ futures_rebalance_backtester.py
+@@ -212,16 +212,20 @@
+ def record_trade(timestamp, asset_type, action, quantity_asset, quantity_quote, market_price, 
+                  commission_usdt, slippage_usdt, pnl_net_quote, trades_list):
+-    """
+-    Records a simulated trade.
+-    - quantity_asset: For BTC_SPOT, this is BTC. For leveraged, this is the USDT value being allocated/deallocated.
+-    - quantity_quote: USDT value of the trade *before* commission & slippage.
+-    - market_price: Price of BTC at the time of trade decision.
+-    - commission_usdt: Commission paid in USDT.
+-    - slippage_usdt: Cost of slippage in USDT.
+-    - pnl_net_quote: Net PnL of this trade in USDT (primarily for SPOT, after costs).
+-    - realized_pnl_spot_usdt: The portion of pnl_net_quote that is from realized SPOT gains/losses.
+-    """
+-    trade = {
++    """Записывает информацию о сделке, симулированной в процессе бэктеста.
++    - quantity_asset: количество базового актива (например, BTC) в сделке.
++    - quantity_quote: стоимость сделки в USDT до учета комиссий и проскальзывания.
++    - market_price: цена актива в момент совершения сделки.
++    - commission_usdt: комиссия за сделку в USDT.
++    - slippage_usdt: стоимость проскальзывания в USDT.
++    - pnl_net_quote: чистая прибыль/убыток по сделке в USDT после учета комиссий и проскальзывания.
 +    """
-+    Выполняет бэктест дельта-нейтральной стратегии ребаланса фьючерсов.
-+    Параметры:
-+        params_dict (dict): Настройки стратегии и бэктестера (комиссии, левередж, таргетные веса, пороги и т.д.).
-+        data_path (str): Путь к CSV-файлу(ам) исторических рыночных данных.
-+        is_optimizer_call (bool): Флаг режима оптимизации (True при вызове из оптимизатора, отчёты не сохраняются).
-+        trial_id_for_reports (Optional[int]): Идентификатор прогона для формирования отчётов (используется при оптимизации).
-+    Этапы работы:
-+        1. Загрузка и предобработка данных рынка.
-+        2. Применение сигналов (если включена соответствующая логика).
-+        3. Моделирование сделок по целевым весам и ребалансировка портфеля.
-+        4. Учет комиссий, проскальзывания (slippage), TP/SL, Safe Mode и Circuit Breaker.
-+        5. Сбор метрик (KPI) и формирование equity-кривой и журнала сделок.
-+    Возвращает:
-+        dict: Результаты бэктеста, включая итоговую стоимость портфеля, PnL, статистические метрики и статус выполнения.
-+    """
-@@ -333,1 +333,1 @@
--            if not output_dir: # If prefix was empty or just "/"
-+            if not output_dir: # Если префикс пустой или равен "/"
-@@ -334,1 +334,1 @@
--                output_dir = "reports" # Default to "reports" to be safe for tests
-+                output_dir = "reports" # По умолчанию 'reports'
-@@ -337,1 +337,1 @@
--            # Existing logic for timestamped/optimizer paths
-+            # Логика формирования пути отчётов
-@@ -370,2 +370,2 @@
--    logging.info("Report generation is OFF. No reports will be saved.")
-+    logging.info("Report generation is OFF. No reports will be saved.")
--    # output_dir remains None as it's not used when reports are off.
-+    # output_dir остаётся None, поскольку при отключенных отчётах он не используется.
-@@ -374,1 +374,1 @@
--    df_market_original = load_data(data_path) # Keep original for plotting price
-+    df_market_original = load_data(data_path) # Оригинальные данные рынка для графика цены
-@@ -384,1 +384,1 @@
--                                   "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Added more zeroed metrics
-+                                   "conditional_value_at_risk_cvar_percent", "omega_ratio", "ulcer_index", "skewness", "kurtosis")} # Добавлены новые метрики с нулевыми значениями
-@@ -386,1 +386,1 @@
--            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Corrected
-+            "final_portfolio_value_usdt": initial_portfolio_value_usdt, # Исправлено
-@@ -387,1 +387,1 @@
--            "total_net_pnl_usdt": 0.0, # Corrected
-+            "total_net_pnl_usdt": 0.0, # Исправлено
-@@ -388,1 +388,1 @@
--            "total_net_pnl_percent": 0.0, # Corrected
-+            "total_net_pnl_percent": 0.0, # Исправлено
-@@ -395,1 +395,1 @@
--    df_market = df_market_original.copy() # Work with a copy for potential modifications
-+    df_market = df_market_original.copy() # Работаем с копией данных для изменений
-@@ -404,1 +404,1 @@
--    # ── auto-range: если "auto" или дата вне диапазона файла ────────────
-+    # ── авто-диапазон: если "auto" или дата вне диапазона файла ────────────
-@@ -407,1 +407,1 @@
--    dr = params.setdefault("date_range", {}) # Get or create 'date_range' dict
-+    dr = params.setdefault("date_range", {}) # Получаем или создаём словарь 'date_range'
-@@ -453,1 +453,1 @@
--            except Exception as e: # More general exception
-+            except Exception as e: # Общий перехват исключений
-@@ -467,1 +467,1 @@
--    if df_market.empty:                     # graceful-fail for unit-tests
-+    if df_market.empty:                     # Корректный выход для unit-тестов
-@@ -503,1 +503,1 @@
--        # Return structure consistent with other error returns
-+        # Структура ответа при ошибке (как и в других случаях)
-@@ -544,1 +544,1 @@
--                     metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Initialize all expected keys
-+                     metrics_cb_fail = {key: 0 for key in ["sharpe_ratio", "sortino_ratio", "profit_factor", "win_rate_percent"]} # Инициализируем все необходимые ключи
-@@ -548,1 +548,1 @@
--                         "max_drawdown_percent": -100.0, # Or calculate actual if possible
-+                         "max_drawdown_percent": -100.0, # или вычислить реальный, если возможно
-@@ -551,1 +551,1 @@
--                         **portfolio # Spread existing portfolio state
-+                         **portfolio # Добавляем текущее состояние портфеля
++    trade = {
+         "timestamp_open": timestamp, 
+         "timestamp_close": timestamp, 
+         "asset_type": asset_type,
+@@ -228,8 +232,8 @@
+         "entry_price": market_price, 
+         "exit_price": market_price, 
+         "commission_quote": commission_usdt,
+         "slippage_quote": slippage_usdt, 
+-        "pnl_gross_quote": realized_pnl_spot_usdt, 
+-        "pnl_net_quote": realized_pnl_spot_usdt - commission_usdt, 
++        "pnl_gross_quote": pnl_net_quote, 
++        "pnl_net_quote": pnl_net_quote - commission_usdt, 
+     }
+     trades_list.append(trade)
+     logging.info(
+         f"  TRADE: {action} {quantity_asset:.6f} {asset_type} @ MktPx {market_price:.2f}, "
+@@ -240,7 +244,7 @@
+         f"Val: {quantity_quote:.2f}, Comm: {commission_usdt:.2f}, SlipCost: {slippage_usdt:.2f}, "
+-        f"NetPnL_Trade: {(realized_pnl_spot_usdt - commission_usdt):.2f}"
++        f"NetPnL_Trade: {(pnl_net_quote - commission_usdt):.2f}"
+     )
