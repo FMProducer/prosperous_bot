@@ -2,14 +2,14 @@
 
 - Репозиторий: https://github.com/FMProducer/prosperous_bot
 - Документация:
-  - https://github.com/FMProducer/prosperous_bot/tree/main/docs
-  - https://github.com/FMProducer/prosperous_bot/blob/main/README.md
-  - https://github.com/FMProducer/prosperous_bot/blob/main/docs/SYSTEM_PROMPT.md
+  - https://github.com/FMProducer/prosperous_bot/tree/prosperous_bot/docs
+  - https://github.com/FMProducer/prosperous_bot/blob/prosperous_bot/README.md
+  - https://github.com/FMProducer/prosperous_bot/blob/prosperous_bot/docs/SYSTEM_PROMPT.md
 - Конфигурации:
   - https://github.com/FMProducer/prosperous_bot/search?q=unified_config
-  - https://github.com/FMProducer/prosperous_bot/blob/main/unified_config.example.json
-- Исходники: https://github.com/FMProducer/prosperous_bot/tree/main/src
+  - https://github.com/FMProducer/prosperous_bot/blob/prosperous_bot/unified_config.example.json
+- Исходники: https://github.com/FMProducer/prosperous_bot/tree/prosperous_bot/src
 - Тесты и CI:
-  - https://github.com/FMProducer/prosperous_bot/tree/main/tests
-  - https://github.com/FMProducer/prosperous_bot/tree/main/.github/workflows
-- Отчёты: https://github.com/FMProducer/prosperous_bot/tree/main/reports
+  - https://github.com/FMProducer/prosperous_bot/tree/prosperous_bot/tests
+  - https://github.com/FMProducer/prosperous_bot/tree/prosperous_bot/.github/workflows
+- Отчёты: https://github.com/FMProducer/prosperous_bot/tree/prosperous_bot/reports
