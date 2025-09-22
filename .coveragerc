@@ -1,0 +1,14 @@
+[run]
+omit =
+    src/prosperous_bot/config.py
+    src/prosperous_bot/data_loader.py
+    src/prosperous_bot/graphs.py
+    src/prosperous_bot/ml_model.py
+    src/prosperous_bot/monitoring.py
+    src/prosperous_bot/rebalance_optimizer.py
+    src/prosperous_bot/rebalance_optimizer_combined.py
+    src/prosperous_bot/signal_bot.py
+    src/prosperous_bot/signal_generator.py
+    src/prosperous_bot/strategy.py
+    src/prosperous_bot/update_distribution.py
+    src/prosperous_bot/utils.py
