@@ -1,0 +1,2 @@
+# Mark third-party subtree as vendored to exclude from language stats, code owners, etc.
+third_party/rl-trading-binance/** linguist-vendored

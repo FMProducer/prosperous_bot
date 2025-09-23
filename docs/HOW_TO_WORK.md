@@ -103,3 +103,28 @@ deliverables:
 - git checkout -b feature/xyz
 - git apply --index changes.patch && git commit -m "feat: xyz"
 - git push -u origin feature/xyz
+
+## Обновление `third_party/rl-trading-binance` (git subtree)
+
+&gt; Источник: https://github.com/YuriyKolesnikov/rl-trading-binance (MIT). Первичный импорт выполнен сквошем из upstream-коммита `f711309` (см. `bbca4c81a7674bcfe3e35490578e85ff59d4b860`).  
+&gt; Подтверждение: наш коммит с сабтри-метаданными `git-subtree-dir`/`git-subtree-split` есть в истории. 
+
+### Первичная настройка remotes (если ещё не настроено)
+```bash
+git remote add upstream-rl https://github.com/YuriyKolesnikov/rl-trading-binance.git
+# Опционально: определить дефолтную ветку upstream
+git ls-remote --symref upstream-rl HEAD
+```
+
+### Обновление сабтри до актуального upstream
+```bash
+git fetch upstream-rl main
+git subtree pull --prefix=third_party/rl-trading-binance upstream-rl main --squash
+```
+
+### (Для справки) Первичное добавление сабтри
+```bash
+git subtree add --prefix=third_party/rl-trading-binance upstream-rl main --squash
+```
+
+&gt; Политика PR/CI: один атомарный дифф, без бинарников; `pytest --cov` ≥ 90%, смоук-бэктест, отчёты в `reports/`. См. чек-листы проекта.

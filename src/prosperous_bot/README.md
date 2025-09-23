@@ -287,3 +287,10 @@ python -m src.prosperous_bot.rebalance_optimizer --config_file config/unified_co
 (Content is largely the same as before)
 
 ```
+
+## Third-party subtree: `rl-trading-binance`
+Этот репозиторий включает внешний код в каталоге `third_party/rl-trading-binance/` (импорт `git subtree` с `--squash`).  
+**Upstream:** https://github.com/YuriyKolesnikov/rl-trading-binance (MIT).  
+**Импортировано из upstream-коммита:** `f711309`  
+  — подтверждено нашим коммитом `bbca4c81a7674bcfe3e35490578e85ff59d4b860` (“Squashed 'third_party/rl-trading-binance/' content from commit f711309”).  
+**Как обновить:** см. раздел *“Обновление third_party/rl-trading-binance (git subtree)”* в `docs/HOW_TO_WORK.md`.
