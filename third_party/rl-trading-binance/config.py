@@ -14,7 +14,7 @@ class DeviceConfig(BaseModel):
 
 
 class PathConfig(BaseModel):
-    config_name: Optional[str] = None
+    config_name: str = "alpha"
     base_output_dir: str = "output"
     extra_model_dir: Optional[str] = None
     extra_cache_dir: Optional[str] = None
@@ -72,7 +72,7 @@ class SequenceConfig(BaseModel):
     post_signal_len: int = 60
     agent_history_len: int = 30
     agent_session_len: int = 10
-    action_history_len: int = 5
+    action_history_len: int = 3
 
     @property
     def num_features(self) -> int:
@@ -133,7 +133,7 @@ class ModelConfig(BaseModel):
     cnn_strides: List[int] = [2, 1, 1]
     dense_val: List[int] = [128, 64] # [64, 32]
     dense_adv: List[int] = [128, 64] # [64, 32]
-    additional_feats: int = 4 + 5 * 4  # 4 + action_history_len * num_actions
+    additional_feats: int = 4 + 3 * 4  # 4 + action_history_len * num_actions
     dropout_p: float = 0.1  # 0 ≤ p < 0.5; typical values are 0.1–0.2
 
 
