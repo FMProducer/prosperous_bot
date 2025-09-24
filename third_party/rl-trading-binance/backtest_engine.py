@@ -47,7 +47,7 @@ def setup_logging(cfg: MasterConfig) -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(log_file),
-            # logging.StreamHandler(),
+            logging.StreamHandler(),
         ],
     )
     logging.info("[Init] Logging for backtest session started")
@@ -218,6 +218,7 @@ def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> boo
 
 
 def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
+    cfg.backtest_mode = True
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 

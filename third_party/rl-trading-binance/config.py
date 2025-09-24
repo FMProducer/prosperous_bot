@@ -194,7 +194,7 @@ class BacktestConfig(BaseModel):
     take_profit: float = 0.04
     trailing_stop: float = 0.01
     selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "ensemble_q_filter"
-    plot_backtest_balance_curve: bool = False
+    plot_backtest_balance_curve: bool = True
     ensemble_n_samples: int = 10
     # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
     ensemble_max_sigma: float = 0.01
