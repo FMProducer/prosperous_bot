@@ -3,6 +3,7 @@ import copy
 import json
 import pandas as pd
 import pytest
+import logging
 
 # Подавляем известное предупреждение NumPy в сценариях с пустыми срезах
 pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
@@ -10,6 +11,9 @@ pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
 from prosperous_bot.futures_rebalance_backtester import (
     run_backtest,
     main as backtester_main,
+    simulate_rebalance,
+    _subst_symbol,
+    load_signal_data,
 )
 
 def test_main_cli_execution(tmp_path, monkeypatch):
@@ -449,3 +453,140 @@ def test_metrics_exist_and_reasonable_pf(tmp_path):
     assert metrics["profit_factor"] >= 0.0
     assert "sharpe_ratio" in metrics
     assert "max_drawdown_percent" in metrics
+
+def test_buy_to_close_short_position():
+    """
+    Проверяет корректность закрытия короткой позиции покупкой.
+    """
+    data = pd.DataFrame({
+        'timestamp': pd.to_datetime(['2023-01-01 00:00:00', '2023-01-01 01:00:00']),
+        'close': [100, 90]
+    })
+    data = data.set_index(pd.DatetimeIndex(data['timestamp']))
+
+    # Сначала открываем шорт на 1 BTC по 100
+    # Затем на следующем шаге откупаем 1 BTC по 90
+    orders_by_step = {
+        data.index[0]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 1}],
+        data.index[1]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'buy', 'qty': 1}]
+    }
+
+    trade_log = simulate_rebalance(data, orders_by_step, leverage=1.0)
+
+    assert len(trade_log) == 1
+    trade = trade_log[0]
+    assert trade['asset_key'] == 'BTC_PERP_SHORT'
+    assert trade['entry_price'] == 100
+    assert trade['exit_price'] == 90
+    assert trade['qty'] == 1
+    assert trade['pnl_gross_quote'] == 10.0
+
+def test_sell_to_increase_short_position():
+    """
+    Проверяет корректность увеличения короткой позиции продажей.
+    """
+    data = pd.DataFrame({
+        'timestamp': pd.to_datetime(['2023-01-01 00:00:00', '2023-01-01 01:00:00']),
+        'close': [100, 110]
+    })
+    data = data.set_index(pd.DatetimeIndex(data['timestamp']))
+
+    # Сначала открываем шорт на 1 BTC по 100
+    # Затем на следующем шаге продаем еще 1 BTC по 110
+    orders_by_step = {
+        data.index[0]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 1}],
+        data.index[1]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 1}]
+    }
+
+    trade_log = simulate_rebalance(data, orders_by_step, leverage=1.0, force_close_open_positions=True)
+
+    assert len(trade_log) == 1
+    trade = trade_log[0]
+    assert trade['status'] == 'force_closed'
+    assert trade['asset_key'] == 'BTC_PERP_SHORT'
+    assert trade['entry_price'] == 105
+    assert trade['exit_price'] == 110
+    assert trade['qty'] == 2
+    assert trade['pnl_gross_quote'] == -10.0
+
+def test_buy_to_partially_close_short_position():
+    """
+    Проверяет корректность частичного закрытия короткой позиции покупкой.
+    """
+    data = pd.DataFrame({
+        'timestamp': pd.to_datetime(['2023-01-01 00:00:00', '2023-01-01 01:00:00', '2023-01-01 02:00:00']),
+        'close': [100, 90, 95]
+    })
+    data = data.set_index(pd.DatetimeIndex(data['timestamp']))
+
+    # Сначала открываем шорт на 1 BTC по 100
+    # Затем на следующем шаге откупаем 0.5 BTC по 90
+    orders_by_step = {
+        data.index[0]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'sell', 'qty': 1}],
+        data.index[1]: [{'asset_key': 'BTC_PERP_SHORT', 'side': 'buy', 'qty': 0.5}]
+    }
+
+    trade_log = simulate_rebalance(data, orders_by_step, leverage=1.0, force_close_open_positions=True)
+
+    assert len(trade_log) == 2
+    
+    # First trade (partial close)
+    trade1 = trade_log[0]
+    assert trade1['asset_key'] == 'BTC_PERP_SHORT'
+    assert trade1['entry_price'] == 100
+    assert trade1['exit_price'] == 90
+    assert trade1['qty'] == 0.5
+    assert trade1['pnl_gross_quote'] == 5.0
+
+    # Second trade (force close)
+    trade2 = trade_log[1]
+    assert trade2['status'] == 'force_closed'
+    assert trade2['asset_key'] == 'BTC_PERP_SHORT'
+    assert trade2['entry_price'] == 100 # The entry price of the remaining position
+    assert trade2['exit_price'] == 95
+    assert trade2['qty'] == 0.5
+    assert trade2['pnl_gross_quote'] == 2.5
+
+def test_subst_symbol():
+    """
+    Проверяет рекурсивную замену {main_asset_symbol} и *USDT.
+    """
+    obj = {
+        "key1": "value_{main_asset_symbol}",
+        "key2": ["item1", "{main_asset_symbol}USDT", "*USDT"],
+        "key3": {
+            "nested_key": "nested_value_{main_asset_symbol}"
+        }
+    }
+    sym = "TEST"
+    result = _subst_symbol(obj, sym)
+    assert result["key1"] == "value_TEST"
+    assert result["key2"] == ["item1", "TESTUSDT", "TESTUSDT"]
+    assert result["key3"]["nested_key"] == "nested_value_TEST"
+
+def test_load_signal_data_extended(tmp_path):
+    """
+    Проверяет расширенные сценарии для load_signal_data.
+    """
+    # 1) Файл с некорректными строками
+    bad_rows_csv = tmp_path / "bad_rows.csv"
+    with open(bad_rows_csv, "w") as f:
+        f.write("timestamp,signal\n")
+        f.write("2023-01-01 00:00:00,BUY\n")
+        f.write("not a date,SELL\n")
+    df = load_signal_data(str(bad_rows_csv))
+    assert df is not None
+    assert len(df) == 1
+
+    # 2) Файл, который становится пустым после очистки
+    empty_after_clean_csv = tmp_path / "empty_after_clean.csv"
+    with open(empty_after_clean_csv, "w") as f:
+        f.write("timestamp,signal\n")
+        f.write("not a date,BUY\n")
+    df = load_signal_data(str(empty_after_clean_csv))
+    assert df is None
+
+    # 3) Файл не найден
+    non_existent_csv = tmp_path / "non_existent.csv"
+    df = load_signal_data(str(non_existent_csv))
+    assert df is None
