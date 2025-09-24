@@ -4,6 +4,7 @@ import json
 import pandas as pd
 import pytest
 import logging
+from unittest.mock import MagicMock
 
 # Подавляем известное предупреждение NumPy в сценариях с пустыми срезах
 pytestmark = pytest.mark.filterwarnings("ignore:Mean of empty slice")
@@ -590,3 +591,113 @@ def test_load_signal_data_extended(tmp_path):
     non_existent_csv = tmp_path / "non_existent.csv"
     df = load_signal_data(str(non_existent_csv))
     assert df is None
+
+def test_main_dummy_file_generation(tmp_path, monkeypatch, caplog):
+    """
+    Проверяет создание dummy-файлов при отсутствии конфига.
+    """
+    config_file = tmp_path / "non_existent_config.json"
+    
+    # Use os.path.join to create platform-independent relative paths
+    dummy_config_path_rel = os.path.join('config', 'dummy_unified_config_for_backtester.json')
+    dummy_data_path_rel = os.path.join('data', 'dummy_BTCUSDT_1h_for_backtester.csv')
+    dummy_signals_path_rel = os.path.join('data', 'dummy_BTCUSDT_signals_for_backtester.csv')
+
+    dummy_config_path_abs = tmp_path / dummy_config_path_rel
+    dummy_data_path_abs = tmp_path / dummy_data_path_rel
+    dummy_signals_path_abs = tmp_path / dummy_signals_path_rel
+
+    monkeypatch.setattr("sys.argv", ["futures_rebalance_backtester.py", "--config_file", str(config_file)])
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.INFO):
+        backtester_main()
+
+    assert f"Configuration file '{config_file}' not found." in caplog.text
+    assert f"Dummy unified config for backtester created at '{dummy_config_path_rel}'" in caplog.text
+    assert f"Dummy market data file created at '{dummy_data_path_rel}'" in caplog.text
+    assert f"Dummy signal data file created at '{dummy_signals_path_rel}'" in caplog.text
+    assert os.path.exists(dummy_config_path_abs)
+    assert os.path.exists(dummy_data_path_abs)
+    assert os.path.exists(dummy_signals_path_abs)
+
+def test_main_override(tmp_path, monkeypatch):
+    """
+    Проверяет работу флага --override.
+    """
+    data_csv = tmp_path / "data.csv"
+    df = pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "close": [100]})
+    df.to_csv(data_csv, index=False)
+
+    config_json = tmp_path / "config.json"
+    params = {
+        "backtest_settings": {
+            "main_asset_symbol": "BTC",
+            "initial_portfolio_value_usdt": 1000.0,
+            "futures_leverage": 1.0,
+            "commission_taker": 0.0,
+            "slippage_percent": 0.0,
+            "min_order_notional_usdt": 0.0,
+            "min_rebalance_interval_minutes": 0,
+            "rebalance_threshold": 0.0,
+            "target_weights_normal": {"BTC_PERP_LONG": 1.0},
+            "safe_mode_config": {"enabled": False},
+            "circuit_breaker_config": {"threshold_percentage": 1.0},
+            "data_settings": {"csv_file_path": str(data_csv)},
+            "report_path_prefix": str(tmp_path / "cli_reports"),
+            "use_fixed_report_path": True,
+        }
+    }
+    with open(config_json, "w") as f:
+        json.dump(params, f)
+
+    # Mock run_standalone_backtest to check its arguments
+    from prosperous_bot import futures_rebalance_backtester
+    
+    def mock_run_standalone_backtest(config, data_path):
+        assert config['main_asset_symbol'] == 'ETH'
+
+    monkeypatch.setattr(futures_rebalance_backtester, "run_standalone_backtest", mock_run_standalone_backtest)
+    monkeypatch.setattr("sys.argv", ["futures_rebalance_backtester.py", "--config_file", str(config_json), "--override", '{"main_asset_symbol": "ETH"}'])
+    
+    backtester_main()
+
+def test_safe_mode_activation(tmp_path):
+    """
+    Проверяет активацию Safe Mode.
+    """
+    ts = pd.date_range("2024-01-01", periods=10, freq="h", tz="UTC")
+    df = pd.DataFrame({
+        "timestamp": ts,
+        "open": 100, "high": 110, "low": 90, "close": 105, "volume": 1
+    })
+    data_csv = tmp_path / "data.csv"
+    df.to_csv(data_csv, index=False)
+
+    params = {
+        "main_asset_symbol": "BTC",
+        "apply_signal_logic": False,
+        "initial_portfolio_value_usdt": 1000.0,
+        "futures_leverage": 10.0, 
+        "commission_taker": 0.0,
+        "slippage_percent": 0.0,
+        "min_order_notional_usdt": 0.0,
+        "min_rebalance_interval_minutes": 0,
+        "rebalance_threshold": 0.0,
+        "target_weights_normal": {"BTC_PERP_LONG": 10.0}, # High weight to trigger high margin usage
+        "safe_mode_config": {
+            "enabled": True,
+            "metric_to_monitor": "margin_usage",
+            "entry_threshold": 0.5,
+            "exit_threshold": 0.2,
+            "target_weights_safe": {"USDT": 1.0}
+        },
+        "circuit_breaker_config": {"enabled": False},
+        "data_settings": {"csv_file_path": str(data_csv)},
+        "report_path_prefix": str(tmp_path / "reports"),
+        "use_fixed_report_path": True,
+    }
+
+    metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
+    print(metrics)
+    assert metrics['num_safe_mode_entries'] > 0
