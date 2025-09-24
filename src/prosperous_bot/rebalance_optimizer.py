@@ -11,19 +11,19 @@ import math
 # Attempt to import the backtester; handle potential ImportError if structure changes
 try:
     # Explicit relative import for files within the same package
-    from .rebalance_backtester import run_backtest
+    from .futures_rebalance_backtester import run_backtest
 except ImportError as e1:
-    logging.warning(f"Relative import '.rebalance_backtester' failed: {e1}. Trying original fallbacks.")
+    logging.warning(f"Relative import '.futures_rebalance_backtester' failed: {e1}. Trying original fallbacks.")
     try:
-        from prosperous_bot.rebalance_backtester import run_backtest
+        from prosperous_bot.futures_rebalance_backtester import run_backtest
     except ImportError as e2:
-        logging.warning(f"Absolute import 'prosperous_bot.rebalance_backtester' failed: {e2}. Trying direct import.")
+        logging.warning(f"Absolute import 'prosperous_bot.futures_rebalance_backtester' failed: {e2}. Trying direct import.")
         # Fallback if the script is run from a different relative path or package structure issues
-        # This assumes rebalance_backtester.py is in the same directory for a simple fallback
+        # This assumes futures_rebalance_backtester.py is in the same directory for a simple fallback
         try:
-            from rebalance_backtester import run_backtest # This would only work if src/prosperous_bot was directly on PYTHONPATH
+            from futures_rebalance_backtester import run_backtest # This would only work if src/prosperous_bot was directly on PYTHONPATH
         except ImportError as e3:
-            logging.error(f"CRITICAL: Could not import 'run_backtest' from rebalance_backtester.py. All attempts failed. Last error: {e3}", exc_info=True)
+            logging.error(f"CRITICAL: Could not import 'run_backtest' from futures_rebalance_backtester.py. All attempts failed. Last error: {e3}", exc_info=True)
             run_backtest = None # Ensure it's defined to avoid NameError later, but it will fail
 
 # Basic logging configuration for the optimizer

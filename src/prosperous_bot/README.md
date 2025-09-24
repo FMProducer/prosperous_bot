@@ -11,7 +11,7 @@ This document describes the tools used for backtesting and optimizing a BTC-Neut
 
 **Tools:**
 
-*   **`rebalance_backtester.py`**: This script simulates the rebalancing strategy on historical market data. It applies configured parameters like target asset weights, rebalance thresholds, commission rates, slippage, and risk controls (circuit breaker, safe mode) to generate detailed performance reports.
+*   **`futures_rebalance_backtester.py`**: This script simulates the rebalancing strategy on historical market data. It applies configured parameters like target asset weights, rebalance thresholds, commission rates, slippage, and risk controls (circuit breaker, safe mode) to generate detailed performance reports.
 *   **`rebalance_optimizer.py`**: This script uses the Optuna hyperparameter optimization framework to find the best set of parameters for the rebalancing strategy by running multiple backtests with different parameter combinations.
 
 Both scripts now primarily use a **unified configuration file** (typically `config/unified_config.json` or an example like `config/unified_config.example.json`) for all settings.
@@ -24,7 +24,7 @@ A typical directory structure for using these tools would be:
 prosperous_bot_project/
 ├── src/
 │   └── prosperous_bot/
-│       ├── rebalance_backtester.py
+│       ├── futures_rebalance_backtester.py
 │       ├── rebalance_optimizer.py
 │       └── README.md  <-- This file
 ├── config/
@@ -32,7 +32,7 @@ prosperous_bot_project/
 ├── data/
 │   └── BTCUSDT_default_1h.csv
 ├── reports/
-│   ├── backtest_YYYYMMDD_HHMMSS/      <-- Output from rebalance_backtester.py
+│   ├── backtest_YYYYMMDD_HHMMSS/      <-- Output from futures_rebalance_backtester.py
 │   │   ├── summary.csv
 │   │   ├── trades.csv
 │   │   └── equity.html
@@ -137,7 +137,7 @@ This section controls the Optuna optimization process.
 
 ### 4.2. `backtest_settings` Section
 
-This section contains all parameters needed to define a single backtest run. It's used directly by `rebalance_backtester.py` (when run standalone) and serves as the base template for `rebalance_optimizer.py` (which overrides values based on `optimization_space`).
+This section contains all parameters needed to define a single backtest run. It's used directly by `futures_rebalance_backtester.py` (when run standalone) and serves as the base template for `rebalance_optimizer.py` (which overrides values based on `optimization_space`).
 
 ```json
 {
@@ -226,14 +226,14 @@ This section contains all parameters needed to define a single backtest run. It'
     *   `end_date` (string, optional): End date for backtest. If null or omitted, uses data end.
 *   `logging_level` (string): Logging level (e.g., "INFO", "DEBUG", "WARNING").
 *   `report_path_prefix` (string): Base path for saving reports. The optimizer will create a main run folder here, and individual trial reports (if enabled) will be in a "trials" subfolder. Standalone backtester runs will append "backtest_TIMESTAMP" to this prefix.
-*   `generate_reports_for_optimizer_trial` (boolean, optional, default `false`): Specific to optimizer context. If `true` when `rebalance_optimizer.py` calls `rebalance_backtester.py`, individual backtest reports for that trial will be saved.
+*   `generate_reports_for_optimizer_trial` (boolean, optional, default `false`): Specific to optimizer context. If `true` when `rebalance_optimizer.py` calls `futures_rebalance_backtester.py`, individual backtest reports for that trial will be saved.
 
 ## 5. How to Run Scripts
 
 Ensure you have Python installed and the required libraries (see Dependencies). It's recommended to use a virtual environment.
 Scripts should generally be run from the root of the `prosperous_bot_project` directory using the `python -m src.prosperous_bot.<script_name>` module execution style for robust import handling.
 
-### 5.1. `rebalance_backtester.py`
+### 5.1. `futures_rebalance_backtester.py`
 
 This script runs a single backtest using settings from the `backtest_settings` section of a unified configuration file.
 
@@ -242,7 +242,7 @@ This script runs a single backtest using settings from the `backtest_settings` s
 
 **Example Command:**
 ```bash
-python -m src.prosperous_bot.rebalance_backtester --config_file config/unified_config.example.json
+python -m src.prosperous_bot.futures_rebalance_backtester --config_file config/unified_config.example.json
 ```
 (If the specified config file is not found, the script will attempt to create a `config/dummy_unified_config_for_backtester.json` and a corresponding dummy data file, then exit, prompting you to run with the new dummy config.)
 
