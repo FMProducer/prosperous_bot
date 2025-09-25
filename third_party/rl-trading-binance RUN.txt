@@ -3,3 +3,5 @@ cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python test_agent.py
 
 python backtest_engine.py
+
+python optimize.py
