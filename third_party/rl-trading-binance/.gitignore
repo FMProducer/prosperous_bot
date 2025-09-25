@@ -8,6 +8,4 @@ __pycache__/
 .idea/
 
 # Model checkpoints and data
-*.npz
 output/
-data/
