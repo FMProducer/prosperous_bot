@@ -133,7 +133,7 @@ class ModelConfig(BaseModel):
     cnn_strides: List[int] = [2, 1, 1]
     dense_val: List[int] = [128, 64] # [64, 32]
     dense_adv: List[int] = [128, 64] # [64, 32]
-    additional_feats: int = 4 + 3 * 4  # 4 + action_history_len * num_actions
+    additional_feats: int = 16  # 4 + action_history_len * num_actions
     dropout_p: float = 0.1  # 0 ≤ p < 0.5; typical values are 0.1–0.2
 
 
