@@ -107,14 +107,14 @@ class RLConfig(BaseModel):
     learning_rate: float = 1e-4
     batch_size: int = 16
     target_update_freq: int = 100
-    train_start: int = 1000
+    train_start: int = 10_000
     max_gradient_norm: float = 1.0
     n_step: int = 5
     gamma_n_step_buffer: float = 0.99
 
 
 class PERConfig(BaseModel):
-    buffer_size: int = 350_000
+    buffer_size: int = 230_000
     per_alpha: float = 0.6
     per_beta_start: float = 0.4
     per_beta_frames: int = 20_000
@@ -128,22 +128,20 @@ class EpsilonConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    cnn_maps: List[int] = [32, 64, 128] # [16, 32, 64]
+    cnn_maps: List[int] = [32, 64, 128]
     cnn_kernels: List[int] = [7, 5, 3]
     cnn_strides: List[int] = [2, 1, 1]
-    dense_val: List[int] = [128, 64] # [64, 32]
-    dense_adv: List[int] = [128, 64] # [64, 32]
+    dense_val: List[int] = [128, 64]
+    dense_adv: List[int] = [128, 64]
     additional_feats: int = 16  # 4 + action_history_len * num_actions
-    dropout_p: float = 0.1  # 0 ≤ p < 0.5; typical values are 0.1–0.2
+    dropout_p: float = 0.1
 
 
 class TrainLogConfig(BaseModel):
-    # 241_000 environment steps (24_100 episodes x 10 steps (agent_session_len=10)). -> episodes = 24_100
-    # gradient steps = 241_000 - 1000 (train_start=1000)
-    episodes: int = 25_000
+    episodes: int = 55_000
     validate_model: bool = True
-    val_freq: int = 100
-    num_val_ep: int = 1500
+    val_freq: int = 1000
+    num_val_ep: int = 3500
     available_metrics: List[str] = [
         "Validation_mean_reward",
         "Validation_mean_pnl",
@@ -153,7 +151,7 @@ class TrainLogConfig(BaseModel):
     val_selection_metrics: str = "Validation_mean_pnl"
     test_selection_metrics: str = "Test_all_pnls"
     plot_moving_avg_window: int = 10
-    plot_top_n: int = 1
+    plot_top_n: int = 10
     plot_metric: str = "pnl"
     iterations: int = 10_000
 
@@ -185,23 +183,21 @@ class BacktestConfig(BaseModel):
     max_parallel_sessions: int = 2
     return_qvals: bool = True
     use_cache: bool = True
-    clear_disk_cache: bool = False
-    long_action_threshold: float = 0.25
-    short_action_threshold: float = 0.15
-    close_action_threshold: float = 0.15
+    clear_disk_cache: bool = True
+    long_action_threshold: float = 0.012695
+    short_action_threshold: float = 0.009902
+    close_action_threshold: float = 0.001141
     use_risk_management: bool = False
-    stop_loss: float = 0.02
-    take_profit: float = 0.04
-    trailing_stop: float = 0.01
-    selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "ensemble_q_filter"
+    stop_loss: float = 0.01
+    take_profit: float = 0.02
+    trailing_stop: float = 0.005
+    selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "advantage_based_filter"
     plot_backtest_balance_curve: bool = True
-    ensemble_n_samples: int = 10
-    # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
+    ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
 
 
 class LoggingConfig(BaseModel):
-    # Disable separate logs for each trial
     per_trial_logs: bool = False
 
 
@@ -211,7 +207,7 @@ class MasterConfig(BaseModel):
     num_envs: int = 2
     random_seed: int = 25
     global_env_seed: int = 17
-    backtest_mode: bool = False
+    backtest_mode: bool = True
 
     device: DeviceConfig = DeviceConfig()
     paths: PathConfig = PathConfig()
