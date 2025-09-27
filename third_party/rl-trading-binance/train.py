@@ -176,8 +176,9 @@ def evaluate_agent(
     win_rates = []
 
     env.reset(seed=env_seed)
-    logging.info(f"--- Evaluation: {split_name}, episodes={num_episodes} ---")
+    logging.info(f"--- Starting Evaluation: {split_name}, episodes={num_episodes} ---")
     for ep in tqdm(range(1, num_episodes + 1), total=num_episodes + 1, desc=f"{split_name} in episodes", leave=False):
+        logging.info(f"--- Validation episode {ep}/{num_episodes} ---")
         obs, _ = env.reset(seed=None, options=None)
         done = False
         ep_reward = 0.0
@@ -208,6 +209,7 @@ def evaluate_agent(
         f"Mean PnL: {metrics[f'{split_name}_mean_pnl']:.2f}, "
         f"Win rate: {metrics[f'{split_name}_win_rate']:.2%} ---"
     )
+    logging.info(f"--- Finished Evaluation: {split_name} ---")
     return metrics
 
 
