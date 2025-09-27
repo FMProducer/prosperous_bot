@@ -8,8 +8,8 @@ from train import main as train_main
 from backtest_engine import run_backtest
 
 # --- Настройки Оптимизации ---
-N_TRIALS = 8  # Количество испытаний для Optuna
-TRAIN_EPISODES_PER_TRIAL = 5000 # Уменьшенное количество эпох для ускорения оптимизации
+N_TRIALS = 30  # Количество испытаний для Optuna
+TRAIN_EPISODES_PER_TRIAL = 20000 # Уменьшенное количество эпох для ускорения оптимизации
 
 # Настройка логирования для Optuna
 optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
@@ -23,12 +23,13 @@ def objective(trial: optuna.Trial) -> float:
     cfg = copy.deepcopy(default_cfg)
 
     # --- 1. Определение пространства поиска гиперпараметров ---
-    cfg.rl.learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
-    cfg.rl.gamma = trial.suggest_float("gamma", 0.9, 0.999)
-    cfg.model.dropout_p = trial.suggest_float("dropout_p", 0.05, 0.3)
-    cfg.backtest.long_action_threshold = trial.suggest_float("long_action_threshold", 0.1, 0.7)
-    cfg.backtest.short_action_threshold = trial.suggest_float("short_action_threshold", 0.1, 0.7)
-    cfg.seq.agent_history_len = trial.suggest_int("agent_history_len", 20, 80)
+    cfg.rl.learning_rate = trial.suggest_float("learning_rate", 5e-5, 5e-4, log=True)
+    cfg.rl.gamma = trial.suggest_float("gamma", 0.95, 0.999)
+    cfg.model.dropout_p = trial.suggest_float("dropout_p", 0.05, 0.2)
+    cfg.backtest.long_action_threshold = trial.suggest_float("long_action_threshold", 0.0, 0.1)
+    cfg.backtest.short_action_threshold = trial.suggest_float("short_action_threshold", 0.0, 0.1)
+    cfg.seq.agent_history_len = trial.suggest_int("agent_history_len", 25, 40)
+    cfg.rl.batch_size = trial.suggest_categorical("batch_size", [16, 32])
 
     # --- 2. Настройка параметров для конкретного испытания ---
     # Уникальное имя для сессии, чтобы логи и модели не перемешивались
