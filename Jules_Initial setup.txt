@@ -1,0 +1,4 @@
+set -euo pipefail
+bash setup_env.sh --strict
+python -m pip install -e .
+export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"

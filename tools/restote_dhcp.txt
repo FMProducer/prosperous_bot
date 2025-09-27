@@ -1,0 +1,3 @@
+﻿Set-ExecutionPolicy Bypass -Scope Process
+cd путь_к_файлу
+.\restore_network.ps1

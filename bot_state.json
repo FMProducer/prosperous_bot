@@ -1,0 +1,42 @@
+{
+    "DOGEUSDT": {
+        "signal": "buy",
+        "time": "2025-06-08T21:30:14.270591"
+    },
+    "SUIUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.463289"
+    },
+    "BTCUSDT": {
+        "signal": "buy",
+        "time": "2025-06-07T21:42:42.250188"
+    },
+    "ENAUSDT": {
+        "signal": "buy",
+        "time": "2025-06-07T21:42:42.315921"
+    },
+    "ADAUSDT": {
+        "signal": "buy",
+        "time": "2025-06-08T21:30:14.301074"
+    },
+    "WIFUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.487980"
+    },
+    "UNIUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T16:45:15.456527"
+    },
+    "AAVEUSDT": {
+        "signal": "buy",
+        "time": "2025-06-11T16:45:15.482490"
+    },
+    "ANIMEUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T17:49:16.175597"
+    },
+    "NEIROUSDT": {
+        "signal": "sell",
+        "time": "2025-06-11T18:21:17.258028"
+    }
+}

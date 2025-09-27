@@ -1,0 +1,11 @@
+# Bytecode and cache
+__pycache__/
+*.py[cod]
+*.pth
+
+# VSCode / PyCharm / IDE settings
+.vscode/
+.idea/
+
+# Model checkpoints and data
+output/

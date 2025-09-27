@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prosperous_bot"
+version = "0.1.0"
+description = "Trading AI Agent by FMProducer"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "gate-api>=6.27",
+    "pytest",
+    "pytest-asyncio",
+    "hypothesis",
+    # … другие …
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
