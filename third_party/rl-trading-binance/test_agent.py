@@ -287,6 +287,7 @@ def test(cfg: MasterConfig = None):
     )
 
     plot_folder = os.path.join(cfg.paths.plot_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
+    os.makedirs(plot_folder, exist_ok=True)
     plt.figure(figsize=(10, 6))
     sns.histplot(
         test_metrics[cfg.trainlog.test_selection_metrics],

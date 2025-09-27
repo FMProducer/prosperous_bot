@@ -1,5 +1,11 @@
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 
+python test_agent.py run_fmproducer_1.py
+
+python backtest_engine.py run_fmproducer_1.py
+
+
+
 python train.py train_best.py
 
 python backtest_engine.py backtest_best_optuna.py
@@ -9,6 +15,7 @@ python backtest_engine.py backtest_optimized.py
 python test_agent.py
 
 python backtest_engine.py
+
 
 python optimize.py
 
