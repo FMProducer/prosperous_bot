@@ -1,0 +1,93 @@
+# build artefacts / metadata
+*.egg-info/
+dist/
+build/
+__pycache__/
+
+# venvs
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+
+# secrets
+.env
+
+# coverage
+.coverage
+htmlcov/*
+
+# logs
+*.log
+
+# cache
+*.cache
+*.pyc
+*.pyo
+*.pyd
+
+# test
+*.pytest_cache/
+.nox/
+.tox/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Sphinx documentation
+docs/_build/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# JupyterLab
+.jupyterlab/workspaces/
+
+# Miniconda
+miniconda3/
+
+# Custom application folders
+# graphs/
+data/
+
+.hypothesis/
+
+# Reports folder
+reports/*
+!reports/last_report/
+
+# Specific files to ignore
+add.txt
+log.txt
+
+requirements.utf8.txt
+
+# Trading Secrets
+*.pth
+*.db
+train_best.py
+backtest_best_optuna.py
+backtest_optimized.py
+run_fmproducer_1.py
+models/
+
+# Third party generated files
+third_party/FMProducer/
+third_party/Smolin/
+third_party/rl-trading-binance/output/
+third_party/rl-trading-binance/plots/
+third_party/rl-trading-binance/configs/
+third_party/rl-trading-binance/config.py
+
+# Sensitive files that should never be in git
+secrets.txt
+rl_trading_optimization.db
