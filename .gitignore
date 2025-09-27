@@ -70,3 +70,12 @@ add.txt
 log.txt
 
 requirements.utf8.txt
+
+# Trading Secrets
+*.pth
+*.db
+train_best.py
+backtest_best_optuna.py
+backtest_optimized.py
+run_fmproducer_1.py
+models/
