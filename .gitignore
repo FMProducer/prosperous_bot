@@ -15,6 +15,7 @@ env/
 
 # secrets
 .env
+secrets.txt
 
 # coverage
 .coverage
@@ -30,7 +31,7 @@ htmlcov/*
 *.pyd
 
 # test
-*.pytest_cache/
+.pytest_cache/
 .nox/
 .tox/
 
@@ -87,7 +88,3 @@ third_party/rl-trading-binance/output/
 third_party/rl-trading-binance/plots/
 third_party/rl-trading-binance/configs/
 third_party/rl-trading-binance/config.py
-
-# Sensitive files that should never be in git
-secrets.txt
-rl_trading_optimization.db
