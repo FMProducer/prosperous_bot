@@ -18,3 +18,6 @@ uvicorn
 xgboost-cpu
 pytest-cov
 pytest-mock
+asyncpg>=0.29.0
+PyYAML>=6.0
+websocket-client

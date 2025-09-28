@@ -1,0 +1,13 @@
+ws:
+  exchange: "binance-futures-um"
+  channels: ["kline_1m", "aggTrade"]
+  symbols: ["btcusdt","ethusdt","bnbusdt"]   # lowercase, как в офдоках
+  combined: true
+  reconnect_backoff: { base_ms: 500, max_ms: 20000, jitter: true }
+db:
+  dsn: "postgresql://user:pass@127.0.0.1:5432/marketdata"
+  batch_rows: 500
+  flush_ms: 500
+runtime:
+  log_level: "INFO"
+  iso_timestamps: true   # все метки времени в ISO-8601 UTC ("Z")
