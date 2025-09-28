@@ -1,0 +1,24 @@
+# third_party/rl-trading-binance/config_ws.yaml
+binance:
+  base_url: "wss://fstream.binance.com"
+  channels:
+    klines_1m: true
+    agg_trade: true
+  shards:
+    kline_streams_per_conn: 600   # < 1024
+    agg_trade_streams_per_conn: 600
+  ping_interval_sec: 60
+  ping_timeout_sec: 10
+  reconnect_backoff_max_sec: 60
+
+universe:
+  symbols: ["BTCUSDT","ETHUSDT"]  # всегда в нижнем регистре при формировании URL
+
+storage:
+  dsn: "postgresql://user:pass@host:5432/db"
+  batch_size: 1000
+  write_timeout_ms: 5000
+
+housekeeping:
+  rotate_connections_hours: 12
+  log_level: "INFO"
