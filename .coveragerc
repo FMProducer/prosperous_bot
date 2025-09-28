@@ -12,3 +12,8 @@ omit =
     src/prosperous_bot/strategy.py
     src/prosperous_bot/update_distribution.py
     src/prosperous_bot/utils.py
+
+[report]
+exclude_lines =
+    if __name__ == .__main__.:
+    except KeyboardInterrupt:

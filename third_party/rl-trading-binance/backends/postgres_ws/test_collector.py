@@ -302,3 +302,95 @@ def test_main(mock_asyncio_run, mock_collector, mock_load_config):
     mock_load_config.assert_called_once()
     mock_collector.assert_called_once()
     mock_asyncio_run.assert_called_once_with(collector_instance.run())
+
+@pytest.mark.asyncio
+async def test_on_msg_edge_cases():
+    cfg = {
+        "binance": {"base_url": "wss://fstream.binance.com", "channels": {"klines_1m": True, "agg_trade": True}, "shards": {"kline_streams_per_conn": 600, "agg_trade_streams_per_conn": 600}},
+        "universe": {"symbols": ["BTCUSDT"]},
+        "storage": {"dsn": "postgresql://user:pass@host:5432/db", "batch_size": 2, "write_timeout_ms": 5000},
+        "housekeeping": {"log_level": "INFO"}
+    }
+    c = Collector(cfg)
+    c.writer = MagicMock()
+    c.writer.kbuf = []
+    c.writer.tbuf = []
+    c.writer.batch_rows = 2
+    c.loop = asyncio.get_event_loop()
+    c.writer.flush = MagicMock()
+    
+    # 1. Test invalid JSON
+    with patch('logging.exception') as mock_log_exc:
+        c._on_msg(None, "not a json")
+        mock_log_exc.assert_called_with("bad json")
+
+    # 2. Test message without stream
+    with patch('logging.warning') as mock_log_warn:
+        c._on_msg(None, json.dumps({"data": {}}))
+        mock_log_warn.assert_called_once()
+
+    # 3. Test buffer flush on batch size
+    kline_msg = {"stream":"btcusdt@kline_1m","data":{"e":"kline","E":1700000000000,"s":"BTCUSDT", "k":{"t":1700000000000,"T":1700000059999,"i":"1m","x":True,"o":"1","h":"2","l":"0.5","c":"1.5","v":"10","q":"15","n":42,"V":"5","Q":"7.5"}}}
+    with patch('asyncio.run_coroutine_threadsafe') as mock_run_coro:
+        c._on_msg(None, json.dumps(kline_msg))
+        c._on_msg(None, json.dumps(kline_msg))
+        mock_run_coro.assert_called()
+
+def test_run_shard_empty():
+    collector = Collector({"binance": {}, "universe": {}, "storage": {"dsn": ""}})
+    with patch('collector.run_ws') as mock_run_ws:
+        collector.run_shard([])
+        mock_run_ws.assert_not_called()
+
+@patch('collector.Collector.run_shards')
+@pytest.mark.asyncio
+async def test_collector_run_channel_disabled(mock_run_shards):
+    cfg = {
+        "binance": {"channels": {"klines_1m": False, "agg_trade": True}, "shards": {}},
+        "universe": {"symbols": ["BTCUSDT"]},
+        "storage": {"dsn": ""},
+        "housekeeping": {}
+    }
+    collector = Collector(cfg)
+    collector.writer = MagicMock()
+    start_future = asyncio.Future()
+    start_future.set_result(None)
+    collector.writer.start.return_value = start_future
+    await collector.run()
+    
+    # Expect kline_streams to be empty
+    mock_run_shards.assert_called_once_with([], ['btcusdt@aggTrade'])
+
+@patch('collector.Collector.run_shard')
+def test_collector_run_sharding_one_empty(mock_run_shard):
+    cfg = {
+        "binance": {
+            "shards": {
+                "kline_streams_per_conn": 1,
+                "agg_trade_streams_per_conn": 1
+            }
+        },
+        "universe": {},
+        "storage": {"dsn": ""}
+    }
+    collector = Collector(cfg)
+    collector.run_shards(["stream1", "stream2"], [])
+    assert mock_run_shard.call_count == 2
+
+@patch('collector.Collector.run_shard')
+def test_collector_run_sharding_first_empty(mock_run_shard):
+    cfg = {
+        "binance": {
+            "shards": {
+                "kline_streams_per_conn": 1,
+                "agg_trade_streams_per_conn": 1
+            }
+        },
+        "universe": {},
+        "storage": {"dsn": ""}
+    }
+    collector = Collector(cfg)
+    collector.run_shards([], ["stream1", "stream2"])
+    assert mock_run_shard.call_count == 2
+
+
