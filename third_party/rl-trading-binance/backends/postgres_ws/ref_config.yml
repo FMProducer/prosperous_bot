@@ -1,13 +1,18 @@
-ws:
-  exchange: "binance-futures-um"
-  channels: ["kline_1m", "aggTrade"]
-  symbols: ["btcusdt","ethusdt","bnbusdt"]   # lowercase, как в офдоках
-  combined: true
+binance:
+  base_url: "wss://fstream.binance.com"
+  channels:
+    klines_1m: true
+    agg_trade: true
+  shards:
+    kline_streams_per_conn: 1000
+    agg_trade_streams_per_conn: 1000
   reconnect_backoff: { base_ms: 500, max_ms: 20000, jitter: true }
-db:
-  dsn: "postgresql://user:pass@127.0.0.1:5432/marketdata"
-  batch_rows: 500
-  flush_ms: 500
-runtime:
+universe:
+  symbols: ["btcusdt","ethusdt","bnbusdt"]   # lowercase, как в офдоках
+storage:
+  dsn: "postgresql://postgres:9691@127.0.0.1:5432/marketdata"
+  batch_size: 500
+  write_timeout_ms: 500
+housekeeping:
   log_level: "INFO"
   iso_timestamps: true   # все метки времени в ISO-8601 UTC ("Z")

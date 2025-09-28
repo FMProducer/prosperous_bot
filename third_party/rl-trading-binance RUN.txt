@@ -8,11 +8,11 @@ python train.py train_best.py
 
 
 python test_agent.py
-python test_agent.py run_fmproducer_1.py
+python test_agent.py run_fmproducer_1.py     *
 
 
 python backtest_engine.py
-python backtest_engine.py run_fmproducer_1.py
+python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
 
@@ -23,7 +23,10 @@ python show_best_trial.py
 
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
+Для запуска: net start postgresql-x64-18
+Для остановки: net stop postgresql-x64-18
 
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres                  *  9691
 
 
 pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\start_postgres_ws.bat
@@ -31,6 +34,3 @@ pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres
 pytest --cov=collector backends/postgres_ws/test_collector.py
 
 python -m third_party.rl-trading-binance.backends.postgres_ws.collector --config third_party/rl-trading-binance/backends/postgres_ws/ref_config.yml
-
-
-Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-18.0-1-windows-x64.exe" -OutFile "$env:USERPROFILE\Downloads\postgresql-18.0-1-windows-x64.exe"
