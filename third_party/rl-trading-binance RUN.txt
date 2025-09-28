@@ -1,3 +1,5 @@
+C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
+
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 
 python train.py 
@@ -19,4 +21,6 @@ python show_results.py
 python show_best_trial.py
 
 
-pytest --cov=collector third_party/rl_trading_binance/backends/postgres_ws/test_collector.py
+pytest --cov=collector backends/postgres_ws/test_collector.py
+
+python -m third_party.rl-trading-binance.backends.postgres_ws.collector --config third_party/rl-trading-binance/backends/postgres_ws/ref_config.yml
