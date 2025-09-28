@@ -1,4 +1,5 @@
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
+C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 
@@ -21,6 +22,15 @@ python show_results.py
 python show_best_trial.py
 
 
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
+
+
+
+pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\start_postgres_ws.bat
+
 pytest --cov=collector backends/postgres_ws/test_collector.py
 
 python -m third_party.rl-trading-binance.backends.postgres_ws.collector --config third_party/rl-trading-binance/backends/postgres_ws/ref_config.yml
+
+
+Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-18.0-1-windows-x64.exe" -OutFile "$env:USERPROFILE\Downloads\postgresql-18.0-1-windows-x64.exe"

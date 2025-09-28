@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 import asyncpg, yaml
 import websocket # websocket-client
+import argparse
 
 STOP = asyncio.Event()
 
@@ -71,9 +72,9 @@ class PgWriter:
 class Collector:
     def __init__(self, cfg:Dict[str,Any]):
         self.cfg=cfg
-        self.binance_cfg = cfg['binance']
-        self.universe_cfg = cfg['universe']
-        self.storage_cfg = cfg['storage']
+        self.binance_cfg = cfg['ws']
+        self.universe_cfg = cfg['ws'] # 'universe' is not directly in ref_config.yml, using 'ws' for symbols
+        self.storage_cfg = cfg['db']
         self.writer=PgWriter(self.storage_cfg["dsn"], int(self.storage_cfg.get("batch_size",1000)), int(self.storage_cfg.get("write_timeout_ms",5000)))
         self.loop = asyncio.get_event_loop()
 
@@ -147,8 +148,11 @@ def load_config(path:str)->Dict[str,Any]:
     with open(path,"r",encoding="utf-8") as f: return yaml.safe_load(f)
 
 def main():
-    cfg_path=os.path.join(os.path.dirname(__file__), "..", "config_ws.yaml")
-    cfg=load_config(cfg_path)
+    parser = argparse.ArgumentParser(description="Binance WebSocket data collector.")
+    parser.add_argument("--config", type=str, required=True, help="Path to the YAML configuration file.")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
     collector = Collector(cfg)
     
     try:
