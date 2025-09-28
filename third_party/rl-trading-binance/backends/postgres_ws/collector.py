@@ -76,7 +76,6 @@ class Collector:
         self.universe_cfg = cfg['universe']
         self.storage_cfg = cfg['storage']
         self.writer=PgWriter(self.storage_cfg["dsn"], int(self.storage_cfg.get("batch_size",1000)), int(self.storage_cfg.get("write_timeout_ms",5000)))
-        self.loop = asyncio.get_event_loop()
 
     def _on_msg(self, ws, message:str):
         try: obj=json.loads(message)
@@ -101,7 +100,7 @@ class Collector:
             self.writer.tbuf.append(row)
         
         if len(self.writer.kbuf)>=self.writer.batch_rows or len(self.writer.tbuf)>=self.writer.batch_rows:
-            asyncio.run_coroutine_threadsafe(self.writer.flush(), self.loop)
+            asyncio.run_coroutine_threadsafe(self.writer.flush(), asyncio.get_running_loop())
 
     def on_open(self, ws):
         logging.info("WebSocket connection opened.")
