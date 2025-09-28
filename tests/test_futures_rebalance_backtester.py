@@ -569,7 +569,7 @@ def test_load_signal_data_extended(tmp_path):
     """
     Проверяет расширенные сценарии для load_signal_data.
     """
-    # 1) Файл с некорректными строками
+    # 1) Файл с некорректными строками (остаются валидные)
     bad_rows_csv = tmp_path / "bad_rows.csv"
     with open(bad_rows_csv, "w") as f:
         f.write("timestamp,signal\n")
@@ -579,17 +579,24 @@ def test_load_signal_data_extended(tmp_path):
     assert df is not None
     assert len(df) == 1
 
-    # 2) Файл, который становится пустым после очистки
+    # 2) Файл не найден
+    non_existent_csv = tmp_path / "non_existent.csv"
+    df = load_signal_data(str(non_existent_csv))
+    assert df is None
+
+def test_load_signal_data_empty_after_cleaning(tmp_path):
+    """
+    Проверяет, что load_signal_data возвращает None для файла, который становится пустым после очистки.
+    """
+    from prosperous_bot.futures_rebalance_backtester import load_signal_data
+    # Создаем файл, где все строки имеют невалидные метки времени
     empty_after_clean_csv = tmp_path / "empty_after_clean.csv"
     with open(empty_after_clean_csv, "w") as f:
         f.write("timestamp,signal\n")
         f.write("not a date,BUY\n")
+        f.write("also not a date,SELL\n")
+    
     df = load_signal_data(str(empty_after_clean_csv))
-    assert df is None
-
-    # 3) Файл не найден
-    non_existent_csv = tmp_path / "non_existent.csv"
-    df = load_signal_data(str(non_existent_csv))
     assert df is None
 
 def test_main_dummy_file_generation(tmp_path, monkeypatch, caplog):
@@ -701,3 +708,67 @@ def test_safe_mode_activation(tmp_path):
     metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
     print(metrics)
     assert metrics['num_safe_mode_entries'] > 0
+
+
+def test_rebalance_triggered_by_threshold(tmp_path):
+    """
+    Проверяет, что ребалансировка запускается при превышении порога отклонения веса (агрессивный сценарий).
+    """
+    # 1. Данные: 2 шага, на втором цена сильно растет
+    ts = pd.to_datetime(["2024-01-01 00:00:00", "2024-01-01 01:00:00"], utc=True)
+    df = pd.DataFrame({
+        "timestamp": ts,
+        "open": [100, 150], "high": [101, 151], "low": [99, 149], 
+        "close": [100, 150],  # Рост цены на 50%
+        "volume": 1.0
+    })
+    data_csv = tmp_path / "threshold_data.csv"
+    df.to_csv(data_csv, index=False)
+
+    # 2. Параметры: таргет 50/50, ВЫСОКОЕ плечо x5, порог ребаланса 1%
+    params = {
+        "main_asset_symbol": "BTC",
+        "apply_signal_logic": False,
+        "initial_portfolio_value_usdt": 1000.0,
+        "futures_leverage": 5.0, # Высокое плечо для большого PnL и отклонения
+        "commission_taker": 0.0,
+        "slippage_percent": 0.0,
+        "min_order_notional_usdt": 0.0,
+        "min_rebalance_interval_minutes": 0,
+        "rebalance_threshold": 0.01,  # 1% порог
+        "target_weights_normal": {"BTC_PERP_LONG": 0.5, "USDT": 0.5},
+        "safe_mode_config": {"enabled": False},
+        "circuit_breaker_config": {"enabled": False},
+        "data_settings": {"csv_file_path": str(data_csv)},
+        "report_path_prefix": str(tmp_path / "reports"),
+        "use_fixed_report_path": True,
+    }
+
+    # 3. Запуск
+    metrics = run_backtest(params, str(data_csv), is_optimizer_call=False)
+    out_dir = metrics["output_dir"]
+    trades_csv = os.path.join(out_dir, "trades.csv")
+    df_tr = pd.read_csv(trades_csv)
+
+    # 4. Проверка
+    # Ожидаем 2 сделки:
+    # - Первая на шаге 0 для установки начальных весов (покупка 500 USDT BTC_PERP_LONG).
+    # - Вторая на шаге 1 из-за срабатывания порога.
+    #   Расчет: PnL = 500 * 5 * (1.5 - 1) = 1250. Новый NAV = 1000 + 1250 = 2250.
+    #   Новый вес LONG = (500+1250)/2250 = 0.777. Отклонение |0.777 - 0.5| > 0.01.
+    assert len(df_tr) > 1, "Должна быть вторая сделка ребалансировки"
+    assert df_tr.iloc[1]["action"] == "SELL", "Вторая сделка должна быть продажей для коррекции веса"
+
+def test_load_signal_data_headers_only(tmp_path):
+    """
+    Проверяет, что load_signal_data корректно обрабатывает CSV-файл, содержащий только заголовки.
+    """
+    from prosperous_bot.futures_rebalance_backtester import load_signal_data
+    
+    # 1) Создаем файл только с заголовками
+    headers_only_csv = tmp_path / "headers_only_signals.csv"
+    with open(headers_only_csv, "w") as f:
+        f.write("timestamp,signal\n")
+    
+    # 2) Вызываем функцию и проверяем, что она возвращает None, покрывая ветку if df_signals.empty:
+    assert load_signal_data(str(headers_only_csv)) is None

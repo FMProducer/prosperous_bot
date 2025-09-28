@@ -108,6 +108,22 @@ class Collector:
     def on_close(self, ws, close_status_code, close_msg):
         logging.warning(f"WebSocket connection closed: {close_status_code} {close_msg}")
 
+    def run_shard(self, streams):
+        if not streams:
+            return
+        url = f"{self.binance_cfg['base_url']}/stream?streams={'/'.join(streams)}"
+        run_ws(url, on_msg=self._on_msg, on_open=self.on_open, on_close=self.on_close)
+
+    def run_shards(self, kline_streams, agg_trade_streams):
+        kline_shard_size = self.binance_cfg['shards']['kline_streams_per_conn']
+        agg_trade_shard_size = self.binance_cfg['shards']['agg_trade_streams_per_conn']
+
+        for i in range(0, len(kline_streams), kline_shard_size):
+            self.run_shard(kline_streams[i:i + kline_shard_size])
+
+        for i in range(0, len(agg_trade_streams), agg_trade_shard_size):
+            self.run_shard(agg_trade_streams[i:i + agg_trade_shard_size])
+
     async def run(self):
         await self.writer.start()
         logging.basicConfig(level=getattr(logging, self.cfg.get("housekeeping",{}).get("log_level","INFO")))
@@ -124,31 +140,13 @@ class Collector:
         if self.binance_cfg["channels"]["agg_trade"]:
             for s in symbols: agg_trade_streams.append(f"{s}@aggTrade")
 
-        def run_shard(streams):
-            if not streams:
-                return
-            url = f"{self.binance_cfg['base_url']}/stream?streams={'/'.join(streams)}"
-            run_ws(url, on_msg=self._on_msg, on_open=self.on_open, on_close=self.on_close)
-
-        # This will block, so we need to run it in a separate thread
-        # but for now, let's just run one shard
-        
-        all_streams = kline_streams + agg_trade_streams
-        
-        # For simplicity, we will run only one shard in the main thread
-        # A more robust implementation would use multiple threads for multiple shards
-        
-        kline_shard_size = self.binance_cfg['shards']['kline_streams_per_conn']
-        agg_trade_shard_size = self.binance_cfg['shards']['agg_trade_streams_per_conn']
-
-        # just combine all streams into one shard for now
-        run_shard(all_streams)
+        self.run_shards(kline_streams, agg_trade_streams)
 
 
 def load_config(path:str)->Dict[str,Any]:
     with open(path,"r",encoding="utf-8") as f: return yaml.safe_load(f)
 
-if __name__=="__main__":
+def main():
     cfg_path=os.path.join(os.path.dirname(__file__), "..", "config_ws.yaml")
     cfg=load_config(cfg_path)
     collector = Collector(cfg)
@@ -159,3 +157,6 @@ if __name__=="__main__":
         STOP.set()
         if collector.writer:
             asyncio.run(collector.writer.stop_and_close())
+
+if __name__=="__main__":
+    main()

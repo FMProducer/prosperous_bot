@@ -1,21 +1,22 @@
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 
-python test_agent.py run_fmproducer_1.py
-
-python backtest_engine.py run_fmproducer_1.py
-
-
 python train.py 
 python train.py train_best.py
-python backtest_engine.py backtest_best_optuna.py
-python backtest_engine.py backtest_optimized.py
 
 
 python test_agent.py
+python test_agent.py run_fmproducer_1.py
+
 
 python backtest_engine.py
+python backtest_engine.py run_fmproducer_1.py
+python backtest_engine.py backtest_best_optuna.py
+python backtest_engine.py backtest_optimized.py
 
 
 python optimize.py
 python show_results.py
 python show_best_trial.py
+
+
+pytest --cov=collector third_party/rl_trading_binance/backends/postgres_ws/test_collector.py
