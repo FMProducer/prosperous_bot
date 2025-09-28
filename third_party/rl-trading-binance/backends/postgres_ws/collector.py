@@ -72,9 +72,9 @@ class PgWriter:
 class Collector:
     def __init__(self, cfg:Dict[str,Any]):
         self.cfg=cfg
-        self.binance_cfg = cfg['ws']
-        self.universe_cfg = cfg['ws'] # 'universe' is not directly in ref_config.yml, using 'ws' for symbols
-        self.storage_cfg = cfg['db']
+        self.binance_cfg = cfg['binance']
+        self.universe_cfg = cfg['universe']
+        self.storage_cfg = cfg['storage']
         self.writer=PgWriter(self.storage_cfg["dsn"], int(self.storage_cfg.get("batch_size",1000)), int(self.storage_cfg.get("write_timeout_ms",5000)))
         self.loop = asyncio.get_event_loop()
 

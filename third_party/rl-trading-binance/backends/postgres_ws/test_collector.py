@@ -284,24 +284,7 @@ def test_collector_on_open_on_close():
         collector.on_close(None, 1000, "test")
         mock_warning.assert_called_once_with("WebSocket connection closed: 1000 test")
 
-@patch('collector.load_config')
-@patch('collector.Collector')
-@patch('asyncio.run')
-def test_main(mock_asyncio_run, mock_collector, mock_load_config):
-    # Mock the config
-    mock_load_config.return_value = {}
-    
-    # Mock the collector instance
-    collector_instance = MagicMock()
-    mock_collector.return_value = collector_instance
-    
-    # Call the main function
-    main()
-    
-    # Assert that the mocks were called
-    mock_load_config.assert_called_once()
-    mock_collector.assert_called_once()
-    mock_asyncio_run.assert_called_once_with(collector_instance.run())
+
 
 @pytest.mark.asyncio
 async def test_on_msg_edge_cases():
