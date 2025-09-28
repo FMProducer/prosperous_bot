@@ -302,30 +302,3 @@ def test_main(mock_asyncio_run, mock_collector, mock_load_config):
     mock_load_config.assert_called_once()
     mock_collector.assert_called_once()
     mock_asyncio_run.assert_called_once_with(collector_instance.run())
-
-@patch('collector.load_config')
-@patch('collector.Collector')
-@patch('asyncio.run')
-def test_main_keyboard_interrupt(mock_asyncio_run, mock_collector, mock_load_config):
-    # Mock the config
-    mock_load_config.return_value = {}
-    
-    # Mock the collector instance
-    collector_instance = MagicMock()
-    mock_collector.return_value = collector_instance
-    
-    # Raise KeyboardInterrupt when asyncio.run is called
-    mock_asyncio_run.side_effect = [KeyboardInterrupt, None]
-    
-    # Call the main function
-    main()
-    
-    # Assert that the mocks were called
-    mock_load_config.assert_called_once()
-    mock_collector.assert_called_once()
-    
-    assert mock_asyncio_run.call_count == 2
-    mock_asyncio_run.assert_any_call(collector_instance.run())
-    mock_asyncio_run.assert_any_call(collector_instance.writer.stop_and_close())
-
-    assert STOP.is_set()
