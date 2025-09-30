@@ -1,7 +1,7 @@
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
-cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance         *
 
 python train.py 
 python train.py train_best.py
@@ -27,6 +27,7 @@ cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
 Для остановки: net stop postgresql-x64-18
 
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres                  *  9691
+postgresql://postgres@localhost:5432/marketdata?sslmode=prefer
 
 
 pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\start_postgres_ws.bat
