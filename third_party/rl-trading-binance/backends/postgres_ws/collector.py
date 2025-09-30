@@ -140,7 +140,8 @@ class Collector:
         if self.binance_cfg["channels"]["agg_trade"]:
             for s in symbols: agg_trade_streams.append(f"{s}@aggTrade")
 
-        self.run_shards(kline_streams, agg_trade_streams)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.run_shards, kline_streams, agg_trade_streams)
 
 
 def load_config(path:str)->Dict[str,Any]:
