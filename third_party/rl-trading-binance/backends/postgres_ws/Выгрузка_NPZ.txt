@@ -1,0 +1,43 @@
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
+$env:PGHOST="localhost"
+$env:PGPORT="5432"
+$env:PGDATABASE="marketdata"
+$env:PGUSER="postgres"
+$env:PGPASSWORD="9691"
+
+### Создайте файл create_mv.sql в текущей директории
+$sqlContent = @"
+DROP MATERIALIZED VIEW IF EXISTS public.mv_candles_prepared;
+CREATE MATERIALIZED VIEW public.mv_candles_prepared AS
+SELECT
+  symbol,
+  (to_timestamp(open_time_ms / 1000.0) AT TIME ZONE 'UTC') AS ts_utc,
+  open_price::double precision  AS open,
+  high_price::double precision  AS high,
+  low_price::double precision   AS low,
+  close_price::double precision AS close,
+  base_volume::double precision AS volume,
+  CASE WHEN base_volume > 0 THEN (quote_volume / base_volume)::double precision ELSE NULL END AS vwap,
+  trade_count::integer AS trades
+FROM public.klines_1m
+WHERE is_closed IS TRUE
+WITH NO DATA;
+
+CREATE UNIQUE INDEX IF NOT EXISTS mv_candles_prepared_uq
+ON public.mv_candles_prepared (symbol, ts_utc);
+"@
+
+Set-Content -Path 'C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\create_mv.sql' -Value $sqlContent -Encoding Ascii
+
+### Добавьте этот путь в переменную Path для текущего сеанса PowerShell
+$env:Path += ";C:\Program Files\PostgreSQL\18\bin"                      2 раза повторить
+
+# Создайте пустое материализованное представление и связанный с ним индекс
+psql -v ON_ERROR_STOP=1 -f 'C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\create_mv.sql'
+
+### Заполните это представление данными из основной таблицы klines_1m. Важно: Первый запуск может занять некоторое время и заблокировать чтение из исходной таблицы на время своей работы.
+psql -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW public.mv_candles_prepared"
+
+
+
+

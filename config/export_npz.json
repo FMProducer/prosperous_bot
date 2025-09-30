@@ -1,0 +1,11 @@
+{
+  "db": {
+    "dsn": "host=localhost port=5432 dbname=marketdata user=postgres password=9691"
+  },
+  "export": {
+    "symbol": "BTCUSDT",
+    "from_utc": "2025-06-29T00:00:00Z",
+    "to_utc": "2025-09-29T23:59:59Z",
+    "out_path": "output/btcusdt_1m_2025_06_29_to_09_29.npz"
+  }
+}
