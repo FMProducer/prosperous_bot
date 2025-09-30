@@ -10,7 +10,7 @@ binance:
 universe:
   symbols: ["btcusdt","ethusdt","bnbusdt"]   # lowercase, как в офдоках
 storage:
-  dsn: "postgresql://postgres:9691@127.0.0.1:5432/marketdata"
+  dsn: "postgresql://postgres:9691@localhost:5432/marketdata"
   batch_size: 500
   write_timeout_ms: 500
 housekeeping:

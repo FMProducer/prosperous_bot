@@ -32,11 +32,20 @@ Set-Content -Path 'C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backe
 ### Добавьте этот путь в переменную Path для текущего сеанса PowerShell
 $env:Path += ";C:\Program Files\PostgreSQL\18\bin"                      2 раза повторить
 
-# Создайте пустое материализованное представление и связанный с ним индекс
+### Создайте пустое материализованное представление и связанный с ним индекс
 psql -v ON_ERROR_STOP=1 -f 'C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\create_mv.sql'
 
 ### Заполните это представление данными из основной таблицы klines_1m. Важно: Первый запуск может занять некоторое время и заблокировать чтение из исходной таблицы на время своей работы.
 psql -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW public.mv_candles_prepared"
+
+### Обновление данных в материализованном представлении mv_candles_prepared периодически (например, раз в час или раз в день по расписанию):
+psql -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_candles_prepared"
+
+### Добавить формальные UNIQUE ограничения на исходные таблицы
+psql -c "ALTER TABLE public.klines_1m
+  ADD CONSTRAINT klines_1m_symbol_open_time_uk UNIQUE (symbol, open_time_ms)"
+psql -c "ALTER TABLE public.agg_trades
+  ADD CONSTRAINT agg_trades_symbol_agg_id_uk UNIQUE (symbol, agg_id)"
 
 
 
