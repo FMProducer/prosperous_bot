@@ -28,6 +28,9 @@ cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
 
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres                  *  9691
 postgresql://postgres@localhost:5432/marketdata?sslmode=prefer
+$env:PGPASSWORD = "9691"
+$PGURI = "postgresql://postgres@localhost:5432/postgres?sslmode=prefer"
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -c "SELECT version(); SHOW server_version; SHOW TIME ZONE; SHOW SERVER_ENCODING; SHOW LC_COLLATE;"
 
 
 pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\start_postgres_ws.bat

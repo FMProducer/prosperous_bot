@@ -1,0 +1,83 @@
+Шаг 1: Откройте PowerShell
+
+Шаг 2: Настройте переменные для подключения
+# Укажите ваш пароль
+$env:PGPASSWORD = "9691"
+# Укажите строку подключения к базе данных 'marketdata'
+$PGURI = "postgresql://postgres@localhost:5432/marketdata?sslmode=prefer"
+
+Шаг 3: Перейдите в папку для сохранения отчетов
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\data
+
+Шаг 4: Выполните команды для сбора данных
+# 1.1: Список схем
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema') ORDER BY 1;
+"@ | Set-Content schemas.csv
+
+# 1.2: Список таблиц и представлений
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2;
+"@ | Set-Content tables_and_views.csv
+
+# 1.3: Список материализованных представлений
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT schemaname, matviewname, definition FROM pg_matviews ORDER BY 1,2;
+"@ | Set-Content matviews.csv
+
+# 2: Список колонок
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT table_schema, table_name, ordinal_position, column_name, data_type, udt_name, is_nullable, column_default FROM information_schema.columns WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2,3;
+"@ | Set-Content columns.csv
+
+# 3.1: Список ограничений (constraints)
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT n.nspname AS schema, c.relname AS table, con.conname AS constraint, con.contype AS type, pg_get_constraintdef(con.oid) AS definition FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2,3;
+"@ | Set-Content constraints.csv
+
+# 3.2: Список индексов
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2;
+"@ | Set-Content indexes.csv
+
+# 6.1: Список расширений
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c "SELECT extname, extversion FROM pg_extension ORDER BY 1;" | Set-Content extensions.csv
+
+# 4.1: Список партиционированных таблиц (мастер-таблицы)
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT n.nspname AS schema, c.relname AS table, p.partstrat AS strategy FROM pg_partitioned_table p JOIN pg_class c ON c.oid = p.partrelid JOIN pg_namespace n ON n.oid = c.relnamespace ORDER BY 1,2;
+"@ | Set-Content partitions_master.csv
+
+# 4.2: Связи родительских и дочерних партиций
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT parent_ns.nspname AS parent_schema, parent.relname AS parent_table, child_ns.nspname AS child_schema, child.relname AS child_table FROM pg_inherits i JOIN pg_class child ON child.oid = i.inhrelid JOIN pg_class parent ON parent.oid = i.inhparent JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace ORDER BY 1,2,3,4;
+"@ | Set-Content partitions_children.csv
+
+# 5.1: Размеры таблиц и примерное количество строк
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT
+    n.nspname AS schema,
+    c.relname AS table,
+    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+    c.reltuples::bigint AS est_rows
+FROM
+    pg_class c
+JOIN
+    pg_namespace n ON n.oid = c.relnamespace
+WHERE
+    n.nspname NOT IN ('pg_catalog','information_schema') AND c.relkind = 'r'
+ORDER BY
+    pg_total_relation_size(c.oid) DESC;
+"@ | Set-Content table_sizes.csv
+
+# 6.2: Права на таблицы для текущего пользователя
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -A -F "," -P footer=off -c @"
+SELECT table_schema, table_name, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privileges FROM information_schema.table_privileges WHERE grantee = CURRENT_USER GROUP BY 1,2 ORDER BY 1,2;
+"@ | Set-Content table_privileges.csv
+
+# 7.2: Cоздание полного снимка структуры (схемы) базы данных, но без самих данных
+& "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" --schema-only --no-owner --no-privileges --file "schema_snapshot.sql" $PGURI
+
+# 8.2: Cоздание файла version_info.txt с информацией о версии сервера PostgreSQL
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" $PGURI -X -c "SELECT version(); SHOW server_version; SHOW TIME ZONE; SHOW SERVER_ENCODING;" | Set-Content version_info.txt
+
