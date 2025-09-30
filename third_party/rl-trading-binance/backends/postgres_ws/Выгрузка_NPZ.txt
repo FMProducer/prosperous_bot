@@ -47,6 +47,12 @@ psql -c "ALTER TABLE public.klines_1m
 psql -c "ALTER TABLE public.agg_trades
   ADD CONSTRAINT agg_trades_symbol_agg_id_uk UNIQUE (symbol, agg_id)"
 
+### Проверка загрузки данных в базу
+psql -c "SELECT COUNT(*) FROM public.klines_1m;"
+
+### Создание датасета
+c:\Python\Prosperous_Bot\config\export_npz.json
+
 
 
 

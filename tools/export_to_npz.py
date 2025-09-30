@@ -12,7 +12,13 @@ from datetime import datetime, timezone
 #              "out_path": "output/btcusdt_1m_2024.npz" }
 # }
 
-cfg = json.load(open(os.environ.get("EXPORT_CONFIG", "config/export_npz.json"), "r"))
+# Construct absolute path to the config file based on the script's location
+script_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(script_path))
+default_config_path = os.path.join(project_root, "config", "export_npz.json")
+
+config_path = os.environ.get("EXPORT_CONFIG", default_config_path)
+cfg = json.load(open(config_path, "r"))
 
 q = """
 SELECT ts_utc AS ts, open, high, low, close, volume, vwap, trades
@@ -44,6 +50,7 @@ arr = {
     "vwap":   np.array([r[6] if r[6] is not None else np.nan for r in rows], dtype=np.float64),
     "trades": np.array([r[7] for r in rows], dtype=np.int32),
 }
-os.makedirs(os.path.dirname(cfg["export"]["out_path"]), exist_ok=True)
-np.savez_compressed(cfg["export"]["out_path"], **arr)
-print("Saved:", cfg["export"]["out_path"], "rows:", len(ts))
+output_path = os.path.join(project_root, cfg["export"]["out_path"])
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+np.savez_compressed(output_path, **arr)
+print("Saved:", output_path, "rows:", len(ts))
