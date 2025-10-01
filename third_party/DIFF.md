@@ -1,255 +1,403 @@
-## TL;DR
+# TL;DR
 
-Я прочитал ваш архив `db_schema_snapshot.zip` и зафиксировал фактическую схему PostgreSQL: две таблицы `public.klines_1m` и `public.agg_trades`, без PK/констрейнтов, но с уникальными индексами на ключах идемпотентности. Для корректировки SQL/скрипта выгрузки в NPZ предлагаю ввести материализованное представление `public.mv_candles_prepared` (минутные свечи в нормализованном виде) + индекс и `REFRESH ... CONCURRENTLY`. Ниже — точные DDL/DML, PowerShell-команды для съёма схемы и минимальный Python-экспортёр (без хардкода, всё через конфиг). Используем `to_timestamp(open_time_ms/1000.0)` и `AT TIME ZONE 'UTC'` корректно согласно документации PostgreSQL ([PostgreSQL][3]). Для `REFRESH CONCURRENTLY` на MV требуется уникальный индекс, что также отражено в оф. доках/разборах ([PostgreSQL][4]).
+Ниже — готовый Python-скрипт, который:
 
----
+1. берёт **актуальный список USDⓈ-M perpetual символов** с Binance через `GET /fapi/v1/exchangeInfo`, фильтруя `status=TRADING` и `contractType=PERPETUAL`. ([Бинанс Разработчик][2])
+2. скачивает **monthly 1m klines** с **data.binance.vision** за **последние 3 полностью завершённых месяца** по всем символам: путь `data/futures/um/monthly/klines/{SYMBOL}/1m/{SYMBOL}-1m-YYYY-MM.zip` (+ опциональная проверка `.CHECKSUM`). ([data.binance.vision][3])
+3. парсит CSV из ZIP и **загружает в вашу PostgreSQL** (таблица `public.klines_1m`) с upsert по `(symbol, open_time)`.
 
-## Что именно у вас в БД (по снапшоту)
-
-* Схемы: `public`
-* Таблицы:
-
-  * `public.klines_1m` (свечи 1m): `symbol text`, `open_time_ms bigint`, `open_price numeric`, `high_price numeric`, `low_price numeric`, `close_price numeric`, `base_volume numeric`, `quote_volume numeric`, `trade_count int`, `taker_base numeric`, `taker_quote numeric`, `is_closed boolean`, `ingest_ts timestamptz`.
-    Индексы: уникальный на `(symbol, open_time_ms)` и btree на `(open_time_ms)`.
-  * `public.agg_trades`: агрегированные трейды; уникальный индекс на `(symbol, agg_id)`.
-* Констрейнтов (PK/UK) формально нет — только индексы (это ок для производительности, но с точки зрения семантики лучше добавить `UNIQUE`/`PRIMARY KEY` — см. отличия PK/UNIQUE в доках) ([PostgreSQL][5]).
+> Отдельный .npz-экспорт для бэктестера у вас уже есть, поэтому в этом скрипте его **не делаем** (соответствует вашим требованиям и проектной доктрине: конфиги/артефакты — разнесены, секреты — только через переменные окружения). 
 
 ---
 
-## Рекомендуемая нормализация под выгрузку NPZ
-
-### 1) Материализованное представление с нормализованными полями
-
-```sql
--- 1) безопасная переcборка
-DROP MATERIALIZED VIEW IF EXISTS public.mv_candles_prepared;
-
-CREATE MATERIALIZED VIEW public.mv_candles_prepared AS
-SELECT
-    k.symbol,
-    -- unix ms -> UTC ts (timestamp without tz), по докам делим на 1000 и to_timestamp(...)
-    -- затем фиксируем часовой пояс как UTC:
-    (to_timestamp(k.open_time_ms / 1000.0) AT TIME ZONE 'UTC') AS ts_utc,
-    k.open_price::double precision  AS open,
-    k.high_price::double precision  AS high,
-    k.low_price::double precision   AS low,
-    k.close_price::double precision AS close,
-    k.base_volume::double precision AS volume,
-    CASE WHEN k.base_volume > 0
-         THEN (k.quote_volume / k.base_volume)::double precision
-         ELSE NULL
-    END AS vwap,
-    k.trade_count::integer AS trades
-FROM public.klines_1m AS k
-WHERE k.is_closed IS TRUE
-WITH NO DATA;
-```
-
-Пояснения: конвертируем миллисекунды корректно (`to_timestamp(.../1000.0)`), приводим `numeric` → `double precision` (для numpy), берём только закрытые свечи, строим VWAP как `quote_volume/base_volume`. См. функции даты/времени в Postgres ([PostgreSQL][3]).
-
-### 2) Индекс для конкурентного обновления MV
-
-```sql
--- Unique индекс обязателен для REFRESH CONCURRENTLY
-CREATE UNIQUE INDEX IF NOT EXISTS mv_candles_prepared_uq
-ON public.mv_candles_prepared (symbol, ts_utc);
-```
-
-Это необходимо для `REFRESH MATERIALIZED VIEW CONCURRENTLY` (иначе будет блокирующий refresh) ([PostgreSQL][6]).
-
-### 3) Первичное наполнение и последующие обновления
-
-```sql
--- первичное наполнение (без CONCURRENTLY)
-REFRESH MATERIALIZED VIEW public.mv_candles_prepared;
-
--- далее в кроне:
-REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_candles_prepared;
-```
-
-([PostgreSQL][4])
-
-> Альтернатива без MV: можно читать напрямую из `klines_1m`, рассчитывая поля «на лету». Но MV уменьшает нагрузку на CPU и упрощает консистентность выгрузок.
+| Шаг | Действие                                                                    | KPI / риск                                                                                                                                                                                         |
+| --- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Получение вселенной USDⓈ-M PERPETUAL из `/fapi/v1/exchangeInfo`             | Быстро, 1 вес/запрос; риск — временные лимиты API. ([Бинанс Разработчик][2])                                                                                                                       |
+| 2   | Скачивание monthly `1m` ZIP с `data.binance.vision` за 3 завершённых месяца | Высокая скорость (архивы по месяцу); риск — отсутствующий архив за текущий месяц (мы берём **полные** месяцы). Обновление monthly — на первой неделе следующего месяца. ([data.binance.vision][3]) |
+| 3   | Вставка в Postgres с upsert, PK `(symbol, open_time)`                       | Идempotentность, отсутствие дублей; риск — размеры batch’ей (настроены). Политика секретов — через env.                                                                                            |
 
 ---
 
-## Обновлённый SQL для выгрузки (если используем MV)
-
-```sql
--- параметризованный селект под один символ/диапазон
-SELECT symbol, ts_utc AS ts, open, high, low, close, volume, vwap, trades
-FROM public.mv_candles_prepared
-WHERE symbol = $1
-  AND ts_utc >= $2
-  AND ts_utc <  $3
-ORDER BY ts_utc;
-```
-
----
-
-## Минимальный Python-скрипт выгрузки в NPZ (без хардкода, конфигами)
+# Скрипт: `download_um_1m_to_postgres.py`
 
 ```python
-# file: tools/export_to_npz.py
-import os, numpy as np
-import psycopg2
-import json
-from datetime import datetime, timezone
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Скачивает последние N (по умолчанию 3) завершённых месяцев monthly 1m klines
+для всех USDⓈ-M PERPETUAL символов Binance и пишет в Postgres (upsert).
 
-# читаем конфиг JSON/ENV, согласовано с README/SYSTEM_PROMPT (никакого хардкода путей/DSN)
-# example JSON:
-# {
-#   "db": {"dsn": "host=... port=5432 dbname=... user=... password=..."},
-#   "export": {"symbol": "BTCUSDT", "from_utc": "2024-01-01T00:00:00Z", "to_utc": "2025-01-01T00:00:00Z",
-#              "out_path": "output/btcusdt_1m_2024.npz" }
-# }
+Требуемые переменные окружения для подключения к БД:
+  PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
-cfg = json.load(open(os.environ.get("EXPORT_CONFIG", "config/export_npz.json"), "r"))
+Примеры запуска:
+  python download_um_1m_to_postgres.py --months 3 --workers 8 --verify-checksum
 
-q = """
-SELECT ts_utc AS ts, open, high, low, close, volume, vwap, trades
-FROM public.mv_candles_prepared
-WHERE symbol = %s AND ts_utc >= %s AND ts_utc < %s
-ORDER BY ts_utc
+Документация и источники:
+- exchangeInfo (Futures USDⓈ-M): GET /fapi/v1/exchangeInfo
+- data.binance.vision: data/futures/um/monthly/klines/{SYMBOL}/1m/{SYMBOL}-1m-YYYY-MM.zip
+- .CHECKSUM файлы лежат рядом с архивами
+
 """
 
-conn = psycopg2.connect(cfg["db"]["dsn"])
-with conn, conn.cursor() as cur:
-    cur.execute(q, (cfg["export"]["symbol"],
-                    cfg["export"]["from_utc"],
-                    cfg["export"]["to_utc"]))
-    rows = cur.fetchall()
+import os
+import io
+import csv
+import sys
+import time
+import math
+import json
+import gzip
+import argparse
+import hashlib
+import zipfile
+import logging
+import datetime as dt
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import numpy as np
-if not rows:
-    raise SystemExit("No rows in selected range")
+import requests
+import psycopg2
+from psycopg2.extras import execute_values
 
-# приводим к numpy. ts -> epoch ms (UTC) для удобства
-ts = np.array([int(r[0].replace(tzinfo=timezone.utc).timestamp() * 1000) for r in rows], dtype=np.int64)
-arr = {
-    "ts": ts,
-    "open":   np.array([r[1] for r in rows], dtype=np.float64),
-    "high":   np.array([r[2] for r in rows], dtype=np.float64),
-    "low":    np.array([r[3] for r in rows], dtype=np.float64),
-    "close":  np.array([r[4] for r in rows], dtype=np.float64),
-    "volume": np.array([r[5] for r in rows], dtype=np.float64),
-    "vwap":   np.array([r[6] if r[6] is not None else np.nan for r in rows], dtype=np.float64),
-    "trades": np.array([r[7] for r in rows], dtype=np.int32),
-}
-os.makedirs(os.path.dirname(cfg["export"]["out_path"]), exist_ok=True)
-np.savez_compressed(cfg["export"]["out_path"], **arr)
-print("Saved:", cfg["export"]["out_path"], "rows:", len(ts))
+BINANCE_FAPI_BASE = "https://fapi.binance.com"
+EXCHANGE_INFO_URL = f"{BINANCE_FAPI_BASE}/fapi/v1/exchangeInfo"
+# Пример пути: data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2025-07.zip
+DATA_VISION_BASE = "https://data.binance.vision"
+UM_MONTHLY_1M_PREFIX = "data/futures/um/monthly/klines"
+
+# Таблица назначения
+TABLE = "public.klines_1m"
+
+# Колонки csv (см. Binance klines формат)
+# Open time, Open, High, Low, Close, Volume, Close time, Quote asset volume, Number of trades,
+# Taker buy base asset volume, Taker buy quote asset volume, Ignore
+# (источник формата колонок — Binance public data README + Klines docs)
+CSV_COLS = [
+    "open_time","open","high","low","close","volume",
+    "close_time","quote_asset_volume","number_of_trades",
+    "taker_buy_base_asset_volume","taker_buy_quote_asset_volume","ignore"
+]
+
+def month_range_last_complete(n_months: int):
+    """Вернуть список (year, month) для n последних полностью завершённых месяцев, начиная с прошлого месяца."""
+    now = dt.datetime.utcnow()
+    # Переходим к первому числу текущего месяца и затем -1 день -> последний день прошлого месяца
+    first_this_month = dt.datetime(now.year, now.month, 1)
+    last_prev_month = first_this_month - dt.timedelta(days=1)
+    y, m = last_prev_month.year, last_prev_month.month
+    out = []
+    for _ in range(n_months):
+        out.append((y, m))
+        # шаг назад на 1 месяц
+        if m == 1:
+            y -= 1
+            m = 12
+        else:
+            m -= 1
+    out.reverse()
+    return out
+
+def get_usdm_perp_symbols(session: requests.Session, timeout=20):
+    """Забрать все USDT-M perpetual symbols со статусом TRADING."""
+    r = session.get(EXCHANGE_INFO_URL, timeout=timeout)
+    r.raise_for_status()
+    data = r.json()
+    symbols = []
+    for s in data.get("symbols", []):
+        if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL":
+            # На USDⓈ-M фьючерсах baseAsset/quoteAsset обычно USDT кроссы;
+            # используем символ как есть (верхний регистр нужен для путей на data.binance.vision).
+            symbols.append(s["symbol"])
+    symbols = sorted(set(symbols))
+    return symbols
+
+def build_monthly_zip_url(symbol: str, year: int, month: int) -> str:
+    filename = f"{symbol}-1m-{year:04d}-{month:02d}.zip"
+    return f"{DATA_VISION_BASE}/{UM_MONTHLY_1M_PREFIX}/{symbol}/1m/{filename}"
+
+def build_checksum_url(symbol: str, year: int, month: int) -> str:
+    filename = f"{symbol}-1m-{year:04d}-{month:02d}.zip.CHECKSUM"
+    return f"{DATA_VISION_BASE}/{UM_MONTHLY_1M_PREFIX}/{symbol}/1m/{filename}"
+
+def fetch_bytes(session: requests.Session, url: str, timeout=60):
+    r = session.get(url, timeout=timeout)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.content
+
+def verify_checksum(content: bytes, checksum_file_bytes: bytes) -> bool:
+    """Проверка sha256 по формату .CHECKSUM (строка 'SHA256 (<file>) = <hash>' или просто '<hash>  <file>')."""
+    try:
+        checksum_text = checksum_file_bytes.decode("utf-8", errors="ignore").strip()
+        # Извлекаем hex-строку sha256
+        token = None
+        for part in checksum_text.replace("=", " ").split():
+            if len(part) == 64 and all(c in "0123456789abcdefABCDEF" for c in part):
+                token = part.lower()
+                break
+        if not token:
+            return False
+        h = hashlib.sha256(content).hexdigest().lower()
+        return h == token
+    except Exception:
+        return False
+
+def ensure_table(conn):
+    ddl = f"""
+    CREATE TABLE IF NOT EXISTS {TABLE} (
+        symbol TEXT NOT NULL,
+        open_time BIGINT NOT NULL,
+        open NUMERIC,
+        high NUMERIC,
+        low NUMERIC,
+        close NUMERIC,
+        volume NUMERIC,
+        close_time BIGINT,
+        quote_asset_volume NUMERIC,
+        number_of_trades INTEGER,
+        taker_buy_base_asset_volume NUMERIC,
+        taker_buy_quote_asset_volume NUMERIC,
+        ignore NUMERIC,
+        CONSTRAINT klines_1m_pk PRIMARY KEY (symbol, open_time)
+    );
+    """
+    with conn.cursor() as cur:
+        cur.execute(ddl)
+    conn.commit()
+
+def parse_zip_klines(zip_bytes: bytes):
+    """Возвращает список строк для вставки: (open_time,...,ignore) в правильных типах."""
+    rows = []
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        # Берём первый .csv внутри (в monthly он один)
+        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not csv_names:
+            return rows
+        with zf.open(csv_names[0], "r") as f:
+            for raw in io.TextIOWrapper(f, encoding="utf-8", newline=""):
+                # Быстрый csv-парсер (на случай разделителей внутри — лучше использовать csv.reader)
+                # Здесь используем csv.reader явно:
+                pass
+    # Перечитаем через csv.reader корректно
+    rows = []
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        with zf.open(csv_names[0], "r") as f:
+            reader = csv.reader(io.TextIOWrapper(f, encoding="utf-8"))
+            for rec in reader:
+                if len(rec) < 12:
+                    continue
+                # Приводим типы
+                open_time = int(rec[0])
+                open_ = rec[1]
+                high = rec[2]
+                low = rec[3]
+                close = rec[4]
+                volume = rec[5]
+                close_time = int(rec[6])
+                quote_asset_volume = rec[7]
+                number_of_trades = int(rec[8])
+                taker_buy_base = rec[9]
+                taker_buy_quote = rec[10]
+                ignore = rec[11]
+                rows.append((
+                    open_time, open_, high, low, close, volume, close_time,
+                    quote_asset_volume, number_of_trades, taker_buy_base, taker_buy_quote, ignore
+                ))
+    return rows
+
+def upsert_rows(conn, symbol: str, rows, batch_size=10_000):
+    if not rows:
+        return 0
+    inserted = 0
+    tpl = "(" + ",".join(["%s"] * 13) + ")"
+    sql = f"""
+    INSERT INTO {TABLE} (
+        symbol, open_time, open, high, low, close, volume, close_time,
+        quote_asset_volume, number_of_trades, taker_buy_base_asset_volume,
+        taker_buy_quote_asset_volume, ignore
+    ) VALUES %s
+    ON CONFLICT (symbol, open_time) DO UPDATE SET
+        open = EXCLUDED.open,
+        high = EXCLUDED.high,
+        low = EXCLUDED.low,
+        close = EXCLUDED.close,
+        volume = EXCLUDED.volume,
+        close_time = EXCLUDED.close_time,
+        quote_asset_volume = EXCLUDED.quote_asset_volume,
+        number_of_trades = EXCLUDED.number_of_trades,
+        taker_buy_base_asset_volume = EXCLUDED.taker_buy_base_asset_volume,
+        taker_buy_quote_asset_volume = EXCLUDED.taker_buy_quote_asset_volume,
+        ignore = EXCLUDED.ignore
+    """
+    buf = []
+    for r in rows:
+        buf.append(
+            (symbol,) + r  # prepend symbol
+        )
+        if len(buf) >= batch_size:
+            with conn.cursor() as cur:
+                execute_values(cur, sql, buf, page_size=10000)
+            conn.commit()
+            inserted += len(buf)
+            buf.clear()
+    if buf:
+        with conn.cursor() as cur:
+            execute_values(cur, sql, buf, page_size=10000)
+        conn.commit()
+        inserted += len(buf)
+    return inserted
+
+def process_symbol_month(session, conn, symbol: str, year: int, month: int, verify_checksum: bool, logger: logging.Logger):
+    zip_url = build_monthly_zip_url(symbol, year, month)
+    content = fetch_bytes(session, zip_url)
+    if content is None:
+        logger.info(f"[{symbol}] {year}-{month:02d}: 404 (нет архива) — пропуск")
+        return (symbol, year, month, 0, False)
+    if verify_checksum:
+        cs_url = build_checksum_url(symbol, year, month)
+        cs_bytes = fetch_bytes(session, cs_url)
+        if cs_bytes is None:
+            logger.warning(f"[{symbol}] {year}-{month:02d}: отсутствует CHECKSUM — продолжаем без проверки")
+        else:
+            ok = verify_checksum(content, cs_bytes)
+            if not ok:
+                logger.error(f"[{symbol}] {year}-{month:02d}: CHECKSUM НЕ СОВПАЛ — пропуск архива")
+                return (symbol, year, month, 0, False)
+    rows = parse_zip_klines(content)
+    n = upsert_rows(conn, symbol, rows)
+    logger.info(f"[{symbol}] {year}-{month:02d}: загружено {n} строк")
+    return (symbol, year, month, n, True)
+
+def connect_pg():
+    conn = psycopg2.connect(
+        host=os.getenv("PGHOST", "localhost"),
+        port=int(os.getenv("PGPORT", "5432")),
+        dbname=os.getenv("PGDATABASE", "marketdata"),
+        user=os.getenv("PGUSER", "postgres"),
+        password=os.getenv("PGPASSWORD", "")
+    )
+    conn.autocommit = False
+    return conn
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--months", type=int, default=3, help="Сколько полных месяцев загрузить (по умолчанию 3).")
+    parser.add_argument("--workers", type=int, default=8, help="Количество потоков для скачивания.")
+    parser.add_argument("--verify-checksum", action="store_true", help="Проверять .CHECKSUM для архивов.")
+    parser.add_argument("--symbols", type=str, default="", help="Кому-сепарированный фильтр символов (опц.).")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logger = logging.getLogger("um_klines_loader")
+
+    months = month_range_last_complete(args.months)
+    logger.info(f"Будут загружены месяцы: {months}")
+
+    with requests.Session() as http, connect_pg() as conn:
+        ensure_table(conn)
+
+        all_symbols = get_usdm_perp_symbols(http)
+        logger.info(f"Всего активных USDⓈ-M PERPETUAL символов: {len(all_symbols)}")
+
+        if args.symbols:
+            filter_set = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
+            symbols = [s for s in all_symbols if s in filter_set]
+            logger.info(f"Фильтр по символам: {len(symbols)} из {len(all_symbols)}")
+        else:
+            symbols = all_symbols
+
+        tasks = []
+        results = []
+        # ВАЖНО: один pg-conn не потокобезопасен; создадим соединения по месту выполнения
+        def worker(symbol, ym):
+            y, m = ym
+            with connect_pg() as local_conn:
+                return process_symbol_month(http, local_conn, symbol, y, m, args.verify_checksum, logger)
+
+        with ThreadPoolExecutor(max_workers=args.workers) as ex:
+            for sym in symbols:
+                for ym in months:
+                    tasks.append(ex.submit(worker, sym, ym))
+            for fut in as_completed(tasks):
+                try:
+                    results.append(fut.result())
+                except Exception as e:
+                    logger.exception("Ошибка выполнения задачи: %s", e)
+
+        total = sum(r[3] for r in results if r and r[4])
+        ok = sum(1 for r in results if r and r[4] and r[3] > 0)
+        logger.info(f"Готово. Успешных загрузок: {ok}, всего вставлено строк: {total}.")
+
+if __name__ == "__main__":
+    main()
 ```
 
-> Примечание: `to_timestamp` и `AT TIME ZONE` — поведение и типы описаны в оф. доках Postgres; будьте внимательны с `timestamp` vs `timestamptz` при дальнейших преобразованиях временных зон ([PostgreSQL][3]).
+## Зависимости
 
----
-
-## Команды PowerShell (Windows) — как получить все нужные артефакты схемы
-
-Замените плейсхолдеры. В PowerShell удобно задавать DSN через переменные окружения:
-
-```powershell
-# 1) Подготовка соединения
-$env:PGHOST="localhost"; $env:PGPORT="5432"; $env:PGDATABASE="trading"; $env:PGUSER="postgres"; $env:PGPASSWORD="********"
-
-# 2) Список схем / таблиц / представлений / индексов / прав / размеры
-psql -v ON_ERROR_STOP=1 -c "\dn+"
-psql -v ON_ERROR_STOP=1 -c "\dt+ public.*"
-psql -v ON_ERROR_STOP=1 -c "\dv+ public.*"
-psql -v ON_ERROR_STOP=1 -c "\di+ public.*"
-
-# 3) Полное описание ключевых таблиц (колонки, типы, индексы)
-psql -v ON_ERROR_STOP=1 -c "\d+ public.klines_1m"
-psql -v ON_ERROR_STOP=1 -c "\d+ public.agg_trades"
-
-# 4) Индексы аккуратно в CSV (удобно для diff)
-psql -A -F "," -P footer=off -c "SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename, indexname" > .\indexes.csv
-
-# 5) Размеры таблиц/матвью с аккуратным pretty-size
-psql -A -F "," -P footer=off -c "SELECT relname, relkind, pg_size_pretty(pg_total_relation_size(oid)) AS total_size FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','m') ORDER BY total_size DESC" > .\table_sizes.csv
-
-# 6) Привилегии на объекты
-psql -A -F "," -P footer=off -c "SELECT schemaname, tablename, privileges FROM information_schema.table_privileges WHERE schemaname='public' ORDER BY tablename, grantee" > .\table_privileges.csv
+```bash
+pip install requests psycopg2-binary
 ```
 
-### Применение DDL (создание MV/индекса/refresh)
+## Настройки окружения
 
-```powershell
-# Пример: применяем DDL-файл
-@'
-DROP MATERIALIZED VIEW IF EXISTS public.mv_candles_prepared;
-CREATE MATERIALIZED VIEW public.mv_candles_prepared AS
-SELECT
-  symbol,
-  (to_timestamp(open_time_ms / 1000.0) AT TIME ZONE 'UTC') AS ts_utc,
-  open_price::double precision  AS open,
-  high_price::double precision  AS high,
-  low_price::double precision   AS low,
-  close_price::double precision AS close,
-  base_volume::double precision AS volume,
-  CASE WHEN base_volume > 0 THEN (quote_volume / base_volume)::double precision ELSE NULL END AS vwap,
-  trade_count::integer AS trades
-FROM public.klines_1m
-WHERE is_closed IS TRUE
-WITH NO DATA;
-
-CREATE UNIQUE INDEX IF NOT EXISTS mv_candles_prepared_uq
-ON public.mv_candles_prepared (symbol, ts_utc);
-'@ | Out-File -Encoding UTF8 .\create_mv.sql
-
-psql -v ON_ERROR_STOP=1 -f .\create_mv.sql
-psql -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW public.mv_candles_prepared"
-psql -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_candles_prepared"
+```bash
+# Пример (Windows PowerShell)
+$env:PGHOST="localhost"
+$env:PGPORT="5432"
+$env:PGDATABASE="marketdata"
+$env:PGUSER="postgres"
+$env:PGPASSWORD="<Ваш_пароль>"
 ```
 
-Документация по MV/refresh/индексации: ([PostgreSQL][4])
+## DDL (если таблицы ещё нет)
 
----
-
-## Если хотите «правильно» закрепить уникальность на сырьевых таблицах
-
-Рекомендация (опционально): формально оформить уникальность как constraint’ы — это улучшает семантику и помогает репликации/инструментам (вместо «только индекс») ([PostgreSQL][5]):
+Скрипт сам создаёт `public.klines_1m`, но на всякий случай — DDL:
 
 ```sql
-ALTER TABLE public.klines_1m
-  ADD CONSTRAINT klines_1m_symbol_open_time_uk UNIQUE (symbol, open_time_ms);
-
-ALTER TABLE public.agg_trades
-  ADD CONSTRAINT agg_trades_symbol_agg_id_uk UNIQUE (symbol, agg_id);
+CREATE TABLE IF NOT EXISTS public.klines_1m (
+  symbol TEXT NOT NULL,
+  open_time BIGINT NOT NULL,
+  open NUMERIC,
+  high NUMERIC,
+  low NUMERIC,
+  close NUMERIC,
+  volume NUMERIC,
+  close_time BIGINT,
+  quote_asset_volume NUMERIC,
+  number_of_trades INTEGER,
+  taker_buy_base_asset_volume NUMERIC,
+  taker_buy_quote_asset_volume NUMERIC,
+  ignore NUMERIC,
+  CONSTRAINT klines_1m_pk PRIMARY KEY (symbol, open_time)
+);
 ```
 
 ---
 
-## Шаг | Действие | KPI/риск
+## Почему именно так (ссылки на первоисточники)
 
-1 | Создать `mv_candles_prepared` и индекс | Быстрые выгрузки; риск: первый `REFRESH` блокирующий (разово)
-2 | Перевести выгрузку NPZ на `mv_candles_prepared` | Стабильность формата; риск: забыть обновить MV по крону
-3 | (Опционально) Добавить UNIQUE-констрейнты | Упрощение контроля качества; риск: конфликт дубликатов при миграции
-4 | Проверка выгрузки (счётчик строк/минуты) | Целостность данных; риск: дыры в периодах
-5 | Логи + мониторинг времени `REFRESH` | SLA ночных процедур; риск: рост времени при больших объёмах
-
----
-
-### Почему именно так (ссылки на доки)
-
-* Преобразование epoch-ms → timestamp: `to_timestamp(ms/1000.0)`; нюансы типов и TZ в оф. доках PostgreSQL ([PostgreSQL][3]).
-* `AT TIME ZONE` — назначение/снятие TZ (для консистентного UTC) ([EDB][7]).
-* Материализованные представления: создание/refresh, конкурентный refresh требует UNIQUE индекса ([PostgreSQL][4]).
-* Отличия PK/UNIQUE и зачем формальные констрейнты, а не «просто индекс» ([PostgreSQL][5]).
+* `GET /fapi/v1/exchangeInfo` — официальный способ получить текущие правила/символы для USDⓈ-M Futures. Мы фильтруем `TRADING` + `PERPETUAL`. ([Бинанс Разработчик][2])
+* Monthly 1m klines на **data.binance.vision**: каталог `data/futures/um/monthly/klines/…` (индекс-браузер), загружаем по **всем символам**, присутствующим в каталоге. ([data.binance.vision][3])
+* Формат колонок Klines (12 полей) соответствует документации/README Binance public data. ([Бинанс Разработчик][4])
+* Для проверки целостности из каталога берём `.zip.CHECKSUM` рядом с архивом (опция `--verify-checksum`). ([GitHub][5])
+* Monthly-архивы пополняются **в начале следующего месяца** (официальный public-data README). Поэтому мы качаем **последние N полностью завершённых месяцев** — без риска частично заполненного текущего. ([GitHub][5])
 
 ---
 
-## Готовность / приоритет
+## Соответствие процессу RL Trader
 
-Готов к следующему шагу: **включить MV+экспорт в ваш пайплайн и (если требуется) оформить PR в репозитории под ветку `prosperous_bot`** с тест-гейтингом (`pytest`) и отчётом в `output/<config_name>/` согласно нашим правилам (см. SYSTEM_PROMPT/README) ([GitHub][2]). Если нужно — сразу подготовлю `unified diff` с командами `git/gh` под ваш путь к тулзам выгрузки.
+* Скрипт не трогает .npz-экспорт и бэктестер (у вас уже есть отдельный шаг/скрипт), — следуем доктрине «конфиги и артефакты — разнесены; секреты — через env». 
+* Потоки/батчи сделаны для скорости, но с **идемпотентным upsert** по `(symbol, open_time)` — безопасно для последующих повторных прогонов.
+* В проектной документации RL Trader подчёркнуто, что продакшн-пайплайн использует **real-time WebSocket + DB**, а бэктест — на статике (.npz). Наш скрипт как раз наполняет БД историей, что согласуется с общей архитектурой. 
 
-Если хотите, могу так же адаптировать выгрузку без MV (селект прямо из `klines_1m`) — но MV даст более предсказуемое время и стабильность.
+---
 
-[1]: https://github.com/FMProducer/prosperous_bot/commit/931c2876836a47d016f514622b9d91870fbc721a "docs: tests websockets fix · FMProducer/prosperous_bot@931c287 · GitHub"
-[2]: https://github.com/FMProducer/prosperous_bot/blob/prosperous_bot/third_party/rl-trading-binance/SYSTEM_PROMPT.md "prosperous_bot/third_party/rl-trading-binance/SYSTEM_PROMPT.md at prosperous_bot · FMProducer/prosperous_bot · GitHub"
-[3]: https://www.postgresql.org/docs/current/functions-datetime.html?utm_source=chatgpt.com "Documentation: 18: 9.9. Date/Time Functions and Operators"
-[4]: https://www.postgresql.org/docs/current/sql-creatematerializedview.html?utm_source=chatgpt.com "Documentation: 18: CREATE MATERIALIZED VIEW"
-[5]: https://www.postgresql.org/docs/current/indexes-unique.html?utm_source=chatgpt.com "Documentation: 18: 11.6. Unique Indexes"
-[6]: https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html?utm_source=chatgpt.com "Documentation: 18: REFRESH MATERIALIZED VIEW"
-[7]: https://www.enterprisedb.com/postgres-tutorials/postgres-time-zone-explained?utm_source=chatgpt.com "Postgres AT TIME ZONE Explained"
+Если хотите, в следующем шаге добавлю **unit-тесты** (offline, с локальными фикстурами ZIP/CSV) и **CLI-обвязку в ваш репозиторий** под `third_party/rl-trading-binance/tools/`, оформив PR по нашему шаблону. 
+
+[1]: https://github.com/FMProducer/prosperous_bot/commit/196d89c360ff3623c45e0c108ee95e2194fbfd7e "docs: export_npz · FMProducer/prosperous_bot@196d89c · GitHub"
+[2]: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Exchange-Information?utm_source=chatgpt.com "Exchange Information | Binance Open Platform"
+[3]: https://data.binance.vision/?prefix=data%2Ffutures%2Fum%2Fmonthly%2Fklines%2F&utm_source=chatgpt.com "Home / data / futures / um / monthly / klines"
+[4]: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data?utm_source=chatgpt.com "Kline Candlestick Data | Binance Open Platform"
+[5]: https://github.com/binance/binance-public-data?utm_source=chatgpt.com "Details on how to get Binance public data"
