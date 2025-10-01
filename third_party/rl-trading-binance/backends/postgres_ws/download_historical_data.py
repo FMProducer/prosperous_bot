@@ -86,7 +86,7 @@ def build_checksum_url(symbol: str, year: int, month: int) -> str:
     filename = f"{symbol}-1m-{year:04d}-{month:02d}.zip.CHECKSUM"
     return f"{DATA_VISION_BASE}/{UM_MONTHLY_1M_PREFIX}/{symbol}/1m/{filename}"
 
-def fetch_bytes(session: requests.Session, url: str, timeout=60):
+def fetch_bytes(session: requests.Session, url: str, timeout=300):
     r = session.get(url, timeout=timeout)
     if r.status_code == 404:
         return None
@@ -209,15 +209,15 @@ def upsert_rows(conn, symbol: str, rows, batch_size=10_000):
         inserted += len(buf)
     return inserted
 
-def process_symbol_month(session, conn, symbol: str, year: int, month: int, verify_checksum: bool, logger: logging.Logger):
+def process_symbol_month(session, conn, symbol: str, year: int, month: int, verify_checksum: bool, logger: logging.Logger, timeout: int):
     zip_url = build_monthly_zip_url(symbol, year, month)
-    content = fetch_bytes(session, zip_url)
+    content = fetch_bytes(session, zip_url, timeout=timeout)
     if content is None:
         logger.info(f"[{symbol}] {year}-{month:02d}: 404 (нет архива) — пропуск")
         return (symbol, year, month, 0, False)
     if verify_checksum:
         cs_url = build_checksum_url(symbol, year, month)
-        cs_bytes = fetch_bytes(session, cs_url)
+        cs_bytes = fetch_bytes(session, cs_url, timeout=timeout)
         if cs_bytes is None:
             logger.warning(f"[{symbol}] {year}-{month:02d}: отсутствует CHECKSUM — продолжаем без проверки")
         else:
@@ -247,6 +247,7 @@ def main():
     parser.add_argument("--workers", type=int, default=8, help="Количество потоков для скачивания.")
     parser.add_argument("--verify-checksum", action="store_true", help="Проверять .CHECKSUM для архивов.")
     parser.add_argument("--symbols", type=str, default="", help="Кому-сепарированный фильтр символов (опц.).")
+    parser.add_argument("--timeout", type=int, default=300, help="Тайм-аут для HTTP запросов в секундах (по умолчанию 300).")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -274,7 +275,7 @@ def main():
         def worker(symbol, ym):
             y, m = ym
             with connect_pg() as local_conn:
-                return process_symbol_month(http, local_conn, symbol, y, m, args.verify_checksum, logger)
+                return process_symbol_month(http, local_conn, symbol, y, m, args.verify_checksum, logger, args.timeout)
 
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
             for sym in symbols:
