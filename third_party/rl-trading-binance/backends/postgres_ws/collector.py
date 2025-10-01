@@ -83,6 +83,7 @@ class Collector:
         
         stream = obj.get("stream")
         if not stream:
+            logging.warning("Message without stream")
             return
         
         data=obj.get("data", {})
