@@ -147,7 +147,11 @@ def parse_zip_klines(zip_bytes: bytes):
                 if len(rec) < 12:
                     continue
                 # Приводим типы
-                open_time_ms = int(rec[0])
+                try:
+                    open_time_ms = int(rec[0])
+                except ValueError:
+                    # Пропускаем строку заголовка
+                    continue
                 open_price = rec[1]
                 high_price = rec[2]
                 low_price = rec[3]
@@ -209,13 +213,13 @@ def upsert_rows(conn, symbol: str, rows, batch_size=10_000):
         inserted += len(buf)
     return inserted
 
-def process_symbol_month(session, conn, symbol: str, year: int, month: int, verify_checksum: bool, logger: logging.Logger, timeout: int):
+def process_symbol_month(session, conn, symbol: str, year: int, month: int, do_verify_checksum: bool, logger: logging.Logger, timeout: int):
     zip_url = build_monthly_zip_url(symbol, year, month)
     content = fetch_bytes(session, zip_url, timeout=timeout)
     if content is None:
         logger.info(f"[{symbol}] {year}-{month:02d}: 404 (нет архива) — пропуск")
         return (symbol, year, month, 0, False)
-    if verify_checksum:
+    if do_verify_checksum:
         cs_url = build_checksum_url(symbol, year, month)
         cs_bytes = fetch_bytes(session, cs_url, timeout=timeout)
         if cs_bytes is None:
@@ -275,7 +279,7 @@ def main():
         def worker(symbol, ym):
             y, m = ym
             with connect_pg() as local_conn:
-                return process_symbol_month(http, local_conn, symbol, y, m, args.verify_checksum, logger, args.timeout)
+                return process_symbol_month(http, local_conn, symbol, y, m, do_verify_checksum=args.verify_checksum, logger=logger, timeout=args.timeout)
 
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
             for sym in symbols:
