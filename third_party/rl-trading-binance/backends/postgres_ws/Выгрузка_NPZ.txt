@@ -5,6 +5,11 @@ $env:PGDATABASE="marketdata"
 $env:PGUSER="postgres"
 $env:PGPASSWORD="9691"
 
+### Добавить директорию C:\Program Files\PostgreSQL\18\bin в системную переменную PATH на постоянной основе для текущего пользователя
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User");
+[Environment]::SetEnvironmentVariable("Path", $userPath + ";C:\Program Files\PostgreSQL\18\bin", "User")
+
+
 ### Создайте файл create_mv.sql в текущей директории
 $sqlContent = @"
 DROP MATERIALIZED VIEW IF EXISTS public.mv_candles_prepared;
