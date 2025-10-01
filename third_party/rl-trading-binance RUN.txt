@@ -6,21 +6,39 @@ cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance         *
 python train.py 
 python train.py train_best.py
 
-
 python test_agent.py
 python test_agent.py run_fmproducer_1.py     *
-
 
 python backtest_engine.py
 python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
 
+pytest --cov=collector backends/postgres_ws/test_collector.py           *
+
+$env:PGDATABASE="marketdata"
+$env:PGUSER="postgres"
+$env:PGPASSWORD="9691"
+psql -c "SELECT COUNT(*) FROM public.klines_1m;"
+
+
+# Установите переменные окружения, если вы открыли новый терминал
+$env:PGHOST="localhost"
+$env:PGPORT="5432"
+$env:PGDATABASE="marketdata"
+$env:PGUSER="postgres"
+$env:PGPASSWORD="9691"
+# Перейдите в директорию
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
+# Запустите загрузку данных с 4 воркерами
+python download_historical_data.py --workers 4 --verify-checksum             *
+
+# Проверка потока данных в БД
+psql -c "SELECT COUNT(*) FROM public.mv_candles_prepared;"
 
 python optimize.py
 python show_results.py
 python show_best_trial.py
-
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\
 Для запуска: net start postgresql-x64-18
@@ -37,6 +55,8 @@ $PGURI = "postgresql://postgres@localhost:5432/marketdata?sslmode=prefer"
 
 pytest C:\Python\Prosperous_Bot\third_party\rl-trading-binance\backends\postgres_ws\start_postgres_ws.bat
 
-pytest --cov=collector backends/postgres_ws/test_collector.py
-
 python -m third_party.rl-trading-binance.backends.postgres_ws.collector --config third_party/rl-trading-binance/backends/postgres_ws/ref_config.yml
+
+
+python download_historical_data.py --months 3 --workers 16 --verify-checksum
+
