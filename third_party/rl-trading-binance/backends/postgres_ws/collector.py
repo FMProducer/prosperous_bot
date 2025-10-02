@@ -91,11 +91,11 @@ class Collector:
 
         if ev=="kline":
             k=data["k"]
-            s=data["s"].lower()
+            s=data["s"].upper()
             row=(s,int(k["t"]),k["o"],k["h"],k["l"],k["c"],k["v"],k["q"],int(k["n"]),k["V"],k["Q"],bool(k["x"]))
             self.writer.kbuf.append(row)
         elif ev=="aggTrade":
-            s=data["s"].lower()
+            s=data["s"].upper()
             row=(s,int(data["a"]),data["p"],data["q"],int(data["f"]),int(data["l"]),int(data["T"]),bool(data["m"]))
             self.writer.tbuf.append(row)
         
