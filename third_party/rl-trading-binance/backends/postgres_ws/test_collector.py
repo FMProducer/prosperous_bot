@@ -60,12 +60,12 @@ async def test_parse_events_offline():
     assert len(c.writer.tbuf) == 1
     
     kline_row = c.writer.kbuf[0]
-    assert kline_row[0] == "btcusdt"
+    assert kline_row[0] == "BTCUSDT"
     assert kline_row[1] == 1700000000000
     assert kline_row[11] is True
 
     agg_trade_row = c.writer.tbuf[0]
-    assert agg_trade_row[0] == "btcusdt"
+    assert agg_trade_row[0] == "BTCUSDT"
     assert agg_trade_row[1] == 123
     assert agg_trade_row[7] is True
 
