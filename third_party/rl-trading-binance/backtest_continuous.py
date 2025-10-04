@@ -224,15 +224,25 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
 
     # --- MODIFIED: Load continuous data ---
     logging.info(f"Loading continuous backtest data from {cfg.paths.backtest_data_path}")
-    with np.load(cfg.paths.backtest_data_path) as data:
+    with np.load(cfg.paths.backtest_data_path, allow_pickle=True) as data: # allow_pickle for string array
         # Expects the NPZ from export_to_npz.py
         df = pd.DataFrame({key: data[key] for key in data.files})
-        df['ts'] = pd.to_datetime(df['ts'], unit='ms')
-        df = df.set_index('ts')
-    
-    logging.info(f"Loaded continuous data with {len(df)} rows, from {df.index[0]} to {df.index[-1]}")
+
+    # --- NEW: Filter data for the specified ticker ---
+    ticker_name = cfg.backtest.ticker_name
+    if ticker_name:
+        logging.info(f"Filtering data for ticker: {ticker_name}")
+        df = df[df['symbol'] == ticker_name].copy()
+        if df.empty:
+            raise SystemExit(f"No data found for ticker {ticker_name} in the .npz file.")
+    else:
+        raise SystemExit("No ticker_name specified in the backtest configuration.")
+
+    df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+    df = df.set_index('ts')
+
+    logging.info(f"Loaded and filtered data with {len(df)} rows, from {df.index[0]} to {df.index[-1]}")
     market_data = df[cfg.data.data_channels].to_numpy(dtype=np.float32)
-    ticker_name = cfg.backtest.ticker_name # Ticker name from config
 
     # --- UNCHANGED: Load training data to calculate normalization stats ---
     train_raw = load_npz_dataset(
@@ -257,11 +267,20 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.data.other_channels,
     )
 
-    # --- UNCHANGED: Agent initialization ---
-    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+    # --- MODIFIED: Agent initialization ---
+    if cfg.paths.extra_model_dir:
+        # If a specific model directory is provided, use it directly
+        model_folder = cfg.paths.extra_model_dir
+        logging.info(f"Using specified model folder: {model_folder}")
+    else:
+        # Otherwise, find the latest model in the default directory
+        model_base = cfg.paths.model_dir
+        logging.info(f"Searching for latest model in: {model_base}")
+        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+
     best_path = os.path.join(model_folder, "best.pth")
     model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+    logging.info(f"Loading agent from: {model_path}")
     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
 
     if cfg.backtest.clear_disk_cache:
@@ -351,7 +370,7 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         logging.info(f": {name_result:>23s} = {value}")
 
     if cfg.backtest.plot_backtest_balance_curve:
-        result.plot_balance(os.path.join(cfg.paths.plot_dir, "continuous_backtest_balance_curve.png")
+        result.plot_balance(os.path.join(cfg.paths.plot_dir, "continuous_backtest_balance_curve.png"))
 
     return metrics
 

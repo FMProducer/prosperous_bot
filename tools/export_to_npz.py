@@ -28,7 +28,7 @@ def main():
             FROM v_klines_1m_npz
             WHERE {" AND ".join(where)}
         )
-        SELECT ts, {", ".join(CHANNELS)}
+        SELECT ts, symbol, {", ".join(CHANNELS)}
         FROM base
         ORDER BY ts, symbol;
     '''
@@ -44,6 +44,7 @@ def main():
     np.savez_compressed(
         args.out,
         ts=df["ts"].astype("int64").values,
+        symbol=df["symbol"].values,
         **{ch: df[ch].astype("float32").values for ch in CHANNELS}
     )
     print(f"Saved {len(df)} rows to {args.out}")
