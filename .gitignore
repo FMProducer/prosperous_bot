@@ -22,7 +22,7 @@ secrets.txt
 htmlcov/*
 
 # logs
-*.log
+# *.log
 
 # cache
 *.cache

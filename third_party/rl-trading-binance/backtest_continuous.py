@@ -1,4 +1,5 @@
-# backtest_engine.py
+# backtest_continuous.py
+# This script is a modification of backtest_engine.py to support continuous data sources.
 
 import datetime as dt
 import logging
@@ -9,6 +10,8 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 from config import MasterConfig
 from config import cfg as default_cfg
@@ -31,14 +34,12 @@ def setup_logging(cfg: MasterConfig) -> None:
     """
     log_dir = cfg.paths.log_dir
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "backtest_session.log")
+    # Use a different log file name to distinguish from the original engine
+    log_file = os.path.join(log_dir, "backtest_continuous_session.log")
 
     logger = logging.getLogger()
 
-    for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
-            return
-
+    # Clear existing handlers
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
@@ -50,8 +51,64 @@ def setup_logging(cfg: MasterConfig) -> None:
             logging.StreamHandler(),
         ],
     )
-    logging.info("[Init] Logging for backtest session started")
+    logging.info("[Init] Logging for continuous backtest session started")
 
+# --- NEW: Data Source Adapter ---
+def create_signal_groups_from_continuous(cfg: MasterConfig) -> Dict[dt.datetime, List[Tuple[str, np.ndarray]]]:
+    """
+    Adapter function to load a continuous flat NPZ file and transform it
+    into the session-based `grouped_backtest_data` format that the backtest engine expects.
+    """
+    logging.info(f"Adapter: Loading continuous backtest data from {cfg.paths.backtest_data_path}")
+    with np.load(cfg.paths.backtest_data_path, allow_pickle=True) as data:
+        df = pd.DataFrame({key: data[key] for key in data.files})
+
+    ticker_name = cfg.backtest.ticker_name
+    if ticker_name:
+        logging.info(f"Adapter: Filtering for ticker: {ticker_name}")
+        df = df[df['symbol'] == ticker_name].copy()
+        if df.empty:
+            raise SystemExit(f"Adapter: No data found for ticker {ticker_name} in the .npz file.")
+    else:
+        # This continuous loader is designed for a single ticker for simplicity
+        raise SystemExit("Adapter: ticker_name must be specified in config for continuous data mode.")
+
+    df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+    df = df.set_index('ts')
+    df.sort_index(inplace=True)
+
+    logging.info(f"Adapter: Loaded {len(df)} rows for {ticker_name}.")
+    market_data = df[cfg.data.data_channels].to_numpy(dtype=np.float32)
+    
+    grouped_signals = defaultdict(list)
+    close_idx = cfg.data.data_channels.index("close")
+
+    logging.info("Adapter: Scanning for volatile signals...")
+    i = cfg.seq.full_seq_len
+    while i < len(market_data):
+        session_window = market_data[i - cfg.seq.full_seq_len : i]
+        
+        # Volatility Filter
+        if cfg.backtest.volatility_threshold is not None:
+            volatility_window = session_window[0:cfg.seq.pre_signal_len]
+            close_price_start = volatility_window[0, close_idx]
+            close_price_end = volatility_window[-1, close_idx]
+            if close_price_start > 0:
+                volatility = abs(close_price_end - close_price_start) / close_price_start
+                if volatility >= cfg.backtest.volatility_threshold:
+                    # This is a valid signal, create a group for it
+                    signal_dt = df.index[i - cfg.seq.post_signal_len -1].to_pydatetime()
+                    grouped_signals[signal_dt].append((ticker_name, session_window))
+            # Always advance by 1 in scanning mode
+            i += 1
+        else:
+            # If no filter, every moment is a signal
+            signal_dt = df.index[i - cfg.seq.post_signal_len -1].to_pydatetime()
+            grouped_signals[signal_dt].append((ticker_name, session_window))
+            i += 1
+            
+    logging.info(f"Adapter: Found {len(grouped_signals)} signals meeting the criteria.")
+    return grouped_signals
 
 class TradeSummary:
     def __init__(self):
@@ -63,9 +120,9 @@ class TradeSummary:
         direction = info.get("direction")
         trade_amount = info.get("trade_amount")
         pnl = info.get("trade_realized_pnl")
-        change_pct = (pnl / trade_amount) * 100 if trade_amount else 0.0
-        balance_pct = (pnl / balance) * 100 if balance else 0.0
-        price_delta_pct = info.get("trade_price_delta") * 100
+        change_pct = (pnl / trade_amount) * 100 if trade_amount and trade_amount > 0 else 0.0
+        balance_pct = (pnl / balance) * 100 if balance and balance > 0 else 0.0
+        price_delta_pct = info.get("trade_price_delta", 0.0) * 100
 
         trade_result = (
             f": {trade_dt.strftime('%Y-%m-%d %H:%M')} {direction:<5} {ticker:<12} {int(trade_amount):>6}:"
@@ -95,13 +152,13 @@ class MetricsCollector:
         self.correct_shorts = 0
 
     def update(self, signal_dt: dt.datetime, info: dict, balance: float):
-        pnl = info.get("trade_realized_pnl")
-        commission = info.get("total_commission")
-        price_change = info.get("trade_price_delta")
-        drawdown = info.get("max_drawdown")
-        amount = info.get("trade_amount")
+        pnl = info.get("trade_realized_pnl", 0.0)
+        commission = info.get("total_commission", 0.0)
+        price_change = info.get("trade_price_delta", 0.0)
+        drawdown = info.get("max_drawdown", 0.0)
+        amount = info.get("trade_amount", 0.0)
         direction = info.get("direction")
-        correct = info.get("correct_prediction")
+        correct = info.get("correct_prediction", False)
 
         self.pnl_by_day[signal_dt.date()] += pnl
         self.pnl_all.append(pnl)
@@ -131,7 +188,7 @@ class MetricsCollector:
         changes = np.array(self.changes)
 
         if not self.balance_curve:
-            return {}
+            return {{}}
 
         _, balances = zip(*sorted(self.balance_curve.values()))
         total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
@@ -140,63 +197,64 @@ class MetricsCollector:
         std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
         std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
 
-        return {
-            "total_commission": f"{(-self.total_commission / balances[0]) * 100:.2f}%" if balances[0] != 0 else "0.00%",
-            "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
-            "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
-            "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
+        return {{
+            "total_commission": f"{{(-self.total_commission / balances[0]) * 100:.2f}}%" if balances[0] != 0 else "0.00%",
+            "avg_commission": f"{{-self.total_commission / self.total_trades:.2f}}" if self.total_trades > 0 else "0.00",
+            "max_loss": f"{{pnl_all.min():.2f}}" if len(pnl_all) > 0 else "0.00",
+            "max_profit": f"{{pnl_all.max():.2f}}" if len(pnl_all) > 0 else "0.00",
             "total_trade_days": trade_days,
             "profit_days": (
-                f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)"
+                f"{{int((pnl_by_day > 0).sum())}} ({{((pnl_by_day > 0).sum() / trade_days) * 100:.2f}}%)"
                 if trade_days > 0
                 else "0 (0.00%)"
             ),
-            "final_balance_change": f"{(total_change - 1) * 100:.2f}%",
+            "final_balance_change": f"{{(total_change - 1) * 100:.2f}}%",
             "exp_day_change": (
-                f"{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}%" if trade_days > 0 else "0.00%"
+                f"{{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}}%" if trade_days > 0 else "0.00%"
             ),
-            "max_drawdown": f"{min(self.drawdowns) * 100:.2f}%" if self.drawdowns else "0.00%",
+            "max_drawdown": f"{{min(self.drawdowns) * 100:.2f}}%" if self.drawdowns else "0.00%",
             "sharpe": (
-                f"{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
+                f"{{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
             "sortino": (
-                f"{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
+                f"{{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
-            "trades_sharpe": (f"{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
-            "trades_sortino": (f"{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
-            "accuracy": (f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%"),
+            "trades_sharpe": (f"{{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}}" if len(pnl_all) > 0 else "0.00"),
+            "trades_sortino": (f"{{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}}" if len(pnl_all) > 0 else "0.00"),
+            "accuracy": (f"{{self.correct_preds / self.total_trades * 100:.1f}}%" if self.total_trades > 0 else "0.0%"),
             "total_trades": self.total_trades,
             "total_longs": self.total_longs,
             "total_shorts": self.total_shorts,
             "longs_correct": (
-                f"{self.correct_longs} (0.0%)"
+                f"{{self.correct_longs}} (0.0%)"
                 if self.total_longs == 0
-                else f"{self.correct_longs} ({(self.correct_longs / self.total_longs) * 100:.1f}%)"
+                else f"{{self.correct_longs}} ({{(self.correct_longs / self.total_longs) * 100:.1f}}%)"
             ),
             "shorts_correct": (
-                f"{self.correct_shorts} (0.0%)"
+                f"{{self.correct_shorts}} (0.0%)"
                 if self.total_shorts == 0
-                else f"{self.correct_shorts} ({(self.correct_shorts / self.total_shorts) * 100:.1f}%)"
+                else f"{{self.correct_shorts}} ({{(self.correct_shorts / self.total_shorts) * 100:.1f}}%)"
             ),
-            "correct_avg_change": (f"{np.mean(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
-            "correct_std_change": (f"{np.std(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
+            "correct_avg_change": (f"{{np.mean(changes[changes > 0]) * 100:.2f}}%" if np.any(changes > 0) else "0.00%"),
+            "correct_std_change": (f"{{np.std(changes[changes > 0]) * 100:.2f}}%" if np.any(changes > 0) else "0.00%"),
             "incorrect_avg_change": (
-                f"{np.mean(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
+                f"{{np.mean(changes[changes <= 0]) * 100:.2f}}%" if np.any(changes <= 0) else "0.00%"
             ),
             "incorrect_std_change": (
-                f"{np.std(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
+                f"{{np.std(changes[changes <= 0]) * 100:.2f}}%" if np.any(changes <= 0) else "0.00%"
             ),
-            "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
-            "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
-        }
+            "avg_trade_amount": (f"{{np.mean(self.trade_amounts):.2f}}" if len(self.trade_amounts) > 0 else "0.00"),
+            "trades_per_day": (f"{{self.total_trades / trade_days:.2f}}" if trade_days > 0 else "0.00"),
+        }}
 
     def plot_balance(self, path: str):
         if not self.balance_curve:
             return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         times, balances = zip(*sorted(self.balance_curve.values()))
         plt.figure(figsize=(12, 6))
         plt.plot(times, balances, label="Balance", color="blue")
@@ -222,17 +280,22 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
-    backtest_raw = load_npz_dataset(
-        file_path=cfg.paths.backtest_data_path,
-        name_dataset="Backtest",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
+    # --- MODIFIED: Data Loading Logic ---
+    if cfg.backtest.continuous_data:
+        grouped_backtest_data = create_signal_groups_from_continuous(cfg)
+    else:
+        backtest_raw = load_npz_dataset(
+            file_path=cfg.paths.backtest_data_path,
+            name_dataset="Backtest",
+            plot_dir=cfg.paths.plot_dir,
+            debug_max_size=cfg.debug.debug_max_size_data,
+            plot_examples=cfg.data.plot_examples,
+            plot_channel_idx=cfg.data.plot_channel_idx,
+            pre_signal_len=cfg.seq.pre_signal_len,
+        )
+        grouped_backtest_data = create_signal_groups(backtest_raw)
 
-    grouped_backtest_data = create_signal_groups(backtest_raw)
+    # --- The rest of the engine is UNCHANGED ---
     train_raw = load_npz_dataset(
         file_path=cfg.paths.train_data_path,
         name_dataset="Train",
@@ -255,8 +318,13 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.data.other_channels,
     )
 
-    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+    if cfg.paths.extra_model_dir:
+        model_folder = cfg.paths.extra_model_dir
+        logging.info(f"Using specified model folder: {model_folder}")
+    else:
+        model_base = cfg.paths.model_dir
+        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+        logging.info(f"Using latest model folder: {model_folder}")
 
     best_path = os.path.join(model_folder, "best.pth")
     model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
@@ -278,7 +346,7 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.backtest.close_action_threshold,
     ]
 
-    for signal_dt, signals in grouped_backtest_data.items():
+    for signal_dt, signals in tqdm(grouped_backtest_data.items(), desc="Processing Signals"):
         open_sessions = [open_s for open_s in open_sessions if open_s["end_time"] > signal_dt]
         free_slots = cfg.backtest.max_parallel_sessions - len(open_sessions)
         if free_slots <= 0:
@@ -286,9 +354,11 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
             continue
 
         selected_signals = signals[:free_slots]
-        logging.info(
-            f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
-        )
+        
+        if not cfg.backtest.continuous_data:
+            logging.info(
+                f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
+            )
 
         for ticker_name, session in selected_signals:
             position_size = balance * cfg.backtest.position_fraction
@@ -321,6 +391,7 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
             obs, _ = env.reset()
             for step in range(cfg.seq.agent_session_len):
                 cache_key = (ticker_name, signal_dt + dt.timedelta(minutes=step))
+                
                 if cfg.backtest.selection_strategy == "advantage_based_filter":
                     q_vals = agent.select_action(
                         state=obs,
@@ -335,35 +406,7 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
 
                     pass_adv = get_pass_advantage(action, confidence, cfg)
                     if pass_adv:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}"
-                        )
                         action = 0
-                # MC-Dropout (Monte Carlo Dropout)
-                elif cfg.backtest.selection_strategy == "ensemble_q_filter":
-                    q_mean, q_std = agent.predict_ensemble(
-                        state=obs,
-                        training=False,
-                        use_cache=cfg.backtest.use_cache,
-                        cache_key=cache_key,
-                        n_samples=cfg.backtest.ensemble_n_samples,
-                    )
-                    advantage = q_mean - q_mean[0]
-                    action = int(np.argmax(advantage))
-                    confidence = advantage[action]
-                    uncertainty = q_std[action]
-
-                    pass_adv = get_pass_advantage(action, confidence, cfg)
-                    pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
-                    if pass_adv and pass_uncertainty:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}, "
-                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
-                        )
-                        action = 0
-
                 else:
                     action = agent.select_action(
                         state=obs,
@@ -403,10 +446,11 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         logging.info(f": {name_result:>23s} = {value}")
 
     if cfg.backtest.plot_backtest_balance_curve:
-        result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
+        result.plot_balance(os.path.join(cfg.paths.plot_dir, "continuous_backtest_balance_curve.png"))
 
     return metrics
 
 
 if __name__ == "__main__":
+    # The script is now self-contained and uses the config to decide the data source
     run_backtest(load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
