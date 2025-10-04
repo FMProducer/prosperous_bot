@@ -293,17 +293,20 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     
     logging.info("\n[Starting continuous backtest...]:")
 
-    # --- MODIFIED: Main loop with session timeout logic ---
+    # --- MODIFIED: Main loop with session timeout and volatility filter ---
     position_open = False
     trade_entry_step = 0
     trade_entry_price = 0.0
     trade_direction = 0 # 1 for LONG, -1 for SHORT
+    
+    # Get column indices for volatility calculation
+    close_idx = cfg.data.data_channels.index("close")
 
     iterator = range(cfg.seq.full_seq_len, len(market_data))
     for i in tqdm(iterator, desc="Running Continuous Backtest"):
         session_window = market_data[i - cfg.seq.full_seq_len : i]
         current_time = df.index[i-1]
-        current_price = session_window[-1][cfg.data.data_channels.index("close")]
+        current_price = session_window[-1][close_idx]
 
         action = 0 # Default to PASS
 
@@ -341,8 +344,21 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
                 if agent_action == 3:
                     action = 3 # Agent wants to close
 
-        # 2. If not in a position, ask agent for an action
+        # 2. If not in a position, check for volatility and ask agent for an action
         elif not position_open:
+            if cfg.backtest.volatility_threshold is not None:
+                volatility_window = session_window[0:cfg.seq.pre_signal_len]
+                close_price_start = volatility_window[0, close_idx]
+                close_price_end = volatility_window[-1, close_idx]
+                
+                if close_price_start > 0:
+                    volatility = abs(close_price_end - close_price_start) / close_price_start
+                    if volatility < cfg.backtest.volatility_threshold:
+                        continue # Skip if volatility is below threshold
+                else:
+                    continue # Skip if start price is zero
+
+            # Volatility is high enough, or no threshold is set. Ask the agent.
             temp_env = TradingEnvironment(
                 sequences=[session_window], stats=stats, render_mode=None, 
                 full_seq_len=cfg.seq.full_seq_len, num_features=cfg.seq.num_features,
