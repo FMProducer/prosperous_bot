@@ -197,6 +197,7 @@ class MetricsCollector:
     def plot_balance(self, path: str):
         if not self.balance_curve:
             return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         times, balances = zip(*sorted(self.balance_curve.values()))
         plt.figure(figsize=(12, 6))
         plt.plot(times, balances, label="Balance", color="blue")
@@ -292,72 +293,118 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     
     logging.info("\n[Starting continuous backtest...]:")
 
-    # --- MODIFIED: Main loop with sliding window ---
-    # We iterate through the continuous data, creating a session window at each step.
+    # --- MODIFIED: Main loop with session timeout logic ---
+    position_open = False
+    trade_entry_step = 0
+    trade_entry_price = 0.0
+    trade_direction = 0 # 1 for LONG, -1 for SHORT
+
     iterator = range(cfg.seq.full_seq_len, len(market_data))
     for i in tqdm(iterator, desc="Running Continuous Backtest"):
         session_window = market_data[i - cfg.seq.full_seq_len : i]
-        current_time = df.index[i-1] # The time of the last data point in the window
+        current_time = df.index[i-1]
+        current_price = session_window[-1][cfg.data.data_channels.index("close")]
 
-        # We can't use the original env logic directly as it's session-based.
-        # Instead, we simulate a single step of the environment at the decision point.
-        position_size = balance * cfg.backtest.position_fraction
+        action = 0 # Default to PASS
 
-        env = TradingEnvironment(
-            sequences=[session_window],
-            stats=stats,
-            render_mode=cfg.render_mode,
-            full_seq_len=cfg.seq.full_seq_len,
-            num_features=cfg.seq.num_features,
-            num_actions=cfg.market.num_actions,
-            flat_state_size=cfg.seq.flat_state_size,
-            initial_balance=position_size,
-            pre_signal_len=cfg.seq.pre_signal_len,
-            data_channels=cfg.data.data_channels,
-            slippage=cfg.market.slippage,
-            transaction_fee=cfg.market.transaction_fee,
-            agent_session_len=cfg.seq.agent_session_len,
-            agent_history_len=cfg.seq.agent_history_len,
-            input_history_len=cfg.seq.input_history_len,
-            price_channels=cfg.data.price_channels,
-            volume_channels=cfg.data.volume_channels,
-            other_channels=cfg.data.other_channels,
-            action_history_len=cfg.seq.action_history_len,
-            inaction_penalty_ratio=cfg.market.inaction_penalty_ratio,
-            backtest_mode=cfg.backtest_mode,
-            use_risk_management=cfg.backtest.use_risk_management,
-        )
+        # 1. Check for forced session timeout or if agent wants to close
+        if position_open:
+            if (i - trade_entry_step) >= cfg.seq.agent_session_len:
+                action = 3 # Force CLOSE action
+                logging.info(f"Force closing position at {current_time} due to session timeout ({cfg.seq.agent_session_len} mins).")
+            else:
+                # If in an open position, we still need to ask the agent if it wants to close
+                temp_env = TradingEnvironment(
+                    sequences=[session_window], stats=stats, render_mode=None, 
+                    full_seq_len=cfg.seq.full_seq_len, num_features=cfg.seq.num_features,
+                    num_actions=cfg.market.num_actions, flat_state_size=cfg.seq.flat_state_size,
+                    initial_balance=balance, pre_signal_len=cfg.seq.pre_signal_len,
+                    data_channels=cfg.data.data_channels, slippage=cfg.market.slippage,
+                    transaction_fee=cfg.market.transaction_fee, agent_session_len=cfg.seq.agent_session_len,
+                    agent_history_len=cfg.seq.agent_history_len, input_history_len=cfg.seq.input_history_len,
+                    price_channels=cfg.data.price_channels, volume_channels=cfg.data.volume_channels,
+                    other_channels=cfg.data.other_channels, action_history_len=cfg.seq.action_history_len,
+                    inaction_penalty_ratio=cfg.market.inaction_penalty_ratio, backtest_mode=True,
+                    use_risk_management=cfg.backtest.use_risk_management
+                )
+                # Manually set the environment state to reflect the open position
+                temp_env.current_seq = temp_env.sequences[0]
+                temp_env.position = trade_direction
+                temp_env.entry_price = trade_entry_price
+                temp_env.step_idx = i - trade_entry_step # Set the correct step index
+                obs = temp_env._get_observation()
 
-        obs, _ = env.reset()
-        
-        # We only care about the decision at the current point in time,
-        # which corresponds to the start of the agent's session in the environment.
-        cache_key = (ticker_name, current_time)
-        action = agent.select_action(
-            state=obs,
-            training=False,
-            return_qvals=False,
-            use_cache=cfg.backtest.use_cache,
-            cache_key=cache_key,
-        )
+                agent_action = agent.select_action(
+                    state=obs, training=False, return_qvals=False, use_cache=cfg.backtest.use_cache,
+                    cache_key=(ticker_name, current_time)
+                )
+                if agent_action == 3:
+                    action = 3 # Agent wants to close
 
-        # We only execute one step, as we are in a continuous timeline.
-        # The environment is re-created at each minute.
-        _, _, _, _, info = env.backtest_step(
-            action=action,
-            signal_dt=current_time,
-            ticker=ticker_name,
-            stop_loss=cfg.backtest.stop_loss,
-            take_profit=cfg.backtest.take_profit,
-            trailing_stop=cfg.backtest.trailing_stop,
-        )
+        # 2. If not in a position, ask agent for an action
+        elif not position_open:
+            temp_env = TradingEnvironment(
+                sequences=[session_window], stats=stats, render_mode=None, 
+                full_seq_len=cfg.seq.full_seq_len, num_features=cfg.seq.num_features,
+                num_actions=cfg.market.num_actions, flat_state_size=cfg.seq.flat_state_size,
+                initial_balance=balance, pre_signal_len=cfg.seq.pre_signal_len,
+                data_channels=cfg.data.data_channels, slippage=cfg.market.slippage,
+                transaction_fee=cfg.market.transaction_fee, agent_session_len=cfg.seq.agent_session_len,
+                agent_history_len=cfg.seq.agent_history_len, input_history_len=cfg.seq.input_history_len,
+                price_channels=cfg.data.price_channels, volume_channels=cfg.data.volume_channels,
+                other_channels=cfg.data.other_channels, action_history_len=cfg.seq.action_history_len,
+                inaction_penalty_ratio=cfg.market.inaction_penalty_ratio, backtest_mode=True,
+                use_risk_management=cfg.backtest.use_risk_management
+            )
+            obs, _ = temp_env.reset()
+            action = agent.select_action(
+                state=obs, training=False, return_qvals=False, use_cache=cfg.backtest.use_cache,
+                cache_key=(ticker_name, current_time)
+            )
 
-        if info["position_closed"]:
-            info["ticker"] = ticker_name
+        # 3. Process the action (Open, Close, or Hold)
+        if not position_open and action in {1, 2}: # Open a new position
+            position_open = True
+            trade_entry_step = i
+            trade_direction = 1 if action == 1 else -1
+            slippage_multiplier = (1 + cfg.market.slippage) if trade_direction == 1 else (1 - cfg.market.slippage)
+            trade_entry_price = current_price * slippage_multiplier
+            direction_str = "LONG" if action == 1 else "SHORT"
+            logging.info(f": ({direction_str}) OPEN at {trade_entry_price:.2f} on {current_time.strftime('%Y-%m-%d %H:%M')}")
+
+        elif position_open and action == 3: # Close the current position
+            slippage_multiplier = (1 - cfg.market.slippage) if trade_direction == 1 else (1 + cfg.market.slippage)
+            exit_price = current_price * slippage_multiplier
+            
+            trade_amount = balance * cfg.backtest.position_fraction
+            volume = trade_amount / trade_entry_price
+            pnl = (exit_price - trade_entry_price) * volume * trade_direction
+            
+            # Recalculate fees for this trade
+            entry_fee = trade_amount * cfg.market.transaction_fee
+            exit_fee = (volume * exit_price) * cfg.market.transaction_fee
+            total_fees = entry_fee + exit_fee
+            net_pnl = pnl - total_fees
+
+            info = {
+                "ticker": ticker_name,
+                "position_closed": True, "trade_realized_pnl": net_pnl, "total_commission": total_fees,
+                "trade_amount": trade_amount, 
+                "trade_price_delta": (exit_price - trade_entry_price) / trade_entry_price * trade_direction,
+                "max_drawdown": 0,  # Simplified: not tracking intra-trade drawdown
+                "correct_prediction": net_pnl > 0,
+                "direction": "LONG" if trade_direction == 1 else "SHORT",
+                "trade_dt": df.index[trade_entry_step - cfg.seq.full_seq_len].to_pydatetime(),
+            }
+
             trade_log.log_trade(info, balance)
-            balance += info.get("trade_realized_pnl", 0.0)
-            # The signal_dt for metrics should be the time the decision was made
+            balance += net_pnl
             result.update(current_time, info, balance)
+
+            position_open = False
+            trade_entry_step = 0
+            trade_entry_price = 0.0
+            trade_direction = 0
 
     agent.save_disk_cache()
 
