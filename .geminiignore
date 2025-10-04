@@ -30,7 +30,7 @@ notebooks/
 *.mp4
 *.wav
 *.m4a
-*.log
+# *.log
 
 # Билды/пакеты
 dist/
