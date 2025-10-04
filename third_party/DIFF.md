@@ -1,403 +1,273 @@
+---
+
 # TL;DR
 
-Ниже — готовый Python-скрипт, который:
+Сейчас ровно по 525 600 минутных баров на тикер за год (полный непрерывный год). Для быстрых выгрузок непрерывных периодов в `.npz` и долгосрочных бэктестов:
 
-1. берёт **актуальный список USDⓈ-M perpetual символов** с Binance через `GET /fapi/v1/exchangeInfo`, фильтруя `status=TRADING` и `contractType=PERPETUAL`. ([Бинанс Разработчик][2])
-2. скачивает **monthly 1m klines** с **data.binance.vision** за **последние 3 полностью завершённых месяца** по всем символам: путь `data/futures/um/monthly/klines/{SYMBOL}/1m/{SYMBOL}-1m-YYYY-MM.zip` (+ опциональная проверка `.CHECKSUM`). ([data.binance.vision][3])
-3. парсит CSV из ZIP и **загружает в вашу PostgreSQL** (таблица `public.klines_1m`) с upsert по `(symbol, open_time)`.
+1. **Оставить текущую таблицу, но навести «порядок под выгрузку»:**
+   — удалить дублирующий уникальный индекс (у вас два ~10 GB),
+   — добавить компактный **BRIN** по времени для ускорения range-запросов,
+   — сделать **view**/материализованное представление с нужными колонками и корректным **VWAP**,
+   — завести **coverage-MV** с min/max/count по тикеру (для быстрых проверок охвата).
+   Это даст мгновенные выгрузки и экономит место/IO. BRIN официально рекомендован для «почти отсортированных по времени» очень больших таблиц. ([PostgreSQL][2])
 
-> Отдельный .npz-экспорт для бэктестера у вас уже есть, поэтому в этом скрипте его **не делаем** (соответствует вашим требованиям и проектной доктрине: конфиги/артефакты — разнесены, секреты — только через переменные окружения). 
-
----
-
-| Шаг | Действие                                                                    | KPI / риск                                                                                                                                                                                         |
-| --- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Получение вселенной USDⓈ-M PERPETUAL из `/fapi/v1/exchangeInfo`             | Быстро, 1 вес/запрос; риск — временные лимиты API. ([Бинанс Разработчик][2])                                                                                                                       |
-| 2   | Скачивание monthly `1m` ZIP с `data.binance.vision` за 3 завершённых месяца | Высокая скорость (архивы по месяцу); риск — отсутствующий архив за текущий месяц (мы берём **полные** месяцы). Обновление monthly — на первой неделе следующего месяца. ([data.binance.vision][3]) |
-| 3   | Вставка в Postgres с upsert, PK `(symbol, open_time)`                       | Идempotentность, отсутствие дублей; риск — размеры batch’ей (настроены). Политика секретов — через env.                                                                                            |
+2. **Экспортер в NPZ** (готовый шаблон Python): вытягивает минутные окна `[start; end)` из view, складывает `ts` (мс) + каналы **строго** в порядке `DataConfig`. Используется `COPY`/`\copy` как самый быстрый способ выгрузки запроса из Postgres. ([PostgreSQL][3])
 
 ---
 
-# Скрипт: `download_um_1m_to_postgres.py`
+## Шаг | Действие | KPI/риск
+
+1 | Проверить и удалить лишний уникальный индекс | −10 GB на диск, быстрее `INSERT/UPDATE`; риск: удалить не тот индекс → **проверка DDL обяз.**
+2 | Создать BRIN по времени (и по разделам, если будут) | Быстрые range-сканы, маленький индекс; риск: слабая корреляция по времени → уменьшить `pages_per_range`. ([PostgreSQL][2])
+3 | Создать `VIEW` с колонками {`ts`,`open`,`high`,`volume_weighted_average`,`low`,`close`,`volume`,`num_trades`} | Гарантия схемы под `DataConfig`; риск: неверный тип времени → см. авто-детект ниже. 
+4 | Материализованное `coverage`-представление + `REFRESH CONCURRENTLY` | Быстрая оценка охвата данных; риск: нужен уникальный индекс для `CONCURRENTLY`. ([PostgreSQL][5])
+5 | Экспортер NPZ (скрипт) + шаблоны `psql \copy` | Скорость выгрузки; риск: несоответствие порядку каналов → жёстко фиксируем список из `DataConfig`. ([PostgreSQL][3])
+6 | (Опц.) Партиционирование / Timescale + компрессия | Масштабируемость и экономия места; риск: миграция данных потребует времени. ([PostgreSQL][4])
+
+---
+
+## 1) Индексы: ревизия и BRIN
+
+**Анализ ваших индексов:** два индекса по ~10 GB (`klines_1m_pkey` и `klines_1m_symbol_open_time_uk`) выглядят дубликатами по ключу (`symbol, open_time`). Сначала проверяем DDL:
+
+```sql
+-- Посмотреть определение индексов
+SELECT i.relname AS index_name, pg_get_indexdef(ix.indexrelid) AS indexdef
+FROM pg_index ix
+JOIN pg_class t ON t.oid = ix.indrelid
+JOIN pg_class i ON i.oid = ix.indexrelid
+WHERE t.relname = 'klines_1m'
+ORDER BY pg_relation_size(ix.indexrelid) DESC;
+```
+
+Если `klines_1m_symbol_open_time_uk` дублирует PK, удалить **только** его:
+
+```sql
+DROP INDEX IF EXISTS public.klines_1m_symbol_open_time_uk;
+```
+
+**BRIN по времени** (очень маленький и быстрый на time-range):
+
+```sql
+-- если колонка времени называется open_time (timestamptz)
+CREATE INDEX IF NOT EXISTS klines_1m_brin_open_time
+ON public.klines_1m
+USING brin (open_time) WITH (pages_per_range = 128);
+-- При слабой корреляции снизьте до 32/64. :contentReference[oaicite:11]{index=11}
+```
+
+> Почему BRIN: компактный индекс по блокам, эффективен для «естественно отсортированных» временных колонок и строится одной линейной прогонкой по таблице. ([PostgreSQL][2])
+
+---
+
+## 2) Представление под NPZ (+ корректный VWAP)
+
+Формат **должен совпадать** с `DataConfig.expected_channels` (см. `config.py`), иначе селектор каналов в бэктестах собьётся. 
+
+```sql
+-- Авто-детект формата времени и сборка нужных колонок:
+-- 1) Узнаём имя и тип временного поля
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema='public' AND table_name='klines_1m'
+  AND column_name ~* '(open_)?time|ts';
+
+-- 2) Создаём VIEW с правильным ts (мс)
+CREATE OR REPLACE VIEW public.v_klines_1m_npz AS
+SELECT
+  symbol,
+  -- ВАРИАНТ A: если open_time = timestamptz
+  (EXTRACT(EPOCH FROM open_time)::bigint * 1000)            AS ts,
+  -- ВАРИАНТ B: если open_time = bigint (мс) — тогда просто: open_time AS ts,
+  open::float8                                              AS open,
+  high::float8                                              AS high,
+  CASE WHEN volume > 0 THEN quote_asset_volume / volume END AS volume_weighted_average,
+  low::float8                                               AS low,
+  close::float8                                             AS close,
+  volume::float8                                            AS volume,
+  number_of_trades::float8                                  AS num_trades
+FROM public.klines_1m;
+```
+
+> Если хотите «зацементировать» VWAP, можно добавить STORED-колонку и поддерживать её триггером, но `VIEW` проще и без накладных расходов на запись.
+
+---
+
+## 3) Coverage-MV (быстрый контроль полноты диапазонов)
+
+```sql
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.mv_klines_coverage AS
+SELECT
+  symbol,
+  MIN(open_time) AS first_ts,
+  MAX(open_time) AS last_ts,
+  COUNT(*)       AS rows_cnt
+FROM public.klines_1m
+GROUP BY symbol;
+
+-- Для REFRESH CONCURRENTLY нужен уникальный индекс:
+CREATE UNIQUE INDEX IF NOT EXISTS mv_klines_coverage_symbol_uidx
+  ON public.mv_klines_coverage (symbol);
+
+-- Обновление без блокировки SELECT'ов:
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_klines_coverage;
+-- CONCURRENTLY допускается с уникальным индексом. :contentReference[oaicite:14]{index=14}
+```
+
+---
+
+## 4) Экспорт непрерывного окна в NPZ (готовый скрипт)
+
+Ниже — минимальный экспортер. Он:
+
+* принимает `--start-utc`, `--end-utc`, `--symbols` (через запятую или `ALL`),
+* тянет из `v_klines_1m_npz`, сортирует,
+* сохраняет NPZ **в канальном порядке из `DataConfig`** (обязательно),
+* совместим с `backtest_continuous.py`, где ожидается `ts` в мс и `df[cfg.data.data_channels]`. 
 
 ```python
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Скачивает последние N (по умолчанию 3) завершённых месяцев monthly 1m klines
-для всех USDⓈ-M PERPETUAL символов Binance и пишет в Postgres (upsert).
+# tools/export_to_npz.py
+import argparse, numpy as np, pandas as pd, psycopg2, os
+from psycopg2.extras import RealDictCursor
 
-Требуемые переменные окружения для подключения к БД:
-  PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
-
-Примеры запуска:
-  python download_um_1m_to_postgres.py --months 3 --workers 8 --verify-checksum
-
-Документация и источники:
-- exchangeInfo (Futures USDⓈ-M): GET /fapi/v1/exchangeInfo
-- data.binance.vision: data/futures/um/monthly/klines/{SYMBOL}/1m/{SYMBOL}-1m-YYYY-MM.zip
-- .CHECKSUM файлы лежат рядом с архивами
-
-"""
-
-import os
-import io
-import csv
-import sys
-import time
-import math
-import json
-import gzip
-import argparse
-import hashlib
-import zipfile
-import logging
-import datetime as dt
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import requests
-import psycopg2
-from psycopg2.extras import execute_values
-
-BINANCE_FAPI_BASE = "https://fapi.binance.com"
-EXCHANGE_INFO_URL = f"{BINANCE_FAPI_BASE}/fapi/v1/exchangeInfo"
-# Пример пути: data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2025-07.zip
-DATA_VISION_BASE = "https://data.binance.vision"
-UM_MONTHLY_1M_PREFIX = "data/futures/um/monthly/klines"
-
-# Таблица назначения
-TABLE = "public.klines_1m"
-
-# Колонки csv (см. Binance klines формат)
-# Open time, Open, High, Low, Close, Volume, Close time, Quote asset volume, Number of trades,
-# Taker buy base asset volume, Taker buy quote asset volume, Ignore
-# (источник формата колонок — Binance public data README + Klines docs)
-CSV_COLS = [
-    "open_time","open","high","low","close","volume",
-    "close_time","quote_asset_volume","number_of_trades",
-    "taker_buy_base_asset_volume","taker_buy_quote_asset_volume","ignore"
-]
-
-def month_range_last_complete(n_months: int):
-    """Вернуть список (year, month) для n последних полностью завершённых месяцев, начиная с прошлого месяца."""
-    now = dt.datetime.utcnow()
-    # Переходим к первому числу текущего месяца и затем -1 день -> последний день прошлого месяца
-    first_this_month = dt.datetime(now.year, now.month, 1)
-    last_prev_month = first_this_month - dt.timedelta(days=1)
-    y, m = last_prev_month.year, last_prev_month.month
-    out = []
-    for _ in range(n_months):
-        out.append((y, m))
-        # шаг назад на 1 месяц
-        if m == 1:
-            y -= 1
-            m = 12
-        else:
-            m -= 1
-    out.reverse()
-    return out
-
-def get_usdm_perp_symbols(session: requests.Session, timeout=20):
-    """Забрать все USDT-M perpetual symbols со статусом TRADING."""
-    r = session.get(EXCHANGE_INFO_URL, timeout=timeout)
-    r.raise_for_status()
-    data = r.json()
-    symbols = []
-    for s in data.get("symbols", []):
-        if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL":
-            # На USDⓈ-M фьючерсах baseAsset/quoteAsset обычно USDT кроссы;
-            # используем символ как есть (верхний регистр нужен для путей на data.binance.vision).
-            symbols.append(s["symbol"])
-    symbols = sorted(set(symbols))
-    return symbols
-
-def build_monthly_zip_url(symbol: str, year: int, month: int) -> str:
-    filename = f"{symbol}-1m-{year:04d}-{month:02d}.zip"
-    return f"{DATA_VISION_BASE}/{UM_MONTHLY_1M_PREFIX}/{symbol}/1m/{filename}"
-
-def build_checksum_url(symbol: str, year: int, month: int) -> str:
-    filename = f"{symbol}-1m-{year:04d}-{month:02d}.zip.CHECKSUM"
-    return f"{DATA_VISION_BASE}/{UM_MONTHLY_1M_PREFIX}/{symbol}/1m/{filename}"
-
-def fetch_bytes(session: requests.Session, url: str, timeout=60):
-    r = session.get(url, timeout=timeout)
-    if r.status_code == 404:
-        return None
-    r.raise_for_status()
-    return r.content
-
-def verify_checksum(content: bytes, checksum_file_bytes: bytes) -> bool:
-    """Проверка sha256 по формату .CHECKSUM (строка 'SHA256 (<file>) = <hash>' или просто '<hash>  <file>')."""
-    try:
-        checksum_text = checksum_file_bytes.decode("utf-8", errors="ignore").strip()
-        # Извлекаем hex-строку sha256
-        token = None
-        for part in checksum_text.replace("=", " ").split():
-            if len(part) == 64 and all(c in "0123456789abcdefABCDEF" for c in part):
-                token = part.lower()
-                break
-        if not token:
-            return False
-        h = hashlib.sha256(content).hexdigest().lower()
-        return h == token
-    except Exception:
-        return False
-
-def ensure_table(conn):
-    ddl = f"""
-    CREATE TABLE IF NOT EXISTS {TABLE} (
-        symbol TEXT NOT NULL,
-        open_time BIGINT NOT NULL,
-        open NUMERIC,
-        high NUMERIC,
-        low NUMERIC,
-        close NUMERIC,
-        volume NUMERIC,
-        close_time BIGINT,
-        quote_asset_volume NUMERIC,
-        number_of_trades INTEGER,
-        taker_buy_base_asset_volume NUMERIC,
-        taker_buy_quote_asset_volume NUMERIC,
-        ignore NUMERIC,
-        CONSTRAINT klines_1m_pk PRIMARY KEY (symbol, open_time)
-    );
-    """
-    with conn.cursor() as cur:
-        cur.execute(ddl)
-    conn.commit()
-
-def parse_zip_klines(zip_bytes: bytes):
-    """Возвращает список строк для вставки: (open_time,...,ignore) в правильных типах."""
-    rows = []
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        # Берём первый .csv внутри (в monthly он один)
-        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-        if not csv_names:
-            return rows
-        with zf.open(csv_names[0], "r") as f:
-            for raw in io.TextIOWrapper(f, encoding="utf-8", newline=""):
-                # Быстрый csv-парсер (на случай разделителей внутри — лучше использовать csv.reader)
-                # Здесь используем csv.reader явно:
-                pass
-    # Перечитаем через csv.reader корректно
-    rows = []
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-        with zf.open(csv_names[0], "r") as f:
-            reader = csv.reader(io.TextIOWrapper(f, encoding="utf-8"))
-            for rec in reader:
-                if len(rec) < 12:
-                    continue
-                # Приводим типы
-                open_time = int(rec[0])
-                open_ = rec[1]
-                high = rec[2]
-                low = rec[3]
-                close = rec[4]
-                volume = rec[5]
-                close_time = int(rec[6])
-                quote_asset_volume = rec[7]
-                number_of_trades = int(rec[8])
-                taker_buy_base = rec[9]
-                taker_buy_quote = rec[10]
-                ignore = rec[11]
-                rows.append((
-                    open_time, open_, high, low, close, volume, close_time,
-                    quote_asset_volume, number_of_trades, taker_buy_base, taker_buy_quote, ignore
-                ))
-    return rows
-
-def upsert_rows(conn, symbol: str, rows, batch_size=10_000):
-    if not rows:
-        return 0
-    inserted = 0
-    tpl = "(" + ",".join(["%s"] * 13) + ")"
-    sql = f"""
-    INSERT INTO {TABLE} (
-        symbol, open_time, open, high, low, close, volume, close_time,
-        quote_asset_volume, number_of_trades, taker_buy_base_asset_volume,
-        taker_buy_quote_asset_volume, ignore
-    ) VALUES %s
-    ON CONFLICT (symbol, open_time) DO UPDATE SET
-        open = EXCLUDED.open,
-        high = EXCLUDED.high,
-        low = EXCLUDED.low,
-        close = EXCLUDED.close,
-        volume = EXCLUDED.volume,
-        close_time = EXCLUDED.close_time,
-        quote_asset_volume = EXCLUDED.quote_asset_volume,
-        number_of_trades = EXCLUDED.number_of_trades,
-        taker_buy_base_asset_volume = EXCLUDED.taker_buy_base_asset_volume,
-        taker_buy_quote_asset_volume = EXCLUDED.taker_buy_quote_asset_volume,
-        ignore = EXCLUDED.ignore
-    """
-    buf = []
-    for r in rows:
-        buf.append(
-            (symbol,) + r  # prepend symbol
-        )
-        if len(buf) >= batch_size:
-            with conn.cursor() as cur:
-                execute_values(cur, sql, buf, page_size=10000)
-            conn.commit()
-            inserted += len(buf)
-            buf.clear()
-    if buf:
-        with conn.cursor() as cur:
-            execute_values(cur, sql, buf, page_size=10000)
-        conn.commit()
-        inserted += len(buf)
-    return inserted
-
-def process_symbol_month(session, conn, symbol: str, year: int, month: int, verify_checksum: bool, logger: logging.Logger):
-    zip_url = build_monthly_zip_url(symbol, year, month)
-    content = fetch_bytes(session, zip_url)
-    if content is None:
-        logger.info(f"[{symbol}] {year}-{month:02d}: 404 (нет архива) — пропуск")
-        return (symbol, year, month, 0, False)
-    if verify_checksum:
-        cs_url = build_checksum_url(symbol, year, month)
-        cs_bytes = fetch_bytes(session, cs_url)
-        if cs_bytes is None:
-            logger.warning(f"[{symbol}] {year}-{month:02d}: отсутствует CHECKSUM — продолжаем без проверки")
-        else:
-            ok = verify_checksum(content, cs_bytes)
-            if not ok:
-                logger.error(f"[{symbol}] {year}-{month:02d}: CHECKSUM НЕ СОВПАЛ — пропуск архива")
-                return (symbol, year, month, 0, False)
-    rows = parse_zip_klines(content)
-    n = upsert_rows(conn, symbol, rows)
-    logger.info(f"[{symbol}] {year}-{month:02d}: загружено {n} строк")
-    return (symbol, year, month, n, True)
-
-def connect_pg():
-    conn = psycopg2.connect(
-        host=os.getenv("PGHOST", "localhost"),
-        port=int(os.getenv("PGPORT", "5432")),
-        dbname=os.getenv("PGDATABASE", "marketdata"),
-        user=os.getenv("PGUSER", "postgres"),
-        password=os.getenv("PGPASSWORD", "")
-    )
-    conn.autocommit = False
-    return conn
+CHANNELS = ["open","high","volume_weighted_average","low","close","volume","num_trades"]  # must match DataConfig
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--months", type=int, default=3, help="Сколько полных месяцев загрузить (по умолчанию 3).")
-    parser.add_argument("--workers", type=int, default=8, help="Количество потоков для скачивания.")
-    parser.add_argument("--verify-checksum", action="store_true", help="Проверять .CHECKSUM для архивов.")
-    parser.add_argument("--symbols", type=str, default="", help="Кому-сепарированный фильтр символов (опц.).")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dsn", required=True, help="postgresql://user:pass@host:5432/marketdata")
+    ap.add_argument("--start-utc", required=True)   # "2024-10-01 00:00:00"
+    ap.add_argument("--end-utc",   required=True)   # "2025-10-01 00:00:00"
+    ap.add_argument("--symbols",   default="ALL")   # "BTCUSDT,ETHUSDT" or ALL
+    ap.add_argument("--out",       default="data/backtest_data.npz")
+    args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logger = logging.getLogger("um_klines_loader")
+    where = ["ts >= EXTRACT(EPOCH FROM %s)::bigint*1000",
+             "ts <  EXTRACT(EPOCH FROM %s)::bigint*1000"]
+    params = [args.start_utc, args.end_utc]
 
-    months = month_range_last_complete(args.months)
-    logger.info(f"Будут загружены месяцы: {months}")
+    if args.symbols != "ALL":
+        syms = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        where.append("symbol = ANY(%s)")
+        params.append(syms)
 
-    with requests.Session() as http, connect_pg() as conn:
-        ensure_table(conn)
+    sql = f"""
+        WITH base AS (
+            SELECT symbol, ts, {", ".join(CHANNELS)}
+            FROM v_klines_1m_npz
+            WHERE {" AND ".join(where)}
+        )
+        SELECT ts, {", ".join(CHANNELS)}
+        FROM base
+        ORDER BY ts, symbol;
+    """
 
-        all_symbols = get_usdm_perp_symbols(http)
-        logger.info(f"Всего активных USDⓈ-M PERPETUAL символов: {len(all_symbols)}")
+    with psycopg2.connect(args.dsn) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    if not rows:
+        raise SystemExit("No rows in requested interval")
 
-        if args.symbols:
-            filter_set = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
-            symbols = [s for s in all_symbols if s in filter_set]
-            logger.info(f"Фильтр по символам: {len(symbols)} из {len(all_symbols)}")
-        else:
-            symbols = all_symbols
-
-        tasks = []
-        results = []
-        # ВАЖНО: один pg-conn не потокобезопасен; создадим соединения по месту выполнения
-        def worker(symbol, ym):
-            y, m = ym
-            with connect_pg() as local_conn:
-                return process_symbol_month(http, local_conn, symbol, y, m, args.verify_checksum, logger)
-
-        with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            for sym in symbols:
-                for ym in months:
-                    tasks.append(ex.submit(worker, sym, ym))
-            for fut in as_completed(tasks):
-                try:
-                    results.append(fut.result())
-                except Exception as e:
-                    logger.exception("Ошибка выполнения задачи: %s", e)
-
-        total = sum(r[3] for r in results if r and r[4])
-        ok = sum(1 for r in results if r and r[4] and r[3] > 0)
-        logger.info(f"Готово. Успешных загрузок: {ok}, всего вставлено строк: {total}.")
+    df = pd.DataFrame(rows)
+    # Сохраняем ключами, которые потом читает backtest_continuous.py
+    np.savez_compressed(
+        args.out,
+        ts=df["ts"].astype("int64").values,
+        **{ch: df[ch].astype("float32").values for ch in CHANNELS}
+    )
+    print(f"Saved {len(df)} rows to {args.out}")
 
 if __name__ == "__main__":
     main()
 ```
 
-## Зависимости
+**PowerShell пример запуска:**
 
-```bash
-pip install requests psycopg2-binary
+```powershell
+$DSN = "postgresql://postgres:9691@localhost:5432/marketdata"
+python tools/export_to_npz.py --dsn $DSN `
+  --start-utc "2025-01-01 00:00:00" `
+  --end-utc   "2025-03-01 00:00:00" `
+  --symbols   "BTCUSDT,ETHUSDT" `
+  --out "data/backtest_data_2025Q1_BTC_ETH.npz"
 ```
 
-## Настройки окружения
+> Почему так быстро: вытягиваем ровно нужное окно; при необходимости можно заменить `SELECT` на `\copy (SELECT …) TO STDOUT` для потоковой выгрузки (самый быстрый путь экспорта SQL-результата из Postgres). ([PostgreSQL][3])
 
-```bash
-# Пример (Windows PowerShell)
-$env:PGHOST="localhost"
-$env:PGPORT="5432"
-$env:PGDATABASE="marketdata"
-$env:PGUSER="postgres"
-$env:PGPASSWORD="<Ваш_пароль>"
-```
+---
 
-## DDL (если таблицы ещё нет)
-
-Скрипт сам создаёт `public.klines_1m`, но на всякий случай — DDL:
+## 5) Проверка непрерывности минут (по тикеру и окну)
 
 ```sql
-CREATE TABLE IF NOT EXISTS public.klines_1m (
-  symbol TEXT NOT NULL,
-  open_time BIGINT NOT NULL,
-  open NUMERIC,
-  high NUMERIC,
-  low NUMERIC,
-  close NUMERIC,
-  volume NUMERIC,
-  close_time BIGINT,
-  quote_asset_volume NUMERIC,
-  number_of_trades INTEGER,
-  taker_buy_base_asset_volume NUMERIC,
-  taker_buy_quote_asset_volume NUMERIC,
-  ignore NUMERIC,
-  CONSTRAINT klines_1m_pk PRIMARY KEY (symbol, open_time)
-);
+-- Проверка «дыр» за период по одному тикеру
+WITH grid AS (
+  SELECT generate_series(
+    TIMESTAMP '2025-01-01 00:00:00',
+    TIMESTAMP '2025-03-01 00:00:00' - INTERVAL '1 minute',
+    INTERVAL '1 minute'
+  ) AS ts
+)
+SELECT g.ts
+FROM grid g
+LEFT JOIN public.klines_1m k
+  ON k.symbol = 'BTCUSDT'
+ AND k.open_time = g.ts
+WHERE k.open_time IS NULL
+ORDER BY g.ts
+LIMIT 50;
 ```
 
 ---
 
-## Почему именно так (ссылки на первоисточники)
+## 6) (Опционально) Долгосрочная масштабируемость
 
-* `GET /fapi/v1/exchangeInfo` — официальный способ получить текущие правила/символы для USDⓈ-M Futures. Мы фильтруем `TRADING` + `PERPETUAL`. ([Бинанс Разработчик][2])
-* Monthly 1m klines на **data.binance.vision**: каталог `data/futures/um/monthly/klines/…` (индекс-браузер), загружаем по **всем символам**, присутствующим в каталоге. ([data.binance.vision][3])
-* Формат колонок Klines (12 полей) соответствует документации/README Binance public data. ([Бинанс Разработчик][4])
-* Для проверки целостности из каталога берём `.zip.CHECKSUM` рядом с архивом (опция `--verify-checksum`). ([GitHub][5])
-* Monthly-архивы пополняются **в начале следующего месяца** (официальный public-data README). Поэтому мы качаем **последние N полностью завершённых месяцев** — без риска частично заполненного текущего. ([GitHub][5])
+### Вариант A — Партиционирование PostgreSQL
+
+Партиционирование по месяцу (RANGE по времени) и наследование индексов у разделов. Хорошо ложится на time-range выгрузки и облегчает `VACUUM/REINDEX`. ([PostgreSQL][4])
+
+```sql
+-- Пример новой таблицы с партиционированием (эскиз)
+CREATE TABLE public.klines_1m_v2 (
+  symbol text NOT NULL,
+  open_time timestamptz NOT NULL,
+  open double precision,
+  high double precision,
+  low  double precision,
+  close double precision,
+  volume double precision,
+  quote_asset_volume double precision,
+  number_of_trades bigint,
+  PRIMARY KEY(symbol, open_time)
+) PARTITION BY RANGE (open_time);
+
+-- Раздел за январь-2025
+CREATE TABLE public.klines_1m_2025_01 PARTITION OF public.klines_1m_v2
+FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+-- Индексы на разделах + BRIN по open_time:
+CREATE INDEX klines_1m_2025_01_brin ON public.klines_1m_2025_01 USING brin(open_time);
+```
+
+### Вариант B — TimescaleDB Hypertable + компрессия
+
+Если можно подключить расширение — перевод таблицы в **hypertable** (`create_hypertable`) с чанками по времени (и доп.измерением `symbol`), плюс **compression policy** для старых чанков. Это даст авто-менеджмент чанков и ощутимую экономию места. ([docs.tigerdata.com][6])
 
 ---
 
-## Соответствие процессу RL Trader
+## 7) Как это вяжется с вашим бэктестом
 
-* Скрипт не трогает .npz-экспорт и бэктестер (у вас уже есть отдельный шаг/скрипт), — следуем доктрине «конфиги и артефакты — разнесены; секреты — через env». 
-* Потоки/батчи сделаны для скорости, но с **идемпотентным upsert** по `(symbol, open_time)` — безопасно для последующих повторных прогонов.
-* В проектной документации RL Trader подчёркнуто, что продакшн-пайплайн использует **real-time WebSocket + DB**, а бэктест — на статике (.npz). Наш скрипт как раз наполняет БД историей, что согласуется с общей архитектурой. 
+* `backtest_continuous.py` грузит NPZ и ожидает индекс `ts` (мс) и матрицу признаков **в порядке `cfg.data.data_channels`**. Мы именно так сохраняем массивы; значит сравнение «сегментированное vs непрерывное» будет корректным. 
+* Параметры окна агента (`full_seq_len=150`, `pre_signal_len=90`, `post_signal_len=60`) берутся из `config.py` и остаются неизменными — непрерывные данные просто «скользящим окном» режутся внутри `backtest_continuous.py`.
 
 ---
 
-Если хотите, в следующем шаге добавлю **unit-тесты** (offline, с локальными фикстурами ZIP/CSV) и **CLI-обвязку в ваш репозиторий** под `third_party/rl-trading-binance/tools/`, оформив PR по нашему шаблону. 
+### Нужные уточнения (минимум)
 
-[1]: https://github.com/FMProducer/prosperous_bot/commit/196d89c360ff3623c45e0c108ee95e2194fbfd7e "docs: export_npz · FMProducer/prosperous_bot@196d89c · GitHub"
-[2]: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Exchange-Information?utm_source=chatgpt.com "Exchange Information | Binance Open Platform"
-[3]: https://data.binance.vision/?prefix=data%2Ffutures%2Fum%2Fmonthly%2Fklines%2F&utm_source=chatgpt.com "Home / data / futures / um / monthly / klines"
-[4]: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data?utm_source=chatgpt.com "Kline Candlestick Data | Binance Open Platform"
-[5]: https://github.com/binance/binance-public-data?utm_source=chatgpt.com "Details on how to get Binance public data"
+Чтобы сразу накатить SQL без правок, ответьте, пожалуйста, одним сообщением:
+
+1. точное имя и тип колонки времени в `public.klines_1m` (например, `open_time timestamptz` или `open_time bigint(ms)`),
+2. точные имена колонок для `quote_asset_volume` и `number_of_trades` (они нужны для корректного VWAP и `num_trades`).
+
+После этого пришлю готовый блок PowerShell/`psql`-команд для вашего окружения Windows, плюс проверочные запросы и шаблоны для разных периодов.
+
+---
+
+**Напоминание по правилам репо:** каналы/порядок — строго по `DataConfig`, результаты/логи — в `output/<config_name>/`. 
