@@ -1,5 +1,4 @@
-# backtest_continuous.py
-# MODIFIED from backtest_engine.py to support continuous data backtesting.
+# backtest_engine.py
 
 import datetime as dt
 import logging
@@ -10,8 +9,6 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
 
 from config import MasterConfig
 from config import cfg as default_cfg
@@ -19,9 +16,9 @@ from test_agent import init_agent
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
-    create_signal_groups, # Kept for reference, but not used for main loop
+    create_signal_groups,
     load_config,
-    load_npz_dataset, # Kept for loading training data
+    load_npz_dataset,
     select_and_arrange_channels,
     set_random_seed,
 )
@@ -34,11 +31,14 @@ def setup_logging(cfg: MasterConfig) -> None:
     """
     log_dir = cfg.paths.log_dir
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "continuous_backtest_session.log") # New log file
+    log_file = os.path.join(log_dir, "backtest_session.log")
 
     logger = logging.getLogger()
 
-    # Remove existing handlers to avoid duplicate logs
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
+            return
+
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
@@ -50,7 +50,7 @@ def setup_logging(cfg: MasterConfig) -> None:
             logging.StreamHandler(),
         ],
     )
-    logging.info("[Init] Logging for continuous backtest session started")
+    logging.info("[Init] Logging for backtest session started")
 
 
 class TradeSummary:
@@ -197,7 +197,6 @@ class MetricsCollector:
     def plot_balance(self, path: str):
         if not self.balance_curve:
             return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
         times, balances = zip(*sorted(self.balance_curve.values()))
         plt.figure(figsize=(12, 6))
         plt.plot(times, balances, label="Balance", color="blue")
@@ -223,29 +222,17 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
-    # --- MODIFIED: Load continuous data ---
-    logging.info(f"Loading continuous backtest data from {cfg.paths.backtest_data_path}")
-    with np.load(cfg.paths.backtest_data_path, allow_pickle=True) as data: # allow_pickle for string array
-        # Expects the NPZ from export_to_npz.py
-        df = pd.DataFrame({key: data[key] for key in data.files})
+    backtest_raw = load_npz_dataset(
+        file_path=cfg.paths.backtest_data_path,
+        name_dataset="Backtest",
+        plot_dir=cfg.paths.plot_dir,
+        debug_max_size=cfg.debug.debug_max_size_data,
+        plot_examples=cfg.data.plot_examples,
+        plot_channel_idx=cfg.data.plot_channel_idx,
+        pre_signal_len=cfg.seq.pre_signal_len,
+    )
 
-    # --- NEW: Filter data for the specified ticker ---
-    ticker_name = cfg.backtest.ticker_name
-    if ticker_name:
-        logging.info(f"Filtering data for ticker: {ticker_name}")
-        df = df[df['symbol'] == ticker_name].copy()
-        if df.empty:
-            raise SystemExit(f"No data found for ticker {ticker_name} in the .npz file.")
-    else:
-        raise SystemExit("No ticker_name specified in the backtest configuration.")
-
-    df['ts'] = pd.to_datetime(df['ts'], unit='ms')
-    df = df.set_index('ts')
-
-    logging.info(f"Loaded and filtered data with {len(df)} rows, from {df.index[0]} to {df.index[-1]}")
-    market_data = df[cfg.data.data_channels].to_numpy(dtype=np.float32)
-
-    # --- UNCHANGED: Load training data to calculate normalization stats ---
+    grouped_backtest_data = create_signal_groups(backtest_raw)
     train_raw = load_npz_dataset(
         file_path=cfg.paths.train_data_path,
         name_dataset="Train",
@@ -268,20 +255,12 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.data.other_channels,
     )
 
-    # --- MODIFIED: Agent initialization ---
-    if cfg.paths.extra_model_dir:
-        # If a specific model directory is provided, use it directly
-        model_folder = cfg.paths.extra_model_dir
-        logging.info(f"Using specified model folder: {model_folder}")
-    else:
-        # Otherwise, find the latest model in the default directory
-        model_base = cfg.paths.model_dir
-        logging.info(f"Searching for latest model in: {model_base}")
-        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
+    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
 
     best_path = os.path.join(model_folder, "best.pth")
     model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
-    logging.info(f"Loading agent from: {model_path}")
+
     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
 
     if cfg.backtest.clear_disk_cache:
@@ -290,137 +269,128 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     result = MetricsCollector()
     trade_log = TradeSummary()
     balance = cfg.market.initial_balance
-    
-    logging.info("\n[Starting continuous backtest...]:")
+    open_sessions: List[Dict] = []
 
-    # --- MODIFIED: Main loop with session timeout and volatility filter ---
-    position_open = False
-    trade_entry_step = 0
-    trade_entry_price = 0.0
-    trade_direction = 0 # 1 for LONG, -1 for SHORT
-    
-    # Get column indices for volatility calculation
-    close_idx = cfg.data.data_channels.index("close")
+    logging.info("\n[Starting backtest...]:")
+    thresholds = [
+        cfg.backtest.long_action_threshold,
+        cfg.backtest.short_action_threshold,
+        cfg.backtest.close_action_threshold,
+    ]
 
-    iterator = range(cfg.seq.full_seq_len, len(market_data))
-    for i in tqdm(iterator, desc="Running Continuous Backtest"):
-        session_window = market_data[i - cfg.seq.full_seq_len : i]
-        current_time = df.index[i-1]
-        current_price = session_window[-1][close_idx]
+    for signal_dt, signals in grouped_backtest_data.items():
+        open_sessions = [open_s for open_s in open_sessions if open_s["end_time"] > signal_dt]
+        free_slots = cfg.backtest.max_parallel_sessions - len(open_sessions)
+        if free_slots <= 0:
+            logging.info("Too many tickers received, skipping")
+            continue
 
-        action = 0 # Default to PASS
+        selected_signals = signals[:free_slots]
+        logging.info(
+            f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
+        )
 
-        # 1. Check for forced session timeout or if agent wants to close
-        if position_open:
-            if (i - trade_entry_step) >= cfg.seq.agent_session_len:
-                action = 3 # Force CLOSE action
-                logging.info(f"Force closing position at {current_time} due to session timeout ({cfg.seq.agent_session_len} mins).")
-            else:
-                # If in an open position, we still need to ask the agent if it wants to close
-                temp_env = TradingEnvironment(
-                    sequences=[session_window], stats=stats, render_mode=None, 
-                    full_seq_len=cfg.seq.full_seq_len, num_features=cfg.seq.num_features,
-                    num_actions=cfg.market.num_actions, flat_state_size=cfg.seq.flat_state_size,
-                    initial_balance=balance, pre_signal_len=cfg.seq.pre_signal_len,
-                    data_channels=cfg.data.data_channels, slippage=cfg.market.slippage,
-                    transaction_fee=cfg.market.transaction_fee, agent_session_len=cfg.seq.agent_session_len,
-                    agent_history_len=cfg.seq.agent_history_len, input_history_len=cfg.seq.input_history_len,
-                    price_channels=cfg.data.price_channels, volume_channels=cfg.data.volume_channels,
-                    other_channels=cfg.data.other_channels, action_history_len=cfg.seq.action_history_len,
-                    inaction_penalty_ratio=cfg.market.inaction_penalty_ratio, backtest_mode=True,
-                    use_risk_management=cfg.backtest.use_risk_management
-                )
-                # Manually set the environment state to reflect the open position
-                temp_env.current_seq = temp_env.sequences[0]
-                temp_env.position = trade_direction
-                temp_env.entry_price = trade_entry_price
-                temp_env.step_idx = i - trade_entry_step # Set the correct step index
-                obs = temp_env._get_observation()
+        for ticker_name, session in selected_signals:
+            position_size = balance * cfg.backtest.position_fraction
 
-                agent_action = agent.select_action(
-                    state=obs, training=False, return_qvals=False, use_cache=cfg.backtest.use_cache,
-                    cache_key=(ticker_name, current_time)
-                )
-                if agent_action == 3:
-                    action = 3 # Agent wants to close
+            env = TradingEnvironment(
+                sequences=[session],
+                stats=stats,
+                render_mode=cfg.render_mode,
+                full_seq_len=cfg.seq.full_seq_len,
+                num_features=cfg.seq.num_features,
+                num_actions=cfg.market.num_actions,
+                flat_state_size=cfg.seq.flat_state_size,
+                initial_balance=position_size,
+                pre_signal_len=cfg.seq.pre_signal_len,
+                data_channels=cfg.data.data_channels,
+                slippage=cfg.market.slippage,
+                transaction_fee=cfg.market.transaction_fee,
+                agent_session_len=cfg.seq.agent_session_len,
+                agent_history_len=cfg.seq.agent_history_len,
+                input_history_len=cfg.seq.input_history_len,
+                price_channels=cfg.data.price_channels,
+                volume_channels=cfg.data.volume_channels,
+                other_channels=cfg.data.other_channels,
+                action_history_len=cfg.seq.action_history_len,
+                inaction_penalty_ratio=cfg.market.inaction_penalty_ratio,
+                backtest_mode=cfg.backtest_mode,
+                use_risk_management=cfg.backtest.use_risk_management,
+            )
 
-        # 2. If not in a position, check for volatility and ask agent for an action
-        elif not position_open:
-            if cfg.backtest.volatility_threshold is not None:
-                volatility_window = session_window[0:cfg.seq.pre_signal_len]
-                close_price_start = volatility_window[0, close_idx]
-                close_price_end = volatility_window[-1, close_idx]
-                
-                if close_price_start > 0:
-                    volatility = abs(close_price_end - close_price_start) / close_price_start
-                    if volatility < cfg.backtest.volatility_threshold:
-                        continue # Skip if volatility is below threshold
+            obs, _ = env.reset()
+            for step in range(cfg.seq.agent_session_len):
+                cache_key = (ticker_name, signal_dt + dt.timedelta(minutes=step))
+                if cfg.backtest.selection_strategy == "advantage_based_filter":
+                    q_vals = agent.select_action(
+                        state=obs,
+                        training=False,
+                        return_qvals=cfg.backtest.return_qvals,
+                        use_cache=cfg.backtest.use_cache,
+                        cache_key=cache_key,
+                    )
+                    adv = q_vals - q_vals[0]
+                    action = int(np.argmax(adv))
+                    confidence = adv[action]
+
+                    pass_adv = get_pass_advantage(action, confidence, cfg)
+                    if pass_adv:
+                        logging.info(
+                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
+                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}"
+                        )
+                        action = 0
+                # MC-Dropout (Monte Carlo Dropout)
+                elif cfg.backtest.selection_strategy == "ensemble_q_filter":
+                    q_mean, q_std = agent.predict_ensemble(
+                        state=obs,
+                        training=False,
+                        use_cache=cfg.backtest.use_cache,
+                        cache_key=cache_key,
+                        n_samples=cfg.backtest.ensemble_n_samples,
+                    )
+                    advantage = q_mean - q_mean[0]
+                    action = int(np.argmax(advantage))
+                    confidence = advantage[action]
+                    uncertainty = q_std[action]
+
+                    pass_adv = get_pass_advantage(action, confidence, cfg)
+                    pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
+                    if pass_adv and pass_uncertainty:
+                        logging.info(
+                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
+                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}, "
+                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
+                        )
+                        action = 0
+
                 else:
-                    continue # Skip if start price is zero
+                    action = agent.select_action(
+                        state=obs,
+                        training=False,
+                        return_qvals=False,
+                        use_cache=cfg.backtest.use_cache,
+                        cache_key=cache_key,
+                    )
 
-            # Volatility is high enough, or no threshold is set. Ask the agent.
-            temp_env = TradingEnvironment(
-                sequences=[session_window], stats=stats, render_mode=None, 
-                full_seq_len=cfg.seq.full_seq_len, num_features=cfg.seq.num_features,
-                num_actions=cfg.market.num_actions, flat_state_size=cfg.seq.flat_state_size,
-                initial_balance=balance, pre_signal_len=cfg.seq.pre_signal_len,
-                data_channels=cfg.data.data_channels, slippage=cfg.market.slippage,
-                transaction_fee=cfg.market.transaction_fee, agent_session_len=cfg.seq.agent_session_len,
-                agent_history_len=cfg.seq.agent_history_len, input_history_len=cfg.seq.input_history_len,
-                price_channels=cfg.data.price_channels, volume_channels=cfg.data.volume_channels,
-                other_channels=cfg.data.other_channels, action_history_len=cfg.seq.action_history_len,
-                inaction_penalty_ratio=cfg.market.inaction_penalty_ratio, backtest_mode=True,
-                use_risk_management=cfg.backtest.use_risk_management
-            )
-            obs, _ = temp_env.reset()
-            action = agent.select_action(
-                state=obs, training=False, return_qvals=False, use_cache=cfg.backtest.use_cache,
-                cache_key=(ticker_name, current_time)
-            )
+                obs, _, done, _, info = env.backtest_step(
+                    action=action,
+                    signal_dt=signal_dt,
+                    ticker=ticker_name,
+                    stop_loss=cfg.backtest.stop_loss,
+                    take_profit=cfg.backtest.take_profit,
+                    trailing_stop=cfg.backtest.trailing_stop,
+                )
 
-        # 3. Process the action (Open, Close, or Hold)
-        if not position_open and action in {1, 2}: # Open a new position
-            position_open = True
-            trade_entry_step = i
-            trade_direction = 1 if action == 1 else -1
-            slippage_multiplier = (1 + cfg.market.slippage) if trade_direction == 1 else (1 - cfg.market.slippage)
-            trade_entry_price = current_price * slippage_multiplier
-            direction_str = "LONG" if action == 1 else "SHORT"
-            logging.info(f": ({direction_str}) OPEN at {trade_entry_price:.2f} on {current_time.strftime('%Y-%m-%d %H:%M')}")
+                if info["position_closed"]:
+                    info["ticker"] = ticker_name
+                    trade_log.log_trade(info, balance)
+                    balance += info.get("trade_realized_pnl", 0.0)
+                    result.update(signal_dt + dt.timedelta(minutes=cfg.seq.agent_session_len), info, balance)
+                if done:
+                    break
 
-        elif position_open and action == 3: # Close the current position
-            slippage_multiplier = (1 - cfg.market.slippage) if trade_direction == 1 else (1 + cfg.market.slippage)
-            exit_price = current_price * slippage_multiplier
-            
-            trade_amount = balance * cfg.backtest.position_fraction
-            volume = trade_amount / trade_entry_price
-            pnl = (exit_price - trade_entry_price) * volume * trade_direction
-            
-            # Recalculate fees for this trade
-            entry_fee = trade_amount * cfg.market.transaction_fee
-            exit_fee = (volume * exit_price) * cfg.market.transaction_fee
-            total_fees = entry_fee + exit_fee
-            net_pnl = pnl - total_fees
-
-            info = {
-                "ticker": ticker_name,
-                "position_closed": True, "trade_realized_pnl": net_pnl, "total_commission": total_fees,
-                "trade_amount": trade_amount, 
-                "trade_price_delta": (exit_price - trade_entry_price) / trade_entry_price * trade_direction,
-                "max_drawdown": 0,  # Simplified: not tracking intra-trade drawdown
-                "correct_prediction": net_pnl > 0,
-                "direction": "LONG" if trade_direction == 1 else "SHORT",
-                "trade_dt": df.index[trade_entry_step - cfg.seq.full_seq_len].to_pydatetime(),
-            }
-
-            trade_log.log_trade(info, balance)
-            balance += net_pnl
-            result.update(current_time, info, balance)
-
-            position_open = False
-            trade_entry_step = 0
-            trade_entry_price = 0.0
-            trade_direction = 0
+            open_sessions.append({"end_time": signal_dt + dt.timedelta(minutes=cfg.seq.agent_session_len)})
 
     agent.save_disk_cache()
 
@@ -433,11 +403,10 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         logging.info(f": {name_result:>23s} = {value}")
 
     if cfg.backtest.plot_backtest_balance_curve:
-        result.plot_balance(os.path.join(cfg.paths.plot_dir, "continuous_backtest_balance_curve.png"))
+        result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
 
     return metrics
 
 
 if __name__ == "__main__":
-    # Expects a config file, e.g., python backtest_continuous.py configs/alpha.py
     run_backtest(load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
