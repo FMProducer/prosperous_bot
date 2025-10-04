@@ -1,0 +1,151 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Download Historical Data",
+            "type": "shell",
+            "command": "$env:PGHOST='localhost'; $env:PGPORT='5432'; $env:PGDATABASE='marketdata'; $env:PGUSER='postgres'; $env:PGPASSWORD='9691'; c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe download_historical_data.py --months 12 --workers 10 --verify-checksum",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance\\\\backends\\\\postgres_ws",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-Command"]
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Check DB Status",
+            "type": "shell",
+            "command": "$env:PGHOST='localhost'; $env:PGPORT='5432'; $env:PGDATABASE='marketdata'; $env:PGUSER='postgres'; $env:PGPASSWORD='9691'; ${workspaceFolder}\\.venv\\Scripts\\python.exe ${workspaceFolder}\\check_db_status.py",
+            "options": {
+                "shell": {
+                    "executable": "powershell.exe"
+                }
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Pytest Collector",
+            "type": "shell",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe -m pytest --cov=collector third_party/rl-trading-binance/backends/postgres_ws/test_collector.py",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Train Agent",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe train.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test Agent",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe test_agent.py run_fmproducer_1.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Backtest",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe backtest_engine.py run_fmproducer_1.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Optuna Optimization",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe optimize.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Start Service",
+            "type": "shell",
+            "command": "net start postgresql-x64-18",
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Stop Service",
+            "type": "shell",
+            "command": "net stop postgresql-x64-18",
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Check Connection",
+            "type": "shell",
+            "command": "$env:PGHOST='localhost'; $env:PGPORT='5432'; $env:PGDATABASE='marketdata'; $env:PGUSER='postgres'; $env:PGPASSWORD='9691'; & 'C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe' -c 'SELECT version();'",
+            "options": {
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-Command"]
+                }
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Pytest (Collector)",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe -m pytest --cov=collector backends/postgres_ws/test_collector.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Interactive Session",
+            "type": "shell",
+            "command": "$env:PGPASSWORD='9691'; & 'C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe' -h localhost -p 5432 -U postgres -d marketdata",
+            "options": {
+                "shell": {
+                    "executable": "powershell.exe"
+                 }
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "DB Login",
+            "type": "shell",
+            "command": "$env:PGPASSWORD='9691'; psql -h localhost -p 5432 -U postgres -d marketdata",
+            "problemMatcher": [],
+            "detail": "Connect to the PostgreSQL marketdata database.",
+            "options": {
+                "shell": {
+                    "executable": "powershell.exe"
+                }
+            }
+        }
+    ]
+}

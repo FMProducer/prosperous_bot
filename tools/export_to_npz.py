@@ -1,56 +1,52 @@
-# file: tools/export_to_npz.py
-import os, numpy as np
-import psycopg2
-import json
-from datetime import datetime, timezone
+# tools/export_to_npz.py
+import argparse, numpy as np, pandas as pd, psycopg2, os
+from psycopg2.extras import RealDictCursor
 
-# читаем конфиг JSON/ENV, согласовано с README/SYSTEM_PROMPT (никакого хардкода путей/DSN)
-# example JSON:
-# {
-#   "db": {"dsn": "host=... port=5432 dbname=... user=... password=..."},
-#   "export": {"symbol": "BTCUSDT", "from_utc": "2024-01-01T00:00:00Z", "to_utc": "2025-01-01T00:00:00Z",
-#              "out_path": "output/btcusdt_1m_2024.npz" }
-# }
+CHANNELS = ["open","high","volume_weighted_average","low","close","volume","num_trades"]  # must match DataConfig
 
-# Construct absolute path to the config file based on the script's location
-script_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(script_path))
-default_config_path = os.path.join(project_root, "config", "export_npz.json")
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dsn", required=True, help="postgresql://user:pass@host:5432/marketdata")
+    ap.add_argument("--start-utc", required=True)   # "2024-10-01 00:00:00"
+    ap.add_argument("--end-utc",   required=True)   # "2025-10-01 00:00:00"
+    ap.add_argument("--symbols",   default="ALL")   # "BTCUSDT,ETHUSDT" or ALL
+    ap.add_argument("--out",       default="data/backtest_data.npz")
+    args = ap.parse_args()
 
-config_path = os.environ.get("EXPORT_CONFIG", default_config_path)
-cfg = json.load(open(config_path, "r"))
+    where = ["ts >= EXTRACT(EPOCH FROM %s::timestamptz)::bigint*1000",
+             "ts <  EXTRACT(EPOCH FROM %s::timestamptz)::bigint*1000"]
+    params = [args.start_utc, args.end_utc]
 
-q = """
-SELECT ts_utc AS ts, open, high, low, close, volume, vwap, trades
-FROM public.mv_candles_prepared
-WHERE symbol = %s AND ts_utc >= %s AND ts_utc < %s
-ORDER BY ts_utc
-"""
+    if args.symbols != "ALL":
+        syms = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        where.append("symbol = ANY(%s)")
+        params.append(syms)
 
-conn = psycopg2.connect(cfg["db"]["dsn"])
-with conn, conn.cursor() as cur:
-    cur.execute(q, (cfg["export"]["symbol"],
-                    cfg["export"]["from_utc"],
-                    cfg["export"]["to_utc"]))
-    rows = cur.fetchall()
+    sql = f'''
+        WITH base AS (
+            SELECT symbol, ts, {", ".join(CHANNELS)}
+            FROM v_klines_1m_npz
+            WHERE {" AND ".join(where)}
+        )
+        SELECT ts, {", ".join(CHANNELS)}
+        FROM base
+        ORDER BY ts, symbol;
+    '''
 
-import numpy as np
-if not rows:
-    raise SystemExit("No rows in selected range")
+    with psycopg2.connect(args.dsn) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    if not rows:
+        raise SystemExit("No rows in requested interval")
 
-# приводим к numpy. ts -> epoch ms (UTC) для удобства
-ts = np.array([int(r[0].replace(tzinfo=timezone.utc).timestamp() * 1000) for r in rows], dtype=np.int64)
-arr = {
-    "ts": ts,
-    "open":   np.array([r[1] for r in rows], dtype=np.float64),
-    "high":   np.array([r[2] for r in rows], dtype=np.float64),
-    "low":    np.array([r[3] for r in rows], dtype=np.float64),
-    "close":  np.array([r[4] for r in rows], dtype=np.float64),
-    "volume": np.array([r[5] for r in rows], dtype=np.float64),
-    "vwap":   np.array([r[6] if r[6] is not None else np.nan for r in rows], dtype=np.float64),
-    "trades": np.array([r[7] for r in rows], dtype=np.int32),
-}
-output_path = os.path.join(project_root, cfg["export"]["out_path"])
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
-np.savez_compressed(output_path, **arr)
-print("Saved:", output_path, "rows:", len(ts))
+    df = pd.DataFrame(rows)
+    # Сохраняем ключами, которые потом читает backtest_continuous.py
+    np.savez_compressed(
+        args.out,
+        ts=df["ts"].astype("int64").values,
+        **{ch: df[ch].astype("float32").values for ch in CHANNELS}
+    )
+    print(f"Saved {len(df)} rows to {args.out}")
+
+if __name__ == "__main__":
+    main()

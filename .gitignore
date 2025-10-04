@@ -9,7 +9,7 @@ __pycache__/
 env/
 
 # IDE / OS
-.vscode/
+# .vscode/
 .idea/
 *.swp
 
