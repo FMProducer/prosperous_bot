@@ -284,12 +284,12 @@ class TradingEnvironment(gym.Env):
 
         if self.use_risk_management and self.position != 0:
             if self.position == 1:
-                self.trailing_max_price = max(getattr(self, "trailing_max_price"), price)
+                self.trailing_max_price = max(getattr(self, "trailing_max_price", price), price)
                 sl_trigger = price <= self.entry_price * (1 - stop_loss)
                 tp_trigger = price >= self.entry_price * (1 + take_profit)
                 trailing_trigger = price <= self.trailing_max_price * (1 - trailing_stop)
             else:
-                self.trailing_min_price = min(getattr(self, "trailing_min_price"), price)
+                self.trailing_min_price = min(getattr(self, "trailing_min_price", price), price)
                 sl_trigger = price >= self.entry_price * (1 + stop_loss)
                 tp_trigger = price <= self.entry_price * (1 - take_profit)
                 trailing_trigger = price >= self.trailing_min_price * (1 + trailing_stop)

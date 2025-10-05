@@ -464,17 +464,21 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
                     pass_adv = get_pass_advantage(action, confidence, cfg)
                     pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
                     if pass_adv and pass_uncertainty:
-                        # threshold per action (for logging)
-                        thr_val = (
-                            cfg.backtest.long_action_threshold if action == 1
-                            else cfg.backtest.short_action_threshold if action == 2
-                            else cfg.backtest.close_action_threshold
-                        )
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thr_val:.3f}, "
-                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
-                        )
+                        # логируем отказ из-за неопределённости
+                        try:
+                            labels = ["HOLD", "LONG", "SHORT", "CLOSE"]
+                            thr_map = {
+                                1: cfg.backtest.long_action_threshold,
+                                2: cfg.backtest.short_action_threshold,
+                                3: cfg.backtest.close_action_threshold,
+                            }
+                            thr = thr_map.get(action, 0.0)
+                            logging.info(
+                                f": REJECTED {labels[action]}, confidence={confidence:.4f} < thr={thr:.4f}, "
+                                f"uncertainty={uncertainty:.4f} > max_sigma={cfg.backtest.ensemble_max_sigma:.4f}"
+                            )
+                        except Exception:
+                            pass
                         action = 0
                 else:
                     action = agent.select_action(
