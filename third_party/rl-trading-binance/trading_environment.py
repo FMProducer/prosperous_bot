@@ -64,6 +64,8 @@ class TradingEnvironment(gym.Env):
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
+        # Cache frequently used channel index
+        self.close_idx = self.data_channels.index("close")
 
         self.history_vector_size = num_actions * self.action_history_len
         expected_shape = (full_seq_len, num_features)
@@ -128,7 +130,7 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
             price_idx = len(self.current_seq) - 1
-        price = self.current_seq[price_idx, self.data_channels.index("close")]
+        price = self.current_seq[price_idx, self.close_idx]
         pnl_change = 0.0
 
         if action == 1 and self.position == 0:
@@ -212,7 +214,7 @@ class TradingEnvironment(gym.Env):
         unrealized = 0.0
         if self.position != 0:
             price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-            current_price = self.current_seq[price_idx, self.data_channels.index("close")]
+            current_price = self.current_seq[price_idx, self.close_idx]
             delta = (current_price - self.entry_price) * self.position
             unrealized = delta / self.entry_price
 
@@ -246,7 +248,7 @@ class TradingEnvironment(gym.Env):
 
         if self.position != 0:
             price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-            current_price = self.current_seq[price_idx, self.data_channels.index("close")]
+            current_price = self.current_seq[price_idx, self.close_idx]
             mark2market = (current_price - self.entry_price) * self.position * (self.balance / self.entry_price)
             info["portfolio_value"] = self.balance + mark2market
         else:
@@ -272,7 +274,7 @@ class TradingEnvironment(gym.Env):
                 action = 3
 
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
-        price = self.current_seq[price_idx, self.data_channels.index("close")]
+        price = self.current_seq[price_idx, self.close_idx]
         position_closed = False
         pnl_change = 0.0
         exec_price = 0.0
