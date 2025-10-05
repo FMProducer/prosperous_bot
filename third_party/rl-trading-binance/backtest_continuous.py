@@ -58,56 +58,68 @@ def create_signal_groups_from_continuous(cfg: MasterConfig) -> Dict[dt.datetime,
     """
     Adapter function to load a continuous flat NPZ file and transform it
     into the session-based `grouped_backtest_data` format that the backtest engine expects.
+    Supports both single-ticker and all-ticker backtesting.
     """
     logging.info(f"Adapter: Loading continuous backtest data from {cfg.paths.backtest_data_path}")
     with np.load(cfg.paths.backtest_data_path, allow_pickle=True) as data:
         df = pd.DataFrame({key: data[key] for key in data.files})
 
-    ticker_name = cfg.backtest.ticker_name
-    if ticker_name:
-        logging.info(f"Adapter: Filtering for ticker: {ticker_name}")
-        df = df[df['symbol'] == ticker_name].copy()
-        if df.empty:
-            raise SystemExit(f"Adapter: No data found for ticker {ticker_name} in the .npz file.")
-    else:
-        # This continuous loader is designed for a single ticker for simplicity
-        raise SystemExit("Adapter: ticker_name must be specified in config for continuous data mode.")
-
     df['ts'] = pd.to_datetime(df['ts'], unit='ms')
     df = df.set_index('ts')
     df.sort_index(inplace=True)
 
-    logging.info(f"Adapter: Loaded {len(df)} rows for {ticker_name}.")
-    market_data = df[cfg.data.data_channels].to_numpy(dtype=np.float32)
-    
+    tickers_to_process = []
+    if cfg.backtest.ticker_name:
+        logging.info(f"Adapter: Filtering for single ticker: {cfg.backtest.ticker_name}")
+        if cfg.backtest.ticker_name in df['symbol'].unique():
+            tickers_to_process.append(cfg.backtest.ticker_name)
+        else:
+            raise SystemExit(f"Adapter: Ticker {cfg.backtest.ticker_name} not found in the .npz file.")
+    else:
+        logging.info("Adapter: No specific ticker set. Loading tickers from tickers.txt.")
+        try:
+            with open("third_party/rl-trading-binance/data/tickers.txt", "r") as f:
+                tickers_to_process = [line.strip() for line in f if line.strip()]
+            logging.info(f"Adapter: Found {len(tickers_to_process)} tickers to process from file.")
+        except FileNotFoundError:
+            logging.warning("Adapter: tickers.txt not found. Processing all available tickers from the data file.")
+            tickers_to_process = df['symbol'].unique()
+
     grouped_signals = defaultdict(list)
     close_idx = cfg.data.data_channels.index("close")
 
-    logging.info("Adapter: Scanning for volatile signals...")
-    i = cfg.seq.full_seq_len
-    while i < len(market_data):
-        session_window = market_data[i - cfg.seq.full_seq_len : i]
+    for ticker_name in tickers_to_process:
+        ticker_df = df[df['symbol'] == ticker_name].copy()
+        if ticker_df.empty:
+            logging.warning(f"Adapter: No data found for ticker {ticker_name} in the .npz file. Skipping.")
+            continue
+
+        logging.info(f"Adapter: Loaded {len(ticker_df)} rows for {ticker_name}.")
+        market_data = ticker_df[cfg.data.data_channels].to_numpy(dtype=np.float32)
         
-        # Volatility Filter
-        if cfg.backtest.volatility_threshold is not None:
-            volatility_window = session_window[0:cfg.seq.pre_signal_len]
-            close_price_start = volatility_window[0, close_idx]
-            close_price_end = volatility_window[-1, close_idx]
-            if close_price_start > 0:
-                volatility = abs(close_price_end - close_price_start) / close_price_start
-                if volatility >= cfg.backtest.volatility_threshold:
-                    # This is a valid signal, create a group for it
-                    signal_dt = df.index[i - cfg.seq.post_signal_len -1].to_pydatetime()
-                    grouped_signals[signal_dt].append((ticker_name, session_window))
-            # Always advance by 1 in scanning mode
-            i += 1
-        else:
-            # If no filter, every moment is a signal
-            signal_dt = df.index[i - cfg.seq.post_signal_len -1].to_pydatetime()
-            grouped_signals[signal_dt].append((ticker_name, session_window))
-            i += 1
+        logging.info(f"Adapter: Scanning for volatile signals in {ticker_name}...")
+        i = cfg.seq.full_seq_len
+        while i < len(market_data):
+            session_window = market_data[i - cfg.seq.full_seq_len : i]
             
-    logging.info(f"Adapter: Found {len(grouped_signals)} signals meeting the criteria.")
+            # Volatility Filter
+            if cfg.backtest.volatility_threshold is not None:
+                volatility_window = session_window[0:cfg.seq.pre_signal_len]
+                close_price_start = volatility_window[0, close_idx]
+                close_price_end = volatility_window[-1, close_idx]
+                if close_price_start > 0:
+                    volatility = abs(close_price_end - close_price_start) / close_price_start
+                    if volatility >= cfg.backtest.volatility_threshold:
+                        signal_dt = ticker_df.index[i - cfg.seq.post_signal_len - 1].to_pydatetime()
+                        grouped_signals[signal_dt].append((ticker_name, session_window))
+                i += 1 
+            else:
+                # If no filter, every moment is a signal
+                signal_dt = ticker_df.index[i - cfg.seq.post_signal_len - 1].to_pydatetime()
+                grouped_signals[signal_dt].append((ticker_name, session_window))
+                i += 1
+            
+    logging.info(f"Adapter: Found a total of {len(grouped_signals)} signal groups across all tickers.")
     return grouped_signals
 
 class TradeSummary:
