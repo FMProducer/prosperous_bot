@@ -309,8 +309,9 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
-    # --- MODIFIED: Data Loading Logic ---
-    if cfg.backtest.continuous_data:
+    # --- Data Loading Logic (robust to missing cfg.backtest.continuous_data) ---
+    use_continuous = getattr(cfg.backtest, "continuous_data", True)
+    if use_continuous:
         grouped_backtest_data = create_signal_groups_from_continuous(cfg)
     else:
         backtest_raw = load_npz_dataset(
@@ -412,15 +413,20 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
 
         selected_signals = signals[:free_slots]
         
-        if not cfg.backtest.continuous_data:
+        if not use_continuous:
             logging.info(
                 f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
             )
 
         for ticker_name, session in selected_signals:
             position_size = balance * cfg.backtest.position_fraction
-            # Подменяем данные и баланс, мягкий сброс в начало эпизода
-            env.sequences[0] = session
+            # Подменяем данные и баланс, мягкий сброс в начало эпизода.
+            # Явная валидация формы окна и копирование в заранее выделенный буфер.
+            expected = (cfg.seq.full_seq_len, cfg.seq.num_features)
+            if session.shape != expected:
+                logging.warning(f"Session shape mismatch: got {session.shape}, expected {expected}; skipping {ticker_name} @ {signal_dt}")
+                continue
+            env.sequences[0][...] = session
             env.initial_balance = position_size
             obs, _ = env.reset(options={"forced_index": 0})
             for step in range(cfg.seq.agent_session_len):
