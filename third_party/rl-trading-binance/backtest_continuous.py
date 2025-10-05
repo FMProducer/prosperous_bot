@@ -216,7 +216,7 @@ class MetricsCollector:
         changes = np.array(self.changes)
 
         if not self.balance_curve:
-            return {}
+            return {{}}
 
         times, balances = zip(*sorted(self.balance_curve.values()))
         all_balances = [self.initial_balance] + list(balances)
@@ -226,29 +226,29 @@ class MetricsCollector:
         std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
         std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
 
-        return {
-            "total_commission": f"{(-self.total_commission / all_balances[0]) * 100:.2f}%" if all_balances[0] != 0 else "0.00%",
-            "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
-            "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
-            "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
+        return {{
+            "total_commission": f"{{(-self.total_commission / all_balances[0]) * 100:.2f}}%" if all_balances[0] != 0 else "0.00%",
+            "avg_commission": f"{{-self.total_commission / self.total_trades:.2f}}" if self.total_trades > 0 else "0.00",
+            "max_loss": f"{{pnl_all.min():.2f}}" if len(pnl_all) > 0 else "0.00",
+            "max_profit": f"{{pnl_all.max():.2f}}" if len(pnl_all) > 0 else "0.00",
             "total_trade_days": trade_days,
             "profit_days": (
-                f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)"
+                f"{{int((pnl_by_day > 0).sum())}} ({{((pnl_by_day > 0).sum() / trade_days) * 100:.2f}}%)"
                 if trade_days > 0
                 else "0 (0.00%)"
             ),
-            "final_balance_change": f"{(total_change - 1) * 100:.2f}%",
+            "final_balance_change": f"{{(total_change - 1) * 100:.2f}}%",
             "exp_day_change": (
-                f"{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}%" if trade_days > 0 else "0.00%"
+                f"{{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}}%" if trade_days > 0 else "0.00%"
             ),
-            "max_drawdown": f"{min(self.drawdowns) * 100:.2f}%" if self.drawdowns else "0.00%",
+            "max_drawdown": f"{{min(self.drawdowns) * 100:.2f}}%" if self.drawdowns else "0.00%",
             "sharpe": (
-                f"{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
+                f"{{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
             "sortino": (
-                f"{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
+                f"{{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
@@ -278,7 +278,7 @@ class MetricsCollector:
             ),
             "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
             "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
-        }
+        }}
 
     def plot_balance(self, path: str):
         if not self.balance_curve:
@@ -447,8 +447,8 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
                     pass_adv = get_pass_advantage(action, confidence, cfg)
                     if pass_adv:
                         action = 0
-                
                 elif cfg.backtest.selection_strategy == "ensemble_q_filter":
+                    # Ансамблевый фильтр Q-значений (MC Dropout)
                     q_mean, q_std = agent.predict_ensemble(
                         state=obs,
                         training=False,
@@ -458,8 +458,8 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
                     )
                     advantage = q_mean - q_mean[0]
                     action = int(np.argmax(advantage))
-                    confidence = float(advantage[action])
-                    uncertainty = float(q_std[action])
+                    confidence = advantage[action]
+                    uncertainty = q_std[action]
 
                     pass_adv = get_pass_advantage(action, confidence, cfg)
                     pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
