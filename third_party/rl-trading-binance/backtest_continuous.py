@@ -188,7 +188,7 @@ class MetricsCollector:
         changes = np.array(self.changes)
 
         if not self.balance_curve:
-            return {{}}
+            return {}
 
         _, balances = zip(*sorted(self.balance_curve.values()))
         total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
@@ -197,59 +197,59 @@ class MetricsCollector:
         std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
         std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
 
-        return {{
-            "total_commission": f"{{(-self.total_commission / balances[0]) * 100:.2f}}%" if balances[0] != 0 else "0.00%",
-            "avg_commission": f"{{-self.total_commission / self.total_trades:.2f}}" if self.total_trades > 0 else "0.00",
-            "max_loss": f"{{pnl_all.min():.2f}}" if len(pnl_all) > 0 else "0.00",
-            "max_profit": f"{{pnl_all.max():.2f}}" if len(pnl_all) > 0 else "0.00",
+        return {
+            "total_commission": f"{(-self.total_commission / balances[0]) * 100:.2f}%" if balances[0] != 0 else "0.00%",
+            "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
+            "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
+            "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
             "total_trade_days": trade_days,
             "profit_days": (
-                f"{{int((pnl_by_day > 0).sum())}} ({{((pnl_by_day > 0).sum() / trade_days) * 100:.2f}}%)"
+                f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)"
                 if trade_days > 0
                 else "0 (0.00%)"
             ),
-            "final_balance_change": f"{{(total_change - 1) * 100:.2f}}%",
+            "final_balance_change": f"{(total_change - 1) * 100:.2f}%",
             "exp_day_change": (
-                f"{{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}}%" if trade_days > 0 else "0.00%"
+                f"{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}%" if trade_days > 0 else "0.00%"
             ),
-            "max_drawdown": f"{{min(self.drawdowns) * 100:.2f}}%" if self.drawdowns else "0.00%",
+            "max_drawdown": f"{min(self.drawdowns) * 100:.2f}%" if self.drawdowns else "0.00%",
             "sharpe": (
-                f"{{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
+                f"{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
             "sortino": (
-                f"{{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
+                f"{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
                 if len(pnl_by_day) > 0
                 else "0.00"
             ),
-            "trades_sharpe": (f"{{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}}" if len(pnl_all) > 0 else "0.00"),
-            "trades_sortino": (f"{{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}}" if len(pnl_all) > 0 else "0.00"),
-            "accuracy": (f"{{self.correct_preds / self.total_trades * 100:.1f}}%" if self.total_trades > 0 else "0.0%"),
+            "trades_sharpe": (f"{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
+            "trades_sortino": (f"{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
+            "accuracy": (f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%"),
             "total_trades": self.total_trades,
             "total_longs": self.total_longs,
             "total_shorts": self.total_shorts,
             "longs_correct": (
-                f"{{self.correct_longs}} (0.0%)"
+                f"{self.correct_longs} (0.0%)"
                 if self.total_longs == 0
-                else f"{{self.correct_longs}} ({{(self.correct_longs / self.total_longs) * 100:.1f}}%)"
+                else f"{self.correct_longs} ({(self.correct_longs / self.total_longs) * 100:.1f}%)"
             ),
             "shorts_correct": (
-                f"{{self.correct_shorts}} (0.0%)"
+                f"{self.correct_shorts} (0.0%)"
                 if self.total_shorts == 0
-                else f"{{self.correct_shorts}} ({{(self.correct_shorts / self.total_shorts) * 100:.1f}}%)"
+                else f"{self.correct_shorts} ({(self.correct_shorts / self.total_shorts) * 100:.1f}%)"
             ),
-            "correct_avg_change": (f"{{np.mean(changes[changes > 0]) * 100:.2f}}%" if np.any(changes > 0) else "0.00%"),
-            "correct_std_change": (f"{{np.std(changes[changes > 0]) * 100:.2f}}%" if np.any(changes > 0) else "0.00%"),
+            "correct_avg_change": (f"{np.mean(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
+            "correct_std_change": (f"{np.std(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
             "incorrect_avg_change": (
-                f"{{np.mean(changes[changes <= 0]) * 100:.2f}}%" if np.any(changes <= 0) else "0.00%"
+                f"{np.mean(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
             ),
             "incorrect_std_change": (
-                f"{{np.std(changes[changes <= 0]) * 100:.2f}}%" if np.any(changes <= 0) else "0.00%"
+                f"{np.std(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
             ),
-            "avg_trade_amount": (f"{{np.mean(self.trade_amounts):.2f}}" if len(self.trade_amounts) > 0 else "0.00"),
-            "trades_per_day": (f"{{self.total_trades / trade_days:.2f}}" if trade_days > 0 else "0.00"),
-        }}
+            "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
+            "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
+        }
 
     def plot_balance(self, path: str):
         if not self.balance_curve:
