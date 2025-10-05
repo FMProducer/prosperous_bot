@@ -216,7 +216,7 @@ class MetricsCollector:
         changes = np.array(self.changes)
 
         if not self.balance_curve:
-            return {{}}
+            return {}
 
         times, balances = zip(*sorted(self.balance_curve.values()))
         all_balances = [self.initial_balance] + list(balances)
@@ -226,7 +226,7 @@ class MetricsCollector:
         std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
         std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
 
-        return {{
+        return {
             "total_commission": f"{{(-self.total_commission / all_balances[0]) * 100:.2f}}%" if all_balances[0] != 0 else "0.00%",
             "avg_commission": f"{{-self.total_commission / self.total_trades:.2f}}" if self.total_trades > 0 else "0.00",
             "max_loss": f"{{pnl_all.min():.2f}}" if len(pnl_all) > 0 else "0.00",
@@ -278,7 +278,7 @@ class MetricsCollector:
             ),
             "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
             "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
-        }}
+        }
 
     def plot_balance(self, path: str):
         if not self.balance_curve:
