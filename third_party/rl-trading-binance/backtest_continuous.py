@@ -102,7 +102,6 @@ def create_signal_groups_from_continuous(cfg: MasterConfig) -> Dict[dt.datetime,
         while i < len(market_data):
             session_window = market_data[i - cfg.seq.full_seq_len : i]
             
-            # Volatility Filter
             if cfg.backtest.volatility_threshold is not None:
                 volatility_window = session_window[0:cfg.seq.pre_signal_len]
                 close_price_start = volatility_window[0, close_idx]
@@ -112,12 +111,12 @@ def create_signal_groups_from_continuous(cfg: MasterConfig) -> Dict[dt.datetime,
                     if volatility >= cfg.backtest.volatility_threshold:
                         signal_dt = ticker_df.index[i - cfg.seq.post_signal_len - 1].to_pydatetime()
                         grouped_signals[signal_dt].append((ticker_name, session_window))
-                i += 1 
             else:
                 # If no filter, every moment is a signal
                 signal_dt = ticker_df.index[i - cfg.seq.post_signal_len - 1].to_pydatetime()
                 grouped_signals[signal_dt].append((ticker_name, session_window))
-                i += 1
+            
+            i += 1 # Always advance the window
             
     logging.info(f"Adapter: Found a total of {len(grouped_signals)} signal groups across all tickers.")
     return grouped_signals

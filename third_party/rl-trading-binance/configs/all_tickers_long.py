@@ -1,4 +1,5 @@
 # configs/all_tickers_long.py
+import torch
 from config import cfg
 
 # Set a unique name for this configuration
@@ -11,10 +12,11 @@ cfg.paths.backtest_data_path = 'third_party/rl-trading-binance/data/backtest_dat
 cfg.paths.extra_model_dir = 'third_party/rl-trading-binance/output/fmproducer_1_eval/saved_models/session_1'
 
 # --- DEVICE ---
-cfg.device.device = 'cpu' # Force CPU usage
+cfg.device.device = torch.device('cpu') # Force CPU usage
 
 # --- BACKTEST SETTINGS ---
 cfg.backtest.continuous_data = True # Use the new continuous data loader
 # cfg.backtest.ticker_name = '1000RATSUSDT' # Commented out to run on all tickers from tickers.txt
 cfg.backtest.volatility_threshold = 0.10 # 10% volatility filter
 cfg.backtest.short_action_threshold = 100.0 # Disable shorting to run long-only strategy
+cfg.backtest.max_parallel_sessions = 300 # Allow many tickers to be traded in parallel
