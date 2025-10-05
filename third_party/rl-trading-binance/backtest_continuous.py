@@ -147,7 +147,8 @@ class TradeSummary:
 
 
 class MetricsCollector:
-    def __init__(self):
+    def __init__(self, initial_balance: float):
+        self.initial_balance = initial_balance
         self.pnl_by_day: Dict[dt.date, float] = defaultdict(float)
         self.pnl_all = []
         self.changes = []
@@ -201,15 +202,16 @@ class MetricsCollector:
         if not self.balance_curve:
             return {}
 
-        _, balances = zip(*sorted(self.balance_curve.values()))
-        total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
+        times, balances = zip(*sorted(self.balance_curve.values()))
+        all_balances = [self.initial_balance] + list(balances)
+        total_change = all_balances[-1] / all_balances[0] if all_balances[0] != 0 else 1.0
         trade_days = len(pnl_by_day)
 
         std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
         std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
 
         return {
-            "total_commission": f"{(-self.total_commission / balances[0]) * 100:.2f}%" if balances[0] != 0 else "0.00%",
+            "total_commission": f"{(-self.total_commission / all_balances[0]) * 100:.2f}%" if all_balances[0] != 0 else "0.00%",
             "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
             "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
             "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
@@ -345,7 +347,7 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
     if cfg.backtest.clear_disk_cache:
         agent.clear_disk_cache()
 
-    result = MetricsCollector()
+    result = MetricsCollector(cfg.market.initial_balance)
     trade_log = TradeSummary()
     balance = cfg.market.initial_balance
     open_sessions: List[Dict] = []
