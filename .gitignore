@@ -86,8 +86,6 @@ third_party/FMProducer/
 third_party/Smolin/
 third_party/rl-trading-binance/output/
 third_party/rl-trading-binance/plots/
-third_party/rl-trading-binance/configs/
-third_party/rl-trading-binance/config.py
 
 # Temporary files
 *.tmp
