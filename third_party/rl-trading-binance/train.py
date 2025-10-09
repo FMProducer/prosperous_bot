@@ -9,6 +9,7 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import torch
 from tqdm import tqdm, trange
 
 from agent import D3QN_PER_Agent
@@ -303,6 +304,8 @@ def main(cfg: MasterConfig = None):
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
     set_random_seed(cfg.random_seed)
+    if cfg.device.device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
     models_dir = os.path.join(cfg.paths.model_dir, session_name)
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
