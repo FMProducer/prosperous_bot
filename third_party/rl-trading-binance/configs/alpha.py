@@ -23,7 +23,7 @@ cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 16
+cfg.rl.batch_size = 32
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 10_000
 
