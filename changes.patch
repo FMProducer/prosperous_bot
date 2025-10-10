@@ -1,555 +1,232 @@
-*** third_party/rl-trading-binance/backtest_continuous.py
+*** a/third_party/rl-trading-binance/config.py
+--- b/third_party/rl-trading-binance/config.py
 @@
--#  backtest_continuous.py
--# This script is a modification of backtest_engine.py to support continuous data sources.
-+# backtest_continuous.py
-+# This script mirrors backtest_engine.py and differs ONLY by the data source:
-+# grouped signals are built from a continuous NPZ via an adapter.
-
+ from typing import List, Literal, Optional
+ 
+ import torch
+ from pydantic import BaseModel, Field, validator
+ 
 @@
--from typing import Any, Dict, List, Tuple
-+from typing import Any, Dict, List, Tuple
-
- import matplotlib.pyplot as plt
- import numpy as np
--import pandas as pd
--from tqdm import tqdm
-+import pandas as pd
-
+ class PathConfig(BaseModel):
+@@
+     def cache_dir(self) -> str:
+         return os.path.join(self.output_dir, "backtest_qval_cache")
+ 
++class PerformanceConfig(BaseModel):
++    # CuDNN
++    cudnn_benchmark: bool = True
++    cudnn_deterministic: Optional[bool] = None  # None = не трогаем
++    # Threads (CPU)
++    num_threads: Optional[int] = None
++    # Data transfer
++    non_blocking_transfer: bool = True
++    # AMP / dtype
++    use_amp: bool = False
++    amp_dtype: Literal["float16", "bfloat16"] = "float16"
++    # torch.compile (PyTorch 2.x)
++    compile_model: bool = False
++    compile_mode: Literal["default", "reduce-overhead", "max-autotune"] = "reduce-overhead"
++
+@@
+ class LoggingConfig(BaseModel):
+     per_trial_logs: bool = False
+ 
+ 
+ class MasterConfig(BaseModel):
+@@
+     backtest_mode: bool = True
+ 
+     device: DeviceConfig = DeviceConfig()
+     paths: PathConfig = PathConfig()
++    perf: PerformanceConfig = PerformanceConfig()
+     data: DataConfig = DataConfig()
+     seq: SequenceConfig = SequenceConfig()
+     market: MarketConfig = MarketConfig()
+     rl: RLConfig = RLConfig()
+     per: PERConfig = PERConfig()
+*** a/third_party/rl-trading-binance/configs/alpha.py
+--- b/third_party/rl-trading-binance/configs/alpha.py
+@@
  from config import MasterConfig
- from config import cfg as default_cfg
- from test_agent import init_agent
- from trading_environment import TradingEnvironment
- from utils import (
-@@
--    set_random_seed,
--)
-+    set_random_seed,
-+)
-
  
--def setup_logging(cfg: MasterConfig) -> None:
--    """
--    Smart logger setup for backtesting: safe for multiple calls,
--    creates 'backtest_session.log' only if it doesn't already exist.
--    """
--    log_dir = cfg.paths.log_dir
--    os.makedirs(log_dir, exist_ok=True)
--    # Use a different log file name to distinguish from the original engine
--    log_file = os.path.join(log_dir, "backtest_continuous_session.log")
--
--    logger = logging.getLogger()
--
--    # Clear existing handlers
--    for handler in logger.handlers[:]:
--        logger.removeHandler(handler)
--
--    logging.basicConfig(
--        level=logging.INFO,
--        format="%(asctime)s [%(levelname)s] %(message)s",
--        handlers=[
--            logging.FileHandler(log_file),
--            logging.StreamHandler(),
--        ],
--    )
--    logging.info("[Init] Logging for continuous backtest session started")
-+def setup_logging(cfg: MasterConfig) -> None:
-+    """
-+    Smart logger setup for backtesting: safe for multiple calls,
-+    creates 'backtest_session.log' only if it doesn't already exist.
-+    """
-+    log_dir = cfg.paths.log_dir
-+    os.makedirs(log_dir, exist_ok=True)
-+    log_file = os.path.join(log_dir, "backtest_session.log")
-+
-+    logger = logging.getLogger()
-+
-+    for handler in logger.handlers:
-+        if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
-+            return
-+
-+    for handler in logger.handlers[:]:
-+        logger.removeHandler(handler)
-+
-+    logging.basicConfig(
-+        level=logging.INFO,
-+        format="%(asctime)s [%(levelname)s] %(message)s",
-+        handlers=[
-+            logging.FileHandler(log_file),
-+            logging.StreamHandler(),
-+        ],
-+    )
-+    logging.info("[Init] Logging for backtest session started")
+ cfg = MasterConfig()
  
--# --- NEW: Data Source Adapter ---
-+# --- Data Source Adapter (ONLY intentional difference vs backtest_engine.py) ---
- def create_signal_groups_from_continuous(cfg: MasterConfig) -> Dict[dt.datetime, List[Tuple[str, np.ndarray]]]:
-     """
-     Adapter function to load a continuous flat NPZ file and transform it
-     into the session-based `grouped_backtest_data` format that the backtest engine expects.
-     Supports both single-ticker and all-ticker backtesting.
-     """
-     logging.info(f"Adapter: Loading continuous backtest data from {cfg.paths.backtest_data_path}")
-     with np.load(cfg.paths.backtest_data_path, allow_pickle=True) as data:
-         df = pd.DataFrame({key: data[key] for key in data.files})
 @@
--    tickers_to_process = []
--    if cfg.backtest.ticker_name:
--        logging.info(f"Adapter: Filtering for single ticker: {cfg.backtest.ticker_name}")
--        if cfg.backtest.ticker_name in df['symbol'].unique():
--            tickers_to_process.append(cfg.backtest.ticker_name)
-+    tickers_to_process: List[str] = []
-+    ticker_name = getattr(cfg.backtest, "ticker_name", None)
-+    if ticker_name:
-+        logging.info(f"Adapter: Filtering for single ticker: {ticker_name}")
-+        if ticker_name in df['symbol'].unique():
-+            tickers_to_process.append(ticker_name)
-         else:
--            raise SystemExit(f"Adapter: Ticker {cfg.backtest.ticker_name} not found in the .npz file.")
-+            raise SystemExit(f"Adapter: Ticker {ticker_name} not found in the .npz file.")
-     else:
-         logging.info("Adapter: No specific ticker set. Loading tickers from tickers.txt.")
-         try:
-             with open("third_party/rl-trading-binance/data/tickers.txt", "r") as f:
-                 tickers_to_process = [line.strip() for line in f if line.strip()]
-@@
--    close_idx = cfg.data.data_channels.index("close")
-+    close_idx = cfg.data.data_channels.index("close")
-@@
--            if getattr(cfg.backtest, "volatility_threshold", None) is not None:
-+            if getattr(cfg.backtest, "volatility_threshold", None) is not None:
-                 valid = (pre_start >= 0) & (pre_end < n) & (close_arr[pre_start] > 0)
-                 if np.any(valid):
-                     c0 = close_arr[pre_start[valid]]
-                     c1 = close_arr[pre_end[valid]]
-                     vol = np.abs(c1 - c0) / c0
-                     passed = valid.copy()
--                    passed[valid] = vol >= cfg.backtest.volatility_threshold
-+                    passed[valid] = vol >= getattr(cfg.backtest, "volatility_threshold", 0.0)
-                 else:
-                     passed = np.zeros_like(end_idx, dtype=bool)
-             else:
-                 # Без фильтра — все моменты валидны
-                 passed = np.ones_like(end_idx, dtype=bool)
-@@
--    return grouped_signals
--
--class TradeSummary:
--    def __init__(self):
--        self.trade_records = []
--
--    def log_trade(self, info: dict, balance: float):
--        ticker = info.get("ticker")
--        trade_dt = info.get("trade_dt")
--        direction = info.get("direction")
--        trade_amount = info.get("trade_amount")
--        pnl = info.get("trade_realized_pnl")
--        change_pct = (pnl / trade_amount) * 100 if trade_amount and trade_amount > 0 else 0.0
--        balance_pct = (pnl / balance) * 100 if balance and balance > 0 else 0.0
--        price_delta_pct = info.get("trade_price_delta", 0.0) * 100
--
--        trade_result = (
--            f": {trade_dt.strftime('%Y-%m-%d %H:%M')} {direction:<5} {ticker:<12} {int(trade_amount):>6}:"
--            f"   {pnl:+7.2f} ({change_pct:+6.2f}%  |{balance_pct:+7.2f}%) PRICE CHANGE: {price_delta_pct:+.2f}%"
--        )
--        self.trade_records.append(trade_result)
--
--    def dump(self):
--        for trade_result in self.trade_records:
--            logging.info(trade_result)
-+    return grouped_signals
+ cfg.debug.use_final_model = False
 +
-+class TradeSummary:
-+    def __init__(self):
-+        self.trade_records = []
++# ---- Performance presets for i5-6600 + GTX 1070 (Pascal) ----
++# Прирост от AMP на Pascal обычно невелик (нет Tensor Cores), но экономит память
++# Источники: NVIDIA/TF/PyTorch (Volta ввела Tensor Cores; старые GPU не ускоряют математику в FP16).
++# AMP/compile по умолчанию выключены; включайте точечно для экспериментов.
++cfg.perf.cudnn_benchmark = True
++cfg.perf.cudnn_deterministic = None
++cfg.perf.num_threads = 4
++cfg.perf.non_blocking_transfer = True
++cfg.perf.use_amp = False           # set True для экономии VRAM, если нужно
++cfg.perf.amp_dtype = "float16"
++cfg.perf.compile_model = False     # set True для эксперимента с torch.compile
++cfg.perf.compile_mode = "reduce-overhead"
+ 
+ # python train.py configs/alpha.py
+ # python test_agent.py configs/alpha.py
+ # python backtest_engine.py configs/alpha.py
+ # python optimize_cfg.py configs/alpha.py
+*** a/third_party/rl-trading-binance/agent.py
+--- b/third_party/rl-trading-binance/agent.py
+@@
+-import datetime as dt
++import datetime as dt
+ import logging
+ import os
+ import pickle
+-from typing import Dict, List, Optional, Tuple, Union
++from typing import Dict, List, Optional, Tuple, Union
++from contextlib import nullcontext
+ 
+ import numpy as np
+ import torch
+ import torch.nn.functional as F
+ import torch.optim as optim
+@@
+ class D3QN_PER_Agent:
+     def __init__(
+         self,
+         state_shape: Tuple[int, ...],
+         action_dim: int,
+@@
+         max_gradient_norm: float,
+         backtest_cache_path: str = None,
++        # performance
++        use_amp: bool = False,
++        amp_dtype: str = "float16",
++        compile_model: bool = False,
++        compile_mode: str = "reduce-overhead",
++        non_blocking_transfer: bool = True,
+     ) -> None:
+-        self.device = device
++        self.device = device
++        self.use_amp = bool(use_amp and device.type == "cuda")
++        self.amp_dtype = torch.float16 if amp_dtype == "float16" else torch.bfloat16
++        self.non_blocking = bool(non_blocking_transfer)
+@@
+-        self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
+-        self.target_net = DuelingQNetwork(**model_kwargs).to(device)
++        self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
++        self.target_net = DuelingQNetwork(**model_kwargs).to(device)
 +
-+    def log_trade(self, info: dict, balance: float):
-+        ticker = info.get("ticker")
-+        trade_dt = info.get("trade_dt")
-+        direction = info.get("direction")
-+        trade_amount = info.get("trade_amount")
-+        pnl = info.get("trade_realized_pnl")
-+        change_pct = (pnl / trade_amount) * 100 if trade_amount else 0.0
-+        balance_pct = (pnl / balance) * 100 if balance else 0.0
-+        price_delta_pct = info.get("trade_price_delta") * 100
-+
-+        trade_result = (
-+            f": {trade_dt.strftime('%Y-%m-%d %H:%M')} {direction:<5} {ticker:<12} {int(trade_amount):>6}:"
-+            f"   {pnl:+7.2f} ({change_pct:+6.2f}%  |{balance_pct:+7.2f}%) PRICE CHANGE: {price_delta_pct:+.2f}%"
++        # Optional compile (PyTorch 2.x)
++        if compile_model and hasattr(torch, "compile"):
++            try:
++                self.policy_net = torch.compile(self.policy_net, mode=compile_mode)
++                self.target_net = torch.compile(self.target_net, mode=compile_mode)
++                logger.info(f"torch.compile enabled (mode='{compile_mode}') for policy/target")
++            except Exception as e:
++                logger.warning(f"torch.compile failed, fallback to eager mode: {e}")
+ 
+         num_params = sum(p.numel() for p in self.policy_net.parameters())
+         logger.info(f"Policy Net with {millify(num_params, precision=1)} parameters created in Agent")
+         logger.info(f"Target Net with {millify(num_params, precision=1)} parameters created in Agent")
+@@
+-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
++        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
++        # AMP scaler
++        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
++        self.autocast = (
++            torch.cuda.amp.autocast(dtype=self.amp_dtype) if self.use_amp else nullcontext
 +        )
-+        self.trade_records.append(trade_result)
-+
-+    def dump(self):
-+        for trade_result in self.trade_records:
-+            logging.info(trade_result)
- 
- class MetricsCollector:
--    def __init__(self, initial_balance: float):
--        self.initial_balance = initial_balance
--        self.pnl_by_day: Dict[dt.date, float] = defaultdict(float)
--        self.pnl_all = []
--        self.changes = []
--        self.drawdowns = []
--        self.trade_amounts = []
--        self.balance_curve: Dict[dt.datetime, Tuple[dt.datetime, float]] = defaultdict()
--        self.total_commission = 0.0
--        self.correct_preds = 0
--        self.total_trades = 0
--        self.total_longs = 0
--        self.total_shorts = 0
--        self.correct_longs = 0
--        self.correct_shorts = 0
-+    def __init__(self):
-+        self.pnl_by_day: Dict[dt.date, float] = defaultdict(float)
-+        self.pnl_all = []
-+        self.changes = []
-+        self.drawdowns = []
-+        self.trade_amounts = []
-+        self.balance_curve: Dict[dt.datetime, Tuple[dt.datetime, float]] = defaultdict()
-+        self.total_commission = 0.0
-+        self.correct_preds = 0
-+        self.total_trades = 0
-+        self.total_longs = 0
-+        self.total_shorts = 0
-+        self.correct_longs = 0
-+        self.correct_shorts = 0
- 
-     def update(self, signal_dt: dt.datetime, info: dict, balance: float):
-         pnl = info.get("trade_realized_pnl")
-         commission = info.get("total_commission")
-         price_change = info.get("trade_price_delta")
-         drawdown = info.get("max_drawdown")
-         amount = info.get("trade_amount")
-         direction = info.get("direction")
-         correct = info.get("correct_prediction")
 @@
--        if not self.balance_curve:
--            return {}
+     def learn(self) -> Optional[float]:
+         if len(self.replay_buffer) < self.train_start:
+             return None
+ 
+-        (states, actions, rewards, next_states, dones, indices, weights) = self.replay_buffer.sample(self.batch_size)
 -
--        all_balances = sorted(self.balance_curve.values())
--        _, balances = zip(*all_balances)
--        total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
--        trade_days = len(pnl_by_day)
--        std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
--        std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
+-        states_t = torch.from_numpy(states).float().to(self.device)
+-        actions_t = torch.from_numpy(actions).long().to(self.device)
+-        rewards_t = torch.from_numpy(rewards).float().to(self.device)
+-        next_states_t = torch.from_numpy(next_states).float().to(self.device)
+-        dones_t = torch.from_numpy(dones).bool().to(self.device)
+-        weights_t = torch.from_numpy(weights).float().to(self.device)
 -
--        return {
--            "total_commission": f"{{(-self.total_commission / all_balances[0]) * 100:.2f}}%" if len(all_balances) > 0 else "0.00%",
--            "avg_commission": (f"{{-self.total_commission / self.total_trades:.2f}}" if self.total_trades > 0 else "0.00"),
--            "max_loss": (f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00"),
--            "max_profit": (f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00"),
--            "total_trade_days": trade_days,
--            "profit_days": (f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)" if trade_days > 0 else "0.00"),
--            "final_balance_change": (f"{(total_change - 1) * 100:.2f}%"),
--            "sharpe": (f"{{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}" if len(pnl_by_day) > 0 else "0.00"),
--            "sortino": (
--                f"{{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}}"
--                if len(pnl_by_day) > 0
--                else "0.00"
--            ),
--            "trades_sharpe": (f"{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
--            "trades_sortino": (f"{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
--            "accuracy": (f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%"),
--            "total_trades": self.total_trades,
--            "total_longs": self.total_longs,
--            "total_shorts": self.total_shorts,
--            "longs_correct": (
--                f"{self.correct_longs} (0.0%)"
--                if self.total_longs == 0
--                else f"{self.correct_longs} ({(self.correct_longs / self.total_longs) * 100:.1f}%)"
--            ),
--            "shorts_correct": (
--                f"{self.correct_shorts} (0.0%)"
--                if self.total_shorts == 0
--                else f"{self.correct_shorts} ({(self.correct_shorts / self.total_shorts) * 100:.1f}%)"
--            ),
--            "correct_avg_change": (f"{np.mean(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
--            "correct_std_change": (f"{np.std(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
--            "incorrect_avg_change": (
--                f"{np.mean(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
--            ),
--            "incorrect_std_change": (
--                f"{np.std(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
--            ),
--            "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
--            "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
--        }
-+        if not self.balance_curve:
-+            return {}
+-        next_actions = self.policy_net(next_states_t).argmax(dim=1)
+-        next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+-        next_q_values[dones_t] = 0.0
+-        target_q_values = rewards_t + self.gamma * next_q_values
+-
+-        current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+-        td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
+-        self.replay_buffer.update_priorities(indices, td_errors)
+-
+-        loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+-        weighted_loss = (weights_t * loss).mean()
+-
+-        self.optimizer.zero_grad()
+-        weighted_loss.backward()
+-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+-        self.optimizer.step()
++        (states, actions, rewards, next_states, dones, indices, weights) = self.replay_buffer.sample(self.batch_size)
 +
-+        _, balances = zip(*sorted(self.balance_curve.values()))
-+        total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
-+        trade_days = len(pnl_by_day)
++        states_t = torch.from_numpy(states).float().to(self.device, non_blocking=self.non_blocking)
++        actions_t = torch.from_numpy(actions).long().to(self.device, non_blocking=self.non_blocking)
++        rewards_t = torch.from_numpy(rewards).float().to(self.device, non_blocking=self.non_blocking)
++        next_states_t = torch.from_numpy(next_states).float().to(self.device, non_blocking=self.non_blocking)
++        dones_t = torch.from_numpy(dones).bool().to(self.device, non_blocking=self.non_blocking)
++        weights_t = torch.from_numpy(weights).float().to(self.device, non_blocking=self.non_blocking)
 +
-+        std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
-+        std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
++        with (self.autocast() if self.use_amp else nullcontext()):
++            next_actions = self.policy_net(next_states_t).argmax(dim=1)
++            next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
++            next_q_values[dones_t] = 0.0
++            target_q_values = rewards_t + self.gamma * next_q_values
 +
-+        return {
-+            "total_commission": f"{(-self.total_commission / balances[0]) * 100:.2f}%" if balances[0] != 0 else "0.00%",
-+            "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
-+            "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
-+            "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
-+            "total_trade_days": trade_days,
-+            "profit_days": f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)" if trade_days > 0 else "0.00",
-+            "final_balance_change": f"{(total_change - 1) * 100:.2f}%",
-+            "sharpe": f"{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}" if len(pnl_by_day) > 0 else "0.00",
-+            "sortino": f"{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}" if len(pnl_by_day) > 0 else "0.00",
-+            "trades_sharpe": f"{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00",
-+            "trades_sortino": f"{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00",
-+            "accuracy": f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%",
-+            "total_trades": self.total_trades,
-+            "total_longs": self.total_longs,
-+            "total_shorts": self.total_shorts,
-+            "longs_correct": f"{self.correct_longs} (0.0%)" if self.total_longs == 0 else f"{self.correct_longs} ({(self.correct_longs / self.total_longs) * 100:.1f}%)",
-+            "shorts_correct": f"{self.correct_shorts} (0.0%)" if self.total_shorts == 0 else f"{self.correct_shorts} ({(self.correct_shorts / self.total_shorts) * 100:.1f}%)",
-+            "correct_avg_change": f"{np.mean(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%",
-+            "correct_std_change": f"{np.std(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%",
-+            "incorrect_avg_change": f"{np.mean(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%",
-+            "incorrect_std_change": f"{np.std(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%",
-+            "avg_trade_amount": f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00",
-+            "trades_per_day": f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00",
-+        }
++            current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
++            td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
++            self.replay_buffer.update_priorities(indices, td_errors)
++
++            loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
++            weighted_loss = (weights_t * loss).mean()
++
++        self.optimizer.zero_grad(set_to_none=True)
++        if self.use_amp:
++            self.scaler.scale(weighted_loss).backward()
++            self.scaler.unscale_(self.optimizer)  # требуется перед clip_grad_norm_
++            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
++            self.scaler.step(self.optimizer)
++            self.scaler.update()
++        else:
++            weighted_loss.backward()
++            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
++            self.optimizer.step()
+ 
+         self.learn_steps += 1
+         if self.learn_steps % self.target_update_freq == 0:
+             self.target_net.load_state_dict(self.policy_net.state_dict())
+ 
+         return float(weighted_loss.item())
+*** a/third_party/rl-trading-binance/train.py
+--- b/third_party/rl-trading-binance/train.py
 @@
- def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> bool:
-     long_pass = action == 1 and confidence <= cfg.backtest.long_action_threshold
-     short_pass = action == 2 and confidence <= cfg.backtest.short_action_threshold
-     close_pass = action == 3 and confidence <= cfg.backtest.close_action_threshold
-     pass_adv = long_pass or short_pass or close_pass
-     return pass_adv
- 
- 
- def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
-     cfg.backtest_mode = True
-     setup_logging(cfg)
+     setup_logging(session_name, cfg)
      set_random_seed(cfg.random_seed)
- 
--    # --- Data Loading Logic (robust to missing cfg.backtest.continuous_data) ---
--    use_continuous = getattr(cfg.backtest, "continuous_data", True)
--    if use_continuous:
--        grouped_backtest_data = create_signal_groups_from_continuous(cfg)
--    else:
--        backtest_raw = load_npz_dataset(
--            file_path=cfg.paths.backtest_data_path,
--            name_dataset="Backtest",
--            plot_dir=cfg.paths.plot_dir,
--            debug_max_size=cfg.debug.debug_max_size_data,
--            plot_examples=cfg.data.plot_examples,
--            plot_channel_idx=cfg.data.plot_channel_idx,
--            pre_signal_len=cfg.seq.pre_signal_len,
--        )
--        grouped_backtest_data = create_signal_groups(backtest_raw)
-+    # --- ONLY difference vs backtest_engine.py: build groups from continuous NPZ ---
-+    grouped_backtest_data = create_signal_groups_from_continuous(cfg)
- 
--    # --- The rest of the engine is UNCHANGED ---
-+    # --- The rest mirrors backtest_engine.py ---
-     train_raw = load_npz_dataset(
-         file_path=cfg.paths.train_data_path,
-         name_dataset="Train",
-         plot_dir=cfg.paths.plot_dir,
-         debug_max_size=cfg.debug.debug_max_size_data,
-         plot_examples=0,
-         plot_channel_idx=None,
-         pre_signal_len=cfg.seq.pre_signal_len,
+-    if cfg.device.device.type == "cuda":
+-        torch.backends.cudnn.benchmark = True
++    if cfg.device.device.type == "cuda":
++        torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
++        if cfg.perf.cudnn_deterministic is not None:
++            torch.backends.cudnn.deterministic = cfg.perf.cudnn_deterministic
++    if cfg.perf.num_threads is not None:
++        torch.set_num_threads(cfg.perf.num_threads)
+@@
+     agent = D3QN_PER_Agent(
+         state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
+         action_dim=cfg.market.num_actions,
+@@
+         max_gradient_norm=cfg.rl.max_gradient_norm,
+         backtest_cache_path=None,
++        # performance flags
++        use_amp=cfg.perf.use_amp,
++        amp_dtype=cfg.perf.amp_dtype,
++        compile_model=cfg.perf.compile_model,
++        compile_mode=cfg.perf.compile_mode,
++        non_blocking_transfer=cfg.perf.non_blocking_transfer,
      )
-@@
--    if cfg.paths.extra_model_dir:
--        model_folder = cfg.paths.extra_model_dir
--        logging.info(f"Using specified model folder: {model_folder}")
--    else:
--        model_base = cfg.paths.model_dir
--        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
--        logging.info(f"Using latest model folder: {model_folder}")
-+    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-+    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
- 
-     best_path = os.path.join(model_folder, "best.pth")
-     model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
- 
-     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
- 
-     if cfg.backtest.clear_disk_cache:
-         agent.clear_disk_cache()
- 
--    result = MetricsCollector(cfg.market.initial_balance)
-+    result = MetricsCollector()
-     trade_log = TradeSummary()
-     balance = cfg.market.initial_balance
-     open_sessions: List[Dict] = []
- 
-     logging.info("\n[Starting backtest]:")
-     thresholds = [
-         cfg.backtest.long_action_threshold,
-         cfg.backtest.short_action_threshold,
-         cfg.backtest.close_action_threshold,
-     ]
- 
--    # --- Оптимизация: создаём один Environment и переиспользуем ---
--    # Заглушка правильной формы (fs x num_features); окно будет подменяться перед reset()
--    dummy_session = np.zeros((cfg.seq.full_seq_len, cfg.seq.num_features), dtype=np.float32)
--    env = TradingEnvironment(
--        sequences=[dummy_session],
--        stats=stats,
--        render_mode=cfg.render_mode,
--        full_seq_len=cfg.seq.full_seq_len,
--        num_features=cfg.seq.num_features,
--        num_actions=cfg.market.num_actions,
--        flat_state_size=cfg.seq.flat_state_size,
--        initial_balance=0.0,  # выставим перед каждым запуском
--        pre_signal_len=cfg.seq.pre_signal_len,
--        data_channels=cfg.data.data_channels,
--        slippage=cfg.market.slippage,
--        transaction_fee=cfg.market.transaction_fee,
--        agent_session_len=cfg.seq.agent_session_len,
--        agent_history_len=cfg.seq.agent_history_len,
--        input_history_len=cfg.seq.input_history_len,
--        price_channels=cfg.data.price_channels,
--        volume_channels=cfg.data.volume_channels,
--        other_channels=cfg.data.other_channels,
--        action_history_len=cfg.seq.action_history_len,
--        inaction_penalty_ratio=cfg.market.inaction_penalty_ratio,
--        backtest_mode=cfg.backtest_mode,
--        use_risk_management=cfg.backtest.use_risk_management,
--    )
--
--    for signal_dt, signals in tqdm(grouped_backtest_data.items(), desc="Processing Signals"):
-+    for signal_dt, signals in grouped_backtest_data.items():
-         open_sessions = [open_s for open_s in open_sessions if open_s["end_time"] > signal_dt]
-         free_slots = cfg.backtest.max_parallel_sessions - len(open_sessions)
-         if free_slots <= 0:
-             logging.info("Too many tickers received, skipping")
-             continue
- 
-         selected_signals = signals[:free_slots]
--        
--        if not use_continuous:
--            logging.info(
--                f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
--            )
-+        logging.info(
-+            f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
-+        )
- 
-         for ticker_name, session in selected_signals:
-             position_size = balance * cfg.backtest.position_fraction
--            # Подменяем данные и баланс, мягкий сброс в начало эпизода.
--            # Явная валидация формы окна и копирование в заранее выделенный буфер.
--            expected = (cfg.seq.full_seq_len, cfg.seq.num_features)
--            if session.shape != expected:
--                logging.warning(f"Session shape mismatch: got {session.shape}, expected {expected}; skipping {ticker_name} @ {signal_dt}")
--                continue
--            env.sequences[0][.] = session
--            env.initial_balance = position_size
--            obs, _ = env.reset(options={"forced_index": 0})
-+            env = TradingEnvironment(
-+                sequences=[session],
-+                stats=stats,
-+                render_mode=cfg.render_mode,
-+                full_seq_len=cfg.seq.full_seq_len,
-+                num_features=cfg.seq.num_features,
-+                num_actions=cfg.market.num_actions,
-+                flat_state_size=cfg.seq.flat_state_size,
-+                initial_balance=position_size,
-+                pre_signal_len=cfg.seq.pre_signal_len,
-+                data_channels=cfg.data.data_channels,
-+                slippage=cfg.market.slippage,
-+                transaction_fee=cfg.market.transaction_fee,
-+                agent_session_len=cfg.seq.agent_session_len,
-+                agent_history_len=cfg.seq.agent_history_len,
-+                input_history_len=cfg.seq.input_history_len,
-+                price_channels=cfg.data.price_channels,
-+                volume_channels=cfg.data.volume_channels,
-+                other_channels=cfg.data.other_channels,
-+                action_history_len=cfg.seq.action_history_len,
-+                inaction_penalty_ratio=cfg.market.inaction_penalty_ratio,
-+                backtest_mode=cfg.backtest_mode,
-+                use_risk_management=cfg.backtest.use_risk_management,
-+            )
-+
-+            obs, _ = env.reset()
-             for step in range(cfg.seq.agent_session_len):
-                 cache_key = (ticker_name, signal_dt + dt.timedelta(minutes=step))
--                
-                 if cfg.backtest.selection_strategy == "advantage_based_filter":
-                     q_vals = agent.select_action(
-                         state=obs,
-                         training=False,
-                         return_qvals=cfg.backtest.return_qvals,
-                         use_cache=cfg.backtest.use_cache,
-                         cache_key=cache_key,
-                     )
-                     adv = q_vals - q_vals[0]
-                     action = int(np.argmax(adv))
-                     confidence = adv[action]
- 
-                     pass_adv = get_pass_advantage(action, confidence, cfg)
-                     if pass_adv:
--                        action = 0
-+                        logging.info(
-+                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-+                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}"
-+                        )
-+                        action = 0
-                 elif cfg.backtest.selection_strategy == "ensemble_q_filter":
--                    # Ансамблевый фильтр Q-значений (MC Dropout)
-                     q_mean, q_std = agent.predict_ensemble(
-                         state=obs,
-                         training=False,
-                         use_cache=cfg.backtest.use_cache,
-                         cache_key=cache_key,
-                         n_samples=cfg.backtest.ensemble_n_samples,
-                     )
-                     advantage = q_mean - q_mean[0]
-                     action = int(np.argmax(advantage))
-                     confidence = advantage[action]
-                     uncertainty = q_std[action]
- 
-                     pass_adv = get_pass_advantage(action, confidence, cfg)
-                     pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
-                     if pass_adv and pass_uncertainty:
--                        # логируем отказ из-за неопределённости
--                        try:
--                            labels = ["HOLD", "LONG", "SHORT", "CLOSE"]
--                            thr_map = {
--                                1: cfg.backtest.long_action_threshold,
--                                2: cfg.backtest.short_action_threshold,
--                                3: cfg.backtest.close_action_threshold,
--                            }
--                            thr = thr_map.get(action, 0.0)
--                            logging.info(
--                                f": REJECTED {labels[action]}, confidence={confidence:.4f} < thr={thr:.4f}, "
--                                f"uncertainty={uncertainty:.4f} > max_sigma={cfg.backtest.ensemble_max_sigma:.4f}"
--                            )
--                        except Exception:
--                            pass
-+                        logging.info(
-+                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-+                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}, "
-+                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
-+                        )
-                         action = 0
-                 else:
-                     action = agent.select_action(
-                         state=obs,
-                         training=False,
-                         return_qvals=False,
-                         use_cache=cfg.backtest.use_cache,
-                         cache_key=cache_key,
-                     )
-@@
-     metrics = result.finalize()
-     logging.info("\n[Final Metrics]:")
-     for name_result, value in metrics.items():
-         logging.info(f": {name_result:>23s} = {value}")
- 
--    if cfg.backtest.plot_backtest_balance_curve:
--        result.plot_balance(os.path.join(cfg.paths.plot_dir, "continuous_backtest_balance_curve.png"))
-+    if cfg.backtest.plot_backtest_balance_curve:
-+        result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
- 
-     return metrics
- 
- 
- if __name__ == "__main__":
--    # The script is now self-contained and uses the config to decide the data source
-     run_backtest(load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
