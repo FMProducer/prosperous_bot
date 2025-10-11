@@ -239,7 +239,7 @@ def evaluate_agent(
 
     env.reset(seed=env_seed)
     logging.info(f"--- Starting Evaluation: {split_name}, episodes={num_episodes} ---")
-    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes + 1, desc=f"{split_name} in episodes", leave=False):
+    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes, desc=f"{split_name} in episodes", leave=False):
         logging.info(f"--- Validation episode {ep}/{num_episodes} ---")
         obs, _ = env.reset(seed=None, options=None)
         done = False
@@ -257,10 +257,13 @@ def evaluate_agent(
         win_rates.append(win_rate)
 
     metrics = {
-        f"{split_name}_mean_reward": np.mean(rewards),
-        f"{split_name}_mean_pnl": np.mean(pnls),
-        f"{split_name}_win_rate": np.mean(win_rates),
+        f"{split_name}_mean_reward": float(np.mean(rewards)),
+        f"{split_name}_mean_pnl": float(np.mean(pnls)),
+        f"{split_name}_win_rate": float(np.mean(win_rates)),
         f"{split_name}_all_pnls": pnls,
+        # добавить ключи, которых ждут тестовые графики:
+        f"{split_name}_all_reward": rewards,
+        f"{split_name}_all_win_rate": win_rates,
     }
     if current_episode is not None:
         episode_info = f" Ep_{current_episode}"

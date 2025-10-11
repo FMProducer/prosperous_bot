@@ -32,8 +32,8 @@ cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
-cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.5
+cfg.backtest.max_parallel_sessions = 3
+cfg.backtest.position_fraction = 0.32
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.012695

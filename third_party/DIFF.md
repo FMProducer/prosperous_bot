@@ -1,64 +1,56 @@
+---
+
 ## TL;DR
 
-1. В счётчиках вы увеличиваете `term_count` при **любом** `done`, даже если это `truncated=True`. Для чистой статистики лучше считать **только истинные терминалы**.  ([The Farama Foundation][2])
-2. Логируемый ε вы рассчитываете формулой по `train_steps`. Это ок, но **ещё надёжнее** брать его из самого агента (атрибут `epsilon` или `get_epsilon()`), чтобы график ε точно совпадал с тем, что реально использует политика. 
+## Мелкие несоответствия (не критично)
 
-Ниже минимальный патч на оба пункта.
+1. **`tqdm(total)` в `evaluate_agent`:** сейчас `range(1, num_episodes + 1)` и `total=num_episodes + 1` — прогресс-бар будет «длиннее» на 1. Предлагаю `total=num_episodes`. 
+
+2. **Совпадение ключей метрик c графиками теста:** `plot_test_distributions()` ожидает `Test_all_reward` и `Test_all_win_rate`, а `evaluate_agent()` возвращает только `..._all_pnls`. Из-за этого видите предупреждения и пустые графики (код так и пишет warning). Предлагаю добавить два списка в `metrics`. 
 
 ---
 
-## changes.patch (микро-фиксы статистики и логирования ε)
+## Мини-патч (unified diff ≤ 30 строк)
 
 ```diff
 *** Begin Patch
 *** Update File: third_party/rl-trading-binance/train.py
 @@
--            if bool(dones[i]):
--                term_count += 1
-+            # считать "terminated" только когда done и НЕ truncated
-+            if bool(dones[i]) and not bool(trunc[i]):
-+                term_count += 1
-             if bool(trunc[i]):
-                 trunc_count += 1
+-    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes + 1, desc=f"{split_name} in episodes", leave=False):
++    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes, desc=f"{split_name} in episodes", leave=False):
 @@
--        # Логируем ε в точности так же, как в агенте (ε-start/end и актуальные eps_frames)
--        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / max(1, float(agent.eps_frames)))
--        history["epsilons"].append(eps_current)
-+        # Логируем ФАКТИЧЕСКИЙ ε агента (если доступен), иначе падать назад на формулу
-+        eps_current = None
-+        if hasattr(agent, "epsilon"):
-+            try:
-+                eps_current = float(agent.epsilon)
-+            except Exception:
-+                eps_current = None
-+        if eps_current is None and hasattr(agent, "get_epsilon") and callable(agent.get_epsilon):
-+            try:
-+                eps_current = float(agent.get_epsilon())
-+            except Exception:
-+                eps_current = None
-+        if eps_current is None:
-+            eps_current = float(
-+                agent.eps_end + (agent.eps_start - agent.eps_end)
-+                * np.exp(-train_steps / max(1.0, float(agent.eps_frames)))
-+            )
-+        history["epsilons"].append(eps_current)
+-    metrics = {
+-        f"{split_name}_mean_reward": np.mean(rewards),
+-        f"{split_name}_mean_pnl": np.mean(pnls),
+-        f"{split_name}_win_rate": np.mean(win_rates),
+-        f"{split_name}_all_pnls": pnls,
+-    }
++    metrics = {
++        f"{split_name}_mean_reward": float(np.mean(rewards)),
++        f"{split_name}_mean_pnl": float(np.mean(pnls)),
++        f"{split_name}_win_rate": float(np.mean(win_rates)),
++        f"{split_name}_all_pnls": pnls,
++        # добавить ключи, которых ждут тестовые графики:
++        f"{split_name}_all_reward": rewards,
++        f"{split_name}_all_win_rate": win_rates,
++    }
 *** End Patch
 ```
 
-### Почему так
-
-* **VecEnv & финальные наблюдения.** При авто-ресете наблюдение при `done[i]` — уже **первый кадр нового эпизода**, а финальный кадр лежит в `info["terminal_observation"]/["final_observation"]`. Ваш код это учитывает; патч не меняет эту часть. ([stable-baselines3.readthedocs.io][1]) 
-* **`truncated` ≠ `terminated`.** По API Gymnasium, тайм-лимит (`truncated=True`) **не** терминал — таргеты DQN нужно бутстрэпить. Исправление `term_count` делает статистику честной. ([The Farama Foundation][2])
-* **Логирование ε.** Считывание ε прямо из агента гарантирует полное совпадение с политикой `select_action`; при отсутствии атрибута используем формулу-fallback (как сейчас). 
+**Почему это безопасно:** не меняет тренировочную логику; только косметика прогресс-бара и совместимость ключей метрик с уже написанной функцией построения графиков.
 
 ---
 
-## Быстрый чек-лист после мержа
+## Шаг | Действие | KPI/риск
 
-| Шаг | Действие                                                                              | KPI/риск                                         |
-| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 1   | Сравнить `transitions/terminated/truncated` в логах на одинаковом периоде             | Диагностика поведения эпизодов; риск 0           |
-| 2   | Проверить график ε: совпадает с внутренним ε агента                                   | Честные A/B; риск 0                              |
-| 3   | Пересмотреть частоты `val_freq/save_freq` при `n_envs>1` (обычно делят на `num_envs`) | Стабильность логов/сейвов; риск 0. ([GitHub][3]) |
+1 | Оставить реализацию `terminal_observation/final_observation` и `done & ~truncated` как есть | Корректные таргеты DQN; ↓ ложных терминалов. Риск 0. ([The Farama Foundation][2])
+2 | Применить мини-патч на tqdm/метрики | Чистые логи и полноценные тест-графики. Риск 0. 
+3 | (Опционально) масштабировать частоты `val_freq/save_freq` при `num_envs>1` (делить на `num_envs`) | Сопоставимость частот с single-env. Риск 0. ([stable-baselines3.readthedocs.io][1])
 
 ---
+
+### Справки (почему «так правильно»)
+
+* **VecEnv авто-reset и «финальный кадр в info»**: при `done[i]` наблюдение — уже старт нового эпизода; последний кадр хранится как `final_observation`/`terminal_observation`. ([gymnasium.farama.org][4])
+* **`terminated` vs `truncated`**: `truncated` — внешний лимит (напр., по времени), и это **не** терминал — таргеты надо бутстрэпить. ([The Farama Foundation][2])
+* **Экспоненциальный ε-decay**: стандартная формула и практика логирования из фактического ε. ([docs.pytorch.org][3])
