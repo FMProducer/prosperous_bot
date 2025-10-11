@@ -217,7 +217,7 @@ def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> boo
     return pass_adv
 
 
-def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
+def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str, Any]:
     cfg.backtest_mode = True
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
@@ -255,11 +255,15 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.data.other_channels,
     )
 
-    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
-
-    best_path = os.path.join(model_folder, "best.pth")
-    model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+    if model_path_override:
+        model_path = model_path_override
+        logging.info(f"Using model from command line: {model_path}")
+    else:
+        model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
+        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+        best_path = os.path.join(model_folder, "best.pth")
+        model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+        logging.info(f"Using latest model from config: {model_path}")
 
     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
 
@@ -409,4 +413,8 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    run_backtest(load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
+    config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    model_path_arg = sys.argv[2] if len(sys.argv) > 2 else None
+
+    cfg = load_config(config_path) if config_path else default_cfg
+    run_backtest(cfg=cfg, model_path_override=model_path_arg)

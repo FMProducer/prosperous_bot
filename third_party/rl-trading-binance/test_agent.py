@@ -208,7 +208,7 @@ def init_agent(model_path: str, cfg: MasterConfig, cache_path: str = None) -> D3
     return agent
 
 
-def test(cfg: MasterConfig = None):
+def test(cfg: MasterConfig = None, model_path_override: str = None):
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
@@ -265,11 +265,14 @@ def test(cfg: MasterConfig = None):
 
     test_env = TradingEnvironment(**env_kwargs)
 
-    model_folder = os.path.join(cfg.paths.model_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
-    model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
-    model_path = os.path.join(model_folder, model_name)
-    # best_path = os.path.join(model_folder, "best.pth")
-    # model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+    if model_path_override:
+        model_path = model_path_override
+        logging.info(f"Using model from command line: {model_path}")
+    else:
+        model_folder = os.path.join(cfg.paths.model_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
+        model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
+        model_path = os.path.join(model_folder, model_name)
+        logging.info(f"Using latest model from config: {model_path}")
     agent = init_agent(model_path, cfg)
 
     all_sessions = record_all_sessions(test_env, agent, test_seqs, cfg)
@@ -312,4 +315,8 @@ def test(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    test(cfg=load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
+    config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    model_path_arg = sys.argv[2] if len(sys.argv) > 2 else None
+
+    cfg = load_config(config_path) if config_path else default_cfg
+    test(cfg=cfg, model_path_override=model_path_arg)
