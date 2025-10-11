@@ -2,233 +2,129 @@
 
 ## TL;DR
 
-Готов патч, который добавляет **настраиваемое количество копий сред** через конфиг (по умолчанию `2`) и включает **векторизованный сбор опыта** в обучающем цикле. Реализация без новых внешних зависимостей: свой лёгкий `DummyVecEnv` (синхронно в одном процессе). Это безопасная ступень №1. Позже (если будет нужно) можно добавить `SubprocVecEnv` (мультипроцессный backend) тем же интерфейсом. Концептуально это согласуется с Gymnasium/Stable-Baselines3 (`SyncVectorEnv/AsyncVectorEnv`, `DummyVecEnv/SubprocVecEnv`). ([gymnasium.farama.org][2])
+Основная логика векторизации **в целом корректна**: свой `DummyVecEnv` синхронно батчит `reset/step`, автомасштабирование сред и авто-reset реализованы верно; интеграция в `train.py` включается по `cfg.vec.num_envs>1`, как и требовалось. Это соответствует типовым подходам `Dummy/Sync` векторизации в Gym/Gymnasium/SB3. ([stable-baselines3.readthedocs.io][2])
+
+Нашёл **3 важных момента для исправления** и 2 улучшения:
+
+1. **Баг в конфиге:** опечатка `cgf.perf.cudnn_benchmark` → `cfg.perf.cudnn_benchmark`. (Блокер.) 
+2. **Счётчик шагов обучения (`train_steps`) в векторном режиме:** сейчас увеличивается только на `num_envs` раз за эпизод, но реальное число **транзакций** = `число_итераций_цикла * num_envs`. Это влияет на скорость затухания ε, частоты логов и др. (Исправление — считать реальные переходы.) 
+3. **Потеря метрик побед/винрейта в VecEnv-пути:** вы пишете `info = {}`-заглушку, из-за чего `win_rates` в истории становятся нулями. В `DummyVecEnv.step(...)` приходят `infos[i]` для каждой подсреды; их надо агрегировать.
+
+**Улучшения (необязательно, но желательно):**
+— выровнять частоту `agent.learn()` с одиночным режимом (сейчас она проседает: вызов всего один раз на «батч-эпизод» вместо каждого шага);
+— убрать дублирование полей `MasterConfig.num_envs` vs `cfg.vec.num_envs` (оставить только `cfg.vec.num_envs` как единственный источник правды).
 
 ---
 
-## changes.patch
+## Что исправить — минимальный патч (unified diff ≤ 300 строк)
 
-> Все пути — внутри `third_party/rl-trading-binance/`. Патч затрагивает **3 файла** (1 новый) и ~220 строк diff. Конфиг-параметры — в отдельном `VecConfig`.
+### 1) `configs/alpha.py` — опечатка `cgf` → `cfg`
 
-```diff
-*** Begin Patch
-*** Update File: third_party/rl-trading-binance/config.py
-@@
--from typing import List, Literal, Optional
-+from typing import List, Literal, Optional
- 
- import torch
- from pydantic import BaseModel, Field, validator
-@@
- class PathConfig(BaseModel):
-@@
-     def cache_dir(self) -> str:
-         return os.path.join(self.output_dir, "backtest_qval_cache")
- 
-+class VecConfig(BaseModel):
-+    """
-+    Параметры векторизации окружений (Vectorized Environments).
-+    По умолчанию включаем 2 копии тренеровочной среды и синхронный backend.
-+    """
-+    num_envs: int = 2
-+    backend: Literal["dummy", "subproc"] = "dummy"  # "dummy" = 1 процесс, синхронно
-+    start_method: Literal["spawn", "fork", "forkserver"] = "spawn"  # безопасно на всех ОС
-+
- class PerformanceConfig(BaseModel):
-@@
- class MasterConfig(BaseModel):
-@@
--    device: DeviceConfig = DeviceConfig()
-+    device: DeviceConfig = DeviceConfig()
-     paths: PathConfig = PathConfig()
-+    vec: VecConfig = VecConfig()
-     perf: PerformanceConfig = PerformanceConfig()
-     data: DataConfig = DataConfig()
-     seq: SequenceConfig = SequenceConfig()
-     market: MarketConfig = MarketConfig()
-     rl: RLConfig = RLConfig()
-*** End Patch
-```
+
 
 ```diff
 *** Begin Patch
 *** Update File: third_party/rl-trading-binance/configs/alpha.py
 @@
- # ---- Performance presets for i5-6600 + GTX 1070 (Pascal) ----
-@@
- cfg.perf.compile_mode = "reduce-overhead"
- 
-+# ---- Vectorized Environments ----
-+# По умолчанию 2 копии тренеровочной среды, синхронный backend.
-+# На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-+cfg.vec.num_envs = 2
-+cfg.vec.backend = "dummy"      # можно переключить на "subproc" в отдельном PR
-+cfg.vec.start_method = "spawn"
-+
- # python train.py configs/alpha.py
- # python test_agent.py configs/alpha.py
- # python backtest_engine.py configs/alpha.py
- # python optimize_cfg.py configs/alpha.py
+-cgf.perf.cudnn_benchmark = True
++cfg.perf.cudnn_benchmark = True
 *** End Patch
 ```
 
-```diff
-*** Begin Patch
-*** Add File: third_party/rl-trading-binance/vec_env.py
-+from __future__ import annotations
-+import numpy as np
-+from typing import Callable, List, Tuple, Any, Sequence
-+
-+class DummyVecEnv:
-+    """
-+    Минимальная синхронная векторизация без зависимостей (аналог gym Sync/DummyVecEnv):
-+    - хранит N независимых копий среды в одном процессе;
-+    - reset()/step() работают с батчами наблюдений/действий;
-+    - при done/terminated/ truncated — авто-reset соответствующей под-среды.
-+    """
-+    def __init__(self, env_fns: Sequence[Callable[[], Any]]):
-+        assert len(env_fns) >= 1, "Need at least one env_fn"
-+        self.envs = [fn() for fn in env_fns]
-+        self.num_envs = len(self.envs)
-+
-+    def reset(self, seed=None, options=None):
-+        obs_batch, infos = [], []
-+        for i, env in enumerate(self.envs):
-+            s = None if seed is None else (seed + i if isinstance(seed, int) else None)
-+            obs, info = env.reset(seed=s, options=options)
-+            obs_batch.append(obs)
-+            infos.append(info)
-+        return np.stack(obs_batch), infos
-+
-+    def step(self, actions: Sequence[Any]):
-+        assert len(actions) == self.num_envs, "actions must match num_envs"
-+        obs_b, rew_b, done_b, trunc_b, infos = [], [], [], [], []
-+        for env, act in zip(self.envs, actions):
-+            next_obs, reward, done, truncated, info = env.step(act)
-+            # autoreset для закончившихся эпизодов
-+            if done or truncated:
-+                info = dict(info or {})
-+                info["terminal_observation"] = next_obs
-+                next_obs, info_reset = env.reset(seed=None, options=None)
-+                info["reset_info"] = info_reset
-+            obs_b.append(next_obs)
-+            rew_b.append(float(reward))
-+            done_b.append(bool(done))
-+            trunc_b.append(bool(truncated))
-+            infos.append(info)
-+        return (
-+            np.stack(obs_b),
-+            np.asarray(rew_b, dtype=float),
-+            np.asarray(done_b, dtype=bool),
-+            np.asarray(trunc_b, dtype=bool),
-+            infos,
-+        )
-+
-+    def close(self):
-+        for env in self.envs:
-+            close = getattr(env, "close", None)
-+            if callable(close):
-+                close()
-*** End Patch
-```
+### 2) `train.py` — корректный учёт шагов и win-rate в VecEnv-цикле
+
+Идея: `_rollout_vectorized_episode(...)` возвращает **(avg_reward, avg_win_rate, transitions_count)**; в основном цикле мы добавляем `train_steps += transitions_count` и прокидываем win-rate в историю. Основание: векторизованные среды батчат `obs/reward/done` на `n` под-сред одновременно — это и есть причина линейного ускорения по steps/sec при корректном учёте, как описано в SB3/Gymnasium. ([stable-baselines3.readthedocs.io][2])
+
 
 ```diff
 *** Begin Patch
 *** Update File: third_party/rl-trading-binance/train.py
 @@
--from agent import D3QN_PER_Agent
--from config import MasterConfig
-+from agent import D3QN_PER_Agent
-+from config import MasterConfig
-+from vec_env import DummyVecEnv
+-from typing import Any, Dict
++from typing import Any, Dict
 @@
--from trading_environment import TradingEnvironment
-+from trading_environment import TradingEnvironment
-@@
--def main(cfg: MasterConfig) -> None:
-+def _make_train_env_fns(env_kwargs, n: int):
-+    # фабрика копий среды для векторизации
-+    return [lambda ek=env_kwargs: TradingEnvironment(**ek) for _ in range(n)]
-+
+-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
 +def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
-+    """
-+    Один "батч-эпизод" на N средах:
-+    - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
-+    - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
-+    """
-+    obs_batch, _ = train_env.reset(seed=None, options=None)
-+    done_mask = np.zeros(train_env.num_envs, dtype=bool)
-+    ep_reward = np.zeros(train_env.num_envs, dtype=float)
-+    while not done_mask.all():
-+        actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
-+        next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
-+        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
-+        for i in range(train_env.num_envs):
-+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
-+        ep_reward += rewards
-+        obs_batch = next_obs_b
-+        done_mask |= dones  # эпизод для каждой под-среды
-+    return float(ep_reward.mean())
-+
-+def main(cfg: MasterConfig) -> None:
 @@
--    train_env = TradingEnvironment(**env_kwargs)
-+    # --- TRAIN ENV: single vs vectorized ---
-+    if cfg.vec.num_envs > 1:
-+        train_env = DummyVecEnv(_make_train_env_fns(env_kwargs, cfg.vec.num_envs))
-+        logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
-+    else:
-+        train_env = TradingEnvironment(**env_kwargs)
+-    obs_batch, _ = train_env.reset(seed=None, options=None)
++    obs_batch, _ = train_env.reset(seed=None, options=None)
+     done_mask = np.zeros(train_env.num_envs, dtype=bool)
+     ep_reward = np.zeros(train_env.num_envs, dtype=float)
+-    while not done_mask.all():
++    step_iters = 0
++    win_rates = []
++    while not done_mask.all():
+         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
+         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
+         # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
+         for i in range(train_env.num_envs):
+             agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
++            if bool(dones[i]) and isinstance(infos[i], dict):
++                wr = infos[i].get("episode_win_rate", None)
++                if wr is not None:
++                    win_rates.append(float(wr))
+         ep_reward += rewards
+         obs_batch = next_obs_b
+         done_mask |= dones  # эпизод для каждой под-среды
+-    return float(ep_reward.mean())
++        step_iters += 1
++    avg_reward = float(ep_reward.mean())
++    avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
++    transitions_count = int(step_iters * train_env.num_envs)
++    return avg_reward, avg_win_rate, transitions_count
 @@
 -    for ep in counter:
--        obs, _ = train_env.reset(seed=None, options=None)
--        ep_reward = 0.0
--        ep_losses = []
--        done = False
--
--        while not done:
--            action = agent.select_action(obs, training=True)
--            next_obs, reward, done, _, info = train_env.step(action)
--            agent.store_experience(obs, action, reward, next_obs, done)
--            loss = agent.learn()
--            if loss is not None:
--                ep_losses.append(loss)
--            obs = next_obs
--            train_steps += 1
+-        if hasattr(train_env, "num_envs"):  # VecEnv путь
+-            ep_reward = _rollout_vectorized_episode(train_env, agent)
+-            loss = agent.learn()  # один шаг оптимизации после батча (можно увеличить частоту по желанию)
+-            ep_losses = [] if loss is None else [loss]
+-            train_steps += cfg.vec.num_envs
+-            info = {} # placeholder for info
 +    for ep in counter:
 +        if hasattr(train_env, "num_envs"):  # VecEnv путь
-+            ep_reward = _rollout_vectorized_episode(train_env, agent)
-+            loss = agent.learn()  # один шаг оптимизации после батча (можно увеличить частоту по желанию)
++            ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
++            loss = agent.learn()  # TODO: при желании выровнять частоту с одиночным режимом (учащать вызовы)
 +            ep_losses = [] if loss is None else [loss]
-+            train_steps += cfg.vec.num_envs
-+        else:
-+            obs, _ = train_env.reset(seed=None, options=None)
-+            ep_reward = 0.0
-+            ep_losses = []
-+            done = False
-+            while not done:
-+                action = agent.select_action(obs, training=True)
-+                next_obs, reward, done, _, info = train_env.step(action)
-+                agent.store_experience(obs, action, reward, next_obs, done)
-+                loss = agent.learn()
-+                if loss is not None:
-+                    ep_losses.append(loss)
-+                obs = next_obs
-+                train_steps += 1
++            train_steps += transitions
++            info = {"episode_win_rate": ep_win_rate}
+         else:
+             obs, _ = train_env.reset(seed=None, options=None)
+             ep_reward = 0.0
+             ep_losses = []
+             done = False
 @@
--        # logging/plots below (unchanged)
-+        # logging/plots ниже (без изменений)
+-        episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
+-        history["win_rates"].append(info.get("episode_win_rate", 0.0))
++        episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
++        history["win_rates"].append(info.get("episode_win_rate", 0.0))
 *** End Patch
 ```
 
-> Примечания к интеграции: мы **векторизуем только train-среду** (валидация/тест — по-старому, на 1 среде), что соответствует распространённой практике: собирать батчи опыта параллельно, а оценку держать детерминированной и сравнимой. Это также упрощает смену частот логирования/сохранений: помните, что один «батч-эпизод» в VecEnv эквивалентен `n_envs` обычным эпизодам по шагам. SB3 прямо предупреждает пересчитать частоты `eval_freq/save_freq` на `// n_envs`. ([stable-baselines3.readthedocs.io][4])
+> Пояснение: теперь `train_steps` отражает **реальное** число записанных переходов (loops × `num_envs`), а `win_rates` наполняются усреднённым значением по завершившимся под-эпизодам. Это согласуется с поведением векторизованных API (`observations/rewards/dones` — векторы длины `n`), описанным в SB3/Gymnasium. ([stable-baselines3.readthedocs.io][2])
 
 ---
 
-## Что это даст и почему так безопаснее
+## Что ещё стоит иметь в виду
 
-* **Скорость:** теоретически до ~`min(n_envs, ядер CPU/IO узких мест)` ускорения по сбору опыта. В синхронном бэкенде накладные минимальны, и на Windows он часто предпочтительней (нет `spawn` процессов). ([stable-baselines3.readthedocs.io][3])
-* **Простота и совместимость:** без новых зависимостей (не тянем Gym/Gymnasium/SB3), API среды не меняем; только точечные ветки в `train.py`.
-* **Масштабирование позже:** при желании можно добавить `SubprocVecEnv` с multiprocessing (`spawn`/`forkserver`), но это отдельный небольшой PR; PyTorch/CPython советуют избегать «грязного fork», особенно при многопоточности, поэтому `spawn` остаётся дефолтом. ([Python documentation][5])
+* **Частоты логов/валидации/сохранений**: при `n_envs>1` многие фреймворки рекомендуют масштабировать «частоты на шаги» на `// n_envs`, чтобы сравнение с одиночным режимом оставалось корректным. (SB3 guidance по VecEnv). ([stable-baselines3.readthedocs.io][3])
+* **Выбор backend’а:** `DummyVecEnv` (синхронный) часто быстрее на «лёгких» средах из-за отсутствия межпроцессного IPC, в то время как `SubprocVecEnv` выигрывает на «тяжёлых» средах; ровно так описано в руководствах/разборах. ([colab.research.google.com][4])
+* **`cudnn.benchmark`**: включение уместно при фиксированных размерах тензоров (стандартная рекомендация PyTorch). ([PyTorch Forums][5])
+
+---
+
+## Верификация по файлам (ваши загрузки)
+
+* **`config.py`**: `VecConfig` добавлен корректно, `cfg.vec` присутствует в `MasterConfig`. (Есть дублирующее поле `MasterConfig.num_envs`: чтобы избежать конфузов, лучше оставить единый источник — `cfg.vec.num_envs`.) 
+* **`vec_env.py`**: `DummyVecEnv.reset/step` батчат `np.stack` и делают `autoreset` с сохранением `terminal_observation` и `reset_info` — ок. Это соответствует семантике векторизованных сред (батчи `obs/reward/done/info`).  ([gymnasium.farama.org][6])
+* **`train.py`**: интеграция VecEnv включается условно, валидация/тест — на одиночной среде (правильно). Но до патча шаги и win-rate в VecEnv-пути считались некорректно (см. правки выше). 
+* **`configs/alpha.py`**: все перф-флаги ок, **кроме опечатки** `cgf.perf.cudnn_benchmark`. 
+
+---
+
+## Шаг | Действие | KPI/риск
+
+1 | Исправить опечатку `cgf`→`cfg` в `alpha.py` | +надёжность запуска; риск 0
+2 | Учитывать реальное число переходов в VecEnv и возвращать `avg_win_rate` из роллаута | корректная ε-декада, метрики; риск 0
+3 | (Рекомендация) Выровнять частоту `agent.learn()` по шагам (напр., вызывать в каждом шаге цикла VecEnv) | динамика обучения ближе к прежней; риск ↑нагрузка на GPU/CPU
 
 ---
