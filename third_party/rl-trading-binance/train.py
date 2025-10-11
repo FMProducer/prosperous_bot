@@ -16,6 +16,7 @@ from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
 from vec_env import DummyVecEnv
+from subproc_vec_env import SubprocVecEnv
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
@@ -31,8 +32,19 @@ def _make_train_env_fns(env_kwargs, n: int):
     # фабрика копий среды для векторизации
     return [lambda ek=env_kwargs: TradingEnvironment(**ek) for _ in range(n)]
 
+def _make_vec_env(env_kwargs, cfg):
+    n = int(getattr(cfg.vec, "num_envs", 1))
+    if n <= 1:
+        return TradingEnvironment(**env_kwargs)
+    backend = getattr(cfg.vec, "backend", "dummy")
+    if backend == "subproc":
+        start = getattr(cfg.vec, "start_method", "spawn")
+        return SubprocVecEnv(_make_train_env_fns(env_kwargs, n), start_method=start)
+    # fallback: dummy
+    return DummyVecEnv(_make_train_env_fns(env_kwargs, n))
 
-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent) -> Tuple[float, float, int, int, int, float]:
+
+def _rollout_vectorized_episode(train_env, agent: D3QN_PER_Agent) -> Tuple[float, float, int, int, int, float]:
     """
     Один "батч-эпизод" на N средах (auto-reset внутри VecEnv):
     Возвращает:
@@ -50,7 +62,11 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent) -
     step_losses: list[float] = []
     while not done_mask.all():
         prev_done = done_mask.copy()
-        actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
+        # Батч-выбор действий: один forward на весь набор состояний, если агент это поддерживает
+        if hasattr(agent, "select_action_batch"):
+            actions = agent.select_action_batch(obs_batch, training=True)
+        else:
+            actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
         for i in range(train_env.num_envs):
             info_i = infos[i] if isinstance(infos[i], dict) else {}
@@ -451,11 +467,9 @@ def main(cfg: MasterConfig = None):
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
     # --- TRAIN ENV: single vs vectorized ---
-    if cfg.vec.num_envs > 1:
-        train_env = DummyVecEnv(_make_train_env_fns(env_kwargs, cfg.vec.num_envs))
-        logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
-    else:
-        train_env = TradingEnvironment(**env_kwargs)
+    train_env = _make_vec_env(env_kwargs, cfg)
+    if hasattr(train_env, "num_envs"):
+        logging.info(f"Vectorized train env: backend={getattr(cfg.vec,'backend','dummy')} x{train_env.num_envs}")
     env_kwargs["sequences"] = val_seqs
     val_env = TradingEnvironment(**env_kwargs) if val_seqs else None
 

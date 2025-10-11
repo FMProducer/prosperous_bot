@@ -78,7 +78,8 @@ cfg.perf.cudnn_benchmark = True
 # По умолчанию 2 копии тренеровочной среды, синхронный backend.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
 cfg.vec.num_envs = 2
-cfg.vec.backend = "dummy"      # можно переключить на "subproc" в отдельном PR
+# включаем реальный параллелизм для CPU-тяжелых сред
+cfg.vec.backend = "subproc"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шага́ до той же ε.

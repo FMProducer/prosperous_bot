@@ -149,6 +149,33 @@ class D3QN_PER_Agent:
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
         return qvals if return_qvals else int(np.argmax(qvals))
 
+    def select_action_batch(self, states: np.ndarray, training: bool = True) -> list[int]:
+        """
+        Векторизованный epsilon-greedy для батча состояний (N,H,W,C/…):
+        - один forward сети на весь батч (torch.no_grad, AMP при включённом autocast)
+        - argmax по действиям для каждой строки
+        - случайные действия под epsilon по тем же индексам
+        Возвращает список длины N.
+        """
+        self.policy_net.eval()  # детерминированный инференс вне MC-дропаут
+        n = int(states.shape[0])
+        with torch.no_grad(), torch.autocast(device_type="cuda" if self.device.type=="cuda" else "cpu",
+                                             enabled=getattr(self, "amp_enabled", False)):
+            x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
+            q = self.policy_net(x)              # [N, action_dim]
+            greedy = q.argmax(dim=1).detach().to("cpu").numpy()  # [N]
+        # epsilon-greedy по батчу
+        eps = float(self.epsilon if hasattr(self, "epsilon") else
+                    (self.eps_end + (self.eps_start - self.eps_end)
+                     * np.exp(-self.total_steps / max(1, self.eps_frames))))
+        if training and eps > 0.0:
+            rnd = np.random.rand(n) < eps
+            if np.any(rnd):
+                rand_actions = np.random.randint(0, self.action_dim, size=int(rnd.sum()))
+                greedy = greedy.copy()
+                greedy[rnd] = rand_actions
+        return greedy.tolist()
+
     def predict_ensemble(
         self,
         state: np.ndarray,
