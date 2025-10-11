@@ -192,6 +192,26 @@ class BacktestConfig(BaseModel):
 class LoggingConfig(BaseModel):
     per_trial_logs: bool = False
 
+class PerformanceConfig(BaseModel):
+    """
+    Переключатели производительности, управляемые из configs/*.py.
+    Никакой бизнес-логики — только флаги/параметры, которые затем
+    используются в train.py/agent.py (AMP, torch.compile, DataLoader).
+    """
+    # AMP (автокаст и GradScaler)
+    use_amp: bool = False
+    amp_dtype: Literal["float16", "bfloat16"] = "float16"
+    # torch.compile (PyTorch 2.x)
+    compile_mode: Optional[Literal["default", "reduce-overhead", "max-autotune"]] = None
+    compile_dynamic: bool = True
+    # CUDA/CuDNN
+    cudnn_benchmark: bool = True
+    # Параметры загрузки данных
+    dataloader_num_workers: int = 0
+    pin_memory: bool = False
+    persistent_workers: bool = False
+    prefetch_factor: Optional[int] = None
+
 
 class MasterConfig(BaseModel):
     project_name: str = "rl_binance_futures_trading"
@@ -215,6 +235,7 @@ class MasterConfig(BaseModel):
     smart: SmartExplorationConfig = SmartExplorationConfig()
     backtest: BacktestConfig = BacktestConfig()
     logging: LoggingConfig = LoggingConfig()
+    perf: PerformanceConfig = PerformanceConfig()
 
 
 cfg = MasterConfig()

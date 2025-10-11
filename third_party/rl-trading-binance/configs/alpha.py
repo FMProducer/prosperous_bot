@@ -57,6 +57,23 @@ cfg.logging.per_trial_logs = False
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
 
+# ---------------------------
+# ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
+# Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
+# AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) FP16 без тензорных ядер — эффект умеренный, но полезна экономия памяти.
+cfg.perf.use_amp = True
+cfg.perf.amp_dtype = "float16"
+# torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
+cfg.perf.compile_mode = "reduce-overhead"
+cfg.perf.compile_dynamic = True
+# DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
+cfg.perf.dataloader_num_workers = 4
+cfg.perf.pin_memory = True
+cfg.perf.persistent_workers = True
+cfg.perf.prefetch_factor = 2
+# CuDNN Heuristics
+cfg.perf.cudnn_benchmark = True
+
 # python train.py configs/alpha.py
 # python test_agent.py configs/alpha.py
 # python backtest_engine.py configs/alpha.py

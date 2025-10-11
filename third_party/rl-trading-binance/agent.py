@@ -13,6 +13,8 @@ from utils import millify
 
 from model import DuelingQNetwork
 from replay_buffer import PrioritizedReplayBuffer
+from config import PerformanceConfig
+from config import PerformanceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,7 @@ class D3QN_PER_Agent:
         epsilon: float,
         max_gradient_norm: float,
         backtest_cache_path: str = None,
+        perf_cfg: PerformanceConfig = PerformanceConfig(),
     ) -> None:
         self.device = device
         model_kwargs = {
@@ -61,6 +64,21 @@ class D3QN_PER_Agent:
 
         self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
         self.target_net = DuelingQNetwork(**model_kwargs).to(device)
+        
+        if perf_cfg.compile_mode:
+            logger.info(f"Enabling torch.compile with mode='{perf_cfg.compile_mode}' and dynamic={perf_cfg.compile_dynamic}")
+            self.policy_net = torch.compile(
+                self.policy_net,
+                mode=perf_cfg.compile_mode,
+                dynamic=perf_cfg.compile_dynamic,
+            )
+
+        self.use_amp = perf_cfg.use_amp and self.device.type == 'cuda'
+        if self.use_amp:
+            amp_dtype_str = perf_cfg.amp_dtype
+            self.amp_dtype = torch.float16 if amp_dtype_str == "float16" else torch.bfloat16
+            self.scaler = torch.cuda.amp.GradScaler()
+            logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={amp_dtype_str}.")
 
         num_params = sum(p.numel() for p in self.policy_net.parameters())
         logger.info(f"Policy Net with {millify(num_params, precision=1)} parameters created in Agent")
@@ -195,18 +213,29 @@ class D3QN_PER_Agent:
         next_q_values[dones_t] = 0.0
         target_q_values = rewards_t + self.gamma * next_q_values
 
-        current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+        self.optimizer.zero_grad()
+
+        if self.use_amp:
+            with torch.cuda.amp.autocast(dtype=self.amp_dtype):
+                current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+                loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+                weighted_loss = (weights_t * loss).mean()
+
+            self.scaler.scale(weighted_loss).backward()
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+            loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+            weighted_loss = (weights_t * loss).mean()
+            weighted_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+            self.optimizer.step()
+
         td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
         self.replay_buffer.update_priorities(indices, td_errors)
-
-        loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-        weighted_loss = (weights_t * loss).mean()
-
-        self.optimizer.zero_grad()
-        weighted_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
-        self.optimizer.step()
-
         self.learn_steps += 1
         if self.learn_steps % self.target_update_freq == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())

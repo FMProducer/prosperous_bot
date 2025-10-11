@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm, trange
 
 from agent import D3QN_PER_Agent
-from config import MasterConfig
+from config import MasterConfig, PerformanceConfig
 from config import cfg as default_cfg
 from trading_environment import TradingEnvironment
 from utils import (
@@ -416,6 +416,7 @@ def main(cfg: MasterConfig = None):
         epsilon=cfg.per.per_eps,
         max_gradient_norm=cfg.rl.max_gradient_norm,
         backtest_cache_path=None,
+        perf_cfg=cfg.perf,
     )
 
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
