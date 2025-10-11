@@ -44,19 +44,32 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     step_iters = 0
     win_rates = []
     while not done_mask.all():
+        prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
         # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
         for i in range(train_env.num_envs):
-            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
+            # Корректный next_state при done: брать финальное наблюдение из info
+            if bool(dones[i]) and isinstance(infos[i], dict):
+                next_state = infos[i].get("terminal_observation", next_obs_b[i])
+            else:
+                next_state = next_obs_b[i]
+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     win_rates.append(float(wr))
-        ep_reward += rewards
+        # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
+        for i in range(train_env.num_envs):
+            if not prev_done[i]:
+                ep_reward[i] += float(rewards[i])
         obs_batch = next_obs_b
         done_mask |= dones  # эпизод для каждой под-среды
         step_iters += 1
+        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
+        # loss = agent.learn()
+        # if loss is not None:
+        #     ep_losses.append(loss)
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
     transitions_count = int(step_iters * train_env.num_envs)

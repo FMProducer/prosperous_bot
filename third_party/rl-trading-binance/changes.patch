@@ -1,232 +1,40 @@
-*** a/third_party/rl-trading-binance/config.py
---- b/third_party/rl-trading-binance/config.py
-@@
- from typing import List, Literal, Optional
- 
- import torch
- from pydantic import BaseModel, Field, validator
- 
-@@
- class PathConfig(BaseModel):
-@@
-     def cache_dir(self) -> str:
-         return os.path.join(self.output_dir, "backtest_qval_cache")
- 
-+class PerformanceConfig(BaseModel):
-+    # CuDNN
-+    cudnn_benchmark: bool = True
-+    cudnn_deterministic: Optional[bool] = None  # None = не трогаем
-+    # Threads (CPU)
-+    num_threads: Optional[int] = None
-+    # Data transfer
-+    non_blocking_transfer: bool = True
-+    # AMP / dtype
-+    use_amp: bool = False
-+    amp_dtype: Literal["float16", "bfloat16"] = "float16"
-+    # torch.compile (PyTorch 2.x)
-+    compile_model: bool = False
-+    compile_mode: Literal["default", "reduce-overhead", "max-autotune"] = "reduce-overhead"
-+
-@@
- class LoggingConfig(BaseModel):
-     per_trial_logs: bool = False
- 
- 
- class MasterConfig(BaseModel):
-@@
-     backtest_mode: bool = True
- 
-     device: DeviceConfig = DeviceConfig()
-     paths: PathConfig = PathConfig()
-+    perf: PerformanceConfig = PerformanceConfig()
-     data: DataConfig = DataConfig()
-     seq: SequenceConfig = SequenceConfig()
-     market: MarketConfig = MarketConfig()
-     rl: RLConfig = RLConfig()
-     per: PERConfig = PERConfig()
-*** a/third_party/rl-trading-binance/configs/alpha.py
---- b/third_party/rl-trading-binance/configs/alpha.py
-@@
- from config import MasterConfig
- 
- cfg = MasterConfig()
- 
-@@
- cfg.debug.use_final_model = False
-+
-+# ---- Performance presets for i5-6600 + GTX 1070 (Pascal) ----
-+# Прирост от AMP на Pascal обычно невелик (нет Tensor Cores), но экономит память
-+# Источники: NVIDIA/TF/PyTorch (Volta ввела Tensor Cores; старые GPU не ускоряют математику в FP16).
-+# AMP/compile по умолчанию выключены; включайте точечно для экспериментов.
-+cfg.perf.cudnn_benchmark = True
-+cfg.perf.cudnn_deterministic = None
-+cfg.perf.num_threads = 4
-+cfg.perf.non_blocking_transfer = True
-+cfg.perf.use_amp = False           # set True для экономии VRAM, если нужно
-+cfg.perf.amp_dtype = "float16"
-+cfg.perf.compile_model = False     # set True для эксперимента с torch.compile
-+cfg.perf.compile_mode = "reduce-overhead"
- 
- # python train.py configs/alpha.py
- # python test_agent.py configs/alpha.py
- # python backtest_engine.py configs/alpha.py
- # python optimize_cfg.py configs/alpha.py
-*** a/third_party/rl-trading-binance/agent.py
---- b/third_party/rl-trading-binance/agent.py
-@@
--import datetime as dt
-+import datetime as dt
- import logging
- import os
- import pickle
--from typing import Dict, List, Optional, Tuple, Union
-+from typing import Dict, List, Optional, Tuple, Union
-+from contextlib import nullcontext
- 
- import numpy as np
- import torch
- import torch.nn.functional as F
- import torch.optim as optim
-@@
- class D3QN_PER_Agent:
-     def __init__(
-         self,
-         state_shape: Tuple[int, ...],
-         action_dim: int,
-@@
-         max_gradient_norm: float,
-         backtest_cache_path: str = None,
-+        # performance
-+        use_amp: bool = False,
-+        amp_dtype: str = "float16",
-+        compile_model: bool = False,
-+        compile_mode: str = "reduce-overhead",
-+        non_blocking_transfer: bool = True,
-     ) -> None:
--        self.device = device
-+        self.device = device
-+        self.use_amp = bool(use_amp and device.type == "cuda")
-+        self.amp_dtype = torch.float16 if amp_dtype == "float16" else torch.bfloat16
-+        self.non_blocking = bool(non_blocking_transfer)
-@@
--        self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
--        self.target_net = DuelingQNetwork(**model_kwargs).to(device)
-+        self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
-+        self.target_net = DuelingQNetwork(**model_kwargs).to(device)
-+
-+        # Optional compile (PyTorch 2.x)
-+        if compile_model and hasattr(torch, "compile"):
-+            try:
-+                self.policy_net = torch.compile(self.policy_net, mode=compile_mode)
-+                self.target_net = torch.compile(self.target_net, mode=compile_mode)
-+                logger.info(f"torch.compile enabled (mode='{compile_mode}') for policy/target")
-+            except Exception as e:
-+                logger.warning(f"torch.compile failed, fallback to eager mode: {e}")
- 
-         num_params = sum(p.numel() for p in self.policy_net.parameters())
-         logger.info(f"Policy Net with {millify(num_params, precision=1)} parameters created in Agent")
-         logger.info(f"Target Net with {millify(num_params, precision=1)} parameters created in Agent")
-@@
--        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
-+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
-+        # AMP scaler
-+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
-+        self.autocast = (
-+            torch.cuda.amp.autocast(dtype=self.amp_dtype) if self.use_amp else nullcontext
-+        )
-@@
-     def learn(self) -> Optional[float]:
-         if len(self.replay_buffer) < self.train_start:
-             return None
- 
--        (states, actions, rewards, next_states, dones, indices, weights) = self.replay_buffer.sample(self.batch_size)
--
--        states_t = torch.from_numpy(states).float().to(self.device)
--        actions_t = torch.from_numpy(actions).long().to(self.device)
--        rewards_t = torch.from_numpy(rewards).float().to(self.device)
--        next_states_t = torch.from_numpy(next_states).float().to(self.device)
--        dones_t = torch.from_numpy(dones).bool().to(self.device)
--        weights_t = torch.from_numpy(weights).float().to(self.device)
--
--        next_actions = self.policy_net(next_states_t).argmax(dim=1)
--        next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
--        next_q_values[dones_t] = 0.0
--        target_q_values = rewards_t + self.gamma * next_q_values
--
--        current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
--        td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
--        self.replay_buffer.update_priorities(indices, td_errors)
--
--        loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
--        weighted_loss = (weights_t * loss).mean()
--
--        self.optimizer.zero_grad()
--        weighted_loss.backward()
--        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
--        self.optimizer.step()
-+        (states, actions, rewards, next_states, dones, indices, weights) = self.replay_buffer.sample(self.batch_size)
-+
-+        states_t = torch.from_numpy(states).float().to(self.device, non_blocking=self.non_blocking)
-+        actions_t = torch.from_numpy(actions).long().to(self.device, non_blocking=self.non_blocking)
-+        rewards_t = torch.from_numpy(rewards).float().to(self.device, non_blocking=self.non_blocking)
-+        next_states_t = torch.from_numpy(next_states).float().to(self.device, non_blocking=self.non_blocking)
-+        dones_t = torch.from_numpy(dones).bool().to(self.device, non_blocking=self.non_blocking)
-+        weights_t = torch.from_numpy(weights).float().to(self.device, non_blocking=self.non_blocking)
-+
-+        with (self.autocast() if self.use_amp else nullcontext()):
-+            next_actions = self.policy_net(next_states_t).argmax(dim=1)
-+            next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
-+            next_q_values[dones_t] = 0.0
-+            target_q_values = rewards_t + self.gamma * next_q_values
-+
-+            current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
-+            td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
-+            self.replay_buffer.update_priorities(indices, td_errors)
-+
-+            loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-+            weighted_loss = (weights_t * loss).mean()
-+
-+        self.optimizer.zero_grad(set_to_none=True)
-+        if self.use_amp:
-+            self.scaler.scale(weighted_loss).backward()
-+            self.scaler.unscale_(self.optimizer)  # требуется перед clip_grad_norm_
-+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
-+            self.scaler.step(self.optimizer)
-+            self.scaler.update()
-+        else:
-+            weighted_loss.backward()
-+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
-+            self.optimizer.step()
- 
-         self.learn_steps += 1
-         if self.learn_steps % self.target_update_freq == 0:
-             self.target_net.load_state_dict(self.policy_net.state_dict())
- 
-         return float(weighted_loss.item())
-*** a/third_party/rl-trading-binance/train.py
---- b/third_party/rl-trading-binance/train.py
-@@
-     setup_logging(session_name, cfg)
-     set_random_seed(cfg.random_seed)
--    if cfg.device.device.type == "cuda":
--        torch.backends.cudnn.benchmark = True
-+    if cfg.device.device.type == "cuda":
-+        torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
-+        if cfg.perf.cudnn_deterministic is not None:
-+            torch.backends.cudnn.deterministic = cfg.perf.cudnn_deterministic
-+    if cfg.perf.num_threads is not None:
-+        torch.set_num_threads(cfg.perf.num_threads)
-@@
-     agent = D3QN_PER_Agent(
-         state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
-         action_dim=cfg.market.num_actions,
-@@
-         max_gradient_norm=cfg.rl.max_gradient_norm,
-         backtest_cache_path=None,
-+        # performance flags
-+        use_amp=cfg.perf.use_amp,
-+        amp_dtype=cfg.perf.amp_dtype,
-+        compile_model=cfg.perf.compile_model,
-+        compile_mode=cfg.perf.compile_mode,
-+        non_blocking_transfer=cfg.perf.non_blocking_transfer,
-     )
+diff --git a/third_party/rl-trading-binance/train.py b/third_party/rl-trading-binance/train.py
+index a6bb9d0..118102c 100644
+--- a/third_party/rl-trading-binance/train.py
++++ b/third_party/rl-trading-binance/train.py
+@@ -44,19 +44,32 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
+     step_iters = 0
+     win_rates = []
+     while not done_mask.all():
++        prev_done = done_mask.copy()
+         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
+         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
+-        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
++        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
+         for i in range(train_env.num_envs):
+-            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
++            # Корректный next_state при done: брать финальное наблюдение из info
++            if bool(dones[i]) and isinstance(infos[i], dict):
++                next_state = infos[i].get("terminal_observation", next_obs_b[i])
++            else:
++                next_state = next_obs_b[i]
++            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
+             if bool(dones[i]) and isinstance(infos[i], dict):
+                 wr = infos[i].get("episode_win_rate", None)
+                 if wr is not None:
+                     win_rates.append(float(wr))
+-        ep_reward += rewards
++        # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
++        for i in range(train_env.num_envs):
++            if not prev_done[i]:
++                ep_reward[i] += float(rewards[i])
+         obs_batch = next_obs_b
+         done_mask |= dones  # эпизод для каждой под-среды
+         step_iters += 1
++        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
++        # loss = agent.learn()
++        # if loss is not None:
++        #     ep_losses.append(loss)
+     avg_reward = float(ep_reward.mean())
+     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
+     transitions_count = int(step_iters * train_env.num_envs)
