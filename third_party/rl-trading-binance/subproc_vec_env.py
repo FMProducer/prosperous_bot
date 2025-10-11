@@ -19,10 +19,14 @@ def _worker(remote, env_fn):
             elif cmd == _CMD_STEP:
                 action = data
                 obs, rew, terminated, truncated, info = env.step(action)
-                # autoreset семантика как в векторных обёртках: если эпизод кончился — сразу reset
+                # autoreset семантика: если эпизод кончился — сразу reset
+                # ⚠️ Но НЕ пересылаем финальный кадр при terminated (он не нужен DQN-таргету:
+                #     next_Q будет занулён). Передаём финальный кадр ТОЛЬКО при truncated,
+                #     где нужен бутстрап корректного s'.
                 if terminated or truncated:
                     info = dict(info or {})
-                    info["terminal_observation"] = obs
+                    if truncated:
+                        info["terminal_observation"] = obs  # финальный кадр нужен для bootstrap
                     obs, info_reset = env.reset(seed=None, options=None)
                     info["reset_info"] = info_reset
                 remote.send((obs, float(rew), bool(terminated), bool(truncated), info))

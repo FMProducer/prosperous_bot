@@ -160,8 +160,10 @@ class D3QN_PER_Agent:
         """
         self.policy_net.eval()  # детерминированный инференс вне MC-дропаут
         n = int(states.shape[0])
-        with torch.no_grad(), torch.autocast(device_type="cuda" if self.device.type=="cuda" else "cpu",
-                                             enabled=getattr(self, "amp_enabled", False)):
+        with torch.no_grad(), torch.autocast(
+            device_type=("cuda" if self.device.type == "cuda" else "cpu"),
+            enabled=getattr(self, "use_amp", False)
+        ):
             x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
             q = self.policy_net(x)              # [N, action_dim]
             greedy = q.argmax(dim=1).detach().to("cpu").numpy()  # [N]

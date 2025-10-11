@@ -32,8 +32,8 @@ cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
-cfg.backtest.max_parallel_sessions = 3
-cfg.backtest.position_fraction = 0.32
+cfg.backtest.max_parallel_sessions = 4
+cfg.backtest.position_fraction = 0.25
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.012695
@@ -78,8 +78,9 @@ cfg.perf.cudnn_benchmark = True
 # По умолчанию 2 копии тренеровочной среды, синхронный backend.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
 cfg.vec.num_envs = 2
-# включаем реальный параллелизм для CPU-тяжелых сред
-cfg.vec.backend = "subproc"
+# По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
+# SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
+cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шага́ до той же ε.
