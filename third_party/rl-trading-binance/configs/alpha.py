@@ -72,7 +72,14 @@ cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = True
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
-cfg.perf.cudnn_benchmark = True
+cgf.perf.cudnn_benchmark = True
+
+# ---- Vectorized Environments ----
+# По умолчанию 2 копии тренеровочной среды, синхронный backend.
+# На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
+cfg.vec.num_envs = 2
+cfg.vec.backend = "dummy"      # можно переключить на "subproc" в отдельном PR
+cfg.vec.start_method = "spawn"
 
 # python train.py configs/alpha.py
 # python test_agent.py configs/alpha.py

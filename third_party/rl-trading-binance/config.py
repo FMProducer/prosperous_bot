@@ -45,6 +45,16 @@ class PathConfig(BaseModel):
         return os.path.join(self.output_dir, "backtest_qval_cache")
 
 
+class VecConfig(BaseModel):
+    """
+    Параметры векторизации окружений (Vectorized Environments).
+    По умолчанию включаем 2 копии тренеровочной среды и синхронный backend.
+    """
+    num_envs: int = 2
+    backend: Literal["dummy", "subproc"] = "dummy"  # "dummy" = 1 процесс, синхронно
+    start_method: Literal["spawn", "fork", "forkserver"] = "spawn"  # безопасно на всех ОС
+
+
 class DataConfig(BaseModel):
     expected_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close", "volume", "num_trades"]
     data_channels: List[str] = expected_channels.copy()
@@ -223,6 +233,7 @@ class MasterConfig(BaseModel):
 
     device: DeviceConfig = DeviceConfig()
     paths: PathConfig = PathConfig()
+    vec: VecConfig = VecConfig()
     data: DataConfig = DataConfig()
     seq: SequenceConfig = SequenceConfig()
     market: MarketConfig = MarketConfig()

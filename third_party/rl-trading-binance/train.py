@@ -13,8 +13,9 @@ import torch
 from tqdm import tqdm, trange
 
 from agent import D3QN_PER_Agent
-from config import MasterConfig, PerformanceConfig
+from config import MasterConfig
 from config import cfg as default_cfg
+from vec_env import DummyVecEnv
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
@@ -24,6 +25,32 @@ from utils import (
     set_random_seed,
     setup_logging,
 )
+
+
+def _make_train_env_fns(env_kwargs, n: int):
+    # фабрика копий среды для векторизации
+    return [lambda ek=env_kwargs: TradingEnvironment(**ek) for _ in range(n)]
+
+
+def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
+    """
+    Один "батч-эпизод" на N средах:
+    - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
+    - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
+    """
+    obs_batch, _ = train_env.reset(seed=None, options=None)
+    done_mask = np.zeros(train_env.num_envs, dtype=bool)
+    ep_reward = np.zeros(train_env.num_envs, dtype=float)
+    while not done_mask.all():
+        actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
+        next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
+        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
+        for i in range(train_env.num_envs):
+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
+        ep_reward += rewards
+        obs_batch = next_obs_b
+        done_mask |= dones  # эпизод для каждой под-среды
+    return float(ep_reward.mean())
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -386,7 +413,12 @@ def main(cfg: MasterConfig = None):
         "action_history_len": cfg.seq.action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
-    train_env = TradingEnvironment(**env_kwargs)
+    # --- TRAIN ENV: single vs vectorized ---
+    if cfg.vec.num_envs > 1:
+        train_env = DummyVecEnv(_make_train_env_fns(env_kwargs, cfg.vec.num_envs))
+        logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
+    else:
+        train_env = TradingEnvironment(**env_kwargs)
     env_kwargs["sequences"] = val_seqs
     val_env = TradingEnvironment(**env_kwargs) if val_seqs else None
 
@@ -435,26 +467,32 @@ def main(cfg: MasterConfig = None):
     }
 
     best_val_metric = float("-inf")
+    train_steps = 0
 
     train_env.reset(seed=cfg.global_env_seed)
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
-        obs, _ = train_env.reset(seed=None, options=None)
-        ep_reward = 0.0
-        ep_losses = []
-        done = False
-
-        while not done:
-            action = agent.select_action(obs, training=True)
-            next_obs, reward, done, _, info = train_env.step(action)
-            agent.store_experience(obs, action, reward, next_obs, done)
-            loss = agent.learn()
-            agent.increment_step()
-            obs = next_obs
-
-            ep_reward += reward
-            if loss is not None:
-                ep_losses.append(loss)
+        if hasattr(train_env, "num_envs"):  # VecEnv путь
+            ep_reward = _rollout_vectorized_episode(train_env, agent)
+            loss = agent.learn()  # один шаг оптимизации после батча (можно увеличить частоту по желанию)
+            ep_losses = [] if loss is None else [loss]
+            train_steps += cfg.vec.num_envs
+            info = {} # placeholder for info
+        else:
+            obs, _ = train_env.reset(seed=None, options=None)
+            ep_reward = 0.0
+            ep_losses = []
+            done = False
+            while not done:
+                action = agent.select_action(obs, training=True)
+                next_obs, reward, done, _, info = train_env.step(action)
+                agent.store_experience(obs, action, reward, next_obs, done)
+                loss = agent.learn()
+                if loss is not None:
+                    ep_losses.append(loss)
+                obs = next_obs
+                train_steps += 1
+                ep_reward += reward
 
         history["episodes"].append(ep)
         history["rewards"].append(ep_reward)
@@ -470,7 +508,7 @@ def main(cfg: MasterConfig = None):
         mean_loss_N = float(np.mean(episode_losses_deque)) if episode_losses_deque else 0.0
         history["mean_losses_N"].append(mean_loss_N)
 
-        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-agent.total_steps / agent.eps_frames)
+        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
         episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
