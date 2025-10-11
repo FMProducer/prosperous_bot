@@ -175,17 +175,21 @@ class D3QN_PER_Agent:
         mean_q, std_q = self.get_mean_std_q(state, n_samples)
         return mean_q, std_q
 
-    def get_mean_std_q(self, state: np.ndarray, n_samples: int = 10) -> Tuple[np.ndarray, np.ndarray]:
-        # enable Dropout
+    def get_mean_std_q(self, state: np.ndarray, n_samples: int = 5) -> Tuple[float, float]:
+        # Включаем стохастику (dropout), но сохраняем и восстанавливаем исходный режим
+        prev_training = self.policy_net.training
         self.policy_net.train()
-        tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        x = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        q_list = []
         with torch.no_grad():
-            q_samples = [self.policy_net(tensor).cpu().numpy().squeeze(0) for _ in range(n_samples)]
-
-        q_array = np.stack(q_samples)
-        mean_q = q_array.mean(axis=0)
-        std_q = q_array.std(axis=0)
-        return mean_q, std_q
+            for _ in range(n_samples):
+                q = self.policy_net(x).squeeze(0).detach().cpu().numpy()
+                q_list.append(q)
+        # Восстанавливаем исходный режим (детерминированный инференс вне MC-оценки)
+        if not prev_training:
+            self.policy_net.eval()
+        q_arr = np.stack(q_list, axis=0)
+        return float(q_arr.mean()), float(q_arr.std(ddof=1) if n_samples > 1 else 0.0)
 
     def store_experience(
         self,
@@ -317,12 +321,15 @@ class D3QN_PER_Agent:
                 self.qval_cache = pickle.load(f)
             logger.info(f"\nLoaded Q-value cache from {self.cache_path} ({len(self.qval_cache)} entries).")
 
-    def save_disk_cache(self):
-        if not os.path.exists(self.cache_path):
-            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-            with open(self.cache_path, "wb") as f:
-                pickle.dump(self.qval_cache, f)
-            logger.info(f"\nSaved Q-value cache to {self.cache_path} ({len(self.qval_cache)} entries).")
+    def save_disk_cache(self) -> None:
+        # Атомарная перезапись кэша: временный файл + os.replace
+        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        tmp_path = self.cache_path + ".tmp"
+        with open(tmp_path, "wb") as f:
+            pickle.dump(self.qval_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+            f.flush(); os.fsync(f.fileno())
+        os.replace(tmp_path, self.cache_path)
+        logger.info(f"Q-value cache saved at {self.cache_path}")
 
     def clear_disk_cache(self):
         if os.path.exists(self.cache_path):
