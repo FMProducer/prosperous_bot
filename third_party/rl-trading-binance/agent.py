@@ -249,17 +249,67 @@ class D3QN_PER_Agent:
         self.total_steps += 1
 
     def save_model(self, path: str) -> None:
+        """
+        Сохраняет ПОЛНЫЙ чекпоинт для безопасного возобновления обучения:
+        - policy/target state_dict
+        - optimizer state_dict
+        - GradScaler (если AMP включён)
+        - meta (счётчики шагов/eps-параметры и UTC-время)
+        Обратная совместимость: загрузка старых .pth с одним state_dict поддерживается в load_model().
+        """
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save(self.policy_net.state_dict(), path)
-        logger.info(f"Model saved to {path}")
+        checkpoint = {
+            "format": "d3qn_per_agent_v1",
+            "created_utc": dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "policy_state": self.policy_net.state_dict(),
+            "target_state": self.target_net.state_dict(),
+            "optimizer_state": self.optimizer.state_dict(),
+            "scaler_state": (self.scaler.state_dict() if hasattr(self, "scaler") else None),
+            "meta": {
+                "total_steps": int(self.total_steps),
+                "learn_steps": int(self.learn_steps),
+                "eps_start": float(self.eps_start),
+                "eps_end": float(self.eps_end),
+                "eps_frames": int(self.eps_frames),
+            },
+        }
+        torch.save(checkpoint, path)
+        logger.info(f"Checkpoint saved to {path} (policy+target+optimizer+scaler+meta).")
 
-    def load_model(self, path: str) -> None:
-        state_dict = torch.load(path, map_location=self.device)
-        self.policy_net.load_state_dict(state_dict)
-        self.target_net.load_state_dict(state_dict)
+    def load_model(self, path: str, strict: bool = True) -> None:
+        """
+        Загружает либо новый чекпоинт (см. save_model), либо старый .pth с единственным state_dict.
+        Аргумент strict пробрасывается в load_state_dict для гибкости при мелких несовпадениях ключей.
+        """
+        obj = torch.load(path, map_location=self.device)
+        # Новый формат (чекпоинт)
+        if isinstance(obj, dict) and "policy_state" in obj:
+            self.policy_net.load_state_dict(obj["policy_state"], strict=strict)
+            self.target_net.load_state_dict(obj.get("target_state", obj["policy_state"]), strict=strict)
+            opt_state = obj.get("optimizer_state")
+            if opt_state:
+                try:
+                    self.optimizer.load_state_dict(opt_state)
+                except Exception as e:
+                    logger.warning(f"Optimizer state load skipped: {e}")
+            scaler_state = obj.get("scaler_state")
+            if hasattr(self, "scaler") and scaler_state:
+                try:
+                    self.scaler.load_state_dict(scaler_state)
+                except Exception as e:
+                    logger.warning(f"GradScaler state load skipped: {e}")
+            meta = obj.get("meta", {}) or {}
+            self.total_steps = int(meta.get("total_steps", self.total_steps))
+            self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
+            kind = "checkpoint"
+        else:
+            # Старый формат (только веса сети)
+            self.policy_net.load_state_dict(obj, strict=strict)
+            self.target_net.load_state_dict(obj, strict=strict)
+            kind = "weights-only"
         self.policy_net.eval()
         self.target_net.eval()
-        logger.info(f"Model loaded from {path}")
+        logger.info(f"Model loaded from {path} ({kind}).")
 
     def _load_disk_cache(self):
         if os.path.exists(self.cache_path):
