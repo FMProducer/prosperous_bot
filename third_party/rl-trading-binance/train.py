@@ -51,7 +51,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
         for i in range(train_env.num_envs):
             # Корректный next_state при done: брать финальное наблюдение из info
             if bool(dones[i]) and isinstance(infos[i], dict):
-                next_state = infos[i].get("terminal_observation", next_obs_b[i])
+                next_state = infos[i].get("terminal_observation",
+                               infos[i].get("final_observation", next_obs_b[i]))
             else:
                 next_state = next_obs_b[i]
             agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
