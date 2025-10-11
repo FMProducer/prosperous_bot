@@ -65,7 +65,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent) -
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     win_rates.append(float(wr))
-            if bool(dones[i]):
+            # считать "terminated" только когда done и НЕ truncated
+            if bool(dones[i]) and not bool(trunc[i]):
                 term_count += 1
             if bool(trunc[i]):
                 trunc_count += 1
@@ -558,8 +559,23 @@ def main(cfg: MasterConfig = None):
         mean_loss_N = float(np.mean(episode_losses_deque)) if episode_losses_deque else 0.0
         history["mean_losses_N"].append(mean_loss_N)
 
-        # Логируем ε в точности так же, как в агенте (ε-start/end и актуальные eps_frames)
-        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / max(1, float(agent.eps_frames)))
+        # Логируем ФАКТИЧЕСКИЙ ε агента (если доступен), иначе падать назад на формулу
+        eps_current = None
+        if hasattr(agent, "epsilon"):
+            try:
+                eps_current = float(agent.epsilon)
+            except Exception:
+                eps_current = None
+        if eps_current is None and hasattr(agent, "get_epsilon") and callable(agent.get_epsilon):
+            try:
+                eps_current = float(agent.get_epsilon())
+            except Exception:
+                eps_current = None
+        if eps_current is None:
+            eps_current = float(
+                agent.eps_end + (agent.eps_start - agent.eps_end)
+                * np.exp(-train_steps / max(1.0, float(agent.eps_frames)))
+            )
         history["epsilons"].append(eps_current)
 
         episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
