@@ -41,16 +41,26 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     obs_batch, _ = train_env.reset(seed=None, options=None)
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
+    step_iters = 0
+    win_rates = []
     while not done_mask.all():
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
         # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
         for i in range(train_env.num_envs):
             agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
+            if bool(dones[i]) and isinstance(infos[i], dict):
+                wr = infos[i].get("episode_win_rate", None)
+                if wr is not None:
+                    win_rates.append(float(wr))
         ep_reward += rewards
         obs_batch = next_obs_b
         done_mask |= dones  # эпизод для каждой под-среды
-    return float(ep_reward.mean())
+        step_iters += 1
+    avg_reward = float(ep_reward.mean())
+    avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
+    transitions_count = int(step_iters * train_env.num_envs)
+    return avg_reward, avg_win_rate, transitions_count
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -473,11 +483,11 @@ def main(cfg: MasterConfig = None):
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if hasattr(train_env, "num_envs"):  # VecEnv путь
-            ep_reward = _rollout_vectorized_episode(train_env, agent)
-            loss = agent.learn()  # один шаг оптимизации после батча (можно увеличить частоту по желанию)
+            ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
+            loss = agent.learn()  # TODO: при желании выровнять частоту с одиночным режимом (учащать вызовы)
             ep_losses = [] if loss is None else [loss]
-            train_steps += cfg.vec.num_envs
-            info = {} # placeholder for info
+            train_steps += transitions
+            info = {"episode_win_rate": ep_win_rate}
         else:
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward = 0.0

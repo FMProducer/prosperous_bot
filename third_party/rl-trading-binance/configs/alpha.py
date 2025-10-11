@@ -72,7 +72,7 @@ cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = True
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
-cgf.perf.cudnn_benchmark = True
+cfg.perf.cudnn_benchmark = True
 
 # ---- Vectorized Environments ----
 # По умолчанию 2 копии тренеровочной среды, синхронный backend.
