@@ -305,7 +305,7 @@ def main(cfg: MasterConfig = None):
     setup_logging(session_name, cfg)
     set_random_seed(cfg.random_seed)
     if cfg.device.device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
 
     models_dir = os.path.join(cfg.paths.model_dir, session_name)
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)

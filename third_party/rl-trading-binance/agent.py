@@ -14,7 +14,6 @@ from utils import millify
 from model import DuelingQNetwork
 from replay_buffer import PrioritizedReplayBuffer
 from config import PerformanceConfig
-from config import PerformanceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +71,9 @@ class D3QN_PER_Agent:
                 mode=perf_cfg.compile_mode,
                 dynamic=perf_cfg.compile_dynamic,
             )
+            self.target_net = torch.compile(self.target_net,
+                                    mode=perf_cfg.compile_mode,
+                                    dynamic=perf_cfg.compile_dynamic)
 
         self.use_amp = perf_cfg.use_amp and self.device.type == 'cuda'
         if self.use_amp:
@@ -208,10 +210,11 @@ class D3QN_PER_Agent:
         dones_t = torch.from_numpy(dones).bool().to(self.device)
         weights_t = torch.from_numpy(weights).float().to(self.device)
 
-        next_actions = self.policy_net(next_states_t).argmax(dim=1)
-        next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
-        next_q_values[dones_t] = 0.0
-        target_q_values = rewards_t + self.gamma * next_q_values
+        with torch.no_grad():
+            next_actions = self.policy_net(next_states_t).argmax(dim=1)
+            next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+            next_q_values[dones_t] = 0.0
+            target_q_values = rewards_t + self.gamma * next_q_values
 
         self.optimizer.zero_grad()
 
