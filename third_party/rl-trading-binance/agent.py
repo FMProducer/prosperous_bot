@@ -49,6 +49,7 @@ class D3QN_PER_Agent:
         perf_cfg: PerformanceConfig = PerformanceConfig(),
     ) -> None:
         self.device = device
+        self.action_dim = action_dim
         model_kwargs = {
             "input_shape": state_shape,
             "action_dim": action_dim,
