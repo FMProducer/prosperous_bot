@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from collections import deque
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,7 +16,6 @@ from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
 from vec_env import DummyVecEnv
-from subproc_vec_env import SubprocVecEnv
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
@@ -32,75 +31,50 @@ def _make_train_env_fns(env_kwargs, n: int):
     # фабрика копий среды для векторизации
     return [lambda ek=env_kwargs: TradingEnvironment(**ek) for _ in range(n)]
 
-def _make_vec_env(env_kwargs, cfg):
-    n = int(getattr(cfg.vec, "num_envs", 1))
-    if n <= 1:
-        return TradingEnvironment(**env_kwargs)
-    backend = getattr(cfg.vec, "backend", "dummy")
-    if backend == "subproc":
-        start = getattr(cfg.vec, "start_method", "spawn")
-        return SubprocVecEnv(_make_train_env_fns(env_kwargs, n), start_method=start)
-    # fallback: dummy
-    return DummyVecEnv(_make_train_env_fns(env_kwargs, n))
 
-
-def _rollout_vectorized_episode(train_env, agent: D3QN_PER_Agent) -> Tuple[float, float, int, int, int, float]:
+def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     """
-    Один "батч-эпизод" на N средах (auto-reset внутри VecEnv):
-    Возвращает:
-      ep_reward_sum_avg, ep_win_rate_avg, transitions, term_count, trunc_count, avg_loss
-    Примечание: при done[i] VecEnv уже отдал наблюдение следующего эпизода, поэтому
-    для корректного next_state берём info["terminal_observation"] / "final_observation".
-    См. предупреждение SB3 о VecEnv auto-reset.  # :contentReference[oaicite:4]{index=4}
+    Один "батч-эпизод" на N средах:
+    - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
+    - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
     """
     obs_batch, _ = train_env.reset(seed=None, options=None)
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
-    transitions = 0
-    term_count, trunc_count = 0, 0
-    win_rates: list[float] = []
-    step_losses: list[float] = []
+    step_iters = 0
+    win_rates = []
     while not done_mask.all():
         prev_done = done_mask.copy()
-        # Батч-выбор действий: один forward на весь набор состояний, если агент это поддерживает
-        if hasattr(agent, "select_action_batch"):
-            actions = agent.select_action_batch(obs_batch, training=True)
-        else:
-            actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
+        actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
+        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
         for i in range(train_env.num_envs):
-            info_i = infos[i] if isinstance(infos[i], dict) else {}
-            # финальное наблюдение может называться "terminal_observation" (Gymnasium) или "final_observation" (старые обёртки)
-            next_state = info_i.get("terminal_observation",
-                                    info_i.get("final_observation", next_obs_b[i]))
-            # Для бустрэппинга: terminal = terminated (а не truncated).
-            # В DQN next_Q зануляется только для истинно терминальных состояний.  # :contentReference[oaicite:5]{index=5}
-            terminal = bool(dones[i]) and not bool(trunc[i])
-            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, terminal)
+            # Корректный next_state при done: брать финальное наблюдение из info
+            if bool(dones[i]) and isinstance(infos[i], dict):
+                next_state = infos[i].get("terminal_observation",
+                               infos[i].get("final_observation", next_obs_b[i]))
+            else:
+                next_state = next_obs_b[i]
+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     win_rates.append(float(wr))
-            # считать "terminated" только когда done и НЕ truncated
-            if bool(dones[i]) and not bool(trunc[i]):
-                term_count += 1
-            if bool(trunc[i]):
-                trunc_count += 1
         # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
         for i in range(train_env.num_envs):
             if not prev_done[i]:
                 ep_reward[i] += float(rewards[i])
         obs_batch = next_obs_b
-        done_mask |= dones
-        transitions += train_env.num_envs
-        # Частота обучения при VecEnv: один learn() на каждый векторный шаг (паритет с single-env по шагам)
-        loss = agent.learn()
-        if loss is not None:
-            step_losses.append(float(loss))
-    ep_reward_mean = float(np.mean(ep_reward)) if ep_reward.size else 0.0
-    ep_win_rate_mean = float(np.mean(win_rates)) if win_rates else 0.0
-    avg_loss = float(np.mean(step_losses)) if step_losses else 0.0
-    return ep_reward_mean, ep_win_rate_mean, transitions, term_count, trunc_count, avg_loss
+        done_mask |= dones  # эпизод для каждой под-среды
+        step_iters += 1
+        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
+        # loss = agent.learn()
+        # if loss is not None:
+        #     ep_losses.append(loss)
+    avg_reward = float(ep_reward.mean())
+    avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
+    transitions_count = int(step_iters * train_env.num_envs)
+    return avg_reward, avg_win_rate, transitions_count
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -255,7 +229,7 @@ def evaluate_agent(
 
     env.reset(seed=env_seed)
     logging.info(f"--- Starting Evaluation: {split_name}, episodes={num_episodes} ---")
-    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes, desc=f"{split_name} in episodes", leave=False):
+    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes + 1, desc=f"{split_name} in episodes", leave=False):
         logging.info(f"--- Validation episode {ep}/{num_episodes} ---")
         obs, _ = env.reset(seed=None, options=None)
         done = False
@@ -273,13 +247,10 @@ def evaluate_agent(
         win_rates.append(win_rate)
 
     metrics = {
-        f"{split_name}_mean_reward": float(np.mean(rewards)),
-        f"{split_name}_mean_pnl": float(np.mean(pnls)),
-        f"{split_name}_win_rate": float(np.mean(win_rates)),
+        f"{split_name}_mean_reward": np.mean(rewards),
+        f"{split_name}_mean_pnl": np.mean(pnls),
+        f"{split_name}_win_rate": np.mean(win_rates),
         f"{split_name}_all_pnls": pnls,
-        # добавить ключи, которых ждут тестовые графики:
-        f"{split_name}_all_reward": rewards,
-        f"{split_name}_all_win_rate": win_rates,
     }
     if current_episode is not None:
         episode_info = f" Ep_{current_episode}"
@@ -467,9 +438,11 @@ def main(cfg: MasterConfig = None):
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
     # --- TRAIN ENV: single vs vectorized ---
-    train_env = _make_vec_env(env_kwargs, cfg)
-    if hasattr(train_env, "num_envs"):
-        logging.info(f"Vectorized train env: backend={getattr(cfg.vec,'backend','dummy')} x{train_env.num_envs}")
+    if cfg.vec.num_envs > 1:
+        train_env = DummyVecEnv(_make_train_env_fns(env_kwargs, cfg.vec.num_envs))
+        logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
+    else:
+        train_env = TradingEnvironment(**env_kwargs)
     env_kwargs["sequences"] = val_seqs
     val_env = TradingEnvironment(**env_kwargs) if val_seqs else None
 
@@ -521,28 +494,14 @@ def main(cfg: MasterConfig = None):
     train_steps = 0
 
     train_env.reset(seed=cfg.global_env_seed)
-
-    # --- Паритет ε между single-env и vec-env ---
-    # Масштабируем продолжительность распада ε на число сред (однократно), чтобы ε(t) совпадал
-    # при одинаковом числе собранных переходов. Защита от двойного масштабирования — флаг на агенте.
-    if hasattr(cfg, "vec") and getattr(cfg.vec, "scale_epsilon_by_envs", True) and hasattr(agent, "eps_frames"):
-        if not getattr(agent, "_eps_scaled_by_envs", False):
-            try:
-                original = int(agent.eps_frames)
-                scale = max(1, int(getattr(cfg.vec, "num_envs", 1)))
-                agent.eps_frames = original * scale
-                agent._eps_scaled_by_envs = True
-                logging.info(f"[VecEnv] Scaled epsilon frames by num_envs={scale}: {original} -> {agent.eps_frames}")
-            except Exception as e:
-                logging.warning(f"Failed to scale epsilon frames: {e}")
- 
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if hasattr(train_env, "num_envs"):  # VecEnv путь
-            ep_reward, ep_wr, transitions, term_cnt, trunc_cnt, ep_avg_loss = _rollout_vectorized_episode(train_env, agent)
-            ep_losses = [] if ep_avg_loss == 0.0 else [ep_avg_loss]
+            ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
+            loss = agent.learn()  # TODO: при желании выровнять частоту с одиночным режимом (учащать вызовы)
+            ep_losses = [] if loss is None else [loss]
             train_steps += transitions
-            info = {"episode_win_rate": ep_wr, "terminated": term_cnt, "truncated": trunc_cnt, "transitions": transitions}
+            info = {"episode_win_rate": ep_win_rate}
         else:
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward = 0.0
@@ -550,17 +509,14 @@ def main(cfg: MasterConfig = None):
             done = False
             while not done:
                 action = agent.select_action(obs, training=True)
-                next_obs, reward, done, truncated, info = train_env.step(action)
-                # single-env: корректно отделяем truncated от terminated
-                terminal = bool(done) and not bool(truncated)
-                agent.store_experience(obs, action, reward, next_obs, terminal)
+                next_obs, reward, done, _, info = train_env.step(action)
+                agent.store_experience(obs, action, reward, next_obs, done)
                 loss = agent.learn()
                 if loss is not None:
                     ep_losses.append(loss)
                 obs = next_obs
                 train_steps += 1
                 ep_reward += reward
-            info = {"episode_win_rate": info.get("episode_win_rate", 0.0), "terminated": int(done), "truncated": int(truncated), "transitions": train_steps}
 
         history["episodes"].append(ep)
         history["rewards"].append(ep_reward)
@@ -576,34 +532,13 @@ def main(cfg: MasterConfig = None):
         mean_loss_N = float(np.mean(episode_losses_deque)) if episode_losses_deque else 0.0
         history["mean_losses_N"].append(mean_loss_N)
 
-        # Логируем ФАКТИЧЕСКИЙ ε агента (если доступен), иначе падать назад на формулу
-        eps_current = None
-        if hasattr(agent, "epsilon"):
-            try:
-                eps_current = float(agent.epsilon)
-            except Exception:
-                eps_current = None
-        if eps_current is None and hasattr(agent, "get_epsilon") and callable(agent.get_epsilon):
-            try:
-                eps_current = float(agent.get_epsilon())
-            except Exception:
-                eps_current = None
-        if eps_current is None:
-            eps_current = float(
-                agent.eps_end + (agent.eps_start - agent.eps_end)
-                * np.exp(-train_steps / max(1.0, float(agent.eps_frames)))
-            )
+        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
         episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
         history["win_rates"].append(info.get("episode_win_rate", 0.0))
         mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
         history["mean_win_rates_N"].append(mean_win_rate_N)
-        # Доп. диагностические счётчики при VecEnv
-        if hasattr(train_env, "num_envs"):
-            counter.set_postfix_str(
-                f"ε={eps_current:.4f} tr={info.get('transitions',0)} T={info.get('terminated',0)} U={info.get('truncated',0)}"
-            )
 
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
