@@ -23,7 +23,7 @@ cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 32
+cfg.rl.batch_size = 16
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 10_000
 
@@ -33,7 +33,7 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
 cfg.backtest.max_parallel_sessions = 4
-cfg.backtest.position_fraction = 0.25
+cfg.backtest.position_fraction = 0.24
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.012695
@@ -77,7 +77,7 @@ cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # По умолчанию 2 копии тренеровочной среды, синхронный backend.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 2
+cfg.vec.num_envs = 4
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
