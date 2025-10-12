@@ -27,8 +27,8 @@ cfg.rl.batch_size = 16
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 10_000
 
-cfg.seq.agent_history_len = 90
-cfg.seq.agent_session_len = 60
+cfg.seq.agent_history_len = 30
+cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
