@@ -84,7 +84,7 @@ cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шага́ до той же ε.
-cfg.vec.scale_epsilon_by_envs = True
+# cfg.vec.scale_epsilon_by_envs = True
 
 # python train.py configs/alpha.py
 # python test_agent.py configs/alpha.py

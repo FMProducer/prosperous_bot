@@ -155912,3 +155912,23 @@ Loaded Q-value cache from output\alpha\backtest_qval_cache\qval_cache.pkl (24090
 2025-10-11 22:20:14,954 [INFO] :    incorrect_std_change = 3.91%
 2025-10-11 22:20:14,954 [INFO] :        avg_trade_amount = 5136.71
 2025-10-11 22:20:14,955 [INFO] :          trades_per_day = 1.41
+2025-10-12 06:19:49,424 [INFO] [Init] Logging for backtest session started
+2025-10-12 06:19:49,426 [INFO] Random seed set to 25
+2025-10-12 06:19:49,427 [INFO] Loading dataset 'Backtest' from data/backtest_data.npz
+2025-10-12 06:19:50,379 [INFO] Loaded 3186 sequences from data/backtest_data.npz
+2025-10-12 06:19:50,380 [INFO] Dataset 'Backtest' period: from 2025-03-01 to 2025-05-31
+2025-10-12 06:19:50,883 [INFO] Saved example plot: Backtest_example_1_SKLUSDT_2025-04-22 22:56.png
+2025-10-12 06:19:50,891 [INFO] From a dataset of 3186 signals, 2554 groups were created.
+2025-10-12 06:19:50,893 [INFO] Loading dataset 'Train' from data/train_data.npz
+2025-10-12 06:20:18,483 [INFO] Loaded 24086 sequences from data/train_data.npz
+2025-10-12 06:20:18,491 [INFO] Dataset 'Train' period: from 2020-01-14 to 2024-08-30
+2025-10-12 06:20:30,273 [INFO] Normalization statistics computed
+2025-10-12 06:20:30,558 [INFO] Using model from command line: C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251012_time_052546\best.pth
+2025-10-12 06:20:30,569 [INFO] Initialized DuelingQNetwork: input=(7, 89, 1), actions=4
+2025-10-12 06:20:30,644 [INFO] Initialized DuelingQNetwork: input=(7, 89, 1), actions=4
+2025-10-12 06:20:30,647 [INFO] Policy Net with 1.2M parameters created in Agent
+2025-10-12 06:20:30,647 [INFO] Target Net with 1.2M parameters created in Agent
+2025-10-12 06:20:32,285 [INFO] Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-12 06:20:32,358 [INFO] 
+Loaded Q-value cache from output\alpha\backtest_qval_cache\qval_cache.pkl (24090 entries).
+2025-10-12 06:20:32,358 [INFO] D3QN_PER_Agent initialized.
