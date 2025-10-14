@@ -15,15 +15,15 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
 cfg.model.dropout_p = 0.1
 # For Val 1500 | Test 3500
-cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
+cfg.trainlog.num_val_ep = 300
+cfg.trainlog.val_freq = 10000
 # gradient steps ~ 241_000 ~ episodes = 24_000
 cfg.trainlog.episodes = 55_000
 cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 16
+cfg.rl.batch_size = 256
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 10_000
 
@@ -31,7 +31,7 @@ cfg.seq.agent_history_len = 30
 cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
-cfg.backtest_mode = True
+cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 4
 cfg.backtest.position_fraction = 0.24
 # ["advantage_based_filter", "ensemble_q_filter"]
@@ -61,15 +61,15 @@ cfg.debug.use_final_model = False
 # ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
 # Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
 # AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) FP16 без тензорных ядер — эффект умеренный, но полезна экономия памяти.
-cfg.perf.use_amp = True
+cfg.perf.use_amp = False
 cfg.perf.amp_dtype = "float16"
 # torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
-cfg.perf.compile_mode = "reduce-overhead"
-cfg.perf.compile_dynamic = True
+cfg.perf.compile_mode = "None"
+cfg.perf.compile_dynamic = False
 # DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
-cfg.perf.dataloader_num_workers = 4
+cfg.perf.dataloader_num_workers = 0
 cfg.perf.pin_memory = True
-cfg.perf.persistent_workers = True
+cfg.perf.persistent_workers = False
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
 cfg.perf.cudnn_benchmark = True
@@ -77,7 +77,7 @@ cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # По умолчанию 2 копии тренеровочной среды, синхронный backend.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 4
+cfg.vec.num_envs = 2
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
