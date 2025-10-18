@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it."
+title: Open RL Trading Agent for Binance Futures (D3QN + PER)
+type: software
+authors:
+  - family-names: Kolesnikov
+    given-names: Yuriy
+repository-code: https://github.com/YuriyKolesnikov/rl-trading-binance
+license: MIT
+version: "0.1.0"
+date-released: 2025-08-12
+keywords:
+  - reinforcement learning
+  - trading
+  - binance futures
+  - D3QN
+  - prioritized experience replay
+  - backtesting
+preferred-citation:
+  type: software
+  authors:
+    - family-names: Kolesnikov
+      given-names: Yuriy
+  title: Open RL Trading Agent for Binance Futures (D3QN + PER)
+  year: 2025
+  version: "0.1.0"
+  url: https://github.com/YuriyKolesnikov/rl-trading-binance
