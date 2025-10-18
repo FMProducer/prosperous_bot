@@ -254,11 +254,14 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         cfg.data.other_channels,
     )
 
-    model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-    model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+    if cfg.paths.direct_model_path:
+        model_path = cfg.paths.direct_model_path
+    else:
+        model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
+        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
 
-    best_path = os.path.join(model_folder, "best.pth")
-    model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+        best_path = os.path.join(model_folder, "best.pth")
+        model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
 
     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
 

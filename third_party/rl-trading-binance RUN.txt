@@ -3,6 +3,7 @@ C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance         *
 
+python train.py configs/alpha.py
 python train.py 
 python train.py train_best.py
 
@@ -14,7 +15,7 @@ python backtest_engine.py
 python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
-python third_party/rl-trading-binance/backtest_engine.py third_party/rl-trading-binance/configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251011_time_192222\best.pth
+python third_party/rl-trading-binance/backtest_engine.py third_party/rl-trading-binance/configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth
 
 pytest --cov=collector backends/postgres_ws/test_collector.py           *
 

@@ -15,9 +15,10 @@ class DeviceConfig(BaseModel):
 
 class PathConfig(BaseModel):
     config_name: Optional[str] = None
-    base_output_dir: str = "output"
+    base_output_dir: str = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance-source-code\\output"
     extra_model_dir: Optional[str] = None
     extra_cache_dir: Optional[str] = None
+    direct_model_path: Optional[str] = None
 
     @property
     def output_dir(self) -> str:

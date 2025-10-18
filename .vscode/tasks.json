@@ -56,6 +56,15 @@
             "problemMatcher": []
         },
         {
+            "label": "Train Agent Source Code",
+            "type": "shell",
+            "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python train.py configs/alpha.py",
+            "options": {
+                "cwd": "C:\\\\Python\\\\Prosperous_Bot\\\\third_party\\\\rl-trading-binance-source-code"
+            },
+            "problemMatcher": []
+        },        
+        {
             "label": "Train Agent",
             "type": "shell",
             "command": "c:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe train.py",
