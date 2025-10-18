@@ -57,7 +57,7 @@ cfg.logging.per_trial_logs = False
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
 
-cfg.paths.direct_model_path = "C:/Python/Prosperous_Bot/third_party/rl-trading-binance.output/fmproducer_1_eval/saved_models/session_1/best.pth"
+cfg.paths.direct_model_path = "C:/Python/Prosperous_Bot/third_party/FMProducer/1/best.pth"
 
 # python train.py configs/alpha.py
 # python test_agent.py configs/alpha.py
