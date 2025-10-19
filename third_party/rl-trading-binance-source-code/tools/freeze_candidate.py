@@ -43,7 +43,7 @@ def build_run_id_from_ts(ts: str) -> str:
       rl_binance_futures_trading_date_YYYYMMDD_time_HHMMSS
     """
     dt = datetime.fromisoformat(ts)
-    return f"rl_binance_futures_trading_date_{dt:%Y%m%d}_time_{dt:%H%M%S}"
+    return f"rl_binance_futures_trading_date_{{dt:%Y%m%d}}_time_{{dt:%H%M%S}}"
 
 
 def find_best_pth(config_name: str, run_id: str) -> Path:
@@ -85,49 +85,53 @@ def parse_seed_from_log(text: str) -> str | None:
 
 def extract_final_metrics_block(text: str) -> list[str]:
     """
-    Extract the line containing "--- Test Results:".
+    Extract lines after a line starting with "[Final Metrics]:" until a blank line.
+    Supports logs where each subsequent line contains key/value.
     """
     lines = text.splitlines()
+    block: list[str] = []
+    collecting = False
     for line in lines:
-        if "--- Test Results:" in line:
-            return [line] # Return it as a list to be compatible with the next function
-    raise ValueError("Test Results line not found in log.")
+        if line.strip().startswith("[Final Metrics]:"):
+            collecting = True
+            # Handle case where first metric is on the same line
+            if ":" in line or "=" in line:
+                first_metric_line = line.split("[Final Metrics]:", 1)[1].strip()
+                if first_metric_line:
+                    block.append(first_metric_line)
+            continue
+        if collecting:
+            if not line.strip():
+                break
+            block.append(line)
+    if not block:
+        raise ValueError("Final Metrics block not found or is empty in log.")
+    return block
 
+KV_PATTERNS = [
+    re.compile(r"^\s*(?:.+?\[INFO\]\s*:\s*)?([A-Za-z0-9_ ]+?)\s*=\s*(.+?)\s*$"),
+    re.compile(r"^\s*(?:.+?\[INFO\]\s*:\s*)?([A-Za-z0-9_ ]+?)\s*:\s*(.+?)\s*$"),
+]
 
 def parse_metrics_kv(block_lines: list[str]) -> dict:
     """
-    Parse key/value pairs from the '--- Test Results: ...' line.
+    Parse key/value pairs from block lines. Accepts "key = value" and "key: value".
+    Keys are normalized with underscores.
     """
-    if not block_lines:
-        raise ValueError("No lines provided to parse_metrics_kv.")
-
-    line = block_lines[0]
-    
-    # Extract content from "--- Test Results: ... ---"
-    match = re.search(r'---\s*Test Results:\s*(.*?)\s*---', line)
-    if not match:
-        raise ValueError("Could not find '--- Test Results: ... ---' in the line.")
-        
-    content = match.group(1)
-    
-    kv = {}
-    pairs = [p.strip() for p in content.split(',')]
-    
-    for pair in pairs:
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-        elif ':' in pair:
-            key, value = pair.split(':', 1)
-        else:
+    kv: dict[str, str] = {}
+    for raw in block_lines:
+        line = raw.strip()
+        if not line:
             continue
-            
-        key = key.strip().lower().replace(' ', '_').replace('.', '')
-        value = value.strip()
-        kv[key] = value
-        
+        for pat in KV_PATTERNS:
+            m = pat.match(line)
+            if m:
+                k, v = m.group(1).strip(), m.group(2).strip()
+                k = re.sub(r"\s+", "_", k.lower())
+                kv[k] = v
+                break
     if not kv:
-        raise ValueError("No key/value pairs parsed from Test Results line.")
-        
+        raise ValueError("No key/value pairs parsed from Final Metrics block.")
     return kv
 
 
@@ -174,13 +178,12 @@ def find_log_with_final_metrics(log_root: Path, ts: datetime | None) -> Path:
                 txt = p.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            if "--- Test Results:" in txt:
-                # Prefer files with mtime near provided ts, else collect all
+            if "[Final Metrics]:" in txt:
                 mtime = datetime.fromtimestamp(p.stat().st_mtime)
                 time_diff = abs((mtime - (ts or mtime)).total_seconds())
                 candidates.append((p, time_diff))
     if not candidates:
-        raise FileNotFoundError(f"No log with '--- Test Results:' found under {log_root}")
+        raise FileNotFoundError(f"No log with '[Final Metrics]:' found under {log_root}")
     candidates.sort(key=lambda t: t[1])
     return candidates[0][0]
 
@@ -208,70 +211,86 @@ def collect_repo_state(args) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="Freeze RL Trader candidate snapshot")
-    ap.add_argument("--config-name", required=True, help="Config name (e.g., alpha). Must exist under configs/")
-    gid = ap.add_mutually_exclusive_group(required=True)
-    gid.add_argument("--run-id", help="Exact saved_models run id (rl_binance_futures_trading_date_YYYYMMDD_time_HHMMSS)")
-    gid.add_argument("--run-timestamp", help="Timestamp YYYY-MM-DDTHH:MM:SS to derive run-id")
+    ap.add_argument("--config-name", required=False, help="Config name (e.g., alpha). Used if paths are not provided.")
+    gid = ap.add_mutually_exclusive_group(required=False)
+    gid.add_argument("--run-id", help="Exact saved_models run id. Used if paths are not provided.")
+    gid.add_argument("--run-timestamp", help="Timestamp YYYY-MM-DDTHH:MM:SS to derive run-id. Used if paths are not provided.")
     ap.add_argument("--candidate-id", default="candidate_prod_v1", help="Snapshot id under output/")
     ap.add_argument("--repo-branch", default=None)
     ap.add_argument("--repo-sha", default=None)
     ap.add_argument("--repo-url", default=None)
     ap.add_argument("--repo-title", default=None)
+    ap.add_argument("--model-path", default=None, help="Absolute path to the model file (e.g., best.pth)")
+    ap.add_argument("--config-path", default=None, help="Absolute path to the config file")
+    ap.add_argument("--log-path", default=None, help="Absolute path to the log file")
+
     args = ap.parse_args()
 
-    config_name = args.config_name
-    run_id = args.run_id or build_run_id_from_ts(args.run_timestamp)
+    run_id = "custom_run"
+    config_name = "custom_config"
 
-    # Validate paths
-    cfg_src = PROJECT_ROOT / "configs" / f"{config_name}.py"
+    if args.model_path and args.config_path and args.log_path:
+        best_pth = Path(args.model_path)
+        cfg_src = Path(args.config_path)
+        log_file = Path(args.log_path)
+        config_name = cfg_src.stem
+        if args.run_id:
+            run_id = args.run_id
+    else:
+        if not args.config_name or not (args.run_id or args.run_timestamp):
+             ap.error("Either all --*-path arguments or --config-name and (--run-id or --run-timestamp) must be provided.")
+        config_name = args.config_name
+        run_id = args.run_id or build_run_id_from_ts(args.run_timestamp)
+        cfg_src = PROJECT_ROOT / "configs" / f"{config_name}.py"
+        best_pth = find_best_pth(config_name, run_id)
+        log_root = PROJECT_ROOT / "output" / config_name / "logs"
+        ts = None
+        if args.run_timestamp:
+            ts = datetime.fromisoformat(args.run_timestamp)
+        log_file = find_log_with_final_metrics(log_root, ts)
+
     if not cfg_src.exists():
         raise FileNotFoundError(f"Config not found: {cfg_src}")
-    best_pth = find_best_pth(config_name, run_id)
+    if not best_pth.exists():
+        raise FileNotFoundError(f"Model not found: {best_pth}")
+    if not log_file.exists():
+        raise FileNotFoundError(f"Log file not found: {log_file}")
 
     dst_root = PROJECT_ROOT / "output" / args.candidate_id
     artifacts_dir, reports_dir = ensure_dirs(dst_root)
 
-    # Copy artifacts
     pth_dst = artifacts_dir / "best.pth"
     copy_file(best_pth, pth_dst)
-    cfg_dst = artifacts_dir / "config_snapshot.py"
+    cfg_dst = artifacts_dir / cfg_src.name
     copy_file(cfg_src, cfg_dst)
 
-    # Parse logs for seed + final metrics
-    log_root = PROJECT_ROOT / "output" / config_name / "logs"
-    ts = None
-    if args.run_timestamp:
-        ts = datetime.fromisoformat(args.run_timestamp)
-    log_file = find_log_with_final_metrics(log_root, ts)
     log_text = log_file.read_text(encoding="utf-8", errors="ignore")
     seed = parse_seed_from_log(log_text) or ""
     block = extract_final_metrics_block(log_text)
 
-    # Save raw block
-    metrics_txt = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.txt"
-    write_text(metrics_txt, block)
+    base_filename = f"final_metrics_{args.candidate_id}"
+    metrics_txt = reports_dir / f"{base_filename}.txt"
+    write_text(metrics_txt, ["[Final Metrics]:"] + block)
 
     # Parse KV and enrich
     kv = parse_metrics_kv(block)
     kv["seed"] = seed
     kv["run_id"] = run_id
     kv["config_name"] = config_name
-    kv["timestamp_utc"] = (args.run_timestamp + "Z") if args.run_timestamp else ""
+    if args.run_timestamp:
+        kv["timestamp_utc"] = (args.run_timestamp + "Z")
 
     # Save JSON/CSV
-    metrics_json = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.json"
-    metrics_csv = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.csv"
+    metrics_json = reports_dir / f"{base_filename}.json"
+    metrics_csv = reports_dir / f"{base_filename}.csv"
     write_json(metrics_json, kv)
     write_csv(metrics_csv, kv)
 
-    # SHA256
     sha_pth = sha256sum(pth_dst)
     sha_cfg = sha256sum(cfg_dst)
 
-    # Repo-State
     repo_state = collect_repo_state(args)
 
-    # Manifest
     manifest = {
         "candidate_id": args.candidate_id,
         "run_id": run_id,
@@ -294,9 +313,8 @@ def main():
         encoding="utf-8"
     )
 
-    # Render PNG summary
     summary_png = reports_dir / "metrics_summary.png"
-    title = f"{args.candidate_id} — Final Metrics ({kv.get('timestamp_utc','') or run_id})"
+    title = f'{args.candidate_id} — Final Metrics ({kv.get("timestamp_utc","") or run_id})'
     render_metrics_png(metrics_json, summary_png, title)
 
     print(f"[OK] Snapshot created at: {dst_root}")
