@@ -14,24 +14,25 @@ cfg.model.dense_adv = [128, 64]
 cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
 cfg.model.dropout_p = 0.1
-# For Val 1500 | Test 3500
-cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
+# Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
+cfg.trainlog.num_val_ep = 1500
+cfg.trainlog.val_freq = 2000
 # gradient steps ~ 241_000 ~ episodes = 24_000
 cfg.trainlog.episodes = 55_000
 cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 16
+cfg.rl.batch_size = 64
 cfg.rl.learning_rate = 1e-4
-cfg.rl.train_start = 10_000
+cfg.rl.train_start = 20_000
 
-cfg.seq.agent_history_len = 30
-cfg.seq.agent_session_len = 10
+# Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
+cfg.seq.agent_history_len = 90
+cfg.seq.agent_session_len = 60
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
-cfg.backtest_mode = True
+cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
@@ -75,16 +76,16 @@ cfg.perf.prefetch_factor = 2
 cfg.perf.cudnn_benchmark = True
 
 # ---- Vectorized Environments ----
-# По умолчанию 2 копии тренеровочной среды, синхронный backend.
+# По умолчанию 3 копии тренеровочной среды, синхронный backend.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 2
+cfg.vec.num_envs = 3
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
-# Это восстанавливает паритет поведения между single-env и vec-env по числу env-шага́ до той же ε.
-# cfg.vec.scale_epsilon_by_envs = True
+# Это восстанавливает паритет поведения между single-env и vec-env по числу env-шагов до той же ε.
+cfg.vec.scale_epsilon_by_envs = True
 
 # python train.py configs/alpha.py
 # python test_agent.py configs/alpha.py
@@ -105,4 +106,3 @@ cfg.vec.start_method = "spawn"
 # 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
 # 3. Run optimization:              python optimize_cfg.py configs/...
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
-
