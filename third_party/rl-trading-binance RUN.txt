@@ -7,15 +7,17 @@ python train.py configs/alpha.py
 python train.py 
 python train.py train_best.py
 
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python test_agent.py
 python test_agent.py run_fmproducer_1.py     *
-python third_party/rl-trading-binance/test_agent.py third_party/rl-trading-binance/configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251011_time_192222\best.pth
+*python test_agent.py configs/alpha.py "output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_123712/best.pth"
 
 python backtest_engine.py
 python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
-python third_party/rl-trading-binance/backtest_engine.py third_party/rl-trading-binance/configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth
+*python backtest_engine.py configs/alpha.py output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_113307/best.pth
+python backtest_engine.py configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth
 
 pytest --cov=collector backends/postgres_ws/test_collector.py           *
 

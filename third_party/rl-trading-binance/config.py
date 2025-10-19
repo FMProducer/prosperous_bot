@@ -53,6 +53,9 @@ class VecConfig(BaseModel):
     num_envs: int = 2
     backend: Literal["dummy", "subproc"] = "dummy"  # "dummy" = 1 процесс, синхронно
     start_method: Literal["spawn", "fork", "forkserver"] = "spawn"  # безопасно на всех ОС
+    # Флаг для масштабирования убывания эпсилон в зависимости от кол-ва сред.
+    # Восстанавливает паритет шагов исследования между single-env и vec-env.
+    scale_epsilon_by_envs: bool = False
 
 
 class DataConfig(BaseModel):
