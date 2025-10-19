@@ -80,7 +80,7 @@ class D3QN_PER_Agent:
         if self.use_amp:
             amp_dtype_str = perf_cfg.amp_dtype
             self.amp_dtype = torch.float16 if amp_dtype_str == "float16" else torch.bfloat16
-            self.scaler = torch.cuda.amp.GradScaler()
+            self.scaler = torch.amp.GradScaler("cuda")
             logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={amp_dtype_str}.")
 
         num_params = sum(p.numel() for p in self.policy_net.parameters())
@@ -253,7 +253,7 @@ class D3QN_PER_Agent:
         self.optimizer.zero_grad()
 
         if self.use_amp:
-            with torch.cuda.amp.autocast(dtype=self.amp_dtype):
+            with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                 current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
                 loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
                 weighted_loss = (weights_t * loss).mean()

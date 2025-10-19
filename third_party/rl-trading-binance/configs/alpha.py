@@ -23,7 +23,7 @@ cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 64
+cfg.rl.batch_size = 128
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 20_000
 
@@ -61,14 +61,14 @@ cfg.debug.use_final_model = False
 # ---------------------------
 # ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
 # Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
-# AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) FP16 без тензорных ядер — эффект умеренный, но полезна экономия памяти.
-cfg.perf.use_amp = False
+# AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) и новее FP16 даёт ускорение и экономию памяти.
+cfg.perf.use_amp = True
 cfg.perf.amp_dtype = "float16"
 # torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
-cfg.perf.compile_mode = "None"
+cfg.perf.compile_mode = None
 cfg.perf.compile_dynamic = False
 # DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
-cfg.perf.dataloader_num_workers = 0
+cfg.perf.dataloader_num_workers = 4
 cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = False
 cfg.perf.prefetch_factor = 2
@@ -76,9 +76,9 @@ cfg.perf.prefetch_factor = 2
 cfg.perf.cudnn_benchmark = True
 
 # ---- Vectorized Environments ----
-# По умолчанию 3 копии тренеровочной среды, синхронный backend.
+# Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 3
+cfg.vec.num_envs = 4
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
