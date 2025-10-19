@@ -1,12 +1,6 @@
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
-** Visual Studio 2022 Developer Command Prompt
-cd C:\Python\Prosperous_Bot
-.\.venv\Scripts\activate
-cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
-python train.py configs/alpha.py
-
 *cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 *python train.py configs/alpha.py
 python train.py 
@@ -15,14 +9,14 @@ python train.py train_best.py
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python test_agent.py
 python test_agent.py run_fmproducer_1.py     *
-*python test_agent.py configs/alpha.py "output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_123712/best.pth"
+*python test_agent.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\FMProducer\1\best.pth"
 
 python backtest_engine.py
 python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
-*python backtest_engine.py configs/alpha.py "output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_123712/best.pth"
-python backtest_engine.py configs/alpha.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth
+python backtest_engine.py configs/alpha.py "output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_123712/best.pth"
+*python backtest_engine.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\FMProducer\1\best.pth"
 
 pytest --cov=collector backends/postgres_ws/test_collector.py           *
 
@@ -69,4 +63,15 @@ python -m third_party.rl-trading-binance.backends.postgres_ws.collector --config
 
 
 python download_historical_data.py --months 3 --workers 16 --verify-checksum
+
+
+
+
+
+** Visual Studio 2022 Developer Command Prompt
+cd C:\Python\Prosperous_Bot
+code .
+.\.venv\Scripts\activate
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
+python train.py configs/alpha.py
 

@@ -47,7 +47,7 @@ def setup_logging(cfg: MasterConfig) -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(log_file),
-            # logging.StreamHandler(),
+            logging.StreamHandler(),
         ],
     )
     logging.info("[Init] Logging for backtest session started")
@@ -218,6 +218,9 @@ def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> boo
 
 
 def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    cfg.paths.run_name = f"backtest_{timestamp}"
+
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
@@ -405,10 +408,14 @@ def run_backtest(cfg: MasterConfig) -> Dict[str, Any]:
         logging.info(f": {name_result:>23s} = {value}")
 
     if cfg.backtest.plot_backtest_balance_curve:
+        os.makedirs(cfg.paths.plot_dir, exist_ok=True)
         result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
 
     return metrics
 
 
 if __name__ == "__main__":
-    run_backtest(load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
+    cfg = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg
+    if len(sys.argv) > 2:
+        cfg.paths.direct_model_path = sys.argv[2]
+    run_backtest(cfg)

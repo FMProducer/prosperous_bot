@@ -1,40 +1,46 @@
-diff --git a/third_party/rl-trading-binance/train.py b/third_party/rl-trading-binance/train.py
-index a6bb9d0..118102c 100644
---- a/third_party/rl-trading-binance/train.py
-+++ b/third_party/rl-trading-binance/train.py
-@@ -44,19 +44,32 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
-     step_iters = 0
-     win_rates = []
-     while not done_mask.all():
-+        prev_done = done_mask.copy()
-         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
-         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
--        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
-+        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
-         for i in range(train_env.num_envs):
--            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_obs_b[i], bool(dones[i]))
-+            # Корректный next_state при done: брать финальное наблюдение из info
-+            if bool(dones[i]) and isinstance(infos[i], dict):
-+                next_state = infos[i].get("terminal_observation", next_obs_b[i])
-+            else:
-+                next_state = next_obs_b[i]
-+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
-             if bool(dones[i]) and isinstance(infos[i], dict):
-                 wr = infos[i].get("episode_win_rate", None)
-                 if wr is not None:
-                     win_rates.append(float(wr))
--        ep_reward += rewards
-+        # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
-+        for i in range(train_env.num_envs):
-+            if not prev_done[i]:
-+                ep_reward[i] += float(rewards[i])
-         obs_batch = next_obs_b
-         done_mask |= dones  # эпизод для каждой под-среды
-         step_iters += 1
-+        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
-+        # loss = agent.learn()
-+        # if loss is not None:
-+        #     ep_losses.append(loss)
-     avg_reward = float(ep_reward.mean())
-     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
-     transitions_count = int(step_iters * train_env.num_envs)
+--- a/third_party/rl-trading-binance/configs/alpha.py
++++ b/third_party/rl-trading-binance/configs/alpha.py
+@@ -15,20 +15,20 @@
+ # 0 ≤ p < 0.5; typical values are 0.1–0.2
+ cfg.model.dropout_p = 0.1
+ # For Val 1500 | Test 3500
+-cfg.trainlog.num_val_ep = 300
+-cfg.trainlog.val_freq = 10000
++cfg.trainlog.num_val_ep = 1500
++cfg.trainlog.val_freq = 2000
+ # gradient steps ~ 241_000 ~ episodes = 24_000
+ cfg.trainlog.episodes = 55_000
+ cfg.trainlog.plot_top_n = 10
+ 
+ cfg.per.buffer_size = 230_000
+ 
+-cfg.rl.batch_size = 256
++cfg.rl.batch_size = 64
+ cfg.rl.learning_rate = 1e-4
+-cfg.rl.train_start = 10_000
++cfg.rl.train_start = 20_000
+ 
+-cfg.seq.agent_history_len = 30
+-cfg.seq.agent_session_len = 10
++cfg.seq.agent_history_len = 90
++cfg.seq.agent_session_len = 60
+ cfg.seq.action_history_len = ACTION_HISTORY_LEN
+ 
+ cfg.backtest_mode = False
+@@ -77,14 +77,14 @@
+ # ---- Vectorized Environments ----
+ # По умолчанию 2 копии тренеровочной среды, синхронный backend.
+ # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
+-cfg.vec.num_envs = 2
++cfg.vec.num_envs = 3
+ # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
+ # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
+ cfg.vec.backend = "dummy"
+ cfg.vec.start_method = "spawn"
+ # Масштабировать скорость убывания epsilon на количество параллельных сред.
+ # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шага́ до той же ε.
+-# cfg.vec.scale_epsilon_by_envs = True
++cfg.vec.scale_epsilon_by_envs = True
+ 
+ # python train.py configs/alpha.py
+ # python test_agent.py configs/alpha.py

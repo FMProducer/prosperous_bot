@@ -19,10 +19,14 @@ class PathConfig(BaseModel):
     extra_model_dir: Optional[str] = None
     extra_cache_dir: Optional[str] = None
     direct_model_path: Optional[str] = None
+    run_name: Optional[str] = None
 
     @property
     def output_dir(self) -> str:
-        return os.path.join(self.base_output_dir, self.config_name)
+        path = os.path.join(self.base_output_dir, self.config_name)
+        if self.run_name:
+            path = os.path.join(path, self.run_name)
+        return path
 
     @property
     def train_data_path(self) -> str:

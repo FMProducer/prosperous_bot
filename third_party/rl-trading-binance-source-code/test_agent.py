@@ -1,4 +1,5 @@
 # test_agent.py
+import datetime as dt
 import logging
 import os
 import sys
@@ -208,7 +209,10 @@ def init_agent(model_path: str, cfg: MasterConfig, cache_path: str = None) -> D3
     return agent
 
 
-def test(cfg: MasterConfig = None):
+def test(cfg: MasterConfig = None, model_path: str = None):
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    cfg.paths.run_name = f"test_agent_{timestamp}"
+
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
@@ -265,11 +269,11 @@ def test(cfg: MasterConfig = None):
 
     test_env = TradingEnvironment(**env_kwargs)
 
-    model_folder = os.path.join(cfg.paths.model_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
-    model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
-    model_path = os.path.join(model_folder, model_name)
-    # best_path = os.path.join(model_folder, "best.pth")
-    # model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+    if model_path is None:
+        model_folder = os.path.join(cfg.paths.model_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
+        model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
+        model_path = os.path.join(model_folder, model_name)
+
     agent = init_agent(model_path, cfg)
 
     all_sessions = record_all_sessions(test_env, agent, test_seqs, cfg)
@@ -286,7 +290,7 @@ def test(cfg: MasterConfig = None):
         test_env, agent, min(len(test_seqs), cfg.trainlog.num_val_ep), "Test", None, cfg.global_env_seed
     )
 
-    plot_folder = os.path.join(cfg.paths.plot_dir, sorted(os.listdir(cfg.paths.model_dir))[-1])
+    plot_folder = cfg.paths.plot_dir
     plt.figure(figsize=(10, 6))
     sns.histplot(
         test_metrics[cfg.trainlog.test_selection_metrics],
@@ -311,4 +315,6 @@ def test(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    test(cfg=load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
+    config = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg
+    path_to_model = sys.argv[2] if len(sys.argv) > 2 else None
+    test(cfg=config, model_path=path_to_model)
