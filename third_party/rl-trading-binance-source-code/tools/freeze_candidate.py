@@ -85,63 +85,59 @@ def parse_seed_from_log(text: str) -> str | None:
 
 def extract_final_metrics_block(text: str) -> list[str]:
     """
-    Extract lines after a line starting with "[Final Metrics]:" until a blank line.
-    Supports logs where each subsequent line contains key/value.
+    Extract the line containing "--- Test Results:".
     """
     lines = text.splitlines()
-    block: list[str] = []
-    collecting = False
     for line in lines:
-        if line.strip().startswith("[Final Metrics]:"):
-            collecting = True
-            continue
-        if collecting:
-            if not line.strip():
-                break
-            block.append(line)
-    if not block:
-        # Some logs include the [Final Metrics]: header line itself with first kv on same line
-        # Try to include header line if no block found (edge-case tolerant)
-        for i, line in enumerate(lines):
-            if line.strip().startswith("[Final Metrics]:"):
-                block = lines[i:i+50]  # take next chunk as-is; will be parsed loosely
-                break
-    if not block:
-        raise ValueError("Final Metrics block not found in log.")
-    return block
+        if "--- Test Results:" in line:
+            return [line] # Return it as a list to be compatible with the next function
+    raise ValueError("Test Results line not found in log.")
 
-
-KV_PATTERNS = [
-    re.compile(r"^\s*(?:[\d{4}-\d{2}-\d{2}.*?])?\s*(?:[INFO]\s*:)?\s*([A-Za-z0-9_ ]+?)\s*=\s*(.+?)\s*$"),
-    re.compile(r"^\s*(?:[\d{4}-\d{2}-\d{2}.*?])?\s*(?:[INFO]\s*:)?\s*([A-Za-z0-9_ ]+?)\s*:\s*(.+?)\s*$"),
-]
 
 def parse_metrics_kv(block_lines: list[str]) -> dict:
     """
-    Parse key/value pairs from block lines. Accepts "key = value" and "key: value".
-    Keys are normalized with underscores.
+    Parse key/value pairs from the '--- Test Results: ...' line.
     """
-    kv: dict[str, str] = {}
-    for raw in block_lines:
-        line = raw.strip()
-        if not line or line.startswith("[Final Metrics]:"):
+    if not block_lines:
+        raise ValueError("No lines provided to parse_metrics_kv.")
+
+    line = block_lines[0]
+    
+    # Extract content from "--- Test Results: ... ---"
+    match = re.search(r'---\s*Test Results:\s*(.*?)\s*---', line)
+    if not match:
+        raise ValueError("Could not find '--- Test Results: ... ---' in the line.")
+        
+    content = match.group(1)
+    
+    kv = {}
+    pairs = [p.strip() for p in content.split(',')]
+    
+    for pair in pairs:
+        if '=' in pair:
+            key, value = pair.split('=', 1)
+        elif ':' in pair:
+            key, value = pair.split(':', 1)
+        else:
             continue
-        for pat in KV_PATTERNS:
-            m = pat.match(line)
-            if m:
-                k, v = m.group(1).strip(), m.group(2).strip()
-                k = re.sub(r"\s+", "_", k.lower())
-                kv[k] = v
-                break
+            
+        key = key.strip().lower().replace(' ', '_').replace('.', '')
+        value = value.strip()
+        kv[key] = value
+        
     if not kv:
-        raise ValueError("No key/value pairs parsed from Final Metrics block.")
+        raise ValueError("No key/value pairs parsed from Test Results line.")
+        
     return kv
+
 
 def write_text(p: Path, lines: list[str]) -> None:
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+
 def write_json(p: Path, obj: dict) -> None:
     p.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def write_csv(p: Path, kv: dict) -> None:
     with p.open("w", newline="", encoding="utf-8") as f:
@@ -149,6 +145,7 @@ def write_csv(p: Path, kv: dict) -> None:
         w.writerow(["Metric", "Value"])
         for k in sorted(kv.keys()):
             w.writerow([k, kv[k]])
+
 
 def render_metrics_png(json_path: Path, out_png: Path, title: str) -> None:
     m = json.loads(json_path.read_text(encoding="utf-8"))
@@ -168,6 +165,7 @@ def render_metrics_png(json_path: Path, out_png: Path, title: str) -> None:
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")
 
+
 def find_log_with_final_metrics(log_root: Path, ts: datetime | None) -> Path:
     candidates = []
     for p in log_root.rglob("*"):
@@ -176,13 +174,16 @@ def find_log_with_final_metrics(log_root: Path, ts: datetime | None) -> Path:
                 txt = p.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            if "[Final Metrics]:" in txt:
+            if "--- Test Results:" in txt:
                 # Prefer files with mtime near provided ts, else collect all
-                candidates.append((p, abs((datetime.fromtimestamp(p.stat().st_mtime) - (ts or datetime.fromtimestamp(p.stat().st_mtime))).total_seconds())))
+                mtime = datetime.fromtimestamp(p.stat().st_mtime)
+                time_diff = abs((mtime - (ts or mtime)).total_seconds())
+                candidates.append((p, time_diff))
     if not candidates:
-        raise FileNotFoundError(f"No log with '[Final Metrics]:' found under {log_root}")
+        raise FileNotFoundError(f"No log with '--- Test Results:' found under {log_root}")
     candidates.sort(key=lambda t: t[1])
     return candidates[0][0]
+
 
 def safe_git(cmd: list[str]) -> str | None:
     try:
@@ -191,6 +192,7 @@ def safe_git(cmd: list[str]) -> str | None:
         return out.decode("utf-8", errors="ignore").strip()
     except Exception:
         return None
+
 
 def collect_repo_state(args) -> dict:
     branch = args.repo_branch or safe_git(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "prosperous_bot"
@@ -247,7 +249,7 @@ def main():
 
     # Save raw block
     metrics_txt = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.txt"
-    write_text(metrics_txt, ["[Final Metrics]:"] + block)
+    write_text(metrics_txt, block)
 
     # Parse KV and enrich
     kv = parse_metrics_kv(block)
