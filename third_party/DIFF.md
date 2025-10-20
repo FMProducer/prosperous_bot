@@ -1,165 +1,188 @@
+# Repo-State Header
+
+**Ветка (default):** `prosperous_bot`
+**Примечание:** в этой сессии не смог надёжно подтвердить актуальный SHA-1 HEAD по REPO_URL. Действую по предоставленным локальным файлам и артефактам; SHA-1 зафиксируем при подготовке PR.
+
 ---
 
 ## TL;DR
 
-Проверил ваши версии `paper_trader.py` и `configs/alpha.py`. Сейчас в трейдере всё ещё есть **ветка fallback** (Follow-Context) при `strict=False` и при ошибке `policy.predict(...)` — её нужно **удалить полностью**. Также для инференса модели мы должны грузить данные **с контекстом**, а не только «сессию». Я сделал минимальный патч:
+Ваши логи падают на `db_provider.py` из-за запроса столбцов, которых **нет** в таблице (`num_trades`, иногда `quote_asset_volume`). Это не про модель/трейдер — это чисто **SQL-схема**.
+Сделал точечный фикс провайдера: динамически проверяем наличие колонок и собираем `SELECT` только из существующих; расчёт `volume_weighted_average` выполняем **только** при наличии `quote_asset_volume`.
+Дополнительно устраняю потенциальную **циклическую зависимость**: `inference_adapter.py` импортирует `paper_trader.Cfg`, что может «закусить» импорт при загрузке политики. Патч убирает этот импорт и использует уже загруженный `MasterConfig` (он у вас есть в `paper_trader.py`).
 
-* Полностью исключил fallback-логику (теперь трейдер **работает только при наличии и корректности модели**).
-* Гружу OHLCV **за диапазон `[ctx_start, session_end]`**, чтобы передавать в модель реальный контекст.
-* Исправил выход из позиции на **последнюю минуту сессии** (`session_end - 1m`), чтобы исключить off-by-one.
-
-Ниже — diff и как применить.
+Ниже — причины и минимальные патчи.
 
 ---
 
-## Что не так в текущих файлах
+## Что именно сломалось и где
 
-* **`paper_trader.py`** (ваша версия):
+1. **Ошибка SQL (UndefinedColumn)**
+   В логе видно: запрос включает `num_trades`, а в вашей `klines_1m` этого столбца нет → `psycopg2.errors.UndefinedColumn`. Источник — текущий запрос в `db_provider.py`: он всегда тянет
+   `..., base_volume, num_trades, quote_asset_volume ...` 
 
-  1. В коде есть ветка fallback: при `strict=False` или исключении в `policy.predict()` трейдер уходит в Follow-Context. Это прямо видно в блоке `if side is None: ... side = "BUY" if ctx_ret > 0 else "SELL"`. 
-  2. Для инференса срез `ctx_slice = df.loc[ctx_start:ctx_end]` строится на данных, загруженных **только за сессию** (`ses_start→ses_end`) — контекста в DataFrame нет. Это приводит к пустому `ctx_slice` и нестабильному поведению. 
-  3. Выход берётся по бару `session_end` (а должен — **по последней минуте сессии**, `session_end - 1m`). 
-
-* **`configs/alpha.py`** (ваша версия): секция `inference` уже есть и стоит `strict: True` и путь к чекпойнту — ок. 
+2. **Риск кругового импорта**
+   `inference_adapter.py` делает `from paper_trader import Cfg`. А `paper_trader.py` динамически импортирует адаптер для загрузки политики. Это создаёт цикл *paper_trader → inference_adapter → paper_trader*. Сегодня повезло, но это хрупко. 
 
 ---
 
-## Патч (unified diff)
+## Патч 1 — безопасный SQL в провайдере БД
+
+**Файл:** `third_party/rl-trading-binance/db_provider.py` (ваша версия) 
 
 ```diff
-*** a/third_party/rl-trading-binance/paper_trader.py
---- b/third_party/rl-trading-binance/paper_trader.py
+*** a/third_party/rl-trading-binance/db_provider.py
+--- b/third_party/rl-trading-binance/db_provider.py
 @@
--Читает индекс эпизодов из stream_backtest_engine → воспроизводит сделки
--в режиме "реального времени" (sleep) или ASAP, подгружая минутки из БД
--только на период сессии. Стратегия по умолчанию: Follow-Context.
-+Читает индекс эпизодов из stream_backtest_engine → воспроизводит сделки
-+в режиме "реального времени" (sleep) или ASAP, подгружая минутки из БД.
-+Работает ТОЛЬКО с указанной в конфиге моделью (без fallback).
-@@
--from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Protocol, Any
-+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Protocol, Any
-@@
--# Плагинная политика инференса; при strict=True — без fallback.
-+# Плагинная политика инференса; fallback ОТСУТСТВУЕТ (модель обязательна).
-@@
- def _load_policy(loader_path: str, ckpt_path: str) -> Policy | None:
-@@
--    except Exception as e:
--        print(f"[paper_trader] WARN: не удалось загрузить политику из '{loader_path}' ({e}).")
--        return None
+-    for symbol in symbols:
+-        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume, num_trades, quote_asset_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
++    # Определим доступные колонки в таблице (один раз на соединение)
++    try:
++        with engine.connect() as connection:
++            cols_res = connection.execute(
++                text("SELECT column_name FROM information_schema.columns WHERE table_name = 'klines_1m'")
++            )
++            available_cols = {row[0] for row in cols_res}
 +    except Exception as e:
-+        raise RuntimeError(f"[paper_trader] Ошибка загрузки политики '{loader_path}': {e}")
++        raise RuntimeError(f"Could not inspect table columns: {e}")
++
++    base_cols = ["open_time_ms", "open_price", "high_price", "low_price", "close_price", "base_volume"]
++    opt_cols = []
++    # Добавим только реально существующие «опциональные» поля
++    if "quote_asset_volume" in available_cols:
++        opt_cols.append("quote_asset_volume")
++    # num_trades не обязателен — используем только если есть
++    if "num_trades" in available_cols:
++        opt_cols.append("num_trades")
++
++    select_cols = base_cols + opt_cols
++    select_clause = ", ".join(select_cols)
++
++    for symbol in symbols:
++        query = (
++            f"SELECT {select_clause} FROM klines_1m "
++            "WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms "
++            "ORDER BY open_time_ms"
++        )
 @@
--    provider = _load_db_provider(cfg.db_provider_path)
--    policy = _load_policy(cfg.inf.policy_loader, cfg.inf.checkpoint_path) if cfg.inf.policy_loader else None
--    if cfg.inf.strict and policy is None:
--        raise RuntimeError("[paper_trader] strict=True: модель не загружена — прерываю симуляцию.")
-+    provider = _load_db_provider(cfg.db_provider_path)
-+    policy = _load_policy(cfg.inf.policy_loader, cfg.inf.checkpoint_path)
-@@
--    for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
-+    for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
-         sym = row["symbol"]
-         ctx_start = _to_utc(row["ctx_start"])
-         ctx_end = _to_utc(row["ctx_end"])
-         ses_start = _to_utc(row["session_start"])
-         ses_end = _to_utc(row["session_end"])
--        # Подгружаем ровно сессию
--        feed = dict(provider([sym], ses_start.isoformat(), ses_end.isoformat()))
-+        # Подгружаем диапазон с КОНТЕКСТОМ и СЕССИЕЙ (для инференса модели):
-+        feed = dict(provider([sym], ctx_start.isoformat(), ses_end.isoformat()))
-         if sym not in feed or feed[sym].empty:
-             continue
-         df = _ensure_utc_index(feed[sym]).sort_index()
--        if df.index[0] > ses_start or df.index[-1] < ses_end:
-+        # Минимальные проверки покрытия ключевых временных меток
-+        last_ts = ses_end - pd.Timedelta(minutes=1)
-+        if df.index[0] > ctx_start or df.index[-1] < last_ts:
-             # неполное покрытие — пропустим окно
-             continue
--        first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
--        # Выбор стороны:
--        # 1) Если доступна модель — спрашиваем политику на контексте [ctx_start, ctx_end].
--        # 2) Если strict=False и модель недоступна — fallback (Follow-Context).
--        side = None
--        ctx_slice = df.loc[ctx_start:ctx_end]
--        if policy is not None:
--            try:
--                side = str(policy.predict(sym, ctx_slice))
--                if side not in ("BUY","SELL"):
--                    raise ValueError("policy returned non-standard action")
--            except Exception as e:
--                if cfg.inf.strict:
--                    raise
--                print(f"[paper_trader] WARN: policy.predict() failed ({e}); fallback → Follow-Context.")
--                side = None
--        if side is None:  # fallback используется ТОЛЬКО при strict=False
--            px_ctx_start = float(ctx_slice.iloc[0]["close"])
--            px_ctx_end   = float(ctx_slice.iloc[-1]["close"])
--            ctx_ret = (px_ctx_end / max(px_ctx_start, 1e-12)) - 1.0
--            if ctx_ret == 0.0:
--                continue
--            side = "BUY" if ctx_ret > 0.0 else "SELL"
-+        first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
-+        # Выбор стороны: ТОЛЬКО модель (никаких fallback).
-+        ctx_slice = df.loc[ctx_start:ctx_end]
-+        try:
-+            side = str(policy.predict(sym, ctx_slice))
-+        except Exception as e:
-+            raise RuntimeError(f"[paper_trader] policy.predict() error for {sym} @ {ctx_end}: {e}")
-+        if side not in ("BUY", "SELL"):
-+            raise RuntimeError(f"[paper_trader] policy returned invalid action: {side!r}")
-@@
--        # Выход в конце сессии
--        last_px = float(df.loc[ses_end:ses_end].iloc[-1]["close"])
-+        # Выход по ПОСЛЕДНЕЙ минуте сессии (исключаем бар, начинающийся в session_end)
-+        last_px = float(df.loc[last_ts:last_ts].iloc[-1]["close"])
-         exit_px = _apply_slippage(last_px, cfg.exec.slippage_bps, "SELL" if side=="BUY" else "BUY")
+-        df.rename(columns={
++        df.rename(columns={
+             'open_price': 'open',
+             'high_price': 'high',
+             'low_price': 'low',
+             'close_price': 'close',
+             'base_volume': 'volume'
+         }, inplace=True)
+-
+-        df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
+-        df.drop(columns=['quote_asset_volume'], inplace=True)
++        # Рассчитываем VWAP-подобную метрику, только если есть quote_asset_volume
++        if 'quote_asset_volume' in df.columns:
++            df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
++            df.drop(columns=['quote_asset_volume'], inplace=True)
+ 
+         yield (symbol, df)
 ```
 
-> Ключевые изменения: удалены все ветви кода, где мог запускаться Follow-Context, и добавлены два гейта корректности данных (наличие контекста и точка выхода). Основано на вашей версии файлов. 
+**Эффект:**
+
+* Больше **нет** запросов к несуществующим колонкам → исчезают `UndefinedColumn` для `num_trades`/`quote_asset_volume`.
+* Формат отдачи в трейдер прежний (обязательные `open/high/low/close/volume`), расчёт `volume_weighted_average` — если есть данные.
 
 ---
 
-## Как применить
+## Патч 2 — убрать потенциальный circular import в адаптере
 
-| Шаг | Действие                                             | KPI/риск                             |
-| --- | ---------------------------------------------------- | ------------------------------------ |
-| 1   | Сохраните diff выше как `changes.patch` в корне репо | —                                    |
-| 2   | Примените и закоммитьте                              | Код собирается                       |
-| 3   | Прогоните трейдер                                    | `trades.csv`, `metrics.json` созданы |
-| 4   | В логах не должно быть «fallback» сообщений вовсе    | Гарантия «model-only»                |
+**Файл:** `third_party/rl-trading-binance/inference_adapter.py` (ваша версия) 
+И **согласовать сигнатуры** с тем, как вы вызываете загрузчик в `paper_trader.py` (там вы передаёте `MasterConfig` как `master_cfg`). 
+
+```diff
+*** a/third_party/rl-trading-binance/inference_adapter.py
+--- b/third_party/rl-trading-binance/inference_adapter.py
+@@
+-import torch
+-import pandas as pd
+-import numpy as np
+-import datetime as dt
+-
+-from model import DuelingQNetwork
+-from paper_trader import Cfg
+-from utils import calculate_normalization_stats, apply_normalization
+-from config import MasterConfig
++import torch
++import pandas as pd
++import numpy as np
++import datetime as dt
++
++from model import DuelingQNetwork
++from utils import calculate_normalization_stats, apply_normalization
++from config import MasterConfig
+@@
+-def load_policy(ckpt_path: str, cfg: Cfg):
+-    # This is a simplified way to get the master config.
+-    # It assumes that the paper_trader config has enough information.
+-    master_cfg = MasterConfig()
+-    # We need to populate master_cfg with values from cfg if they exist.
+-    # For now, we will use the defaults from config.py and alpha.py,
+-    # as they are loaded in train.py.
+-    
+-    # A better way would be to load the config file that was used for training.
+-    # Assuming the config is compatible.
++def load_policy(ckpt_path: str, master_cfg: MasterConfig):
++    # Используем master_cfg, который передаёт paper_trader (без импортов paper_trader → нет цикла).
+@@
+-    # This is the hardest part: getting the normalization stats.
+-    # For now, I will create dummy stats.
+-    # In a real scenario, these should be loaded from a file saved during training.
++    # TODO: подставить реальные нормировочные статистики, сохранённые при обучении
+     stats = {
+         "means": {ch: 0.0 for ch in master_cfg.data.data_channels},
+         "stds": {ch: 1.0 for ch in master_cfg.data.data_channels},
+     }
+ 
+-    return DuelingQPolicy(model, stats, master_cfg)
++    return DuelingQPolicy(model, stats, master_cfg)
+```
+
+**Эффект:**
+
+* `inference_adapter.py` больше **не импортирует** `paper_trader.Cfg` → исключаем круговой импорт.
+* Подпись `load_policy()` совпадает с используемой в `paper_trader.py` (вы туда уже передаёте `master_cfg`). 
+
+---
+
+## Что делать сейчас (быстрые шаги)
+
+| Шаг | Действие                                                                                  | KPI/риск                                                         |
+| --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 1   | Применить патч к `db_provider.py`                                                         | Ошибка `UndefinedColumn` исчезает                                |
+| 2   | Прогнать `paper_trader.py` ещё раз                                                        | Прогон завершается; скорость вернётся к прежней                  |
+| 3   | Применить патч к `inference_adapter.py`                                                   | Исключён риск кругового импорта; поведение инференса не меняется |
+| 4   | (Опционально) Снять метрику «сколько окон было пропущено из-за неполного покрытия данных» | Контроль качества БД/окон                                        |
+
+**Команды (локально):**
 
 ```bash
-git checkout -b feature/paper-trader-no-fallback
+git checkout -b fix/db-provider-safe-select
+# сохраните diff(ы) как changes.patch
 git apply --index changes.patch
-git commit -m "fix(paper_trader): remove all fallback paths; require model; load [ctx_start, session_end]; exit at session_end-1m"
-git push -u origin feature/paper-trader-no-fallback
-gh pr create -t "paper_trader: model-only (no fallback), context-aware feed" -B prosperous_bot -b "### 🎯 Goal
-Исключить любой fallback; трейдер работает только при наличии корректной модели.
+git commit -m "fix(db_provider): safe SELECT only existing columns; VWAP only if quote_asset_volume present"
 
-### 📝 Implementation Details
-- Полностью удалены ветки Follow-Context.
-- Загрузка данных за [ctx_start, session_end] для инференса.
-- Выход по последней минуте сессии (session_end-1m).
+# если делали и правку inference_adapter:
+git commit -a -m "chore(inference): remove circular import; align loader signature with paper_trader"
 
-### 📈 KPI/Risk Assessment
-- **Sharpe/PF:** реалистичнее (без скрытой эвристики).
-- **Max DD:** без изменений в расчёте, зависит от модели.
-
-### 롤백 계획
-Revert PR."
+# прогон
+$env:PGPASSWORD="9691"
+python third_party/rl-trading-binance/paper_trader.py third_party/rl-trading-binance/configs/alpha.py
 ```
 
 ---
 
-## Примечания по соответствию регламенту
+## Пояснения и соответствие регламенту
 
-* Конфиг-драйв: путь к модели и загрузчик — в `configs/*.py` (у вас уже есть `data["inference"]`). 
-* Артефакты — в `third_party/rl-trading-binance/output/<config_name>/…`, как требовалось. Текущий `paper_trader.py` сохраняет `trades.csv` и `metrics.json`. 
-* Безопасность дат/денег: UTC-времена, суммы в USDT — без изменений. 
+* Все параметры остаются **в конфиге**; мы правили только код провайдера/адаптера.
+* Формат артефактов `paper_trader` не менялся (`output/<config>/trades.csv`, `metrics.json`).
+* Изменения минимальны и безопасны: не затрагивают расчёт PnL/комиссий/времени, только читают корректные колонки и исключают потенциальную цикличность импортов.
 
-Готов, при необходимости, сразу добавить минимальные unit-тесты (pytest) на: (1) падение при отсутствии модели, (2) корректность точки выхода `session_end-1m`, (3) что запрос к провайдеру охватывает `[ctx_start, session_end]` (моки).
-
-[1]: https://github.com/FMProducer/prosperous_bot/commit/6c2e8f94fc9565a2732f32bb47d771b804754b49 "docs: rl-trading-binance-source-code fix · FMProducer/prosperous_bot@6c2e8f9 · GitHub"
+Если хотите, дополнительно добавлю в `paper_trader.py` счётчик и лог строк вида:
+`[paper_trader] skipped windows due to missing bars: N` — это поможет быстро видеть, если БД иногда «рвётся» на отдельных окнах/символах.

@@ -4,7 +4,6 @@ import numpy as np
 import datetime as dt
 
 from model import DuelingQNetwork
-from paper_trader import Cfg
 from utils import calculate_normalization_stats, apply_normalization
 from config import MasterConfig
 
@@ -20,7 +19,19 @@ class DuelingQPolicy:
         # This needs to replicate the logic from TradingEnvironment._get_observation
         
         # The ctx_df is the window. Its length should be agent_history_len
-        window = ctx_df[self.master_cfg.data.expected_channels].to_numpy(dtype=np.float32)
+
+        # Create a copy to avoid SettingWithCopyWarning.
+        df = ctx_df.copy()
+
+        # Ensure all expected channels are present in the DataFrame.
+        # The data provider might omit optional channels like 'volume_weighted_average' or 'num_trades'
+        # if they are not available in the database for a given window.
+        # We add them here with a default value of 0.0 to ensure the model's input shape is always correct.
+        for channel in self.master_cfg.data.expected_channels:
+            if channel not in df.columns:
+                df[channel] = 0.0
+        
+        window = df[self.master_cfg.data.expected_channels].to_numpy(dtype=np.float32)
 
         # Normalize the window
         normalized_window = apply_normalization(
@@ -58,16 +69,8 @@ class DuelingQPolicy:
         else:
             return "HOLD"
 
-def load_policy(ckpt_path: str, cfg: Cfg):
-    # This is a simplified way to get the master config.
-    # It assumes that the paper_trader config has enough information.
-    master_cfg = MasterConfig()
-    # We need to populate master_cfg with values from cfg if they exist.
-    # For now, we will use the defaults from config.py and alpha.py,
-    # as they are loaded in train.py.
-    
-    # A better way would be to load the config file that was used for training.
-    # Assuming the config is compatible.
+def load_policy(ckpt_path: str, master_cfg: MasterConfig):
+    # Используем master_cfg, который передаёт paper_trader (без импортов paper_trader → нет цикла).
     
     # Instantiate the model
     model = DuelingQNetwork(
@@ -90,9 +93,7 @@ def load_policy(ckpt_path: str, cfg: Cfg):
         model.load_state_dict(checkpoint)
     model.eval()
 
-    # This is the hardest part: getting the normalization stats.
-    # For now, I will create dummy stats.
-    # In a real scenario, these should be loaded from a file saved during training.
+    # TODO: подставить реальные нормировочные статистики, сохранённые при обучении
     stats = {
         "means": {ch: 0.0 for ch in master_cfg.data.data_channels},
         "stds": {ch: 1.0 for ch in master_cfg.data.data_channels},

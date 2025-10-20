@@ -241,6 +241,9 @@ def main(argv: List[str]) -> int:
         first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
         # Выбор стороны: ТОЛЬКО модель (никаких fallback).
         ctx_slice = df.loc[ctx_start:ctx_end]
+        if len(ctx_slice) != master_cfg.seq.agent_history_len:
+            # Пропускаем, если окно контекста неполное
+            continue
         try:
             side = str(policy.predict(sym, ctx_slice))
         except Exception as e:

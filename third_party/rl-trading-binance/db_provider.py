@@ -33,8 +33,34 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
             raise RuntimeError(f"Could not fetch symbol list from database: {e}")
 
 
+    # Определим доступные колонки в таблице (один раз на соединение)
+    try:
+        with engine.connect() as connection:
+            cols_res = connection.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name = 'klines_1m'")
+            )
+            available_cols = {row[0] for row in cols_res}
+    except Exception as e:
+        raise RuntimeError(f"Could not inspect table columns: {e}")
+
+    base_cols = ["open_time_ms", "open_price", "high_price", "low_price", "close_price", "base_volume"]
+    opt_cols = []
+    # Добавим только реально существующие «опциональные» поля
+    if "quote_asset_volume" in available_cols:
+        opt_cols.append("quote_asset_volume")
+    # num_trades не обязателен — используем только если есть
+    if "num_trades" in available_cols:
+        opt_cols.append("num_trades")
+
+    select_cols = base_cols + opt_cols
+    select_clause = ", ".join(select_cols)
+
     for symbol in symbols:
-        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume, num_trades, quote_asset_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
+        query = (
+            f"SELECT {select_clause} FROM klines_1m "
+            "WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms "
+            "ORDER BY open_time_ms"
+        )
         
         try:
             df = pd.read_sql_query(sql=text(query), con=engine, params={'symbol': symbol, 'start_ms': start_ms, 'end_ms': end_ms})
@@ -55,8 +81,9 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
             'close_price': 'close',
             'base_volume': 'volume'
         }, inplace=True)
-
-        df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
-        df.drop(columns=['quote_asset_volume'], inplace=True)
+        # Рассчитываем VWAP-подобную метрику, только если есть quote_asset_volume
+        if 'quote_asset_volume' in df.columns:
+            df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
+            df.drop(columns=['quote_asset_volume'], inplace=True)
 
         yield (symbol, df)
