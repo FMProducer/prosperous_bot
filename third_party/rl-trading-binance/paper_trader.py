@@ -4,8 +4,8 @@
 Paper Trader (Real-Time DB Feed)
 --------------------------------
 Читает индекс эпизодов из stream_backtest_engine → воспроизводит сделки
-в режиме "реального времени" (sleep) или ASAP, подгружая минутки из БД
-только на период сессии. Стратегия по умолчанию: Follow-Context.
+в режиме "реального времени" (sleep) или ASAP, подгружая минутки из БД.
+Работает ТОЛЬКО с указанной в конфиге моделью (без fallback).
 
 Выход: output/<config_name>/{trades.csv, metrics.json}
 Правила проекта: конфиги строго из configs/*.py, даты — UTC, суммы — USDT.
@@ -24,6 +24,8 @@ import numpy as np
 import pandas as pd
 from dateutil import parser as dtparser
 from tqdm import tqdm
+from config import MasterConfig
+from utils import load_config as load_master_config
 
 # ------------------------------ Utils ------------------------------
 
@@ -130,14 +132,14 @@ def _load_db_provider(path: str) -> ProviderFn:
     return getattr(mod, fn_name)
 
 # ------------------------------ Strategy / Policy -------------------
-# Плагинная политика инференса; при strict=True — без fallback.
+# Плагинная политика инференса; fallback ОТСУТСТВУЕТ (модель обязательна).
 
 class Policy(Protocol):
     def predict(self, symbol: str, ctx_df: pd.DataFrame) -> str:
         """Вернуть 'BUY' или 'SELL' по данным контекста."""
         ...
 
-def _load_policy(loader_path: str, ckpt_path: str) -> Policy | None:
+def _load_policy(loader_path: str, ckpt_path: str, cfg: MasterConfig) -> Policy | None:
     try:
         if ":" not in loader_path:
             raise RuntimeError("`inference.policy_loader` должен быть 'module:function'.")
@@ -146,11 +148,10 @@ def _load_policy(loader_path: str, ckpt_path: str) -> Policy | None:
         if not hasattr(mod, fn_name):
             raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}`.")
         loader = getattr(mod, fn_name)
-        policy = loader(ckpt_path)  # type: ignore
+        policy = loader(ckpt_path, cfg)  # type: ignore
         return policy
     except Exception as e:
-        print(f"[paper_trader] WARN: не удалось загрузить политику из '{loader_path}' ({e}).")
-        return None
+        raise RuntimeError(f"[paper_trader] Ошибка загрузки политики '{loader_path}': {e}")
 
 # ------------------------------ Execution helpers -----------------
 
@@ -199,15 +200,14 @@ def main(argv: List[str]) -> int:
         return 2
     cfg_path = argv[1]
     cfg = _load_cfg(cfg_path)
+    master_cfg = load_master_config(cfg_path)
     out_dir = os.path.join("third_party", "rl-trading-binance", "output", cfg.config_name)
     os.makedirs(out_dir, exist_ok=True)
     out_trades = os.path.join(out_dir, "trades.csv")
     out_metrics = os.path.join(out_dir, "metrics.json")
 
     provider = _load_db_provider(cfg.db_provider_path)
-    policy = _load_policy(cfg.inf.policy_loader, cfg.inf.checkpoint_path) if cfg.inf.policy_loader else None
-    if cfg.inf.strict and policy is None:
-        raise RuntimeError("[paper_trader] strict=True: модель не загружена — прерываю симуляцию.")
+    policy = _load_policy(cfg.inf.policy_loader, cfg.inf.checkpoint_path, master_cfg)
     idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
     # Опциональный "колпак" на окна в день/тикер
     if cfg.pt.cap_windows_per_symbol > 0:
@@ -228,43 +228,31 @@ def main(argv: List[str]) -> int:
         ctx_end = _to_utc(row["ctx_end"])
         ses_start = _to_utc(row["session_start"])
         ses_end = _to_utc(row["session_end"])
-        # Подгружаем ровно сессию
-        feed = dict(provider([sym], ses_start.isoformat(), ses_end.isoformat()))
+        # Подгружаем диапазон с КОНТЕКСТОМ и СЕССИЕЙ (для инференса модели):
+        feed = dict(provider([sym], ctx_start.isoformat(), ses_end.isoformat()))
         if sym not in feed or feed[sym].empty:
             continue
         df = _ensure_utc_index(feed[sym]).sort_index()
-        if df.index[0] > ses_start or df.index[-1] < ses_end:
+        # Минимальные проверки покрытия ключевых временных меток
+        last_ts = ses_end - pd.Timedelta(minutes=1)
+        if df.index[0] > ctx_start or df.index[-1] < last_ts:
             # неполное покрытие — пропустим окно
             continue
         first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
-        # Выбор стороны:
-        # 1) Если доступна модель — спрашиваем политику на контексте [ctx_start, ctx_end].
-        # 2) Если strict=False и модель недоступна — fallback (Follow-Context).
-        side = None
+        # Выбор стороны: ТОЛЬКО модель (никаких fallback).
         ctx_slice = df.loc[ctx_start:ctx_end]
-        if policy is not None:
-            try:
-                side = str(policy.predict(sym, ctx_slice))
-                if side not in ("BUY","SELL"):
-                    raise ValueError("policy returned non-standard action")
-            except Exception as e:
-                if cfg.inf.strict:
-                    raise
-                print(f"[paper_trader] WARN: policy.predict() failed ({e}); fallback → Follow-Context.")
-                side = None
-        if side is None:  # fallback используется ТОЛЬКО при strict=False
-            px_ctx_start = float(ctx_slice.iloc[0]["close"])
-            px_ctx_end   = float(ctx_slice.iloc[-1]["close"])
-            ctx_ret = (px_ctx_end / max(px_ctx_start, 1e-12)) - 1.0
-            if ctx_ret == 0.0:
-                continue
-            side = "BUY" if ctx_ret > 0.0 else "SELL"
+        try:
+            side = str(policy.predict(sym, ctx_slice))
+        except Exception as e:
+            raise RuntimeError(f"[paper_trader] policy.predict() error for {sym} @ {ctx_end}: {e}")
+        if side not in ("BUY", "SELL"):
+            raise RuntimeError(f"[paper_trader] policy returned invalid action: {side!r}")
         # Исполнение
         entry_raw = first_px
         entry_px = _apply_slippage(entry_raw, cfg.exec.slippage_bps, side)
         qty = _position_size(capital, cfg.exec.risk_per_trade_pct, entry_px)
-        # Выход в конце сессии
-        last_px = float(df.loc[ses_end:ses_end].iloc[-1]["close"])
+        # Выход по ПОСЛЕДНЕЙ минуте сессии (исключаем бар, начинающийся в session_end)
+        last_px = float(df.loc[last_ts:last_ts].iloc[-1]["close"])
         exit_px = _apply_slippage(last_px, cfg.exec.slippage_bps, "SELL" if side=="BUY" else "BUY")
         notional_entry = qty * entry_px
         notional_exit = qty * exit_px

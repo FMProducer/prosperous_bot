@@ -34,7 +34,7 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
 
 
     for symbol in symbols:
-        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
+        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume, num_trades, quote_asset_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
         
         try:
             df = pd.read_sql_query(sql=text(query), con=engine, params={'symbol': symbol, 'start_ms': start_ms, 'end_ms': end_ms})
@@ -55,5 +55,8 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
             'close_price': 'close',
             'base_volume': 'volume'
         }, inplace=True)
+
+        df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
+        df.drop(columns=['quote_asset_volume'], inplace=True)
 
         yield (symbol, df)
