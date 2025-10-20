@@ -23,13 +23,13 @@ cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
 
-cfg.rl.batch_size = 128
+cfg.rl.batch_size = 64
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 20_000
 
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
-cfg.seq.agent_history_len = 90
-cfg.seq.agent_session_len = 60
+cfg.seq.agent_history_len = 45
+cfg.seq.agent_session_len = 15
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = False
@@ -37,8 +37,8 @@ cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.012695
-cfg.backtest.short_action_threshold = 0.009902
+cfg.backtest.long_action_threshold = 0.002
+cfg.backtest.short_action_threshold = 0.002
 cfg.backtest.close_action_threshold = 0.001141
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
@@ -62,7 +62,7 @@ cfg.debug.use_final_model = False
 # ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
 # Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
 # AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) и новее FP16 даёт ускорение и экономию памяти.
-cfg.perf.use_amp = True
+cfg.perf.use_amp = False
 cfg.perf.amp_dtype = "float16"
 # torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
 cfg.perf.compile_mode = None
@@ -106,3 +106,12 @@ cfg.vec.scale_epsilon_by_envs = True
 # 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
 # 3. Run optimization:              python optimize_cfg.py configs/...
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
+
+data = {
+    "source": "stream_sim_db",
+    "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
+    "ctx_minutes": 30,
+    "session_minutes": 10,
+    "trigger": {"abs_change_pct": 5.0},
+    "db_provider": "backends.postgres_ws.db_provider:get_feed"
+}

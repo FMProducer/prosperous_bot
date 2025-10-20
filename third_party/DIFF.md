@@ -1,480 +1,381 @@
-Ниже — полноценный PR-патч, добавляющий CLI-скрипт `tools/freeze_candidate.py`, который **автоматизирует Шаг 1**: фиксирует кандидата `candidate_prod_v1` (копирует `best.pth` и снапшот конфига из `configs/`, извлекает `seed` и блок `[Final Metrics]` из логов, создаёт `manifest.json` с Repo-State, считает SHA-256 артефактов, строит `metrics_summary.png`).
-Требования к путям, конфиг-first политике и отчётности соответствуют регламенту проекта (`SYSTEM_PROMPT.md`, `README.md`)  .
+> Напоминание по режиму: конфигурации — **только** из `configs/` директории; отчёты/артефакты — в `output/<config_name>/`; соблюдаем KPI (Sharpe ≥ 2.5, PF ≥ 1.3, Max DD < 20%). См. системные правила проекта.  Также опираемся на архитектуру и команды запуска из README (`train.py`, `backtest_engine.py`, структура `data/*.npz`). 
 
 ---
 
-### TL;DR
+## TL;DR
 
-* Запуск (Windows, пример для **23:23:57**):
+Готовлю **шаг 1** из вашего плана: добавляю модуль **`stream_backtest_engine.py` (Вариант B)**, который:
 
-  ```powershell
-  cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
-  python tools\freeze_candidate.py ^
-    --config-name alpha ^
-    --run-timestamp 2025-10-18T23:23:57 ^
-    --candidate-id candidate_prod_v1 ^
-    --repo-branch prosperous_bot ^
-    --repo-sha 97d9ca36bb2c056dd09d041c31f348f744e7b3b5 ^
-    --repo-url https://github.com/FMProducer/prosperous_bot/commit/97d9ca36bb2c056dd09d041c31f348f744e7b3b5 ^
-    --repo-title "source-code backtest_engine"
-  ```
-* Артефакты появятся в:
-  `output/candidate_prod_v1/{artifacts, reports, manifest.json}`
-* Скрипт **не меняет** конфиги и код обучения; работает по принципу snapshot-freeze, что соответствует «Repo is Truth» и «Конфигурации — только из configs/» .
+1. Читает конфиг `configs/*.py` и **имитирует поток** минутных свечей из БД через настраиваемый провайдер (`data.db_provider`).
+2. **Выделяет окна** по правилу волатильности (напр., ±5% за `ctx_minutes`) и формирует **индекс эпизодов** (ctx→session) в CSV: `output/<config_name>/stream_backtest_index.csv`.
+3. Работает строго в **UTC** и использует `data.time_range` (по умолчанию — *требует наличия в конфиге*).
+
+Это «инфраструктурный» слой для стрим-бэктеста: он подготавливает те же окна, что использовались в `.npz` (30→10 и др.), но теперь **из вашей локальной БД**, чтобы далее (шаг 2) подключить реалтайм-часовщик и paper trader.
+
+> По документации репозитория демонстрационный режим — 30 мин контекст → 10 мин сессия; full — 90→60. Мы **не хардкодим** интервалы: берём из `configs/*.py`. 
 
 ---
 
-## Патч (unified diff)
+## ACTION NEEDED (минимум для полноценного пробега)
 
-> Лимиты соблюдены: 2 файла, < 600 строк. Все пути **точные**. Перед диффом — Repo-State Header (см. выше).
+Чтобы модуль отработал «из коробки», в **вашем** конфиге (`configs/alpha.py` либо рабочем) должны быть поля:
+
+* `data = { "source": "stream_sim_db", "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"}, "ctx_minutes": 30, "session_minutes": 10, "trigger": {"abs_change_pct": 5.0}, "db_provider": "your_package.db_feed:get_feed" }`
+* `symbols_whitelist` (опционально) — список тикеров (если не задать, берутся все из провайдера).
+
+**`db_provider`** — это строка `"module_path:function_name"`, функция должна вернуть итератор пар `(symbol: str, df: pandas.DataFrame)` по заданным `symbols, start_utc, end_utc`. DataFrame обязан содержать UTC-индекс по минутам и колонки: `open, high, low, close, volume`.
+Если этих полей нет — модуль бросит понятное исключение и подскажет, что добавить (см. код).
+
+---
+
+## Шаги | Действие | KPI/риск
+
+| Шаг | Действие                                                                                                                         | KPI/риск                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1   | Добавить `stream_backtest_engine.py` (офлайн «replay» БД → индекс эпизодов)                                                      | **Нулевой торговый риск**; подготовка к стрим-бэктесту                   |
+| 2   | (Отдельно) Подключить `paper_trader.py` с RealTimeDbFeed и «живыми» часами, использовать индекс эпизодов или онлайновый детектор | KPI тест-гейтинг по PF/Sharpe; риски — синхронизация времени/латентности |
+| 3   | (Опционально) Расширить engine для прямого запуска среды/агента вместо записи индекса                                            | +скорость итераций; риск — интерфейс среды (нужно сверить сигнатуры)     |
+
+---
+
+# Патч (unified diff)
+
+> **Ветвь и SHA см. Repo-State Header.** Вносим **1 новый файл**. Лимит по diff соблюдён. Все параметры читаются из `configs/*.py`. Даты в ISO-8601 UTC. Выходной артефакт: `output/<config_name>/stream_backtest_index.csv`. 
 
 ```diff
 *** Begin Patch
-*** Add File: third_party/rl-trading-binance/tools/freeze_candidate.py
+*** Add File: third_party/rl-trading-binance/stream_backtest_engine.py
 +#!/usr/bin/env python
 +# -*- coding: utf-8 -*-
 +"""
-+Freeze candidate snapshot for RL Trader.
++Stream Backtest Engine (Variant B): DB Replay → Episode Index
++--------------------------------------------------------------
++Назначение:
++  - Имитация потока минутных свечей из локальной БД.
++  - Детект окон по волатильности для последующего бэктеста/пейпер-трейдинга.
 +
-+Creates a reproducible snapshot under:
-+  output/<candidate_id>/{artifacts,reports,manifest.json}
++Требования к конфигу (configs/*.py):
++  data = {
++      "source": "stream_sim_db",  # обязательный переключатель
++      "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
++      "ctx_minutes": 30,
++      "session_minutes": 10,
++      "trigger": {"abs_change_pct": 5.0},   # порог на |(close_t - close_{t-ctx})/close_{t-ctx}| * 100
++      "symbols_whitelist": ["BTCUSDT", "..."],  # опционально
++      "db_provider": "your_package.db_feed:get_feed"  # module:function
++  }
 +
-+Actions:
-+  1) Copy best.pth from: output/<config_name>/saved_models/<run_id>/best.pth
-+  2) Copy config snapshot from: configs/<config_name>.py
-+  3) Parse logs to extract seed and [Final Metrics] block
-+  4) Save metrics as TXT/JSON/CSV
-+  5) Compute SHA-256 for artifacts
-+  6) Build manifest.json with Repo-State
-+  7) Render metrics_summary.png from metrics JSON
++Провайдер БД:
++  get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str)
++    -> Iterator[Tuple[str, pandas.DataFrame]]
++  DataFrame: UTC DatetimeIndex (freq='T'), колонки: open, high, low, close, volume (float).
 +
-+Notes:
-+  - Configuration must come from configs/*.py (project rule).
-+  - All outputs live under output/ (project rule).
-+  - Designed to be OS-agnostic; tested on Windows paths.
++Выход:
++  CSV: output/<config_name>/stream_backtest_index.csv
++  Колонки: symbol,ctx_start,ctx_end,session_start,session_end,ctx_minutes,session_minutes,abs_change_pct
++
++© RL Trading Agent (demo). См. README и системные правила проекта.
 +"""
 +from __future__ import annotations
-+import argparse
-+import csv
-+import hashlib
-+import json
++
++import importlib
 +import os
-+from pathlib import Path
-+import re
 +import sys
-+from datetime import datetime
++import types
++from dataclasses import dataclass
++from datetime import datetime, timezone
++from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 +
-+# matplotlib is in requirements.txt
-+import matplotlib.pyplot as plt
-+
-+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # .../third_party/rl-trading-binance
-+
-+
-+def build_run_id_from_ts(ts: str) -> str:
-+    """
-+    Convert ISO-like timestamp (UTC/local) 'YYYY-MM-DDTHH:MM:SS' into
-+    saved_models run-id pattern:
-+      rl_binance_futures_trading_date_YYYYMMDD_time_HHMMSS
-+    """
-+    dt = datetime.fromisoformat(ts)
-+    return f"rl_binance_futures_trading_date_{dt:%Y%m%d}_time_{dt:%H%M%S}"
++import numpy as np
++import pandas as pd
++from dateutil import parser as dtparser
++from tqdm import tqdm
 +
 +
-+def find_best_pth(config_name: str, run_id: str) -> Path:
-+    p = PROJECT_ROOT / "output" / config_name / "saved_models" / run_id / "best.pth"
-+    if not p.exists():
-+        raise FileNotFoundError(f"best.pth not found: {p}")
-+    return p
++# ---------------------------- Utils & Config Loader ----------------------------
++
++def _load_py_module(path: str) -> types.ModuleType:
++    import importlib.util
++    spec = importlib.util.spec_from_file_location("user_config", path)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"Не удалось загрузить конфиг: {path}")
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)  # type: ignore
++    return mod
 +
 +
-+def ensure_dirs(dst_root: Path) -> tuple[Path, Path]:
-+    artifacts = dst_root / "artifacts"
-+    reports = dst_root / "reports"
-+    artifacts.mkdir(parents=True, exist_ok=True)
-+    reports.mkdir(parents=True, exist_ok=True)
-+    return artifacts, reports
++def _require(d: dict, key: str, err: str):
++    if key not in d:
++        raise KeyError(err)
++    return d[key]
 +
 +
-+def copy_file(src: Path, dst: Path) -> None:
-+    dst.parent.mkdir(parents=True, exist_ok=True)
-+    data = src.read_bytes()
-+    dst.write_bytes(data)
++def _to_utc(ts: str) -> datetime:
++    dt = dtparser.isoparse(ts)
++    if dt.tzinfo is None:
++        # строго требуем UTC — добавляем Z только если не указали
++        dt = dt.replace(tzinfo=timezone.utc)
++    return dt.astimezone(timezone.utc)
 +
 +
-+def sha256sum(p: Path) -> str:
-+    h = hashlib.sha256()
-+    with p.open("rb") as f:
-+        for chunk in iter(lambda: f.read(1 << 20), b""):
-+            h.update(chunk)
-+    return h.hexdigest()
++@dataclass
++class EngineParams:
++    ctx_minutes: int
++    session_minutes: int
++    abs_change_pct: float
++    start_utc: datetime
++    end_utc: datetime
++    symbols: Optional[List[str]]
++    db_provider_path: str
++    config_name: str  # для output/<config_name>/
 +
 +
-+SEED_REGEX = re.compile(r"Random seed set to\s+(\d+)")
++def _load_params_from_config(cfg_path: str) -> EngineParams:
++    cfg_mod = _load_py_module(cfg_path)
++    if not hasattr(cfg_mod, "data") or not isinstance(cfg_mod.data, dict):
++        raise RuntimeError("В конфиге должен быть dict `data` с настройками источника данных.")
++    data = cfg_mod.data
 +
++    source = data.get("source", None)
++    if source != "stream_sim_db":
++        raise RuntimeError("`data.source` должен быть 'stream_sim_db' для запуска stream_backtest_engine.")
 +
-+def parse_seed_from_log(text: str) -> str | None:
-+    m = SEED_REGEX.search(text)
-+    return m.group(1) if m else None
++    tr = _require(
++        data, "time_range",
++        "Отсутствует `data.time_range` (ожидается {'start_utc': ..., 'end_utc': ...} в ISO-8601 UTC)."
++    )
++    start_utc = _to_utc(_require(tr, "start_utc", "Нужен `data.time_range['start_utc']` в ISO-8601 UTC."))
++    end_utc = _to_utc(_require(tr, "end_utc", "Нужен `data.time_range['end_utc']` в ISO-8601 UTC."))
++    if end_utc <= start_utc:
++        raise ValueError("`end_utc` должен быть строго позже `start_utc`.")
 +
++    ctx_minutes = int(_require(data, "ctx_minutes", "Нужен `data.ctx_minutes` (целые минуты)."))
++    session_minutes = int(_require(data, "session_minutes", "Нужен `data.session_minutes` (целые минуты)."))
++    trig = _require(data, "trigger", "Нужен блок `data.trigger` (например, {'abs_change_pct': 5.0}).")
++    abs_change_pct = float(_require(trig, "abs_change_pct", "Нужен `data.trigger['abs_change_pct']` (float)."))
 +
-+def extract_final_metrics_block(text: str) -> list[str]:
-+    """
-+    Extract lines after a line starting with "[Final Metrics]:" until a blank line.
-+    Supports logs where each subsequent line contains key/value.
-+    """
-+    lines = text.splitlines()
-+    block: list[str] = []
-+    collecting = False
-+    for line in lines:
-+        if line.strip().startswith("[Final Metrics]:"):
-+            collecting = True
-+            continue
-+        if collecting:
-+            if not line.strip():
-+                break
-+            block.append(line)
-+    if not block:
-+        # Some logs include the [Final Metrics]: header line itself with first kv on same line
-+        # Try to include header line if no block found (edge-case tolerant)
-+        for i, line in enumerate(lines):
-+            if line.strip().startswith("[Final Metrics]:"):
-+                block = lines[i:i+50]  # take next chunk as-is; will be parsed loosely
-+                break
-+    if not block:
-+        raise ValueError("Final Metrics block not found in log.")
-+    return block
++    dbp = _require(
++        data, "db_provider",
++        "Нужен `data.db_provider` вида 'package.module:function' для доступа к минутным свечам из БД."
++    )
++    symbols = data.get("symbols_whitelist", None)
 +
++    # имя конфига для артефактов
++    config_name = os.path.splitext(os.path.basename(cfg_path))[0]
 +
-+KV_PATTERNS = [
-+    re.compile(r"^\s*(?:\[\d{4}-\d{2}-\d{2}.*?\])?\s*(?:\[INFO\]\s*:)?\s*([A-Za-z0-9_ ]+?)\s*=\s*(.+?)\s*$"),
-+    re.compile(r"^\s*(?:\[\d{4}-\d{2}-\d{2}.*?\])?\s*(?:\[INFO\]\s*:)?\s*([A-Za-z0-9_ ]+?)\s*:\s*(.+?)\s*$"),
-+]
-+
-+
-+def parse_metrics_kv(block_lines: list[str]) -> dict:
-+    """
-+    Parse key/value pairs from block lines. Accepts "key = value" and "key: value".
-+    Keys are normalized with underscores.
-+    """
-+    kv: dict[str, str] = {}
-+    for raw in block_lines:
-+        line = raw.strip()
-+        if not line or line.startswith("[Final Metrics]:"):
-+            continue
-+        for pat in KV_PATTERNS:
-+            m = pat.match(line)
-+            if m:
-+                k, v = m.group(1).strip(), m.group(2).strip()
-+                k = re.sub(r"\s+", "_", k.lower())
-+                kv[k] = v
-+                break
-+    if not kv:
-+        raise ValueError("No key/value pairs parsed from Final Metrics block.")
-+    return kv
-+
-+
-+def write_text(p: Path, lines: list[str]) -> None:
-+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-+
-+
-+def write_json(p: Path, obj: dict) -> None:
-+    p.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
-+
-+
-+def write_csv(p: Path, kv: dict) -> None:
-+    with p.open("w", newline="", encoding="utf-8") as f:
-+        w = csv.writer(f)
-+        w.writerow(["Metric", "Value"])
-+        for k in sorted(kv.keys()):
-+            w.writerow([k, kv[k]])
-+
-+
-+def render_metrics_png(json_path: Path, out_png: Path, title: str) -> None:
-+    m = json.loads(json_path.read_text(encoding="utf-8"))
-+    keys = [
-+        "final_balance_change", "sharpe", "sortino", "max_drawdown", "accuracy",
-+        "total_trades", "avg_trade_amount", "trades_per_day", "total_commission", "seed"
-+    ]
-+    rows = [(k, m.get(k, "")) for k in keys]
-+    fig = plt.figure(figsize=(6, 6), dpi=160)
-+    plt.axis("off")
-+    tbl = plt.table(cellText=[(k, str(v)) for k, v in rows],
-+                    colLabels=["Metric", "Value"], loc="center")
-+    tbl.auto_set_font_size(False)
-+    tbl.set_fontsize(9)
-+    tbl.scale(1, 1.2)
-+    plt.title(title, pad=12)
-+    fig.tight_layout()
-+    fig.savefig(out_png, bbox_inches="tight")
-+
-+
-+def find_log_with_final_metrics(log_root: Path, ts: datetime | None) -> Path:
-+    candidates = []
-+    for p in log_root.rglob("*"):
-+        if p.is_file() and p.suffix.lower() in {".log", ".txt"}:
-+            try:
-+                txt = p.read_text(encoding="utf-8", errors="ignore")
-+            except Exception:
-+                continue
-+            if "[Final Metrics]:" in txt:
-+                # Prefer files with mtime near provided ts, else collect all
-+                candidates.append((p, abs((datetime.fromtimestamp(p.stat().st_mtime) - (ts or datetime.fromtimestamp(p.stat().st_mtime))).total_seconds())))
-+    if not candidates:
-+        raise FileNotFoundError(f"No log with '[Final Metrics]:' found under {log_root}")
-+    candidates.sort(key=lambda t: t[1])
-+    return candidates[0][0]
-+
-+
-+def safe_git(cmd: list[str]) -> str | None:
-+    try:
-+        import subprocess
-+        out = subprocess.check_output(cmd, cwd=PROJECT_ROOT, shell=False)
-+        return out.decode("utf-8", errors="ignore").strip()
-+    except Exception:
-+        return None
-+
-+
-+def collect_repo_state(args) -> dict:
-+    branch = args.repo_branch or safe_git(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "prosperous_bot"
-+    sha = args.repo_sha or safe_git(["git", "rev-parse", "HEAD"]) or ""
-+    title = args.repo_title or (safe_git(["git", "show", "-s", "--format=%s", sha]) if sha else "") or ""
-+    url = args.repo_url or (f"https://github.com/FMProducer/prosperous_bot/commit/{sha}" if sha else "")
-+    return {
-+        "branch": branch,
-+        "sha": sha,
-+        "title": title,
-+        "url": url,
-+    }
-+
-+
-+def main():
-+    ap = argparse.ArgumentParser(description="Freeze RL Trader candidate snapshot")
-+    ap.add_argument("--config-name", required=True, help="Config name (e.g., alpha). Must exist under configs/")
-+    gid = ap.add_mutually_exclusive_group(required=True)
-+    gid.add_argument("--run-id", help="Exact saved_models run id (rl_binance_futures_trading_date_YYYYMMDD_time_HHMMSS)")
-+    gid.add_argument("--run-timestamp", help="Timestamp YYYY-MM-DDTHH:MM:SS to derive run-id")
-+    ap.add_argument("--candidate-id", default="candidate_prod_v1", help="Snapshot id under output/")
-+    ap.add_argument("--repo-branch", default=None)
-+    ap.add_argument("--repo-sha", default=None)
-+    ap.add_argument("--repo-url", default=None)
-+    ap.add_argument("--repo-title", default=None)
-+    args = ap.parse_args()
-+
-+    config_name = args.config_name
-+    run_id = args.run_id or build_run_id_from_ts(args.run_timestamp)
-+
-+    # Validate paths
-+    cfg_src = PROJECT_ROOT / "configs" / f"{config_name}.py"
-+    if not cfg_src.exists():
-+        raise FileNotFoundError(f"Config not found: {cfg_src}")
-+    best_pth = find_best_pth(config_name, run_id)
-+
-+    dst_root = PROJECT_ROOT / "output" / args.candidate_id
-+    artifacts_dir, reports_dir = ensure_dirs(dst_root)
-+
-+    # Copy artifacts
-+    pth_dst = artifacts_dir / "best.pth"
-+    copy_file(best_pth, pth_dst)
-+    cfg_dst = artifacts_dir / "config_snapshot.py"
-+    copy_file(cfg_src, cfg_dst)
-+
-+    # Parse logs for seed + final metrics
-+    log_root = PROJECT_ROOT / "output" / config_name / "logs"
-+    ts = None
-+    if args.run_timestamp:
-+        ts = datetime.fromisoformat(args.run_timestamp)
-+    log_file = find_log_with_final_metrics(log_root, ts)
-+    log_text = log_file.read_text(encoding="utf-8", errors="ignore")
-+    seed = parse_seed_from_log(log_text) or ""
-+    block = extract_final_metrics_block(log_text)
-+
-+    # Save raw block
-+    metrics_txt = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.txt"
-+    write_text(metrics_txt, ["[Final Metrics]:"] + block)
-+
-+    # Parse KV and enrich
-+    kv = parse_metrics_kv(block)
-+    kv["seed"] = seed
-+    kv["run_id"] = run_id
-+    kv["config_name"] = config_name
-+    kv["timestamp_utc"] = (args.run_timestamp + "Z") if args.run_timestamp else ""
-+
-+    # Save JSON/CSV
-+    metrics_json = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.json"
-+    metrics_csv = reports_dir / f"final_metrics_{run_id[-6:] if len(run_id)>=6 else 'run'}.csv"
-+    write_json(metrics_json, kv)
-+    write_csv(metrics_csv, kv)
-+
-+    # SHA256
-+    sha_pth = sha256sum(pth_dst)
-+    sha_cfg = sha256sum(cfg_dst)
-+
-+    # Repo-State
-+    repo_state = collect_repo_state(args)
-+
-+    # Manifest
-+    manifest = {
-+        "candidate_id": args.candidate_id,
-+        "run_id": run_id,
-+        "config_name": config_name,
-+        "seed": seed,
-+        "repo_state": repo_state,
-+        "artifacts": {
-+            "best_pth": str(pth_dst.as_posix()),
-+            "best_pth_sha256": sha_pth,
-+            "config_snapshot": str(cfg_dst.as_posix()),
-+            "config_snapshot_sha256": sha_cfg,
-+            "metrics_json": str(metrics_json.as_posix()),
-+            "metrics_csv": str(metrics_csv.as_posix()),
-+            "metrics_txt": str(metrics_txt.as_posix()),
-+        },
-+        "timestamp_utc": kv.get("timestamp_utc", ""),
-+    }
-+    (dst_root / "manifest.json").write_text(
-+        json.dumps(manifest, ensure_ascii=False, indent=2),
-+        encoding="utf-8"
++    return EngineParams(
++        ctx_minutes=ctx_minutes,
++        session_minutes=session_minutes,
++        abs_change_pct=abs_change_pct,
++        start_utc=start_utc,
++        end_utc=end_utc,
++        symbols=symbols,
++        db_provider_path=dbp,
++        config_name=config_name,
 +    )
 +
-+    # Render PNG summary
-+    summary_png = reports_dir / "metrics_summary.png"
-+    title = f"{args.candidate_id} — Final Metrics ({kv.get('timestamp_utc','') or run_id})"
-+    render_metrics_png(metrics_json, summary_png, title)
 +
-+    print(f"[OK] Snapshot created at: {dst_root}")
-+    print(f"      Artifacts: {artifacts_dir}")
-+    print(f"      Reports  : {reports_dir}")
-+    print(f"      Manifest : {(dst_root / 'manifest.json')}")
++# ---------------------------- DB Provider Loader -------------------------------
++
++ProviderFn = Callable[[Optional[List[str]], str, str], Iterable[Tuple[str, pd.DataFrame]]]
++
++
++def _load_db_provider(path: str) -> ProviderFn:
++    """
++    path: "package.module:function"
++    function signature: get_feed(symbols, start_utc, end_utc) -> Iterable[(symbol, DataFrame)]
++    """
++    if ":" not in path:
++        raise RuntimeError("`data.db_provider` должен быть в формате 'module.submodule:function'.")
++    mod_path, fn_name = path.split(":", 1)
++    mod = importlib.import_module(mod_path)
++    if not hasattr(mod, fn_name):
++        raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}`.")
++    fn = getattr(mod, fn_name)
++    return fn  # type: ignore
++
++
++# ---------------------------- Volatility Detector ------------------------------
++
++def compute_abs_change_pct(series_close: pd.Series, minutes: int) -> pd.Series:
++    """
++    | close_t - close_{t-minutes} | / close_{t-minutes} * 100
++    """
++    ref = series_close.shift(minutes)
++    return (series_close - ref).abs().div(ref).mul(100.0)
++
++
++def detect_windows(df: pd.DataFrame, symbol: str, ctx_m: int, ses_m: int, thr_pct: float) -> List[Dict[str, object]]:
++    """
++    df: minute-level OHLCV with UTC DatetimeIndex (freq='T').
++    Возвращает список окон (dict) с метаданными.
++    """
++    if df.empty:
++        return []
++
++    # Убедимся в сортировке и равномерной частоте
++    df = df.sort_index()
++    # forward fill на редкие пропуски, но без создания новых меток
++    df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].ffill()
++
++    # Детект «всплесков» на основе контекстного окна ctx_m
++    abs_chg = compute_abs_change_pct(df["close"], minutes=ctx_m)
++    triggers = abs_chg >= thr_pct
++
++    out: List[Dict[str, object]] = []
++    # Начало сессии — сразу после контекста
++    for t in df.index[(triggers).to_numpy()]:
++        ctx_end = t
++        ctx_start = ctx_end - pd.Timedelta(minutes=ctx_m)
++        ses_start = ctx_end
++        ses_end = ses_start + pd.Timedelta(minutes=ses_m)
++
++        # Проверим, что окно полностью в пределах df
++        if ctx_start < df.index[0]:
++            continue
++        if ses_end > df.index[-1]:
++            continue
++
++        out.append({
++            "symbol": symbol,
++            "ctx_start": ctx_start.to_pydatetime().replace(tzinfo=timezone.utc),
++            "ctx_end": ctx_end.to_pydatetime().replace(tzinfo=timezone.utc),
++            "session_start": ses_start.to_pydatetime().replace(tzinfo=timezone.utc),
++            "session_end": ses_end.to_pydatetime().replace(tzinfo=timezone.utc),
++            "ctx_minutes": ctx_m,
++            "session_minutes": ses_m,
++            "abs_change_pct": float(abs_chg.loc[ctx_end]),
++        })
++    return out
++
++
++# ---------------------------- Main Runner --------------------------------------
++
++def main(argv: List[str]) -> int:
++    if len(argv) < 2:
++        print("Использование: python stream_backtest_engine.py configs/alpha.py")
++        return 2
++    cfg_path = argv[1]
++    params = _load_params_from_config(cfg_path)
++
++    # Загрузка провайдера БД
++    provider = _load_db_provider(params.db_provider_path)
++
++    # Получаем поток (symbol, DataFrame)
++    feed_iter = provider(
++        params.symbols,
++        params.start_utc.replace(tzinfo=timezone.utc).isoformat(),
++        params.end_utc.replace(tzinfo=timezone.utc).isoformat(),
++    )
++
++    all_rows: List[Dict[str, object]] = []
++    total_symbols = 0
++    for symbol, df in tqdm(feed_iter, desc="DB replay", unit="symbol"):
++        total_symbols += 1
++        # sanity checks
++        if not isinstance(df.index, pd.DatetimeIndex):
++            raise RuntimeError(f"[{symbol}] index должен быть DatetimeIndex в UTC.")
++        if df.index.tz is None:
++            # трактуем как UTC, но лучше отдавать уже tz-aware
++            df.index = df.index.tz_localize("UTC")
++        else:
++            df.index = df.index.tz_convert("UTC")
++        required_cols = {"open", "high", "low", "close", "volume"}
++        if not required_cols.issubset(df.columns):
++            missing = sorted(list(required_cols.difference(df.columns)))
++            raise RuntimeError(f"[{symbol}] отсутствуют колонки: {missing}")
++
++        # ограничим по диапазону (на случай, если провайдер вернул шире)
++        df = df.loc[params.start_utc: params.end_utc]
++        rows = detect_windows(df, symbol, params.ctx_minutes, params.session_minutes, params.abs_change_pct)
++        all_rows.extend(rows)
++
++    # Экспорт индекса эпизодов
++    out_dir = os.path.join("third_party", "rl-trading-binance", "output", params.config_name)
++    os.makedirs(out_dir, exist_ok=True)
++    out_csv = os.path.join(out_dir, "stream_backtest_index.csv")
++    pd.DataFrame(all_rows).to_csv(out_csv, index=False)
++
++    print(f"[stream_backtest_engine] Сформировано окон: {len(all_rows)} по {total_symbols} тикерам.")
++    print(f"[stream_backtest_engine] Индекс эпизодов сохранён: {out_csv}")
++    print("[stream_backtest_engine] Следующий шаг: пейпер-трейдинг в реальном времени на основе этих окон (paper_trader.py).")
++    return 0
 +
 +
 +if __name__ == "__main__":
-+    sys.exit(main())
-+
-*** End Patch
-*** Add File: tests/test_freeze_candidate.py
-+# -*- coding: utf-8 -*-
-+"""
-+Lightweight tests for tools.freeze_candidate parsing utilities.
-+No external files; uses synthetic log snippets.
-+"""
-+from pathlib import Path
-+import json
-+
-+from third_party.rl_trading_binance.tools.freeze_candidate import (
-+    parse_seed_from_log, extract_final_metrics_block, parse_metrics_kv
-+)
-+
-+
-+def test_parse_seed_from_log():
-+    txt = "2025-10-18 23:23:00,001 [INFO] Random seed set to 25\n"
-+    assert parse_seed_from_log(txt) == "25"
-+
-+
-+def test_extract_final_metrics_block_and_kv_equal():
-+    snippet = """
-+some line
-+[Final Metrics]:
-+2025-10-18 23:23:57,537 [INFO] :    final_balance_change = 210.79%
-+2025-10-18 23:23:57,537 [INFO] :                  sharpe = 2.87
-+2025-10-18 23:23:57,537 [INFO] :            max_drawdown = -17.07%
-+2025-10-18 23:23:57,537 [INFO] :                accuracy = 69.3%
-+
-+after block
-+"""
-+    block = extract_final_metrics_block(snippet)
-+    kv = parse_metrics_kv(block)
-+    assert kv["final_balance_change"] == "210.79%"
-+    assert kv["sharpe"] == "2.87"
-+    assert kv["max_drawdown"] == "-17.07%"
-+    assert kv["accuracy"] == "69.3%"
-+
-+
-+def test_parse_metrics_kv_colon_style():
-+    snippet = """
-+[Final Metrics]:
-+2025-10-18 22:37:28,864 [INFO] :          trades_per_day: 1.22
-+2025-10-18 22:37:28,864 [INFO] :        avg_trade_amount: 5810.88
-+
-+"""
-+    block = extract_final_metrics_block(snippet)
-+    kv = parse_metrics_kv(block)
-+    assert kv["trades_per_day"] == "1.22"
-+    assert kv["avg_trade_amount"] == "5810.88"
++    raise SystemExit(main(sys.argv))
 +
 *** End Patch
 ```
 
 ---
 
-## Команды для локальной проверки и PR
+## Что это даёт прямо сейчас
+
+* «Под ключ» реализовано: чтение конфига → загрузка данных из БД (через **настраиваемый провайдер**) → **детект эпизодов** по волатильности → сохранение индекса эпизодов в артефакты эксперимента (`output/<config>/stream_backtest_index.csv`).
+* В логике **нет хардкода интервалов**: `ctx_minutes`/`session_minutes` и `abs_change_pct` берём из `configs/*.py`. Это соответствует проектным правилам. 
+* Это «кирпичик» для шага 2 (**`paper_trader.py`**): по этому индексу легко воспроизводить сессии с «живыми» часами и принимать решения агентом.
+
+> В README проекта прямо выделено различие «Demo (30→10, статичные .npz)» vs «Full (90→60, реальный поток WebSocket+DB)». Мы как раз закрываем часть «Full» — стрим из БД с фильтром по волатильности. 
+
+---
+
+## Команды для проверки локально
 
 ```bash
-# 1) Создать ветку
-git checkout -b feature/freeze-candidate-cli
+# 1) Новая ветка
+git checkout -b feature/stream-backtest-engine
 
-# 2) Применить патч (если нужно) и закоммитить
-# (вы уже получили код в этом сообщении — просто сохраните файлы)
-git add third_party/rl-trading-binance/tools/freeze_candidate.py tests/test_freeze_candidate.py
-git commit -m "feat(tools): add freeze_candidate.py CLI to snapshot candidate_prod_v1"
+# 2) Сохраните патч в файл и примените
+# (скопируйте diff в changes.patch)
+git apply --index changes.patch
+git commit -m "feat(stream): add stream_backtest_engine.py (DB replay → episodes index)"
 
-# 3) Прогнать pytest (fast, без сети)
+# 3) Убедитесь, что в configs/alpha.py (или вашем конфиге) задан source=stream_sim_db и блок data.* как описано
+# Пример запуска:
+python third_party/rl-trading-binance/stream_backtest_engine.py third_party/rl-trading-binance/configs/alpha.py
+
+# 4) Запустите unit-тесты проекта (если настроены)
 pytest -q
+```
 
-# 4) Push и создать PR в base=prosperous_bot
-git push -u origin feature/freeze-candidate-cli
-gh pr create -t "tools: freeze_candidate CLI (candidate_prod_v1 snapshot)" -b "\
+---
+
+## PR (создание)
+
+```bash
+git push -u origin feature/stream-backtest-engine
+gh pr create -t "feat(stream): DB replay → stream_backtest_engine (episode index)" -B prosperous_bot -b "$(cat <<'PRBODY'
 ### 🎯 Goal
-Freeze reproducible snapshot of candidate model (weights/config/seed/metrics) via CLI.
+Поддержать стрим-бэктест: воспроизведение минутных свечей из БД, детект эпизодов по волатильности и сохранение индекса окон для последующего пейпер-трейдинга.
+
 ### 📝 Implementation Details
-- Added \`tools/freeze_candidate.py\`:
-  - copies \`best.pth\` and config snapshot from \`configs/\`
-  - parses logs for \`seed\` and \`[Final Metrics]\`
-  - saves \`metrics.{txt,json,csv}\`, computes SHA-256
-  - emits \`manifest.json\` with Repo-State and artifact hashes
-  - renders \`metrics_summary.png\`
-- Added \`tests/test_freeze_candidate.py\` (KV/seed parsing).
+- Добавлен `third_party/rl-trading-binance/stream_backtest_engine.py`.
+- Чтение конфига `configs/*.py` (data.source='stream_sim_db', time_range, ctx/session, trigger.abs_change_pct, db_provider).
+- Загрузка данных из БД через модульную функцию-провайдер.
+- Детект окон: |ΔP|/P * 100 за `ctx_minutes` ≥ порога.
+- Экспорт индекса эпизодов: `output/<config>/stream_backtest_index.csv` (UTC).
+
 ### 📈 KPI/Risk Assessment
-- **Sharpe:** n/a (infra only), enables strict reproducibility for KPI audits
-- **Max DD:** n/a (infra only)
-- **Profit Factor:** n/a (infra only)
+- **Sharpe:** n/a (инфраструктурный слой; не меняет логику торговли напрямую)
+- **Max DD:** n/a
+- **Profit Factor:** n/a
+Риск: требуется корректный провайдер БД; несоответствие схемы данных — явная ошибка с подсказкой.
+
 ### 롤백 계획 (Rollback Plan)
-Revert PR; script is additive and isolated.
----
-Repo-State Header
-- branch: prosperous_bot
-- commit: 97d9ca36bb2c056dd09d041c31f348f744e7b3b5
-- title: source-code backtest_engine
-- url: https://github.com/FMProducer/prosperous_bot/commit/97d9ca36bb2c056dd09d041c31f348f744e7b3b5
-"
--B prosperous_bot
-```
+Revert PR. Код изолирован в новом файле; откат безопасен.
 
 ---
 
-## Как пользоваться (пример под ваш кейс 23:23:57)
+## Что дальше
 
-```powershell
-cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
-python tools\freeze_candidate.py `
-  --config-name alpha `
-  --run-timestamp 2025-10-18T23:23:57 `
-  --candidate-id candidate_prod_v1 `
-  --repo-branch prosperous_bot `
-  --repo-sha 97d9ca36bb2c056dd09d041c31f348f744e7b3b5 `
-  --repo-url https://github.com/FMProducer/prosperous_bot/commit/97d9ca36bb2c056dd09d041c31f348f744e7b3b5 `
-  --repo-title "source-code backtest_engine"
-```
-
-После выполнения проверьте:
-
-* `output/candidate_prod_v1/artifacts/best.pth` (+ `config_snapshot.py`)
-* `output/candidate_prod_v1/reports/final_metrics_*.{txt,json,csv}`
-* `output/candidate_prod_v1/reports/metrics_summary.png`
-* `output/candidate_prod_v1/manifest.json` (Repo-State, SHA-256, пути)
+1. **Подтвердите**/добавьте поля в `configs/*.py` (`data.source='stream_sim_db'`, `time_range`, `ctx_minutes`, `session_minutes`, `trigger.abs_change_pct`, `db_provider`, опц. `symbols_whitelist`).
+2. Дайте путь к вашей функции-провайдеру `db_provider` (я ожидаю подпись как в докстроке).
 
 ---
 
-## Контрольные требования проекта
+**Ссылки/источники:**
 
-* Конфиги только из `configs/` (скрипт делает **копию** в снапшот, исходники не трогает) .
-* Отчёты и артефакты — под `output/…` (строго соблюдено) .
-* Тест-гейтинг `pytest` — добавлен лёгкий тест на парсинг (без сети) .
+* Архитектура и команды (`train.py`, `backtest_engine.py`, структура данных/директорий): README. 
+* Политики проекта (конфиги из `configs/`, артефакты в `output/<config>/`, KPI): SYSTEM_PROMPT. 
+* История коммитов на ветке `prosperous_bot`: подтверждение состояния (см. Repo-State Header). ([GitHub][2])
