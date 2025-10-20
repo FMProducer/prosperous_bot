@@ -20,6 +20,7 @@ python backtest_engine.py configs/alpha.py "output/alpha/saved_models/rl_binance
 
 $env:PGPASSWORD="9691"
 python third_party/rl-trading-binance/stream_backtest_engine.py third_party/rl-trading-binance/configs/alpha.py
+python third_party/rl-trading-binance/paper_trader.py third_party/rl-trading-binance/configs/alpha.py
 
 
 pytest --cov=collector backends/postgres_ws/test_collector.py           *
