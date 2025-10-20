@@ -9,7 +9,10 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
     DB Provider function to get klines data from PostgreSQL database using SQLAlchemy.
     """
     try:
-        db_url = f"postgresql+psycopg2://{os.getenv('PGUSER', 'postgres')}:{os.getenv('PGPASSWORD', '9691')}@{os.getenv('PGHOST', 'localhost')}:{os.getenv('PGPORT', '5432')}/{os.getenv('PGDATABASE', 'marketdata')}"
+        password = os.getenv('PGPASSWORD')
+        if not password:
+            raise RuntimeError("PGPASSWORD environment variable not set.")
+        db_url = f"postgresql+psycopg2://{os.getenv('PGUSER', 'postgres')}:{password}@{os.getenv('PGHOST', 'localhost')}:{os.getenv('PGPORT', '5432')}/{os.getenv('PGDATABASE', 'marketdata')}"
         engine = create_engine(db_url, connect_args={'connect_timeout': 10})
     except Exception as e:
         raise RuntimeError(f"Could not create SQLAlchemy engine: {e}")
@@ -31,7 +34,7 @@ def get_feed(symbols: Optional[List[str]], start_utc: str, end_utc: str) -> Iter
 
 
     for symbol in symbols:
-        query = "SELECT * FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
+        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
         
         try:
             df = pd.read_sql_query(sql=text(query), con=engine, params={'symbol': symbol, 'start_ms': start_ms, 'end_ms': end_ms})

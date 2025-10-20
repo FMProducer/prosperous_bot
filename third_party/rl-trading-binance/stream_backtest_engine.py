@@ -76,6 +76,8 @@ class EngineParams:
     ctx_minutes: int
     session_minutes: int
     abs_change_pct: float
+    cooldown_minutes: int
+    resample_1t: bool
     start_utc: datetime
     end_utc: datetime
     symbols: Optional[List[str]]
@@ -106,6 +108,8 @@ def _load_params_from_config(cfg_path: str) -> EngineParams:
     session_minutes = int(_require(data, "session_minutes", "Нужен `data.session_minutes` (целые минуты)."))
     trig = _require(data, "trigger", "Нужен блок `data.trigger` (например, {'abs_change_pct': 5.0}).")
     abs_change_pct = float(_require(trig, "abs_change_pct", "Нужен `data.trigger['abs_change_pct']` (float)."))
+    cooldown_minutes = int(trig.get("cooldown_minutes", 60))
+    resample_1t = bool(data.get("resample_1t", True))
 
     dbp = _require(
         data, "db_provider",
@@ -120,6 +124,8 @@ def _load_params_from_config(cfg_path: str) -> EngineParams:
         ctx_minutes=ctx_minutes,
         session_minutes=session_minutes,
         abs_change_pct=abs_change_pct,
+        cooldown_minutes=cooldown_minutes,
+        resample_1t=resample_1t,
         start_utc=start_utc,
         end_utc=end_utc,
         symbols=symbols,
@@ -152,13 +158,16 @@ def _load_db_provider(path: str) -> ProviderFn:
 
 def compute_abs_change_pct(series_close: pd.Series, minutes: int) -> pd.Series:
     """
-    | close_t - close_{t-minutes} | / close_{t-minutes} * 100
+    Абсолютное изменение в % относительно цены ровно minutes назад по времени,
+    а не по числу строк. Требует регулярного индекса или time-based shift.
     """
-    ref = series_close.shift(minutes)
-    return (series_close - ref).abs().div(ref).mul(100.0)
+    ref = series_close.shift(freq=pd.Timedelta(minutes=minutes))
+    change = (series_close - ref).abs().div(ref).mul(100.0)
+    return change.reindex(series_close.index)
 
 
-def detect_windows(df: pd.DataFrame, symbol: str, ctx_m: int, ses_m: int, thr_pct: float) -> List[Dict[str, object]]:
+def detect_windows(df: pd.DataFrame, symbol: str, ctx_m: int, ses_m: int, thr_pct: float,
+                   cooldown_m: int) -> List[Dict[str, object]]:
     """
     df: minute-level OHLCV with UTC DatetimeIndex (freq='T').
     Возвращает список окон (dict) с метаданными.
@@ -166,18 +175,22 @@ def detect_windows(df: pd.DataFrame, symbol: str, ctx_m: int, ses_m: int, thr_pc
     if df.empty:
         return []
 
-    # Убедимся в сортировке и равномерной частоте
+    # Сортировка и (опц.) выравнивание минутной частоты
     df = df.sort_index()
-    # forward fill на редкие пропуски, но без создания новых меток
-    df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].ffill()
+    if (df.index.freq is None) and (getattr(df.index, "inferred_freq", None) != "T"):
+        # Нерегулярный индекс — оставляем как есть; time-based shift создаст NaN, что безопаснее ложных сигналов.
+        pass
+    # forward fill на редкие пропуски в значениях (метки не добавляем)
+    cols = ["open", "high", "low", "close", "volume"]
+    df[cols] = df[cols].ffill()
 
     # Детект «всплесков» на основе контекстного окна ctx_m
     abs_chg = compute_abs_change_pct(df["close"], minutes=ctx_m)
     triggers = abs_chg >= thr_pct
 
     out: List[Dict[str, object]] = []
-    # Начало сессии — сразу после контекста
-    for t in df.index[(triggers).to_numpy()]:
+    last_fire: Optional[pd.Timestamp] = None
+    for t in df.index[triggers.to_numpy()]:
         ctx_end = t
         ctx_start = ctx_end - pd.Timedelta(minutes=ctx_m)
         ses_start = ctx_end
@@ -189,6 +202,10 @@ def detect_windows(df: pd.DataFrame, symbol: str, ctx_m: int, ses_m: int, thr_pc
         if ses_end > df.index[-1]:
             continue
 
+        # cooldown: не допускаем перекрывающиеся эпизоды слишком часто
+        if last_fire is not None and (t - last_fire) < pd.Timedelta(minutes=cooldown_m):
+            continue
+        last_fire = t
         out.append({
             "symbol": symbol,
             "ctx_start": ctx_start.to_pydatetime().replace(tzinfo=timezone.utc),
@@ -240,7 +257,12 @@ def main(argv: List[str]) -> int:
 
         # ограничим по диапазону (на случай, если провайдер вернул шире)
         df = df.loc[params.start_utc: params.end_utc]
-        rows = detect_windows(df, symbol, params.ctx_minutes, params.session_minutes, params.abs_change_pct)
+        # (опц.) жёсткое выравнивание до 1Т: минимизирует NaN в time-based shift
+        if params.resample_1t:
+            df = df.asfreq("min")
+            df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].ffill()
+        rows = detect_windows(df, symbol, params.ctx_minutes, params.session_minutes,
+                              params.abs_change_pct, params.cooldown_minutes)
         all_rows.extend(rows)
 
     # Экспорт индекса эпизодов

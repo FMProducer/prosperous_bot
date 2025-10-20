@@ -112,6 +112,8 @@ data = {
     "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
     "ctx_minutes": 30,
     "session_minutes": 10,
-    "trigger": {"abs_change_pct": 5.0},
-    "db_provider": "backends.postgres_ws.db_provider:get_feed"
+    "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
+    "resample_1t": True,
+    # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
+    "db_provider": "db_provider:get_feed"
 }
