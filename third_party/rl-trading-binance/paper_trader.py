@@ -18,7 +18,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Protocol, Any
 
 import numpy as np
 import pandas as pd
@@ -70,12 +70,19 @@ class PTParams:
     cap_windows_per_symbol: int
 
 @dataclass
+class InferenceParams:
+    policy_loader: str
+    checkpoint_path: str
+    strict: bool
+
+@dataclass
 class Cfg:
     config_name: str
     db_provider_path: str
     index_csv: str
     exec: ExecParams
     pt: PTParams
+    inf: InferenceParams
 
 def _load_cfg(cfg_path: str) -> Cfg:
     mod = _load_py_module(cfg_path)
@@ -90,6 +97,7 @@ def _load_cfg(cfg_path: str) -> Cfg:
         raise FileNotFoundError(f"Не найден индекс эпизодов: {index_csv}")
     pt_d = data.get("paper_trader", {"mode": "asap", "cap_windows_per_symbol": 0})
     ex_d = data.get("exec", {})
+    inf_d = data.get("inference", {})
     execp = ExecParams(
         base_capital_usdt=float(ex_d.get("base_capital_usdt", 10000.0)),
         risk_per_trade_pct=float(ex_d.get("risk_per_trade_pct", 1.0)),
@@ -101,7 +109,12 @@ def _load_cfg(cfg_path: str) -> Cfg:
         mode=str(pt_d.get("mode", "asap")),
         cap_windows_per_symbol=int(pt_d.get("cap_windows_per_symbol", 0)),
     )
-    return Cfg(config_name, dbp, index_csv, execp, ptp)
+    infp = InferenceParams(
+        policy_loader=str(inf_d.get("policy_loader", "")),
+        checkpoint_path=str(inf_d.get("checkpoint_path", "")),
+        strict=bool(inf_d.get("strict", False)),
+    )
+    return Cfg(config_name, dbp, index_csv, execp, ptp, infp)
 
 # ------------------------------ Provider ---------------------------
 
@@ -116,14 +129,28 @@ def _load_db_provider(path: str) -> ProviderFn:
         raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}`.")
     return getattr(mod, fn_name)
 
-# ------------------------------ Strategy ---------------------------
-# Baseline: Follow-Context — направление = sign(close(ctx_end)-close(ctx_start))
+# ------------------------------ Strategy / Policy -------------------
+# Плагинная политика инференса; при strict=True — без fallback.
 
-def _direction_from_ctx(row: pd.Series) -> int:
-    # Предполагаем, что в index CSV нет direction. Направление восстановим из ret_ctx, если доступно,
-    # иначе по sign(abs_change + эвристика через session цены).
-    # В базовой реализации — вычислим позже по реальным баррам session_start-ctx_end (см. ниже).
-    return 0  # placeholder; определим после загрузки цен
+class Policy(Protocol):
+    def predict(self, symbol: str, ctx_df: pd.DataFrame) -> str:
+        """Вернуть 'BUY' или 'SELL' по данным контекста."""
+        ...
+
+def _load_policy(loader_path: str, ckpt_path: str) -> Policy | None:
+    try:
+        if ":" not in loader_path:
+            raise RuntimeError("`inference.policy_loader` должен быть 'module:function'.")
+        mod_path, fn_name = loader_path.split(":", 1)
+        mod = importlib.import_module(mod_path)
+        if not hasattr(mod, fn_name):
+            raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}`.")
+        loader = getattr(mod, fn_name)
+        policy = loader(ckpt_path)  # type: ignore
+        return policy
+    except Exception as e:
+        print(f"[paper_trader] WARN: не удалось загрузить политику из '{loader_path}' ({e}).")
+        return None
 
 # ------------------------------ Execution helpers -----------------
 
@@ -178,6 +205,9 @@ def main(argv: List[str]) -> int:
     out_metrics = os.path.join(out_dir, "metrics.json")
 
     provider = _load_db_provider(cfg.db_provider_path)
+    policy = _load_policy(cfg.inf.policy_loader, cfg.inf.checkpoint_path) if cfg.inf.policy_loader else None
+    if cfg.inf.strict and policy is None:
+        raise RuntimeError("[paper_trader] strict=True: модель не загружена — прерываю симуляцию.")
     idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
     # Опциональный "колпак" на окна в день/тикер
     if cfg.pt.cap_windows_per_symbol > 0:
@@ -194,6 +224,8 @@ def main(argv: List[str]) -> int:
 
     for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
         sym = row["symbol"]
+        ctx_start = _to_utc(row["ctx_start"])
+        ctx_end = _to_utc(row["ctx_end"])
         ses_start = _to_utc(row["session_start"])
         ses_end = _to_utc(row["session_end"])
         # Подгружаем ровно сессию
@@ -204,12 +236,29 @@ def main(argv: List[str]) -> int:
         if df.index[0] > ses_start or df.index[-1] < ses_end:
             # неполное покрытие — пропустим окно
             continue
-        # Определяем направление по контексту: сравним close в ctx_end и ctx_start из БД
-        # Чтобы не тянуть весь контекст второй раз, используем знак изменения в первой минуте сессии vs последней минуте контекста:
         first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
-        # эвристика: если в CSV abs_change_pct > 0, берём знак через df на соседних барах
-        # (в проде сюда подставится предсказание модели)
-        side = "BUY" if row["abs_change_pct"] >= 0.0 else "SELL"
+        # Выбор стороны:
+        # 1) Если доступна модель — спрашиваем политику на контексте [ctx_start, ctx_end].
+        # 2) Если strict=False и модель недоступна — fallback (Follow-Context).
+        side = None
+        ctx_slice = df.loc[ctx_start:ctx_end]
+        if policy is not None:
+            try:
+                side = str(policy.predict(sym, ctx_slice))
+                if side not in ("BUY","SELL"):
+                    raise ValueError("policy returned non-standard action")
+            except Exception as e:
+                if cfg.inf.strict:
+                    raise
+                print(f"[paper_trader] WARN: policy.predict() failed ({e}); fallback → Follow-Context.")
+                side = None
+        if side is None:  # fallback используется ТОЛЬКО при strict=False
+            px_ctx_start = float(ctx_slice.iloc[0]["close"])
+            px_ctx_end   = float(ctx_slice.iloc[-1]["close"])
+            ctx_ret = (px_ctx_end / max(px_ctx_start, 1e-12)) - 1.0
+            if ctx_ret == 0.0:
+                continue
+            side = "BUY" if ctx_ret > 0.0 else "SELL"
         # Исполнение
         entry_raw = first_px
         entry_px = _apply_slippage(entry_raw, cfg.exec.slippage_bps, side)

@@ -116,6 +116,12 @@ data = {
     "resample_1t": True,
     # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
     "db_provider": "db_provider:get_feed",
+    # ---- Inference (строгий режим без фоллбэка) ----
+    "inference": {
+        "policy_loader": "inference_adapter:load_policy",  # module:function
+        "checkpoint_path": r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth",
+        "strict": True
+    },
     # ---- Paper trading (RT/ASAP) ----
     "paper_trader": {
         "mode": "asap",             # "realtime" | "asap"
