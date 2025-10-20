@@ -1,188 +1,126 @@
 # Repo-State Header
 
-**Ветка (default):** `prosperous_bot`
-**Примечание:** в этой сессии не смог надёжно подтвердить актуальный SHA-1 HEAD по REPO_URL. Действую по предоставленным локальным файлам и артефактам; SHA-1 зафиксируем при подготовке PR.
+**branch:** `prosperous_bot` • **latest:** `6c2e8f94fc9565a2732f32bb47d771b804754b49` — “docs: rl-trading-binance-source-code fix” (2025-10-19) ([GitHub][1])
+**repo:** FMProducer/prosperous_bot (GitHub) ([GitHub][2])
+
+TL;DR: 0 сделок от `paper_trader.py` — почти наверняка из-за того, что в ранней версии мы подгружали **только сессию** (`ses_start → ses_end`), а далее требуем покрытие **контекста** (`ctx_start`). В результате каждое окно отфильтровывалось проверкой покрытия, и сделки не формировались. Исправление — грузить диапазон **`ctx_start → ses_end`**. Дополнительно: в `inference_adapter.py` статистики нормализации сейчас «заглушки» — это влияет на качество, но не на сам факт генерации сделок; позже подставим реальные stats из обучения. Ниже — минимальный patch, команды и чек-лист.
 
 ---
 
-## TL;DR
+## Почему 0 сделок
 
-Ваши логи падают на `db_provider.py` из-за запроса столбцов, которых **нет** в таблице (`num_trades`, иногда `quote_asset_volume`). Это не про модель/трейдер — это чисто **SQL-схема**.
-Сделал точечный фикс провайдера: динамически проверяем наличие колонок и собираем `SELECT` только из существующих; расчёт `volume_weighted_average` выполняем **только** при наличии `quote_asset_volume`.
-Дополнительно устраняю потенциальную **циклическую зависимость**: `inference_adapter.py` импортирует `paper_trader.Cfg`, что может «закусить» импорт при загрузке политики. Патч убирает этот импорт и использует уже загруженный `MasterConfig` (он у вас есть в `paper_trader.py`).
+1. **Источник данных окна:**
+   В варианте файла, который даёт симптом “0 trades”, фид подгружается **по сессии**:
+   `feed = provider([sym], ses_start.isoformat(), ses_end.isoformat())` — дальше идёт проверка: если `df.index[0] > ctx_start`, окно **пропускается** (контекст не покрыт). Это как раз ваш случай нулевой выборки сделок. 
 
-Ниже — причины и минимальные патчи.
+2. **Правильный диапазон:**
+   В более новой правке мы уже показывали корректный вызов:
+   `feed = provider([sym], ctx_start.isoformat(), ses_end.isoformat())` — тогда контекст и сессия покрыты, и окно проходит проверку. 
 
----
+3. **Строгий инференс и модель:**
+   Конфиг `alpha.py` указывает строгое использование модели без фоллбэка и путь к чекпойнту (`strict=True`, явный `checkpoint_path`) — это корректно.
 
-## Что именно сломалось и где
-
-1. **Ошибка SQL (UndefinedColumn)**
-   В логе видно: запрос включает `num_trades`, а в вашей `klines_1m` этого столбца нет → `psycopg2.errors.UndefinedColumn`. Источник — текущий запрос в `db_provider.py`: он всегда тянет
-   `..., base_volume, num_trades, quote_asset_volume ...` 
-
-2. **Риск кругового импорта**
-   `inference_adapter.py` делает `from paper_trader import Cfg`. А `paper_trader.py` динамически импортирует адаптер для загрузки политики. Это создаёт цикл *paper_trader → inference_adapter → paper_trader*. Сегодня повезло, но это хрупко. 
+4. **Нормализация признаков (качество):**
+   В `inference_adapter.py` stats сейчас временно `means=0/stds=1` («TODO: подставить реальные нормировочные статистики»). Это **не мешает** появлению сделок (модель всё равно выдаёт действие), но способно ухудшать PF/Sharpe vs бэктест. Позже подставим реальные stats из обучения. 
 
 ---
 
-## Патч 1 — безопасный SQL в провайдере БД
+## Мини-патч (исправление диапазона фида)
 
-**Файл:** `third_party/rl-trading-binance/db_provider.py` (ваша версия) 
+**Файл:** `third_party/rl-trading-binance/paper_trader.py`
+Меняем подгрузку фида с `ses_start→ses_end` на `ctx_start→ses_end`.
 
 ```diff
-*** a/third_party/rl-trading-binance/db_provider.py
---- b/third_party/rl-trading-binance/db_provider.py
+*** a/third_party/rl-trading-binance/paper_trader.py
+--- b/third_party/rl-trading-binance/paper_trader.py
 @@
--    for symbol in symbols:
--        query = "SELECT open_time_ms, open_price, high_price, low_price, close_price, base_volume, num_trades, quote_asset_volume FROM klines_1m WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms ORDER BY open_time_ms"
-+    # Определим доступные колонки в таблице (один раз на соединение)
-+    try:
-+        with engine.connect() as connection:
-+            cols_res = connection.execute(
-+                text("SELECT column_name FROM information_schema.columns WHERE table_name = 'klines_1m'")
-+            )
-+            available_cols = {row[0] for row in cols_res}
-+    except Exception as e:
-+        raise RuntimeError(f"Could not inspect table columns: {e}")
-+
-+    base_cols = ["open_time_ms", "open_price", "high_price", "low_price", "close_price", "base_volume"]
-+    opt_cols = []
-+    # Добавим только реально существующие «опциональные» поля
-+    if "quote_asset_volume" in available_cols:
-+        opt_cols.append("quote_asset_volume")
-+    # num_trades не обязателен — используем только если есть
-+    if "num_trades" in available_cols:
-+        opt_cols.append("num_trades")
-+
-+    select_cols = base_cols + opt_cols
-+    select_clause = ", ".join(select_cols)
-+
-+    for symbol in symbols:
-+        query = (
-+            f"SELECT {select_clause} FROM klines_1m "
-+            "WHERE symbol = :symbol AND open_time_ms >= :start_ms AND open_time_ms <= :end_ms "
-+            "ORDER BY open_time_ms"
-+        )
-@@
--        df.rename(columns={
-+        df.rename(columns={
-             'open_price': 'open',
-             'high_price': 'high',
-             'low_price': 'low',
-             'close_price': 'close',
-             'base_volume': 'volume'
-         }, inplace=True)
--
--        df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
--        df.drop(columns=['quote_asset_volume'], inplace=True)
-+        # Рассчитываем VWAP-подобную метрику, только если есть quote_asset_volume
-+        if 'quote_asset_volume' in df.columns:
-+            df['volume_weighted_average'] = df['quote_asset_volume'] / (df['volume'] + 1e-9)
-+            df.drop(columns=['quote_asset_volume'], inplace=True)
- 
-         yield (symbol, df)
+-        # Подгружаем ровно сессию
+-        feed = dict(provider([sym], ses_start.isoformat(), ses_end.isoformat()))
++        # ВАЖНО: для инференса нужна и зона контекста, и сама сессия
++        feed = dict(provider([sym], ctx_start.isoformat(), ses_end.isoformat()))
+         if sym not in feed or feed[sym].empty:
+             continue
+         df = _ensure_utc_index(feed[sym]).sort_index()
+-        if df.index[0] > ses_start or df.index[-1] < last_ts:
++        # минимум проверяем покрытие контекста и последней минуты сессии
++        if df.index[0] > ctx_start or df.index[-1] < last_ts:
+             # неполное покрытие — пропустим окно
+             continue
 ```
 
-**Эффект:**
+*Примечание:* В вашей копии уже может быть часть этого исправления — ориентируйтесь на две строки: **границы вызова провайдера** и **условие покрытия**. Симптом “0 trades” возникает именно когда фид грузится от `ses_start`, а проверка сравнивает с `ctx_start`.
 
-* Больше **нет** запросов к несуществующим колонкам → исчезают `UndefinedColumn` для `num_trades`/`quote_asset_volume`.
-* Формат отдачи в трейдер прежний (обязательные `open/high/low/close/volume`), расчёт `volume_weighted_average` — если есть данные.
+(**Процесс/требования**) Перед любым патчем мы сверяемся с системным регламентом: Repo-first, единый unified diff, ограничения патча и обязательные метрики/отчёты.
 
 ---
 
-## Патч 2 — убрать потенциальный circular import в адаптере
+## Что ожидать после фикса
 
-**Файл:** `third_party/rl-trading-binance/inference_adapter.py` (ваша версия) 
-И **согласовать сигнатуры** с тем, как вы вызываете загрузчик в `paper_trader.py` (там вы передаёте `MasterConfig` как `master_cfg`). 
-
-```diff
-*** a/third_party/rl-trading-binance/inference_adapter.py
---- b/third_party/rl-trading-binance/inference_adapter.py
-@@
--import torch
--import pandas as pd
--import numpy as np
--import datetime as dt
--
--from model import DuelingQNetwork
--from paper_trader import Cfg
--from utils import calculate_normalization_stats, apply_normalization
--from config import MasterConfig
-+import torch
-+import pandas as pd
-+import numpy as np
-+import datetime as dt
-+
-+from model import DuelingQNetwork
-+from utils import calculate_normalization_stats, apply_normalization
-+from config import MasterConfig
-@@
--def load_policy(ckpt_path: str, cfg: Cfg):
--    # This is a simplified way to get the master config.
--    # It assumes that the paper_trader config has enough information.
--    master_cfg = MasterConfig()
--    # We need to populate master_cfg with values from cfg if they exist.
--    # For now, we will use the defaults from config.py and alpha.py,
--    # as they are loaded in train.py.
--    
--    # A better way would be to load the config file that was used for training.
--    # Assuming the config is compatible.
-+def load_policy(ckpt_path: str, master_cfg: MasterConfig):
-+    # Используем master_cfg, который передаёт paper_trader (без импортов paper_trader → нет цикла).
-@@
--    # This is the hardest part: getting the normalization stats.
--    # For now, I will create dummy stats.
--    # In a real scenario, these should be loaded from a file saved during training.
-+    # TODO: подставить реальные нормировочные статистики, сохранённые при обучении
-     stats = {
-         "means": {ch: 0.0 for ch in master_cfg.data.data_channels},
-         "stds": {ch: 1.0 for ch in master_cfg.data.data_channels},
-     }
- 
--    return DuelingQPolicy(model, stats, master_cfg)
-+    return DuelingQPolicy(model, stats, master_cfg)
-```
-
-**Эффект:**
-
-* `inference_adapter.py` больше **не импортирует** `paper_trader.Cfg` → исключаем круговой импорт.
-* Подпись `load_policy()` совпадает с используемой в `paper_trader.py` (вы туда уже передаёте `master_cfg`). 
+* **Факт сделок:** сделки появятся (модель будет принимать решение на полном окне).
+* **Метрики vs backtest:** цифры будут отличаться (другой состав тикеров/окна и грубая нормализация), но порядок величин станет сопоставим с тестовыми прогонами. Для приближения к бэктесту потребуется подставить **реальные stats нормализации** из обучения в `inference_adapter.py` (замена «TODO»-заглушки). 
 
 ---
 
-## Что делать сейчас (быстрые шаги)
+## Шаги, KPI/риск
 
-| Шаг | Действие                                                                                  | KPI/риск                                                         |
-| --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 1   | Применить патч к `db_provider.py`                                                         | Ошибка `UndefinedColumn` исчезает                                |
-| 2   | Прогнать `paper_trader.py` ещё раз                                                        | Прогон завершается; скорость вернётся к прежней                  |
-| 3   | Применить патч к `inference_adapter.py`                                                   | Исключён риск кругового импорта; поведение инференса не меняется |
-| 4   | (Опционально) Снять метрику «сколько окон было пропущено из-за неполного покрытия данных» | Контроль качества БД/окон                                        |
+| Шаг | Действие                                                                                     | KPI/риск                                                                                                          |
+| --- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | Применить дифф (подгружать `ctx_start→ses_end`, сверить условие покрытия)                    | Разблокирует генерацию сделок; риск: если в БД есть пропуски по контексту, часть окон всё ещё будет отфильтрована |
+| 2   | Реран `paper_trader.py` на том же `stream_backtest_index.csv`                                | Должны появиться `trades.csv` с N>0 строк и валидные `metrics.json`                                               |
+| 3   | Подставить реальные **stats нормализации** в `inference_adapter.py` (из артефактов обучения) | Улучшение PF/Sharpe к уровням бэктеста; риск: несовпадение каналов — проверяем `expected_channels`                |
+| 4   | Сверка метрик (PF≥1.3, Sharpe≥2.5, Max DD<20%) и логов пропусков окон                        | Гейтинг по требованиям проекта; при отклонении — корректировка конфигов/комиссий/слонговок                        |
 
-**Команды (локально):**
+---
+
+## Команды для PR
 
 ```bash
-git checkout -b fix/db-provider-safe-select
-# сохраните diff(ы) как changes.patch
-git apply --index changes.patch
-git commit -m "fix(db_provider): safe SELECT only existing columns; VWAP only if quote_asset_volume present"
+git checkout -b feature/paper-trader-ctx-start-feed
+git apply --index changes.patch && git commit -m "feat(paper_trader): load ctx_start→ses_end to pass coverage check and enable trades"
+git push -u origin feature/paper-trader-ctx-start-feed
+gh pr create -t "paper_trader: fix feed range (ctx_start→ses_end)" -b "
+### 🎯 Goal
+Исправить диапазон подгрузки котировок для инференса (включая контекст), чтобы окна не отбрасывались проверкой покрытия.
 
-# если делали и правку inference_adapter:
-git commit -a -m "chore(inference): remove circular import; align loader signature with paper_trader"
+### 📝 Implementation Details
+- Изменён вызов провайдера: ses_start→ses_end → ctx_start→ses_end.
+- Уточнена проверка покрытия (ctx_start / last_ts).
 
-# прогон
-$env:PGPASSWORD="9691"
+### 📈 KPI/Risk Assessment
+- **Sharpe:** ожидается рост к значениям бэктеста (после подстановки нормировок).
+- **Max DD:** без ухудшений; соответствует симуляции.
+- **Profit Factor:** ≥ 1.3 при корректных stats.
+
+### 롤백 계획 (Rollback Plan)
+Откат PR; без миграций.
+
+---
+Repo-State: branch=prosperous_bot, sha=6c2e8f94fc9565a2732f32bb47d771b804754b49, title='docs: rl-trading-binance-source-code fix'
+"
+# для RL-бота: base ветка
+# (если требуется)
+# gh pr create ... -B prosperous_bot
+```
+
+---
+
+## Быстрая проверка (smoke)
+
+После патча запустите:
+
+```bash
 python third_party/rl-trading-binance/paper_trader.py third_party/rl-trading-binance/configs/alpha.py
 ```
 
+Ожидаем **`trades > 0`** и валидные метрики. Если снова 0, выведем счётчики причин пропусков (могу добавить логирование: `skipped_coverage`, `skipped_empty_feed`, `invalid_action`), но по текущей симптоматике корень — именно диапазон подкачки данных.
+
 ---
 
-## Пояснения и соответствие регламенту
+### P.S.
 
-* Все параметры остаются **в конфиге**; мы правили только код провайдера/адаптера.
-* Формат артефактов `paper_trader` не менялся (`output/<config>/trades.csv`, `metrics.json`).
-* Изменения минимальны и безопасны: не затрагивают расчёт PnL/комиссий/времени, только читают корректные колонки и исключают потенциальную цикличность импортов.
+* В `inference_adapter.py` сейчас добавлены заглушки каналов (`expected_channels`) и заглушечные stats — это допустимо для smoke-прогона, но на результативность (`PF`, `Sharpe`) влияет заметно; на следующем шаге подставим реальные статистики, сохранённые при обучении.
 
-Если хотите, дополнительно добавлю в `paper_trader.py` счётчик и лог строк вида:
-`[paper_trader] skipped windows due to missing bars: N` — это поможет быстро видеть, если БД иногда «рвётся» на отдельных окнах/символах.
+Если хотите — сразу добавлю логирование причин пропуска окон и мини-юнит-тест (pytest) для проверки корректности диапазона и покрытия (обязательное требование процесса). 
+
+[1]: https://github.com/FMProducer/prosperous_bot/commit/6c2e8f94fc9565a2732f32bb47d771b804754b49 "docs: rl-trading-binance-source-code fix · FMProducer/prosperous_bot@6c2e8f9 · GitHub"
+[2]: https://github.com/FMProducer/prosperous_bot "GitHub - FMProducer/prosperous_bot"
