@@ -28,17 +28,17 @@ cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 20_000
 
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
-cfg.seq.agent_history_len = 45
-cfg.seq.agent_session_len = 15
+cfg.seq.agent_history_len = 30
+cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
-cfg.backtest_mode = False
+cfg.backtest_mode = True
 cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.002
-cfg.backtest.short_action_threshold = 0.002
+cfg.backtest.long_action_threshold = 0.0099
+cfg.backtest.short_action_threshold = 0.0099
 cfg.backtest.close_action_threshold = 0.001141
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
@@ -115,5 +115,17 @@ data = {
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
     "resample_1t": True,
     # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
-    "db_provider": "db_provider:get_feed"
+    "db_provider": "db_provider:get_feed",
+    # ---- Paper trading (RT/ASAP) ----
+    "paper_trader": {
+        "mode": "asap",             # "realtime" | "asap"
+        "cap_windows_per_symbol": 0 # 0 = без лимита; иначе макс. окон/день/тикер
+    },
+    "exec": {
+        "base_capital_usdt": 10000.0,   # общий капитал (для риска/позиции)
+        "risk_per_trade_pct": 1.0,      # риск на сделку, %
+        "fee_bps": 2.0,                 # комиссия в б.п. (0.01% = 1 б.п.)
+        "slippage_bps": 1.0,            # проскальзывание (одна сторона) в б.п.
+        "max_concurrent": 4             # ограничение на одновременные позиции
+    }
 }
