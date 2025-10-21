@@ -116,9 +116,13 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     if not hasattr(mod, "data") or not isinstance(mod.data, dict):
         raise RuntimeError("В конфиге нужен dict `data`.")
     data = mod.data
+    # master_cfg НЕ обязателен: попробуем найти cfg / MasterConfig(), иначе оставим None
     master_cfg = getattr(mod, "cfg", None)
-    if master_cfg is None:
-        raise RuntimeError("В конфиге не найден объект `cfg` (MasterConfig).")
+    if master_cfg is None and hasattr(mod, "MasterConfig"):
+        try:
+            master_cfg = mod.MasterConfig()
+        except Exception:
+            master_cfg = None
 
     # обязательные части (см. SYSTEM_PROMPT.md / README)
     dbp = data["db_provider"]
@@ -336,7 +340,9 @@ def main(argv: List[str]) -> int:
                 "Либо выключите build_index_from_db=False и подготовьте stream_backtest_index.csv офлайн."
             )
         rows = []
+        print("Starting index generation...")
         for sym in cfg.symbols:
+            print(f"--> Processing symbol: {sym}")
             feed = dict(provider([sym], cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
             if sym not in feed or feed[sym].empty:
                 continue
@@ -408,7 +414,12 @@ def main(argv: List[str]) -> int:
             else:
                 raise RuntimeError("Policy не загружена, а inf_strict=False запрещает эвристику.")
         
-        df_ctx = df.loc[pd.Timestamp(ctx_start):pd.Timestamp(ctx_end - pd.Timedelta(minutes=1))]
+        # Контекст для модели должен иметь длину agent_history_len
+        ctx_end_ts = pd.Timestamp(ctx_end)
+        # NB: ctx_start из индекса может быть шире, чем нужно модели.
+        # Отрезаем окно нужной длины agent_history_len от конца контекста.
+        ctx_start_for_model = ctx_end_ts - pd.Timedelta(minutes=master_cfg.seq.agent_history_len)
+        df_ctx = df.loc[ctx_start_for_model : ctx_end_ts - pd.Timedelta(minutes=1)]
         side = _policy_to_side(policy, sym, df_ctx)
 
         if side not in ("BUY", "SELL"):

@@ -120,9 +120,9 @@ data = {
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
     "resample_1t": True,
     # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
-    "build_index_from_db": False,
+    "build_index_from_db": True,
     # NB: для build_index_from_db=True обязательно укажите список тикеров:
-    # "symbols": ["BTCUSDT","ETHUSDT"],
+    "symbols": ["OMUSDT","1000RATSUSDT","KAVAUSDT","FILUSDT","POPCATUSDT","ZECUSDT","LUNA2USDT","BRETTUSDT","BELUSDT","LISTAUSDT","ZKUSDT","PORTALUSDT","AUCTIONUSDT","BIGTIMEUSDT","TRBUSDT","ARKMUSDT","TIAUSDT","NEOUSDT","IMXUSDT","AXLUSDT","MASKUSDT","CATIUSDT","REZUSDT"],
     # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
     "detector": {
         # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)

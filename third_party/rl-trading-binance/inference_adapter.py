@@ -13,6 +13,7 @@ class DuelingQPolicy:
         self.stats = stats
         self.master_cfg = master_cfg
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
 
     def predict(self, symbol: str, ctx_df: pd.DataFrame) -> str:
         # 1. Prepare the observation from ctx_df
