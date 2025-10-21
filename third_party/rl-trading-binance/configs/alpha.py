@@ -139,7 +139,7 @@ data = {
     "inference": {
         "policy_loader": "inference_adapter:load_policy",  # module:function
         "checkpoint_path": r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\fmproducer_1_eval\saved_models\session_1\best.pth",
-        "strict": True
+        "strict": True   # True: без рабочей политики торги пропускаются (никакого Follow-Context)
     },
     # ---- Paper trading (RT/ASAP) ----
     "paper_trader": {

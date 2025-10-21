@@ -18,7 +18,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Callable
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Callable, Protocol, Any
 
 import numpy as np
 import pandas as pd
@@ -80,12 +80,19 @@ class PTParams:
     cap_windows_per_symbol: int
 
 @dataclass
+class InferenceParams:
+    policy_loader: Optional[str]
+    checkpoint_path: Optional[str]
+    strict: bool = False
+
+@dataclass
 class Cfg:
     config_name: str
     db_provider_path: str
     index_csv: str
     exec: ExecParams
     pt: PTParams
+    inference: InferenceParams
     # --- расширения для потокового построения индекса ---
     build_index_from_db: bool
     time_start_utc: Optional[datetime]
@@ -124,6 +131,13 @@ def _load_cfg(cfg_path: str) -> Cfg:
         mode=str(pt_d.get("mode", "asap")),
         cap_windows_per_symbol=int(pt_d.get("cap_windows_per_symbol", 0)),
     )
+    # ---- inference ----
+    inf_d = data.get("inference", {})
+    inf = InferenceParams(
+        policy_loader=inf_d.get("policy_loader"),
+        checkpoint_path=inf_d.get("checkpoint_path"),
+        strict=bool(inf_d.get("strict", False)),
+    )
     # --- доп. поля для индекса и детектора ---
     tr = data.get("time_range", {})
     t_start = tr.get("start_utc")
@@ -140,7 +154,7 @@ def _load_cfg(cfg_path: str) -> Cfg:
     det_cool = int(det.get("cooldown_minutes", data.get("trigger", {}).get("cooldown_minutes", 60)))
     det_la = bool(det.get("use_lookahead", True))
     symbols = list(data.get("symbols", []))
-    return Cfg(config_name, dbp, index_csv, execp, ptp,
+    return Cfg(config_name, dbp, index_csv, execp, ptp, inf,
                bool(data.get("build_index_from_db", False)),
                t_start, t_end, ctx_m, sess_m,
                det_ctx, det_win, det_abs, det_con, det_cool, det_la,
@@ -159,14 +173,49 @@ def _load_db_provider(path: str) -> ProviderFn:
         raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}`.")
     return getattr(mod, fn_name)
 
-# ------------------------------ Strategy ---------------------------
-# Baseline: Follow-Context — направление = sign(close(ctx_end)-close(ctx_start))
+# ------------------------------ Inference --------------------------
+class _Policy(Protocol):
+    # Рекомендуемый интерфейс адаптера инференса:
+    #  - predict_side(df_ctx: pd.DataFrame) -> str  ("BUY"/"SELL")
+    #  - либо predict(df_ctx) -> int (1=BUY, 0/−1=SELL)
+    #  - либо __call__(df_ctx) -> ...
+    def predict_side(self, df_ctx: pd.DataFrame) -> str: ...
 
-def _direction_from_ctx(row: pd.Series) -> int:
-    # Предполагаем, что в index CSV нет direction. Направление восстановим из ret_ctx, если доступно,
-    # иначе по sign(abs_change + эвристика через session цены).
-    # В базовой реализации — вычислим позже по реальным баррам session_start-ctx_end (см. ниже).
-    return 0  # placeholder; определим после загрузки цен
+def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str]) -> Optional[_Policy]:
+    if not policy_loader:
+        return None
+    if ":" not in policy_loader:
+        raise RuntimeError("`data.inference.policy_loader` должен быть 'module:function'.")
+    mod_path, fn_name = policy_loader.split(":", 1)
+    mod = importlib.import_module(mod_path)
+    if not hasattr(mod, fn_name):
+        raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}` (policy_loader).")
+    loader = getattr(mod, fn_name)
+    return loader(checkpoint_path)
+
+def _policy_to_side(policy: _Policy, df_ctx: pd.DataFrame) -> Optional[str]:
+    # Универсальный вызов с мягкой деградацией интерфейса
+    if hasattr(policy, "predict_side"):
+        side = policy.predict_side(df_ctx)  # ожидается "BUY"/"SELL"
+        return str(side).upper()
+    if hasattr(policy, "predict"):
+        pred = policy.predict(df_ctx)
+        try:
+            pred = int(pred)
+        except Exception:
+            pass
+        return "BUY" if pred == 1 else "SELL"
+    if callable(policy):
+        pred = policy(df_ctx)
+        try:
+            pred = int(pred)
+        except Exception:
+            pass
+        return "BUY" if pred == 1 else "SELL"
+    return None
+
+# ------------------------------ Strategy ---------------------------
+# (удалено) Follow-Context — заменено на инференс политики
 
 # ------------------------------ Execution helpers -----------------
 
@@ -221,6 +270,8 @@ def main(argv: List[str]) -> int:
     out_metrics = os.path.join(out_dir, "metrics.json")
 
     provider = _load_db_provider(cfg.db_provider_path)
+    # Загружаем модель (если указана)
+    policy: Optional[_Policy] = _load_policy(cfg.inference.policy_loader, cfg.inference.checkpoint_path)
     need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
     if need_build:
         if cfg.time_start_utc is None or cfg.time_end_utc is None or not cfg.symbols:
@@ -293,11 +344,20 @@ def main(argv: List[str]) -> int:
         if df.index[0] > ctx_start or df.index[-1] < last_ts:
             # неполное покрытие — пропустим окно
             continue
-        # Направление из контекста: sign(close(ctx_end-1m) - close(ctx_start))
-        ctx_end_minus = ctx_end - pd.Timedelta(minutes=1)
-        px_ctx_start = _get_close_near(df, pd.Timestamp(ctx_start))
-        px_ctx_endm1 = _get_close_near(df, pd.Timestamp(ctx_end_minus))
-        side = "BUY" if (px_ctx_endm1 - px_ctx_start) >= 0 else "SELL"
+        # 1) Направление из политики (если задана)
+        side: Optional[str] = None
+        if policy is not None:
+            df_ctx = df.loc[pd.Timestamp(ctx_start):pd.Timestamp(ctx_end)]
+            side = _policy_to_side(policy, df_ctx)
+        if side is None:
+            if cfg.inference.strict:
+                # Строгий режим: без валидного инференса пропускаем окно
+                continue
+            # fallback: Follow-Context — знак изменения цены за контекст
+            ctx_end_minus = ctx_end - pd.Timedelta(minutes=1)
+            px_ctx_start = _get_close_near(df, pd.Timestamp(ctx_start))
+            px_ctx_endm1 = _get_close_near(df, pd.Timestamp(ctx_end_minus))
+            side = "BUY" if (px_ctx_endm1 - px_ctx_start) >= 0 else "SELL"
         # Первая цена сессии / последняя цена сессии (с nearest-защитой)
         first_px = _get_close_near(df, pd.Timestamp(ses_start))
         # Исполнение
