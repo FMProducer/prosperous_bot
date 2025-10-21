@@ -325,3 +325,77 @@ def millify(n, precision=1):
     millidx = max(0, min(len(millnames) - 1, int(math.floor(math.log10(abs(n))) / 3))) if n != 0 else 0
     return f"{n / 10 ** (3 * millidx):.{precision}f}{millnames[millidx]}"
 
+# ------------------------------ Volatility Spike Detector ------------------------------
+def _abs_change_pct(series: pd.Series) -> float:
+    """Абсолютное изменение цены между первым и последним значением, %."""
+    if series.empty:
+        return 0.0
+    first, last = float(series.iloc[0]), float(series.iloc[-1])
+    if first <= 0:
+        return 0.0
+    return abs((last - first) / first) * 100.0
+
+def _avg_abs_minute_ret(series: pd.Series) -> float:
+    """Средний |минутный доход| в процентах (как прокси стабильности/волатильности)."""
+    if series.size < 2:
+        return 0.0
+    rets = series.pct_change().abs().dropna()
+    return float(rets.mean() * 100.0)
+
+def find_spike_windows(
+    df: pd.DataFrame,
+    *,
+    context_minutes: int = 90,
+    window_minutes: int = 10,
+    abs_change_threshold_pct: float = 5.0,
+    contrast_min: float = 5.0,
+    cooldown_minutes: int = 60,
+    use_lookahead: bool = True,
+) -> List[Tuple[dt.datetime, dt.datetime, dt.datetime, dt.datetime, float]]:
+    """
+    По минутным данным df (index=UTC, колонки содержат 'close') возвращает список окон:
+    (ctx_start, ctx_end, session_start, session_end, abs_change_pct).
+    * use_lookahead=True — как в бэктесте: спайк оценивается на [t, t+window].
+    * use_lookahead=False — реал-режим: спайк оценивается на [t-window, t] (без заглядывания вперёд).
+    """
+    if df.empty or "close" not in df.columns:
+        return []
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise ValueError("DataFrame index must be DatetimeIndex (UTC).")
+    s = df["close"].astype(float).copy()
+    # Безопасная монотонная итерация по времени
+    s = s.sort_index()
+    out: List[Tuple[dt.datetime, dt.datetime, dt.datetime, dt.datetime, float]] = []
+    # Границы перебора t: это конец контекста; окно спайка зависит от lookahead
+    t0 = s.index.min() + pd.Timedelta(minutes=context_minutes)
+    t1 = s.index.max() - pd.Timedelta(minutes=window_minutes if use_lookahead else 0)
+    t = t0
+    while t <= t1:
+        ctx_start = t - pd.Timedelta(minutes=context_minutes)
+        ctx_end = t
+        if use_lookahead:
+            win_start = t
+            win_end = t + pd.Timedelta(minutes=window_minutes)
+        else:
+            win_start = t - pd.Timedelta(minutes=window_minutes)
+            win_end = t
+        ctx_slice = s.loc[ctx_start:ctx_end]
+        win_slice = s.loc[win_start:win_end]
+        # Требуем почти полную заполненность окна (минутные бары, включительно по краям)
+        if len(ctx_slice) < context_minutes or len(win_slice) < window_minutes:
+            t += pd.Timedelta(minutes=1)
+            continue
+        abs_chg = _abs_change_pct(win_slice)
+        pre_avg_abs = _avg_abs_minute_ret(ctx_slice)
+        contrast = abs_chg / max(pre_avg_abs, 1e-9)
+        if abs_chg >= abs_change_threshold_pct and contrast >= contrast_min:
+            session_start = win_start  # начало сессии совпадает с окном оценки
+            session_end = win_end
+            out.append((ctx_start.to_pydatetime(), ctx_end.to_pydatetime(),
+                        session_start.to_pydatetime(), session_end.to_pydatetime(), abs_chg))
+            # Кулдаун: пропускаем окна вблизи
+            t += pd.Timedelta(minutes=cooldown_minutes)
+        else:
+            t += pd.Timedelta(minutes=1)
+    return out
+

@@ -15,8 +15,8 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
 cfg.model.dropout_p = 0.1
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
-cfg.trainlog.num_val_ep = 1500
-cfg.trainlog.val_freq = 2000
+cfg.trainlog.num_val_ep = 3500
+cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
 cfg.trainlog.episodes = 55_000
 cfg.trainlog.plot_top_n = 10
@@ -25,11 +25,14 @@ cfg.per.buffer_size = 230_000
 
 cfg.rl.batch_size = 64
 cfg.rl.learning_rate = 1e-4
-cfg.rl.train_start = 20_000
+cfg.rl.train_start = 10_000
 
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
 cfg.seq.agent_history_len = 30
 cfg.seq.agent_session_len = 10
+# NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
+if not hasattr(cfg.seq, "pre_signal_len"):
+    cfg.seq.pre_signal_len = cfg.seq.agent_history_len
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
@@ -37,8 +40,8 @@ cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.009
-cfg.backtest.short_action_threshold = 0.009
+cfg.backtest.long_action_threshold = 0.012695
+cfg.backtest.short_action_threshold = 0.009902
 cfg.backtest.close_action_threshold = 0.001141
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
@@ -110,10 +113,26 @@ cfg.vec.scale_epsilon_by_envs = True
 data = {
     "source": "stream_sim_db",
     "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
+    # Базовый (демо) режим: 30-10 — полная совместимость с README (Demo) :contentReference[oaicite:10]{index=10}
     "ctx_minutes": 30,
     "session_minutes": 10,
+    # Порог и кулдаун используются и офлайн, и при потоковом построении индекса
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
     "resample_1t": True,
+    # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
+    "build_index_from_db": False,
+    # NB: для build_index_from_db=True обязательно укажите список тикеров:
+    # "symbols": ["BTCUSDT","ETHUSDT"],
+    # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
+    "detector": {
+        # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)
+        "context_minutes": 90,
+        "window_minutes": 10,
+        "use_lookahead": True,       # True — как в бэктесте; False — реал-режим без заглядывания вперёд
+        "abs_change_pct": 5.0,       # |ΔP| over window, %
+        "contrast_min": 5.0,         # (|ΔP| / avg_abs_ret_pre) ≥ contrast_min
+        "cooldown_minutes": 60
+    },
     # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
     "db_provider": "db_provider:get_feed",
     # ---- Inference (строгий режим без фоллбэка) ----
@@ -124,14 +143,14 @@ data = {
     },
     # ---- Paper trading (RT/ASAP) ----
     "paper_trader": {
-        "mode": "asap",             # "realtime" | "asap"
-        "cap_windows_per_symbol": 0 # 0 = без лимита; иначе макс. окон/день/тикер
+        "mode": "asap",  # "realtime" | "asap"
+        "cap_windows_per_symbol": 0  # 0 = без лимита; иначе макс. окон/день/тикер
     },
     "exec": {
-        "base_capital_usdt": 10000.0,   # общий капитал (для риска/позиции)
-        "risk_per_trade_pct": 1.0,      # риск на сделку, %
-        "fee_bps": 2.0,                 # комиссия в б.п. (0.01% = 1 б.п.)
-        "slippage_bps": 1.0,            # проскальзывание (одна сторона) в б.п.
-        "max_concurrent": 4             # ограничение на одновременные позиции
+        "base_capital_usdt": 10000.0,  # общий капитал (для риска/позиции)
+        "risk_per_trade_pct": 1.0,     # риск на сделку, %
+        "fee_bps": 2.0,                # комиссия в б.п. (0.01% = 1 б.п.)
+        "slippage_bps": 1.0,           # проскальзывание (одна сторона) в б.п.
+        "max_concurrent": 4            # ограничение на одновременные позиции
     }
 }

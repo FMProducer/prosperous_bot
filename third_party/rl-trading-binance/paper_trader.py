@@ -18,12 +18,13 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Callable
 
 import numpy as np
 import pandas as pd
 from dateutil import parser as dtparser
 from tqdm import tqdm
+from utils import find_spike_windows  # детектор всплесков из utils
 
 # ------------------------------ Utils ------------------------------
 
@@ -54,6 +55,15 @@ def _ensure_utc_index(df: pd.DataFrame) -> pd.DataFrame:
         df.index = df.index.tz_convert("UTC")
     return df
 
+
+def _get_close_near(df: pd.DataFrame, ts: pd.Timestamp) -> float:
+    """Безопасно получить цену close вблизи ts (UTC, минутные бары)."""
+    if ts in df.index:
+        return float(df.loc[ts, "close"])
+    # ближайший бар
+    i = df.index.get_indexer([ts], method="nearest")[0]
+    return float(df.iloc[i]["close"])
+
 # ------------------------------ Config -----------------------------
 
 @dataclass
@@ -76,6 +86,21 @@ class Cfg:
     index_csv: str
     exec: ExecParams
     pt: PTParams
+    # --- расширения для потокового построения индекса ---
+    build_index_from_db: bool
+    time_start_utc: Optional[datetime]
+    time_end_utc: Optional[datetime]
+    ctx_minutes: int
+    session_minutes: int
+    # детектор
+    det_context: int
+    det_window: int
+    det_abs_change_pct: float
+    det_contrast_min: float
+    det_cooldown: int
+    det_use_lookahead: bool
+    # опционально: список тикеров для сканирования
+    symbols: List[str]
 
 def _load_cfg(cfg_path: str) -> Cfg:
     mod = _load_py_module(cfg_path)
@@ -86,8 +111,6 @@ def _load_cfg(cfg_path: str) -> Cfg:
     dbp = data["db_provider"]
     config_name = os.path.splitext(os.path.basename(cfg_path))[0]
     index_csv = os.path.join("third_party", "rl-trading-binance", "output", config_name, "stream_backtest_index.csv")
-    if not os.path.exists(index_csv):
-        raise FileNotFoundError(f"Не найден индекс эпизодов: {index_csv}")
     pt_d = data.get("paper_trader", {"mode": "asap", "cap_windows_per_symbol": 0})
     ex_d = data.get("exec", {})
     execp = ExecParams(
@@ -101,11 +124,31 @@ def _load_cfg(cfg_path: str) -> Cfg:
         mode=str(pt_d.get("mode", "asap")),
         cap_windows_per_symbol=int(pt_d.get("cap_windows_per_symbol", 0)),
     )
-    return Cfg(config_name, dbp, index_csv, execp, ptp)
+    # --- доп. поля для индекса и детектора ---
+    tr = data.get("time_range", {})
+    t_start = tr.get("start_utc")
+    t_end = tr.get("end_utc")
+    t_start = t_start if t_start is None else _to_utc(t_start)
+    t_end = t_end if t_end is None else _to_utc(t_end)
+    ctx_m = int(data.get("ctx_minutes", 30))
+    sess_m = int(data.get("session_minutes", 10))
+    det = data.get("detector", {})
+    det_ctx = int(det.get("context_minutes", 90))
+    det_win = int(det.get("window_minutes", 10))
+    det_abs = float(det.get("abs_change_pct", data.get("trigger", {}).get("abs_change_pct", 5.0)))
+    det_con = float(det.get("contrast_min", 5.0))
+    det_cool = int(det.get("cooldown_minutes", data.get("trigger", {}).get("cooldown_minutes", 60)))
+    det_la = bool(det.get("use_lookahead", True))
+    symbols = list(data.get("symbols", []))
+    return Cfg(config_name, dbp, index_csv, execp, ptp,
+               bool(data.get("build_index_from_db", False)),
+               t_start, t_end, ctx_m, sess_m,
+               det_ctx, det_win, det_abs, det_con, det_cool, det_la,
+               symbols)
 
 # ------------------------------ Provider ---------------------------
 
-ProviderFn = callable
+ProviderFn = Callable[[List[str], str, str], Dict[str, pd.DataFrame]]
 
 def _load_db_provider(path: str) -> ProviderFn:
     if ":" not in path:
@@ -178,7 +221,46 @@ def main(argv: List[str]) -> int:
     out_metrics = os.path.join(out_dir, "metrics.json")
 
     provider = _load_db_provider(cfg.db_provider_path)
-    idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
+    need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
+    if need_build:
+        if cfg.time_start_utc is None or cfg.time_end_utc is None or not cfg.symbols:
+            raise RuntimeError(
+                "Для построения индекса из БД нужны data.time_range{start_utc,end_utc} и data.symbols[]. "
+                "Либо выключите build_index_from_db=False и подготовьте stream_backtest_index.csv офлайн."
+            )
+        rows = []
+        for sym in cfg.symbols:
+            feed = dict(provider([sym], cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
+            if sym not in feed or feed[sym].empty:
+                continue
+            df = _ensure_utc_index(feed[sym]).sort_index()
+            # Контекст/окно детектора берём из cfg.det_* (полный режим), сессия для трейда — из cfg.session_minutes (демо/полный)
+            wins = find_spike_windows(
+                df,
+                context_minutes=cfg.det_context,
+                window_minutes=cfg.det_window,
+                abs_change_threshold_pct=cfg.det_abs_change_pct,
+                contrast_min=cfg.det_contrast_min,
+                cooldown_minutes=cfg.det_cooldown,
+                use_lookahead=cfg.det_use_lookahead,
+            )
+            for (ctx_start, ctx_end, ses_start, ses_end, abs_chg) in wins:
+                # Приводим торговую сессию к длине из конфига (напр., 10 минут в демо)
+                ses_end_adj = ses_start + timedelta(minutes=cfg.session_minutes)
+                rows.append({
+                    "symbol": sym,
+                    "ctx_start": ctx_start.isoformat(),
+                    "ctx_end": ctx_end.isoformat(),
+                    "session_start": ses_start.isoformat(),
+                    "session_end": ses_end_adj.isoformat(),
+                    "abs_change_pct": abs_chg,
+                })
+        idx = pd.DataFrame(rows)
+        out_dir = os.path.dirname(cfg.index_csv)
+        os.makedirs(out_dir, exist_ok=True)
+        idx.to_csv(cfg.index_csv, index=False)
+    else:
+        idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
     # Опциональный "колпак" на окна в день/тикер
     if cfg.pt.cap_windows_per_symbol > 0:
         keep_rows = []
@@ -195,6 +277,7 @@ def main(argv: List[str]) -> int:
     for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
         sym = row["symbol"]
         ctx_start = _to_utc(row["ctx_start"])
+        ctx_end = _to_utc(row["ctx_end"])
         ses_start = _to_utc(row["session_start"])
         ses_end = _to_utc(row["session_end"])
         last_ts = ses_end - pd.Timedelta(minutes=1)
@@ -207,18 +290,19 @@ def main(argv: List[str]) -> int:
         if df.index[0] > ctx_start or df.index[-1] < last_ts:
             # неполное покрытие — пропустим окно
             continue
-        # Определяем направление по контексту: сравним close в ctx_end и ctx_start из БД
-        # Чтобы не тянуть весь контекст второй раз, используем знак изменения в первой минуте сессии vs последней минуте контекста:
-        first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
-        # эвристика: если в CSV abs_change_pct > 0, берём знак через df на соседних барах
-        # (в проде сюда подставится предсказание модели)
-        side = "BUY" if row["abs_change_pct"] >= 0.0 else "SELL"
+        # Направление из контекста: sign(close(ctx_end-1m) - close(ctx_start))
+        ctx_end_minus = ctx_end - pd.Timedelta(minutes=1)
+        px_ctx_start = _get_close_near(df, pd.Timestamp(ctx_start))
+        px_ctx_endm1 = _get_close_near(df, pd.Timestamp(ctx_end_minus))
+        side = "BUY" if (px_ctx_endm1 - px_ctx_start) >= 0 else "SELL"
+        # Первая цена сессии / последняя цена сессии (с nearest-защитой)
+        first_px = _get_close_near(df, pd.Timestamp(ses_start))
         # Исполнение
         entry_raw = first_px
         entry_px = _apply_slippage(entry_raw, cfg.exec.slippage_bps, side)
         qty = _position_size(capital, cfg.exec.risk_per_trade_pct, entry_px)
         # Выход в конце сессии
-        last_px = float(df.loc[ses_end:ses_end].iloc[-1]["close"])
+        last_px = _get_close_near(df, pd.Timestamp(ses_end))
         exit_px = _apply_slippage(last_px, cfg.exec.slippage_bps, "SELL" if side=="BUY" else "BUY")
         notional_entry = qty * entry_px
         notional_exit = qty * exit_px
