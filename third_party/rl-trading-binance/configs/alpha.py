@@ -120,7 +120,7 @@ data = {
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
     "resample_1t": True,
     # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
-    "build_index_from_db": True,
+    "build_index_from_db": False,
     # NB: для build_index_from_db=True обязательно укажите список тикеров:
     "symbols": ["OMUSDT","1000RATSUSDT","KAVAUSDT","FILUSDT","POPCATUSDT","ZECUSDT","LUNA2USDT","BRETTUSDT","BELUSDT","LISTAUSDT","ZKUSDT","PORTALUSDT","AUCTIONUSDT","BIGTIMEUSDT","TRBUSDT","ARKMUSDT","TIAUSDT","NEOUSDT","IMXUSDT","AXLUSDT","MASKUSDT","CATIUSDT","REZUSDT"],
     # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым

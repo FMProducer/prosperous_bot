@@ -2,6 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 import datetime as dt
+from typing import Dict, Any
 
 from model import DuelingQNetwork
 from utils import calculate_normalization_stats, apply_normalization
@@ -60,18 +61,28 @@ class DuelingQPolicy:
             tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             qvals = self.model(tensor).cpu().numpy().squeeze(0)
         
-        action = int(np.argmax(qvals))
+        # --- Advantage-based filtering logic from backtest_engine.py ---
+        # Advantage = Q(s,a) - V(s). V(s) is approximated by Q(s, a=0/hold).
+        adv = qvals - qvals[0]
+        action = int(np.argmax(adv))
+        confidence = adv[action]
 
+        # Check against thresholds from config
+        if action == 1 and confidence < self.master_cfg.backtest.long_action_threshold:
+            action = 0  # Reject, set to HOLD
+        elif action == 2 and confidence < self.master_cfg.backtest.short_action_threshold:
+            action = 0  # Reject, set to HOLD
+        
         # 3. Map action to string
         if action == 1:
             return "BUY"
         elif action == 2:
             return "SELL"
-        else:
+        else: # action == 0
             return "HOLD"
 
-def load_policy(ckpt_path: str, master_cfg: MasterConfig):
-    # Используем master_cfg, который передаёт paper_trader (без импортов paper_trader → нет цикла).
+def load_policy(ckpt_path: str, master_cfg: MasterConfig, stats: Dict[str, Any]):
+    # Используем master_cfg и stats, которые передаёт paper_trader.
     
     # Instantiate the model
     model = DuelingQNetwork(
@@ -94,10 +105,8 @@ def load_policy(ckpt_path: str, master_cfg: MasterConfig):
         model.load_state_dict(checkpoint)
     model.eval()
 
-    # TODO: подставить реальные нормировочные статистики, сохранённые при обучении
-    stats = {
-        "means": {ch: 0.0 for ch in master_cfg.data.data_channels},
-        "stds": {ch: 1.0 for ch in master_cfg.data.data_channels},
-    }
+    # Используем переданные статистики, а не заглушку.
+    if not stats or "means" not in stats or "stds" not in stats:
+        raise ValueError("Normalization stats are missing or invalid.")
 
     return DuelingQPolicy(model, stats, master_cfg)

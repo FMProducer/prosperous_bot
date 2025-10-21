@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 from dateutil import parser as dtparser
 from tqdm import tqdm
-from utils import find_spike_windows  # детектор всплесков из utils
+from utils import find_spike_windows, calculate_normalization_stats # детектор + нормировка
 
 # ------------------------------ Utils ------------------------------
 
@@ -192,7 +192,7 @@ class _Policy(Protocol):
     #  - либо __call__(df_ctx) -> ...
     def predict_side(self, df_ctx: pd.DataFrame) -> str: ...
 
-def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], cfg_path: str) -> Optional[_Policy]:
+def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], cfg_path: str, stats: Optional[Dict]) -> Optional[_Policy]:
     if not policy_loader:
         return None
     if ":" not in policy_loader:
@@ -202,19 +202,8 @@ def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], c
     if not hasattr(mod, fn_name):
         raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}` (policy_loader).")
     loader = getattr(mod, fn_name)
-    # Попробуем определить сигнатуру лоадера и передать master_cfg при необходимости
-    try:
-        sig = inspect.signature(loader)
-    except (TypeError, ValueError):
-        sig = None
 
     def _resolve_master_cfg():
-        '''Извлекаем объект master_cfg из конфиг-файла:
-        - переменная `cfg` или `master_cfg`
-        - или инстанс `MasterConfig()`
-        - иначе отдаём dict `data`
-        - в крайнем случае — сам модуль как нейтральный контейнер.
-        '''
         try:
             cfg_mod = _load_py_module(cfg_path)
         except Exception:
@@ -231,43 +220,50 @@ def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], c
             return cfg_mod.data
         return cfg_mod
 
-    if sig is not None:
-        params = [p for p in sig.parameters.values()
-                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-        # Однопараметрические лоадеры: load_policy(ckpt)
-        if len(params) <= 1:
-            return loader(checkpoint_path)
-        # Двухпараметрические лоадеры: load_policy(ckpt, master_cfg / cfg / ...)
-        mc = _resolve_master_cfg()
-        # Если в сигнатуре есть параметр по имени, передаём его как позиционный — совместимо в обоих случаях
-        return loader(checkpoint_path, mc)
-
-    # Fallback: сначала без master_cfg, если упадёт — попробуем с ним
-    try:
-        return loader(checkpoint_path)
-    except TypeError:
-        mc = _resolve_master_cfg()
-        return loader(checkpoint_path, mc)
+    mc = _resolve_master_cfg()
+    # Ожидаем, что лоадер принимает 3 аргумента: ckpt, master_cfg, stats
+    return loader(checkpoint_path, mc, stats)
 
 def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optional[str]:
     # Универсальный вызов с мягкой деградацией интерфейса
     if hasattr(policy, "predict_side"):
-        side = policy.predict_side(df_ctx)  # ожидается "BUY"/"SELL"
-        return str(side).upper()
+        side = str(policy.predict_side(df_ctx)).upper()
+        if side in ("BUY", "SELL"):
+            return side
+        if side == "HOLD":
+            return None
+        return None
     if hasattr(policy, "predict"):
         pred = policy.predict(symbol, df_ctx)
+        # допускаем как str, так и int
+        if isinstance(pred, str):
+            up = pred.upper()
+            if up in ("BUY", "SELL"):
+                return up
+            if up == "HOLD":
+                return None
+            return None
         try:
-            pred = int(pred)
+            pred_i = int(pred)
         except Exception:
-            pass
-        return "BUY" if pred == 1 else "SELL"
+            return None
+        if pred_i == 1:
+            return "BUY"
+        if pred_i == 2:
+            return "SELL"
+        # 0 или иное — трактуем как HOLD/нет сигнала
+        return None
     if callable(policy):
         pred = policy(df_ctx)
         try:
             pred = int(pred)
         except Exception:
             pass
-        return "BUY" if pred == 1 else "SELL"
+        if pred == 1:
+            return "BUY"
+        if pred == 2:
+            return "SELL"
+        return None
     return None
 
 # ------------------------------ Strategy ---------------------------
@@ -324,13 +320,57 @@ def main(argv: List[str]) -> int:
     os.makedirs(out_dir, exist_ok=True)
     out_trades = os.path.join(out_dir, "trades.csv")
     out_metrics = os.path.join(out_dir, "metrics.json")
+    stats_path = os.path.join(out_dir, "norm_stats.json")
 
     provider = _load_db_provider(cfg.db_provider_path)
+
+    # --- Статистики нормализации ---
+    stats = None
+    if os.path.exists(stats_path):
+        print(f"Loading normalization stats from {stats_path}")
+        with open(stats_path, 'r') as f:
+            stats = json.load(f)
+    
+    if stats is None:
+        print("Normalization stats not found, calculating...")
+        if not (cfg.time_start_utc and cfg.time_end_utc and cfg.symbols):
+            raise RuntimeError(
+                "Normalization stats are missing. Please set `time_range` and `symbols` in config, "
+                "or provide a `norm_stats.json` file."
+            )
+        
+        print(f"Fetching data for {len(cfg.symbols)} symbols to calculate stats...")
+        all_data = dict(provider(cfg.symbols, cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
+        sequences = []
+        for sym, df in all_data.items():
+            if df.empty or master_cfg is None:
+                continue
+            # Убедимся, что все каналы на месте, как в inference_adapter
+            for channel in master_cfg.data.expected_channels:
+                if channel not in df.columns:
+                    df[channel] = 0.0
+            sequences.append(df[master_cfg.data.expected_channels].to_numpy(dtype=np.float32))
+
+        if not sequences:
+            raise RuntimeError("No data to calculate normalization stats.")
+
+        stats = calculate_normalization_stats(
+            sequences,
+            use_channels=master_cfg.data.data_channels,
+            price_channels=master_cfg.data.price_channels,
+            volume_channels=master_cfg.data.volume_channels,
+            other_channels=master_cfg.data.other_channels,
+        )
+        with open(stats_path, 'w') as f:
+            json.dump(stats, f, indent=2)
+        print(f"Normalization stats saved to {stats_path}")
+
     # Загружаем модель (если указана)
     policy: Optional[_Policy] = _load_policy(
         cfg.inference.policy_loader,
         cfg.inference.checkpoint_path,
-        cfg_path
+        cfg_path,
+        stats
     )
     need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
     if need_build:
@@ -341,6 +381,7 @@ def main(argv: List[str]) -> int:
             )
         rows = []
         print("Starting index generation...")
+        total_wins = 0
         for sym in cfg.symbols:
             print(f"--> Processing symbol: {sym}")
             feed = dict(provider([sym], cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
@@ -368,6 +409,8 @@ def main(argv: List[str]) -> int:
                     "session_end": ses_end_adj.isoformat(),
                     "abs_change_pct": abs_chg,
                 })
+            print(f"    -> windows found: {len(wins)}")
+            total_wins += len(wins)
         idx = pd.DataFrame(rows)
         out_dir = os.path.dirname(cfg.index_csv)
         os.makedirs(out_dir, exist_ok=True)
@@ -375,6 +418,7 @@ def main(argv: List[str]) -> int:
         for col in ["ctx_start","ctx_end","session_start","session_end"]:
             idx[col] = pd.to_datetime(idx[col], utc=True)
         idx.to_csv(cfg.index_csv, index=False)
+        print(f"Index saved: {cfg.index_csv}  | total windows: {total_wins}")
     else:
         idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
     # Опциональный "колпак" на окна в день/тикер
