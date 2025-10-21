@@ -258,6 +258,9 @@ def main(argv: List[str]) -> int:
         idx = pd.DataFrame(rows)
         out_dir = os.path.dirname(cfg.index_csv)
         os.makedirs(out_dir, exist_ok=True)
+        # Сразу храним UTC-датавремена и используем их же ниже
+        for col in ["ctx_start","ctx_end","session_start","session_end"]:
+            idx[col] = pd.to_datetime(idx[col], utc=True)
         idx.to_csv(cfg.index_csv, index=False)
     else:
         idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])

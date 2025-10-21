@@ -377,6 +377,7 @@ def find_spike_windows(
             win_start = t
             win_end = t + pd.Timedelta(minutes=window_minutes)
         else:
+            # Реал-режим: оцениваем всплеск на [t-window, t], но торговать начинаем с момента t
             win_start = t - pd.Timedelta(minutes=window_minutes)
             win_end = t
         ctx_slice = s.loc[ctx_start:ctx_end]
@@ -389,8 +390,12 @@ def find_spike_windows(
         pre_avg_abs = _avg_abs_minute_ret(ctx_slice)
         contrast = abs_chg / max(pre_avg_abs, 1e-9)
         if abs_chg >= abs_change_threshold_pct and contrast >= contrast_min:
-            session_start = win_start  # начало сессии совпадает с окном оценки
-            session_end = win_end
+            # Начало торговой сессии:
+            #  - look-ahead=True  -> стартуем с начала окна (t)
+            #  - look-ahead=False -> стартуем с конца окна (t), чтобы не заглядывать в будущее
+            session_start = win_start if use_lookahead else win_end
+            # Предзаполним session_end длиной оценочного окна; фактическая длительность может быть переопределена конфигом
+            session_end = session_start + pd.Timedelta(minutes=window_minutes)
             out.append((ctx_start.to_pydatetime(), ctx_end.to_pydatetime(),
                         session_start.to_pydatetime(), session_end.to_pydatetime(), abs_chg))
             # Кулдаун: пропускаем окна вблизи

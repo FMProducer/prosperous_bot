@@ -1,207 +1,144 @@
----
-
 ## TL;DR
 
-Нашёл 3 ключевые проблемы в ваших версиях файлов и подготовил минимальный фикс-патч.
+Код в целом корректно реализует задуманную логику (демо 30-10, look-ahead управляется конфигом), **но есть два критичных момента**:
 
-1. **`paper_trader.py` преждевременно падает, если нет `stream_backtest_index.csv`**, хотя дальше по коду предусмотрено автопостроение индекса из БД (флаг `build_index_from_db`). Сейчас в `_load_cfg()` производится `raise FileNotFoundError(...)` — это ломает режим построения индекса «на лету». 
-2. **Сторона сделки фактически всегда `BUY`**, т.к. берётся `row["abs_change_pct"] >= 0.0` — всегда `True`. Контекст не используется (нет чтения `ctx_end`). Итог — неверная логика исполнения. 
-3. **Тип `ProviderFn` объявлен как `callable`**, что не критично в рантайме, но неверно типизировано; плюс чтение цены на момент `ses_start`/`ses_end` может падать при отсутствии точного таймстампа ( `.iloc[0]`/`.iloc[-1]` на пустом срезе). 
+1. В режиме **без look-ahead** сессия торговли стартует слишком рано — от начала окна оценки, а не с момента детекции. Это заложено в `utils.find_spike_windows()` и нарушает потоковую семантику. Исправляем, чтобы при `use_lookahead=False` сессия начиналась в **t**, а не в **t−window**. 
 
-Файл `utils.py` с детектором всплесков в целом корректен: реализует **оба критерия** (≥5% на 10-мин окне и контраст ≥5× к среднему за 90 мин), режимы `use_lookahead=True/False` работают; возможны лишь косметические улучшения (строже проверять полноту окна), но функционально — OK. 
-`configs/alpha.py` — параметры демо 30-10, детектор и флаги заведены **через конфиг**, как требует регламент (это правильно). Рекомендую явно добавить `data.symbols` перед построением индекса из БД. 
+2. В `paper_trader.py` после построения индекса «на лету» даты остаются строками. Блок лимитирования окон «на тикер/день» (`.dt.floor("D")`) тогда упадёт. Нужно привести колонки времени к `datetime64[ns, UTC]` перед использованием `.dt`. 
 
----
-
-## Шаг | Действие | KPI/риск
-
-—|—|—
-1 | Убрать ранний `FileNotFoundError` в `_load_cfg()` и отложить проверку до основной логики, где уже есть ветка `need_build` | Включает режим авто-построения индекса; снижает «ложные» падения
-2 | Корректно вычислять сторону сделки из **контекста**: `sign(close(ctx_end-1м) − close(ctx_start))` | Повторяемость с бэктестом, устранение смещения (все сделки BUY)
-3 | Исправить тип `ProviderFn` и сделать безопасное получение цены на `ses_start`/`ses_end` (nearest bar) | Устранение редких падений при непопадании в минуту
+Прочее — соответствует требованиям «конфигурации только из configs», демо-параметры 30-10 валидны и согласованы с документацией проекта.  
 
 ---
 
-# Unified diff (≤ 600 строк)
+## Проверка по файлам
 
-> Пути соответствуют репозиторию `third_party/rl-trading-binance/...`.
+**`configs/alpha.py`**
+
+* Базовые параметры модели и сессий заданы как 30-10 (демо), что соответствует README (демо: 10-мин сессии, 30-мин контекст).  
+* `detector.use_lookahead = True` по умолчанию — для репликации офлайн-бэктеста; при потоках из БД можно выключить. Все пороги/окна заданы **только** в конфиге, в коде не захардкожены, что соответствует правилам.  
+
+**`utils.py`**
+
+* Детектор всплесков корректно считает: `abs_change_pct` на окне и «контраст» = `abs_chg / avg|minutely return|` за 90-мин контекст. Однако **начало торговой сессии** всегда ставится в `win_start`. Это правильно для look-ahead, но **неверно для real-time** — там торговля должна начинаться в `t` (то есть в конце окна оценки). Нужно условно сдвигать старт. 
+
+**`paper_trader.py`**
+
+* Построение индекса из БД верно «нормализует» длину торговой сессии к `cfg.session_minutes` (демо 10), независимо от окна детектора, что согласуется с нашей парадигмой «детект 90-10, инференс 30-10». Но при построении «на лету» даты в `DataFrame` остаются строками, а ниже используется `.dt.floor("D")` — будет исключение. Нужно привести колонки времени к `datetime` (UTC) перед лимитированием. 
+* Прочая логика (проверка покрытия контекста/сессии, расчёт направления по границе контекста, исполнение с комиссиями/проскальзыванием, консервативные метрики PF/Sharpe) — ок.
+
+---
+
+## Мини-патч (unified diff, ≤ 600 строк)
+
+### 1) Правка семантики начала сессии при `use_lookahead=False` (stream-режим)
+
+**Путь:** `third_party/rl-trading-binance/utils.py`
+Идея: если `use_lookahead=False`, торговая сессия стартует в **t** (конец оценочного окна).
 
 ```diff
-*** a/third_party/rl-trading-binance/paper_trader.py
---- b/third_party/rl-trading-binance/paper_trader.py
+--- a/third_party/rl-trading-binance/utils.py
++++ b/third_party/rl-trading-binance/utils.py
+@@ -329,18 +329,24 @@ def find_spike_windows(
+-        if use_lookahead:
+-            win_start = t
+-            win_end = t + pd.Timedelta(minutes=window_minutes)
+-        else:
+-            win_start = t - pd.Timedelta(minutes=window_minutes)
+-            win_end = t
++        if use_lookahead:
++            win_start = t
++            win_end = t + pd.Timedelta(minutes=window_minutes)
++        else:
++            # Реал-режим: оцениваем всплеск на [t-window, t], но торговать начинаем с момента t
++            win_start = t - pd.Timedelta(minutes=window_minutes)
++            win_end = t
 @@
--from typing import Dict, Iterable, Iterator, List, Optional, Tuple
-+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Callable
-@@
--from utils import find_spike_windows  # детектор всплесков из utils
-+from utils import find_spike_windows  # детектор всплесков из utils
-@@
--def _to_utc(ts: str | datetime) -> datetime:
-+def _to_utc(ts: str | datetime) -> datetime:
-@@
- def _ensure_utc_index(df: pd.DataFrame) -> pd.DataFrame:
-@@
-+def _get_close_near(df: pd.DataFrame, ts: pd.Timestamp) -> float:
-+    """Безопасно получить цену close вблизи ts (UTC, минутные бары)."""
-+    if ts in df.index:
-+        return float(df.loc[ts, "close"])
-+    # ближайший бар
-+    i = df.index.get_indexer([ts], method="nearest")[0]
-+    return float(df.iloc[i]["close"])
-+
- # ------------------------------ Config -----------------------------
-@@
--@dataclass
--class Cfg:
-+@dataclass
-+class Cfg:
-@@
--ProviderFn = callable
-+ProviderFn = Callable[[List[str], str, str], Dict[str, pd.DataFrame]]
-@@
- def _load_db_provider(path: str) -> ProviderFn:
-@@
- def main(argv: List[str]) -> int:
-@@
--    index_csv = os.path.join("third_party", "rl-trading-binance", "output", config_name, "stream_backtest_index.csv")
--    if not os.path.exists(index_csv):
--        raise FileNotFoundError(f"Не найден индекс эпизодов: {index_csv}")
-+    index_csv = os.path.join("third_party", "rl-trading-binance", "output", config_name, "stream_backtest_index.csv")
-@@
--    provider = _load_db_provider(cfg.db_provider_path)
--    need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
-+    provider = _load_db_provider(cfg.db_provider_path)
-+    need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
-@@
--        idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
-+        idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
-@@
--    for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
-+    for _, row in tqdm(idx.iterrows(), total=len(idx), desc="Paper trading"):
-         sym = row["symbol"]
-         ctx_start = _to_utc(row["ctx_start"])
-+        ctx_end = _to_utc(row["ctx_end"])
-         ses_start = _to_utc(row["session_start"])
-         ses_end = _to_utc(row["session_end"])
-         last_ts = ses_end - pd.Timedelta(minutes=1)
-@@
--        # Определяем направление по контексту: сравним close в ctx_end и ctx_start из БД
--        # Чтобы не тянуть весь контекст второй раз, используем знак изменения в первой минуте сессии vs последней минуте контекста:
--        first_px = float(df.loc[ses_start:ses_start].iloc[0]["close"])
--        # эвристика: если в CSV abs_change_pct > 0, берём знак через df на соседних барах
--        # (в проде сюда подставится предсказание модели)
--        side = "BUY" if row["abs_change_pct"] >= 0.0 else "SELL"
-+        # Направление из контекста: sign(close(ctx_end-1m) - close(ctx_start))
-+        ctx_end_minus = ctx_end - pd.Timedelta(minutes=1)
-+        px_ctx_start = _get_close_near(df, pd.Timestamp(ctx_start))
-+        px_ctx_endm1 = _get_close_near(df, pd.Timestamp(ctx_end_minus))
-+        side = "BUY" if (px_ctx_endm1 - px_ctx_start) >= 0 else "SELL"
-+        # Первая цена сессии / последняя цена сессии (с nearest-защитой)
-+        first_px = _get_close_near(df, pd.Timestamp(ses_start))
-@@
--        last_px = float(df.loc[ses_end:ses_end].iloc[-1]["close"])
-+        last_px = _get_close_near(df, pd.Timestamp(ses_end))
-         exit_px = _apply_slippage(last_px, cfg.exec.slippage_bps, "SELL" if side=="BUY" else "BUY")
+-        if abs_chg >= abs_change_threshold_pct and contrast >= contrast_min:
+-            session_start = win_start  # начало сессии совпадает с окном оценки
+-            session_end = win_end
++        if abs_chg >= abs_change_threshold_pct and contrast >= contrast_min:
++            # Начало торговой сессии:
++            #  - look-ahead=True  -> стартуем с начала окна (t)
++            #  - look-ahead=False -> стартуем с конца окна (t), чтобы не заглядывать в будущее
++            session_start = win_start if use_lookahead else win_end
++            # Предзаполним session_end длиной оценочного окна; фактическая длительность может быть переопределена конфигом
++            session_end = session_start + pd.Timedelta(minutes=window_minutes)
+             out.append((ctx_start.to_pydatetime(), ctx_end.to_pydatetime(),
+                         session_start.to_pydatetime(), session_end.to_pydatetime(), abs_chg))
 ```
+
+> Это не меняет поведение офлайн-режима (где `use_lookahead=True`) и **чинит** реальное потоковое поведение (сессия начинается в момент детекции). Логика полностью согласуется с демо/фулл режимами, описанными в README. 
+
+### 2) Приведение типов дат при построении индекса, чтобы не падал `.dt.floor("D")`
+
+**Путь:** `third_party/rl-trading-binance/paper_trader.py`
 
 ```diff
-*** a/third_party/rl-trading-binance/utils.py
---- b/third_party/rl-trading-binance/utils.py
+--- a/third_party/rl-trading-binance/paper_trader.py
++++ b/third_party/rl-trading-binance/paper_trader.py
+@@ -286,9 +286,15 @@ def main(cfg_path: Optional[str] = None, cfg_obj: Optional[MasterConfig] = None):
+         idx = pd.DataFrame(rows)
+         out_dir = os.path.dirname(cfg.index_csv)
+         os.makedirs(out_dir, exist_ok=True)
+-        idx.to_csv(cfg.index_csv, index=False)
++        # Сразу храним UTC-датавремена и используем их же ниже
++        for col in ["ctx_start","ctx_end","session_start","session_end"]:
++            idx[col] = pd.to_datetime(idx[col], utc=True)
++        idx.to_csv(cfg.index_csv, index=False)
+     else:
+         idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
 @@
--def find_spike_windows(
-+def find_spike_windows(
-     df: pd.DataFrame,
-@@
--    # Границы перебора t: это конец контекста; окно спайка зависит от lookahead
--    t0 = s.index.min() + pd.Timedelta(minutes=context_minutes)
--    t1 = s.index.max() - pd.Timedelta(minutes=window_minutes if use_lookahead else 0)
-+    # Границы перебора t: это конец контекста; окно спайка зависит от lookahead
-+    t0 = s.index.min() + pd.Timedelta(minutes=context_minutes)
-+    t1 = s.index.max() - pd.Timedelta(minutes=window_minutes if use_lookahead else 0)
-@@
--        ctx_slice = s.loc[ctx_start:ctx_end]
--        win_slice = s.loc[win_start:win_end]
--        if len(ctx_slice) < max(2, context_minutes - 1) or len(win_slice) < max(2, window_minutes - 1):
-+        ctx_slice = s.loc[ctx_start:ctx_end]
-+        win_slice = s.loc[win_start:win_end]
-+        # Требуем почти полную заполненность окна (минутные бары, включительно по краям)
-+        if len(ctx_slice) < context_minutes or len(win_slice) < window_minutes:
-             t += pd.Timedelta(minutes=1)
-             continue
+-    if cfg.pt.cap_windows_per_symbol > 0:
++    if cfg.pt.cap_windows_per_symbol > 0:
+         keep_rows = []
+         for sym, g in idx.groupby("symbol"):
+             g = g.sort_values("session_start")
+             g["d"] = g["session_start"].dt.floor("D")
+             g = g.groupby("d").head(cfg.pt.cap_windows_per_symbol).drop(columns=["d"])
+             keep_rows.append(g)
+         idx = pd.concat(keep_rows, ignore_index=True)
 ```
 
-```diff
-*** a/third_party/rl-trading-binance/configs/alpha.py
---- b/third_party/rl-trading-binance/configs/alpha.py
-@@
- # Mini run with 10 short sessions
- # python optimize_cfg.py configs/alpha.py --trials 100 --jobs 1
-@@
- data = {
-     "source": "stream_sim_db",
-     "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
-@@
-     "build_index_from_db": False,
-+    # NB: для build_index_from_db=True обязательно укажите список тикеров:
-+    # "symbols": ["BTCUSDT","ETHUSDT"],
-@@
-     "detector": {
-@@
-         "cooldown_minutes": 60
-     },
-```
-
-> Примечание: правки в `utils.py` — лишь ужесточение проверки полноты окна; сама логика (5% + контраст 5×, режимы look-ahead) остаётся прежней. 
+> Эта правка устраняет падение при `.dt.floor("D")` в случае свежесобранного индекса. Логика «сжимания» сигналов до N/день/тикер сохраняется без изменений. 
 
 ---
 
-## Что именно было некорректно — с привязкой к строкам
+## Как это соотносится с правилами проекта
 
-* **Преждевременный `FileNotFoundError`** в `_load_cfg()` (`paper_trader.py`): после вычисления `index_csv` сразу поднимается исключение при отсутствии файла — это противоречит дальнейшей ветке `need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)` (в которой как раз и выполняется построение индекса из БД). Исправлено удалением раннего рейза; проверка делается на «боевом» пути. 
-* **Сторона сделки**: вычислялась через `abs_change_pct >= 0.0` → всегда `BUY`. Теперь берём тренд **контекста**: `sign(close(ctx_end−1м)−close(ctx_start))`. Это соответствует идее «Follow-Context», указанной в докстринге. 
-* **Доступ к ценам по точному таймстампу**: прямые срезы `df.loc[ses_start:ses_start].iloc[0]` и `df.loc[ses_end:ses_end].iloc[-1]` падали, если бар ровно в минуту отсутствует. Добавил `_get_close_near()` (nearest). 
-* **Тип `ProviderFn`**: заменён на `typing.Callable[[List[str], str, str], Dict[str, pd.DataFrame]]` — безопасно и самодокументируемо. 
-* **`utils.py`**: усилил проверку полноты окна, чтобы не принимать «дырявые» 90/10-мин отрезки (особенно актуально при пропусках минут). Логика детектора сохранена. 
-* **`configs/alpha.py`**: добавил подсказку про `data.symbols` (обязателен при `build_index_from_db=True`), остальное корректно (демо 30-10, детектор и флаги). 
+* **«Параметры — только из `configs/*.py`»**: все ключевые параметры (окна, пороги, look-ahead) лежат в `configs/alpha.py`; код лишь читает их — норм. 
+* **Демо 30-10 по умолчанию**: выдержано; README чётко разводит Demo vs Full Pipeline (10-мин сессии, 30-мин контекст в демо). 
+* **Артефакты/пути**: индекс по умолчанию пишется в `output/<config_name>/stream_backtest_index.csv`, что соответствует структуре из README. 
 
 ---
 
-## Команды для применения и PR
+## Шаги / Риски
+
+| Шаг | Действие                                                             | KPI / риск                                                              |
+| --- | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1   | Применить патч в `utils.py` (старт сессии для real-time)             | Потоковая семантика корректна; **снижается риск** «заглядывания вперёд» |
+| 2   | Привести даты к `datetime` в `paper_trader.py` перед `.dt.floor`     | **Устранение падений** при лимитировании окон                           |
+| 3   | Прогон `pytest -q` и минимальный прогон paper-trader на демо конфиге | Ожидаемо без регрессий; офлайн-режим не меняется                        |
+| 4   | При real-time отключить `use_lookahead` в конфиге                    | Повторяем условия тренировки/валидации без утечки будущего              |
+
+---
+
+## Команды для локальной проверки (без CI)
 
 ```bash
-# 1) Ветка
-git checkout -b feature/paper-lookahead-fixes
+# 1) Ветка и патч
+git checkout -b feature/rt-session-start-fix
+git apply --index changes.patch && git commit -m "fix(utils,paper_trader): correct RT session start; ensure datetime for daily cap"
+git push -u origin feature/rt-session-start-fix
 
-# 2) Применить патч (сохраните diff выше в changes.patch)
-git apply --index changes.patch
-git commit -m "fix(stream): enable DB index build; correct trade side; safe price lookup; tighten window checks"
-
-# 3) Прогнать тесты (test-gating)
+# 2) Тесты (если есть базовые)
 pytest -q
 
-# 4) Пуш и PR (base=prosperous_bot)
-git push -u origin feature/paper-lookahead-fixes
-gh pr create -t "PaperTrader: look-ahead/DB-index fixes (demo 30-10)" -b "$(cat <<'MD'
-### 🎯 Goal
-Исправить режимы работы paper_trader: разрешить построение индекса из БД при отсутствии CSV; корректно определять сторону сделки из контекста; безопасно читать цены; усилить валидацию окон.
+# 3) Быстрый прогон индекса и paper-trader (демо 30-10)
+python third_party/rl-trading-binance/paper_trader.py configs/alpha.py
+```
 
-### 📝 Implementation Details
-- `paper_trader.py`: удалён ранний FileNotFoundError; добавлены `_get_close_near()` и расчёт направления по контексту; тип `ProviderFn`.
-- `utils.py`: ужесточена проверка полноты окон в `find_spike_windows`.
-- `configs/alpha.py`: комментарий про `data.symbols` для build_index_from_db.
-
-### 📈 KPI/Risk Assessment
-- **Sharpe / PF / Max DD** в режиме `use_lookahead=True` — без изменений (логика отбора окон не тронута).
-- В `use_lookahead=False` поведение честнее (без утечек будущего); метрики могут снизиться — ожидаемо.
-
-### 롤백 계획 (Rollback Plan)
-Feature-flag: отключить `build_index_from_db`; вернуть использование готового CSV-индекса.
+> Напоминаю: при реальном потоке **обязательно** ставим `detector.use_lookahead=False` в конфиге, чтобы условия совпали с RT-торговлей; для репликации бэктеста оставляем `True`. 
 
 ---
 
-## Что проверить у себя (быстрый чек-лист)
-
-* В `configs/alpha.py` указаны ли **`data.symbols`** (для DB-builder)? Если да — поставьте `build_index_from_db=True`. 
-* Для **реплики оффлайна** ставьте `data.detector.use_lookahead=True`; для **реалистичного стрима** — `False`. 
-* Путь к `db_provider:get_feed` корректен и возвращает `Dict[str, DataFrame]` с минутными барами UTC. 
-[1]: https://github.com/FMProducer/prosperous_bot/commits/prosperous_bot/ "Commits · FMProducer/prosperous_bot · GitHub"
+[1]: https://github.com/FMProducer/prosperous_bot/commit/1e54f6b46d72d27c1833d23963566fa6e24b26d7 "docs: paper_trader.py fix · FMProducer/prosperous_bot@1e54f6b · GitHub"
