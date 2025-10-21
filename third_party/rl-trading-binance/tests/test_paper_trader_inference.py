@@ -27,8 +27,9 @@ sys.modules["db_provider"] = db_mod
 # Подменяем inference_adapter:load_policy
 inf_mod = types.ModuleType("inference_adapter")
 class _DummyPolicy:
+    calls = 0
     def predict_side(self, df_ctx):
-        # Всегда BUY
+        _DummyPolicy.calls += 1
         return "BUY"
 def load_policy(ckpt_path):
     return _DummyPolicy()
@@ -89,3 +90,5 @@ data = {{
     # Файлы с результатами должны появиться
     assert (out_dir / "trades.csv").exists()
     assert (out_dir / "metrics.json").exists()
+    # Критично: модель должна быть вызвана хотя бы раз
+    assert _DummyPolicy.calls > 0

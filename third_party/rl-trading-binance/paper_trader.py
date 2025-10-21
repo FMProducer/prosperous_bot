@@ -56,12 +56,13 @@ def _ensure_utc_index(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _get_close_near(df: pd.DataFrame, ts: pd.Timestamp) -> float:
-    """Безопасно получить цену close вблизи ts (UTC, минутные бары)."""
+def _get_close_near(df: pd.DataFrame, ts: pd.Timestamp, how: str = "pad") -> float:
+    """Честно получить close на/до ts (UTC, минутные бары).
+    how: "pad" → берём последний бар ≤ ts; "nearest" оставлен для совместимости."""
     if ts in df.index:
         return float(df.loc[ts, "close"])
-    # ближайший бар
-    i = df.index.get_indexer([ts], method="nearest")[0]
+    method = how if how in ("pad", "nearest", "backfill") else "pad"
+    i = df.index.get_indexer([ts], method=method)[0]
     return float(df.iloc[i]["close"])
 
 # ------------------------------ Config -----------------------------
@@ -344,28 +345,31 @@ def main(argv: List[str]) -> int:
         if df.index[0] > ctx_start or df.index[-1] < last_ts:
             # неполное покрытие — пропустим окно
             continue
-        # 1) Направление из политики (если задана)
-        side: Optional[str] = None
-        if policy is not None:
-            df_ctx = df.loc[pd.Timestamp(ctx_start):pd.Timestamp(ctx_end)]
-            side = _policy_to_side(policy, df_ctx)
-        if side is None:
+        
+        # Направление определяет модель по контексту
+        if policy is None:
             if cfg.inference.strict:
-                # Строгий режим: без валидного инференса пропускаем окно
+                continue  # строгий режим: без политики окно пропускаем
+            else:
+                raise RuntimeError("Policy не загружена, а inf_strict=False запрещает эвристику.")
+        
+        df_ctx = df.loc[pd.Timestamp(ctx_start):pd.Timestamp(ctx_end - pd.Timedelta(minutes=1))]
+        side = _policy_to_side(policy, df_ctx)
+
+        if side not in ("BUY", "SELL"):
+            if cfg.inference.strict:
                 continue
-            # fallback: Follow-Context — знак изменения цены за контекст
-            ctx_end_minus = ctx_end - pd.Timedelta(minutes=1)
-            px_ctx_start = _get_close_near(df, pd.Timestamp(ctx_start))
-            px_ctx_endm1 = _get_close_near(df, pd.Timestamp(ctx_end_minus))
-            side = "BUY" if (px_ctx_endm1 - px_ctx_start) >= 0 else "SELL"
-        # Первая цена сессии / последняя цена сессии (с nearest-защитой)
-        first_px = _get_close_near(df, pd.Timestamp(ses_start))
+            else:
+                raise RuntimeError(f"predict_side вернул некорректное значение: {side}")
+
+        # Первая цена сессии / последняя цена сессии (с pad-защитой)
+        first_px = _get_close_near(df, pd.Timestamp(ses_start), how="pad")
         # Исполнение
         entry_raw = first_px
         entry_px = _apply_slippage(entry_raw, cfg.exec.slippage_bps, side)
         qty = _position_size(capital, cfg.exec.risk_per_trade_pct, entry_px)
         # Выход в конце сессии
-        last_px = _get_close_near(df, pd.Timestamp(ses_end))
+        last_px = _get_close_near(df, pd.Timestamp(ses_end), how="pad")
         exit_px = _apply_slippage(last_px, cfg.exec.slippage_bps, "SELL" if side=="BUY" else "BUY")
         notional_entry = qty * entry_px
         notional_exit = qty * exit_px
