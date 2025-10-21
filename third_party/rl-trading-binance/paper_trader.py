@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Callable, Protocol, Any
+import inspect
 
 import numpy as np
 import pandas as pd
@@ -110,11 +111,15 @@ class Cfg:
     # опционально: список тикеров для сканирования
     symbols: List[str]
 
-def _load_cfg(cfg_path: str) -> Cfg:
+def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     mod = _load_py_module(cfg_path)
     if not hasattr(mod, "data") or not isinstance(mod.data, dict):
         raise RuntimeError("В конфиге нужен dict `data`.")
     data = mod.data
+    master_cfg = getattr(mod, "cfg", None)
+    if master_cfg is None:
+        raise RuntimeError("В конфиге не найден объект `cfg` (MasterConfig).")
+
     # обязательные части (см. SYSTEM_PROMPT.md / README)
     dbp = data["db_provider"]
     config_name = os.path.splitext(os.path.basename(cfg_path))[0]
@@ -155,11 +160,12 @@ def _load_cfg(cfg_path: str) -> Cfg:
     det_cool = int(det.get("cooldown_minutes", data.get("trigger", {}).get("cooldown_minutes", 60)))
     det_la = bool(det.get("use_lookahead", True))
     symbols = list(data.get("symbols", []))
-    return Cfg(config_name, dbp, index_csv, execp, ptp, inf,
+    paper_trader_cfg = Cfg(config_name, dbp, index_csv, execp, ptp, inf,
                bool(data.get("build_index_from_db", False)),
                t_start, t_end, ctx_m, sess_m,
                det_ctx, det_win, det_abs, det_con, det_cool, det_la,
                symbols)
+    return paper_trader_cfg, master_cfg
 
 # ------------------------------ Provider ---------------------------
 
@@ -182,7 +188,7 @@ class _Policy(Protocol):
     #  - либо __call__(df_ctx) -> ...
     def predict_side(self, df_ctx: pd.DataFrame) -> str: ...
 
-def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str]) -> Optional[_Policy]:
+def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], cfg_path: str) -> Optional[_Policy]:
     if not policy_loader:
         return None
     if ":" not in policy_loader:
@@ -192,15 +198,60 @@ def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str]) -
     if not hasattr(mod, fn_name):
         raise RuntimeError(f"В модуле `{mod_path}` нет функции `{fn_name}` (policy_loader).")
     loader = getattr(mod, fn_name)
-    return loader(checkpoint_path)
+    # Попробуем определить сигнатуру лоадера и передать master_cfg при необходимости
+    try:
+        sig = inspect.signature(loader)
+    except (TypeError, ValueError):
+        sig = None
 
-def _policy_to_side(policy: _Policy, df_ctx: pd.DataFrame) -> Optional[str]:
+    def _resolve_master_cfg():
+        '''Извлекаем объект master_cfg из конфиг-файла:
+        - переменная `cfg` или `master_cfg`
+        - или инстанс `MasterConfig()`
+        - иначе отдаём dict `data`
+        - в крайнем случае — сам модуль как нейтральный контейнер.
+        '''
+        try:
+            cfg_mod = _load_py_module(cfg_path)
+        except Exception:
+            return None
+        for name in ("cfg", "master_cfg"):
+            if hasattr(cfg_mod, name):
+                return getattr(cfg_mod, name)
+        if hasattr(cfg_mod, "MasterConfig"):
+            try:
+                return cfg_mod.MasterConfig()
+            except Exception:
+                pass
+        if hasattr(cfg_mod, "data"):
+            return cfg_mod.data
+        return cfg_mod
+
+    if sig is not None:
+        params = [p for p in sig.parameters.values()
+                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+        # Однопараметрические лоадеры: load_policy(ckpt)
+        if len(params) <= 1:
+            return loader(checkpoint_path)
+        # Двухпараметрические лоадеры: load_policy(ckpt, master_cfg / cfg / ...)
+        mc = _resolve_master_cfg()
+        # Если в сигнатуре есть параметр по имени, передаём его как позиционный — совместимо в обоих случаях
+        return loader(checkpoint_path, mc)
+
+    # Fallback: сначала без master_cfg, если упадёт — попробуем с ним
+    try:
+        return loader(checkpoint_path)
+    except TypeError:
+        mc = _resolve_master_cfg()
+        return loader(checkpoint_path, mc)
+
+def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optional[str]:
     # Универсальный вызов с мягкой деградацией интерфейса
     if hasattr(policy, "predict_side"):
         side = policy.predict_side(df_ctx)  # ожидается "BUY"/"SELL"
         return str(side).upper()
     if hasattr(policy, "predict"):
-        pred = policy.predict(df_ctx)
+        pred = policy.predict(symbol, df_ctx)
         try:
             pred = int(pred)
         except Exception:
@@ -264,7 +315,7 @@ def main(argv: List[str]) -> int:
         print("Использование: python paper_trader.py configs/alpha.py")
         return 2
     cfg_path = argv[1]
-    cfg = _load_cfg(cfg_path)
+    cfg, master_cfg = _load_cfg(cfg_path)
     out_dir = os.path.join("third_party", "rl-trading-binance", "output", cfg.config_name)
     os.makedirs(out_dir, exist_ok=True)
     out_trades = os.path.join(out_dir, "trades.csv")
@@ -272,7 +323,11 @@ def main(argv: List[str]) -> int:
 
     provider = _load_db_provider(cfg.db_provider_path)
     # Загружаем модель (если указана)
-    policy: Optional[_Policy] = _load_policy(cfg.inference.policy_loader, cfg.inference.checkpoint_path)
+    policy: Optional[_Policy] = _load_policy(
+        cfg.inference.policy_loader,
+        cfg.inference.checkpoint_path,
+        cfg_path
+    )
     need_build = cfg.build_index_from_db or not os.path.exists(cfg.index_csv)
     if need_build:
         if cfg.time_start_utc is None or cfg.time_end_utc is None or not cfg.symbols:
@@ -354,7 +409,7 @@ def main(argv: List[str]) -> int:
                 raise RuntimeError("Policy не загружена, а inf_strict=False запрещает эвристику.")
         
         df_ctx = df.loc[pd.Timestamp(ctx_start):pd.Timestamp(ctx_end - pd.Timedelta(minutes=1))]
-        side = _policy_to_side(policy, df_ctx)
+        side = _policy_to_side(policy, sym, df_ctx)
 
         if side not in ("BUY", "SELL"):
             if cfg.inference.strict:
