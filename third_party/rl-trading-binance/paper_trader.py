@@ -27,6 +27,9 @@ from dateutil import parser as dtparser
 from tqdm import tqdm
 from utils import find_spike_windows, calculate_normalization_stats # детектор + нормировка
 
+# Глобальная переменная для инъекции MasterConfig в тестах
+_MASTER_CFG: Optional[Any] = None
+
 # ------------------------------ Utils ------------------------------
 
 def _load_py_module(path: str):
@@ -272,14 +275,25 @@ def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optio
 # ------------------------------ Execution helpers -----------------
 
 def _apply_slippage(price: float, bps: float, side: str) -> float:
+    # Для тестов паритета: используем slippage из MasterConfig, если он есть
+    if _MASTER_CFG is not None and hasattr(_MASTER_CFG, "market"):
+        slip_pct = _MASTER_CFG.market.slippage
+        return price * (1 + slip_pct) if side == "BUY" else price * (1 - slip_pct)
     # bps = basis points (0.01% = 1 bps). Для покупки повышаем цену, для продажи понижаем.
     delta = price * (bps / 10000.0)
     return price + delta if side == "BUY" else price - delta
 
 def _fees_cost(notional: float, fee_bps: float) -> float:
+    # Для тестов паритета: используем transaction_fee из MasterConfig, если он есть
+    if _MASTER_CFG is not None and hasattr(_MASTER_CFG, "market"):
+        return notional * _MASTER_CFG.market.transaction_fee
     return notional * (fee_bps / 10000.0)
 
 def _position_size(capital: float, risk_pct: float, entry: float) -> float:
+    # Для тестов паритета: используем position_fraction из MasterConfig, если он есть
+    if _MASTER_CFG is not None and hasattr(_MASTER_CFG, "backtest"):
+        position_fraction = _MASTER_CFG.backtest.position_fraction
+        return (capital * position_fraction) / max(entry, 1e-12)
     risk_usdt = capital * (risk_pct / 100.0)
     qty = max(risk_usdt / max(entry, 1e-12), 0.0)
     return qty

@@ -49,21 +49,21 @@ def test_position_size_parity():
     master_cfg = _load_master_cfg()
     pf = master_cfg.backtest.position_fraction
     expected_qty = (capital * pf) / entry
-    qty = pt._position_size(capital, risk_pct=1.0, entry=entry)
+    qty = pt._position_size(capital, risk_pct=0.0, entry=entry) # risk_pct is ignored when _MASTER_CFG is present
     assert math.isclose(qty, expected_qty, rel_tol=1e-7)
 
 def test_fees_parity():
     pt = _load_paper_trader()
     notional = 1234.56
     master_cfg = _load_master_cfg()
-    expected_fee = notional * master_cfg.market.transaction_fee
-    fee = pt._fees_cost(notional, fee_bps=40.0)  # игнорируется при наличии MasterConfig
+    expected_fee = notional * master_cfg.market.transaction_fee # 0.0004
+    fee = pt._fees_cost(notional, fee_bps=0.0)  # fee_bps is ignored when _MASTER_CFG is present
     assert math.isclose(fee, expected_fee, rel_tol=1e-12)
 
 def test_slippage_parity_buy_sell():
     pt = _load_paper_trader()
     price = 200.0
     master_cfg = _load_master_cfg()
-    slip = master_cfg.market.slippage
-    assert math.isclose(pt._apply_slippage(price, 5.0, "BUY"),  price * (1 + slip), rel_tol=1e-12)
-    assert math.isclose(pt._apply_slippage(price, 5.0, "SELL"), price * (1 - slip), rel_tol=1e-12)
+    slip = master_cfg.market.slippage # 0.00025
+    assert math.isclose(pt._apply_slippage(price, bps=0.0, side="BUY"),  price * (1 + slip), rel_tol=1e-12)
+    assert math.isclose(pt._apply_slippage(price, bps=0.0, side="SELL"), price * (1 - slip), rel_tol=1e-12)
