@@ -27,6 +27,10 @@ from dateutil import parser as dtparser
 from tqdm import tqdm
 from utils import find_spike_windows, calculate_normalization_stats # детектор + нормировка
 
+# --- Global master config for execution parity (set in main) ---
+_MASTER_CFG: Optional[Any] = None
+
+
 # ------------------------------ Utils ------------------------------
 
 def _load_py_module(path: str):
@@ -101,6 +105,7 @@ class Cfg:
     time_end_utc: Optional[datetime]
     ctx_minutes: int
     session_minutes: int
+    agent_history_len: int # <--- Добавляем для надёжности
     # детектор
     det_context: int
     det_window: int
@@ -156,6 +161,14 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     t_end = t_end if t_end is None else _to_utc(t_end)
     ctx_m = int(data.get("ctx_minutes", 30))
     sess_m = int(data.get("session_minutes", 10))
+    # >>> Align with MasterConfig to mirror backtest sessions/windows <<<
+    if master_cfg is not None:
+        try:
+            ctx_m = int(getattr(master_cfg.seq, "pre_signal_len"))
+            sess_m = int(getattr(master_cfg.seq, "agent_session_len"))
+        except Exception:
+            # мягкая деградация к значениям из data
+            pass
     det = data.get("detector", {})
     det_ctx = int(det.get("context_minutes", 90))
     det_win = int(det.get("window_minutes", 10))
@@ -164,10 +177,12 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     det_cool = int(det.get("cooldown_minutes", data.get("trigger", {}).get("cooldown_minutes", 60)))
     det_la = bool(det.get("use_lookahead", True))
     symbols = list(data.get("symbols", []))
+    # Длина истории для модели, по умолчанию равна длине контекста
+    agent_hist_len = int(data.get("agent_history_len", ctx_m))
     paper_trader_cfg = Cfg(config_name, dbp, index_csv, execp, ptp, inf,
                bool(data.get("build_index_from_db", False)),
-               t_start, t_end, ctx_m, sess_m,
-               det_ctx, det_win, det_abs, det_con, det_cool, det_la,
+               t_start, t_end, ctx_m, sess_m, agent_hist_len,
+               det_ctx, det_win, det_abs, det_con, det_cool, det_la, # type: ignore
                symbols)
     return paper_trader_cfg, master_cfg
 
@@ -272,17 +287,46 @@ def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optio
 # ------------------------------ Execution helpers -----------------
 
 def _apply_slippage(price: float, bps: float, side: str) -> float:
-    # bps = basis points (0.01% = 1 bps). Для покупки повышаем цену, для продажи понижаем.
-    delta = price * (bps / 10000.0)
+    """
+    Prefer backtest slippage from MasterConfig (fraction), fallback to bps if absent.
+    """
+    global _MASTER_CFG
+    slip = (
+        float(getattr(getattr(_MASTER_CFG, "market", None), "slippage", None))
+        if _MASTER_CFG is not None
+        else None
+    )
+    slippage = slip if isinstance(slip, (float, int)) else (bps / 10000.0)
+    delta = price * slippage
     return price + delta if side == "BUY" else price - delta
 
 def _fees_cost(notional: float, fee_bps: float) -> float:
-    return notional * (fee_bps / 10000.0)
+    """
+    Prefer backtest fee from MasterConfig (fraction), fallback to bps if absent.
+    """
+    global _MASTER_CFG
+    fee = (
+        float(getattr(getattr(_MASTER_CFG, "market", None), "transaction_fee", None))
+        if _MASTER_CFG is not None
+        else None
+    )
+    fee_rate = fee if isinstance(fee, (float, int)) else (fee_bps / 10000.0)
+    return notional * fee_rate
 
 def _position_size(capital: float, risk_pct: float, entry: float) -> float:
+    """
+    If MasterConfig is available, mirror backtest sizing:
+      notional = capital * cfg.backtest.position_fraction
+      qty = notional / entry
+    Else, use legacy risk% sizing.
+    """
+    global _MASTER_CFG
+    if _MASTER_CFG is not None:
+        pf = float(getattr(getattr(_MASTER_CFG, "backtest", None), "position_fraction", 0.5))
+        notional = max(capital * pf, 0.0)
+        return max(notional / max(entry, 1e-12), 0.0)
     risk_usdt = capital * (risk_pct / 100.0)
-    qty = max(risk_usdt / max(entry, 1e-12), 0.0)
-    return qty
+    return max(risk_usdt / max(entry, 1e-12), 0.0)
 
 def _compute_metrics(trades: pd.DataFrame) -> Dict[str, float]:
     if trades.empty:
@@ -316,6 +360,21 @@ def main(argv: List[str]) -> int:
         return 2
     cfg_path = argv[1]
     cfg, master_cfg = _load_cfg(cfg_path)
+    # expose MasterConfig globally for execution helpers
+    global _MASTER_CFG
+    _MASTER_CFG = master_cfg
+
+    # Harmonize minutes with backtest session lengths if MasterConfig present
+    if master_cfg is not None:
+        try:
+            if cfg.session_minutes != master_cfg.seq.agent_session_len:
+                print(f"[WARN] Override session_minutes: {cfg.session_minutes} -> {master_cfg.seq.agent_session_len}")
+                cfg.session_minutes = master_cfg.seq.agent_session_len
+            if cfg.ctx_minutes != master_cfg.seq.pre_signal_len:
+                print(f"[WARN] Override ctx_minutes: {cfg.ctx_minutes} -> {master_cfg.seq.pre_signal_len}")
+                cfg.ctx_minutes = master_cfg.seq.pre_signal_len
+        except Exception:
+            pass
     out_dir = os.path.join("third_party", "rl-trading-binance", "output", cfg.config_name)
     os.makedirs(out_dir, exist_ok=True)
     out_trades = os.path.join(out_dir, "trades.csv")
@@ -460,9 +519,15 @@ def main(argv: List[str]) -> int:
         
         # Контекст для модели должен иметь длину agent_history_len
         ctx_end_ts = pd.Timestamp(ctx_end)
+        # Используем длину истории из master_cfg, если доступно, иначе из cfg
+        history_len_m = cfg.agent_history_len
+        if master_cfg and hasattr(master_cfg.seq, "agent_history_len"):
+            history_len_m = master_cfg.seq.agent_history_len
+        elif master_cfg and hasattr(master_cfg.seq, "pre_signal_len"): # Fallback
+            history_len_m = master_cfg.seq.pre_signal_len
         # NB: ctx_start из индекса может быть шире, чем нужно модели.
         # Отрезаем окно нужной длины agent_history_len от конца контекста.
-        ctx_start_for_model = ctx_end_ts - pd.Timedelta(minutes=master_cfg.seq.agent_history_len)
+        ctx_start_for_model = ctx_end_ts - pd.Timedelta(minutes=history_len_m)
         df_ctx = df.loc[ctx_start_for_model : ctx_end_ts - pd.Timedelta(minutes=1)]
         side = _policy_to_side(policy, sym, df_ctx)
 
