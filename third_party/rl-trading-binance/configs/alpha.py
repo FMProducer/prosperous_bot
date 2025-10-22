@@ -120,18 +120,19 @@ data = {
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
     "resample_1t": True,
     # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
-    "build_index_from_db": False,
+    "build_index_from_db": True,
     # NB: для build_index_from_db=True обязательно укажите список тикеров:
     "symbols": ["OMUSDT","1000RATSUSDT","KAVAUSDT","FILUSDT","POPCATUSDT","ZECUSDT","LUNA2USDT","BRETTUSDT","BELUSDT","LISTAUSDT","ZKUSDT","PORTALUSDT","AUCTIONUSDT","BIGTIMEUSDT","TRBUSDT","ARKMUSDT","TIAUSDT","NEOUSDT","IMXUSDT","AXLUSDT","MASKUSDT","CATIUSDT","REZUSDT"],
+    # "symbols": ["OMUSDT"],
     # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
     "detector": {
         # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)
-        "context_minutes": 90,
+        "context_minutes": 30,
         "window_minutes": 10,
-        "use_lookahead": True,       # True — как в бэктесте; False — реал-режим без заглядывания вперёд
-        "abs_change_pct": 5.0,       # |ΔP| over window, %
-        "contrast_min": 5.0,         # (|ΔP| / avg_abs_ret_pre) ≥ contrast_min
-        "cooldown_minutes": 60
+        "use_lookahead": False,       # True — как в бэктесте; False — реал-режим без заглядывания вперёд
+        "abs_change_pct": 1.0,       # |ΔP| over window, %
+        "contrast_min": 9.0,         # (|ΔP| / avg_abs_ret_pre) ≥ contrast_min
+        "cooldown_minutes": 15
     },
     # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
     "db_provider": "db_provider:get_feed",
