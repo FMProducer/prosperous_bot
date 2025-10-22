@@ -1,162 +1,331 @@
-## TL;DR
+# TL;DR
 
-Логи `Starting index generation...` и `--> Processing symbol: ...` означают, что **идёт построение индекса окон из БД**: берётся диапазон ~3 месяцев и **23 тикера** из `configs/alpha.py` — это тяжёлая операция по минутным данным, поэтому всё выглядит «долго», но это корректное поведение. После завершения будет создан `output/alpha/stream_backtest_index.csv`, далее запустится исполнение сделок и сохранение `trades.csv`/`metrics.json`. (См. логи и код ветки построения индекса в `paper_trader.py`.)  
+Готов патч, который **синхронизирует поведение `paper_trader.py` с `backtest_engine.py`**:
 
-При этом я заметил одну важную вещь по инференсу:
+1. унифицирует **размер позиции** (как в бэктесте, через `backtest.position_fraction`),
+2. использует **те же комиссии/проскальзывание** (`market.transaction_fee` и `market.slippage`),
+3. выравнивает **длины окон** (контекст/сессия) c `cfg.seq.pre_signal_len` и `cfg.seq.agent_session_len` для построения окон из БД,
+4. добавляет минимальные **pytest-тесты** на паритет расчётов, чтобы не допустить регрессии.
 
-* Ваша политика может вернуть **"HOLD"** (см. `inference_adapter.py`). Сейчас `_policy_to_side(...)` в `paper_trader.py` интерпретирует любые нечисловые ответы как SELL — это приведёт к **ложным продажам**, когда модель хотела «не входить». Рекомендую мини-патч: корректно обрабатывать {0, "HOLD"} → пропуск окна.  
-
-Дополнительно — микро-улучшение логирования: печатать число найденных окон на тикер и итоговый счётчик — чтобы вы видели прогресс не только по именам.
-
----
-
-## Почему индексация «долго» — и это норма
-
-* В `alpha.py` включён режим `build_index_from_db=True`, задан большой период `2025-03-01 → 2025-06-01` и список из **23 символов**. Для каждого символа PaperTrader запрашивает минутки и minute-by-minute сканирует всплески по алгоритму 90→10 (look-ahead=True). Это вычислительно и I/O-интенсивно. Логи `Starting index generation...` / `--> Processing symbol: ...` печатаются как раз в этой ветке.  
-* После окончания цикла собирается `DataFrame` окон и **сразу приводится к UTC-datetime** (важно для `.dt.floor("D")` ниже), затем пишется CSV. Это в коде уже сделано правильно. 
-
-Если нужно «быстрый дымовой тест» — сократите `data.symbols` до 1–2 тикеров и/или сузьте `time_range` до пары дней; а затем верните прод-параметры.
+Это должно резко приблизить число сделок и метрики в `paper_trader.py` к тем, что даёт `backtest_engine.py` на тех же данных/модели.
 
 ---
 
-## Мини-патч: корректный "HOLD" + информативный прогресс
+## Repo-State Header (prosperous_bot)
 
-Ниже — компактный unified diff к вашему текущему `paper_trader.py`. Он:
+* **Branch:** `prosperous_bot`
+* **Latest commit:** `4f8ad89f74ffc56661386dc4b058165681a8e591` — *"docs: test_paper_trader_inference.py"*, 2025-10-21. ([GitHub][1])
+* **Репозиторий:** `FMProducer/prosperous_bot` (структура ветки `third_party/rl-trading-binance` подтверждена). ([GitHub][2])
+* **Релевантные файлы исходного кода:**
 
-1. Учит `_policy_to_side(...)` правильно обрабатывать **HOLD/0** (пропуск окна при `strict=True`),
-2. Добавляет счётчик и печать количества окон на каждый тикер и итоговый total.
+  * `third_party/rl-trading-binance/backtest_engine.py` — использует `market.slippage`, `market.transaction_fee`, `backtest.position_fraction` и пороги **advantage**. ([GitHub][3])
+  * `third_party/rl-trading-binance/trading_environment.py` — точная механика исполнения/комиссий/лимитов. ([GitHub][4])
+  * `third_party/rl-trading-binance/inference_adapter.py` — инференс с **advantage** и порогами из конфига. ([GitHub][5])
+  * `third_party/rl-trading-binance/utils.py` — нормализация и детектор всплесков (динамическое окно). ([GitHub][6])
+  * `third_party/rl-trading-binance/config.py` — источник истинных параметров: `seq.*`, `market.*`, `backtest.*`. ([GitHub][7])
+
+> Примечание: я сверил логику по исходникам выше, чтобы изменения были **repo-first**, без допущений.
+
+---
+
+## Патч (unified diff)
+
+> Лимиты соблюдены: 2 файла, ~<300 строк diff.
+
+### 1) Выравнивание `paper_trader.py` под параметры бэктеста
+
+* глобально фиксируем `MasterConfig` в модуле (`_MASTER_CFG`);
+* используем `market.slippage`, `market.transaction_fee`, `backtest.position_fraction`;
+* в `_load_cfg` подменяем `ctx_minutes` и `session_minutes` значениями из `cfg.seq.*`, чтобы **генерация окон** на БД совпала с бэктест-сессиями;
+* в `main()` присваиваем `_MASTER_CFG = master_cfg`.
+
+### 2) Тест на паритет расчётов
+
+* лёгкий `pytest`, проверяющий, что функции размера/комиссий/проскальзывания в `paper_trader.py` выдают те же формулы, что в `TradingEnvironment`/бэктест-коде.
+
+---
 
 ```diff
-*** a/third_party/rl-trading-binance/paper_trader.py
---- b/third_party/rl-trading-binance/paper_trader.py
+*** Begin Patch
+*** Update File: third_party/rl-trading-binance/paper_trader.py
 @@
--def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optional[str]:
-+def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optional[str]:
-     # Универсальный вызов с мягкой деградацией интерфейса
-     if hasattr(policy, "predict_side"):
--        side = policy.predict_side(df_ctx)  # ожидается "BUY"/"SELL"
--        return str(side).upper()
-+        side = str(policy.predict_side(df_ctx)).upper()
-+        if side in ("BUY", "SELL"):
-+            return side
-+        if side == "HOLD":
-+            return None
-+        return None
-     if hasattr(policy, "predict"):
--        pred = policy.predict(symbol, df_ctx)
--        try:
--            pred = int(pred)
--        except Exception:
--            pass
--        return "BUY" if pred == 1 else "SELL"
-+        pred = policy.predict(symbol, df_ctx)
-+        # допускаем как str, так и int
-+        if isinstance(pred, str):
-+            up = pred.upper()
-+            if up in ("BUY", "SELL"):
-+                return up
-+            if up == "HOLD":
-+                return None
-+            return None
-+        try:
-+            pred_i = int(pred)
-+        except Exception:
-+            return None
-+        if pred_i == 1:
-+            return "BUY"
-+        if pred_i == 2:
-+            return "SELL"
-+        # 0 или иное — трактуем как HOLD/нет сигнала
-+        return None
-     if callable(policy):
-         pred = policy(df_ctx)
-         try:
-             pred = int(pred)
-         except Exception:
-             pass
--        return "BUY" if pred == 1 else "SELL"
-+        if pred == 1:
-+            return "BUY"
-+        if pred == 2:
-+            return "SELL"
-+        return None
-     return None
-@@
--    if need_build:
-+    if need_build:
-         if cfg.time_start_utc is None or cfg.time_end_utc is None or not cfg.symbols:
-             raise RuntimeError(
-                 "Для построения индекса из БД нужны data.time_range{start_utc,end_utc} и data.symbols[]. "
-                 "Либо выключите build_index_from_db=False и подготовьте stream_backtest_index.csv офлайн."
-             )
-         rows = []
-         print("Starting index generation...")
-+        total_wins = 0
-         for sym in cfg.symbols:
-             print(f"--> Processing symbol: {sym}")
-             feed = dict(provider([sym], cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
-             if sym not in feed or feed[sym].empty:
-                 continue
-             df = _ensure_utc_index(feed[sym]).sort_index()
-@@
--            for (ctx_start, ctx_end, ses_start, ses_end, abs_chg) in wins:
-+            for (ctx_start, ctx_end, ses_start, ses_end, abs_chg) in wins:
-                 # Приводим торговую сессию к длине из конфига (напр., 10 минут в демо)
-                 ses_end_adj = ses_start + timedelta(minutes=cfg.session_minutes)
-                 rows.append({
-                     "symbol": sym,
-                     "ctx_start": ctx_start.isoformat(),
-                     "ctx_end": ctx_end.isoformat(),
-                     "session_start": ses_start.isoformat(),
-                     "session_end": ses_end_adj.isoformat(),
-                     "abs_change_pct": abs_chg,
-                 })
-+            print(f"    -> windows found: {len(wins)}")
-+            total_wins += len(wins)
-         idx = pd.DataFrame(rows)
-         out_dir = os.path.dirname(cfg.index_csv)
-         os.makedirs(out_dir, exist_ok=True)
-         # Сразу храним UTC-датавремена и используем их же ниже
-         for col in ["ctx_start","ctx_end","session_start","session_end"]:
-             idx[col] = pd.to_datetime(idx[col], utc=True)
-         idx.to_csv(cfg.index_csv, index=False)
-+        print(f"Index saved: {cfg.index_csv}  | total windows: {total_wins}")
-@@
--        side = _policy_to_side(policy, sym, df_ctx)
-+        side = _policy_to_side(policy, sym, df_ctx)
+-from utils import find_spike_windows, calculate_normalization_stats  # детектор + нормировка
++from utils import find_spike_windows, calculate_normalization_stats  # детектор + нормировка
++
++# --- Global master config for execution parity (set in main) ---
++_MASTER_CFG: Optional[Any] = None
  
--        if side not in ("BUY", "SELL"):
-+        if side not in ("BUY", "SELL"):
-             if cfg.inference.strict:
-                 continue
-             else:
-                 raise RuntimeError(f"predict_side вернул некорректное значение: {side}")
+@@
+-def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
++def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
+     mod = _load_py_module(cfg_path)
+     if not hasattr(mod, "data") or not isinstance(mod.data, dict):
+         raise RuntimeError("В конфиге нужен dict `data`.")
+     data = mod.data
+     # master_cfg НЕ обязателен: попробуем найти cfg / MasterConfig(), иначе оставим None
+     master_cfg = getattr(mod, "cfg", None)
+     if master_cfg is None and hasattr(mod, "MasterConfig"):
+         try:
+             master_cfg = mod.MasterConfig()
+         except Exception:
+             master_cfg = None
+ 
+     # обязательные части (см. SYSTEM_PROMPT.md / README)
+     dbp = data["db_provider"]
+     config_name = os.path.splitext(os.path.basename(cfg_path))[0]
+     index_csv = os.path.join("third_party", "rl-trading-binance", "output", config_name, "stream_backtest_index.csv")
+@@
+-    ctx_m = int(data.get("ctx_minutes", 30))
+-    sess_m = int(data.get("session_minutes", 10))
++    ctx_m = int(data.get("ctx_minutes", 30))
++    sess_m = int(data.get("session_minutes", 10))
++    # >>> Align with MasterConfig to mirror backtest sessions/windows <<<
++    if master_cfg is not None:
++        try:
++            ctx_m = int(getattr(master_cfg.seq, "pre_signal_len"))
++            sess_m = int(getattr(master_cfg.seq, "agent_session_len"))
++        except Exception:
++            # мягкая деградация к значениям из data
++            pass
+@@
+-    return paper_trader_cfg, master_cfg
++    return paper_trader_cfg, master_cfg
+ 
+@@
+-def _apply_slippage(price: float, bps: float, side: str) -> float:
+-    # bps = basis points (0.01% = 1 bps). Для покупки повышаем цену, для продажи понижаем.
+-    delta = price * (bps / 10000.0)
+-    return price + delta if side == "BUY" else price - delta
++def _apply_slippage(price: float, bps: float, side: str) -> float:
++    """
++    Prefer backtest slippage from MasterConfig (fraction), fallback to bps if absent.
++    """
++    global _MASTER_CFG
++    slip = (
++        float(getattr(getattr(_MASTER_CFG, "market", None), "slippage", None))
++        if _MASTER_CFG is not None
++        else None
++    )
++    slippage = slip if isinstance(slip, (float, int)) else (bps / 10000.0)
++    delta = price * slippage
++    return price + delta if side == "BUY" else price - delta
+ 
+-def _fees_cost(notional: float, fee_bps: float) -> float:
+-    return notional * (fee_bps / 10000.0)
++def _fees_cost(notional: float, fee_bps: float) -> float:
++    """
++    Prefer backtest fee from MasterConfig (fraction), fallback to bps if absent.
++    """
++    global _MASTER_CFG
++    fee = (
++        float(getattr(getattr(_MASTER_CFG, "market", None), "transaction_fee", None))
++        if _MASTER_CFG is not None
++        else None
++    )
++    fee_rate = fee if isinstance(fee, (float, int)) else (fee_bps / 10000.0)
++    return notional * fee_rate
+ 
+-def _position_size(capital: float, risk_pct: float, entry: float) -> float:
+-    risk_usdt = capital * (risk_pct / 100.0)
+-    qty = max(risk_usdt / max(entry, 1e-12), 0.0)
+-    return qty
++def _position_size(capital: float, risk_pct: float, entry: float) -> float:
++    """
++    If MasterConfig is available, mirror backtest sizing:
++      notional = capital * cfg.backtest.position_fraction
++      qty = notional / entry
++    Else, use legacy risk% sizing.
++    """
++    global _MASTER_CFG
++    if _MASTER_CFG is not None:
++        pf = float(getattr(getattr(_MASTER_CFG, "backtest", None), "position_fraction", 0.5))
++        notional = max(capital * pf, 0.0)
++        return max(notional / max(entry, 1e-12), 0.0)
++    risk_usdt = capital * (risk_pct / 100.0)
++    return max(risk_usdt / max(entry, 1e-12), 0.0)
+ 
+@@
+ def main(argv: List[str]) -> int:
+     if len(argv) < 2:
+         print("Использование: python paper_trader.py configs/alpha.py")
+         return 2
+     cfg_path = argv[1]
+-    cfg, master_cfg = _load_cfg(cfg_path)
++    cfg, master_cfg = _load_cfg(cfg_path)
++    # expose MasterConfig globally for execution helpers
++    global _MASTER_CFG
++    _MASTER_CFG = master_cfg
++
++    # Harmonize minutes with backtest session lengths if MasterConfig present
++    if master_cfg is not None:
++        try:
++            if cfg.session_minutes != master_cfg.seq.agent_session_len:
++                print(f"[WARN] Override session_minutes: {cfg.session_minutes} -> {master_cfg.seq.agent_session_len}")
++                cfg.session_minutes = master_cfg.seq.agent_session_len
++            if cfg.ctx_minutes != master_cfg.seq.pre_signal_len:
++                print(f"[WARN] Override ctx_minutes: {cfg.ctx_minutes} -> {master_cfg.seq.pre_signal_len}")
++                cfg.ctx_minutes = master_cfg.seq.pre_signal_len
++        except Exception:
++            pass
+@@
+     # Загружаем модель (если указана)
+     policy: Optional[_Policy] = _load_policy(
+         cfg.inference.policy_loader,
+         cfg.inference.checkpoint_path,
+         cfg_path,
+         stats
+     )
+*** End Patch
 ```
 
-**Эффект:** при ответе модели `"HOLD"`/`0` — окно пропускается (в `strict=True` это именно то, что нужно), BUY/SELL — исполняем. Плюс вы теперь видите прогресс по количеству найденных окон на каждый тикер и итоговый total.
+---
+
+```diff
+*** Begin Patch
+*** Add File: third_party/rl-trading-binance/tests/test_exec_parity.py
++# -*- coding: utf-8 -*-
++"""
++Проверка паритета расчётов paper_trader c бэктест-логикой:
++ - размер позиции: cfg.backtest.position_fraction
++ - комиссии: cfg.market.transaction_fee
++ - проскальзывание: cfg.market.slippage
++Тесты лёгкие, без БД/модели.
++"""
++import importlib.util
++import pathlib
++import math
++from third_party.rl-trading-binance.config import cfg as master_cfg
++
++def _load_paper_trader():
++    p = pathlib.Path("third_party/rl-trading-binance/paper_trader.py")
++    spec = importlib.util.spec_from_file_location("paper_trader", p.as_posix())
++    mod = importlib.util.module_from_spec(spec)
++    assert spec and spec.loader
++    spec.loader.exec_module(mod)  # type: ignore
++    # пробрасываем MasterConfig
++    mod._MASTER_CFG = master_cfg
++    return mod
++
++def test_position_size_parity():
++    pt = _load_paper_trader()
++    capital = 10_000.0
++    entry = 100.0
++    pf = master_cfg.backtest.position_fraction
++    expected_qty = (capital * pf) / entry
++    qty = pt._position_size(capital, risk_pct=1.0, entry=entry)
++    assert math.isclose(qty, expected_qty, rel_tol=1e-7)
++
++def test_fees_parity():
++    pt = _load_paper_trader()
++    notional = 1234.56
++    expected_fee = notional * master_cfg.market.transaction_fee
++    fee = pt._fees_cost(notional, fee_bps=40.0)  # игнорируется при наличии MasterConfig
++    assert math.isclose(fee, expected_fee, rel_tol=1e-12)
++
++def test_slippage_parity_buy_sell():
++    pt = _load_paper_trader()
++    price = 200.0
++    slip = master_cfg.market.slippage
++    assert math.isclose(pt._apply_slippage(price, 5.0, "BUY"),  price * (1 + slip), rel_tol=1e-12)
++    assert math.isclose(pt._apply_slippage(price, 5.0, "SELL"), price * (1 - slip), rel_tol=1e-12)
++
+*** End Patch
+```
 
 ---
 
-## Быстрые рекомендации по производительности (без кода)
+## Как это минимизирует расхождения
 
-| Шаг | Что сделать                                                                                                                                                                                                | Зачем                                                             |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| 1   | Для проверки пайплайна временно сузьте `data.time_range` (например, на 2–3 дня) и оставьте 1–2 символа в `data.symbols`.                                                                                   | Быстрый end-to-end прогон, убедиться в корректности окон/трейдов. |
-| 2   | Если нужен лимит на количество окон уже при построении индекса, а не только после — можно добавить «ранний колпак» per-symbol (остановка при достижении N). (Сейчас колпак применяется после чтения CSV.)  | Сократить время I/O/CPU при большом периоде.                      |
-| 3   | Убедитесь, что `db_provider:get_feed` действительно отдаёт **все ожидаемые каналы** (цены, объёмы). Если чего-то нет — `inference_adapter` сам дополняет колонки нулями, это уже реализовано.              | Исключить рассинхронизацию формы входа.                           |
-
----
-
-## Контрольные пункты по инференсу (важно)
-
-* Нарезка окна для модели: вы уже делаете строго `master_cfg.seq.agent_history_len` минут перед `ctx_end` — это правильно и устраняет прошлую ошибку `Window shape mismatch in apply_normalization`. 
-* Политика может возвращать BUY/SELL/HOLD; теперь HOLD корректно пропускается. 
-* В `alpha.py` `inference.strict=True`: так вы получаете **1:1 соответствие с бэктестом** по действиям (без эвристик). 
+* **Размер позиции**: теперь расчёт ровно как в бэктесте — `notional = balance * backtest.position_fraction`, а не через `% риска`. Это ключ к совпадению **количества и PnL** сделок. См. реализацию в `backtest_engine.py` (по месту создания `TradingEnvironment`) и в `TradingEnvironment.backtest_step` (объём = `balance / exec_price`). ([GitHub][3])
+* **Комиссии/проскальзывание**: берём `market.transaction_fee` и `market.slippage` из `config.py`, как делает окружение бэктеста. Раньше в `paper_trader` это было в bps и могло отличаться. ([GitHub][7])
+* **Длины окон**: детектор и индекс теперь жёстко синхронизированы c `cfg.seq.pre_signal_len`/`agent_session_len`, чтобы контекст/сессия из БД соответствовали сессиям в NPZ. ([GitHub][6])
+* **Пороги действий**: уже унифицированы через `inference_adapter.py` (advantage-thresholds из `cfg.backtest.*`). ([GitHub][5])
 
 ---
 
-## Что делать прямо сейчас
+## Команды для PR
 
-1. Примените мини-патч выше к `paper_trader.py` (он не меняет интерфейсов и укладывается в лимиты PR).
-2. Для «быстрого успеха» временно уменьшите `data.symbols`/`time_range`, прогоните, убедитесь, что `stream_backtest_index.csv` появился и дальше отработали `trades.csv`/`metrics.json`.
-3. Верните прод-настройки и запускайте полноценную индексацию.
+> Базовая ветка PR — `prosperous_bot` (как требует процесс).
+
+```bash
+# 1) Новая ветка
+git checkout -b feature/paper-trader-exec-parity
+
+# 2) Применить патч (сохраните patch в файл changes.patch)
+git apply --index changes.patch
+git commit -m "feat(paper_trader): align sizing/fees/slippage & session/ctx minutes with backtest; add exec parity tests"
+
+# 3) Пуш
+git push -u origin feature/paper-trader-exec-parity
+
+# 4) PR (base = prosperous_bot)
+gh pr create -t "paper_trader ↔ backtest: execution parity (sizing/fees/slippage + window lengths)" -b "
+### 🎯 Goal
+Сделать поведение paper_trader максимально идентичным бэктесту: размер позиции, комиссии/проскальзывание, длительности окон.
+
+### 📝 Implementation Details
+- paper_trader.py: глобальный доступ к MasterConfig; выравнивание ctx/session минут; комиссии/проскальзывание/размер позиции из cfg.
+- tests/test_exec_parity.py: pytest на паритет формул.
+
+### 📈 KPI/Risk Assessment
+- **Sharpe:** ≈ без изменения (ожидается сближение с бэктестом).
+- **Max DD:** ≈ без изменения (схожее исполнение).
+- **Profit Factor:** ожидается сближение к бэктестовым значениям.
+
+### 롤백 계획 (Rollback Plan)
+Простой revert PR. Фича изолирована в paper_trader + тесты.
+
+---
+
+## Чек-лист «1:1» поведения на потоке/БД
+
+| Шаг | Действие                                                                                                                                                                     | KPI/риск                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | **Единые окна**: `ctx_minutes = cfg.seq.pre_signal_len`, `session_minutes = cfg.seq.agent_session_len` в `paper_trader` (патч делает это автоматически)                      | Согласованность выборки контекстов/сессий |
+| 2   | **Нормализация**: считать статистики теми же каналами/формулой, как в бэктесте (`utils.calculate_normalization_stats`), проверяя, что **все expected_channels присутствуют** | Идентичный вход модели                    |
+| 3   | **Размер позиции**: использовать `backtest.position_fraction` (а не risk%)                                                                                                   | Кол-во/масштаб PnL совпадает              |
+| 4   | **Комиссии/проскальзывание**: `market.transaction_fee`, `market.slippage`                                                                                                    | Сходство метрик (PF, Win-rate)            |
+| 5   | **Пороги действий**: advantage-thresholds из `cfg.backtest.*` (через `inference_adapter`)                                                                                    | Идентичная фильтрация сигналов            |
+| 6   | **Часовой пояс/индекс минуток**: UTC-индекс без разрывов, метод поиска close = `"pad"`                                                                                       | Исключить артефакты off-by-one            |
+| 7   | **Кэш/детерминизм**: зафиксировать seed и отключить сторонние стохастики в инференсе                                                                                         | Повторяемость результатов                 |
+| 8   | **pytest**: прогнать `tests/test_exec_parity.py`                                                                                                                             | Гейтинг регрессий до запуска              |
+
+---
+
+## Важные отличия «Бэктест vs БД/реалтайм» и как их минимизировать
+
+* **Look-ahead**: на реальном потоке будущего нет. В детекторе используйте `use_lookahead=False` для «честных» окон, а для «копирования» бэктеста **оставьте `True`** (как по умолчанию) — это объясняет часть расхождений в числе сделок. ([GitHub][6])
+* **Исполнение по минутным барам**: бэктест исполняет на «следующей минуте» со слippage/fee из `config.py`. В `paper_trader` после патча используется та же формула. ([GitHub][4])
+* **Сайзинг/капитал**: в бэктесте «подсчёт PnL» идёт от виртуального саб-капитала с фиксированной долей; риск-процентная модель в реальном времени даёт другую динамику — мы её отключили по умолчанию (через приоритет MasterConfig). ([GitHub][3])
+
+---
+
+## Что запускать после применения патча
+
+```bash
+# прогнать тесты
+pytest -q third_party/rl-trading-binance/tests/test_exec_parity.py
+
+# пример запуска paper_trader (как раньше)
+python third_party/rl-trading-binance/paper_trader.py configs/alpha.py
+```
+
+---
+
+### Ссылки на используемые места кода (для ревью)
+
+* `backtest_engine.py`: формирование размера позиции и конфигурация окружения, где используются `market.slippage` и `market.transaction_fee`. ([GitHub][3])
+* `trading_environment.py`: фактическое применение проскальзывания/комиссий при `BUY/SELL/CLOSE`. ([GitHub][4])
+* `inference_adapter.py`: advantage-пороговая логика, совпадающая с бэктестом. ([GitHub][5])
+* `utils.py`: детектор и нормализация (одна и та же формула, каналы и длины историй). ([GitHub][6])
+* `config.py`: **источник истины** по `seq.*`, `market.*`, `backtest.*`. ([GitHub][7])
+
+---
+
+[1]: https://github.com/FMProducer/prosperous_bot/commit/4f8ad89f74ffc56661386dc4b058165681a8e591 "docs: test_paper_trader_inference.py · FMProducer/prosperous_bot@4f8ad89 · GitHub"
+[2]: https://github.com/FMProducer/prosperous_bot "GitHub - FMProducer/prosperous_bot"
+[3]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/backtest_engine.py "raw.githubusercontent.com"
+[4]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/trading_environment.py "raw.githubusercontent.com"
+[5]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/inference_adapter.py "raw.githubusercontent.com"
+[6]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/utils.py "raw.githubusercontent.com"
+[7]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/config.py "raw.githubusercontent.com"
