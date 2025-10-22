@@ -25,7 +25,98 @@ import numpy as np
 import pandas as pd
 from dateutil import parser as dtparser
 from tqdm import tqdm
-from utils import find_spike_windows, calculate_normalization_stats # детектор + нормировка
+from utils import find_spike_windows as _raw_find_spike_windows, calculate_normalization_stats # детектор + нормировка
+import os
+from typing import Iterable, Dict, Any, Tuple, List, Union
+
+# ---------- Враппер детектора всплесков (мягкое расширение и аугментация) ----------
+# Форматы окна поддерживаем максимально терпимо:
+#  - dict со свойствами "start_ms"/"end_ms" (предпочтительно)
+#  - tuple/list: (start_ms, end_ms, ...) — остальные поля сохраняем как есть
+Window = Union[Dict[str, Any], Tuple, List]
+
+def _norm_ts_pair(w: Window) -> Tuple[int, int, Window, str]:
+    if isinstance(w, dict) and "start_ms" in w and "end_ms" in w:
+        return int(w["start_ms"]), int(w["end_ms"]), w, "dict"
+    if isinstance(w, (tuple, list)) and len(w) >= 2:
+        return int(w[0]), int(w[1]), w, "seq"
+    # Неизвестный формат — не трогаем
+    return None, None, w, "raw"  # type: ignore
+
+def _apply_dilate(w: Window, dilate_ms: int) -> Window:
+    s, e, obj, kind = _norm_ts_pair(w)
+    if s is None or dilate_ms <= 0:
+        return w
+    ns, ne = s - dilate_ms, e + dilate_ms
+    if kind == "dict":
+        newd = dict(obj)
+        newd["start_ms"], newd["end_ms"] = ns, ne
+        return newd
+    if kind == "seq":
+        seq = list(obj)
+        seq[0], seq[1] = ns, ne
+        return type(obj)(seq)  # tuple -> tuple, list -> list
+    return w
+
+def _apply_offsets(w: Window, offsets_ms: Iterable[int]) -> List[Window]:
+    s, e, obj, kind = _norm_ts_pair(w)
+    if s is None:
+        return [w]
+    res: List[Window] = []
+    for off in offsets_ms:
+        ns, ne = s + off, e + off
+        if kind == "dict":
+            nd = dict(obj)
+            nd["start_ms"], nd["end_ms"] = ns, ne
+            res.append(nd)
+        elif kind == "seq":
+            seq = list(obj)
+            seq[0], seq[1] = ns, ne
+            res.append(type(obj)(seq))
+        else:
+            res.append(obj)
+    return res or [w]
+
+def _build_augmenter(dilate_min: int, offsets_min: Iterable[int]):
+    dilate_ms = max(int(dilate_min), 0) * 60_000
+    offsets_ms = [int(x) * 60_000 for x in offsets_min] if offsets_min else [0]
+    def _wrapped_find_spike_windows(*args, **kwargs):
+        base: List[Window] = _raw_find_spike_windows(*args, **kwargs)
+        if not base:
+            return base
+        # 1) dilation
+        if dilate_ms > 0:
+            base = [_apply_dilate(w, dilate_ms) for w in base]
+        # 2) offsets-augmentation
+        if offsets_ms and not (len(offsets_ms) == 1 and offsets_ms[0] == 0):
+            aug: List[Window] = []
+            for w in base:
+                aug.extend(_apply_offsets(w, offsets_ms))
+            return aug
+        return base
+    return _wrapped_find_spike_windows
+
+# По умолчанию — без изменений поведения:
+# Можно включить через конфиг (data["spike_augment"]) или env:
+#   SPIKE_DILATE_MIN=20
+#   SPIKE_OFFSETS_MIN="-20,-10,0,10,20"
+_SPIKE_AUGMENT: Dict[str, Any] = {}
+def _configure_spike_augment(augment_cfg: Dict[str, Any]):
+    global find_spike_windows, _SPIKE_AUGMENT
+    _SPIKE_AUGMENT = dict(augment_cfg or {})
+    # из env (если заданы) перекрываем
+    if "SPIKE_DILATE_MIN" in os.environ:
+        _SPIKE_AUGMENT["dilate_min"] = int(os.environ.get("SPIKE_DILATE_MIN", "0"))
+    if "SPIKE_OFFSETS_MIN" in os.environ:
+        raw = os.environ.get("SPIKE_OFFSETS_MIN", "0")
+        _SPIKE_AUGMENT["offsets_min"] = [int(x) for x in str(raw).split(",") if x]
+    dil = int(_SPIKE_AUGMENT.get("dilate_min", 0))
+    offs = _SPIKE_AUGMENT.get("offsets_min", [0])
+    try:
+        find_spike_windows = _build_augmenter(dil, offs)  # type: ignore
+    except Exception:
+        # В случае неожиданных форматов окон — просто оставим оригинальный детектор
+        find_spike_windows = _raw_find_spike_windows  # type: ignore
 
 # --- Global master config for execution parity (set in main) ---
 _MASTER_CFG: Optional[Any] = None
@@ -182,8 +273,15 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     paper_trader_cfg = Cfg(config_name, dbp, index_csv, execp, ptp, inf,
                bool(data.get("build_index_from_db", False)),
                t_start, t_end, ctx_m, sess_m, agent_hist_len,
-               det_ctx, det_win, det_abs, det_con, det_cool, det_la, # type: ignore
+               det_ctx, det_win, det_abs, det_con, det_cool, det_la,
                symbols)
+    # Включаем (если задано) расширение/аугментацию «вола-окон»
+    spike_augment = data.get("spike_augment", {})
+    try:
+        _configure_spike_augment(spike_augment or {})
+    except Exception:
+        pass
+
     return paper_trader_cfg, master_cfg
 
 # ------------------------------ Provider ---------------------------

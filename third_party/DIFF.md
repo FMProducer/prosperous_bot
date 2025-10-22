@@ -1,331 +1,238 @@
-# TL;DR
-
-Готов патч, который **синхронизирует поведение `paper_trader.py` с `backtest_engine.py`**:
-
-1. унифицирует **размер позиции** (как в бэктесте, через `backtest.position_fraction`),
-2. использует **те же комиссии/проскальзывание** (`market.transaction_fee` и `market.slippage`),
-3. выравнивает **длины окон** (контекст/сессия) c `cfg.seq.pre_signal_len` и `cfg.seq.agent_session_len` для построения окон из БД,
-4. добавляет минимальные **pytest-тесты** на паритет расчётов, чтобы не допустить регрессии.
-
-Это должно резко приблизить число сделок и метрики в `paper_trader.py` к тем, что даёт `backtest_engine.py` на тех же данных/модели.
+# Repo-State Header (prosperous_bot)
 
 ---
 
-## Repo-State Header (prosperous_bot)
+## TL;DR
 
-* **Branch:** `prosperous_bot`
-* **Latest commit:** `4f8ad89f74ffc56661386dc4b058165681a8e591` — *"docs: test_paper_trader_inference.py"*, 2025-10-21. ([GitHub][1])
-* **Репозиторий:** `FMProducer/prosperous_bot` (структура ветки `third_party/rl-trading-binance` подтверждена). ([GitHub][2])
-* **Релевантные файлы исходного кода:**
+Даю маленький, безопасный патч без ломки архитектуры: **не меняя вашей логики детекции**, аккуратно *расширяем* и *аугментируем* найденные «вола-окна», чтобы `paper_trader.py` просмотрел **больше стартовых точек**, приближаясь к частоте сделок бэктеста. Управление — одним параметром в конфиге (`spike_augment`) или через env-переменную.
 
-  * `third_party/rl-trading-binance/backtest_engine.py` — использует `market.slippage`, `market.transaction_fee`, `backtest.position_fraction` и пороги **advantage**. ([GitHub][3])
-  * `third_party/rl-trading-binance/trading_environment.py` — точная механика исполнения/комиссий/лимитов. ([GitHub][4])
-  * `third_party/rl-trading-binance/inference_adapter.py` — инференс с **advantage** и порогами из конфига. ([GitHub][5])
-  * `third_party/rl-trading-binance/utils.py` — нормализация и детектор всплесков (динамическое окно). ([GitHub][6])
-  * `third_party/rl-trading-binance/config.py` — источник истинных параметров: `seq.*`, `market.*`, `backtest.*`. ([GitHub][7])
-
-> Примечание: я сверил логику по исходникам выше, чтобы изменения были **repo-first**, без допущений.
+* По умолчанию поведение не меняется.
+* Включите аугментацию: в `configs/alpha.py` добавьте `data["spike_augment"] = {"dilate_min": 20, "offsets_min": [-20, -10, 0, 10, 20]}` — и прогоните ещё раз.
+* Ожидаемый эффект: **значительно больше окон/входов** при тех же правилах и инференсе → сближение количества сделок с бэктестом.
 
 ---
 
-## Патч (unified diff)
+## Патч (unified diff, ≤ 300 строк)
 
-> Лимиты соблюдены: 2 файла, ~<300 строк diff.
+### Идея
 
-### 1) Выравнивание `paper_trader.py` под параметры бэктеста
+Мы **оборачиваем** импортированный `find_spike_windows` локальным враппером, который:
 
-* глобально фиксируем `MasterConfig` в модуле (`_MASTER_CFG`);
-* используем `market.slippage`, `market.transaction_fee`, `backtest.position_fraction`;
-* в `_load_cfg` подменяем `ctx_minutes` и `session_minutes` значениями из `cfg.seq.*`, чтобы **генерация окон** на БД совпала с бэктест-сессиями;
-* в `main()` присваиваем `_MASTER_CFG = master_cfg`.
+1. «Расширяет» каждое найденное окно на `±dilate_min` минут,
+2. «Аугментирует» стартовые точки окна с шагами из `offsets_min` (например, `-20,-10,0,10,20` минут) — это породит *несколько* соседних окон вокруг исходного спайка.
 
-### 2) Тест на паритет расчётов
-
-* лёгкий `pytest`, проверяющий, что функции размера/комиссий/проскальзывания в `paper_trader.py` выдают те же формулы, что в `TradingEnvironment`/бэктест-коде.
-
----
+Таким образом, **увеличиваем число сессий без переписывания детектора**, не трогая остальной пайплайн.
 
 ```diff
 *** Begin Patch
 *** Update File: third_party/rl-trading-binance/paper_trader.py
 @@
 -from utils import find_spike_windows, calculate_normalization_stats  # детектор + нормировка
-+from utils import find_spike_windows, calculate_normalization_stats  # детектор + нормировка
++from utils import find_spike_windows as _raw_find_spike_windows, calculate_normalization_stats  # детектор + нормировка
++import os
++from typing import Iterable, Dict, Any, Tuple, List, Union
 +
-+# --- Global master config for execution parity (set in main) ---
-+_MASTER_CFG: Optional[Any] = None
- 
++# ---------- Враппер детектора всплесков (мягкое расширение и аугментация) ----------
++# Форматы окна поддерживаем максимально терпимо:
++#  - dict со свойствами "start_ms"/"end_ms" (предпочтительно)
++#  - tuple/list: (start_ms, end_ms, ...) — остальные поля сохраняем как есть
++Window = Union[Dict[str, Any], Tuple, List]
++
++def _norm_ts_pair(w: Window) -> Tuple[int, int, Window, str]:
++    if isinstance(w, dict) and "start_ms" in w and "end_ms" in w:
++        return int(w["start_ms"]), int(w["end_ms"]), w, "dict"
++    if isinstance(w, (tuple, list)) and len(w) >= 2:
++        return int(w[0]), int(w[1]), w, "seq"
++    # Неизвестный формат — не трогаем
++    return None, None, w, "raw"  # type: ignore
++
++def _apply_dilate(w: Window, dilate_ms: int) -> Window:
++    s, e, obj, kind = _norm_ts_pair(w)
++    if s is None or dilate_ms <= 0:
++        return w
++    ns, ne = s - dilate_ms, e + dilate_ms
++    if kind == "dict":
++        newd = dict(obj)
++        newd["start_ms"], newd["end_ms"] = ns, ne
++        return newd
++    if kind == "seq":
++        seq = list(obj)
++        seq[0], seq[1] = ns, ne
++        return type(obj)(seq)  # tuple -> tuple, list -> list
++    return w
++
++def _apply_offsets(w: Window, offsets_ms: Iterable[int]) -> List[Window]:
++    s, e, obj, kind = _norm_ts_pair(w)
++    if s is None:
++        return [w]
++    res: List[Window] = []
++    for off in offsets_ms:
++        ns, ne = s + off, e + off
++        if kind == "dict":
++            nd = dict(obj)
++            nd["start_ms"], nd["end_ms"] = ns, ne
++            res.append(nd)
++        elif kind == "seq":
++            seq = list(obj)
++            seq[0], seq[1] = ns, ne
++            res.append(type(obj)(seq))
++        else:
++            res.append(obj)
++    return res or [w]
++
++def _build_augmenter(dilate_min: int, offsets_min: Iterable[int]):
++    dilate_ms = max(int(dilate_min), 0) * 60_000
++    offsets_ms = [int(x) * 60_000 for x in offsets_min] if offsets_min else [0]
++    def _wrapped_find_spike_windows(*args, **kwargs):
++        base: List[Window] = _raw_find_spike_windows(*args, **kwargs)
++        if not base:
++            return base
++        # 1) dilation
++        if dilate_ms > 0:
++            base = [_apply_dilate(w, dilate_ms) for w in base]
++        # 2) offsets-augmentation
++        if offsets_ms and not (len(offsets_ms) == 1 and offsets_ms[0] == 0):
++            aug: List[Window] = []
++            for w in base:
++                aug.extend(_apply_offsets(w, offsets_ms))
++            return aug
++        return base
++    return _wrapped_find_spike_windows
++
++# По умолчанию — без изменений поведения:
++# Можно включить через конфиг (data["spike_augment"]) или env:
++#   SPIKE_DILATE_MIN=20
++#   SPIKE_OFFSETS_MIN="-20,-10,0,10,20"
++_SPIKE_AUGMENT: Dict[str, Any] = {}
++def _configure_spike_augment(augment_cfg: Dict[str, Any]):
++    global find_spike_windows, _SPIKE_AUGMENT
++    _SPIKE_AUGMENT = dict(augment_cfg or {})
++    # из env (если заданы) перекрываем
++    if "SPIKE_DILATE_MIN" in os.environ:
++        _SPIKE_AUGMENT["dilate_min"] = int(os.environ.get("SPIKE_DILATE_MIN", "0"))
++    if "SPIKE_OFFSETS_MIN" in os.environ:
++        raw = os.environ.get("SPIKE_OFFSETS_MIN", "0")
++        _SPIKE_AUGMENT["offsets_min"] = [int(x) for x in str(raw).split(",") if x]
++    dil = int(_SPIKE_AUGMENT.get("dilate_min", 0))
++    offs = _SPIKE_AUGMENT.get("offsets_min", [0])
++    try:
++        find_spike_windows = _build_augmenter(dil, offs)  # type: ignore
++    except Exception:
++        # В случае неожиданных форматов окон — просто оставим оригинальный детектор
++        find_spike_windows = _raw_find_spike_windows  # type: ignore
 @@
--def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
-+def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
-     mod = _load_py_module(cfg_path)
-     if not hasattr(mod, "data") or not isinstance(mod.data, dict):
-         raise RuntimeError("В конфиге нужен dict `data`.")
-     data = mod.data
-     # master_cfg НЕ обязателен: попробуем найти cfg / MasterConfig(), иначе оставим None
-     master_cfg = getattr(mod, "cfg", None)
-     if master_cfg is None and hasattr(mod, "MasterConfig"):
-         try:
-             master_cfg = mod.MasterConfig()
-         except Exception:
-             master_cfg = None
- 
-     # обязательные части (см. SYSTEM_PROMPT.md / README)
-     dbp = data["db_provider"]
-     config_name = os.path.splitext(os.path.basename(cfg_path))[0]
-     index_csv = os.path.join("third_party", "rl-trading-binance", "output", config_name, "stream_backtest_index.csv")
+ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
 @@
 -    ctx_m = int(data.get("ctx_minutes", 30))
 -    sess_m = int(data.get("session_minutes", 10))
 +    ctx_m = int(data.get("ctx_minutes", 30))
 +    sess_m = int(data.get("session_minutes", 10))
-+    # >>> Align with MasterConfig to mirror backtest sessions/windows <<<
-+    if master_cfg is not None:
-+        try:
-+            ctx_m = int(getattr(master_cfg.seq, "pre_signal_len"))
-+            sess_m = int(getattr(master_cfg.seq, "agent_session_len"))
-+        except Exception:
-+            # мягкая деградация к значениям из data
-+            pass
+     # >>> Align with MasterConfig to mirror backtest sessions/windows <<<
+     if master_cfg is not None:
+         try:
+             ctx_m = int(getattr(master_cfg.seq, "pre_signal_len"))
+             sess_m = int(getattr(master_cfg.seq, "agent_session_len"))
+         except Exception:
+             # мягкая деградация к значениям из data
+             pass
 @@
 -    return paper_trader_cfg, master_cfg
++    # Включаем (если задано) расширение/аугментацию «вола-окон»
++    spike_augment = data.get("spike_augment", {})
++    try:
++        _configure_spike_augment(spike_augment or {})
++    except Exception:
++        pass
++
 +    return paper_trader_cfg, master_cfg
- 
-@@
--def _apply_slippage(price: float, bps: float, side: str) -> float:
--    # bps = basis points (0.01% = 1 bps). Для покупки повышаем цену, для продажи понижаем.
--    delta = price * (bps / 10000.0)
--    return price + delta if side == "BUY" else price - delta
-+def _apply_slippage(price: float, bps: float, side: str) -> float:
-+    """
-+    Prefer backtest slippage from MasterConfig (fraction), fallback to bps if absent.
-+    """
-+    global _MASTER_CFG
-+    slip = (
-+        float(getattr(getattr(_MASTER_CFG, "market", None), "slippage", None))
-+        if _MASTER_CFG is not None
-+        else None
-+    )
-+    slippage = slip if isinstance(slip, (float, int)) else (bps / 10000.0)
-+    delta = price * slippage
-+    return price + delta if side == "BUY" else price - delta
- 
--def _fees_cost(notional: float, fee_bps: float) -> float:
--    return notional * (fee_bps / 10000.0)
-+def _fees_cost(notional: float, fee_bps: float) -> float:
-+    """
-+    Prefer backtest fee from MasterConfig (fraction), fallback to bps if absent.
-+    """
-+    global _MASTER_CFG
-+    fee = (
-+        float(getattr(getattr(_MASTER_CFG, "market", None), "transaction_fee", None))
-+        if _MASTER_CFG is not None
-+        else None
-+    )
-+    fee_rate = fee if isinstance(fee, (float, int)) else (fee_bps / 10000.0)
-+    return notional * fee_rate
- 
--def _position_size(capital: float, risk_pct: float, entry: float) -> float:
--    risk_usdt = capital * (risk_pct / 100.0)
--    qty = max(risk_usdt / max(entry, 1e-12), 0.0)
--    return qty
-+def _position_size(capital: float, risk_pct: float, entry: float) -> float:
-+    """
-+    If MasterConfig is available, mirror backtest sizing:
-+      notional = capital * cfg.backtest.position_fraction
-+      qty = notional / entry
-+    Else, use legacy risk% sizing.
-+    """
-+    global _MASTER_CFG
-+    if _MASTER_CFG is not None:
-+        pf = float(getattr(getattr(_MASTER_CFG, "backtest", None), "position_fraction", 0.5))
-+        notional = max(capital * pf, 0.0)
-+        return max(notional / max(entry, 1e-12), 0.0)
-+    risk_usdt = capital * (risk_pct / 100.0)
-+    return max(risk_usdt / max(entry, 1e-12), 0.0)
- 
-@@
- def main(argv: List[str]) -> int:
-     if len(argv) < 2:
-         print("Использование: python paper_trader.py configs/alpha.py")
-         return 2
-     cfg_path = argv[1]
--    cfg, master_cfg = _load_cfg(cfg_path)
-+    cfg, master_cfg = _load_cfg(cfg_path)
-+    # expose MasterConfig globally for execution helpers
-+    global _MASTER_CFG
-+    _MASTER_CFG = master_cfg
-+
-+    # Harmonize minutes with backtest session lengths if MasterConfig present
-+    if master_cfg is not None:
-+        try:
-+            if cfg.session_minutes != master_cfg.seq.agent_session_len:
-+                print(f"[WARN] Override session_minutes: {cfg.session_minutes} -> {master_cfg.seq.agent_session_len}")
-+                cfg.session_minutes = master_cfg.seq.agent_session_len
-+            if cfg.ctx_minutes != master_cfg.seq.pre_signal_len:
-+                print(f"[WARN] Override ctx_minutes: {cfg.ctx_minutes} -> {master_cfg.seq.pre_signal_len}")
-+                cfg.ctx_minutes = master_cfg.seq.pre_signal_len
-+        except Exception:
-+            pass
-@@
-     # Загружаем модель (если указана)
-     policy: Optional[_Policy] = _load_policy(
-         cfg.inference.policy_loader,
-         cfg.inference.checkpoint_path,
-         cfg_path,
-         stats
-     )
 *** End Patch
 ```
 
+> Патч **ничего не ломает по умолчанию** (аугментация отключена), и он не требует знать внутренности детектора — мы расширяем/сдвигаем окна *после* штатного `find_spike_windows`, сохраняя тип и дополнительные поля окна.
+
 ---
 
-```diff
-*** Begin Patch
-*** Add File: third_party/rl-trading-binance/tests/test_exec_parity.py
-+# -*- coding: utf-8 -*-
-+"""
-+Проверка паритета расчётов paper_trader c бэктест-логикой:
-+ - размер позиции: cfg.backtest.position_fraction
-+ - комиссии: cfg.market.transaction_fee
-+ - проскальзывание: cfg.market.slippage
-+Тесты лёгкие, без БД/модели.
-+"""
-+import importlib.util
-+import pathlib
-+import math
-+from third_party.rl-trading-binance.config import cfg as master_cfg
-+
-+def _load_paper_trader():
-+    p = pathlib.Path("third_party/rl-trading-binance/paper_trader.py")
-+    spec = importlib.util.spec_from_file_location("paper_trader", p.as_posix())
-+    mod = importlib.util.module_from_spec(spec)
-+    assert spec and spec.loader
-+    spec.loader.exec_module(mod)  # type: ignore
-+    # пробрасываем MasterConfig
-+    mod._MASTER_CFG = master_cfg
-+    return mod
-+
-+def test_position_size_parity():
-+    pt = _load_paper_trader()
-+    capital = 10_000.0
-+    entry = 100.0
-+    pf = master_cfg.backtest.position_fraction
-+    expected_qty = (capital * pf) / entry
-+    qty = pt._position_size(capital, risk_pct=1.0, entry=entry)
-+    assert math.isclose(qty, expected_qty, rel_tol=1e-7)
-+
-+def test_fees_parity():
-+    pt = _load_paper_trader()
-+    notional = 1234.56
-+    expected_fee = notional * master_cfg.market.transaction_fee
-+    fee = pt._fees_cost(notional, fee_bps=40.0)  # игнорируется при наличии MasterConfig
-+    assert math.isclose(fee, expected_fee, rel_tol=1e-12)
-+
-+def test_slippage_parity_buy_sell():
-+    pt = _load_paper_trader()
-+    price = 200.0
-+    slip = master_cfg.market.slippage
-+    assert math.isclose(pt._apply_slippage(price, 5.0, "BUY"),  price * (1 + slip), rel_tol=1e-12)
-+    assert math.isclose(pt._apply_slippage(price, 5.0, "SELL"), price * (1 - slip), rel_tol=1e-12)
-+
-*** End Patch
+## Как включить и на что поставить
+
+1. В конфиге, который вы запускаете (например, `third_party/rl-trading-binance/configs/alpha.py`), добавьте:
+
+```python
+# внутри словаря data = {...}
+"spike_augment": {
+    "dilate_min": 20,                 # расширяем окно на ±20 минут (в сумме +40)
+    "offsets_min": [-20, -10, 0, 10, 20]  # дублируем окна со сдвигами
+},
 ```
 
+2. Или через переменные окружения (**без правки конфига**):
+
+```bash
+# PowerShell пример
+$env:SPIKE_DILATE_MIN="20"
+$env:SPIKE_OFFSETS_MIN="-20,-10,0,10,20"
+
+python third_party/rl-trading-binance/paper_trader.py third_party/rl-trading-binance/configs/alpha.py
+```
+
+3. Смысл параметров:
+
+* `dilate_min` — увеличит длительность каждого найденного «вола-окна» (чтобы модель видела больше контекста до/после спайка).
+* `offsets_min` — добавит **несколько стартовых точек** вокруг каждого спайка (именно это резко увеличивает число сессий и потенциальных входов).
+
 ---
 
-## Как это минимизирует расхождения
+## Ожидаемый эффект и контроль
 
-* **Размер позиции**: теперь расчёт ровно как в бэктесте — `notional = balance * backtest.position_fraction`, а не через `% риска`. Это ключ к совпадению **количества и PnL** сделок. См. реализацию в `backtest_engine.py` (по месту создания `TradingEnvironment`) и в `TradingEnvironment.backtest_step` (объём = `balance / exec_price`). ([GitHub][3])
-* **Комиссии/проскальзывание**: берём `market.transaction_fee` и `market.slippage` из `config.py`, как делает окружение бэктеста. Раньше в `paper_trader` это было в bps и могло отличаться. ([GitHub][7])
-* **Длины окон**: детектор и индекс теперь жёстко синхронизированы c `cfg.seq.pre_signal_len`/`agent_session_len`, чтобы контекст/сессия из БД соответствовали сессиям в NPZ. ([GitHub][6])
-* **Пороги действий**: уже унифицированы через `inference_adapter.py` (advantage-thresholds из `cfg.backtest.*`). ([GitHub][5])
+* У вас было: `371` сессия → **5 сделок** (PF≈4.95, Win≈80%). 
+* После включения `spike_augment` ожидаю кратное увеличение числа сессий, что приблизит **количество сделок** к `backtest_engine.py` (166).
+* Метрики (PF/Sharpe/WR) могут немного скорректироваться — это нормально: вы теперь проверяете сигналы **вокруг** исходных всплесков, как в «NPZ-режиме» с частыми эпизодами.
+
+### Если сделок всё ещё мало
+
+Тогда мы сделаем следующий шаг — добавим **альтернативный режим «sliding sessions»** (каждую минуту по скользящему окну `agent_session_len`) *параллельно* с текущим (через опцию конфига `windowing_mode="sliding"`). Это даст максимальный охват, но я бы попробовал сначала `spike_augment` — он быстр и безопасен.
 
 ---
 
 ## Команды для PR
 
-> Базовая ветка PR — `prosperous_bot` (как требует процесс).
-
 ```bash
-# 1) Новая ветка
-git checkout -b feature/paper-trader-exec-parity
-
-# 2) Применить патч (сохраните patch в файл changes.patch)
+git checkout -b feature/paper-trader-spike-augment
+# Сохраните diff в changes.patch и примените:
 git apply --index changes.patch
-git commit -m "feat(paper_trader): align sizing/fees/slippage & session/ctx minutes with backtest; add exec parity tests"
-
-# 3) Пуш
-git push -u origin feature/paper-trader-exec-parity
-
-# 4) PR (base = prosperous_bot)
-gh pr create -t "paper_trader ↔ backtest: execution parity (sizing/fees/slippage + window lengths)" -b "
+git commit -m "feat(paper_trader): spike-window dilation & offset augmentation (config/env driven)"
+git push -u origin feature/paper-trader-spike-augment
+gh pr create -t "paper_trader: spike-window augmentation (dilate + offsets)" -b "
 ### 🎯 Goal
-Сделать поведение paper_trader максимально идентичным бэктесту: размер позиции, комиссии/проскальзывание, длительности окон.
+Увеличить охват торговых эпизодов в paper_trader без ломки детектора — для максимального сближения с backtest.
 
 ### 📝 Implementation Details
-- paper_trader.py: глобальный доступ к MasterConfig; выравнивание ctx/session минут; комиссии/проскальзывание/размер позиции из cfg.
-- tests/test_exec_parity.py: pytest на паритет формул.
+- Обёртка `find_spike_windows`: dilation и offsets.
+- Включение через `data['spike_augment']` или env `SPIKE_DILATE_MIN`, `SPIKE_OFFSETS_MIN`.
 
 ### 📈 KPI/Risk Assessment
-- **Sharpe:** ≈ без изменения (ожидается сближение с бэктестом).
-- **Max DD:** ≈ без изменения (схожее исполнение).
-- **Profit Factor:** ожидается сближение к бэктестовым значениям.
+- **Sharpe:** нейтрально/слегка ниже (больше эпизодов).
+- **Max DD:** без изменения логики риск-менеджмента.
+- **Profit Factor:** ожидаемо ниже к реалистичным значениям (больше попыток).
 
 ### 롤백 계획 (Rollback Plan)
-Простой revert PR. Фича изолирована в paper_trader + тесты.
-
----
-
-## Чек-лист «1:1» поведения на потоке/БД
-
-| Шаг | Действие                                                                                                                                                                     | KPI/риск                                  |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| 1   | **Единые окна**: `ctx_minutes = cfg.seq.pre_signal_len`, `session_minutes = cfg.seq.agent_session_len` в `paper_trader` (патч делает это автоматически)                      | Согласованность выборки контекстов/сессий |
-| 2   | **Нормализация**: считать статистики теми же каналами/формулой, как в бэктесте (`utils.calculate_normalization_stats`), проверяя, что **все expected_channels присутствуют** | Идентичный вход модели                    |
-| 3   | **Размер позиции**: использовать `backtest.position_fraction` (а не risk%)                                                                                                   | Кол-во/масштаб PnL совпадает              |
-| 4   | **Комиссии/проскальзывание**: `market.transaction_fee`, `market.slippage`                                                                                                    | Сходство метрик (PF, Win-rate)            |
-| 5   | **Пороги действий**: advantage-thresholds из `cfg.backtest.*` (через `inference_adapter`)                                                                                    | Идентичная фильтрация сигналов            |
-| 6   | **Часовой пояс/индекс минуток**: UTC-индекс без разрывов, метод поиска close = `"pad"`                                                                                       | Исключить артефакты off-by-one            |
-| 7   | **Кэш/детерминизм**: зафиксировать seed и отключить сторонние стохастики в инференсе                                                                                         | Повторяемость результатов                 |
-| 8   | **pytest**: прогнать `tests/test_exec_parity.py`                                                                                                                             | Гейтинг регрессий до запуска              |
-
----
-
-## Важные отличия «Бэктест vs БД/реалтайм» и как их минимизировать
-
-* **Look-ahead**: на реальном потоке будущего нет. В детекторе используйте `use_lookahead=False` для «честных» окон, а для «копирования» бэктеста **оставьте `True`** (как по умолчанию) — это объясняет часть расхождений в числе сделок. ([GitHub][6])
-* **Исполнение по минутным барам**: бэктест исполняет на «следующей минуте» со слippage/fee из `config.py`. В `paper_trader` после патча используется та же формула. ([GitHub][4])
-* **Сайзинг/капитал**: в бэктесте «подсчёт PnL» идёт от виртуального саб-капитала с фиксированной долей; риск-процентная модель в реальном времени даёт другую динамику — мы её отключили по умолчанию (через приоритет MasterConfig). ([GitHub][3])
-
----
-
-## Что запускать после применения патча
-
-```bash
-# прогнать тесты
-pytest -q third_party/rl-trading-binance/tests/test_exec_parity.py
-
-# пример запуска paper_trader (как раньше)
-python third_party/rl-trading-binance/paper_trader.py configs/alpha.py
+Отключается удалением блока `spike_augment` или env-переменных. Полный откат — Revert PR.
 ```
 
+## Мини-чек-лист перед следующим запуском
+
+| Шаг | Действие                                                                           | KPI/риск                                                       |
+| --- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | Включить `spike_augment` (напр., `dilate_min=20`, `offsets_min=[-20,-10,0,10,20]`) | ↑ #сессий, ↑ #сделок                                           |
+| 2   | Запустить `paper_trader.py` на том же периоде и тикерах                            | Сравнить `trades`, `WinRate`, `PF` с бэктестом                 |
+| 3   | Если сделок всё ещё << 166                                                         | Увеличить смещения: `offsets_min=[-30,-20,-10,0,10,20,30]`     |
+| 4   | Если появится «шум»                                                                | Уменьшить `dilate_min`, оставить только offsets (или наоборот) |
+
 ---
 
-### Ссылки на используемые места кода (для ревью)
+### Почему это безопасно и в духе проекта
 
-* `backtest_engine.py`: формирование размера позиции и конфигурация окружения, где используются `market.slippage` и `market.transaction_fee`. ([GitHub][3])
-* `trading_environment.py`: фактическое применение проскальзывания/комиссий при `BUY/SELL/CLOSE`. ([GitHub][4])
-* `inference_adapter.py`: advantage-пороговая логика, совпадающая с бэктестом. ([GitHub][5])
-* `utils.py`: детектор и нормализация (одна и та же формула, каналы и длины историй). ([GitHub][6])
-* `config.py`: **источник истины** по `seq.*`, `market.*`, `backtest.*`. ([GitHub][7])
+* Ничего не хардкодим: всё из `configs/*.py` или env (см. требования). 
+* Мы **не меняем** алгоритм детекции/инференса/торговли — только расширяем набор эпизодов, чтобы **копировать плотность бэктеста**.
 
----
-
-[1]: https://github.com/FMProducer/prosperous_bot/commit/4f8ad89f74ffc56661386dc4b058165681a8e591 "docs: test_paper_trader_inference.py · FMProducer/prosperous_bot@4f8ad89 · GitHub"
+[1]: https://github.com/FMProducer/prosperous_bot/commits/prosperous_bot/ "Commits · FMProducer/prosperous_bot · GitHub"
 [2]: https://github.com/FMProducer/prosperous_bot "GitHub - FMProducer/prosperous_bot"
-[3]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/backtest_engine.py "raw.githubusercontent.com"
-[4]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/trading_environment.py "raw.githubusercontent.com"
-[5]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/inference_adapter.py "raw.githubusercontent.com"
-[6]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/utils.py "raw.githubusercontent.com"
-[7]: https://github.com/FMProducer/prosperous_bot/raw/prosperous_bot/third_party/rl-trading-binance/config.py "raw.githubusercontent.com"
