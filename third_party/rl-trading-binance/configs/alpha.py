@@ -115,16 +115,16 @@ data = {
     "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
     # Базовый (демо) режим: 30-10 — полная совместимость с README (Demo) :contentReference[oaicite:10]{index=10}
     "ctx_minutes": 30,
-    "session_minutes": 10,
-    # Новый режим индекса: скользящее окно на КАЖДОМ минутном баре
-    "index_mode": "sliding",
-    "sliding_stride_minutes": 1,
     # Порог и кулдаун используются и офлайн, и при потоковом построении индекса
     "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 30},
     "resample_1t": True,
     # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
     "build_index_from_db": True,
+    # Новый режим индекса: скользящее окно на КАЖДОМ минутном баре
+    "index_mode": "sliding",
+    "sliding_stride_minutes": 1,
     "symbols": ["OMUSDT"],
+    "session_minutes": 10,
      # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
     "detector": {
         # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)
