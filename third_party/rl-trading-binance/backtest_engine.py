@@ -1,6 +1,7 @@
 # backtest_engine.py
 
 import datetime as dt
+import json
 import logging
 import os
 import sys
@@ -233,27 +234,41 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
     )
 
     grouped_backtest_data = create_signal_groups(backtest_raw)
-    train_raw = load_npz_dataset(
-        file_path=cfg.paths.train_data_path,
-        name_dataset="Train",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=0,
-        plot_channel_idx=None,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
-    train_seqs = []
-    for _, arr in train_raw:
-        sel = select_and_arrange_channels(arr, cfg.data.expected_channels, cfg.data.data_channels)
-        if sel is not None:
-            train_seqs.append(sel)
-    stats = calculate_normalization_stats(
-        train_seqs,
-        cfg.data.data_channels,
-        cfg.data.price_channels,
-        cfg.data.volume_channels,
-        cfg.data.other_channels,
-    )
+
+    # --- NEW: Логика загрузки/сохранения статистик нормализации ---
+    stats_path = os.path.join(cfg.paths.output_dir, "norm_stats.json")
+    stats = None
+    if os.path.exists(stats_path):
+        logging.info(f"Loading normalization stats from {stats_path}")
+        with open(stats_path, 'r') as f:
+            stats = json.load(f)
+
+    if stats is None:
+        logging.info("Normalization stats not found, calculating...")
+        train_raw = load_npz_dataset(
+            file_path=cfg.paths.train_data_path,
+            name_dataset="Train",
+            plot_dir=cfg.paths.plot_dir,
+            debug_max_size=cfg.debug.debug_max_size_data,
+            plot_examples=0,
+            plot_channel_idx=None,
+            pre_signal_len=cfg.seq.pre_signal_len,
+        )
+        train_seqs = []
+        for _, arr in train_raw:
+            sel = select_and_arrange_channels(arr, cfg.data.expected_channels, cfg.data.data_channels)
+            if sel is not None:
+                train_seqs.append(sel)
+        stats = calculate_normalization_stats(
+            train_seqs,
+            cfg.data.data_channels,
+            cfg.data.price_channels,
+            cfg.data.volume_channels,
+            cfg.data.other_channels,
+        )
+        with open(stats_path, 'w') as f:
+            json.dump(stats, f, indent=2)
+        logging.info(f"Normalization stats saved to {stats_path}")
 
     if model_path_override:
         model_path = model_path_override

@@ -60,6 +60,9 @@ class DuelingQPolicy:
         with torch.no_grad():
             tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             qvals = self.model(tensor).cpu().numpy().squeeze(0)
+            # --- NEW: Сохраняем последние Q-значения для отладки ---
+            if hasattr(self.model, 'last_qvals'):
+                self.model.last_qvals = qvals
         
         # --- Advantage-based filtering logic from backtest_engine.py ---
         # Advantage = Q(s,a) - V(s). V(s) is approximated by Q(s, a=0/hold).
@@ -97,6 +100,8 @@ def load_policy(ckpt_path: str, master_cfg: MasterConfig, stats: Dict[str, Any])
         dropout_p=master_cfg.model.dropout_p,
     )
 
+    # --- NEW: Добавляем атрибут для хранения Q-значений для отладки ---
+    model.last_qvals = None
     # Load the model weights
     checkpoint = torch.load(ckpt_path, map_location=torch.device('cpu'))
     if 'policy_state' in checkpoint:

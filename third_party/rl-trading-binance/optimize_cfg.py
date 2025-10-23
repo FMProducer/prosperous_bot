@@ -60,9 +60,6 @@ def objective(trial: optuna.Trial):
     cfg.paths.config_name = f"{base_cfg.paths.config_name}_trial{trial.number:05d}"
     cfg.paths.base_output_dir = opt_dir
 
-    cfg.paths.config_name = f"{base_cfg.paths.config_name}_trial{trial.number:05d}"
-    cfg.paths.base_output_dir = opt_dir
-
     # for faster runs: skip plotting and example caching
     cfg.data.plot_examples = 0
     cfg.backtest.plot_backtest_balance_curve = False

@@ -166,9 +166,14 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     det_con = float(det.get("contrast_min", 5.0))
     det_cool = int(det.get("cooldown_minutes", data.get("trigger", {}).get("cooldown_minutes", 60)))
     det_la = bool(det.get("use_lookahead", True))
-    symbols = list(data.get("symbols", []))
+
+    # --- NEW: Адаптация под вложенную структуру build_index_from_db ---
+    build_idx_cfg = data.get("build_index_from_db", False)
+    build_idx_enabled = isinstance(build_idx_cfg, dict) and build_idx_cfg.get("enabled", False)
+    symbols = list(build_idx_cfg.get("symbols", [])) if isinstance(build_idx_cfg, dict) else list(data.get("symbols", []))
+
     paper_trader_cfg = Cfg(config_name, dbp, index_csv, execp, ptp, inf,
-               bool(data.get("build_index_from_db", False)),
+               build_idx_enabled,
                t_start, t_end, ctx_m, sess_m,
                det_ctx, det_win, det_abs, det_con, det_cool, det_la,
                symbols)
@@ -227,7 +232,7 @@ def _load_policy(policy_loader: Optional[str], checkpoint_path: Optional[str], c
     # Ожидаем, что лоадер принимает 3 аргумента: ckpt, master_cfg, stats
     return loader(checkpoint_path, mc, stats)
 
-def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optional[str]:
+def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame, master_cfg: Any) -> Optional[str]:
     # Универсальный вызов с мягкой деградацией интерфейса
     if hasattr(policy, "predict_side"):
         side = str(policy.predict_side(df_ctx)).upper()
@@ -257,6 +262,16 @@ def _policy_to_side(policy: _Policy, symbol: str, df_ctx: pd.DataFrame) -> Optio
         # 0 или иное — трактуем как HOLD/нет сигнала
         return None
     if callable(policy):
+        # --- NEW: Добавим отладочный вывод для callable-политик ---
+        if master_cfg and hasattr(policy, "model") and hasattr(policy.model, "last_qvals"):
+            qvals = getattr(policy.model, "last_qvals", None)
+            if qvals is not None:
+                adv = qvals - qvals[0]
+                act = np.argmax(adv)
+                conf = adv[act]
+                thr = master_cfg.backtest.long_action_threshold if act == 1 else (master_cfg.backtest.short_action_threshold if act == 2 else 0.0)
+                print(f"    [DEBUG] {symbol}: action={act}, confidence={conf:.5f}, threshold={thr:.5f}")
+
         pred = policy(df_ctx)
         try:
             pred = int(pred)
@@ -346,38 +361,10 @@ def main(argv: List[str]) -> int:
             stats = json.load(f)
     
     if stats is None:
-        print("Normalization stats not found, calculating...")
-        if not (cfg.time_start_utc and cfg.time_end_utc and cfg.symbols):
-            raise RuntimeError(
-                "Normalization stats are missing. Please set `time_range` and `symbols` in config, "
-                "or provide a `norm_stats.json` file."
-            )
-        
-        print(f"Fetching data for {len(cfg.symbols)} symbols to calculate stats...")
-        all_data = dict(provider(cfg.symbols, cfg.time_start_utc.isoformat(), cfg.time_end_utc.isoformat()))
-        sequences = []
-        for sym, df in all_data.items():
-            if df.empty or master_cfg is None:
-                continue
-            # Убедимся, что все каналы на месте, как в inference_adapter
-            for channel in master_cfg.data.expected_channels:
-                if channel not in df.columns:
-                    df[channel] = 0.0
-            sequences.append(df[master_cfg.data.expected_channels].to_numpy(dtype=np.float32))
-
-        if not sequences:
-            raise RuntimeError("No data to calculate normalization stats.")
-
-        stats = calculate_normalization_stats(
-            sequences,
-            use_channels=master_cfg.data.data_channels,
-            price_channels=master_cfg.data.price_channels,
-            volume_channels=master_cfg.data.volume_channels,
-            other_channels=master_cfg.data.other_channels,
-        )
-        with open(stats_path, 'w') as f:
-            json.dump(stats, f, indent=2)
-        print(f"Normalization stats saved to {stats_path}")
+        print(f"ERROR: Normalization stats not found at '{stats_path}'")
+        print("Please run backtest_engine.py first to generate the stats file:")
+        print(f"  python third_party\\rl-trading-binance\\backtest_engine.py {cfg_path}")
+        return 1 # Завершаем с ошибкой
 
     # Загружаем модель (если указана)
     policy: Optional[_Policy] = _load_policy(
@@ -435,6 +422,30 @@ def main(argv: List[str]) -> int:
         print(f"Index saved: {cfg.index_csv}  | total windows: {total_wins}")
     else:
         idx = pd.read_csv(cfg.index_csv, parse_dates=["ctx_start","ctx_end","session_start","session_end"])
+
+    # === NEW: Prefetch & cache per-symbol minute feed for the whole time-span ===
+    # Сокращаем кол-во DB-коннектов: вместо запроса на КАЖДОЕ окно берём всё разом по символу
+    # и далее работаем только срезами по временам окна.
+    symbols = sorted(idx["symbol"].unique())
+    # по каждому символу берём минимальный ctx_start и максимальный session_end для охвата всех окон
+    sym_ranges = {
+        sym: (
+            pd.to_datetime(idx.loc[idx["symbol"] == sym, "ctx_start"].min(), utc=True),
+            pd.to_datetime(idx.loc[idx["symbol"] == sym, "session_end"].max(), utc=True),
+        )
+        for sym in symbols
+    }
+    FEED_CACHE: Dict[str, pd.DataFrame] = {}
+    for sym, (t_min, t_max) in sym_ranges.items():
+        try:
+            feed = dict(provider([sym], t_min.isoformat(), t_max.isoformat()))
+            if sym in feed and not feed[sym].empty:
+                FEED_CACHE[sym] = _ensure_utc_index(feed[sym]).sort_index()
+            else:
+                FEED_CACHE[sym] = pd.DataFrame()
+        except Exception as e:
+            print(f"[warn] provider failed for {sym}: {e}")
+            FEED_CACHE[sym] = pd.DataFrame()
     # Опциональный "колпак" на окна в день/тикер
     if cfg.pt.cap_windows_per_symbol > 0:
         keep_rows = []
@@ -455,12 +466,10 @@ def main(argv: List[str]) -> int:
         ses_start = _to_utc(row["session_start"])
         ses_end = _to_utc(row["session_end"])
         last_ts = ses_end - pd.Timedelta(minutes=1)
-        # ВАЖНО: для инференса нужна и зона контекста, и сама сессия
-        feed = dict(provider([sym], ctx_start.isoformat(), ses_end.isoformat()))
-        if sym not in feed or feed[sym].empty:
+        # Берём минутные бары из кэша (загружены один раз на символ)
+        df = FEED_CACHE.get(sym, pd.DataFrame())
+        if df.empty:
             continue
-        df = _ensure_utc_index(feed[sym]).sort_index()
-        # минимум проверяем покрытие контекста и последней минуты сессии
         if df.index[0] > ctx_start or df.index[-1] < last_ts:
             # неполное покрытие — пропустим окно
             continue
@@ -478,10 +487,16 @@ def main(argv: List[str]) -> int:
         # Отрезаем окно нужной длины agent_history_len от конца контекста.
         ctx_start_for_model = ctx_end_ts - pd.Timedelta(minutes=master_cfg.seq.agent_history_len)
         df_ctx = df.loc[ctx_start_for_model : ctx_end_ts - pd.Timedelta(minutes=1)]
-        side = _policy_to_side(policy, sym, df_ctx)
+        
+        # --- NEW: Передаем master_cfg в _policy_to_side для отладки ---
+        # Это позволит нам видеть пороги прямо в логе.
+        side = _policy_to_side(policy, sym, df_ctx, master_cfg)
 
         if side not in ("BUY", "SELL"):
             if cfg.inference.strict:
+                # В строгом режиме просто пропускаем, если модель решила не торговать (HOLD)
+                if side is None:
+                    pass # Отладочный вывод теперь делается в _policy_to_side
                 continue
             else:
                 raise RuntimeError(f"predict_side вернул некорректное значение: {side}")
