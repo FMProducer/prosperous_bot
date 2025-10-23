@@ -104,6 +104,9 @@ class Cfg:
     time_end_utc: Optional[datetime]
     ctx_minutes: int
     session_minutes: int
+    # режим построения индекса: "spike" | "sliding"
+    index_mode: str
+    sliding_stride_minutes: int
     # детектор
     det_context: int
     det_window: int
@@ -159,6 +162,8 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
     t_end = t_end if t_end is None else _to_utc(t_end)
     ctx_m = int(data.get("ctx_minutes", 30))
     sess_m = int(data.get("session_minutes", 10))
+    index_mode = str(data.get("index_mode", "spike"))
+    sliding_stride = int(data.get("sliding_stride_minutes", 1))
     det = data.get("detector", {})
     det_ctx = int(det.get("context_minutes", 90))
     det_win = int(det.get("window_minutes", 10))
@@ -169,12 +174,17 @@ def _load_cfg(cfg_path: str) -> Tuple[Cfg, Any]:
 
     # --- NEW: Адаптация под вложенную структуру build_index_from_db ---
     build_idx_cfg = data.get("build_index_from_db", False)
-    build_idx_enabled = isinstance(build_idx_cfg, dict) and build_idx_cfg.get("enabled", False)
-    symbols = list(build_idx_cfg.get("symbols", [])) if isinstance(build_idx_cfg, dict) else list(data.get("symbols", []))
+    if isinstance(build_idx_cfg, dict):
+        build_idx_enabled = bool(build_idx_cfg.get("enabled", False))
+        symbols = list(build_idx_cfg.get("symbols", []))
+    else:
+        build_idx_enabled = bool(build_idx_cfg)
+        symbols = list(data.get("symbols", []))
 
     paper_trader_cfg = Cfg(config_name, dbp, index_csv, execp, ptp, inf,
                build_idx_enabled,
                t_start, t_end, ctx_m, sess_m,
+               index_mode, sliding_stride,
                det_ctx, det_win, det_abs, det_con, det_cool, det_la,
                symbols)
     return paper_trader_cfg, master_cfg
@@ -337,6 +347,33 @@ def _compute_metrics(trades: pd.DataFrame) -> Dict[str, float]:
         "net_pnl_usdt": round(float(pnl.sum()), 2),
     }
 
+def _build_sliding_windows(
+    df: pd.DataFrame,
+    ctx_minutes: int,
+    session_minutes: int,
+    stride_minutes: int = 1,
+) -> List[Tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp, float]]:
+    """
+    Строит эпизоды по КАЖДОЙ минуте с шагом stride_minutes.
+    Возвращает список (ctx_start, ctx_end, ses_start, ses_end, abs_change_pct=nan).
+    """
+    if df.empty:
+        return []
+    df = _ensure_utc_index(df).sort_index()
+    ts = df.index.unique().sort_values()
+    wins: List[Tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp, float]] = []
+    # требуем полное покрытие минут в [ctx_start, ses_end)
+    for i in range(ctx_minutes, len(ts) - session_minutes, stride_minutes):
+        ses_start = ts[i]
+        ctx_start = ses_start - pd.Timedelta(minutes=ctx_minutes)
+        ctx_end   = ses_start
+        ses_end   = ses_start + pd.Timedelta(minutes=session_minutes)
+        full_range = pd.date_range(ctx_start, ses_end - pd.Timedelta(minutes=1), freq="min", tz="UTC")
+        slice_df = df.loc[(df.index >= full_range[0]) & (df.index <= full_range[-1])]
+        if len(slice_df) == len(full_range):
+            wins.append((ctx_start, ctx_end, ses_start, ses_end, float("nan")))
+    return wins
+
 # ------------------------------ Main --------------------------------
 
 def main(argv: List[str]) -> int:
@@ -389,16 +426,24 @@ def main(argv: List[str]) -> int:
             if sym not in feed or feed[sym].empty:
                 continue
             df = _ensure_utc_index(feed[sym]).sort_index()
-            # Контекст/окно детектора берём из cfg.det_* (полный режим), сессия для трейда — из cfg.session_minutes (демо/полный)
-            wins = find_spike_windows(
-                df,
-                context_minutes=cfg.det_context,
-                window_minutes=cfg.det_window,
-                abs_change_threshold_pct=cfg.det_abs_change_pct,
-                contrast_min=cfg.det_contrast_min,
-                cooldown_minutes=cfg.det_cooldown,
-                use_lookahead=cfg.det_use_lookahead,
-            )
+            # --- Построение окон: режим "sliding" (каждый минутный бар) или "spike" (детектор всплесков) ---
+            if getattr(cfg, "index_mode", "spike") == "sliding":
+                wins = _build_sliding_windows(
+                    df=df,
+                    ctx_minutes=cfg.ctx_minutes,
+                    session_minutes=cfg.session_minutes,
+                    stride_minutes=max(1, int(getattr(cfg, "sliding_stride_minutes", 1))),
+                )
+            else:
+                wins = find_spike_windows(
+                    df,
+                    context_minutes=cfg.det_context,
+                    window_minutes=cfg.det_window,
+                    abs_change_threshold_pct=cfg.det_abs_change_pct,
+                    contrast_min=cfg.det_contrast_min,
+                    cooldown_minutes=cfg.det_cooldown,
+                    use_lookahead=cfg.det_use_lookahead,
+                )
             for (ctx_start, ctx_end, ses_start, ses_end, abs_chg) in wins:
                 # Приводим торговую сессию к длине из конфига (напр., 10 минут в демо)
                 ses_end_adj = ses_start + timedelta(minutes=cfg.session_minutes)

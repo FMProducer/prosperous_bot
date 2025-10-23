@@ -116,25 +116,24 @@ data = {
     # Базовый (демо) режим: 30-10 — полная совместимость с README (Demo) :contentReference[oaicite:10]{index=10}
     "ctx_minutes": 30,
     "session_minutes": 10,
+    # Новый режим индекса: скользящее окно на КАЖДОМ минутном баре
+    "index_mode": "sliding",
+    "sliding_stride_minutes": 1,
     # Порог и кулдаун используются и офлайн, и при потоковом построении индекса
-    "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 60},
+    "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 30},
     "resample_1t": True,
     # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
-    "build_index_from_db": {
-        "enabled": True,
-        # NB: для enabled=True обязательно укажите список тикеров:
-        # "symbols": ["OMUSDT","1000RATSUSDT","KAVAUSDT","FILUSDT","POPCATUSDT","ZECUSDT","LUNA2USDT","BRETTUSDT","BELUSDT","LISTAUSDT","ZKUSDT","PORTALUSDT","AUCTIONUSDT","BIGTIMEUSDT","TRBUSDT","ARKMUSDT","TIAUSDT","NEOUSDT","IMXUSDT","AXLUSDT","MASKUSDT","CATIUSDT","REZUSDT"],
-        "symbols": ["OMUSDT"],
-    },
+    "build_index_from_db": True,
+    "symbols": ["OMUSDT"],
      # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
     "detector": {
         # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)
-        "context_minutes": 90,
+        "context_minutes": 30,
         "window_minutes": 10,
         "use_lookahead": True,       # True — как в бэктесте; False — реал-режим без заглядывания вперёд
         "abs_change_pct": 5.0,       # |ΔP| over window, %
         "contrast_min": 5.0,         # (|ΔP| / avg_abs_ret_pre) ≥ contrast_min
-        "cooldown_minutes": 60
+        "cooldown_minutes": 30
     },
     # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
     "db_provider": "db_provider:get_feed",

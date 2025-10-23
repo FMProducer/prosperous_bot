@@ -1,0 +1,55 @@
+Вот бэктест на тех же тикерах, периоде и модели:
+
+ticker	profit_usdt	trades_count
+OMUSDT	43682.33	57
+1000RATSUSDT	18901.01	95
+KAVAUSDT	9571.63	38
+FILUSDT	8644.62	19
+POPCATUSDT	8071.20	38
+ZECUSDT	7813.56	19
+LUNA2USDT	7425.96	19
+BRETTUSDT	5977.59	19
+BELUSDT	4851.08	19
+LISTAUSDT	4639.23	19
+ZKUSDT	4620.42	19
+PORTALUSDT	4176.58	19
+AUCTIONUSDT	2968.75	19
+BIGTIMEUSDT	2727.26	19
+TRBUSDT	1993.67	19
+ARKMUSDT	531.24	19
+TIAUSDT	-819.47	19
+NEOUSDT	-1144.75	19
+IMXUSDT	-1502.52	19
+AXLUSDT	-1912.16	19
+MASKUSDT	-5364.46	19
+CATIUSDT	-11048.88	38
+REZUSDT	-17300.26	19
+TOTAL	97503.63	
+		
+[Final Metrics]:		
+2025-10-11 02:02:23,374 [INFO] :        total_commission = -15.06%		
+2025-10-11 02:02:23,374 [INFO] :          avg_commission = -9.20		
+2025-10-11 02:02:23,374 [INFO] :                max_loss = -3014.95		
+2025-10-11 02:02:23,374 [INFO] :              max_profit = 1470.37		
+2025-10-11 02:02:23,375 [INFO] :        total_trade_days = 69		
+2025-10-11 02:02:23,375 [INFO] :             profit_days = 53 (76.81%)		
+2025-10-11 02:02:23,375 [INFO] :    final_balance_change = 210.79%		
+2025-10-11 02:02:23,375 [INFO] :          exp_day_change = 1.66%		
+2025-10-11 02:02:23,375 [INFO] :            max_drawdown = -17.07%		
+2025-10-11 02:02:23,377 [INFO] :                  sharpe = 2.87		
+2025-10-11 02:02:23,378 [INFO] :                 sortino = 2.83		
+2025-10-11 02:02:23,378 [INFO] :           trades_sharpe = 0.25		
+2025-10-11 02:02:23,378 [INFO] :          trades_sortino = 0.26		
+2025-10-11 02:02:23,379 [INFO] :                accuracy = 69.3%		
+2025-10-11 02:02:23,379 [INFO] :            total_trades = 166		
+2025-10-11 02:02:23,379 [INFO] :             total_longs = 77		
+2025-10-11 02:02:23,379 [INFO] :            total_shorts = 89		
+2025-10-11 02:02:23,380 [INFO] :           longs_correct = 54 (70.1%)		
+2025-10-11 02:02:23,380 [INFO] :          shorts_correct = 61 (68.5%)		
+2025-10-11 02:02:23,380 [INFO] :      correct_avg_change = 3.58%		
+2025-10-11 02:02:23,381 [INFO] :      correct_std_change = 3.12%		
+2025-10-11 02:02:23,381 [INFO] :    incorrect_avg_change = -3.19%		
+2025-10-11 02:02:23,381 [INFO] :    incorrect_std_change = 3.30%		
+2025-10-11 02:02:23,382 [INFO] :        avg_trade_amount = 11491.88		
+2025-10-11 02:02:23,382 [INFO] :          trades_per_day = 2.41		
+		
