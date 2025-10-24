@@ -205,6 +205,11 @@ class BacktestConfig(BaseModel):
 class LoggingConfig(BaseModel):
     per_trial_logs: bool = False
 
+
+class DbConfig(BaseModel):
+    dsn: Optional[str] = None
+
+
 class PerformanceConfig(BaseModel):
     """
     Переключатели производительности, управляемые из configs/*.py.
@@ -250,6 +255,7 @@ class MasterConfig(BaseModel):
     backtest: BacktestConfig = BacktestConfig()
     logging: LoggingConfig = LoggingConfig()
     perf: PerformanceConfig = PerformanceConfig()
+    db: DbConfig = DbConfig()
 
 
 cfg = MasterConfig()

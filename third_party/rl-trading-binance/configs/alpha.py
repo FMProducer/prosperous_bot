@@ -156,3 +156,5 @@ data = {
         "max_concurrent": 4            # ограничение на одновременные позиции
     }
 }
+
+cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
