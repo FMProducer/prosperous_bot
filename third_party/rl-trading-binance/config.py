@@ -23,6 +23,7 @@ class PathConfig(BaseModel):
     val_data_path: str = "data/val_data.npz"
     test_data_path: str = "data/test_data.npz"
     backtest_data_path: str = "data/backtest_data.npz"
+    norm_stats_path: Optional[str] = None
 
     @property
     def output_dir(self) -> str:

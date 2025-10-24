@@ -23,6 +23,7 @@ from utils import (
     create_signal_groups,
     find_spike_windows,
     load_config,
+    load_npz_dataset,
     select_and_arrange_channels,
     set_random_seed,
 )
@@ -289,7 +290,10 @@ def run_backtest(cfg: MasterConfig, cfg_mod: Any, model_path_override: str = Non
     grouped_backtest_data = create_signal_groups(backtest_raw)
 
     # --- NEW: Логика загрузки/сохранения статистик нормализации ---
-    stats_path = os.path.join(cfg.paths.output_dir, "norm_stats.json")
+    if cfg.paths.norm_stats_path:
+        stats_path = cfg.paths.norm_stats_path
+    else:
+        stats_path = os.path.join(cfg.paths.output_dir, "norm_stats.json")
     stats = None
     if os.path.exists(stats_path):
         logging.info(f"Loading normalization stats from {stats_path}")

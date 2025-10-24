@@ -123,7 +123,7 @@ data = {
     # Новый режим индекса: скользящее окно на КАЖДОМ минутном баре
     "index_mode": "sliding",
     "sliding_stride_minutes": 1,
-    "symbols": ["OMUSDT"],
+    "symbols": ["OMUSDT","1000RATSUSDT"],
     "session_minutes": 10,
      # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
     "detector": {
@@ -158,3 +158,4 @@ data = {
 }
 
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
+cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
