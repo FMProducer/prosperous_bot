@@ -270,45 +270,67 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig) -> List[Tuple[Tuple[str,
     try:
         with engine.connect() as conn:
             from sqlalchemy import text
-            # This SQL query uses window functions to find spikes directly in the database.
-            # It's much faster than loading all data into Python.
             detector_cfg = cfg.detector
-            query = text(f"""
-            WITH minute_returns AS (
-                SELECT
-                    ts,
-                    symbol,
-                    close,
-                    (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
-                FROM v_klines_1m_npz
-                WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
-            ),
-            rolling_stats AS (
-                SELECT
-                    ts,
-                    symbol,
-                    -- NEW: Conditional logic for lookahead
-                    CASE
-                        WHEN :use_lookahead THEN
-                            (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 -- Заглядываем вперед
-                        ELSE
-                            (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 -- Смотрим только в прошлое
-                    END AS abs_change,
-                    CASE
-                        WHEN :use_lookahead THEN
-                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) -- Контекст для lookahead
-                        ELSE
-                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) -- Контекст для "честного" режима
-                    END AS avg_abs_ret_pre
-                FROM minute_returns
-            )
-            SELECT ts, symbol
-            FROM rolling_stats
-            WHERE
-                ABS(abs_change) * 100.0 >= :abs_change_pct AND
-                (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
-            ORDER BY ts, symbol;
-            """)
+            logging.info(f"[Detector] use_lookahead={detector_cfg.use_lookahead} "
+                         f"window_minutes={detector_cfg.window_minutes} "
+                         f"context_minutes={detector_cfg.context_minutes}")
+
+            # ДВА ВАРИАНТА SQL: без параметризации булевой ветки
+            if detector_cfg.use_lookahead:
+                query = text(f"""
+                WITH minute_returns AS (
+                    SELECT
+                        ts,
+                        symbol,
+                        close,
+                        (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
+                    FROM v_klines_1m_npz
+                    WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
+                ),
+                rolling_stats AS (
+                    SELECT
+                        ts,
+                        symbol,
+                        (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 AS abs_change,
+                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts
+                            ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) AS avg_abs_ret_pre
+                    FROM minute_returns
+                )
+                SELECT ts, symbol
+                FROM rolling_stats
+                WHERE
+                    ABS(abs_change) * 100.0 >= :abs_change_pct AND
+                    (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
+                ORDER BY ts, symbol;
+                """)
+            else:
+                query = text(f"""
+                WITH minute_returns AS (
+                    SELECT
+                        ts,
+                        symbol,
+                        close,
+                        (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
+                    FROM v_klines_1m_npz
+                    WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
+                ),
+                rolling_stats AS (
+                    SELECT
+                        ts,
+                        symbol,
+                        (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
+                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts
+                            ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING
+                            AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
+                    FROM minute_returns
+                )
+                SELECT ts, symbol
+                FROM rolling_stats
+                WHERE
+                    ABS(abs_change) * 100.0 >= :abs_change_pct AND
+                    (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
+                ORDER BY ts, symbol;
+                """)
 
             found_spikes_df = pd.read_sql(query, conn, params={
                 "symbols": symbols,
@@ -316,7 +338,6 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig) -> List[Tuple[Tuple[str,
                 "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
                 "abs_change_pct": detector_cfg.abs_change_pct,
                 "contrast_min": detector_cfg.contrast_min,
-                "use_lookahead": detector_cfg.use_lookahead,
             })
             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
     except Exception as e:

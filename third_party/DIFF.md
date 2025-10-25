@@ -1,228 +1,174 @@
-TL;DR: ниже — итоговый патч к `third_party/rl-trading-binance/optimize_cfg.py`, который делает сохранение результатов Optuna максимально информативным и устойчивым: Parquet+CSV (fallback), JSONL всех триалов, топ-таблицы (PnL/Accuracy/−Trades), Pareto-набор, важности параметров, системная мета-инфа, длительность каждого триала и сид, кэш-директория триала. Структура артефактов и вызовы соответствуют README (Quickstart шаги 5–7) и требованиям проекта о сохранении артефактов в `output/<config_name>/`  .
+TL;DR: В вашей версии `backtest_engine.py` флаг `cfg.detector.use_lookahead` реально подставляется в SQL через параметр `:use_lookahead`, но именно такая форма CASE в SQL (булевый плейсхолдер внутри CASE) иногда ведёт себя неочевидно и «залипает» на одну ветку. Чтобы гарантированно исключить «подглядку в будущее», предложил безусловно разветвить SQL на уровне Python (две разные строки запроса для `True/False`) и залогировать выбранный режим. Это убирает риск. Ниже — минимальный патч.
+
+**Repo-State Header (Ultra-strict):**
+Ветка: `prosperous_bot` (default). Полный SHA последнего коммита получить из текущего окружения не удалось (ограничение доступа к API). Репозиторий: [https://github.com/FMProducer/prosperous_bot](https://github.com/FMProducer/prosperous_bot). Требования проекта и режим Ultra-strict — см. SYSTEM_PROMPT/README    
+
+| Шаг | Что сделал                                                                                                     | KPI/риск                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Проверил логику `use_lookahead` в `load_from_db_and_prepare_signals`                                           | Обнаружено: CASE WHEN :use_lookahead THEN LEAD(...) ELSE LAG(...) — теоретически верно, но может «залипать» (DB/driver нюанс)   |
+| 2   | Подтвердил, что флаг в `alpha.py` выставлен `False` и используется `data_source="find_spikes"`                 | Конфиг корректный; параметр действительно должен выключать lookahead                                                            |
+| 3   | Предложил патч: формировать ДВА варианта SQL без параметризации ветки CASE; добавить явный лог `use_lookahead` | Исключаем неоднозначность, получаем воспроизводимое поведение                                                                   |
+
+# Почему сейчас «как будто не выключается»
+
+* CASE с параметром `:use_lookahead` корректен синтаксически, но на практике встречается поведение, когда драйвер/планировщик запроса компилирует план с одной веткой и переиспользует его (особенно при повторных вызовах одинакового текста запроса). Вы это видите как «переключатель не влияет». Перенос выбора ветки из SQL в Python гарантированно устраняет эффект. Кодовая база вокруг (формирование сессий, вызовы Env) при этом не меняется  .
 
 ---
 
-## Шаг | Действие | KPI/риск
+# Unified diff (минимально необходимый)
 
-1 | Добавить Parquet→CSV fallback и дублирующее сохранение CSV | Экспорт никогда не падает без `pyarrow`; всегда есть читаемый CSV
-2 | Сохранить `trials.jsonl` + топ-таблицы + Pareto + importances | Быстрый анализ качества/важности и аудит
-3 | Логировать `duration_s`, `random_seed`, `trial_cache_dir` в `user_attrs` | Диагностика производительности и воспроизводимость
-4 | `system_info.json` (версии, платформа) | Репродуцируемость окружения
-
----
-
-## Unified diff (1 файл)
+**Файл:** `third_party/rl-trading-binance/backtest_engine.py`  
 
 ```diff
-*** a/third_party/rl-trading-binance/optimize_cfg.py
---- b/third_party/rl-trading-binance/optimize_cfg.py
-@@
- import argparse
- import copy
- import datetime as dt
- import json
- import logging
- import os
- import time
+--- a/third_party/rl-trading-binance/backtest_engine.py
++++ b/third_party/rl-trading-binance/backtest_engine.py
+@@ -133,6 +133,8 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig) -> List[Tuple[Tuple[str,
+     engine = create_engine(cfg.db.dsn)
  
- import optuna
-+import pandas as pd
-+import platform
- 
- from backtest_engine import run_backtest
- from config import MasterConfig
- from utils import load_config, setup_logging
- 
-+def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
-+    """
-+    Save trials as Parquet (if engine available) and ALWAYS as CSV.
-+    """
-+    base = os.path.join(opt_dir, "trials")
-+    csv_path = f"{base}.csv"
-+    try:
-+        pq_path = f"{base}.parquet"
-+        df.to_parquet(pq_path, index=False)
-+        logging.info(f"[Optuna] saved {pq_path}")
-+    except Exception as e:
-+        logging.warning(f"[Optuna] parquet save failed: {e}. CSV will be used.")
-+    df.to_csv(csv_path, index=False)
-+    logging.info(f"[Optuna] saved {csv_path}")
+     if isinstance(cfg.paper.symbols, list) and cfg.paper.symbols:
+         symbols = cfg.paper.symbols
+@@ -163,35 +165,63 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig) -> List[Tuple[Tuple[str,
+     logging.info(f"Scanning for spike signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
+     try:
+         with engine.connect() as conn:
+             from sqlalchemy import text
+-            # This SQL query uses window functions to find spikes directly in the database.
+-            # It's much faster than loading all data into Python.
+             detector_cfg = cfg.detector
+-            query = text(f"""
+-            WITH minute_returns AS (
+-                SELECT
+-                    ts,
+-                    symbol,
+-                    close,
+-                    (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
+-                FROM v_klines_1m_npz
+-                WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
+-            ),
+-            rolling_stats AS (
+-                SELECT
+-                    ts,
+-                    symbol,
+-                    -- NEW: Conditional logic for lookahead
+-                    CASE
+-                        WHEN :use_lookahead THEN
+-                            (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 -- Заглядываем вперед
+-                        ELSE
+-                            (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 -- Смотрим только в прошлое
+-                    END AS abs_change,
+-                    CASE
+-                        WHEN :use_lookahead THEN
+-                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) -- Контекст для lookahead
+-                        ELSE
+-                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) -- Контекст для "честного" режима
+-                    END AS avg_abs_ret_pre
+-                FROM minute_returns
+-            )
+-            SELECT ts, symbol
+-            FROM rolling_stats
+-            WHERE
+-                ABS(abs_change) * 100.0 >= :abs_change_pct AND
+-                (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
+-            ORDER BY ts, symbol;
+-            """)
++            logging.info(f"[Detector] use_lookahead={detector_cfg.use_lookahead} "
++                         f"window_minutes={detector_cfg.window_minutes} "
++                         f"context_minutes={detector_cfg.context_minutes}")
 +
-+def _dump_trials_jsonl(study: "optuna.study.Study", opt_dir: str) -> None:
-+    """
-+    Export all trials (number, state, values, params, user_attrs, timings) to JSONL.
-+    """
-+    path = os.path.join(opt_dir, "trials.jsonl")
-+    with open(path, "w", encoding="utf-8") as f:
-+        for t in study.get_trials(deepcopy=False):
-+            rec = {
-+                "number": t.number,
-+                "state": str(t.state) if t.state is not None else None,
-+                "values": t.values,
-+                "params": t.params,
-+                "user_attrs": t.user_attrs,
-+                "datetime_start": t.datetime_start.isoformat() if t.datetime_start else None,
-+                "datetime_complete": t.datetime_complete.isoformat() if t.datetime_complete else None,
-+            }
-+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-+    logging.info(f"[Optuna] saved {path}")
-+
-+def _save_top_tables(df: "pd.DataFrame", opt_dir: str, topn: int = 20) -> None:
-+    """
-+    Save top-N trials by PnL (values_0), Accuracy (values_1), and -Trades (values_2).
-+    """
-+    cols = df.columns
-+    targets = [("values_0", "top_by_pnl"), ("values_1", "top_by_accuracy"), ("values_2", "top_by_neg_trades")]
-+    for val_col, stem in targets:
-+        if val_col in cols:
-+            top = df.sort_values(val_col, ascending=False).head(topn)
-+            top.to_csv(os.path.join(opt_dir, f"{stem}.csv"), index=False)
-+            top.to_json(os.path.join(opt_dir, f"{stem}.json"), orient="records", indent=2)
-+            logging.info(f"[Optuna] saved {stem} (top {len(top)})")
-+
-+def _save_pareto(study: "optuna.study.Study", opt_dir: str) -> None:
-+    """
-+    Save Pareto-front trials (numbers, values, params) into pareto_trials.json.
-+    """
-+    best_trials = [t for t in study.best_trials if t.values is not None]
-+    payload = [{"number": t.number, "values": t.values, "params": t.params} for t in best_trials]
-+    with open(os.path.join(opt_dir, "pareto_trials.json"), "w", encoding="utf-8") as f:
-+        json.dump(payload, f, ensure_ascii=False, indent=2)
-+    logging.info(f"[Optuna] saved pareto_trials.json ({len(payload)} trials)")
-+
-+def _save_param_importances(study: "optuna.study.Study", opt_dir: str) -> None:
-+    """
-+    Save parameter importances for PnL objective (values[0]) if available.
-+    """
-+    try:
-+        from optuna.importance import get_param_importances
-+        imp = get_param_importances(study, target=lambda t: t.values[0])
-+        with open(os.path.join(opt_dir, "param_importances_pnl.json"), "w", encoding="utf-8") as f:
-+            json.dump(imp, f, ensure_ascii=False, indent=2)
-+        logging.info("[Optuna] saved param_importances_pnl.json")
-+    except Exception as e:
-+        logging.warning(f"[Optuna] param importances unavailable: {e}")
-+
-+def _save_system_info(opt_dir: str, run_stamp: str) -> None:
-+    """
-+    Save environment metadata for reproducibility.
-+    """
-+    info = {
-+        "run_stamp_utc": run_stamp,
-+        "python": platform.python_version(),
-+        "platform": platform.platform(),
-+        "optuna": getattr(optuna, "__version__", None),
-+        "pandas": getattr(pd, "__version__", None),
-+    }
-+    with open(os.path.join(opt_dir, "system_info.json"), "w", encoding="utf-8") as f:
-+        json.dump(info, f, ensure_ascii=False, indent=2)
-+    logging.info("[Optuna] saved system_info.json")
-+
- def objective(trial: optuna.Trial):
-     # Reconstruct the config object from the JSON stored in user_attrs
-     base_cfg_raw = trial.study.user_attrs["base_cfg"]
-     base_cfg_dict = json.loads(base_cfg_raw) if isinstance(base_cfg_raw, str) else base_cfg_raw
-     cfg = MasterConfig.model_validate(base_cfg_dict)
-     cfg.random_seed = 17 + trial.number
-@@
-     # for faster runs: skip plotting and example caching
-     cfg.data.plot_examples = 0
-     cfg.backtest.plot_backtest_balance_curve = False
-     # cfg.debug.debug_max_size_data = None
++            # ДВА ВАРИАНТА SQL: без параметризации булевой ветки
++            if detector_cfg.use_lookahead:
++                query = text(f"""
++                WITH minute_returns AS (
++                    SELECT
++                        ts,
++                        symbol,
++                        close,
++                        (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
++                    FROM v_klines_1m_npz
++                    WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
++                ),
++                rolling_stats AS (
++                    SELECT
++                        ts,
++                        symbol,
++                        (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 AS abs_change,
++                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts
++                            ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) AS avg_abs_ret_pre
++                    FROM minute_returns
++                )
++                SELECT ts, symbol
++                FROM rolling_stats
++                WHERE
++                    ABS(abs_change) * 100.0 >= :abs_change_pct AND
++                    (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
++                ORDER BY ts, symbol;
++                """)
++            else:
++                query = text(f"""
++                WITH minute_returns AS (
++                    SELECT
++                        ts,
++                        symbol,
++                        close,
++                        (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
++                    FROM v_klines_1m_npz
++                    WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
++                ),
++                rolling_stats AS (
++                    SELECT
++                        ts,
++                        symbol,
++                        (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
++                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts
++                            ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING
++                            AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
++                    FROM minute_returns
++                )
++                SELECT ts, symbol
++                FROM rolling_stats
++                WHERE
++                    ABS(abs_change) * 100.0 >= :abs_change_pct AND
++                    (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
++                ORDER BY ts, symbol;
++                """)
  
--    metrics = run_backtest(cfg=cfg) # model_path_override is not needed for optimization
-+    t0 = time.time()
-+    metrics = run_backtest(cfg=cfg)  # model_path_override is not needed for optimization
-+    duration_s = time.time() - t0
-+    # Persist useful attrs for later analysis/audit
-+    trial.set_user_attr("duration_s", round(duration_s, 3))
-+    trial.set_user_attr("random_seed", cfg.random_seed)
-+    trial.set_user_attr("trial_cache_dir", trial_cache_dir)
-     for k, v in metrics.items():
-         trial.set_user_attr(k, v)
- 
-     # TARGET METRICS
-     total_pnl = float(metrics.get("final_balance_change", "0.0%").rstrip("%"))
-@@
- def main():
-     parser = argparse.ArgumentParser(description="Optimise BacktestConfig parameters")
-     parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
-     parser.add_argument("--trials", type=int, default=200, help="Total Optuna trials")
-     parser.add_argument("--jobs", type=int, default=4, help="Parallel jobs")
-+    parser.add_argument("--topn", type=int, default=20, help="Top-N rows to save in summary tables")
-     args = parser.parse_args()
- 
-     base_cfg = load_config(args.cfg_path)
-     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
- 
-     session_name = "optuna_cfg_optimization_results"
-     opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
-     os.makedirs(opt_dir, exist_ok=True)
-@@
-     sampler = optuna.samplers.TPESampler(multivariate=True, warn_independent_sampling=False)
-     pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
- 
-     study = optuna.create_study(
-         directions=["maximize", "maximize", "maximize"],  # pnl ↑,  accuracy ↑, -trades ↑
-         sampler=sampler,
-         pruner=pruner,
-         study_name=f"backtest_opt_{run_stamp}",
-         storage=f"sqlite:///{os.path.join(opt_dir,'optuna.db')}",
-         load_if_exists=False,
-     )
-@@
-     logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
-     start_t = time.time()
-     study.optimize(objective, n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
-     logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
- 
--    df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
--    df.to_parquet(os.path.join(opt_dir, "trials.parquet"), index=False)
-+    df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
-+    _safe_save_df(df, opt_dir)
-+    _dump_trials_jsonl(study, opt_dir)
-+    _save_top_tables(df, opt_dir, topn=args.topn)
-+    _save_pareto(study, opt_dir)
-+    _save_param_importances(study, opt_dir)
-+    _save_system_info(opt_dir, run_stamp)
- 
-     # best of Pareto front (rank 0) -> take the first one
-     best_trials = [t for t in study.best_trials if t.values is not None]
-     if best_trials:
-         best = best_trials[0]
-         best_cfg = dict(best.params)
-         with open(os.path.join(opt_dir, "best_backtest_cfg.json"), "w") as f:
-             json.dump(best_cfg, f, indent=2)
-@@
-     except Exception as e:
-         logging.warning(f"Failed to draw Optuna plots: {e}")
- 
- if __name__ == "__main__":
-     main()
+             found_spikes_df = pd.read_sql(query, conn, params={
+                 "symbols": symbols,
+                 "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+                 "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
+-                "abs_change_pct": detector_cfg.abs_change_pct,
+-                "contrast_min": detector_cfg.contrast_min,
+-                "use_lookahead": detector_cfg.use_lookahead,
++                "abs_change_pct": detector_cfg.abs_change_pct,
++                "contrast_min": detector_cfg.contrast_min,
+             })
+             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
 ```
-
-**Обоснование по проектной доке:**
-— Quickstart прямо предусматривает Optuna и отчёт по топ-триалам (шаги 5–7) — теперь артефакты богаче и стабильнее (CSV-fallback) .
-— Артефакты сохраняются в `output/<config_name>/...`, как требует SYSTEM_PROMPT/README (репортинг и воспроизводимость)  .
-— В `requirements.txt` нет `pyarrow/fastparquet`; fallback предотвращает падения при их отсутствии .
 
 ---
 
-### Команды для применения и PR
+# Что и как проверить локально
 
-```bash
-git checkout -b feat/optuna-informative-exports
-git apply --index changes.patch
-git commit -m "feat(optuna): informative exports (CSV/Parquet fallback, JSONL, top tables, Pareto, importances, system info, per-trial duration/seed)"
-git push -u origin feat/optuna-informative-exports
-gh pr create -t "feat(optuna): informative and robust results saving" -b "Расширен экспорт: Parquet+CSV (fallback), trials.jsonl, top_by_* (CSV/JSON), pareto_trials.json, param_importances_pnl.json, system_info.json; добавлены duration_s/seed/trial_cache_dir. Соответствует README Quickstart и правилам артефактов output/<config_name>/. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}" -B prosperous_bot
+1. Запустите два раза, меняя только `cfg.detector.use_lookahead` в `configs/alpha.py` на `False`/`True`. Логи теперь явно покажут выбранный режим:
+
+```
+[Detector] use_lookahead=False window_minutes=10 context_minutes=30
 ```
 
-### Быстрый smoke-test (CPU, 5 триалов)
+И количество найденных сигналов должно **заметно отличаться** между режимами (обычно с lookahead их больше/«ярче»).
 
-```powershell
-python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 5 --jobs 1 --topn 5
+2. Убедитесь, что в `alpha.py` стоит:
+
+```python
+cfg.backtest.data_source = "find_spikes"
+cfg.detector.use_lookahead = False
 ```
 
-Должны появиться:
-`trials.parquet` + `trials.csv`, `trials.jsonl`, `top_by_*.csv/json`, `pareto_trials.json`, `param_importances_pnl.json`, `system_info.json`, `best_backtest_cfg.json`, а также PNG-графики истории/Парето (как и раньше) .
+и правильно задан `time_range`  .
+
+3. Чтобы исключить прочие источники «заглядывания вперёд»:
+
+* Нормализация берётся из заранее сохранённых stats (`norm_stats.json`) — в этом месте нет локальной подгонки по текущей сессии (нет «per-sequence» нормализации)  .
+* Сессия загружается как `[-pre_signal_len .. +post_signal_len]`, но наблюдение в среде должно идти пошагово; сам выбор сигналов мы уже сделали «честным». Если подозрения сохранятся, включим отладочный лог в `TradingEnvironment`, чтобы печатать индекс последней доступной свечи в наблюдении на каждом шаге — это быстро добавляется, но в представленных файлах среды нет  .
+
+Если после этого обновления разницы не будет — значит проблема **не** в детекторе, а в самой среде/агенте (например, если наблюдение формируется из «полной сессии» сразу). Тогда предложу точечный патч в `trading_environment.py` (логика нарезки окна на каждом шаге) и дам юнит-тест, который детектирует «утечку будущего» на синтетической последовательности.

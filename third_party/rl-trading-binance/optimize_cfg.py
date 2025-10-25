@@ -110,7 +110,11 @@ def objective(trial: optuna.Trial):
     # --- NEW: Create a unique cache directory for each trial to prevent race conditions ---
     trial_cache_dir = os.path.join(trial.study.user_attrs["opt_dir"], "trial_caches", f"trial_{trial.number}")
     os.makedirs(trial_cache_dir, exist_ok=True)
-    cfg.paths.extra_cache_dir = trial_cache_dir
+    # set trial-specific cache dir only if model supports it
+    if hasattr(cfg.paths, "extra_cache_dir"):
+        cfg.paths.extra_cache_dir = trial_cache_dir
+    else:
+        trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
     # SEARCH SPACE
     # b.position_fraction = trial.suggest_float("position_frac", 0.1, 1.0, step=0.05)
@@ -118,13 +122,34 @@ def objective(trial: optuna.Trial):
     cfg.backtest.long_action_threshold = trial.suggest_float("long_thr", 0.001, 0.03, log=True)
     cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
     cfg.backtest.close_action_threshold = trial.suggest_float("close_thr", 0.001, 0.03, log=True)
-    cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
-    if cfg.backtest.use_risk_management:
-        cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
-        cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
-        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+    # risk-management knobs only if fields exist in config model
+    if hasattr(cfg.backtest, "use_risk_management"):
+        cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
+        if cfg.backtest.use_risk_management:
+            if hasattr(cfg.backtest, "stop_loss"):
+                cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
+            if hasattr(cfg.backtest, "take_profit"):
+                cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
+            if hasattr(cfg.backtest, "trailing_stop"):
+                cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+        else:
+            # если поля есть — сбросим; если нет — просто зафиксируем в user_attrs
+            if hasattr(cfg.backtest, "stop_loss"): cfg.backtest.stop_loss = 0.0
+            if hasattr(cfg.backtest, "take_profit"): cfg.backtest.take_profit = 0.0
+            if hasattr(cfg.backtest, "trailing_stop"): cfg.backtest.trailing_stop = 0.0
     else:
-        cfg.backtest.stop_loss = cfg.backtest.take_profit = cfg.backtest.trailing_stop = 0.0
+        # нет полей — сохраним выбранные значения в user_attrs (для отчётов/аналитики)
+        _use_rm = trial.suggest_categorical("use_rm", [True, False])
+        attrs = {"use_rm": _use_rm}
+        if _use_rm:
+            attrs.update({
+                "stop_loss": trial.suggest_float("stop_loss", 0.005, 0.03),
+                "take_profit": trial.suggest_float("take_profit", 0.01, 0.05),
+                "trailing_stop": trial.suggest_float("trail", 0.001, 0.02),
+            })
+        else:
+            attrs.update({"stop_loss": 0.0, "take_profit": 0.0, "trailing_stop": 0.0})
+        trial.set_user_attr("risk_management", attrs)
 
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
