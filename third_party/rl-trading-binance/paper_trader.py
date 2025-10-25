@@ -19,8 +19,8 @@ from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
 from test_agent import init_agent
-from trading_environment import TradingEnvironment
-from utils import find_spike_windows, load_config, set_random_seed
+from trading_environment import TradingEnvironment, logger
+from utils import find_spike_windows, load_config, set_random_seed, setup_logging
 
 
 def setup_logging(cfg: MasterConfig) -> None:
@@ -42,9 +42,8 @@ def setup_logging(cfg: MasterConfig) -> None:
 
 class PaperTrader:
     def __init__(self, cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None):
-        self.cfg = cfg
-        self.cfg_mod = cfg_mod
-        setup_logging(self.cfg)
+        self.cfg = cfg        
+        setup_logging(session_name="paper_trader_session", cfg=self.cfg)
         set_random_seed(self.cfg.random_seed)
 
         self.agent = self._load_agent(model_path_override)
@@ -52,16 +51,20 @@ class PaperTrader:
 
         # --- NEW: Ticker selection logic ---
         if self.cfg.paper.symbols:
-            self.symbols_to_trade = self.cfg.paper.symbols
-            logging.info(f"Using {len(self.symbols_to_trade)} symbols from config: {self.symbols_to_trade}")
+            symbols = self.cfg.paper.symbols if isinstance(self.cfg.paper.symbols, list) else [self.cfg.paper.symbols]
+            self.symbols_to_trade = symbols if symbols != ["ALL"] else self._get_all_symbols_from_db()
+            logging.info(f"Using {len(self.symbols_to_trade)} symbols for paper trading.")
         else:
             try:
                 with open("data/tickers.txt", "r") as f:
                     self.symbols_to_trade = [line.strip() for line in f if line.strip()]
                 logging.info(f"Config `paper.symbols` is empty. Using {len(self.symbols_to_trade)} symbols from data/tickers.txt")
             except FileNotFoundError:
-                logging.error("`paper.symbols` is empty and data/tickers.txt not found. No symbols to trade.")
                 self.symbols_to_trade = []
+        
+        if not self.symbols_to_trade:
+            logging.error("No symbols to trade. Exiting.")
+            raise SystemExit("Symbol list is empty.")
 
         self.ws_url = "wss://fstream.binance.com/stream?streams=" + "/".join(
             [f"{s.lower()}@kline_1m" for s in self.symbols_to_trade]
@@ -91,13 +94,12 @@ class PaperTrader:
         if model_path_override:
             model_path = model_path_override
             logging.info(f"Using model from command line: {model_path}")
+        elif self.cfg.paths.model_path and os.path.exists(self.cfg.paths.model_path):
+            model_path = self.cfg.paths.model_path
+            logging.info(f"Using model from config file: {model_path}")
         else:
-            model_base = self.cfg.paths.extra_model_dir or self.cfg.paths.model_dir
-            model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
-            best_path = os.path.join(model_folder, "best.pth")
-            model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
-            logging.info(f"Using latest model from config: {model_path}")
-
+            logging.error("Model path not specified. Please set `cfg.paths.model_path` in your config file.")
+            raise FileNotFoundError("Model path not specified in the configuration.")
         return init_agent(model_path, self.cfg, None)  # No cache for live trading
 
     def _load_stats(self) -> Dict:
@@ -109,6 +111,21 @@ class PaperTrader:
         logging.info(f"Loading normalization stats from {stats_path}")
         with open(stats_path, "r") as f:
             return json.load(f)
+
+    def _get_all_symbols_from_db(self) -> List[str]:
+        """Fetches all unique symbols from the database."""
+        if not self.cfg.db.dsn:
+            logging.error("Database DSN `cfg.db.dsn` is not configured.")
+            return []
+        try:
+            engine = create_engine(self.cfg.db.dsn)
+            with engine.connect() as conn:
+                query = text("SELECT DISTINCT symbol FROM v_klines_1m_npz")
+                result = conn.execute(query)
+                return [row[0] for row in result]
+        except Exception as e:
+            logging.error(f"Failed to fetch all symbols from DB for paper trading: {e}", exc_info=True)
+            return []
 
     def _on_message(self, ws, message):
         try:
@@ -168,10 +185,10 @@ class PaperTrader:
         # Find spikes. CRITICAL: use_lookahead=False for live trading
         spike_windows = find_spike_windows(
             df,
-            context_minutes=self.cfg_mod.data["detector"]["context_minutes"],
-            window_minutes=self.cfg_mod.data["detector"]["window_minutes"],
-            abs_change_threshold_pct=self.cfg_mod.data["detector"]["abs_change_pct"],
-            contrast_min=self.cfg_mod.data["detector"]["contrast_min"],
+            context_minutes=self.cfg.detector.context_minutes,
+            window_minutes=self.cfg.detector.window_minutes,
+            abs_change_threshold_pct=self.cfg.detector.abs_change_pct,
+            contrast_min=self.cfg.detector.contrast_min,
             cooldown_minutes=0,  # Cooldown is managed externally
             use_lookahead=False,
         )
@@ -194,7 +211,7 @@ class PaperTrader:
             return # Signal is within cooldown, ignore
         
         logging.info(f"Spike signal detected for {symbol} at {signal_dt}")
-        self.cooldowns[symbol] = now + dt.timedelta(minutes=self.cfg_mod.data["detector"]["cooldown_minutes"])
+        self.cooldowns[symbol] = now + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
 
         # Prepare data for inference
         seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
@@ -343,8 +360,13 @@ class PaperTrader:
     def _run_from_database(self):
         """Runs the trader in simulation mode using historical data from the database."""
         logging.info("Starting trader in 'database' (high-speed simulation) mode.")
-        start_utc = self.cfg_mod.data["time_range"]["start_utc"]
-        end_utc = self.cfg_mod.data["time_range"]["end_utc"]
+        
+        if not hasattr(self.cfg.backtest, "time_range") or not self.cfg.backtest.time_range:
+            logging.error("`cfg.backtest.time_range` is not defined for database simulation. Aborting.")
+            return
+            
+        start_utc = self.cfg.backtest.time_range["start_utc"]
+        end_utc = self.cfg.backtest.time_range["end_utc"]
         symbols = self.symbols_to_trade
 
         all_signals = []
@@ -370,7 +392,7 @@ class PaperTrader:
                         continue
 
                     # Load a small window of data around the current time `t` for all active symbols
-                    window_start = t - dt.timedelta(minutes=self.cfg_mod.data["detector"]["context_minutes"] + self.cfg_mod.data["detector"]["window_minutes"])
+                    window_start = t - dt.timedelta(minutes=self.cfg.detector.context_minutes + self.cfg.detector.window_minutes)
                     
                     query = text(
                         "SELECT ts, symbol, close FROM v_klines_1m_npz "
@@ -391,11 +413,11 @@ class PaperTrader:
                         df_symbol = df_symbol.set_index('ts')
                         spike_windows = find_spike_windows(
                             df_symbol,
-                            context_minutes=self.cfg_mod.data["detector"]["context_minutes"],
-                            window_minutes=self.cfg_mod.data["detector"]["window_minutes"],
-                            abs_change_threshold_pct=self.cfg_mod.data["detector"]["abs_change_pct"],
-                            contrast_min=self.cfg_mod.data["detector"]["contrast_min"],
-                            cooldown_minutes=self.cfg_mod.data["detector"]["cooldown_minutes"],
+                            context_minutes=self.cfg.detector.context_minutes,
+                            window_minutes=self.cfg.detector.window_minutes,
+                            abs_change_threshold_pct=self.cfg.detector.abs_change_pct,
+                            contrast_min=self.cfg.detector.contrast_min,
+                            cooldown_minutes=self.cfg.detector.cooldown_minutes,
                             use_lookahead=False,
                         )
                         
@@ -404,7 +426,7 @@ class PaperTrader:
                             if session_start == t:
                                 all_signals.append({"symbol": symbol, "signal_dt": session_start})
                                 # Apply cooldown immediately
-                                self.cooldowns[symbol] = t + dt.timedelta(minutes=self.cfg_mod.data["detector"]["cooldown_minutes"])
+                                self.cooldowns[symbol] = t + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
                                 break # Move to the next symbol
 
         except Exception as e:
@@ -500,8 +522,5 @@ if __name__ == "__main__":
         cfg_mod = None
         cfg = default_cfg
 
-    if not hasattr(cfg_mod, "data"):
-        from configs import alpha as cfg_mod
-
-    trader = PaperTrader(cfg=cfg, cfg_mod=cfg_mod, model_path_override=model_path_arg)
+    trader = PaperTrader(cfg=cfg, cfg_mod=None, model_path_override=model_path_arg)
     trader.run()

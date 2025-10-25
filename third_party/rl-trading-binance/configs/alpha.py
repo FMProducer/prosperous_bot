@@ -55,6 +55,10 @@ cfg.backtest.stop_loss = 0.01
 cfg.backtest.take_profit = 0.02
 cfg.backtest.trailing_stop = 0.005
 cfg.backtest.plot_backtest_balance_curve = True
+# --- NEW: Explicit time range for backtesting ---
+# This ensures the backtest runs on the correct, unseen data period.
+cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
+
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None
@@ -110,53 +114,6 @@ cfg.vec.scale_epsilon_by_envs = True
 # 3. Run optimization:              python optimize_cfg.py configs/...
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
 
-data = {
-    "source": "stream_sim_db",
-    "time_range": {"start_utc": "2025-03-01T00:00:00Z", "end_utc": "2025-06-01T00:00:00Z"},
-    # Базовый (демо) режим: 30-10 — полная совместимость с README (Demo) :contentReference[oaicite:10]{index=10}
-    "ctx_minutes": 30,
-    # Порог и кулдаун используются и офлайн, и при потоковом построении индекса
-    "trigger": {"abs_change_pct": 5.0, "cooldown_minutes": 30},
-    "resample_1t": True,
-    # Включить построение индекса окон из БД (если нет заранее подготовленного CSV)
-    "build_index_from_db": True,
-    # Новый режим индекса: скользящее окно на КАЖДОМ минутном баре
-    "index_mode": "sliding",
-    "sliding_stride_minutes": 1,
-    "symbols": ["OMUSDT","1000RATSUSDT"],
-    "session_minutes": 10,
-     # Детектор всплесков: для строгой репликации backtest оставляем look-ahead включённым
-    "detector": {
-        # Полный режим: 90-10 детекция (контекст 90, окно оценки 10), но сам инференс/сессия задаётся agent_session_len (выше)
-        "context_minutes": 30,
-        "window_minutes": 10,
-        "use_lookahead": True,       # True — как в бэктесте; False — реал-режим без заглядывания вперёд
-        "abs_change_pct": 5.0,       # |ΔP| over window, %
-        "contrast_min": 5.0,         # (|ΔP| / avg_abs_ret_pre) ≥ contrast_min
-        "cooldown_minutes": 30
-    },
-    # Если файл провайдера лежит рядом (db_provider.py), используем прямой импорт:
-    "db_provider": "db_provider:get_feed",
-    # ---- Inference (строгий режим без фоллбэка) ----
-    "inference": {
-        "policy_loader": "inference_adapter:load_policy",  # module:function
-        "checkpoint_path": r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_005510\best.pth",
-        "strict": True   # True: без рабочей политики торги пропускаются (никакого Follow-Context)
-    },
-    # ---- Paper trading (RT/ASAP) ----
-    "paper_trader": {
-        "mode": "asap",  # "realtime" | "asap"
-        "cap_windows_per_symbol": 0  # 0 = без лимита; иначе макс. окон/день/тикер
-    },
-    "exec": {
-        "base_capital_usdt": 10000.0,  # общий капитал (для риска/позиции)
-        "risk_per_trade_pct": 1.0,     # риск на сделку, %
-        "fee_bps": 2.0,                # комиссия в б.п. (0.01% = 1 б.п.)
-        "slippage_bps": 1.0,           # проскальзывание (одна сторона) в б.п.
-        "max_concurrent": 4            # ограничение на одновременные позиции
-    }
-}
-
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
 # 
@@ -173,11 +130,20 @@ cfg.paper.symbols = "ALL"
 # Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
 # cfg.paper.db_source_speed = 0.1 
 cfg.backtest.data_source = "find_spikes"
-cfg.paths.train_data_path = "data/train_data_fair.npz"
-cfg.paths.val_data_path = "data/val_data_fair.npz"
-cfg.paths.test_data_path = "data/test_data_fair.npz"
-cfg.paths.backtest_data_path = "data/backtest_data_fair.npz"
+cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
+cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
+# test_data_path можно пока не трогать или приравнять к backtest
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_005510\best.pth"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+
+# --- NEW: Spike Detector Configuration ---
+cfg.detector.context_minutes = 30
+cfg.detector.window_minutes = 10
+cfg.detector.use_lookahead = True # IMPORTANT: This should be True for backtesting/dataset creation
+cfg.detector.abs_change_pct = 5.0
+cfg.detector.contrast_min = 5.0
+cfg.detector.cooldown_minutes = 30

@@ -233,9 +233,12 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
     Dynamically finds spike signals in the database for the given symbols and time range.
     This is a high-performance version that loads data once and processes it in memory.
     """
-    # This function is now re-written to be scalable and memory-efficient.
-    start_utc = cfg_mod.data["time_range"]["start_utc"]
-    end_utc = cfg_mod.data["time_range"]["end_utc"]
+    if not hasattr(cfg.backtest, "time_range") or not cfg.backtest.time_range:
+        logging.error("`cfg.backtest.time_range` is not defined in the config. Aborting.")
+        raise ValueError("Backtest time range must be specified in the configuration.")
+
+    start_utc = cfg.backtest.time_range["start_utc"]
+    end_utc = cfg.backtest.time_range["end_utc"]
     
     engine = create_engine(cfg.db.dsn)
 
@@ -270,7 +273,7 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
             from sqlalchemy import text
             # This SQL query uses window functions to find spikes directly in the database.
             # It's much faster than loading all data into Python.
-            detector_cfg = cfg_mod.data["detector"]
+            detector_cfg = cfg.detector
             query = text(f"""
             WITH minute_returns AS (
                 SELECT
@@ -286,9 +289,9 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
                     ts,
                     symbol,
                     -- Absolute change over the 'window_minutes'
-                    (close / LAG(close, {detector_cfg['window_minutes']}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
+                    (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
                     -- Average absolute return in the preceding 'context_minutes'
-                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg['context_minutes'] + detector_cfg['window_minutes']} PRECEDING AND {detector_cfg['window_minutes']} PRECEDING) AS avg_abs_ret_pre
+                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
                 FROM minute_returns
             )
             SELECT ts, symbol
@@ -303,8 +306,8 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
                 "symbols": symbols,
                 "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
                 "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
-                "abs_change_pct": detector_cfg['abs_change_pct'],
-                "contrast_min": detector_cfg['contrast_min'],
+                "abs_change_pct": detector_cfg.abs_change_pct,
+                "contrast_min": detector_cfg.contrast_min,
             })
             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
     except Exception as e:
@@ -324,7 +327,7 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
         symbol, signal_dt = row['symbol'], row['ts']
         if signal_dt > last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
             all_signals.append((symbol, signal_dt))
-            last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg['cooldown_minutes'])
+            last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg.cooldown_minutes)
 
     # --- Step 3: Load data only for the filtered signals ---
     logging.info(f"After cooldown, {len(all_signals)} signals remain. Loading session data...")

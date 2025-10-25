@@ -58,7 +58,7 @@ def create_dataset_from_db(cfg: MasterConfig, cfg_mod: object, time_range: dict,
     logging.info(f"Scanning for spike signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
     try:
         with engine.connect() as conn:
-            detector_cfg = cfg_mod.data["detector"]
+            detector_cfg = cfg.detector
             query = text(f"""
             WITH minute_returns AS (
                 SELECT ts, symbol, close, (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
@@ -66,8 +66,8 @@ def create_dataset_from_db(cfg: MasterConfig, cfg_mod: object, time_range: dict,
             ),
             rolling_stats AS (
                 SELECT ts, symbol,
-                    (close / LAG(close, {detector_cfg['window_minutes']}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
-                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg['context_minutes'] + detector_cfg['window_minutes']} PRECEDING AND {detector_cfg['window_minutes']} PRECEDING) AS avg_abs_ret_pre
+                    (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
+                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
                 FROM minute_returns
             )
             SELECT ts, symbol FROM rolling_stats
@@ -78,8 +78,8 @@ def create_dataset_from_db(cfg: MasterConfig, cfg_mod: object, time_range: dict,
                 "symbols": symbols,
                 "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
                 "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
-                "abs_change_pct": detector_cfg['abs_change_pct'],
-                "contrast_min": detector_cfg['contrast_min'],
+                "abs_change_pct": detector_cfg.abs_change_pct,
+                "contrast_min": detector_cfg.contrast_min,
             })
             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
     except Exception as e:
@@ -98,7 +98,7 @@ def create_dataset_from_db(cfg: MasterConfig, cfg_mod: object, time_range: dict,
             if signal_dt <= last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
                 continue
 
-            last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg['cooldown_minutes'])
+            last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg.cooldown_minutes)
 
             seq_start = signal_dt - dt.timedelta(minutes=cfg.seq.pre_signal_len)
             seq_end = signal_dt + dt.timedelta(minutes=cfg.seq.post_signal_len)

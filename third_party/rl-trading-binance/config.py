@@ -1,6 +1,6 @@
 # config.py
 import os
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 import torch
 from pydantic import BaseModel, Field, validator
@@ -203,12 +203,22 @@ class BacktestConfig(BaseModel):
     data_source: Literal["npz_keys", "find_spikes"] = "npz_keys"
     ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
+    time_range: Optional[Dict[str, str]] = None
 
 
 class PaperTraderConfig(BaseModel):
     source: Literal["websocket", "database"] = "websocket"
     db_source_speed: float = 0.0  # Seconds to sleep between simulated minutes. 0.0 for max speed.
     symbols: Optional[Union[List[str], Literal["ALL"]]] = None # None or empty list means use all from tickers.txt
+
+class DetectorConfig(BaseModel):
+    """Spike detector parameters for finding trading signals."""
+    context_minutes: int = 30
+    window_minutes: int = 10
+    use_lookahead: bool = True  # Must be False for live trading/paper trading
+    abs_change_pct: float = 5.0
+    contrast_min: float = 5.0
+    cooldown_minutes: int = 30
 
 
 class LoggingConfig(BaseModel):
@@ -264,6 +274,7 @@ class MasterConfig(BaseModel):
     backtest: BacktestConfig = BacktestConfig()
     paper: PaperTraderConfig = PaperTraderConfig()
     logging: LoggingConfig = LoggingConfig()
+    detector: DetectorConfig = DetectorConfig()
     perf: PerformanceConfig = PerformanceConfig()
     db: DbConfig = DbConfig()
 
