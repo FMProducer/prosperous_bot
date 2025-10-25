@@ -8,10 +8,97 @@ import os
 import time
 
 import optuna
+import pandas as pd
+import platform
 
 from backtest_engine import run_backtest
 from config import MasterConfig
 from utils import load_config, setup_logging
+
+def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
+    """
+    Save trials as Parquet (if engine available) and ALWAYS as CSV.
+    """
+    base = os.path.join(opt_dir, "trials")
+    csv_path = f"{base}.csv"
+    try:
+        pq_path = f"{base}.parquet"
+        df.to_parquet(pq_path, index=False)
+        logging.info(f"[Optuna] saved {pq_path}")
+    except Exception as e:
+        logging.warning(f"[Optuna] parquet save failed: {e}. CSV will be used.")
+    df.to_csv(csv_path, index=False)
+    logging.info(f"[Optuna] saved {csv_path}")
+
+def _dump_trials_jsonl(study: "optuna.study.Study", opt_dir: str) -> None:
+    """
+    Export all trials (number, state, values, params, user_attrs, timings) to JSONL.
+    """
+    path = os.path.join(opt_dir, "trials.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for t in study.get_trials(deepcopy=False):
+            rec = {
+                "number": t.number,
+                "state": str(t.state) if t.state is not None else None,
+                "values": t.values,
+                "params": t.params,
+                "user_attrs": t.user_attrs,
+                "datetime_start": t.datetime_start.isoformat() if t.datetime_start else None,
+                "datetime_complete": t.datetime_complete.isoformat() if t.datetime_complete else None,
+            }
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    logging.info(f"[Optuna] saved {path}")
+
+def _save_top_tables(df: "pd.DataFrame", opt_dir: str, topn: int = 20) -> None:
+    """
+    Save top-N trials by PnL (values_0), Accuracy (values_1), and -Trades (values_2).
+    """
+    cols = df.columns
+    targets = [("values_0", "top_by_pnl"), ("values_1", "top_by_accuracy"), ("values_2", "top_by_neg_trades")]
+    for val_col, stem in targets:
+        if val_col in cols:
+            top = df.sort_values(val_col, ascending=False).head(topn)
+            top.to_csv(os.path.join(opt_dir, f"{stem}.csv"), index=False)
+            top.to_json(os.path.join(opt_dir, f"{stem}.json"), orient="records", indent=2)
+            logging.info(f"[Optuna] saved {stem} (top {len(top)})")
+
+def _save_pareto(study: "optuna.study.Study", opt_dir: str) -> None:
+    """
+    Save Pareto-front trials (numbers, values, params) into pareto_trials.json.
+    """
+    best_trials = [t for t in study.best_trials if t.values is not None]
+    payload = [{"number": t.number, "values": t.values, "params": t.params} for t in best_trials]
+    with open(os.path.join(opt_dir, "pareto_trials.json"), "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    logging.info(f"[Optuna] saved pareto_trials.json ({len(payload)} trials)")
+
+def _save_param_importances(study: "optuna.study.Study", opt_dir: str) -> None:
+    """
+    Save parameter importances for PnL objective (values[0]) if available.
+    """
+    try:
+        from optuna.importance import get_param_importances
+        imp = get_param_importances(study, target=lambda t: t.values[0])
+        with open(os.path.join(opt_dir, "param_importances_pnl.json"), "w", encoding="utf-8") as f:
+            json.dump(imp, f, ensure_ascii=False, indent=2)
+        logging.info("[Optuna] saved param_importances_pnl.json")
+    except Exception as e:
+        logging.warning(f"[Optuna] param importances unavailable: {e}")
+
+def _save_system_info(opt_dir: str, run_stamp: str) -> None:
+    """
+    Save environment metadata for reproducibility.
+    """
+    info = {
+        "run_stamp_utc": run_stamp,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "optuna": getattr(optuna, "__version__", None),
+        "pandas": getattr(pd, "__version__", None),
+    }
+    with open(os.path.join(opt_dir, "system_info.json"), "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+    logging.info("[Optuna] saved system_info.json")
 
 def objective(trial: optuna.Trial):
     # Reconstruct the config object from the JSON stored in user_attrs
@@ -50,7 +137,13 @@ def objective(trial: optuna.Trial):
     cfg.backtest.plot_backtest_balance_curve = False
     # cfg.debug.debug_max_size_data = None
 
-    metrics = run_backtest(cfg=cfg) # model_path_override is not needed for optimization
+    t0 = time.time()
+    metrics = run_backtest(cfg=cfg)  # model_path_override is not needed for optimization
+    duration_s = time.time() - t0
+    # Persist useful attrs for later analysis/audit
+    trial.set_user_attr("duration_s", round(duration_s, 3))
+    trial.set_user_attr("random_seed", cfg.random_seed)
+    trial.set_user_attr("trial_cache_dir", trial_cache_dir)
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 
@@ -66,6 +159,7 @@ def main():
     parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
     parser.add_argument("--trials", type=int, default=200, help="Total Optuna trials")
     parser.add_argument("--jobs", type=int, default=4, help="Parallel jobs")
+    parser.add_argument("--topn", type=int, default=20, help="Top-N rows to save in summary tables")
     args = parser.parse_args()
 
     base_cfg = load_config(args.cfg_path)
@@ -108,7 +202,12 @@ def main():
     logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
 
     df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
-    df.to_parquet(os.path.join(opt_dir, "trials.parquet"), index=False)
+    _safe_save_df(df, opt_dir)
+    _dump_trials_jsonl(study, opt_dir)
+    _save_top_tables(df, opt_dir, topn=args.topn)
+    _save_pareto(study, opt_dir)
+    _save_param_importances(study, opt_dir)
+    _save_system_info(opt_dir, run_stamp)
 
     # best of Pareto front (rank 0) -> take the first one
     best_trials = [t for t in study.best_trials if t.values is not None]

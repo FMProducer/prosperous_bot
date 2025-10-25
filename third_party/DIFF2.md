@@ -1,244 +1,124 @@
-2025-10-24 21:15:41,663 [INFO] Q-value cache saved at output\alpha\backtest_qval_cache\qval_cache.pkl
-2025-10-24 21:15:41,664 [INFO] 
-[Trades Summary]:
-2025-10-24 21:15:41,664 [INFO] : 2025-03-02 15:31 LONG  XRPUSDT        5000:   +140.15 ( +2.80%  |  +1.40%) PRICE CHANGE: +2.89%
-2025-10-24 21:15:41,664 [INFO] : 2025-03-02 15:27 LONG  ADAUSDT        5070:   +436.23 ( +8.60%  |  +4.30%) PRICE CHANGE: +8.69%
-2025-10-24 21:15:41,664 [INFO] : 2025-03-02 16:39 LONG  HBARUSDT       5288:   -151.20 ( -2.86%  |  -1.43%) PRICE CHANGE: -2.78%
-2025-10-24 21:15:41,665 [INFO] : 2025-03-02 16:55 LONG  IOTAUSDT       5212:    +44.88 ( +0.86%  |  +0.43%) PRICE CHANGE: +0.94%
-2025-10-24 21:15:41,665 [INFO] : 2025-03-03 00:43 SHORT XVSUSDT        5235:    -46.03 ( -0.88%  |  -0.44%) PRICE CHANGE: -0.80%
-2025-10-24 21:15:41,665 [INFO] : 2025-03-04 00:09 LONG  GLMUSDT        5212:    -45.91 ( -0.88%  |  -0.44%) PRICE CHANGE: -0.80%
-2025-10-24 21:15:41,665 [INFO] : 2025-03-04 03:56 LONG  1000RATSUSDT   5189:    -32.40 ( -0.62%  |  -0.31%) PRICE CHANGE: -0.54%
-2025-10-24 21:15:41,665 [INFO] : 2025-03-04 14:41 LONG  ADAUSDT        5172:   -173.39 ( -3.35%  |  -1.68%) PRICE CHANGE: -3.27%
-2025-10-24 21:15:41,666 [INFO] : 2025-03-05 10:43 SHORT SUPERUSDT      5086:    -80.00 ( -1.57%  |  -0.79%) PRICE CHANGE: -1.49%
-2025-10-24 21:15:41,666 [INFO] : 2025-03-05 16:56 LONG  REZUSDT        5046:   +233.43 ( +4.63%  |  +2.31%) PRICE CHANGE: +4.71%
-2025-10-24 21:15:41,666 [INFO] : 2025-03-06 03:27 SHORT ARKUSDT        5162:    -13.65 ( -0.26%  |  -0.13%) PRICE CHANGE: -0.18%
-2025-10-24 21:15:41,666 [INFO] : 2025-03-06 14:14 LONG  SUIUSDT        5156:    -19.05 ( -0.37%  |  -0.18%) PRICE CHANGE: -0.29%
-2025-10-24 21:15:41,666 [INFO] : 2025-03-06 17:37 LONG  REZUSDT        5146:    +56.99 ( +1.11%  |  +0.55%) PRICE CHANGE: +1.19%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-06 17:37 LONG  JTOUSDT        5175:    +55.76 ( +1.08%  |  +0.54%) PRICE CHANGE: +1.16%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-07 00:21 LONG  ADAUSDT        5202:    -14.74 ( -0.28%  |  -0.14%) PRICE CHANGE: -0.20%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-07 12:36 LONG  REZUSDT        5195:    -26.43 ( -0.51%  |  -0.25%) PRICE CHANGE: -0.43%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-07 20:52 LONG  CHZUSDT        5182:     +2.78 ( +0.05%  |  +0.03%) PRICE CHANGE: +0.13%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-10 00:30 LONG  TNSRUSDT       5183:    -64.04 ( -1.24%  |  -0.62%) PRICE CHANGE: -1.16%
-2025-10-24 21:15:41,667 [INFO] : 2025-03-10 08:50 LONG  RAREUSDT       5151:   -258.71 ( -5.02%  |  -2.51%) PRICE CHANGE: -4.95%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-10 15:11 LONG  RAREUSDT       5022:   +275.66 ( +5.49%  |  +2.74%) PRICE CHANGE: +5.57%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-10 16:47 LONG  RAREUSDT       5160:   -128.41 ( -2.49%  |  -1.24%) PRICE CHANGE: -2.41%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-10 19:07 SHORT TRBUSDT        5095:    -41.72 ( -0.82%  |  -0.41%) PRICE CHANGE: -0.74%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-11 01:06 LONG  QUICKUSDT      5075:    +26.80 ( +0.53%  |  +0.26%) PRICE CHANGE: +0.61%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-11 04:09 LONG  RAREUSDT       5088:   +171.16 ( +3.36%  |  +1.68%) PRICE CHANGE: +3.45%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-11 06:17 LONG  ARKMUSDT       5174:     -9.93 ( -0.19%  |  -0.10%) PRICE CHANGE: -0.11%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-11 07:36 LONG  1000RATSUSDT   5169:    -46.92 ( -0.91%  |  -0.45%) PRICE CHANGE: -0.83%
-2025-10-24 21:15:41,668 [INFO] : 2025-03-11 12:16 LONG  RAREUSDT       5145:     -9.66 ( -0.19%  |  -0.09%) PRICE CHANGE: -0.11%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-11 13:30 LONG  LDOUSDT        5140:    -90.58 ( -1.76%  |  -0.88%) PRICE CHANGE: -1.68%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-12 08:53 LONG  VANRYUSDT      5095:   +119.71 ( +2.35%  |  +1.17%) PRICE CHANGE: +2.43%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-13 12:14 LONG  POPCATUSDT     5155:    +94.20 ( +1.83%  |  +0.91%) PRICE CHANGE: +1.91%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-15 00:06 LONG  CHZUSDT        5202:    +10.75 ( +0.21%  |  +0.10%) PRICE CHANGE: +0.29%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-15 02:42 LONG  QUICKUSDT      5207:    +23.24 ( +0.45%  |  +0.22%) PRICE CHANGE: +0.53%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-15 03:19 LONG  1000RATSUSDT   5219:    -20.27 ( -0.39%  |  -0.19%) PRICE CHANGE: -0.31%
-2025-10-24 21:15:41,669 [INFO] : 2025-03-16 03:33 LONG  QUICKUSDT      5209:    +23.13 ( +0.44%  |  +0.22%) PRICE CHANGE: +0.52%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-17 22:06 LONG  LUNA2USDT      5220:    -74.06 ( -1.42%  |  -0.71%) PRICE CHANGE: -1.34%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-18 06:18 LONG  LUNA2USDT      5183:   +135.75 ( +2.62%  |  +1.31%) PRICE CHANGE: +2.70%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-19 18:18 LONG  UNIUSDT        5251:    -59.54 ( -1.13%  |  -0.57%) PRICE CHANGE: -1.05%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-20 00:08 LONG  1000BONKUSDT   5221:    -30.20 ( -0.58%  |  -0.29%) PRICE CHANGE: -0.50%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-21 11:18 SHORT ARKUSDT        5206:    -37.09 ( -0.71%  |  -0.36%) PRICE CHANGE: -0.63%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-21 14:16 LONG  ACHUSDT        5188:    +15.68 ( +0.30%  |  +0.15%) PRICE CHANGE: +0.38%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-21 21:55 LONG  AUCTIONUSDT    5196:    +57.61 ( +1.11%  |  +0.55%) PRICE CHANGE: +1.19%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-22 00:06 LONG  ARKUSDT        5224:    +45.66 ( +0.87%  |  +0.44%) PRICE CHANGE: +0.95%
-2025-10-24 21:15:41,670 [INFO] : 2025-03-22 14:44 LONG  UMAUSDT        5247:   +120.44 ( +2.30%  |  +1.15%) PRICE CHANGE: +2.38%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-22 17:47 LONG  CYBERUSDT      5308:   -268.60 ( -5.06%  |  -2.53%) PRICE CHANGE: -4.98%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-22 22:47 LONG  API3USDT       5173:    -25.47 ( -0.49%  |  -0.25%) PRICE CHANGE: -0.41%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-24 09:51 LONG  DYDXUSDT       5160:    +14.51 ( +0.28%  |  +0.14%) PRICE CHANGE: +0.36%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-25 17:26 LONG  1000RATSUSDT   5168:    +43.83 ( +0.85%  |  +0.42%) PRICE CHANGE: +0.93%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-25 19:33 LONG  IMXUSDT        5190:    -37.28 ( -0.72%  |  -0.36%) PRICE CHANGE: -0.64%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-25 19:36 LONG  IMXUSDT        5190:   +109.10 ( +2.10%  |  +1.05%) PRICE CHANGE: +2.20%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-26 12:54 LONG  1000RATSUSDT   5226:    +10.94 ( +0.21%  |  +0.10%) PRICE CHANGE: +0.29%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-26 12:58 LONG  1000RATSUSDT   5226:    -40.83 ( -0.78%  |  -0.39%) PRICE CHANGE: -0.70%
-2025-10-24 21:15:41,671 [INFO] : 2025-03-30 06:20 LONG  REZUSDT        5211:    +45.48 ( +0.87%  |  +0.44%) PRICE CHANGE: +0.95%
-2025-10-24 21:15:41,672 [INFO] : 2025-03-30 14:07 LONG  NEOUSDT        5233:    -14.65 ( -0.28%  |  -0.14%) PRICE CHANGE: -0.20%
-2025-10-24 21:15:41,672 [INFO] : 2025-03-30 20:11 LONG  REZUSDT        5226:    -94.73 ( -1.81%  |  -0.91%) PRICE CHANGE: -1.73%
-2025-10-24 21:15:41,672 [INFO] : 2025-03-30 22:42 LONG  REZUSDT        5179:    -27.22 ( -0.53%  |  -0.26%) PRICE CHANGE: -0.45%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-01 02:48 LONG  REZUSDT        5165:   +317.34 ( +6.14%  |  +3.07%) PRICE CHANGE: +6.23%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-01 07:15 LONG  REZUSDT        5324:    -38.69 ( -0.73%  |  -0.36%) PRICE CHANGE: -0.65%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-01 10:34 LONG  KAVAUSDT       5304:    +36.83 ( +0.69%  |  +0.35%) PRICE CHANGE: +0.77%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-01 17:10 LONG  MASKUSDT       5323:     -0.73 ( -0.01%  |  -0.01%) PRICE CHANGE: +0.07%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-02 02:50 LONG  KAVAUSDT       5322:    -34.28 ( -0.64%  |  -0.32%) PRICE CHANGE: -0.56%
-2025-10-24 21:15:41,672 [INFO] : 2025-04-02 06:48 LONG  NEOUSDT        5305:    -40.83 ( -0.77%  |  -0.38%) PRICE CHANGE: -0.69%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-04 07:06 LONG  FILUSDT        5285:   +146.84 ( +2.78%  |  +1.39%) PRICE CHANGE: +2.86%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-04 08:42 LONG  VOXELUSDT      5358:     -6.96 ( -0.13%  |  -0.06%) PRICE CHANGE: -0.05%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-04 17:53 LONG  REZUSDT        5355:    -12.42 ( -0.23%  |  -0.12%) PRICE CHANGE: -0.15%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-04 17:56 LONG  FLMUSDT        5349:   +549.52 (+10.27%  |  +5.14%) PRICE CHANGE: +10.36%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-05 12:20 LONG  CATIUSDT       5623:    +43.44 ( +0.77%  |  +0.39%) PRICE CHANGE: +0.85%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-06 21:48 LONG  AUCTIONUSDT    5645:    -17.85 ( -0.32%  |  -0.16%) PRICE CHANGE: -0.24%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-07 02:43 LONG  VOXELUSDT      5636:    -24.18 ( -0.43%  |  -0.21%) PRICE CHANGE: -0.35%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-07 05:05 LONG  ZECUSDT        5624:   +127.22 ( +2.26%  |  +1.13%) PRICE CHANGE: +2.34%
-2025-10-24 21:15:41,673 [INFO] : 2025-04-09 15:48 LONG  CATIUSDT       5688:   +192.44 ( +3.38%  |  +1.69%) PRICE CHANGE: +3.47%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-10 00:14 LONG  GASUSDT        5784:    +74.73 ( +1.29%  |  +0.65%) PRICE CHANGE: +1.37%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-10 01:50 LONG  MYROUSDT       5821:    -64.52 ( -1.11%  |  -0.55%) PRICE CHANGE: -1.03%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-10 03:47 LONG  CATIUSDT       5789:   -275.69 ( -4.76%  |  -2.38%) PRICE CHANGE: -4.69%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-10 08:03 LONG  BIGTIMEUSDT    5651:    +21.28 ( +0.38%  |  +0.19%) PRICE CHANGE: +0.46%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-11 10:10 LONG  BIGTIMEUSDT    5662:   +326.43 ( +5.76%  |  +2.88%) PRICE CHANGE: +5.85%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-12 02:20 LONG  ARKUSDT        5825:    +95.93 ( +1.65%  |  +0.82%) PRICE CHANGE: +1.73%
-2025-10-24 21:15:41,674 [INFO] : 2025-04-12 11:17 LONG  JASMYUSDT      5873:    +76.64 ( +1.30%  |  +0.65%) PRICE CHANGE: +1.39%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-13 00:08 LONG  GASUSDT        5911:   +338.45 ( +5.73%  |  +2.86%) PRICE CHANGE: +5.81%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-13 00:28 LONG  GLMUSDT        6081:   -108.60 ( -1.79%  |  -0.89%) PRICE CHANGE: -1.71%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-13 05:18 LONG  LISTAUSDT      6026:   -406.72 ( -6.75%  |  -3.37%) PRICE CHANGE: -6.67%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-13 07:28 LONG  LISTAUSDT      5823:   +341.50 ( +5.86%  |  +2.93%) PRICE CHANGE: +5.95%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-13 21:09 LONG  OMUSDT         5994:   -685.58 (-11.44%  |  -5.72%) PRICE CHANGE: -11.37%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-14 10:14 LONG  OMUSDT         5651:    +19.40 ( +0.34%  |  +0.17%) PRICE CHANGE: +0.42%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-14 12:33 LONG  OMUSDT         5661:    -22.21 ( -0.39%  |  -0.20%) PRICE CHANGE: -0.31%
-2025-10-24 21:15:41,675 [INFO] : 2025-04-14 15:27 LONG  OMUSDT         5649:   +126.07 ( +2.23%  |  +1.12%) PRICE CHANGE: +2.31%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-14 20:08 LONG  OMUSDT         5712:     -3.81 ( -0.07%  |  -0.03%) PRICE CHANGE: +0.01%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-15 04:55 LONG  SXPUSDT        5711:    -88.09 ( -1.54%  |  -0.77%) PRICE CHANGE: -1.46%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-15 10:41 LONG  OMUSDT         5667:    -30.99 ( -0.55%  |  -0.27%) PRICE CHANGE: -0.47%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-15 12:46 LONG  OMUSDT         5651:   -335.25 ( -5.93%  |  -2.97%) PRICE CHANGE: -5.86%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-15 13:36 LONG  ZKUSDT         5483:    -56.55 ( -1.03%  |  -0.52%) PRICE CHANGE: -0.95%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-17 16:06 LONG  OMUSDT         5455:    +59.60 ( +1.09%  |  +0.55%) PRICE CHANGE: +1.17%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-18 16:26 LONG  OMUSDT         5485:    -93.82 ( -1.71%  |  -0.86%) PRICE CHANGE: -1.63%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-19 08:55 LONG  JASMYUSDT      5438:    +46.29 ( +0.85%  |  +0.43%) PRICE CHANGE: +0.93%
-2025-10-24 21:15:41,676 [INFO] : 2025-04-19 10:50 LONG  VOXELUSDT      5461:     +0.56 ( +0.01%  |  +0.01%) PRICE CHANGE: +0.09%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-19 14:15 LONG  VOXELUSDT      5461:    +12.89 ( +0.24%  |  +0.12%) PRICE CHANGE: +0.32%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-19 15:20 LONG  NKNUSDT        5468:    +14.00 ( +0.26%  |  +0.13%) PRICE CHANGE: +0.34%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-19 19:20 LONG  VOXELUSDT      5475:    +57.31 ( +1.05%  |  +0.52%) PRICE CHANGE: +1.13%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-20 00:12 LONG  GMTUSDT        5504:    +66.19 ( +1.20%  |  +0.60%) PRICE CHANGE: +1.28%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-20 00:23 LONG  VOXELUSDT      5537:   +459.77 ( +8.30%  |  +4.15%) PRICE CHANGE: +8.39%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-20 03:18 LONG  NKNUSDT        5767:   +297.39 ( +5.16%  |  +2.58%) PRICE CHANGE: +5.24%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-20 03:22 LONG  FLMUSDT        5915:   +232.23 ( +3.93%  |  +1.96%) PRICE CHANGE: +4.01%
-2025-10-24 21:15:41,677 [INFO] : 2025-04-20 05:14 LONG  FLMUSDT        6031:   +154.35 ( +2.56%  |  +1.28%) PRICE CHANGE: +2.64%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 06:07 LONG  PEOPLEUSDT     6108:   +540.83 ( +8.85%  |  +4.43%) PRICE CHANGE: +8.94%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 08:16 LONG  BELUSDT        6379:   -146.09 ( -2.29%  |  -1.15%) PRICE CHANGE: -2.21%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 08:13 LONG  VOXELUSDT      6306:    -24.18 ( -0.38%  |  -0.19%) PRICE CHANGE: -0.30%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 14:33 LONG  MAGICUSDT      6294:   +713.85 (+11.34%  |  +5.67%) PRICE CHANGE: +11.43%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 14:48 LONG  MBOXUSDT       6651:    +54.44 ( +0.82%  |  +0.41%) PRICE CHANGE: +0.90%
-2025-10-24 21:15:41,678 [INFO] : 2025-04-20 16:07 LONG  ALICEUSDT      6678:   -193.95 ( -2.90%  |  -1.45%) PRICE CHANGE: -2.83%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-20 16:08 LONG  NKNUSDT        6581:    -82.07 ( -1.25%  |  -0.62%) PRICE CHANGE: -1.17%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-20 20:25 LONG  NKNUSDT        6540:   +260.54 ( +3.98%  |  +1.99%) PRICE CHANGE: +4.07%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-21 05:31 SHORT XAIUSDT        6670:    -80.69 ( -1.21%  |  -0.60%) PRICE CHANGE: -1.13%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-21 07:50 LONG  MBOXUSDT       6630:    -48.96 ( -0.74%  |  -0.37%) PRICE CHANGE: -0.66%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-21 10:45 LONG  OMUSDT         6605:   -228.40 ( -3.46%  |  -1.73%) PRICE CHANGE: -3.38%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-21 11:34 LONG  MAGICUSDT      6491:    +72.33 ( +1.11%  |  +0.56%) PRICE CHANGE: +1.20%
-2025-10-24 21:15:41,679 [INFO] : 2025-04-21 12:40 LONG  OMUSDT         6527:    +28.35 ( +0.43%  |  +0.22%) PRICE CHANGE: +0.51%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-21 14:43 LONG  PIXELUSDT      6541:   +160.35 ( +2.45%  |  +1.23%) PRICE CHANGE: +2.53%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-21 15:14 LONG  ALICEUSDT      6622:   -258.17 ( -3.90%  |  -1.95%) PRICE CHANGE: -3.82%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-21 18:51 LONG  MAGICUSDT      6493:    +23.50 ( +0.36%  |  +0.18%) PRICE CHANGE: +0.44%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-21 21:13 LONG  GALAUSDT       6504:    -74.58 ( -1.15%  |  -0.57%) PRICE CHANGE: -1.07%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-22 00:15 LONG  ARKUSDT        6467:    +21.38 ( +0.33%  |  +0.17%) PRICE CHANGE: +0.41%
-2025-10-24 21:15:41,680 [INFO] : 2025-04-22 21:56 LONG  BRETTUSDT      6478:     +4.07 ( +0.06%  |  +0.03%) PRICE CHANGE: +0.14%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-22 22:27 LONG  ENJUSDT        6480:    +78.01 ( +1.20%  |  +0.60%) PRICE CHANGE: +1.28%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 00:28 LONG  IMXUSDT        6519:   +458.39 ( +7.03%  |  +3.52%) PRICE CHANGE: +7.12%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 00:44 SHORT AIUSDT         6748:   +120.56 ( +1.79%  |  +0.89%) PRICE CHANGE: +1.87%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 06:37 LONG  SAGAUSDT       6808:   -245.85 ( -3.61%  |  -1.81%) PRICE CHANGE: -3.53%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 06:44 LONG  SAGAUSDT       6808:    +16.10 ( +0.24%  |  +0.12%) PRICE CHANGE: +0.33%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 06:48 LONG  LPTUSDT        6693:   -171.83 ( -2.57%  |  -1.28%) PRICE CHANGE: -2.49%
-2025-10-24 21:15:41,681 [INFO] : 2025-04-23 06:53 LONG  MASKUSDT       6607:    -52.49 ( -0.79%  |  -0.40%) PRICE CHANGE: -0.71%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 07:22 LONG  NKNUSDT        6581:    +94.26 ( +1.43%  |  +0.72%) PRICE CHANGE: +1.51%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 12:40 SHORT BRETTUSDT      6628:    -50.68 ( -0.76%  |  -0.38%) PRICE CHANGE: -0.68%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 13:06 LONG  IMXUSDT        6603:    -44.45 ( -0.67%  |  -0.34%) PRICE CHANGE: -0.59%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 13:10 LONG  AIUSDT         6581:    +14.31 ( +0.22%  |  +0.11%) PRICE CHANGE: +0.30%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 13:30 LONG  CATIUSDT       6588:    -22.40 ( -0.34%  |  -0.17%) PRICE CHANGE: -0.26%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-23 18:47 LONG  BRETTUSDT      6577:     -2.68 ( -0.04%  |  -0.02%) PRICE CHANGE: +0.04%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-24 00:09 LONG  SYNUSDT        6575:   +501.60 ( +7.63%  |  +3.81%) PRICE CHANGE: +7.71%
-2025-10-24 21:15:41,682 [INFO] : 2025-04-24 13:23 SHORT ETHFIUSDT      6826:    -26.16 ( -0.38%  |  -0.19%) PRICE CHANGE: -0.30%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-24 17:46 LONG  MAGICUSDT      6813:   -120.55 ( -1.77%  |  -0.88%) PRICE CHANGE: -1.69%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-24 20:36 LONG  FLMUSDT        6753:   +168.71 ( +2.50%  |  +1.25%) PRICE CHANGE: +2.58%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-24 21:00 LONG  VOXELUSDT      6837:   -140.62 ( -2.06%  |  -1.03%) PRICE CHANGE: -1.98%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 00:05 LONG  EGLDUSDT       6767:   +134.39 ( +1.99%  |  +0.99%) PRICE CHANGE: +2.07%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 00:14 LONG  FLMUSDT        6834:    +63.73 ( +0.93%  |  +0.47%) PRICE CHANGE: +1.01%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 02:21 LONG  RDNTUSDT       6866:   +646.42 ( +9.41%  |  +4.71%) PRICE CHANGE: +9.50%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 05:06 LONG  RDNTUSDT       7189:    +22.00 ( +0.31%  |  +0.15%) PRICE CHANGE: +0.39%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 05:35 LONG  FLMUSDT        7200:   +826.25 (+11.47%  |  +5.74%) PRICE CHANGE: +11.56%
-2025-10-24 21:15:41,683 [INFO] : 2025-04-25 08:01 LONG  MBOXUSDT       7613:   +120.75 ( +1.59%  |  +0.79%) PRICE CHANGE: +1.67%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 08:04 LONG  MBOXUSDT       7613:    -12.38 ( -0.16%  |  -0.08%) PRICE CHANGE: -0.08%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 08:49 LONG  CHESSUSDT      7667:   -849.59 (-11.08%  |  -5.54%) PRICE CHANGE: -11.01%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 13:10 LONG  FLMUSDT        7243:    +34.17 ( +0.47%  |  +0.24%) PRICE CHANGE: +0.55%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 17:33 LONG  FLMUSDT        7260:    -52.85 ( -0.73%  |  -0.36%) PRICE CHANGE: -0.65%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 19:51 LONG  MYROUSDT       7233:   -174.24 ( -2.41%  |  -1.20%) PRICE CHANGE: -2.33%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-25 22:09 LONG  VOXELUSDT      7146:   +397.62 ( +5.56%  |  +2.78%) PRICE CHANGE: +5.65%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-26 01:36 LONG  MYROUSDT       7345:    +34.85 ( +0.47%  |  +0.24%) PRICE CHANGE: +0.55%
-2025-10-24 21:15:41,684 [INFO] : 2025-04-26 13:12 LONG  FIOUSDT        7362:   +110.00 ( +1.49%  |  +0.75%) PRICE CHANGE: +1.58%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-26 16:16 LONG  COTIUSDT       7417:    -42.30 ( -0.57%  |  -0.29%) PRICE CHANGE: -0.49%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-27 12:39 LONG  XAIUSDT        7396:   +128.84 ( +1.74%  |  +0.87%) PRICE CHANGE: +1.82%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-27 21:32 SHORT IOTAUSDT       7461:    -40.11 ( -0.54%  |  -0.27%) PRICE CHANGE: -0.46%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-28 00:22 SHORT BSVUSDT        7441:    -64.99 ( -0.87%  |  -0.44%) PRICE CHANGE: -0.79%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-28 01:48 LONG  LISTAUSDT      7408:    -27.43 ( -0.37%  |  -0.19%) PRICE CHANGE: -0.29%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-29 02:11 LONG  TOKENUSDT      7394:     +5.45 ( +0.07%  |  +0.04%) PRICE CHANGE: +0.15%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-29 21:13 LONG  OMUSDT         7397:    +23.93 ( +0.32%  |  +0.16%) PRICE CHANGE: +0.40%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-30 08:47 LONG  FLMUSDT        7409:   -258.67 ( -3.49%  |  -1.75%) PRICE CHANGE: -3.41%
-2025-10-24 21:15:41,685 [INFO] : 2025-04-30 08:49 LONG  FLMUSDT        7409:    -80.18 ( -1.08%  |  -0.55%) PRICE CHANGE: -1.04%
-2025-10-24 21:15:41,686 [INFO] : 2025-04-30 10:34 LONG  PIXELUSDT      7240:    -28.17 ( -0.39%  |  -0.19%) PRICE CHANGE: -0.31%
-2025-10-24 21:15:41,686 [INFO] : 2025-04-30 17:05 LONG  FLMUSDT        7226:     -9.39 ( -0.13%  |  -0.06%) PRICE CHANGE: -0.05%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-01 01:11 LONG  CATIUSDT       7221:    -38.56 ( -0.53%  |  -0.27%) PRICE CHANGE: -0.45%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-01 17:18 SHORT BANANAUSDT     7202:    +82.11 ( +1.14%  |  +0.57%) PRICE CHANGE: +1.22%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-02 00:14 LONG  AGLDUSDT       7243:    -31.79 ( -0.44%  |  -0.22%) PRICE CHANGE: -0.36%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-02 03:10 LONG  VOXELUSDT      7227:    -31.81 ( -0.44%  |  -0.22%) PRICE CHANGE: -0.36%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-02 06:48 SHORT BANANAUSDT     7211:    -46.86 ( -0.65%  |  -0.32%) PRICE CHANGE: -0.57%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-03 17:11 LONG  REZUSDT        7187:    +35.84 ( +0.50%  |  +0.25%) PRICE CHANGE: +0.58%
-2025-10-24 21:15:41,686 [INFO] : 2025-05-04 00:15 LONG  ARKUSDT        7205:    -34.38 ( -0.48%  |  -0.24%) PRICE CHANGE: -0.40%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-04 00:54 LONG  BSVUSDT        7188:     +6.44 ( +0.09%  |  +0.04%) PRICE CHANGE: +0.17%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-08 02:40 SHORT TOKENUSDT      7191:    -20.56 ( -0.29%  |  -0.14%) PRICE CHANGE: -0.21%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-08 07:31 LONG  TIAUSDT        7181:    +22.10 ( +0.31%  |  +0.15%) PRICE CHANGE: +0.39%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-08 07:28 LONG  IOUSDT         7192:   -247.22 ( -3.44%  |  -1.72%) PRICE CHANGE: -3.36%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-08 15:29 SHORT FIDAUSDT       7069:     +6.70 ( +0.09%  |  +0.05%) PRICE CHANGE: +0.17%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-10 00:14 LONG  MYROUSDT       7072:   +411.15 ( +5.81%  |  +2.91%) PRICE CHANGE: +5.90%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-10 11:44 LONG  PIXELUSDT      7278:    -28.01 ( -0.38%  |  -0.19%) PRICE CHANGE: -0.31%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-10 15:05 LONG  OMUSDT         7264:   +279.99 ( +3.85%  |  +1.93%) PRICE CHANGE: +3.94%
-2025-10-24 21:15:41,687 [INFO] : 2025-05-11 00:08 LONG  SSVUSDT        7404:    -32.08 ( -0.43%  |  -0.22%) PRICE CHANGE: -0.35%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-11 15:24 LONG  FIDAUSDT       7387:    +97.21 ( +1.32%  |  +0.66%) PRICE CHANGE: +1.40%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-12 07:13 LONG  MBOXUSDT       7436:    +35.64 ( +0.48%  |  +0.24%) PRICE CHANGE: +0.56%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-12 11:23 LONG  KSMUSDT        7454:   +115.01 ( +1.54%  |  +0.77%) PRICE CHANGE: +1.62%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-12 12:16 LONG  1000RATSUSDT   7511:   -264.64 ( -3.52%  |  -1.76%) PRICE CHANGE: -3.45%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-12 22:04 LONG  KDAUSDT        7379:   -175.01 ( -2.37%  |  -1.19%) PRICE CHANGE: -2.29%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-13 01:26 LONG  CATIUSDT       7292:    +23.50 ( +0.32%  |  +0.16%) PRICE CHANGE: +0.40%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-13 06:21 SHORT AXSUSDT        7303:   +199.85 ( +2.74%  |  +1.37%) PRICE CHANGE: +2.82%
-2025-10-24 21:15:41,688 [INFO] : 2025-05-13 06:24 LONG  AXSUSDT        7303:    -77.49 ( -1.06%  |  -0.52%) PRICE CHANGE: -0.95%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-13 15:52 LONG  PEOPLEUSDT     7365:    +67.77 ( +0.92%  |  +0.46%) PRICE CHANGE: +1.00%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-13 19:28 LONG  PEOPLEUSDT     7398:    +32.13 ( +0.43%  |  +0.22%) PRICE CHANGE: +0.51%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-13 21:38 LONG  NKNUSDT        7414:    -42.63 ( -0.57%  |  -0.29%) PRICE CHANGE: -0.50%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-14 00:03 LONG  EGLDUSDT       7393:    -70.21 ( -0.95%  |  -0.47%) PRICE CHANGE: -0.87%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-14 02:53 LONG  1000RATSUSDT   7358:    +14.83 ( +0.20%  |  +0.10%) PRICE CHANGE: +0.28%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-14 06:34 LONG  PEOPLEUSDT     7365:   -253.45 ( -3.44%  |  -1.72%) PRICE CHANGE: -3.36%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-14 13:16 LONG  ONDOUSDT       7239:   +226.13 ( +3.12%  |  +1.56%) PRICE CHANGE: +3.21%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-14 16:19 LONG  PEOPLEUSDT     7352:   -211.22 ( -2.87%  |  -1.44%) PRICE CHANGE: -2.80%
-2025-10-24 21:15:41,689 [INFO] : 2025-05-16 02:43 LONG  1000RATSUSDT   7246:   -140.52 ( -1.94%  |  -0.97%) PRICE CHANGE: -1.86%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-17 01:26 LONG  IOTXUSDT       7176:    -20.17 ( -0.28%  |  -0.14%) PRICE CHANGE: -0.20%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-17 16:17 LONG  PORTALUSDT     7166:   +161.52 ( +2.25%  |  +1.13%) PRICE CHANGE: +2.34%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-19 17:00 LONG  BRETTUSDT      7247:     +2.62 ( +0.04%  |  +0.02%) PRICE CHANGE: +0.12%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-20 10:08 LONG  REIUSDT        7248:    +75.58 ( +1.04%  |  +0.52%) PRICE CHANGE: +1.12%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-21 02:47 LONG  OMUSDT         7286:   +185.99 ( +2.55%  |  +1.28%) PRICE CHANGE: +2.63%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-22 03:40 LONG  LISTAUSDT      7379:    +68.07 ( +0.92%  |  +0.46%) PRICE CHANGE: +1.00%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-24 16:42 LONG  VOXELUSDT      7413:    +14.04 ( +0.19%  |  +0.09%) PRICE CHANGE: +0.27%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-25 03:13 LONG  TRBUSDT        7420:     -8.53 ( -0.11%  |  -0.06%) PRICE CHANGE: -0.04%
-2025-10-24 21:15:41,690 [INFO] : 2025-05-27 05:57 LONG  FLMUSDT        7415:   +198.16 ( +2.67%  |  +1.34%) PRICE CHANGE: +2.75%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-27 15:57 LONG  TRBUSDT        7515:     -4.62 ( -0.06%  |  -0.03%) PRICE CHANGE: +0.02%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-27 21:22 SHORT ZECUSDT        7512:    +59.69 ( +0.79%  |  +0.40%) PRICE CHANGE: +0.87%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-28 03:24 LONG  TRBUSDT        7542:    -69.76 ( -0.92%  |  -0.46%) PRICE CHANGE: -0.85%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-28 21:36 LONG  TONUSDT        7507:    +13.07 ( +0.17%  |  +0.09%) PRICE CHANGE: +0.25%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-29 08:11 SHORT BANANAUSDT     7514:    +62.86 ( +0.84%  |  +0.42%) PRICE CHANGE: +0.92%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-29 08:14 SHORT BANANAUSDT     7514:     +3.77 ( +0.05%  |  +0.03%) PRICE CHANGE: +0.13%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-31 00:14 LONG  OMUSDT         7547:   -103.25 ( -1.37%  |  -0.68%) PRICE CHANGE: -1.29%
-2025-10-24 21:15:41,691 [INFO] : 2025-05-31 00:25 LONG  BRETTUSDT      7495:   -170.13 ( -2.27%  |  -1.13%) PRICE CHANGE: -2.19%
-2025-10-24 21:15:41,692 [INFO]
-[Final Metrics]:
-2025-10-24 21:15:41,692 [INFO] :        total_commission = -10.16%
-2025-10-24 21:15:41,693 [INFO] :          avg_commission = -5.02
-2025-10-24 21:15:41,693 [INFO] :                max_loss = -849.59
-2025-10-24 21:15:41,693 [INFO] :              max_profit = 826.25
-2025-10-24 21:15:41,693 [INFO] :        total_trade_days = 71
-2025-10-24 21:15:41,693 [INFO] :             profit_days = 43 (60.56%)
-2025-10-24 21:15:41,693 [INFO] :    final_balance_change = 40.14%
-2025-10-24 21:15:41,693 [INFO] :          exp_day_change = 0.48%
-2025-10-24 21:15:41,693 [INFO] :            max_drawdown = -11.36%
-2025-10-24 21:15:41,694 [INFO] :                  sharpe = 1.54
-2025-10-24 21:15:41,694 [INFO] :                 sortino = 3.89
-2025-10-24 21:15:41,694 [INFO] :           trades_sharpe = 0.12
-2025-10-24 21:15:41,694 [INFO] :          trades_sortino = 0.18
-2025-10-24 21:15:41,694 [INFO] :                accuracy = 53.3%
-2025-10-24 21:15:41,694 [INFO] :            total_trades = 214
-2025-10-24 21:15:41,695 [INFO] :             total_longs = 195
-2025-10-24 21:15:41,695 [INFO] :            total_shorts = 19
-2025-10-24 21:15:41,695 [INFO] :           longs_correct = 107 (54.9%)
-2025-10-24 21:15:41,695 [INFO] :          shorts_correct = 7 (36.8%)
-2025-10-24 21:15:41,695 [INFO] :      correct_avg_change = 2.21%
-2025-10-24 21:15:41,695 [INFO] :      correct_std_change = 2.61%
-2025-10-24 21:15:41,695 [INFO] :    incorrect_avg_change = -1.51%
-2025-10-24 21:15:41,695 [INFO] :    incorrect_std_change = 1.94%
-2025-10-24 21:15:41,696 [INFO] :        avg_trade_amount = 6266.50
-2025-10-24 21:15:41,696 [INFO] :          trades_per_day = 3.01
+TL;DR: Текущая загруженная версия `third_party/rl-trading-binance/optimize_cfg.py` синтаксически корректна и реализует «информативные» сохранения: Parquet+CSV (fallback), `trials.jsonl`, топ-таблицы, Pareto, importances, `system_info.json`, а также пишет `duration_s/seed/trial_cache_dir` в `user_attrs` (проверено по файлу ). Структура артефактов и пути соответствуют требованиям README/SYSTEM_PROMPT — всё складывается в `output/<config_name>/optuna_cfg_optimization_results/` . Ниже — короткий отчёт и один небольшой защитный патч (idempotent), чтобы избежать падений на конфигурациях без полей `extra_cache_dir` и блоков risk-management.
+
+---
+
+## Проверка применённых изменений
+
+| Пункт                                               | Статус | Деталь                                                                                        |
+| --------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| Parquet+CSV экспорт                                 | OK     | `_safe_save_df` пишет Parquet (если движок есть) и всегда CSV; логирует путь                  |
+| Полный дамп триалов                                 | OK     | `trials.jsonl` по всем полям (values/params/user_attrs/timings)                               |
+| Топ-таблицы                                         | OK     | `top_by_pnl/accuracy/neg_trades` (CSV/JSON), сортировки корректные (по `values_0/1/2`)        |
+| Pareto-набор                                        | OK     | `pareto_trials.json` по `study.best_trials` (MO-режим)                                        |
+| Importances                                         | OK*    | `optuna.importance` с `target=lambda t: t.values[0]`; при недоступности — warning, не падает  |
+| System info                                         | OK     | `system_info.json` с версиями Python/Optuna/Pandas и UTC-штампом                              |
+| Логи времени                                        | OK     | `duration_s` + `random_seed` + `trial_cache_dir` в `user_attrs`                               |
+| Выводы/артефакты в `output/<config_name>/`          | OK     | путь `opt_dir = <base_cfg.paths.output_dir>/optuna_cfg_optimization_results` соблюдён         |
+| Совместимость с пайплайном README (Optuna → топ-10) | OK     | ожидаемый вызов извлечения топ-триалов поддержан (файлы готовы для чтения)                    |
+
+* В multi-objective это валидно: мы явно задаём целевую метрику для importance (PnL).
+
+### Быстрая синтакс-проверка
+
+Файл компилируется без ошибок (я выполнил компиляцию Python-байткода локально).
+
+---
+
+## Замеченные потенциальные риски
+
+1. **`cfg.paths.extra_cache_dir`**. В коде используется новое поле:
+
+```python
+cfg.paths.extra_cache_dir = trial_cache_dir
+```
+
+Если поле отсутствует в модели `MasterConfig.paths`, возможен `AttributeError`/валидационная ошибка.
+2) **Блок risk-management в search space**:
+
+```python
+cfg.backtest.use_risk_management = ...
+cfg.backtest.stop_loss / take_profit / trailing_stop = ...
+```
+
+Если этих полей нет в `Backtest`-секции модели, присваивание может «сломать» конфиг.
+
+Оба пункта легко устраняются маленькой «обёрткой» (без изменения логики оптимизации): **ставим значения только если поле существует**, иначе пишем их как `user_attrs` триала (чтобы информация не терялась и отчёты оставались полными).
+
+---
+
+## Мини-патч (идемпотентная защита от несовместимых полей)
+
+```diff
+*** a/third_party/rl-trading-binance/optimize_cfg.py
+--- b/third_party/rl-trading-binance/optimize_cfg.py
+@@
+-    cfg.paths.extra_cache_dir = trial_cache_dir
++    # set trial-specific cache dir only if model supports it
++    if hasattr(cfg.paths, "extra_cache_dir"):
++        cfg.paths.extra_cache_dir = trial_cache_dir
++    else:
++        trial.set_user_attr("extra_cache_dir", trial_cache_dir)
+@@
+-    cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
+-    if cfg.backtest.use_risk_management:
+-        cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
+-        cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
+-        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+-    else:
+-        cfg.backtest.stop_loss = cfg.backtest.take_profit = cfg.backtest.trailing_stop = 0.0
++    # risk-management knobs only if fields exist in config model
++    if hasattr(cfg.backtest, "use_risk_management"):
++        cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
++        if cfg.backtest.use_risk_management:
++            if hasattr(cfg.backtest, "stop_loss"):
++                cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
++            if hasattr(cfg.backtest, "take_profit"):
++                cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
++            if hasattr(cfg.backtest, "trailing_stop"):
++                cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
++        else:
++            # если поля есть — сбросим; если нет — просто зафиксируем в user_attrs
++            if hasattr(cfg.backtest, "stop_loss"): cfg.backtest.stop_loss = 0.0
++            if hasattr(cfg.backtest, "take_profit"): cfg.backtest.take_profit = 0.0
++            if hasattr(cfg.backtest, "trailing_stop"): cfg.backtest.trailing_stop = 0.0
++    else:
++        # нет полей — сохраним выбранные значения в user_attrs (для отчётов/аналитики)
++        _use_rm = trial.suggest_categorical("use_rm", [True, False])
++        attrs = {"use_rm": _use_rm}
++        if _use_rm:
++            attrs.update({
++                "stop_loss": trial.suggest_float("stop_loss", 0.005, 0.03),
++                "take_profit": trial.suggest_float("take_profit", 0.01, 0.05),
++                "trailing_stop": trial.suggest_float("trail", 0.001, 0.02),
++            })
++        else:
++            attrs.update({"stop_loss": 0.0, "take_profit": 0.0, "trailing_stop": 0.0})
++        trial.set_user_attr("risk_management", attrs)
+```
+
+Это **не меняет** ранее добавленную информативную отчётность, а лишь исключает падения при несовпадении структуры `MasterConfig`/`Backtest` с полями risk-management и `extra_cache_dir` (т.е. повышает устойчивость, сохраняя всю аналитику в `user_attrs`) — полностью в духе требований к артефактам/отчётам из SYSTEM_PROMPT и README проекта .
+
+---
+
+## Рекомендованные команды проверки
+
+1. Быстрый smoke-run (CPU, мало триалов):
+
+```powershell
+python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 5 --jobs 1 --topn 5
+```
+
+2. Ожидаемые артефакты в
+   `C:\Python\Prosperous_Bot\output\alpha\optuna_cfg_optimization_results\`:
+
+* `trials.parquet` **и** `trials.csv`
+* `trials.jsonl`, `pareto_trials.json`, `param_importances_pnl.json`, `system_info.json`
+* `top_by_pnl.*`, `top_by_accuracy.*`, `top_by_neg_trades.*`
+* `best_backtest_cfg.json`, `optuna_history.png`, `pareto.png`
+  (каталог и файлы подтверждены логикой текущего скрипта ).
+
+3. Извлечение топ-10:
+
+```powershell
+python third_party/rl-trading-binance/get_info_from_optuna.py third_party/rl-trading-binance/configs/alpha.py --n-best-trials 10
+```
