@@ -267,12 +267,21 @@ class PaperTrader:
         direction = "LONG" if action == 1 else "SHORT"
         position_size = self.balance * self.cfg.backtest.position_fraction
 
+        # --- NEW: Initialize risk management state ---
+        rm_state = {}
+        if self.cfg.backtest.use_risk_management:
+            if direction == "LONG":
+                rm_state["trailing_max_price"] = entry_price
+            else: # SHORT
+                rm_state["trailing_min_price"] = entry_price
+
         self.open_positions[symbol] = {
             "direction": direction,
             "entry_price": entry_price,
             "entry_time": signal_dt,
             "size": position_size,
             "close_time": signal_dt + dt.timedelta(minutes=self.cfg.seq.agent_session_len),
+            **rm_state
         }
         logging.info(
             f"PAPER TRADE OPEN: {direction} {symbol} at {entry_price:.4f} (Size: {position_size:.2f} USDT)"
@@ -281,14 +290,10 @@ class PaperTrader:
     def _update_and_close_positions(self):
         """Periodically check and close open positions."""
         now = self._get_current_time()
-        symbols_to_close = []
-        for symbol, pos in self.open_positions.items():
-            if now >= pos["close_time"]:
-                symbols_to_close.append(symbol)
+        symbols_to_close: List[Tuple[str, str]] = [] # (symbol, exit_reason)
 
-        for symbol in symbols_to_close:
-            pos = self.open_positions.pop(symbol)
-            
+        # --- NEW: Enhanced closing logic with Risk Management ---
+        for symbol, pos in list(self.open_positions.items()):
             # --- NEW: Get the correct close price ---
             # In websocket mode, use the buffer. In DB mode, query the price at close_time.
             if self.cfg.paper.source == "websocket":
@@ -296,15 +301,54 @@ class PaperTrader:
                     logging.warning(f"Cannot close position for {symbol}, buffer is empty.")
                     continue
                 current_price = self.buffers[symbol][-1]["close"]
+                current_ts = self.buffers[symbol][-1]["ts"]
             else: # database mode
                 with create_engine(self.cfg.db.dsn).connect() as conn:
                     query = text("SELECT close FROM v_klines_1m_npz WHERE symbol = :symbol AND ts = :ts")
-                    result = conn.execute(query, {"symbol": symbol, "ts": int(pos["close_time"].timestamp() * 1000)}).scalar_one_or_none()
+                    # Use current simulated time to get the price
+                    result = conn.execute(query, {"symbol": symbol, "ts": int(now.timestamp() * 1000)}).scalar_one_or_none()
                     if result is None:
-                        logging.warning(f"Could not find close price for {symbol} at {pos['close_time']}. Skipping PnL calculation.")
-                        continue
+                        # If no price at 'now', maybe the position should have closed earlier. Try pos['close_time'].
+                        result = conn.execute(query, {"symbol": symbol, "ts": int(pos['close_time'].timestamp() * 1000)}).scalar_one_or_none()
+                        if result is None:
+                            logging.warning(f"Could not find close price for {symbol} at {now} or {pos['close_time']}. Skipping check.")
+                            continue
                     current_price = float(result)
+                    current_ts = now
 
+            exit_reason = None
+            if self.cfg.backtest.use_risk_management and pos["direction"] == "LONG":
+                pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
+                if current_price <= pos["entry_price"] * (1 - self.cfg.backtest.stop_loss):
+                    exit_reason = "SL"
+                elif current_price >= pos["entry_price"] * (1 + self.cfg.backtest.take_profit):
+                    exit_reason = "TP"
+                elif current_price <= pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop):
+                    exit_reason = "TSL"
+
+            elif self.cfg.backtest.use_risk_management and pos["direction"] == "SHORT":
+                pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
+                if current_price >= pos["entry_price"] * (1 + self.cfg.backtest.stop_loss):
+                    exit_reason = "SL"
+                elif current_price <= pos["entry_price"] * (1 - self.cfg.backtest.take_profit):
+                    exit_reason = "TP"
+                elif current_price >= pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop):
+                    exit_reason = "TSL"
+
+            if now >= pos["close_time"] and not exit_reason:
+                exit_reason = "Time"
+
+            if exit_reason:
+                symbols_to_close.append((symbol, exit_reason, current_price, current_ts))
+
+        for symbol, exit_reason, current_price, close_ts in symbols_to_close:
+            if symbol not in self.open_positions:
+                continue # Already closed in this loop
+            pos = self.open_positions.pop(symbol)
+
+            if current_price is None:
+                logging.warning(f"Could not find close price for {symbol} at {close_ts}. Skipping PnL calculation.")
+                continue
 
             # Simplified PnL calculation
             if pos["direction"] == "LONG":
@@ -323,17 +367,18 @@ class PaperTrader:
                 "symbol": symbol,
                 "direction": pos["direction"],
                 "entry_time": pos["entry_time"].isoformat(),
-                "close_time": now.isoformat(),
+                "close_time": close_ts.isoformat(),
                 "entry_price": pos["entry_price"],
                 "close_price": current_price,
                 "pnl": net_pnl,
                 "balance": self.balance,
+                "exit_reason": exit_reason,
             }
             self.trades_log.append(trade_record)
-            self.equity_curve.append({"ts": now.isoformat(), "balance": self.balance})
+            self.equity_curve.append({"ts": close_ts.isoformat(), "balance": self.balance})
 
             logging.info(
-                f"PAPER TRADE CLOSE: {pos['direction']} {symbol} at {current_price:.4f}. PnL: {net_pnl:+.2f} USDT. New Balance: {self.balance:.2f} USDT"
+                f"PAPER TRADE CLOSE ({exit_reason}): {pos['direction']} {symbol} at {current_price:.4f}. PnL: {net_pnl:+.2f} USDT. New Balance: {self.balance:.2f} USDT"
             )
 
     def _run_from_websocket(self):

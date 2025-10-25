@@ -103,3 +103,6 @@ output/alpha/plots/backtest_balance_curve.png
 output/alpha/optuna_cfg_optimization_results/orig_master_cfg.json
 output/alpha/plots/backtest_balance_curve.png
 output/alpha/logs/backtest_session.log
+output/alpha/paper_trader/paper_equity.csv
+output/alpha/logs/paper_trader_session.log
+output/alpha/paper_trader/paper_trades.csv
