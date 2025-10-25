@@ -288,10 +288,19 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
                 SELECT
                     ts,
                     symbol,
-                    -- Absolute change over the 'window_minutes'
-                    (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
-                    -- Average absolute return in the preceding 'context_minutes'
-                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
+                    -- NEW: Conditional logic for lookahead
+                    CASE
+                        WHEN {str(detector_cfg.use_lookahead).lower()} THEN
+                            (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 -- Заглядываем вперед
+                        ELSE
+                            (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 -- Смотрим только в прошлое
+                    END AS abs_change,
+                    CASE
+                        WHEN {str(detector_cfg.use_lookahead).lower()} THEN
+                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) -- Контекст для lookahead
+                        ELSE
+                            AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) -- Контекст для "честного" режима
+                    END AS avg_abs_ret_pre
                 FROM minute_returns
             )
             SELECT ts, symbol

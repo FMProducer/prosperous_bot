@@ -143,7 +143,7 @@ cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_b
 # --- NEW: Spike Detector Configuration ---
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
-cfg.detector.use_lookahead = True # IMPORTANT: This should be True for backtesting/dataset creation
+cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
 cfg.detector.abs_change_pct = 5.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 30

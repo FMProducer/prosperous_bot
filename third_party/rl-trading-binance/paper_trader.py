@@ -208,10 +208,11 @@ class PaperTrader:
 
         # Get action from agent
         action = self._get_agent_action(session_data)
+        entry_price = df.loc[signal_dt]['close']
 
         # Execute trade
         if action in [1, 2]:  # LONG or SHORT
-            self._execute_trade(symbol, action, signal_dt)
+            self._execute_trade(symbol, action, signal_dt, entry_price)
 
     def _get_agent_action(self, session_data: np.ndarray) -> int:
         """Get a trading action from the RL agent."""
@@ -253,7 +254,7 @@ class PaperTrader:
 
         return action
 
-    def _execute_trade(self, symbol: str, action: int, signal_dt: dt.datetime):
+    def _execute_trade(self, symbol: str, action: int, signal_dt: dt.datetime, entry_price: float):
         """Open a paper trade."""
         if symbol in self.open_positions:
             logging.warning(f"Already have an open position for {symbol}. Skipping new trade.")
@@ -265,7 +266,6 @@ class PaperTrader:
 
         direction = "LONG" if action == 1 else "SHORT"
         position_size = self.balance * self.cfg.backtest.position_fraction
-        entry_price = self.buffers[symbol][-1]["close"]  # Use last close price as entry
 
         self.open_positions[symbol] = {
             "direction": direction,
@@ -288,7 +288,23 @@ class PaperTrader:
 
         for symbol in symbols_to_close:
             pos = self.open_positions.pop(symbol)
-            current_price = self.buffers[symbol][-1]["close"]
+            
+            # --- NEW: Get the correct close price ---
+            # In websocket mode, use the buffer. In DB mode, query the price at close_time.
+            if self.cfg.paper.source == "websocket":
+                if not self.buffers[symbol]:
+                    logging.warning(f"Cannot close position for {symbol}, buffer is empty.")
+                    continue
+                current_price = self.buffers[symbol][-1]["close"]
+            else: # database mode
+                with create_engine(self.cfg.db.dsn).connect() as conn:
+                    query = text("SELECT close FROM v_klines_1m_npz WHERE symbol = :symbol AND ts = :ts")
+                    result = conn.execute(query, {"symbol": symbol, "ts": int(pos["close_time"].timestamp() * 1000)}).scalar_one_or_none()
+                    if result is None:
+                        logging.warning(f"Could not find close price for {symbol} at {pos['close_time']}. Skipping PnL calculation.")
+                        continue
+                    current_price = float(result)
+
 
             # Simplified PnL calculation
             if pos["direction"] == "LONG":
@@ -350,66 +366,50 @@ class PaperTrader:
         start_utc = self.cfg.backtest.time_range["start_utc"]
         end_utc = self.cfg.backtest.time_range["end_utc"]
         symbols = self.symbols_to_trade
-
-        all_signals = []
-
-        # 1. Iterate through the time range minute by minute and find signals efficiently.
+        
+        # --- NEW: Use the efficient SQL query from backtest_engine.py ---
         try:
             logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
             engine = create_engine(self.cfg.db.dsn)
             with engine.connect() as conn:
-                # This loop simulates the live environment by stepping through time.
-                current_time = pd.to_datetime(start_utc)
-                end_time = pd.to_datetime(end_utc)
-                
-                pbar = pd.date_range(start=current_time, end=end_time, freq='min')
-                for t in pbar:
-                    # For each minute, check which symbols have a spike.
-                    # This is a placeholder for a more optimized SQL query that would do this on the DB side.
-                    # For now, we load a small window for each symbol to check for a spike.
-                    
-                    # Check cooldowns first to avoid unnecessary DB queries
-                    active_symbols = [s for s in symbols if t >= self.cooldowns.get(s, t)]
-                    if not active_symbols:
-                        continue
+                detector_cfg = self.cfg.detector
+                # IMPORTANT: For paper trading simulation, we must not look ahead.
+                # The find_spike_windows function already handles this with use_lookahead=False,
+                # but the SQL query needs to be adjusted to find spikes based on past data.
+                # This query is simplified for demonstration; a full real-time replication is complex.
+                # For now, we use the same performant query as the backtester, acknowledging this small deviation.
+                query = text(f"""
+                WITH minute_returns AS (
+                    SELECT ts, symbol, close, (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
+                    FROM v_klines_1m_npz WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
+                ),
+                rolling_stats AS (
+                    SELECT ts, symbol,
+                        (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
+                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
+                    FROM minute_returns
+                )
+                SELECT ts, symbol FROM rolling_stats
+                WHERE ABS(abs_change) * 100.0 >= :abs_change_pct AND (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
+                ORDER BY ts, symbol;
+                """)
+                found_spikes_df = pd.read_sql(query, conn, params={
+                    "symbols": symbols,
+                    "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+                    "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
+                    "abs_change_pct": detector_cfg.abs_change_pct,
+                    "contrast_min": detector_cfg.contrast_min,
+                })
+                found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
 
-                    # Load a small window of data around the current time `t` for all active symbols
-                    window_start = t - dt.timedelta(minutes=self.cfg.detector.context_minutes + self.cfg.detector.window_minutes)
-                    
-                    query = text(
-                        "SELECT ts, symbol, close FROM v_klines_1m_npz "
-                        "WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts <= :end_ts ORDER BY ts ASC;"
-                    )
-                    df_batch = pd.read_sql(query, conn, params={
-                        "symbols": active_symbols,
-                        "start_ts": int(window_start.timestamp() * 1000),
-                        "end_ts": int(t.timestamp() * 1000)
-                    })
-
-                    if df_batch.empty:
-                        continue
-                    
-                    df_batch['ts'] = pd.to_datetime(df_batch['ts'], unit='ms', utc=True)
-
-                    for symbol, df_symbol in df_batch.groupby('symbol'):
-                        df_symbol = df_symbol.set_index('ts')
-                        spike_windows = find_spike_windows(
-                            df_symbol,
-                            context_minutes=self.cfg.detector.context_minutes,
-                            window_minutes=self.cfg.detector.window_minutes,
-                            abs_change_threshold_pct=self.cfg.detector.abs_change_pct,
-                            contrast_min=self.cfg.detector.contrast_min,
-                            cooldown_minutes=self.cfg.detector.cooldown_minutes,
-                            use_lookahead=False,
-                        )
-                        
-                        # We only care about signals that happened exactly at time `t`
-                        for *_, session_start, _, _ in spike_windows:
-                            if session_start == t:
-                                all_signals.append({"symbol": symbol, "signal_dt": session_start})
-                                # Apply cooldown immediately
-                                self.cooldowns[symbol] = t + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
-                                break # Move to the next symbol
+            # Apply cooldown
+            all_signals = []
+            last_signal_time = {}
+            for _, row in found_spikes_df.iterrows():
+                symbol, signal_dt = row['symbol'], row['ts']
+                if signal_dt > last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
+                    all_signals.append({"symbol": symbol, "signal_dt": signal_dt})
+                    last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg.cooldown_minutes)
 
         except Exception as e:
             logging.error(f"Failed to load historical data from database: {e}", exc_info=True)
@@ -418,6 +418,7 @@ class PaperTrader:
         # Signals are already chronological. Now we process them.
         logging.info(f"Found {len(all_signals)} total signals across all symbols. Starting high-speed simulation...")
 
+        engine = create_engine(self.cfg.db.dsn)
         for signal in all_signals:
             # For each found signal, load the full data window required for the agent
             symbol = signal["symbol"]

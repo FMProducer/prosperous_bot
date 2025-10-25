@@ -31,3 +31,1450 @@
 2025-10-25 04:03:24,193 [INFO] Using 257 symbols for paper trading.
 2025-10-25 04:03:24,194 [INFO] Starting trader in 'database' (high-speed simulation) mode.
 2025-10-25 04:03:24,194 [INFO] Scanning for signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 04:21:05,378 [INFO] Shutdown signal received.
+2025-10-25 04:21:05,378 [INFO] Shutting down Paper Trader...
+2025-10-25 04:21:05,382 [INFO] Saved 0 trades to paper_trades.csv
+2025-10-25 04:21:05,384 [INFO] Saved equity curve to paper_equity.csv
+2025-10-25 04:21:05,384 [INFO] Shutdown complete.
+2025-10-25 04:21:22,505 [INFO] Logging to: output\alpha\logs\paper_trader_session.log
+2025-10-25 04:21:22,507 [INFO] Random seed set to 25
+2025-10-25 04:21:22,507 [INFO] Using model from config file: C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth
+2025-10-25 04:21:22,516 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:21:22,580 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:21:22,582 [INFO] Policy Net with 254.4K parameters created in Agent
+2025-10-25 04:21:22,582 [INFO] Target Net with 254.4K parameters created in Agent
+2025-10-25 04:21:24,270 [INFO] Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-25 04:21:24,270 [INFO] D3QN_PER_Agent initialized.
+2025-10-25 04:21:24,310 [INFO] Model loaded from C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth (checkpoint).
+2025-10-25 04:21:24,311 [INFO] Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-25 04:21:32,284 [INFO] Using 257 symbols for paper trading.
+2025-10-25 04:21:32,284 [INFO] Starting trader in 'database' (high-speed simulation) mode.
+2025-10-25 04:21:32,285 [INFO] Scanning for signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 04:24:53,384 [INFO] Found 1172 total signals across all symbols. Starting high-speed simulation...
+2025-10-25 04:24:53,527 [INFO] Spike signal detected for MEMEUSDT at 2025-08-01 00:35:00+00:00
+2025-10-25 04:24:54,105 [INFO] Spike signal detected for ENAUSDT at 2025-08-01 14:10:00+00:00
+2025-10-25 04:24:54,116 [INFO] Spike signal detected for MAGICUSDT at 2025-08-01 19:57:00+00:00
+2025-10-25 04:24:54,124 [INFO] Spike signal detected for MAGICUSDT at 2025-08-01 21:31:00+00:00
+2025-10-25 04:24:54,135 [INFO] Spike signal detected for SPELLUSDT at 2025-08-02 10:10:00+00:00
+2025-10-25 04:24:54,145 [INFO] Spike signal detected for MAGICUSDT at 2025-08-02 16:02:00+00:00
+2025-10-25 04:24:54,154 [INFO] Spike signal detected for USTCUSDT at 2025-08-03 01:27:00+00:00
+2025-10-25 04:24:54,164 [INFO] Spike signal detected for CFXUSDT at 2025-08-03 03:36:00+00:00
+2025-10-25 04:24:54,173 [INFO] Spike signal detected for CKBUSDT at 2025-08-03 10:08:00+00:00
+2025-10-25 04:24:54,183 [INFO] Spike signal detected for MAGICUSDT at 2025-08-03 16:07:00+00:00
+2025-10-25 04:24:54,192 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 05:47:00+00:00
+2025-10-25 04:24:54,202 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 13:41:00+00:00
+2025-10-25 04:24:54,211 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 15:29:00+00:00
+2025-10-25 04:24:54,221 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 17:08:00+00:00
+2025-10-25 04:24:54,229 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 18:08:00+00:00
+2025-10-25 04:24:54,240 [INFO] Spike signal detected for RAREUSDT at 2025-08-04 18:26:00+00:00
+2025-10-25 04:24:54,250 [INFO] Spike signal detected for RAREUSDT at 2025-08-04 22:15:00+00:00
+2025-10-25 04:24:54,266 [INFO] Spike signal detected for GASUSDT at 2025-08-05 00:05:00+00:00
+2025-10-25 04:24:54,270 [INFO] Shutting down Paper Trader...
+2025-10-25 04:24:54,276 [INFO] Saved 0 trades to paper_trades.csv
+2025-10-25 04:24:54,277 [INFO] Saved equity curve to paper_equity.csv
+2025-10-25 04:24:54,278 [INFO] Shutdown complete.
+2025-10-25 04:26:41,810 [INFO] Logging to: output\alpha\logs\paper_trader_session.log
+2025-10-25 04:26:41,814 [INFO] Random seed set to 25
+2025-10-25 04:26:41,814 [INFO] Using model from config file: C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth
+2025-10-25 04:26:41,823 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:26:41,891 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:26:41,893 [INFO] Policy Net with 254.4K parameters created in Agent
+2025-10-25 04:26:41,893 [INFO] Target Net with 254.4K parameters created in Agent
+2025-10-25 04:26:43,776 [INFO] Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-25 04:26:43,776 [INFO] D3QN_PER_Agent initialized.
+2025-10-25 04:26:43,825 [INFO] Model loaded from C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth (checkpoint).
+2025-10-25 04:26:43,826 [INFO] Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-25 04:27:02,256 [INFO] Using 257 symbols for paper trading.
+2025-10-25 04:27:02,256 [INFO] Starting trader in 'database' (high-speed simulation) mode.
+2025-10-25 04:27:02,257 [INFO] Scanning for signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 04:30:29,389 [INFO] Found 1172 total signals across all symbols. Starting high-speed simulation...
+2025-10-25 04:30:29,533 [INFO] Spike signal detected for MEMEUSDT at 2025-08-01 00:35:00+00:00
+2025-10-25 04:30:30,130 [INFO] Spike signal detected for ENAUSDT at 2025-08-01 14:10:00+00:00
+2025-10-25 04:30:30,140 [INFO] Spike signal detected for MAGICUSDT at 2025-08-01 19:57:00+00:00
+2025-10-25 04:30:30,150 [INFO] Spike signal detected for MAGICUSDT at 2025-08-01 21:31:00+00:00
+2025-10-25 04:30:30,162 [INFO] Spike signal detected for SPELLUSDT at 2025-08-02 10:10:00+00:00
+2025-10-25 04:30:30,172 [INFO] Spike signal detected for MAGICUSDT at 2025-08-02 16:02:00+00:00
+2025-10-25 04:30:30,183 [INFO] Spike signal detected for USTCUSDT at 2025-08-03 01:27:00+00:00
+2025-10-25 04:30:30,192 [INFO] Spike signal detected for CFXUSDT at 2025-08-03 03:36:00+00:00
+2025-10-25 04:30:30,200 [INFO] Spike signal detected for CKBUSDT at 2025-08-03 10:08:00+00:00
+2025-10-25 04:30:30,210 [INFO] Spike signal detected for MAGICUSDT at 2025-08-03 16:07:00+00:00
+2025-10-25 04:30:30,220 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 05:47:00+00:00
+2025-10-25 04:30:30,230 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 13:41:00+00:00
+2025-10-25 04:30:30,238 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 15:29:00+00:00
+2025-10-25 04:30:30,248 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 17:08:00+00:00
+2025-10-25 04:30:30,257 [INFO] Spike signal detected for MAGICUSDT at 2025-08-04 18:08:00+00:00
+2025-10-25 04:30:30,267 [INFO] Spike signal detected for RAREUSDT at 2025-08-04 18:26:00+00:00
+2025-10-25 04:30:30,278 [INFO] Spike signal detected for RAREUSDT at 2025-08-04 22:15:00+00:00
+2025-10-25 04:30:30,293 [INFO] Spike signal detected for GASUSDT at 2025-08-05 00:05:00+00:00
+2025-10-25 04:30:30,297 [INFO] PAPER TRADE OPEN: LONG GASUSDT at 3.2250 (Size: 5000.00 USDT)
+2025-10-25 04:30:30,303 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 01:05:00+00:00
+2025-10-25 04:30:30,418 [INFO] PAPER TRADE CLOSE: LONG GASUSDT at 3.2790. PnL: +79.69 USDT. New Balance: 10079.69 USDT
+2025-10-25 04:30:30,423 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 03:02:00+00:00
+2025-10-25 04:30:30,432 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 03:33:00+00:00
+2025-10-25 04:30:30,441 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 04:04:00+00:00
+2025-10-25 04:30:30,449 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 04:43:00+00:00
+2025-10-25 04:30:30,460 [INFO] Spike signal detected for MAGICUSDT at 2025-08-05 05:01:00+00:00
+2025-10-25 04:30:30,467 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 05:54:00+00:00
+2025-10-25 04:30:30,478 [INFO] Spike signal detected for RAREUSDT at 2025-08-05 08:55:00+00:00
+2025-10-25 04:30:30,487 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 09:41:00+00:00
+2025-10-25 04:30:30,497 [INFO] Spike signal detected for SYNUSDT at 2025-08-05 09:48:00+00:00
+2025-10-25 04:30:30,506 [INFO] Spike signal detected for RAREUSDT at 2025-08-05 10:17:00+00:00
+2025-10-25 04:30:30,514 [INFO] Spike signal detected for RAREUSDT at 2025-08-05 12:04:00+00:00
+2025-10-25 04:30:30,522 [INFO] Spike signal detected for BBUSDT at 2025-08-05 13:27:00+00:00
+2025-10-25 04:30:30,532 [INFO] Spike signal detected for BICOUSDT at 2025-08-05 14:30:00+00:00
+2025-10-25 04:30:30,543 [INFO] Spike signal detected for VANRYUSDT at 2025-08-05 19:33:00+00:00
+2025-10-25 04:30:30,552 [INFO] Spike signal detected for ILVUSDT at 2025-08-05 23:12:00+00:00
+2025-10-25 04:30:30,561 [INFO] Spike signal detected for ILVUSDT at 2025-08-06 00:04:00+00:00
+2025-10-25 04:30:30,571 [INFO] Spike signal detected for GASUSDT at 2025-08-06 00:24:00+00:00
+2025-10-25 04:30:30,581 [INFO] Spike signal detected for SPELLUSDT at 2025-08-06 09:40:00+00:00
+2025-10-25 04:30:30,590 [INFO] Spike signal detected for ILVUSDT at 2025-08-06 09:53:00+00:00
+2025-10-25 04:30:30,600 [INFO] Spike signal detected for SPELLUSDT at 2025-08-06 11:34:00+00:00
+2025-10-25 04:30:30,609 [INFO] Spike signal detected for ILVUSDT at 2025-08-06 13:02:00+00:00
+2025-10-25 04:30:30,617 [INFO] Spike signal detected for HFTUSDT at 2025-08-06 20:24:00+00:00
+2025-10-25 04:30:30,621 [INFO] PAPER TRADE OPEN: LONG HFTUSDT at 0.0767 (Size: 5039.84 USDT)
+2025-10-25 04:30:30,627 [INFO] Spike signal detected for SPELLUSDT at 2025-08-06 22:46:00+00:00
+2025-10-25 04:30:30,840 [INFO] PAPER TRADE CLOSE: LONG HFTUSDT at 0.0749. PnL: -124.82 USDT. New Balance: 9954.86 USDT
+2025-10-25 04:30:30,845 [INFO] Spike signal detected for SPELLUSDT at 2025-08-06 23:19:00+00:00
+2025-10-25 04:30:30,854 [INFO] Spike signal detected for SPELLUSDT at 2025-08-07 01:10:00+00:00
+2025-10-25 04:30:30,865 [INFO] Spike signal detected for FIOUSDT at 2025-08-07 07:25:00+00:00
+2025-10-25 04:30:30,877 [INFO] Spike signal detected for MAVUSDT at 2025-08-07 09:37:00+00:00
+2025-10-25 04:30:30,889 [INFO] Spike signal detected for FXSUSDT at 2025-08-07 09:52:00+00:00
+2025-10-25 04:30:30,900 [INFO] Spike signal detected for RAREUSDT at 2025-08-07 15:43:00+00:00
+2025-10-25 04:30:30,909 [INFO] Spike signal detected for RAREUSDT at 2025-08-07 16:15:00+00:00
+2025-10-25 04:30:30,918 [INFO] Spike signal detected for BBUSDT at 2025-08-07 20:34:00+00:00
+2025-10-25 04:30:30,927 [INFO] Spike signal detected for BBUSDT at 2025-08-07 21:45:00+00:00
+2025-10-25 04:30:30,937 [INFO] Spike signal detected for PENDLEUSDT at 2025-08-07 22:02:00+00:00
+2025-10-25 04:30:30,946 [INFO] Spike signal detected for BBUSDT at 2025-08-07 23:50:00+00:00
+2025-10-25 04:30:30,958 [INFO] Spike signal detected for MAGICUSDT at 2025-08-08 08:56:00+00:00
+2025-10-25 04:30:30,968 [INFO] Spike signal detected for MAGICUSDT at 2025-08-08 10:09:00+00:00
+2025-10-25 04:30:30,979 [INFO] Spike signal detected for GHSTUSDT at 2025-08-08 11:57:00+00:00
+2025-10-25 04:30:30,987 [INFO] Spike signal detected for FIOUSDT at 2025-08-08 13:57:00+00:00
+2025-10-25 04:30:30,996 [INFO] Spike signal detected for FIOUSDT at 2025-08-08 15:30:00+00:00
+2025-10-25 04:30:31,007 [INFO] Spike signal detected for MOVRUSDT at 2025-08-08 16:17:00+00:00
+2025-10-25 04:30:31,011 [INFO] PAPER TRADE OPEN: LONG MOVRUSDT at 7.2020 (Size: 4977.43 USDT)
+2025-10-25 04:30:31,019 [INFO] Spike signal detected for VOXELUSDT at 2025-08-08 16:54:00+00:00
+2025-10-25 04:30:31,129 [INFO] PAPER TRADE CLOSE: LONG MOVRUSDT at 6.7720. PnL: -301.04 USDT. New Balance: 9653.82 USDT
+2025-10-25 04:30:31,137 [INFO] Spike signal detected for WUSDT at 2025-08-08 18:01:00+00:00
+2025-10-25 04:30:31,146 [INFO] Spike signal detected for BEAMXUSDT at 2025-08-08 20:15:00+00:00
+2025-10-25 04:30:31,156 [INFO] Spike signal detected for FIOUSDT at 2025-08-09 00:06:00+00:00
+2025-10-25 04:30:31,165 [INFO] Spike signal detected for FIOUSDT at 2025-08-09 01:54:00+00:00
+2025-10-25 04:30:31,175 [INFO] Spike signal detected for MAGICUSDT at 2025-08-09 07:34:00+00:00
+2025-10-25 04:30:31,183 [INFO] Spike signal detected for MAGICUSDT at 2025-08-09 08:07:00+00:00
+2025-10-25 04:30:31,193 [INFO] Spike signal detected for TURBOUSDT at 2025-08-09 09:01:00+00:00
+2025-10-25 04:30:31,205 [INFO] Spike signal detected for HFTUSDT at 2025-08-09 12:50:00+00:00
+2025-10-25 04:30:31,214 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-09 15:39:00+00:00
+2025-10-25 04:30:31,218 [INFO] PAPER TRADE OPEN: LONG 1000RATSUSDT at 0.0174 (Size: 4826.91 USDT)
+2025-10-25 04:30:31,224 [INFO] Spike signal detected for HFTUSDT at 2025-08-09 15:42:00+00:00
+2025-10-25 04:30:31,235 [INFO] Spike signal detected for USTCUSDT at 2025-08-09 16:02:00+00:00
+2025-10-25 04:30:31,238 [INFO] PAPER TRADE OPEN: LONG USTCUSDT at 0.0149 (Size: 4826.91 USDT)
+2025-10-25 04:30:31,347 [INFO] PAPER TRADE CLOSE: LONG 1000RATSUSDT at 0.0176. PnL: +68.36 USDT. New Balance: 9722.18 USDT
+2025-10-25 04:30:31,354 [INFO] Spike signal detected for HFTUSDT at 2025-08-09 17:11:00+00:00
+2025-10-25 04:30:31,450 [INFO] PAPER TRADE CLOSE: LONG USTCUSDT at 0.0144. PnL: -145.20 USDT. New Balance: 9576.98 USDT
+2025-10-25 04:30:31,456 [INFO] Spike signal detected for HFTUSDT at 2025-08-09 17:49:00+00:00
+2025-10-25 04:30:31,464 [INFO] Spike signal detected for HFTUSDT at 2025-08-09 18:23:00+00:00
+2025-10-25 04:30:31,474 [INFO] Spike signal detected for GMXUSDT at 2025-08-09 19:35:00+00:00
+2025-10-25 04:30:31,478 [INFO] PAPER TRADE OPEN: LONG GMXUSDT at 16.6690 (Size: 4788.49 USDT)
+2025-10-25 04:30:31,483 [INFO] Spike signal detected for GMXUSDT at 2025-08-09 20:14:00+00:00
+2025-10-25 04:30:31,597 [INFO] PAPER TRADE CLOSE: LONG GMXUSDT at 16.8520. PnL: +48.72 USDT. New Balance: 9625.70 USDT
+2025-10-25 04:30:31,604 [INFO] Spike signal detected for LDOUSDT at 2025-08-09 21:12:00+00:00
+2025-10-25 04:30:31,612 [INFO] Spike signal detected for GMXUSDT at 2025-08-09 21:27:00+00:00
+2025-10-25 04:30:31,621 [INFO] Spike signal detected for GMXUSDT at 2025-08-09 22:26:00+00:00
+2025-10-25 04:30:31,629 [INFO] Spike signal detected for GMXUSDT at 2025-08-09 23:20:00+00:00
+2025-10-25 04:30:31,639 [INFO] Spike signal detected for GLMUSDT at 2025-08-10 00:01:00+00:00
+2025-10-25 04:30:31,643 [INFO] PAPER TRADE OPEN: LONG GLMUSDT at 0.2786 (Size: 4812.85 USDT)
+2025-10-25 04:30:31,649 [INFO] Spike signal detected for ARKUSDT at 2025-08-10 00:06:00+00:00
+2025-10-25 04:30:31,652 [INFO] PAPER TRADE OPEN: LONG ARKUSDT at 0.4969 (Size: 4812.85 USDT)
+2025-10-25 04:30:31,658 [INFO] Spike signal detected for GMXUSDT at 2025-08-10 00:10:00+00:00
+2025-10-25 04:30:31,667 [INFO] Spike signal detected for GMXUSDT at 2025-08-10 00:44:00+00:00
+2025-10-25 04:30:31,887 [INFO] PAPER TRADE CLOSE: LONG GLMUSDT at 0.2790. PnL: +4.09 USDT. New Balance: 9629.79 USDT
+2025-10-25 04:30:32,091 [INFO] PAPER TRADE CLOSE: LONG ARKUSDT at 0.4813. PnL: -154.89 USDT. New Balance: 9474.90 USDT
+2025-10-25 04:30:32,097 [INFO] Spike signal detected for BSVUSDT at 2025-08-10 01:11:00+00:00
+2025-10-25 04:30:32,108 [INFO] Spike signal detected for ENSUSDT at 2025-08-10 01:13:00+00:00
+2025-10-25 04:30:32,122 [INFO] Spike signal detected for SAGAUSDT at 2025-08-10 01:17:00+00:00
+2025-10-25 04:30:32,127 [INFO] PAPER TRADE OPEN: LONG SAGAUSDT at 0.3101 (Size: 4737.45 USDT)
+2025-10-25 04:30:32,132 [INFO] Spike signal detected for GMXUSDT at 2025-08-10 01:18:00+00:00
+2025-10-25 04:30:32,142 [INFO] Spike signal detected for MYROUSDT at 2025-08-10 14:19:00+00:00
+2025-10-25 04:30:32,146 [INFO] PAPER TRADE OPEN: LONG MYROUSDT at 0.0230 (Size: 4737.45 USDT)
+2025-10-25 04:30:32,252 [INFO] PAPER TRADE CLOSE: LONG SAGAUSDT at 0.2874. PnL: -350.44 USDT. New Balance: 9124.46 USDT
+2025-10-25 04:30:32,260 [INFO] Spike signal detected for UNIUSDT at 2025-08-10 14:32:00+00:00
+2025-10-25 04:30:32,371 [INFO] PAPER TRADE CLOSE: LONG MYROUSDT at 0.0233. PnL: +66.31 USDT. New Balance: 9190.77 USDT
+2025-10-25 04:30:32,376 [INFO] Spike signal detected for FIOUSDT at 2025-08-10 14:37:00+00:00
+2025-10-25 04:30:32,386 [INFO] Spike signal detected for RPLUSDT at 2025-08-10 15:16:00+00:00
+2025-10-25 04:30:32,390 [INFO] PAPER TRADE OPEN: LONG RPLUSDT at 8.7850 (Size: 4595.38 USDT)
+2025-10-25 04:30:32,397 [INFO] Spike signal detected for STGUSDT at 2025-08-10 17:21:00+00:00
+2025-10-25 04:30:32,499 [INFO] PAPER TRADE CLOSE: LONG RPLUSDT at 8.8260. PnL: +17.76 USDT. New Balance: 9208.53 USDT
+2025-10-25 04:30:32,506 [INFO] Spike signal detected for REZUSDT at 2025-08-10 17:30:00+00:00
+2025-10-25 04:30:32,517 [INFO] Spike signal detected for ZROUSDT at 2025-08-10 17:50:00+00:00
+2025-10-25 04:30:32,526 [INFO] Spike signal detected for EDUUSDT at 2025-08-10 18:25:00+00:00
+2025-10-25 04:30:32,534 [INFO] Spike signal detected for ZROUSDT at 2025-08-10 18:32:00+00:00
+2025-10-25 04:30:32,543 [INFO] Spike signal detected for BSVUSDT at 2025-08-11 00:08:00+00:00
+2025-10-25 04:30:32,547 [INFO] PAPER TRADE OPEN: LONG BSVUSDT at 30.5000 (Size: 4604.26 USDT)
+2025-10-25 04:30:32,554 [INFO] Spike signal detected for LISTAUSDT at 2025-08-11 02:44:00+00:00
+2025-10-25 04:30:32,665 [INFO] PAPER TRADE CLOSE: LONG BSVUSDT at 30.0300. PnL: -74.61 USDT. New Balance: 9133.92 USDT
+2025-10-25 04:30:32,674 [INFO] Spike signal detected for LISTAUSDT at 2025-08-11 09:13:00+00:00
+2025-10-25 04:30:32,682 [INFO] Spike signal detected for LISTAUSDT at 2025-08-11 09:45:00+00:00
+2025-10-25 04:30:32,693 [INFO] Spike signal detected for MAGICUSDT at 2025-08-11 10:45:00+00:00
+2025-10-25 04:30:32,703 [INFO] Spike signal detected for KAVAUSDT at 2025-08-11 12:11:00+00:00
+2025-10-25 04:30:32,707 [INFO] PAPER TRADE OPEN: SHORT KAVAUSDT at 0.3628 (Size: 4566.96 USDT)
+2025-10-25 04:30:32,715 [INFO] Spike signal detected for XTZUSDT at 2025-08-11 12:16:00+00:00
+2025-10-25 04:30:32,725 [INFO] Spike signal detected for FIOUSDT at 2025-08-11 12:48:00+00:00
+2025-10-25 04:30:32,729 [INFO] PAPER TRADE OPEN: LONG FIOUSDT at 0.0216 (Size: 4566.96 USDT)
+2025-10-25 04:30:32,833 [INFO] PAPER TRADE CLOSE: SHORT KAVAUSDT at 0.3750. PnL: -157.29 USDT. New Balance: 8976.63 USDT
+2025-10-25 04:30:32,839 [INFO] Spike signal detected for MBOXUSDT at 2025-08-11 13:45:00+00:00
+2025-10-25 04:30:32,843 [INFO] PAPER TRADE OPEN: LONG MBOXUSDT at 0.0616 (Size: 4488.32 USDT)
+2025-10-25 04:30:32,937 [INFO] PAPER TRADE CLOSE: LONG FIOUSDT at 0.0215. PnL: -20.56 USDT. New Balance: 8956.07 USDT
+2025-10-25 04:30:32,942 [INFO] Spike signal detected for MBOXUSDT at 2025-08-11 14:16:00+00:00
+2025-10-25 04:30:33,053 [INFO] PAPER TRADE CLOSE: LONG MBOXUSDT at 0.0617. PnL: +3.69 USDT. New Balance: 8959.76 USDT
+2025-10-25 04:30:33,060 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 15:25:00+00:00
+2025-10-25 04:30:33,070 [INFO] Spike signal detected for UNIUSDT at 2025-08-11 16:00:00+00:00
+2025-10-25 04:30:33,074 [INFO] PAPER TRADE OPEN: LONG UNIUSDT at 11.4370 (Size: 4479.88 USDT)
+2025-10-25 04:30:33,081 [INFO] Spike signal detected for GHSTUSDT at 2025-08-11 16:18:00+00:00
+2025-10-25 04:30:33,200 [INFO] PAPER TRADE CLOSE: LONG UNIUSDT at 11.6840. PnL: +93.13 USDT. New Balance: 9052.89 USDT
+2025-10-25 04:30:33,205 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 16:24:00+00:00
+2025-10-25 04:30:33,213 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 16:55:00+00:00
+2025-10-25 04:30:33,222 [INFO] Spike signal detected for GHSTUSDT at 2025-08-11 17:19:00+00:00
+2025-10-25 04:30:33,231 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 17:29:00+00:00
+2025-10-25 04:30:33,241 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 20:42:00+00:00
+2025-10-25 04:30:33,251 [INFO] Spike signal detected for MYROUSDT at 2025-08-11 22:23:00+00:00
+2025-10-25 04:30:33,260 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 07:30:00+00:00
+2025-10-25 04:30:33,264 [INFO] PAPER TRADE OPEN: LONG CYBERUSDT at 4.4730 (Size: 4526.45 USDT)
+2025-10-25 04:30:33,270 [INFO] Spike signal detected for CATIUSDT at 2025-08-12 07:39:00+00:00
+2025-10-25 04:30:33,273 [INFO] PAPER TRADE OPEN: LONG CATIUSDT at 0.1011 (Size: 4526.45 USDT)
+2025-10-25 04:30:33,280 [INFO] Spike signal detected for MAGICUSDT at 2025-08-12 07:44:00+00:00
+2025-10-25 04:30:33,401 [INFO] PAPER TRADE CLOSE: LONG CYBERUSDT at 4.0170. PnL: -464.89 USDT. New Balance: 8588.01 USDT
+2025-10-25 04:30:33,406 [INFO] Spike signal detected for EDUUSDT at 2025-08-12 07:45:00+00:00
+2025-10-25 04:30:33,414 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 08:11:00+00:00
+2025-10-25 04:30:33,514 [INFO] PAPER TRADE CLOSE: LONG CATIUSDT at 0.0996. PnL: -68.53 USDT. New Balance: 8519.48 USDT
+2025-10-25 04:30:33,519 [INFO] Spike signal detected for CATIUSDT at 2025-08-12 08:33:00+00:00
+2025-10-25 04:30:33,528 [INFO] Spike signal detected for EDUUSDT at 2025-08-12 09:00:00+00:00
+2025-10-25 04:30:33,536 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 09:06:00+00:00
+2025-10-25 04:30:33,543 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 09:44:00+00:00
+2025-10-25 04:30:33,552 [INFO] Spike signal detected for EDUUSDT at 2025-08-12 10:00:00+00:00
+2025-10-25 04:30:33,560 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 10:22:00+00:00
+2025-10-25 04:30:33,568 [INFO] Spike signal detected for CYBERUSDT at 2025-08-12 11:21:00+00:00
+2025-10-25 04:30:33,578 [INFO] Spike signal detected for CHESSUSDT at 2025-08-12 12:27:00+00:00
+2025-10-25 04:30:33,582 [INFO] PAPER TRADE OPEN: LONG CHESSUSDT at 0.0746 (Size: 4259.74 USDT)
+2025-10-25 04:30:33,589 [INFO] Spike signal detected for ETHFIUSDT at 2025-08-12 12:30:00+00:00
+2025-10-25 04:30:33,593 [INFO] PAPER TRADE OPEN: LONG ETHFIUSDT at 1.2220 (Size: 4259.74 USDT)
+2025-10-25 04:30:33,599 [INFO] Spike signal detected for LDOUSDT at 2025-08-12 12:30:00+00:00
+2025-10-25 04:30:33,603 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:33,609 [INFO] Spike signal detected for XTZUSDT at 2025-08-12 12:30:00+00:00
+2025-10-25 04:30:33,621 [INFO] Spike signal detected for ENAUSDT at 2025-08-12 12:31:00+00:00
+2025-10-25 04:30:33,631 [INFO] Spike signal detected for SSVUSDT at 2025-08-12 12:31:00+00:00
+2025-10-25 04:30:33,635 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:33,640 [INFO] Spike signal detected for ARUSDT at 2025-08-12 12:32:00+00:00
+2025-10-25 04:30:33,645 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:33,650 [INFO] Spike signal detected for BRETTUSDT at 2025-08-12 12:32:00+00:00
+2025-10-25 04:30:33,660 [INFO] Spike signal detected for RPLUSDT at 2025-08-12 12:33:00+00:00
+2025-10-25 04:30:33,671 [INFO] Spike signal detected for MAVUSDT at 2025-08-12 13:16:00+00:00
+2025-10-25 04:30:33,786 [INFO] PAPER TRADE CLOSE: LONG CHESSUSDT at 0.0728. PnL: -108.99 USDT. New Balance: 8410.49 USDT
+2025-10-25 04:30:33,882 [INFO] PAPER TRADE CLOSE: LONG ETHFIUSDT at 1.2326. PnL: +33.53 USDT. New Balance: 8444.02 USDT
+2025-10-25 04:30:33,889 [INFO] Spike signal detected for MYROUSDT at 2025-08-12 14:28:00+00:00
+2025-10-25 04:30:33,899 [INFO] Spike signal detected for UMAUSDT at 2025-08-12 14:36:00+00:00
+2025-10-25 04:30:33,907 [INFO] Spike signal detected for UMAUSDT at 2025-08-12 15:14:00+00:00
+2025-10-25 04:30:33,918 [INFO] Spike signal detected for NTRNUSDT at 2025-08-12 16:47:00+00:00
+2025-10-25 04:30:33,930 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 00:23:00+00:00
+2025-10-25 04:30:33,938 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 01:13:00+00:00
+2025-10-25 04:30:33,947 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 02:15:00+00:00
+2025-10-25 04:30:33,957 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 05:42:00+00:00
+2025-10-25 04:30:33,966 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 08:01:00+00:00
+2025-10-25 04:30:33,975 [INFO] Spike signal detected for SKLUSDT at 2025-08-13 10:05:00+00:00
+2025-10-25 04:30:33,985 [INFO] Spike signal detected for MAVUSDT at 2025-08-13 11:03:00+00:00
+2025-10-25 04:30:33,995 [INFO] Spike signal detected for MYROUSDT at 2025-08-13 12:13:00+00:00
+2025-10-25 04:30:34,005 [INFO] Spike signal detected for GTCUSDT at 2025-08-13 14:12:00+00:00
+2025-10-25 04:30:34,013 [INFO] Spike signal detected for GTCUSDT at 2025-08-13 14:43:00+00:00
+2025-10-25 04:30:34,022 [INFO] Spike signal detected for GTCUSDT at 2025-08-13 16:03:00+00:00
+2025-10-25 04:30:34,030 [INFO] Spike signal detected for GTCUSDT at 2025-08-13 16:42:00+00:00
+2025-10-25 04:30:34,040 [INFO] Spike signal detected for TWTUSDT at 2025-08-13 18:26:00+00:00
+2025-10-25 04:30:34,050 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 00:12:00+00:00
+2025-10-25 04:30:34,061 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 00:28:00+00:00
+2025-10-25 04:30:34,070 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 05:01:00+00:00
+2025-10-25 04:30:34,078 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 06:10:00+00:00
+2025-10-25 04:30:34,087 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 08:11:00+00:00
+2025-10-25 04:30:34,095 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 08:45:00+00:00
+2025-10-25 04:30:34,104 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 08:47:00+00:00
+2025-10-25 04:30:34,114 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 09:17:00+00:00
+2025-10-25 04:30:34,123 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 09:36:00+00:00
+2025-10-25 04:30:34,133 [INFO] Spike signal detected for LISTAUSDT at 2025-08-14 09:56:00+00:00
+2025-10-25 04:30:34,137 [INFO] PAPER TRADE OPEN: LONG LISTAUSDT at 0.3139 (Size: 4222.01 USDT)
+2025-10-25 04:30:34,142 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 10:15:00+00:00
+2025-10-25 04:30:34,252 [INFO] PAPER TRADE CLOSE: LONG LISTAUSDT at 0.3118. PnL: -31.61 USDT. New Balance: 8412.41 USDT
+2025-10-25 04:30:34,257 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 10:27:00+00:00
+2025-10-25 04:30:34,266 [INFO] Spike signal detected for CHESSUSDT at 2025-08-14 10:33:00+00:00
+2025-10-25 04:30:34,270 [INFO] PAPER TRADE OPEN: LONG CHESSUSDT at 0.0787 (Size: 4206.20 USDT)
+2025-10-25 04:30:34,275 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 11:11:00+00:00
+2025-10-25 04:30:34,389 [INFO] PAPER TRADE CLOSE: LONG CHESSUSDT at 0.0769. PnL: -102.20 USDT. New Balance: 8310.21 USDT
+2025-10-25 04:30:34,396 [INFO] Spike signal detected for POPCATUSDT at 2025-08-14 12:32:00+00:00
+2025-10-25 04:30:34,407 [INFO] Spike signal detected for 1000BONKUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,416 [INFO] Spike signal detected for BOMEUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,425 [INFO] Spike signal detected for BRETTUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,437 [INFO] Spike signal detected for ETHFIUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,447 [INFO] Spike signal detected for MAVUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,457 [INFO] Spike signal detected for MEMEUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,461 [INFO] PAPER TRADE OPEN: SHORT MEMEUSDT at 0.0020 (Size: 4155.10 USDT)
+2025-10-25 04:30:34,468 [INFO] Spike signal detected for NEIROUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,471 [INFO] PAPER TRADE OPEN: SHORT NEIROUSDT at 0.0004 (Size: 4155.10 USDT)
+2025-10-25 04:30:34,479 [INFO] Spike signal detected for PEOPLEUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,488 [INFO] Spike signal detected for REZUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,499 [INFO] Spike signal detected for WIFUSDT at 2025-08-14 12:33:00+00:00
+2025-10-25 04:30:34,510 [INFO] Spike signal detected for 1000FLOKIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,520 [INFO] Spike signal detected for 1000LUNCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,529 [INFO] Spike signal detected for 1000PEPEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,538 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,541 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:34,547 [INFO] Spike signal detected for 1000SATSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,556 [INFO] Spike signal detected for 1000SHIBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,565 [INFO] Spike signal detected for 1INCHUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,574 [INFO] Spike signal detected for 1MBABYDOGEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,583 [INFO] Spike signal detected for ACEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,591 [INFO] Spike signal detected for ACHUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,600 [INFO] Spike signal detected for ADAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,608 [INFO] Spike signal detected for AEVOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,616 [INFO] Spike signal detected for AIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,625 [INFO] Spike signal detected for ALGOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,635 [INFO] Spike signal detected for ALICEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,644 [INFO] Spike signal detected for ALTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,652 [INFO] Spike signal detected for API3USDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,661 [INFO] Spike signal detected for ARBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,670 [INFO] Spike signal detected for ARKMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,678 [INFO] Spike signal detected for ARKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,686 [INFO] Spike signal detected for ARUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,695 [INFO] Spike signal detected for ATOMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,704 [INFO] Spike signal detected for AVAXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,712 [INFO] Spike signal detected for AXLUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,721 [INFO] Spike signal detected for BANDUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,729 [INFO] Spike signal detected for BATUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,737 [INFO] Spike signal detected for BBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,746 [INFO] Spike signal detected for BEAMXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,754 [INFO] Spike signal detected for BELUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,763 [INFO] Spike signal detected for BLURUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,770 [INFO] Spike signal detected for C98USDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,779 [INFO] Spike signal detected for CATIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,787 [INFO] Spike signal detected for CELOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,796 [INFO] Spike signal detected for CELRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,804 [INFO] Spike signal detected for CFXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,812 [INFO] Spike signal detected for CHESSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,820 [INFO] Spike signal detected for CHRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,830 [INFO] Spike signal detected for CHZUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,837 [INFO] Spike signal detected for CKBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,846 [INFO] Spike signal detected for COMPUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,854 [INFO] Spike signal detected for COTIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,866 [INFO] Spike signal detected for CRVUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,879 [INFO] Spike signal detected for CTSIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,892 [INFO] Spike signal detected for CYBERUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,903 [INFO] Spike signal detected for DENTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,914 [INFO] Spike signal detected for DODOXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,924 [INFO] Spike signal detected for DOGEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,933 [INFO] Spike signal detected for DOGSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,944 [INFO] Spike signal detected for DOTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,952 [INFO] Spike signal detected for DUSKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,960 [INFO] Spike signal detected for DYDXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,969 [INFO] Spike signal detected for DYMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,977 [INFO] Spike signal detected for EDUUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,987 [INFO] Spike signal detected for ENAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:34,996 [INFO] Spike signal detected for ENJUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,005 [INFO] Spike signal detected for ENSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,016 [INFO] Spike signal detected for ETCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,026 [INFO] Spike signal detected for ETHWUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,035 [INFO] Spike signal detected for FETUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,045 [INFO] Spike signal detected for FIDAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,056 [INFO] Spike signal detected for FILUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,065 [INFO] Spike signal detected for FIOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,074 [INFO] Spike signal detected for FLMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,085 [INFO] Spike signal detected for GALAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,095 [INFO] Spike signal detected for GHSTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,104 [INFO] Spike signal detected for GLMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,115 [INFO] Spike signal detected for GMTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,124 [INFO] Spike signal detected for GMXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,136 [INFO] Spike signal detected for GRTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,144 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,154 [INFO] Spike signal detected for HBARUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,163 [INFO] Spike signal detected for HFTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,172 [INFO] Spike signal detected for HMSTRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,182 [INFO] Spike signal detected for HOOKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,191 [INFO] Spike signal detected for HOTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,202 [INFO] Spike signal detected for IDUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,211 [INFO] Spike signal detected for ILVUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,221 [INFO] Spike signal detected for IMXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,231 [INFO] Spike signal detected for INJUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,240 [INFO] Spike signal detected for IOSTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,250 [INFO] Spike signal detected for IOTAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,261 [INFO] Spike signal detected for IOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,270 [INFO] Spike signal detected for JASMYUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,281 [INFO] Spike signal detected for JOEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,290 [INFO] Spike signal detected for JUPUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,300 [INFO] Spike signal detected for KASUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,309 [INFO] Spike signal detected for KDAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,319 [INFO] Spike signal detected for KNCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,329 [INFO] Spike signal detected for KSMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,338 [INFO] Spike signal detected for LDOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,348 [INFO] Spike signal detected for LINKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,357 [INFO] Spike signal detected for LISTAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,365 [INFO] Spike signal detected for LPTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,375 [INFO] Spike signal detected for LQTYUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,386 [INFO] Spike signal detected for LRCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,396 [INFO] Spike signal detected for LUNA2USDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,407 [INFO] Spike signal detected for MAGICUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,416 [INFO] Spike signal detected for MANAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,427 [INFO] Spike signal detected for MANTAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,435 [INFO] Spike signal detected for MBOXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,446 [INFO] Spike signal detected for METISUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,456 [INFO] Spike signal detected for MEWUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,467 [INFO] Spike signal detected for MINAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,478 [INFO] Spike signal detected for MOVRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,487 [INFO] Spike signal detected for MYROUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,497 [INFO] Spike signal detected for NEOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,507 [INFO] Spike signal detected for NFPUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,516 [INFO] Spike signal detected for NMRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,526 [INFO] Spike signal detected for NOTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,537 [INFO] Spike signal detected for NTRNUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,548 [INFO] Spike signal detected for OMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,557 [INFO] Spike signal detected for ONEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,567 [INFO] Spike signal detected for ONTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,578 [INFO] Spike signal detected for OPUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,589 [INFO] Spike signal detected for ORDIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,599 [INFO] Spike signal detected for PENDLEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,608 [INFO] Spike signal detected for PHBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,618 [INFO] Spike signal detected for PIXELUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,628 [INFO] Spike signal detected for POLUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,639 [INFO] Spike signal detected for PORTALUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,648 [INFO] Spike signal detected for POWRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,652 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:35,660 [INFO] Spike signal detected for PYTHUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,669 [INFO] Spike signal detected for QTUMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,679 [INFO] Spike signal detected for QUICKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,682 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:35,689 [INFO] Spike signal detected for RDNTUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,698 [INFO] Spike signal detected for REIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,708 [INFO] Spike signal detected for RENDERUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,719 [INFO] Spike signal detected for ROSEUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,729 [INFO] Spike signal detected for RVNUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,739 [INFO] Spike signal detected for SAGAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,749 [INFO] Spike signal detected for SANDUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,758 [INFO] Spike signal detected for SEIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,768 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,777 [INFO] Spike signal detected for SNXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,786 [INFO] Spike signal detected for SOLUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,796 [INFO] Spike signal detected for SSVUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,806 [INFO] Spike signal detected for STEEMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,816 [INFO] Spike signal detected for STRKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,826 [INFO] Spike signal detected for STXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,836 [INFO] Spike signal detected for SUIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,846 [INFO] Spike signal detected for SUSHIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,856 [INFO] Spike signal detected for SYNUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,865 [INFO] Spike signal detected for SYSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,875 [INFO] Spike signal detected for TAOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,886 [INFO] Spike signal detected for THETAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,896 [INFO] Spike signal detected for TIAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,904 [INFO] Spike signal detected for TLMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,908 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:35,915 [INFO] Spike signal detected for TNSRUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,925 [INFO] Spike signal detected for TOKENUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,935 [INFO] Spike signal detected for TRBUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,945 [INFO] Spike signal detected for TRUUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,955 [INFO] Spike signal detected for TURBOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,965 [INFO] Spike signal detected for UMAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,975 [INFO] Spike signal detected for UNIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,985 [INFO] Spike signal detected for USTCUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:35,995 [INFO] Spike signal detected for VANRYUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,005 [INFO] Spike signal detected for WLDUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,014 [INFO] Spike signal detected for WOOUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,023 [INFO] Spike signal detected for WUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,033 [INFO] Spike signal detected for XAIUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,043 [INFO] Spike signal detected for XLMUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,053 [INFO] Spike signal detected for XRPUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,063 [INFO] Spike signal detected for XVGUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,072 [INFO] Spike signal detected for XVSUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,081 [INFO] Spike signal detected for YGGUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,091 [INFO] Spike signal detected for ZENUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,101 [INFO] Spike signal detected for ZETAUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,110 [INFO] Spike signal detected for ZKUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,119 [INFO] Spike signal detected for ZROUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,128 [INFO] Spike signal detected for ZRXUSDT at 2025-08-14 12:34:00+00:00
+2025-10-25 04:30:36,137 [INFO] Spike signal detected for BANANAUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,146 [INFO] Spike signal detected for BNTUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,156 [INFO] Spike signal detected for EGLDUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,166 [INFO] Spike signal detected for FXSUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,175 [INFO] Spike signal detected for ICXUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,185 [INFO] Spike signal detected for ONDOUSDT at 2025-08-14 12:35:00+00:00
+2025-10-25 04:30:36,196 [INFO] Spike signal detected for HIGHUSDT at 2025-08-14 12:36:00+00:00
+2025-10-25 04:30:36,206 [INFO] Spike signal detected for VOXELUSDT at 2025-08-14 12:36:00+00:00
+2025-10-25 04:30:36,216 [INFO] Spike signal detected for NKNUSDT at 2025-08-14 12:39:00+00:00
+2025-10-25 04:30:36,224 [INFO] Spike signal detected for GTCUSDT at 2025-08-14 13:11:00+00:00
+2025-10-25 04:30:36,333 [INFO] PAPER TRADE CLOSE: SHORT MEMEUSDT at 0.0019. PnL: +7.32 USDT. New Balance: 8317.52 USDT
+2025-10-25 04:30:36,432 [INFO] PAPER TRADE CLOSE: SHORT NEIROUSDT at 0.0004. PnL: +48.70 USDT. New Balance: 8366.22 USDT
+2025-10-25 04:30:36,437 [INFO] Spike signal detected for MEMEUSDT at 2025-08-14 13:11:00+00:00
+2025-10-25 04:30:36,445 [INFO] Spike signal detected for BRETTUSDT at 2025-08-14 13:13:00+00:00
+2025-10-25 04:30:36,453 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 13:24:00+00:00
+2025-10-25 04:30:36,463 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 15:17:00+00:00
+2025-10-25 04:30:36,472 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 15:59:00+00:00
+2025-10-25 04:30:36,483 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 22:54:00+00:00
+2025-10-25 04:30:36,493 [INFO] Spike signal detected for SKLUSDT at 2025-08-14 23:41:00+00:00
+2025-10-25 04:30:36,504 [INFO] Spike signal detected for SKLUSDT at 2025-08-15 05:46:00+00:00
+2025-10-25 04:30:36,515 [INFO] Spike signal detected for MAGICUSDT at 2025-08-15 11:07:00+00:00
+2025-10-25 04:30:36,523 [INFO] Spike signal detected for MAGICUSDT at 2025-08-15 11:39:00+00:00
+2025-10-25 04:30:36,533 [INFO] Spike signal detected for GASUSDT at 2025-08-16 00:01:00+00:00
+2025-10-25 04:30:36,537 [INFO] PAPER TRADE OPEN: LONG GASUSDT at 3.4530 (Size: 4183.11 USDT)
+2025-10-25 04:30:36,544 [INFO] Spike signal detected for ILVUSDT at 2025-08-16 01:09:00+00:00
+2025-10-25 04:30:36,653 [INFO] PAPER TRADE CLOSE: LONG GASUSDT at 3.4480. PnL: -9.40 USDT. New Balance: 8356.82 USDT
+2025-10-25 04:30:36,659 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-16 03:04:00+00:00
+2025-10-25 04:30:36,668 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 09:43:00+00:00
+2025-10-25 04:30:36,675 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 10:36:00+00:00
+2025-10-25 04:30:36,685 [INFO] Spike signal detected for LRCUSDT at 2025-08-16 10:48:00+00:00
+2025-10-25 04:30:36,695 [INFO] Spike signal detected for RAREUSDT at 2025-08-16 10:58:00+00:00
+2025-10-25 04:30:36,706 [INFO] Spike signal detected for SKLUSDT at 2025-08-16 11:18:00+00:00
+2025-10-25 04:30:36,715 [INFO] Spike signal detected for LRCUSDT at 2025-08-16 11:27:00+00:00
+2025-10-25 04:30:36,723 [INFO] Spike signal detected for API3USDT at 2025-08-16 11:39:00+00:00
+2025-10-25 04:30:36,731 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 11:50:00+00:00
+2025-10-25 04:30:36,739 [INFO] Spike signal detected for API3USDT at 2025-08-16 12:10:00+00:00
+2025-10-25 04:30:36,747 [INFO] Spike signal detected for API3USDT at 2025-08-16 13:01:00+00:00
+2025-10-25 04:30:36,755 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 14:22:00+00:00
+2025-10-25 04:30:36,765 [INFO] Spike signal detected for CHRUSDT at 2025-08-16 15:18:00+00:00
+2025-10-25 04:30:36,773 [INFO] Spike signal detected for BATUSDT at 2025-08-16 16:04:00+00:00
+2025-10-25 04:30:36,782 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-16 16:49:00+00:00
+2025-10-25 04:30:36,793 [INFO] Spike signal detected for OGNUSDT at 2025-08-16 16:55:00+00:00
+2025-10-25 04:30:36,797 [INFO] PAPER TRADE OPEN: LONG OGNUSDT at 0.0692 (Size: 4178.41 USDT)
+2025-10-25 04:30:36,802 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 17:15:00+00:00
+2025-10-25 04:30:36,919 [INFO] PAPER TRADE CLOSE: LONG OGNUSDT at 0.0755. PnL: +376.91 USDT. New Balance: 8733.73 USDT
+2025-10-25 04:30:36,924 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-16 17:20:00+00:00
+2025-10-25 04:30:36,927 [INFO] PAPER TRADE OPEN: SHORT 1000RATSUSDT at 0.0190 (Size: 4366.87 USDT)
+2025-10-25 04:30:36,932 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 17:58:00+00:00
+2025-10-25 04:30:37,052 [INFO] PAPER TRADE CLOSE: SHORT 1000RATSUSDT at 0.0191. PnL: -26.52 USDT. New Balance: 8707.21 USDT
+2025-10-25 04:30:37,056 [INFO] Spike signal detected for CHRUSDT at 2025-08-16 22:05:00+00:00
+2025-10-25 04:30:37,065 [INFO] Spike signal detected for CTSIUSDT at 2025-08-16 23:04:00+00:00
+2025-10-25 04:30:37,074 [INFO] Spike signal detected for SKLUSDT at 2025-08-16 23:04:00+00:00
+2025-10-25 04:30:37,083 [INFO] Spike signal detected for SKLUSDT at 2025-08-17 00:12:00+00:00
+2025-10-25 04:30:37,087 [INFO] PAPER TRADE OPEN: SHORT SKLUSDT at 0.0380 (Size: 4353.60 USDT)
+2025-10-25 04:30:37,092 [INFO] Spike signal detected for BBUSDT at 2025-08-17 00:23:00+00:00
+2025-10-25 04:30:37,204 [INFO] PAPER TRADE CLOSE: SHORT SKLUSDT at 0.0374. PnL: +64.19 USDT. New Balance: 8771.40 USDT
+2025-10-25 04:30:37,209 [INFO] Spike signal detected for CTSIUSDT at 2025-08-17 05:40:00+00:00
+2025-10-25 04:30:37,217 [INFO] Spike signal detected for CTSIUSDT at 2025-08-17 07:03:00+00:00
+2025-10-25 04:30:37,227 [INFO] Spike signal detected for MOVRUSDT at 2025-08-17 07:16:00+00:00
+2025-10-25 04:30:37,237 [INFO] Spike signal detected for NMRUSDT at 2025-08-17 07:55:00+00:00
+2025-10-25 04:30:37,249 [INFO] Spike signal detected for HOTUSDT at 2025-08-17 08:33:00+00:00
+2025-10-25 04:30:37,258 [INFO] Spike signal detected for CTSIUSDT at 2025-08-17 13:33:00+00:00
+2025-10-25 04:30:37,268 [INFO] Spike signal detected for SKLUSDT at 2025-08-17 17:00:00+00:00
+2025-10-25 04:30:37,277 [INFO] Spike signal detected for SKLUSDT at 2025-08-17 18:01:00+00:00
+2025-10-25 04:30:37,285 [INFO] Spike signal detected for API3USDT at 2025-08-18 05:55:00+00:00
+2025-10-25 04:30:37,293 [INFO] Spike signal detected for API3USDT at 2025-08-18 08:00:00+00:00
+2025-10-25 04:30:37,303 [INFO] Spike signal detected for MAGICUSDT at 2025-08-18 11:07:00+00:00
+2025-10-25 04:30:37,314 [INFO] Spike signal detected for TOKENUSDT at 2025-08-18 12:09:00+00:00
+2025-10-25 04:30:37,323 [INFO] Spike signal detected for MEMEUSDT at 2025-08-18 12:53:00+00:00
+2025-10-25 04:30:37,334 [INFO] Spike signal detected for MYROUSDT at 2025-08-19 02:47:00+00:00
+2025-10-25 04:30:37,342 [INFO] Spike signal detected for API3USDT at 2025-08-19 07:30:00+00:00
+2025-10-25 04:30:37,351 [INFO] Spike signal detected for ARPAUSDT at 2025-08-19 07:58:00+00:00
+2025-10-25 04:30:37,359 [INFO] Spike signal detected for API3USDT at 2025-08-19 08:11:00+00:00
+2025-10-25 04:30:37,369 [INFO] Spike signal detected for GTCUSDT at 2025-08-19 08:27:00+00:00
+2025-10-25 04:30:37,378 [INFO] Spike signal detected for UMAUSDT at 2025-08-19 09:24:00+00:00
+2025-10-25 04:30:37,386 [INFO] Spike signal detected for API3USDT at 2025-08-19 09:45:00+00:00
+2025-10-25 04:30:37,397 [INFO] Spike signal detected for RAREUSDT at 2025-08-19 11:24:00+00:00
+2025-10-25 04:30:37,405 [INFO] Spike signal detected for CTSIUSDT at 2025-08-19 15:18:00+00:00
+2025-10-25 04:30:37,416 [INFO] Spike signal detected for OGNUSDT at 2025-08-19 15:28:00+00:00
+2025-10-25 04:30:37,420 [INFO] PAPER TRADE OPEN: LONG OGNUSDT at 0.0648 (Size: 4385.70 USDT)
+2025-10-25 04:30:37,426 [INFO] Spike signal detected for OGNUSDT at 2025-08-19 19:52:00+00:00
+2025-10-25 04:30:37,538 [INFO] PAPER TRADE CLOSE: LONG OGNUSDT at 0.0632. PnL: -111.75 USDT. New Balance: 8659.65 USDT
+2025-10-25 04:30:37,543 [INFO] Spike signal detected for API3USDT at 2025-08-20 04:32:00+00:00
+2025-10-25 04:30:37,552 [INFO] Spike signal detected for API3USDT at 2025-08-20 07:28:00+00:00
+2025-10-25 04:30:37,562 [INFO] Spike signal detected for OGNUSDT at 2025-08-20 08:04:00+00:00
+2025-10-25 04:30:37,567 [INFO] PAPER TRADE OPEN: LONG OGNUSDT at 0.0809 (Size: 4329.82 USDT)
+2025-10-25 04:30:37,572 [INFO] Spike signal detected for HOTUSDT at 2025-08-20 10:51:00+00:00
+2025-10-25 04:30:37,686 [INFO] PAPER TRADE CLOSE: LONG OGNUSDT at 0.0842. PnL: +173.08 USDT. New Balance: 8832.73 USDT
+2025-10-25 04:30:37,691 [INFO] Spike signal detected for CFXUSDT at 2025-08-20 11:50:00+00:00
+2025-10-25 04:30:37,695 [INFO] PAPER TRADE OPEN: LONG CFXUSDT at 0.1938 (Size: 4416.37 USDT)
+2025-10-25 04:30:37,702 [INFO] Spike signal detected for NEOUSDT at 2025-08-20 11:56:00+00:00
+2025-10-25 04:30:37,712 [INFO] Spike signal detected for MEMEUSDT at 2025-08-20 16:03:00+00:00
+2025-10-25 04:30:37,809 [INFO] PAPER TRADE CLOSE: LONG CFXUSDT at 0.1871. PnL: -155.26 USDT. New Balance: 8677.47 USDT
+2025-10-25 04:30:37,815 [INFO] Spike signal detected for STGUSDT at 2025-08-20 16:07:00+00:00
+2025-10-25 04:30:37,824 [INFO] Spike signal detected for MEMEUSDT at 2025-08-20 16:37:00+00:00
+2025-10-25 04:30:37,833 [INFO] Spike signal detected for BANDUSDT at 2025-08-20 20:30:00+00:00
+2025-10-25 04:30:37,841 [INFO] Spike signal detected for API3USDT at 2025-08-20 21:27:00+00:00
+2025-10-25 04:30:37,850 [INFO] Spike signal detected for GTCUSDT at 2025-08-21 05:01:00+00:00
+2025-10-25 04:30:37,859 [INFO] Spike signal detected for MEMEUSDT at 2025-08-21 08:49:00+00:00
+2025-10-25 04:30:37,863 [INFO] PAPER TRADE OPEN: SHORT MEMEUSDT at 0.0027 (Size: 4338.74 USDT)
+2025-10-25 04:30:37,869 [INFO] Spike signal detected for API3USDT at 2025-08-21 12:11:00+00:00
+2025-10-25 04:30:38,092 [INFO] PAPER TRADE CLOSE: SHORT MEMEUSDT at 0.0027. PnL: +14.41 USDT. New Balance: 8691.89 USDT
+2025-10-25 04:30:38,097 [INFO] Spike signal detected for BANDUSDT at 2025-08-21 12:46:00+00:00
+2025-10-25 04:30:38,108 [INFO] Spike signal detected for SKLUSDT at 2025-08-21 17:28:00+00:00
+2025-10-25 04:30:38,116 [INFO] Spike signal detected for SKLUSDT at 2025-08-21 20:19:00+00:00
+2025-10-25 04:30:38,125 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-22 02:38:00+00:00
+2025-10-25 04:30:38,129 [INFO] PAPER TRADE OPEN: LONG 1000RATSUSDT at 0.0186 (Size: 4345.94 USDT)
+2025-10-25 04:30:38,134 [INFO] Spike signal detected for BRETTUSDT at 2025-08-22 14:03:00+00:00
+2025-10-25 04:30:38,242 [INFO] PAPER TRADE CLOSE: LONG 1000RATSUSDT at 0.0187. PnL: +33.93 USDT. New Balance: 8725.82 USDT
+2025-10-25 04:30:38,248 [INFO] Spike signal detected for SYSUSDT at 2025-08-22 14:03:00+00:00
+2025-10-25 04:30:38,251 [INFO] PAPER TRADE OPEN: LONG SYSUSDT at 0.0428 (Size: 4362.91 USDT)
+2025-10-25 04:30:38,257 [INFO] Spike signal detected for ADAUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,266 [INFO] Spike signal detected for ARBUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,274 [INFO] Spike signal detected for CRVUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,283 [INFO] Spike signal detected for ENAUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,293 [INFO] Spike signal detected for ETHFIUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,304 [INFO] Spike signal detected for LINKUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,314 [INFO] Spike signal detected for MEWUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,325 [INFO] Spike signal detected for POPCATUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,334 [INFO] Spike signal detected for RPLUSDT at 2025-08-22 14:05:00+00:00
+2025-10-25 04:30:38,338 [INFO] PAPER TRADE OPEN: LONG RPLUSDT at 7.3740 (Size: 4362.91 USDT)
+2025-10-25 04:30:38,344 [INFO] Spike signal detected for ALGOUSDT at 2025-08-22 14:06:00+00:00
+2025-10-25 04:30:38,356 [INFO] Spike signal detected for HBARUSDT at 2025-08-22 14:06:00+00:00
+2025-10-25 04:30:38,367 [INFO] Spike signal detected for ONDOUSDT at 2025-08-22 14:06:00+00:00
+2025-10-25 04:30:38,377 [INFO] Spike signal detected for PENDLEUSDT at 2025-08-22 14:06:00+00:00
+2025-10-25 04:30:38,388 [INFO] Spike signal detected for TOKENUSDT at 2025-08-22 14:06:00+00:00
+2025-10-25 04:30:38,396 [INFO] Spike signal detected for BEAMXUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,408 [INFO] Spike signal detected for MYROUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,417 [INFO] Spike signal detected for RENDERUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,426 [INFO] Spike signal detected for SEIUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,436 [INFO] Spike signal detected for SUIUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,446 [INFO] Spike signal detected for TURBOUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,456 [INFO] Spike signal detected for WIFUSDT at 2025-08-22 14:07:00+00:00
+2025-10-25 04:30:38,467 [INFO] Spike signal detected for 1000BONKUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,477 [INFO] Spike signal detected for 1000PEPEUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,486 [INFO] Spike signal detected for BANANAUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,495 [INFO] Spike signal detected for DOGEUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,505 [INFO] Spike signal detected for INJUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,514 [INFO] Spike signal detected for JASMYUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,523 [INFO] Spike signal detected for JUPUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,535 [INFO] Spike signal detected for POLUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,547 [INFO] Spike signal detected for PYTHUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,557 [INFO] Spike signal detected for RSRUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,566 [INFO] Spike signal detected for TRUUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,576 [INFO] Spike signal detected for XLMUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,587 [INFO] Spike signal detected for ZKUSDT at 2025-08-22 14:08:00+00:00
+2025-10-25 04:30:38,595 [INFO] Spike signal detected for BBUSDT at 2025-08-22 14:38:00+00:00
+2025-10-25 04:30:38,704 [INFO] PAPER TRADE CLOSE: LONG SYSUSDT at 0.0435. PnL: +65.82 USDT. New Balance: 8791.63 USDT
+2025-10-25 04:30:38,801 [INFO] PAPER TRADE CLOSE: LONG RPLUSDT at 7.5900. PnL: +124.26 USDT. New Balance: 8915.89 USDT
+2025-10-25 04:30:38,808 [INFO] Spike signal detected for SKLUSDT at 2025-08-22 15:14:00+00:00
+2025-10-25 04:30:38,816 [INFO] Spike signal detected for BANDUSDT at 2025-08-22 15:25:00+00:00
+2025-10-25 04:30:38,825 [INFO] Spike signal detected for YFIUSDT at 2025-08-22 16:02:00+00:00
+2025-10-25 04:30:38,829 [INFO] PAPER TRADE OPEN: LONG YFIUSDT at 5990.0000 (Size: 4457.95 USDT)
+2025-10-25 04:30:38,834 [INFO] Spike signal detected for BBUSDT at 2025-08-22 16:07:00+00:00
+2025-10-25 04:30:38,841 [INFO] Spike signal detected for BANDUSDT at 2025-08-22 16:09:00+00:00
+2025-10-25 04:30:38,851 [INFO] Spike signal detected for ETHWUSDT at 2025-08-22 16:43:00+00:00
+2025-10-25 04:30:38,970 [INFO] PAPER TRADE CLOSE: LONG YFIUSDT at 5990.0000. PnL: -3.57 USDT. New Balance: 8912.32 USDT
+2025-10-25 04:30:38,977 [INFO] Spike signal detected for YGGUSDT at 2025-08-22 16:56:00+00:00
+2025-10-25 04:30:38,986 [INFO] Spike signal detected for ETHWUSDT at 2025-08-22 17:27:00+00:00
+2025-10-25 04:30:38,990 [INFO] PAPER TRADE OPEN: LONG ETHWUSDT at 1.9612 (Size: 4456.16 USDT)
+2025-10-25 04:30:38,995 [INFO] Spike signal detected for BANDUSDT at 2025-08-22 17:29:00+00:00
+2025-10-25 04:30:39,004 [INFO] Spike signal detected for ETHWUSDT at 2025-08-22 18:01:00+00:00
+2025-10-25 04:30:39,120 [INFO] PAPER TRADE CLOSE: LONG ETHWUSDT at 1.9409. PnL: -49.67 USDT. New Balance: 8862.65 USDT
+2025-10-25 04:30:39,127 [INFO] Spike signal detected for SXPUSDT at 2025-08-22 18:04:00+00:00
+2025-10-25 04:30:39,135 [INFO] Spike signal detected for BBUSDT at 2025-08-22 19:02:00+00:00
+2025-10-25 04:30:39,145 [INFO] Spike signal detected for MEMEUSDT at 2025-08-22 21:01:00+00:00
+2025-10-25 04:30:39,153 [INFO] Spike signal detected for MEMEUSDT at 2025-08-22 21:32:00+00:00
+2025-10-25 04:30:39,162 [INFO] Spike signal detected for MEMEUSDT at 2025-08-22 22:07:00+00:00
+2025-10-25 04:30:39,172 [INFO] Spike signal detected for MEMEUSDT at 2025-08-22 23:24:00+00:00
+2025-10-25 04:30:39,182 [INFO] Spike signal detected for CYBERUSDT at 2025-08-23 00:01:00+00:00
+2025-10-25 04:30:39,186 [INFO] PAPER TRADE OPEN: LONG CYBERUSDT at 2.3780 (Size: 4431.33 USDT)
+2025-10-25 04:30:39,191 [INFO] Spike signal detected for MEMEUSDT at 2025-08-23 00:01:00+00:00
+2025-10-25 04:30:39,201 [INFO] Spike signal detected for QTUMUSDT at 2025-08-23 00:10:00+00:00
+2025-10-25 04:30:39,210 [INFO] Spike signal detected for QTUMUSDT at 2025-08-23 00:47:00+00:00
+2025-10-25 04:30:39,319 [INFO] PAPER TRADE CLOSE: LONG CYBERUSDT at 2.3680. PnL: -22.17 USDT. New Balance: 8840.48 USDT
+2025-10-25 04:30:39,324 [INFO] Spike signal detected for MEMEUSDT at 2025-08-23 02:12:00+00:00
+2025-10-25 04:30:39,328 [INFO] PAPER TRADE OPEN: SHORT MEMEUSDT at 0.0039 (Size: 4420.24 USDT)
+2025-10-25 04:30:39,334 [INFO] Spike signal detected for BANDUSDT at 2025-08-23 04:08:00+00:00
+2025-10-25 04:30:39,548 [INFO] PAPER TRADE CLOSE: SHORT MEMEUSDT at 0.0038. PnL: +43.17 USDT. New Balance: 8883.65 USDT
+2025-10-25 04:30:39,554 [INFO] Spike signal detected for BOMEUSDT at 2025-08-23 06:22:00+00:00
+2025-10-25 04:30:39,565 [INFO] Spike signal detected for TOKENUSDT at 2025-08-23 08:07:00+00:00
+2025-10-25 04:30:39,575 [INFO] Spike signal detected for MEMEUSDT at 2025-08-23 10:39:00+00:00
+2025-10-25 04:30:39,585 [INFO] Spike signal detected for UMAUSDT at 2025-08-23 13:18:00+00:00
+2025-10-25 04:30:39,593 [INFO] Spike signal detected for DOGSUSDT at 2025-08-23 15:27:00+00:00
+2025-10-25 04:30:39,602 [INFO] Spike signal detected for DOGSUSDT at 2025-08-23 16:03:00+00:00
+2025-10-25 04:30:39,613 [INFO] Spike signal detected for USTCUSDT at 2025-08-23 16:03:00+00:00
+2025-10-25 04:30:39,623 [INFO] Spike signal detected for SNXUSDT at 2025-08-23 19:55:00+00:00
+2025-10-25 04:30:39,633 [INFO] Spike signal detected for SPELLUSDT at 2025-08-23 20:33:00+00:00
+2025-10-25 04:30:39,641 [INFO] Spike signal detected for BSVUSDT at 2025-08-23 21:30:00+00:00
+2025-10-25 04:30:39,645 [INFO] PAPER TRADE OPEN: LONG BSVUSDT at 25.5100 (Size: 4441.82 USDT)
+2025-10-25 04:30:39,650 [INFO] Spike signal detected for SPELLUSDT at 2025-08-23 21:34:00+00:00
+2025-10-25 04:30:39,659 [INFO] Spike signal detected for SPELLUSDT at 2025-08-23 22:33:00+00:00
+2025-10-25 04:30:39,859 [INFO] PAPER TRADE CLOSE: LONG BSVUSDT at 26.2000. PnL: +116.54 USDT. New Balance: 9000.19 USDT
+2025-10-25 04:30:39,864 [INFO] Spike signal detected for AUCTIONUSDT at 2025-08-24 00:14:00+00:00
+2025-10-25 04:30:39,868 [INFO] PAPER TRADE OPEN: LONG AUCTIONUSDT at 10.8790 (Size: 4500.09 USDT)
+2025-10-25 04:30:39,875 [INFO] Spike signal detected for MEMEUSDT at 2025-08-24 04:03:00+00:00
+2025-10-25 04:30:39,985 [INFO] PAPER TRADE CLOSE: LONG AUCTIONUSDT at 11.1290. PnL: +99.77 USDT. New Balance: 9099.96 USDT
+2025-10-25 04:30:39,990 [INFO] Spike signal detected for EDUUSDT at 2025-08-24 10:47:00+00:00
+2025-10-25 04:30:40,000 [INFO] Spike signal detected for QTUMUSDT at 2025-08-24 12:02:00+00:00
+2025-10-25 04:30:40,010 [INFO] Spike signal detected for MEMEUSDT at 2025-08-24 12:16:00+00:00
+2025-10-25 04:30:40,020 [INFO] Spike signal detected for MEMEUSDT at 2025-08-24 13:04:00+00:00
+2025-10-25 04:30:40,029 [INFO] Spike signal detected for MEMEUSDT at 2025-08-24 13:35:00+00:00
+2025-10-25 04:30:40,041 [INFO] Spike signal detected for SPELLUSDT at 2025-08-24 15:51:00+00:00
+2025-10-25 04:30:40,052 [INFO] Spike signal detected for QTUMUSDT at 2025-08-24 17:44:00+00:00
+2025-10-25 04:30:40,061 [INFO] Spike signal detected for QTUMUSDT at 2025-08-24 18:16:00+00:00
+2025-10-25 04:30:40,070 [INFO] Spike signal detected for BRETTUSDT at 2025-08-24 19:36:00+00:00
+2025-10-25 04:30:40,074 [INFO] PAPER TRADE OPEN: SHORT BRETTUSDT at 0.0564 (Size: 4549.98 USDT)
+2025-10-25 04:30:40,081 [INFO] Spike signal detected for ONTUSDT at 2025-08-24 19:36:00+00:00
+2025-10-25 04:30:40,091 [INFO] Spike signal detected for GALAUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,094 [INFO] PAPER TRADE OPEN: SHORT GALAUSDT at 0.0176 (Size: 4549.98 USDT)
+2025-10-25 04:30:40,101 [INFO] Spike signal detected for POPCATUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,104 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:40,111 [INFO] Spike signal detected for SAGAUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,121 [INFO] Spike signal detected for TIAUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,125 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:40,132 [INFO] Spike signal detected for TRBUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,142 [INFO] Spike signal detected for VANRYUSDT at 2025-08-24 19:37:00+00:00
+2025-10-25 04:30:40,146 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:40,151 [INFO] Spike signal detected for ONTUSDT at 2025-08-24 20:07:00+00:00
+2025-10-25 04:30:40,271 [INFO] PAPER TRADE CLOSE: SHORT BRETTUSDT at 0.0566. PnL: -19.78 USDT. New Balance: 9080.18 USDT
+2025-10-25 04:30:40,481 [INFO] PAPER TRADE CLOSE: SHORT GALAUSDT at 0.0180. PnL: -88.79 USDT. New Balance: 8991.39 USDT
+2025-10-25 04:30:40,488 [INFO] Spike signal detected for QTUMUSDT at 2025-08-25 00:14:00+00:00
+2025-10-25 04:30:40,499 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 00:18:00+00:00
+2025-10-25 04:30:40,510 [INFO] Spike signal detected for HOOKUSDT at 2025-08-25 02:17:00+00:00
+2025-10-25 04:30:40,520 [INFO] Spike signal detected for BOMEUSDT at 2025-08-25 03:51:00+00:00
+2025-10-25 04:30:40,524 [INFO] PAPER TRADE OPEN: SHORT BOMEUSDT at 0.0023 (Size: 4495.69 USDT)
+2025-10-25 04:30:40,530 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 03:56:00+00:00
+2025-10-25 04:30:40,541 [INFO] Spike signal detected for ONGUSDT at 2025-08-25 04:28:00+00:00
+2025-10-25 04:30:40,655 [INFO] PAPER TRADE CLOSE: SHORT BOMEUSDT at 0.0023. PnL: -115.64 USDT. New Balance: 8875.75 USDT
+2025-10-25 04:30:40,659 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 04:32:00+00:00
+2025-10-25 04:30:40,669 [INFO] Spike signal detected for IOSTUSDT at 2025-08-25 04:54:00+00:00
+2025-10-25 04:30:40,681 [INFO] Spike signal detected for OGNUSDT at 2025-08-25 06:39:00+00:00
+2025-10-25 04:30:40,692 [INFO] Spike signal detected for IOSTUSDT at 2025-08-25 07:51:00+00:00
+2025-10-25 04:30:40,702 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 08:17:00+00:00
+2025-10-25 04:30:40,711 [INFO] Spike signal detected for MEMEUSDT at 2025-08-25 08:21:00+00:00
+2025-10-25 04:30:40,720 [INFO] Spike signal detected for IOSTUSDT at 2025-08-25 08:47:00+00:00
+2025-10-25 04:30:40,729 [INFO] Spike signal detected for QTUMUSDT at 2025-08-25 10:51:00+00:00
+2025-10-25 04:30:40,740 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 11:43:00+00:00
+2025-10-25 04:30:40,750 [INFO] Spike signal detected for IOSTUSDT at 2025-08-25 15:18:00+00:00
+2025-10-25 04:30:40,759 [INFO] Spike signal detected for MAVUSDT at 2025-08-25 16:12:00+00:00
+2025-10-25 04:30:40,767 [INFO] Spike signal detected for EDUUSDT at 2025-08-25 17:39:00+00:00
+2025-10-25 04:30:40,775 [INFO] Spike signal detected for EDUUSDT at 2025-08-25 19:01:00+00:00
+2025-10-25 04:30:40,779 [INFO] PAPER TRADE OPEN: LONG EDUUSDT at 0.1487 (Size: 4437.87 USDT)
+2025-10-25 04:30:40,785 [INFO] Spike signal detected for ONTUSDT at 2025-08-25 21:24:00+00:00
+2025-10-25 04:30:40,889 [INFO] PAPER TRADE CLOSE: LONG EDUUSDT at 0.1456. PnL: -96.03 USDT. New Balance: 8779.72 USDT
+2025-10-25 04:30:40,894 [INFO] Spike signal detected for EDUUSDT at 2025-08-26 00:21:00+00:00
+2025-10-25 04:30:40,903 [INFO] Spike signal detected for EDUUSDT at 2025-08-26 01:03:00+00:00
+2025-10-25 04:30:40,912 [INFO] Spike signal detected for MAVUSDT at 2025-08-26 01:17:00+00:00
+2025-10-25 04:30:40,920 [INFO] Spike signal detected for EDUUSDT at 2025-08-26 06:04:00+00:00
+2025-10-25 04:30:40,924 [INFO] PAPER TRADE OPEN: SHORT EDUUSDT at 0.1557 (Size: 4389.86 USDT)
+2025-10-25 04:30:40,930 [INFO] Spike signal detected for MAVUSDT at 2025-08-26 06:21:00+00:00
+2025-10-25 04:30:41,039 [INFO] PAPER TRADE CLOSE: SHORT EDUUSDT at 0.1560. PnL: -11.97 USDT. New Balance: 8767.74 USDT
+2025-10-25 04:30:41,045 [INFO] Spike signal detected for CTSIUSDT at 2025-08-26 08:23:00+00:00
+2025-10-25 04:30:41,055 [INFO] Spike signal detected for NTRNUSDT at 2025-08-26 13:27:00+00:00
+2025-10-25 04:30:41,066 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 15:24:00+00:00
+2025-10-25 04:30:41,070 [INFO] PAPER TRADE OPEN: LONG NMRUSDT at 8.5910 (Size: 4383.87 USDT)
+2025-10-25 04:30:41,074 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 16:01:00+00:00
+2025-10-25 04:30:41,189 [INFO] PAPER TRADE CLOSE: LONG NMRUSDT at 9.0940. PnL: +253.06 USDT. New Balance: 9020.81 USDT
+2025-10-25 04:30:41,196 [INFO] Spike signal detected for LPTUSDT at 2025-08-26 16:29:00+00:00
+2025-10-25 04:30:41,204 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 16:45:00+00:00
+2025-10-25 04:30:41,213 [INFO] Spike signal detected for SNXUSDT at 2025-08-26 19:17:00+00:00
+2025-10-25 04:30:41,223 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 21:50:00+00:00
+2025-10-25 04:30:41,232 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 23:15:00+00:00
+2025-10-25 04:30:41,240 [INFO] Spike signal detected for NMRUSDT at 2025-08-26 23:46:00+00:00
+2025-10-25 04:30:41,248 [INFO] Spike signal detected for CKBUSDT at 2025-08-27 00:00:00+00:00
+2025-10-25 04:30:41,252 [INFO] PAPER TRADE OPEN: LONG CKBUSDT at 0.0052 (Size: 4510.40 USDT)
+2025-10-25 04:30:41,260 [INFO] Spike signal detected for QTUMUSDT at 2025-08-27 00:04:00+00:00
+2025-10-25 04:30:41,268 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 00:17:00+00:00
+2025-10-25 04:30:41,389 [INFO] PAPER TRADE CLOSE: LONG CKBUSDT at 0.0055. PnL: +257.82 USDT. New Balance: 9278.63 USDT
+2025-10-25 04:30:41,396 [INFO] Spike signal detected for RLCUSDT at 2025-08-27 00:34:00+00:00
+2025-10-25 04:30:41,405 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 01:00:00+00:00
+2025-10-25 04:30:41,413 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 01:34:00+00:00
+2025-10-25 04:30:41,421 [INFO] Spike signal detected for CKBUSDT at 2025-08-27 01:52:00+00:00
+2025-10-25 04:30:41,430 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 06:05:00+00:00
+2025-10-25 04:30:41,441 [INFO] Spike signal detected for LPTUSDT at 2025-08-27 06:52:00+00:00
+2025-10-25 04:30:41,450 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 07:13:00+00:00
+2025-10-25 04:30:41,460 [INFO] Spike signal detected for MOVRUSDT at 2025-08-27 07:28:00+00:00
+2025-10-25 04:30:41,469 [INFO] Spike signal detected for RLCUSDT at 2025-08-27 07:30:00+00:00
+2025-10-25 04:30:41,477 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 08:08:00+00:00
+2025-10-25 04:30:41,486 [INFO] Spike signal detected for SNXUSDT at 2025-08-27 11:00:00+00:00
+2025-10-25 04:30:41,496 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 12:56:00+00:00
+2025-10-25 04:30:41,508 [INFO] Spike signal detected for OMUSDT at 2025-08-27 13:09:00+00:00
+2025-10-25 04:30:41,520 [INFO] Spike signal detected for LPTUSDT at 2025-08-27 15:02:00+00:00
+2025-10-25 04:30:41,529 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 15:25:00+00:00
+2025-10-25 04:30:41,538 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 16:07:00+00:00
+2025-10-25 04:30:41,547 [INFO] Spike signal detected for LPTUSDT at 2025-08-27 16:12:00+00:00
+2025-10-25 04:30:41,556 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 16:46:00+00:00
+2025-10-25 04:30:41,567 [INFO] Spike signal detected for IOTXUSDT at 2025-08-27 17:09:00+00:00
+2025-10-25 04:30:41,570 [INFO] PAPER TRADE OPEN: LONG IOTXUSDT at 0.0312 (Size: 4639.32 USDT)
+2025-10-25 04:30:41,575 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 17:34:00+00:00
+2025-10-25 04:30:41,687 [INFO] PAPER TRADE CLOSE: LONG IOTXUSDT at 0.0303. PnL: -127.16 USDT. New Balance: 9151.47 USDT
+2025-10-25 04:30:41,693 [INFO] Spike signal detected for TOKENUSDT at 2025-08-27 17:37:00+00:00
+2025-10-25 04:30:41,704 [INFO] Spike signal detected for RAREUSDT at 2025-08-27 18:06:00+00:00
+2025-10-25 04:30:41,712 [INFO] Spike signal detected for BICOUSDT at 2025-08-27 18:10:00+00:00
+2025-10-25 04:30:41,721 [INFO] Spike signal detected for CATIUSDT at 2025-08-27 18:31:00+00:00
+2025-10-25 04:30:41,731 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 20:19:00+00:00
+2025-10-25 04:30:41,739 [INFO] Spike signal detected for CATIUSDT at 2025-08-27 20:31:00+00:00
+2025-10-25 04:30:41,747 [INFO] Spike signal detected for CATIUSDT at 2025-08-27 21:36:00+00:00
+2025-10-25 04:30:41,758 [INFO] Spike signal detected for RLCUSDT at 2025-08-27 22:19:00+00:00
+2025-10-25 04:30:41,766 [INFO] Spike signal detected for CATIUSDT at 2025-08-27 22:20:00+00:00
+2025-10-25 04:30:41,777 [INFO] Spike signal detected for NMRUSDT at 2025-08-27 22:45:00+00:00
+2025-10-25 04:30:41,784 [INFO] Spike signal detected for RLCUSDT at 2025-08-27 22:56:00+00:00
+2025-10-25 04:30:41,792 [INFO] Spike signal detected for RLCUSDT at 2025-08-27 23:49:00+00:00
+2025-10-25 04:30:41,802 [INFO] Spike signal detected for LPTUSDT at 2025-08-28 00:11:00+00:00
+2025-10-25 04:30:41,805 [INFO] PAPER TRADE OPEN: LONG LPTUSDT at 7.6670 (Size: 4575.74 USDT)
+2025-10-25 04:30:41,812 [INFO] Spike signal detected for UMAUSDT at 2025-08-28 00:11:00+00:00
+2025-10-25 04:30:41,821 [INFO] Spike signal detected for RLCUSDT at 2025-08-28 00:20:00+00:00
+2025-10-25 04:30:41,830 [INFO] Spike signal detected for RLCUSDT at 2025-08-28 00:58:00+00:00
+2025-10-25 04:30:41,927 [INFO] PAPER TRADE CLOSE: LONG LPTUSDT at 7.9330. PnL: +155.03 USDT. New Balance: 9306.50 USDT
+2025-10-25 04:30:41,932 [INFO] Spike signal detected for RLCUSDT at 2025-08-28 01:35:00+00:00
+2025-10-25 04:30:41,940 [INFO] Spike signal detected for LPTUSDT at 2025-08-28 02:22:00+00:00
+2025-10-25 04:30:41,949 [INFO] Spike signal detected for LPTUSDT at 2025-08-28 04:01:00+00:00
+2025-10-25 04:30:41,959 [INFO] Spike signal detected for NTRNUSDT at 2025-08-28 04:10:00+00:00
+2025-10-25 04:30:41,968 [INFO] Spike signal detected for ARPAUSDT at 2025-08-28 05:07:00+00:00
+2025-10-25 04:30:41,978 [INFO] Spike signal detected for NMRUSDT at 2025-08-28 07:44:00+00:00
+2025-10-25 04:30:41,988 [INFO] Spike signal detected for NMRUSDT at 2025-08-28 09:49:00+00:00
+2025-10-25 04:30:41,998 [INFO] Spike signal detected for RLCUSDT at 2025-08-28 10:09:00+00:00
+2025-10-25 04:30:42,006 [INFO] Spike signal detected for CATIUSDT at 2025-08-28 11:07:00+00:00
+2025-10-25 04:30:42,017 [INFO] Spike signal detected for ZENUSDT at 2025-08-28 13:39:00+00:00
+2025-10-25 04:30:42,027 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 13:47:00+00:00
+2025-10-25 04:30:42,030 [INFO] PAPER TRADE OPEN: LONG PYTHUSDT at 0.1283 (Size: 4653.25 USDT)
+2025-10-25 04:30:42,037 [INFO] Spike signal detected for WUSDT at 2025-08-28 14:02:00+00:00
+2025-10-25 04:30:42,143 [INFO] PAPER TRADE CLOSE: LONG PYTHUSDT at 0.1534. PnL: +906.04 USDT. New Balance: 10212.54 USDT
+2025-10-25 04:30:42,149 [INFO] Spike signal detected for NMRUSDT at 2025-08-28 14:05:00+00:00
+2025-10-25 04:30:42,159 [INFO] Spike signal detected for IDUSDT at 2025-08-28 14:18:00+00:00
+2025-10-25 04:30:42,170 [INFO] Spike signal detected for ZKUSDT at 2025-08-28 14:29:00+00:00
+2025-10-25 04:30:42,180 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 14:52:00+00:00
+2025-10-25 04:30:42,189 [INFO] Spike signal detected for CTSIUSDT at 2025-08-28 15:08:00+00:00
+2025-10-25 04:30:42,197 [INFO] Spike signal detected for IDUSDT at 2025-08-28 15:13:00+00:00
+2025-10-25 04:30:42,206 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 15:23:00+00:00
+2025-10-25 04:30:42,214 [INFO] Spike signal detected for CTSIUSDT at 2025-08-28 15:41:00+00:00
+2025-10-25 04:30:42,222 [INFO] Spike signal detected for WUSDT at 2025-08-28 15:45:00+00:00
+2025-10-25 04:30:42,230 [INFO] Spike signal detected for CTSIUSDT at 2025-08-28 16:20:00+00:00
+2025-10-25 04:30:42,240 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 17:05:00+00:00
+2025-10-25 04:30:42,250 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 21:22:00+00:00
+2025-10-25 04:30:42,261 [INFO] Spike signal detected for PYTHUSDT at 2025-08-28 23:40:00+00:00
+2025-10-25 04:30:42,270 [INFO] Spike signal detected for BIGTIMEUSDT at 2025-08-29 00:00:00+00:00
+2025-10-25 04:30:42,273 [INFO] PAPER TRADE OPEN: LONG BIGTIMEUSDT at 0.0599 (Size: 5106.27 USDT)
+2025-10-25 04:30:42,278 [INFO] Spike signal detected for BIGTIMEUSDT at 2025-08-29 00:31:00+00:00
+2025-10-25 04:30:42,390 [INFO] PAPER TRADE CLOSE: LONG BIGTIMEUSDT at 0.0624. PnL: +214.20 USDT. New Balance: 10426.74 USDT
+2025-10-25 04:30:42,395 [INFO] Spike signal detected for PYTHUSDT at 2025-08-29 00:46:00+00:00
+2025-10-25 04:30:42,403 [INFO] Spike signal detected for CTSIUSDT at 2025-08-29 01:17:00+00:00
+2025-10-25 04:30:42,414 [INFO] Spike signal detected for QTUMUSDT at 2025-08-29 03:06:00+00:00
+2025-10-25 04:30:42,417 [INFO] PAPER TRADE OPEN: LONG QTUMUSDT at 2.9250 (Size: 5213.37 USDT)
+2025-10-25 04:30:42,424 [INFO] Spike signal detected for WUSDT at 2025-08-29 03:52:00+00:00
+2025-10-25 04:30:42,539 [INFO] PAPER TRADE CLOSE: LONG QTUMUSDT at 2.9330. PnL: +10.08 USDT. New Balance: 10436.83 USDT
+2025-10-25 04:30:42,546 [INFO] Spike signal detected for PYTHUSDT at 2025-08-29 06:39:00+00:00
+2025-10-25 04:30:42,557 [INFO] Spike signal detected for STGUSDT at 2025-08-29 06:39:00+00:00
+2025-10-25 04:30:42,560 [INFO] PAPER TRADE OPEN: LONG STGUSDT at 0.1907 (Size: 5218.41 USDT)
+2025-10-25 04:30:42,566 [INFO] Spike signal detected for WUSDT at 2025-08-29 06:39:00+00:00
+2025-10-25 04:30:42,578 [INFO] Spike signal detected for ZROUSDT at 2025-08-29 06:45:00+00:00
+2025-10-25 04:30:42,588 [INFO] Spike signal detected for NMRUSDT at 2025-08-29 06:55:00+00:00
+2025-10-25 04:30:42,815 [INFO] PAPER TRADE CLOSE: LONG STGUSDT at 0.1844. PnL: -176.50 USDT. New Balance: 10260.32 USDT
+2025-10-25 04:30:42,825 [INFO] Spike signal detected for SXPUSDT at 2025-08-29 07:10:00+00:00
+2025-10-25 04:30:42,831 [INFO] PAPER TRADE OPEN: LONG SXPUSDT at 0.1987 (Size: 5130.16 USDT)
+2025-10-25 04:30:42,836 [INFO] Spike signal detected for CATIUSDT at 2025-08-29 10:31:00+00:00
+2025-10-25 04:30:42,943 [INFO] PAPER TRADE CLOSE: LONG SXPUSDT at 0.1866. PnL: -316.38 USDT. New Balance: 9943.94 USDT
+2025-10-25 04:30:42,950 [INFO] Spike signal detected for PYTHUSDT at 2025-08-29 13:03:00+00:00
+2025-10-25 04:30:42,960 [INFO] Spike signal detected for QTUMUSDT at 2025-08-30 00:38:00+00:00
+2025-10-25 04:30:42,969 [INFO] Spike signal detected for 1000RATSUSDT at 2025-08-30 00:55:00+00:00
+2025-10-25 04:30:42,977 [INFO] Spike signal detected for CATIUSDT at 2025-08-30 05:32:00+00:00
+2025-10-25 04:30:42,987 [INFO] Spike signal detected for MAGICUSDT at 2025-08-30 07:22:00+00:00
+2025-10-25 04:30:42,997 [INFO] Spike signal detected for SKLUSDT at 2025-08-30 08:43:00+00:00
+2025-10-25 04:30:43,005 [INFO] Spike signal detected for SKLUSDT at 2025-08-30 09:14:00+00:00
+2025-10-25 04:30:43,014 [INFO] Spike signal detected for RAREUSDT at 2025-08-30 09:42:00+00:00
+2025-10-25 04:30:43,024 [INFO] Spike signal detected for SKLUSDT at 2025-08-30 10:09:00+00:00
+2025-10-25 04:30:43,034 [INFO] Spike signal detected for OGNUSDT at 2025-08-30 10:30:00+00:00
+2025-10-25 04:30:43,039 [INFO] PAPER TRADE OPEN: LONG OGNUSDT at 0.0692 (Size: 4971.97 USDT)
+2025-10-25 04:30:43,044 [INFO] Spike signal detected for OGNUSDT at 2025-08-30 13:59:00+00:00
+2025-10-25 04:30:43,159 [INFO] PAPER TRADE CLOSE: LONG OGNUSDT at 0.0704. PnL: +82.21 USDT. New Balance: 10026.15 USDT
+2025-10-25 04:30:43,165 [INFO] Spike signal detected for SKLUSDT at 2025-08-30 15:08:00+00:00
+2025-10-25 04:30:43,173 [INFO] Spike signal detected for CFXUSDT at 2025-08-30 15:15:00+00:00
+2025-10-25 04:30:43,182 [INFO] Spike signal detected for ETHWUSDT at 2025-08-30 16:03:00+00:00
+2025-10-25 04:30:43,185 [INFO] PAPER TRADE OPEN: LONG ETHWUSDT at 1.7738 (Size: 5013.07 USDT)
+2025-10-25 04:30:43,192 [INFO] Spike signal detected for KSMUSDT at 2025-08-30 19:29:00+00:00
+2025-10-25 04:30:43,308 [INFO] PAPER TRADE CLOSE: LONG ETHWUSDT at 1.7263. PnL: -138.20 USDT. New Balance: 9887.95 USDT
+2025-10-25 04:30:43,314 [INFO] Spike signal detected for SKLUSDT at 2025-08-30 20:38:00+00:00
+2025-10-25 04:30:43,325 [INFO] Spike signal detected for KSMUSDT at 2025-08-31 00:01:00+00:00
+2025-10-25 04:30:43,328 [INFO] PAPER TRADE OPEN: LONG KSMUSDT at 17.3570 (Size: 4943.97 USDT)
+2025-10-25 04:30:43,334 [INFO] Spike signal detected for AXSUSDT at 2025-08-31 00:08:00+00:00
+2025-10-25 04:30:43,342 [INFO] Spike signal detected for AXSUSDT at 2025-08-31 00:39:00+00:00
+2025-10-25 04:30:43,460 [INFO] PAPER TRADE CLOSE: LONG KSMUSDT at 16.8490. PnL: -148.60 USDT. New Balance: 9739.35 USDT
+2025-10-25 04:30:43,464 [INFO] Spike signal detected for AXSUSDT at 2025-08-31 01:24:00+00:00
+2025-10-25 04:30:43,474 [INFO] Spike signal detected for LRCUSDT at 2025-08-31 08:26:00+00:00
+2025-10-25 04:30:43,484 [INFO] Spike signal detected for RLCUSDT at 2025-08-31 12:40:00+00:00
+2025-10-25 04:30:43,493 [INFO] Spike signal detected for NMRUSDT at 2025-08-31 13:21:00+00:00
+2025-10-25 04:30:43,503 [INFO] Spike signal detected for LRCUSDT at 2025-08-31 14:50:00+00:00
+2025-10-25 04:30:43,513 [INFO] Spike signal detected for RLCUSDT at 2025-08-31 19:24:00+00:00
+2025-10-25 04:30:43,523 [INFO] Spike signal detected for AIUSDT at 2025-09-01 07:42:00+00:00
+2025-10-25 04:30:43,533 [INFO] Spike signal detected for XVGUSDT at 2025-09-01 08:24:00+00:00
+2025-10-25 04:30:43,543 [INFO] Spike signal detected for SKLUSDT at 2025-09-01 12:55:00+00:00
+2025-10-25 04:30:43,553 [INFO] Spike signal detected for LRCUSDT at 2025-09-02 08:01:00+00:00
+2025-10-25 04:30:43,561 [INFO] Spike signal detected for BEAMXUSDT at 2025-09-02 08:04:00+00:00
+2025-10-25 04:30:43,571 [INFO] Spike signal detected for XVSUSDT at 2025-09-02 09:15:00+00:00
+2025-10-25 04:30:43,579 [INFO] Spike signal detected for CFXUSDT at 2025-09-02 09:59:00+00:00
+2025-10-25 04:30:43,583 [INFO] PAPER TRADE OPEN: LONG CFXUSDT at 0.1853 (Size: 4869.68 USDT)
+2025-10-25 04:30:43,588 [INFO] Spike signal detected for BEAMXUSDT at 2025-09-02 13:55:00+00:00
+2025-10-25 04:30:43,696 [INFO] PAPER TRADE CLOSE: LONG CFXUSDT at 0.1778. PnL: -201.40 USDT. New Balance: 9537.95 USDT
+2025-10-25 04:30:43,701 [INFO] Spike signal detected for CTSIUSDT at 2025-09-02 18:17:00+00:00
+2025-10-25 04:30:43,710 [INFO] Spike signal detected for CKBUSDT at 2025-09-03 00:10:00+00:00
+2025-10-25 04:30:43,718 [INFO] Spike signal detected for ENAUSDT at 2025-09-05 20:30:00+00:00
+2025-10-25 04:30:43,722 [INFO] PAPER TRADE OPEN: LONG ENAUSDT at 0.7123 (Size: 4768.98 USDT)
+2025-10-25 04:30:43,729 [INFO] Spike signal detected for KASUSDT at 2025-09-06 08:52:00+00:00
+2025-10-25 04:30:43,843 [INFO] PAPER TRADE CLOSE: LONG ENAUSDT at 0.7156. PnL: +18.27 USDT. New Balance: 9556.22 USDT
+2025-10-25 04:30:43,849 [INFO] Spike signal detected for NMRUSDT at 2025-09-06 09:05:00+00:00
+2025-10-25 04:30:43,859 [INFO] Spike signal detected for NMRUSDT at 2025-09-06 13:06:00+00:00
+2025-10-25 04:30:43,868 [INFO] Spike signal detected for NMRUSDT at 2025-09-06 14:31:00+00:00
+2025-10-25 04:30:43,879 [INFO] Spike signal detected for ILVUSDT at 2025-09-06 14:43:00+00:00
+2025-10-25 04:30:43,888 [INFO] Spike signal detected for NMRUSDT at 2025-09-06 15:12:00+00:00
+2025-10-25 04:30:43,896 [INFO] Spike signal detected for NMRUSDT at 2025-09-06 16:23:00+00:00
+2025-10-25 04:30:43,907 [INFO] Spike signal detected for TRBUSDT at 2025-09-06 16:33:00+00:00
+2025-10-25 04:30:43,916 [INFO] Spike signal detected for API3USDT at 2025-09-06 17:48:00+00:00
+2025-10-25 04:30:43,925 [INFO] Spike signal detected for NMRUSDT at 2025-09-07 10:46:00+00:00
+2025-10-25 04:30:43,935 [INFO] Spike signal detected for CTSIUSDT at 2025-09-07 20:23:00+00:00
+2025-10-25 04:30:43,945 [INFO] Spike signal detected for MAVUSDT at 2025-09-08 03:52:00+00:00
+2025-10-25 04:30:43,955 [INFO] Spike signal detected for WLDUSDT at 2025-09-08 11:04:00+00:00
+2025-10-25 04:30:43,964 [INFO] Spike signal detected for WLDUSDT at 2025-09-08 14:09:00+00:00
+2025-10-25 04:30:43,972 [INFO] Spike signal detected for WLDUSDT at 2025-09-08 15:00:00+00:00
+2025-10-25 04:30:43,981 [INFO] Spike signal detected for CHESSUSDT at 2025-09-08 22:04:00+00:00
+2025-10-25 04:30:43,984 [INFO] PAPER TRADE OPEN: SHORT CHESSUSDT at 0.0689 (Size: 4778.11 USDT)
+2025-10-25 04:30:43,991 [INFO] Spike signal detected for WLDUSDT at 2025-09-09 00:03:00+00:00
+2025-10-25 04:30:44,108 [INFO] PAPER TRADE CLOSE: SHORT CHESSUSDT at 0.0704. PnL: -107.24 USDT. New Balance: 9448.98 USDT
+2025-10-25 04:30:44,115 [INFO] Spike signal detected for OPUSDT at 2025-09-09 00:05:00+00:00
+2025-10-25 04:30:44,119 [INFO] PAPER TRADE OPEN: LONG OPUSDT at 0.7920 (Size: 4724.49 USDT)
+2025-10-25 04:30:44,124 [INFO] Spike signal detected for ARKMUSDT at 2025-09-09 00:09:00+00:00
+2025-10-25 04:30:44,133 [INFO] Spike signal detected for AIUSDT at 2025-09-09 00:45:00+00:00
+2025-10-25 04:30:44,241 [INFO] PAPER TRADE CLOSE: LONG OPUSDT at 0.7715. PnL: -126.02 USDT. New Balance: 9322.96 USDT
+2025-10-25 04:30:44,245 [INFO] Spike signal detected for ARKMUSDT at 2025-09-09 00:45:00+00:00
+2025-10-25 04:30:44,254 [INFO] Spike signal detected for AIUSDT at 2025-09-09 05:30:00+00:00
+2025-10-25 04:30:44,264 [INFO] Spike signal detected for ENAUSDT at 2025-09-09 07:06:00+00:00
+2025-10-25 04:30:44,273 [INFO] Spike signal detected for AXLUSDT at 2025-09-09 07:36:00+00:00
+2025-10-25 04:30:44,276 [INFO] PAPER TRADE OPEN: LONG AXLUSDT at 0.3489 (Size: 4661.48 USDT)
+2025-10-25 04:30:44,281 [INFO] Spike signal detected for AXLUSDT at 2025-09-09 08:08:00+00:00
+2025-10-25 04:30:44,498 [INFO] PAPER TRADE CLOSE: LONG AXLUSDT at 0.3343. PnL: -198.71 USDT. New Balance: 9124.25 USDT
+2025-10-25 04:30:44,502 [INFO] Spike signal detected for CTSIUSDT at 2025-09-09 08:40:00+00:00
+2025-10-25 04:30:44,512 [INFO] Spike signal detected for ARKMUSDT at 2025-09-09 10:01:00+00:00
+2025-10-25 04:30:44,521 [INFO] Spike signal detected for AIUSDT at 2025-09-09 10:06:00+00:00
+2025-10-25 04:30:44,528 [INFO] Spike signal detected for AIUSDT at 2025-09-09 10:37:00+00:00
+2025-10-25 04:30:44,537 [INFO] Spike signal detected for AIUSDT at 2025-09-09 11:49:00+00:00
+2025-10-25 04:30:44,548 [INFO] Spike signal detected for WLDUSDT at 2025-09-09 12:30:00+00:00
+2025-10-25 04:30:44,556 [INFO] Spike signal detected for ARKMUSDT at 2025-09-09 12:33:00+00:00
+2025-10-25 04:30:44,565 [INFO] Spike signal detected for AEVOUSDT at 2025-09-09 14:21:00+00:00
+2025-10-25 04:30:44,569 [INFO] PAPER TRADE OPEN: LONG AEVOUSDT at 0.1008 (Size: 4562.13 USDT)
+2025-10-25 04:30:44,575 [INFO] Spike signal detected for WLDUSDT at 2025-09-09 15:18:00+00:00
+2025-10-25 04:30:44,679 [INFO] PAPER TRADE CLOSE: LONG AEVOUSDT at 0.1021. PnL: +55.19 USDT. New Balance: 9179.44 USDT
+2025-10-25 04:30:44,685 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 02:22:00+00:00
+2025-10-25 04:30:44,693 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 03:19:00+00:00
+2025-10-25 04:30:44,702 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 04:03:00+00:00
+2025-10-25 04:30:44,713 [INFO] Spike signal detected for ORDIUSDT at 2025-09-10 04:26:00+00:00
+2025-10-25 04:30:44,724 [INFO] Spike signal detected for PYTHUSDT at 2025-09-10 04:36:00+00:00
+2025-10-25 04:30:44,732 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 05:06:00+00:00
+2025-10-25 04:30:44,741 [INFO] Spike signal detected for FIOUSDT at 2025-09-10 11:00:00+00:00
+2025-10-25 04:30:44,752 [INFO] Spike signal detected for SPELLUSDT at 2025-09-10 11:04:00+00:00
+2025-10-25 04:30:44,761 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 12:57:00+00:00
+2025-10-25 04:30:44,771 [INFO] Spike signal detected for BBUSDT at 2025-09-10 15:42:00+00:00
+2025-10-25 04:30:44,781 [INFO] Spike signal detected for WUSDT at 2025-09-10 15:56:00+00:00
+2025-10-25 04:30:44,790 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-10 16:14:00+00:00
+2025-10-25 04:30:44,800 [INFO] Spike signal detected for ETHFIUSDT at 2025-09-11 02:17:00+00:00
+2025-10-25 04:30:44,810 [INFO] Spike signal detected for NMRUSDT at 2025-09-11 04:06:00+00:00
+2025-10-25 04:30:44,819 [INFO] Spike signal detected for NMRUSDT at 2025-09-11 04:55:00+00:00
+2025-10-25 04:30:44,827 [INFO] Spike signal detected for NMRUSDT at 2025-09-11 05:37:00+00:00
+2025-10-25 04:30:44,835 [INFO] Spike signal detected for NMRUSDT at 2025-09-11 06:26:00+00:00
+2025-10-25 04:30:44,844 [INFO] Spike signal detected for ACEUSDT at 2025-09-11 06:55:00+00:00
+2025-10-25 04:30:44,848 [INFO] PAPER TRADE OPEN: LONG ACEUSDT at 0.6186 (Size: 4589.72 USDT)
+2025-10-25 04:30:44,854 [INFO] Spike signal detected for PIXELUSDT at 2025-09-11 06:58:00+00:00
+2025-10-25 04:30:44,858 [INFO] PAPER TRADE OPEN: LONG PIXELUSDT at 0.0360 (Size: 4589.72 USDT)
+2025-10-25 04:30:44,865 [INFO] Spike signal detected for PORTALUSDT at 2025-09-11 06:59:00+00:00
+2025-10-25 04:30:44,870 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:44,877 [INFO] Spike signal detected for TLMUSDT at 2025-09-11 07:02:00+00:00
+2025-10-25 04:30:44,880 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:44,887 [INFO] Spike signal detected for YGGUSDT at 2025-09-11 07:28:00+00:00
+2025-10-25 04:30:45,118 [INFO] PAPER TRADE CLOSE: LONG ACEUSDT at 0.8389. PnL: +1630.20 USDT. New Balance: 10809.63 USDT
+2025-10-25 04:30:45,222 [INFO] PAPER TRADE CLOSE: LONG PIXELUSDT at 0.0387. PnL: +342.97 USDT. New Balance: 11152.60 USDT
+2025-10-25 04:30:45,227 [INFO] Spike signal detected for PIXELUSDT at 2025-09-11 07:29:00+00:00
+2025-10-25 04:30:45,236 [INFO] Spike signal detected for ACEUSDT at 2025-09-11 07:33:00+00:00
+2025-10-25 04:30:45,244 [INFO] Spike signal detected for NMRUSDT at 2025-09-11 08:16:00+00:00
+2025-10-25 04:30:45,252 [INFO] Spike signal detected for ACEUSDT at 2025-09-11 08:21:00+00:00
+2025-10-25 04:30:45,261 [INFO] Spike signal detected for BEAMXUSDT at 2025-09-11 10:09:00+00:00
+2025-10-25 04:30:45,271 [INFO] Spike signal detected for XAIUSDT at 2025-09-11 12:09:00+00:00
+2025-10-25 04:30:45,276 [INFO] PAPER TRADE OPEN: LONG XAIUSDT at 0.0571 (Size: 5576.30 USDT)
+2025-10-25 04:30:45,283 [INFO] Spike signal detected for YGGUSDT at 2025-09-12 05:22:00+00:00
+2025-10-25 04:30:45,391 [INFO] PAPER TRADE CLOSE: LONG XAIUSDT at 0.0569. PnL: -25.92 USDT. New Balance: 11126.68 USDT
+2025-10-25 04:30:45,396 [INFO] Spike signal detected for YGGUSDT at 2025-09-12 05:53:00+00:00
+2025-10-25 04:30:45,407 [INFO] Spike signal detected for UMAUSDT at 2025-09-12 14:00:00+00:00
+2025-10-25 04:30:45,410 [INFO] PAPER TRADE OPEN: LONG UMAUSDT at 1.3460 (Size: 5563.34 USDT)
+2025-10-25 04:30:45,417 [INFO] Spike signal detected for ROSEUSDT at 2025-09-12 17:44:00+00:00
+2025-10-25 04:30:45,527 [INFO] PAPER TRADE CLOSE: LONG UMAUSDT at 1.3770. PnL: +123.63 USDT. New Balance: 11250.31 USDT
+2025-10-25 04:30:45,533 [INFO] Spike signal detected for PORTALUSDT at 2025-09-12 21:05:00+00:00
+2025-10-25 04:30:45,544 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 01:38:00+00:00
+2025-10-25 04:30:45,555 [INFO] Spike signal detected for FLMUSDT at 2025-09-13 01:45:00+00:00
+2025-10-25 04:30:45,559 [INFO] PAPER TRADE OPEN: LONG FLMUSDT at 0.0367 (Size: 5625.16 USDT)
+2025-10-25 04:30:45,565 [INFO] Spike signal detected for NKNUSDT at 2025-09-13 01:46:00+00:00
+2025-10-25 04:30:45,576 [INFO] Spike signal detected for PORTALUSDT at 2025-09-13 02:19:00+00:00
+2025-10-25 04:30:45,695 [INFO] PAPER TRADE CLOSE: LONG FLMUSDT at 0.0363. PnL: -65.79 USDT. New Balance: 11184.53 USDT
+2025-10-25 04:30:45,701 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 02:33:00+00:00
+2025-10-25 04:30:45,711 [INFO] Spike signal detected for YGGUSDT at 2025-09-13 02:40:00+00:00
+2025-10-25 04:30:45,721 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 03:54:00+00:00
+2025-10-25 04:30:45,730 [INFO] Spike signal detected for FLMUSDT at 2025-09-13 04:24:00+00:00
+2025-10-25 04:30:45,739 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 05:01:00+00:00
+2025-10-25 04:30:45,748 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 07:11:00+00:00
+2025-10-25 04:30:45,758 [INFO] Spike signal detected for TLMUSDT at 2025-09-13 07:29:00+00:00
+2025-10-25 04:30:45,766 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 07:43:00+00:00
+2025-10-25 04:30:45,776 [INFO] Spike signal detected for MBOXUSDT at 2025-09-13 08:26:00+00:00
+2025-10-25 04:30:45,786 [INFO] Spike signal detected for FLMUSDT at 2025-09-13 08:36:00+00:00
+2025-10-25 04:30:45,795 [INFO] Spike signal detected for YGGUSDT at 2025-09-13 10:06:00+00:00
+2025-10-25 04:30:45,803 [INFO] Spike signal detected for YGGUSDT at 2025-09-13 10:38:00+00:00
+2025-10-25 04:30:45,812 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 12:12:00+00:00
+2025-10-25 04:30:45,822 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 13:51:00+00:00
+2025-10-25 04:30:45,830 [INFO] Spike signal detected for VOXELUSDT at 2025-09-13 16:10:00+00:00
+2025-10-25 04:30:45,839 [INFO] Spike signal detected for FLMUSDT at 2025-09-13 16:11:00+00:00
+2025-10-25 04:30:45,847 [INFO] Spike signal detected for ACEUSDT at 2025-09-13 18:45:00+00:00
+2025-10-25 04:30:45,855 [INFO] Spike signal detected for ACEUSDT at 2025-09-13 19:16:00+00:00
+2025-10-25 04:30:45,864 [INFO] Spike signal detected for MBOXUSDT at 2025-09-13 20:38:00+00:00
+2025-10-25 04:30:45,874 [INFO] Spike signal detected for YGGUSDT at 2025-09-14 01:17:00+00:00
+2025-10-25 04:30:45,883 [INFO] Spike signal detected for UNIUSDT at 2025-09-14 03:57:00+00:00
+2025-10-25 04:30:45,894 [INFO] Spike signal detected for SYSUSDT at 2025-09-14 13:27:00+00:00
+2025-10-25 04:30:45,902 [INFO] Spike signal detected for ARKUSDT at 2025-09-14 14:24:00+00:00
+2025-10-25 04:30:45,913 [INFO] Spike signal detected for ROSEUSDT at 2025-09-14 15:33:00+00:00
+2025-10-25 04:30:45,922 [INFO] Spike signal detected for AIUSDT at 2025-09-15 05:47:00+00:00
+2025-10-25 04:30:45,931 [INFO] Spike signal detected for IOUSDT at 2025-09-15 06:11:00+00:00
+2025-10-25 04:30:45,941 [INFO] Spike signal detected for SPELLUSDT at 2025-09-15 06:32:00+00:00
+2025-10-25 04:30:45,949 [INFO] Spike signal detected for ACEUSDT at 2025-09-15 07:40:00+00:00
+2025-10-25 04:30:45,958 [INFO] Spike signal detected for FLMUSDT at 2025-09-15 08:49:00+00:00
+2025-10-25 04:30:45,966 [INFO] Spike signal detected for ENAUSDT at 2025-09-15 14:14:00+00:00
+2025-10-25 04:30:45,975 [INFO] Spike signal detected for BRETTUSDT at 2025-09-15 14:35:00+00:00
+2025-10-25 04:30:45,984 [INFO] Spike signal detected for VANRYUSDT at 2025-09-16 10:08:00+00:00
+2025-10-25 04:30:45,994 [INFO] Spike signal detected for RAREUSDT at 2025-09-16 13:02:00+00:00
+2025-10-25 04:30:46,001 [INFO] Spike signal detected for RAREUSDT at 2025-09-16 13:53:00+00:00
+2025-10-25 04:30:46,011 [INFO] Spike signal detected for ARPAUSDT at 2025-09-17 10:19:00+00:00
+2025-10-25 04:30:46,022 [INFO] Spike signal detected for WUSDT at 2025-09-17 13:07:00+00:00
+2025-10-25 04:30:46,030 [INFO] Spike signal detected for DYMUSDT at 2025-09-17 17:49:00+00:00
+2025-10-25 04:30:46,039 [INFO] Spike signal detected for OGNUSDT at 2025-09-17 19:14:00+00:00
+2025-10-25 04:30:46,049 [INFO] Spike signal detected for NFPUSDT at 2025-09-17 19:34:00+00:00
+2025-10-25 04:30:46,053 [INFO] PAPER TRADE OPEN: LONG NFPUSDT at 0.0801 (Size: 5592.26 USDT)
+2025-10-25 04:30:46,059 [INFO] Spike signal detected for WUSDT at 2025-09-18 06:09:00+00:00
+2025-10-25 04:30:46,176 [INFO] PAPER TRADE CLOSE: LONG NFPUSDT at 0.0777. PnL: -174.71 USDT. New Balance: 11009.81 USDT
+2025-10-25 04:30:46,182 [INFO] Spike signal detected for SUNUSDT at 2025-09-18 10:45:00+00:00
+2025-10-25 04:30:46,193 [INFO] Spike signal detected for TWTUSDT at 2025-09-18 12:09:00+00:00
+2025-10-25 04:30:46,196 [INFO] PAPER TRADE OPEN: LONG TWTUSDT at 0.8504 (Size: 5504.91 USDT)
+2025-10-25 04:30:46,201 [INFO] Spike signal detected for BBUSDT at 2025-09-18 15:16:00+00:00
+2025-10-25 04:30:46,206 [INFO] PAPER TRADE OPEN: LONG BBUSDT at 0.1982 (Size: 5504.91 USDT)
+2025-10-25 04:30:46,313 [INFO] PAPER TRADE CLOSE: LONG TWTUSDT at 0.8463. PnL: -30.93 USDT. New Balance: 10978.88 USDT
+2025-10-25 04:30:46,320 [INFO] Spike signal detected for LUNA2USDT at 2025-09-18 16:01:00+00:00
+2025-10-25 04:30:46,323 [INFO] PAPER TRADE OPEN: LONG LUNA2USDT at 0.1649 (Size: 5489.44 USDT)
+2025-10-25 04:30:46,536 [INFO] PAPER TRADE CLOSE: LONG BBUSDT at 0.1952. PnL: -89.08 USDT. New Balance: 10889.80 USDT
+2025-10-25 04:30:46,543 [INFO] Spike signal detected for SUNUSDT at 2025-09-18 18:05:00+00:00
+2025-10-25 04:30:46,654 [INFO] PAPER TRADE CLOSE: LONG LUNA2USDT at 0.1638. PnL: -41.00 USDT. New Balance: 10848.80 USDT
+2025-10-25 04:30:46,660 [INFO] Spike signal detected for WUSDT at 2025-09-18 21:24:00+00:00
+2025-10-25 04:30:46,669 [INFO] Spike signal detected for IMXUSDT at 2025-09-19 02:31:00+00:00
+2025-10-25 04:30:46,678 [INFO] Spike signal detected for TWTUSDT at 2025-09-19 04:36:00+00:00
+2025-10-25 04:30:46,682 [INFO] PAPER TRADE OPEN: LONG TWTUSDT at 0.9864 (Size: 5424.40 USDT)
+2025-10-25 04:30:46,689 [INFO] Spike signal detected for SFPUSDT at 2025-09-19 04:43:00+00:00
+2025-10-25 04:30:46,693 [INFO] PAPER TRADE OPEN: LONG SFPUSDT at 0.5036 (Size: 5424.40 USDT)
+2025-10-25 04:30:46,698 [INFO] Spike signal detected for C98USDT at 2025-09-19 04:47:00+00:00
+2025-10-25 04:30:46,806 [INFO] PAPER TRADE CLOSE: LONG TWTUSDT at 1.2308. PnL: +1339.13 USDT. New Balance: 12187.93 USDT
+2025-10-25 04:30:46,813 [INFO] Spike signal detected for LISTAUSDT at 2025-09-19 04:54:00+00:00
+2025-10-25 04:30:46,927 [INFO] PAPER TRADE CLOSE: LONG SFPUSDT at 0.4956. PnL: -90.48 USDT. New Balance: 12097.45 USDT
+2025-10-25 04:30:46,933 [INFO] Spike signal detected for TWTUSDT at 2025-09-19 06:08:00+00:00
+2025-10-25 04:30:46,943 [INFO] Spike signal detected for EDUUSDT at 2025-09-19 07:51:00+00:00
+2025-10-25 04:30:46,951 [INFO] Spike signal detected for EDUUSDT at 2025-09-19 08:22:00+00:00
+2025-10-25 04:30:46,962 [INFO] Spike signal detected for SPELLUSDT at 2025-09-19 10:08:00+00:00
+2025-10-25 04:30:46,972 [INFO] Spike signal detected for SUNUSDT at 2025-09-19 14:40:00+00:00
+2025-10-25 04:30:46,981 [INFO] Spike signal detected for CATIUSDT at 2025-09-19 17:15:00+00:00
+2025-10-25 04:30:46,991 [INFO] Spike signal detected for MOVRUSDT at 2025-09-19 23:18:00+00:00
+2025-10-25 04:30:46,995 [INFO] PAPER TRADE OPEN: LONG MOVRUSDT at 5.5070 (Size: 6048.73 USDT)
+2025-10-25 04:30:47,002 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 05:03:00+00:00
+2025-10-25 04:30:47,110 [INFO] PAPER TRADE CLOSE: LONG MOVRUSDT at 5.5970. PnL: +93.97 USDT. New Balance: 12191.43 USDT
+2025-10-25 04:30:47,116 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 06:57:00+00:00
+2025-10-25 04:30:47,124 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 07:31:00+00:00
+2025-10-25 04:30:47,132 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 08:02:00+00:00
+2025-10-25 04:30:47,141 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 08:50:00+00:00
+2025-10-25 04:30:47,150 [INFO] Spike signal detected for SKLUSDT at 2025-09-20 09:13:00+00:00
+2025-10-25 04:30:47,161 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 10:16:00+00:00
+2025-10-25 04:30:47,168 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 10:56:00+00:00
+2025-10-25 04:30:47,179 [INFO] Spike signal detected for TWTUSDT at 2025-09-20 12:28:00+00:00
+2025-10-25 04:30:47,188 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 12:46:00+00:00
+2025-10-25 04:30:47,198 [INFO] Spike signal detected for TWTUSDT at 2025-09-20 12:59:00+00:00
+2025-10-25 04:30:47,207 [INFO] Spike signal detected for AEVOUSDT at 2025-09-20 14:04:00+00:00
+2025-10-25 04:30:47,215 [INFO] Spike signal detected for AEVOUSDT at 2025-09-20 14:41:00+00:00
+2025-10-25 04:30:47,225 [INFO] Spike signal detected for SUNUSDT at 2025-09-20 15:24:00+00:00
+2025-10-25 04:30:47,233 [INFO] Spike signal detected for AEVOUSDT at 2025-09-20 17:23:00+00:00
+2025-10-25 04:30:47,244 [INFO] Spike signal detected for TWTUSDT at 2025-09-20 18:38:00+00:00
+2025-10-25 04:30:47,253 [INFO] Spike signal detected for TWTUSDT at 2025-09-20 19:45:00+00:00
+2025-10-25 04:30:47,263 [INFO] Spike signal detected for LISTAUSDT at 2025-09-20 20:30:00+00:00
+2025-10-25 04:30:47,272 [INFO] Spike signal detected for LISTAUSDT at 2025-09-20 21:01:00+00:00
+2025-10-25 04:30:47,280 [INFO] Spike signal detected for LISTAUSDT at 2025-09-20 22:04:00+00:00
+2025-10-25 04:30:47,289 [INFO] Spike signal detected for LISTAUSDT at 2025-09-20 22:35:00+00:00
+2025-10-25 04:30:47,297 [INFO] Spike signal detected for LISTAUSDT at 2025-09-20 23:20:00+00:00
+2025-10-25 04:30:47,306 [INFO] Spike signal detected for SUNUSDT at 2025-09-21 01:05:00+00:00
+2025-10-25 04:30:47,315 [INFO] Spike signal detected for AEVOUSDT at 2025-09-21 05:21:00+00:00
+2025-10-25 04:30:47,323 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 05:41:00+00:00
+2025-10-25 04:30:47,333 [INFO] Spike signal detected for PERPUSDT at 2025-09-21 06:20:00+00:00
+2025-10-25 04:30:47,342 [INFO] Spike signal detected for LISTAUSDT at 2025-09-21 06:22:00+00:00
+2025-10-25 04:30:47,350 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 06:48:00+00:00
+2025-10-25 04:30:47,359 [INFO] Spike signal detected for SUNUSDT at 2025-09-21 07:14:00+00:00
+2025-10-25 04:30:47,368 [INFO] Spike signal detected for LISTAUSDT at 2025-09-21 07:15:00+00:00
+2025-10-25 04:30:47,376 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 07:19:00+00:00
+2025-10-25 04:30:47,384 [INFO] Spike signal detected for LISTAUSDT at 2025-09-21 07:50:00+00:00
+2025-10-25 04:30:47,392 [INFO] Spike signal detected for LISTAUSDT at 2025-09-21 08:30:00+00:00
+2025-10-25 04:30:47,399 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 08:32:00+00:00
+2025-10-25 04:30:47,409 [INFO] Spike signal detected for SFPUSDT at 2025-09-21 08:42:00+00:00
+2025-10-25 04:30:47,412 [INFO] PAPER TRADE OPEN: LONG SFPUSDT at 0.5323 (Size: 6095.71 USDT)
+2025-10-25 04:30:47,418 [INFO] Spike signal detected for HOOKUSDT at 2025-09-21 09:35:00+00:00
+2025-10-25 04:30:47,633 [INFO] PAPER TRADE CLOSE: LONG SFPUSDT at 0.5192. PnL: -154.83 USDT. New Balance: 12036.60 USDT
+2025-10-25 04:30:47,637 [INFO] Spike signal detected for HOOKUSDT at 2025-09-21 10:10:00+00:00
+2025-10-25 04:30:47,647 [INFO] Spike signal detected for RONINUSDT at 2025-09-21 11:27:00+00:00
+2025-10-25 04:30:47,651 [INFO] PAPER TRADE OPEN: LONG RONINUSDT at 0.5223 (Size: 6018.30 USDT)
+2025-10-25 04:30:47,657 [INFO] Spike signal detected for DODOXUSDT at 2025-09-21 11:52:00+00:00
+2025-10-25 04:30:47,764 [INFO] PAPER TRADE CLOSE: LONG RONINUSDT at 0.5158. PnL: -79.68 USDT. New Balance: 11956.91 USDT
+2025-10-25 04:30:47,768 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 15:18:00+00:00
+2025-10-25 04:30:47,772 [INFO] PAPER TRADE OPEN: LONG EDUUSDT at 0.1784 (Size: 5978.46 USDT)
+2025-10-25 04:30:47,777 [INFO] Spike signal detected for AEVOUSDT at 2025-09-21 16:03:00+00:00
+2025-10-25 04:30:47,894 [INFO] PAPER TRADE CLOSE: LONG EDUUSDT at 0.1746. PnL: -132.08 USDT. New Balance: 11824.84 USDT
+2025-10-25 04:30:47,899 [INFO] Spike signal detected for AEVOUSDT at 2025-09-21 16:45:00+00:00
+2025-10-25 04:30:47,909 [INFO] Spike signal detected for EDUUSDT at 2025-09-21 20:39:00+00:00
+2025-10-25 04:30:47,913 [INFO] PAPER TRADE OPEN: LONG EDUUSDT at 0.1828 (Size: 5912.42 USDT)
+2025-10-25 04:30:47,918 [INFO] Spike signal detected for BBUSDT at 2025-09-21 22:38:00+00:00
+2025-10-25 04:30:48,134 [INFO] PAPER TRADE CLOSE: LONG EDUUSDT at 0.1754. PnL: -243.98 USDT. New Balance: 11580.86 USDT
+2025-10-25 04:30:48,141 [INFO] Spike signal detected for PERPUSDT at 2025-09-21 23:41:00+00:00
+2025-10-25 04:30:48,149 [INFO] Spike signal detected for PERPUSDT at 2025-09-22 00:13:00+00:00
+2025-10-25 04:30:48,153 [INFO] PAPER TRADE OPEN: SHORT PERPUSDT at 0.3274 (Size: 5790.43 USDT)
+2025-10-25 04:30:48,160 [INFO] Spike signal detected for LISTAUSDT at 2025-09-22 00:20:00+00:00
+2025-10-25 04:30:48,169 [INFO] Spike signal detected for BRETTUSDT at 2025-09-22 00:32:00+00:00
+2025-10-25 04:30:48,173 [INFO] PAPER TRADE OPEN: SHORT BRETTUSDT at 0.0442 (Size: 5790.43 USDT)
+2025-10-25 04:30:48,383 [INFO] PAPER TRADE CLOSE: SHORT PERPUSDT at 0.3162. PnL: +193.53 USDT. New Balance: 11774.39 USDT
+2025-10-25 04:30:48,389 [INFO] Spike signal detected for SUNUSDT at 2025-09-22 02:30:00+00:00
+2025-10-25 04:30:48,496 [INFO] PAPER TRADE CLOSE: SHORT BRETTUSDT at 0.0460. PnL: -245.94 USDT. New Balance: 11528.45 USDT
+2025-10-25 04:30:48,501 [INFO] Spike signal detected for SUNUSDT at 2025-09-22 03:05:00+00:00
+2025-10-25 04:30:48,511 [INFO] Spike signal detected for OMUSDT at 2025-09-22 06:00:00+00:00
+2025-10-25 04:30:48,515 [INFO] PAPER TRADE OPEN: SHORT OMUSDT at 0.1811 (Size: 5764.23 USDT)
+2025-10-25 04:30:48,522 [INFO] Spike signal detected for USTCUSDT at 2025-09-22 06:00:00+00:00
+2025-10-25 04:30:48,532 [INFO] Spike signal detected for AIUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,543 [INFO] Spike signal detected for ETHFIUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,553 [INFO] Spike signal detected for HOOKUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,564 [INFO] Spike signal detected for MEMEUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,567 [INFO] PAPER TRADE OPEN: SHORT MEMEUSDT at 0.0023 (Size: 5764.23 USDT)
+2025-10-25 04:30:48,574 [INFO] Spike signal detected for NOTUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,578 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:48,585 [INFO] Spike signal detected for PORTALUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,596 [INFO] Spike signal detected for TIAUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,606 [INFO] Spike signal detected for TONUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,617 [INFO] Spike signal detected for XAIUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,627 [INFO] Spike signal detected for YGGUSDT at 2025-09-22 06:01:00+00:00
+2025-10-25 04:30:48,637 [INFO] Spike signal detected for 1000BONKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,648 [INFO] Spike signal detected for 1000FLOKIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,658 [INFO] Spike signal detected for 1000LUNCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,668 [INFO] Spike signal detected for 1000PEPEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,677 [INFO] Spike signal detected for 1000RATSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,686 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,690 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:48,695 [INFO] Spike signal detected for 1000SHIBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,703 [INFO] Spike signal detected for 1000XECUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,712 [INFO] Spike signal detected for 1INCHUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,721 [INFO] Spike signal detected for 1MBABYDOGEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,730 [INFO] Spike signal detected for AAVEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,738 [INFO] Spike signal detected for ACEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,747 [INFO] Spike signal detected for ACHUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,756 [INFO] Spike signal detected for ADAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,765 [INFO] Spike signal detected for AEVOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,773 [INFO] Spike signal detected for AGLDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,781 [INFO] Spike signal detected for ALGOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,790 [INFO] Spike signal detected for ALICEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,798 [INFO] Spike signal detected for ALTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,806 [INFO] Spike signal detected for ANKRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,814 [INFO] Spike signal detected for APEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,823 [INFO] Spike signal detected for API3USDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,831 [INFO] Spike signal detected for APTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,839 [INFO] Spike signal detected for ARBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,847 [INFO] Spike signal detected for ARKMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,856 [INFO] Spike signal detected for ARKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,865 [INFO] Spike signal detected for ARPAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,874 [INFO] Spike signal detected for ARUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,882 [INFO] Spike signal detected for ASTRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,890 [INFO] Spike signal detected for ATAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,899 [INFO] Spike signal detected for ATOMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,907 [INFO] Spike signal detected for AUCTIONUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,915 [INFO] Spike signal detected for AVAXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,924 [INFO] Spike signal detected for AXLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,932 [INFO] Spike signal detected for AXSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,941 [INFO] Spike signal detected for BANANAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,948 [INFO] Spike signal detected for BANDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,957 [INFO] Spike signal detected for BATUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,964 [INFO] Spike signal detected for BBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,973 [INFO] Spike signal detected for BEAMXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,981 [INFO] Spike signal detected for BELUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,990 [INFO] Spike signal detected for BICOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:48,998 [INFO] Spike signal detected for BIGTIMEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,007 [INFO] Spike signal detected for BLURUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,015 [INFO] Spike signal detected for BNTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,023 [INFO] Spike signal detected for BOMEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,031 [INFO] Spike signal detected for BRETTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,040 [INFO] Spike signal detected for BSVUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,043 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,048 [INFO] Spike signal detected for BTCDOMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,051 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,057 [INFO] Spike signal detected for C98USDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,065 [INFO] Spike signal detected for CATIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,073 [INFO] Spike signal detected for CELOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,082 [INFO] Spike signal detected for CELRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,091 [INFO] Spike signal detected for CFXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,099 [INFO] Spike signal detected for CHESSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,108 [INFO] Spike signal detected for CHRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,116 [INFO] Spike signal detected for CHZUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,124 [INFO] Spike signal detected for CKBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,133 [INFO] Spike signal detected for COMPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,141 [INFO] Spike signal detected for COSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,149 [INFO] Spike signal detected for COTIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,157 [INFO] Spike signal detected for CRVUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,165 [INFO] Spike signal detected for CTSIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,174 [INFO] Spike signal detected for CYBERUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,181 [INFO] Spike signal detected for DASHUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,185 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,190 [INFO] Spike signal detected for DENTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,194 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,199 [INFO] Spike signal detected for DODOXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,207 [INFO] Spike signal detected for DOGEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,215 [INFO] Spike signal detected for DOGSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,224 [INFO] Spike signal detected for DOTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,232 [INFO] Spike signal detected for DUSKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,241 [INFO] Spike signal detected for DYDXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,249 [INFO] Spike signal detected for DYMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,258 [INFO] Spike signal detected for EDUUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,268 [INFO] Spike signal detected for EGLDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,278 [INFO] Spike signal detected for ENAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,287 [INFO] Spike signal detected for ENJUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,296 [INFO] Spike signal detected for ENSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,306 [INFO] Spike signal detected for ETCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,315 [INFO] Spike signal detected for ETHWUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,324 [INFO] Spike signal detected for FETUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,333 [INFO] Spike signal detected for FIDAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,343 [INFO] Spike signal detected for FILUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,353 [INFO] Spike signal detected for FIOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,363 [INFO] Spike signal detected for FLMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,372 [INFO] Spike signal detected for FLOWUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,377 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,383 [INFO] Spike signal detected for FLUXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,393 [INFO] Spike signal detected for FXSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,403 [INFO] Spike signal detected for GALAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,412 [INFO] Spike signal detected for GASUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,423 [INFO] Spike signal detected for GHSTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,432 [INFO] Spike signal detected for GLMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,442 [INFO] Spike signal detected for GMTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,451 [INFO] Spike signal detected for GMXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,461 [INFO] Spike signal detected for GRTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,471 [INFO] Spike signal detected for GTCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,481 [INFO] Spike signal detected for GUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,490 [INFO] Spike signal detected for HBARUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,500 [INFO] Spike signal detected for HFTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,509 [INFO] Spike signal detected for HIGHUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,519 [INFO] Spike signal detected for HMSTRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,530 [INFO] Spike signal detected for HOTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,533 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,539 [INFO] Spike signal detected for ICPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,548 [INFO] Spike signal detected for ICXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,559 [INFO] Spike signal detected for IDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,568 [INFO] Spike signal detected for ILVUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,579 [INFO] Spike signal detected for IMXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,589 [INFO] Spike signal detected for INJUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,599 [INFO] Spike signal detected for IOSTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,609 [INFO] Spike signal detected for IOTAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,619 [INFO] Spike signal detected for IOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,629 [INFO] Spike signal detected for JASMYUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,638 [INFO] Spike signal detected for JOEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,648 [INFO] Spike signal detected for JTOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,657 [INFO] Spike signal detected for JUPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,667 [INFO] Spike signal detected for KDAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,677 [INFO] Spike signal detected for KNCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,686 [INFO] Spike signal detected for KSMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,696 [INFO] Spike signal detected for LDOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,706 [INFO] Spike signal detected for LINKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,716 [INFO] Spike signal detected for LISTAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,725 [INFO] Spike signal detected for LPTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,735 [INFO] Spike signal detected for LQTYUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,745 [INFO] Spike signal detected for LRCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,754 [INFO] Spike signal detected for LSKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,765 [INFO] Spike signal detected for LTCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,775 [INFO] Spike signal detected for LUNA2USDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,784 [INFO] Spike signal detected for MAGICUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,794 [INFO] Spike signal detected for MANAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,805 [INFO] Spike signal detected for MANTAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,815 [INFO] Spike signal detected for MASKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,824 [INFO] Spike signal detected for MAVUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,833 [INFO] Spike signal detected for MBOXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,843 [INFO] Spike signal detected for METISUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,853 [INFO] Spike signal detected for MEWUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,863 [INFO] Spike signal detected for MINAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,872 [INFO] Spike signal detected for MOVRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,881 [INFO] Spike signal detected for MTLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,890 [INFO] Spike signal detected for NEARUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,900 [INFO] Spike signal detected for NEIROUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,903 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,910 [INFO] Spike signal detected for NEOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,919 [INFO] Spike signal detected for NFPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,929 [INFO] Spike signal detected for NMRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,940 [INFO] Spike signal detected for NTRNUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,949 [INFO] Spike signal detected for OGNUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,959 [INFO] Spike signal detected for ONDOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,969 [INFO] Spike signal detected for ONEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,979 [INFO] Spike signal detected for ONGUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,982 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:49,989 [INFO] Spike signal detected for ONTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:49,999 [INFO] Spike signal detected for OPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,009 [INFO] Spike signal detected for ORDIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,019 [INFO] Spike signal detected for PENDLEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,029 [INFO] Spike signal detected for PEOPLEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,039 [INFO] Spike signal detected for PERPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,050 [INFO] Spike signal detected for PHBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,059 [INFO] Spike signal detected for PIXELUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,069 [INFO] Spike signal detected for POLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,079 [INFO] Spike signal detected for POLYXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,089 [INFO] Spike signal detected for POPCATUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,098 [INFO] Spike signal detected for POWRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,101 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:50,109 [INFO] Spike signal detected for PYTHUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,118 [INFO] Spike signal detected for QNTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,128 [INFO] Spike signal detected for QTUMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,139 [INFO] Spike signal detected for QUICKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,148 [INFO] Spike signal detected for RAREUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,158 [INFO] Spike signal detected for RDNTUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,168 [INFO] Spike signal detected for RENDERUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,177 [INFO] Spike signal detected for REZUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,186 [INFO] Spike signal detected for RLCUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,196 [INFO] Spike signal detected for RONINUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,206 [INFO] Spike signal detected for ROSEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,215 [INFO] Spike signal detected for RPLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,225 [INFO] Spike signal detected for RSRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,234 [INFO] Spike signal detected for RUNEUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,245 [INFO] Spike signal detected for RVNUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,256 [INFO] Spike signal detected for SAGAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,265 [INFO] Spike signal detected for SANDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,274 [INFO] Spike signal detected for SEIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,284 [INFO] Spike signal detected for SFPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,294 [INFO] Spike signal detected for SKLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,303 [INFO] Spike signal detected for SNXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,313 [INFO] Spike signal detected for SOLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,323 [INFO] Spike signal detected for SPELLUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,332 [INFO] Spike signal detected for SSVUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,342 [INFO] Spike signal detected for STGUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,352 [INFO] Spike signal detected for STORJUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,362 [INFO] Spike signal detected for STRKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,372 [INFO] Spike signal detected for SUIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,381 [INFO] Spike signal detected for SUPERUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,391 [INFO] Spike signal detected for SUSHIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,399 [INFO] Spike signal detected for SXPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,408 [INFO] Spike signal detected for SYNUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,418 [INFO] Spike signal detected for SYSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,429 [INFO] Spike signal detected for TAOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,439 [INFO] Spike signal detected for THETAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,449 [INFO] Spike signal detected for TLMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,459 [INFO] Spike signal detected for TNSRUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,463 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:50,469 [INFO] Spike signal detected for TOKENUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,479 [INFO] Spike signal detected for TRBUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,489 [INFO] Spike signal detected for TRUUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,499 [INFO] Spike signal detected for TURBOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,508 [INFO] Spike signal detected for TUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,512 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:50,518 [INFO] Spike signal detected for UMAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,527 [INFO] Spike signal detected for UNIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,667 [INFO] Spike signal detected for VANRYUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,677 [INFO] Spike signal detected for VETUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,686 [INFO] Spike signal detected for VOXELUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,696 [INFO] Spike signal detected for WAXPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,706 [INFO] Spike signal detected for WIFUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,717 [INFO] Spike signal detected for WLDUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,727 [INFO] Spike signal detected for WOOUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,736 [INFO] Spike signal detected for XLMUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,746 [INFO] Spike signal detected for XRPUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,756 [INFO] Spike signal detected for XTZUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,759 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:50,766 [INFO] Spike signal detected for XVGUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,775 [INFO] Spike signal detected for XVSUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,784 [INFO] Spike signal detected for YFIUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,795 [INFO] Spike signal detected for ZECUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,805 [INFO] Spike signal detected for ZENUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,808 [WARNING] Max parallel sessions reached. Skipping new trade.
+2025-10-25 04:30:50,815 [INFO] Spike signal detected for ZETAUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,824 [INFO] Spike signal detected for ZILUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,833 [INFO] Spike signal detected for ZKUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,843 [INFO] Spike signal detected for ZROUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,852 [INFO] Spike signal detected for ZRXUSDT at 2025-09-22 06:02:00+00:00
+2025-10-25 04:30:50,862 [INFO] Spike signal detected for MYROUSDT at 2025-09-22 06:03:00+00:00
+2025-10-25 04:30:50,872 [INFO] Spike signal detected for REIUSDT at 2025-09-22 06:03:00+00:00
+2025-10-25 04:30:50,879 [INFO] Spike signal detected for BBUSDT at 2025-09-22 09:50:00+00:00
+2025-10-25 04:30:50,996 [INFO] PAPER TRADE CLOSE: SHORT OMUSDT at 0.1735. PnL: +237.74 USDT. New Balance: 11766.19 USDT
+2025-10-25 04:30:51,089 [INFO] PAPER TRADE CLOSE: SHORT MEMEUSDT at 0.0023. PnL: +108.84 USDT. New Balance: 11875.04 USDT
+2025-10-25 04:30:51,094 [INFO] Spike signal detected for 1000RATSUSDT at 2025-09-22 11:42:00+00:00
+2025-10-25 04:30:51,104 [INFO] Spike signal detected for SUNUSDT at 2025-09-22 11:48:00+00:00
+2025-10-25 04:30:51,112 [INFO] Spike signal detected for SUNUSDT at 2025-09-22 12:43:00+00:00
+2025-10-25 04:30:51,121 [INFO] Spike signal detected for SUNUSDT at 2025-09-22 14:57:00+00:00
+2025-10-25 04:30:51,130 [INFO] Spike signal detected for 1000RATSUSDT at 2025-09-23 04:03:00+00:00
+2025-10-25 04:30:51,139 [INFO] Spike signal detected for NMRUSDT at 2025-09-23 06:22:00+00:00
+2025-10-25 04:30:51,148 [INFO] Spike signal detected for NMRUSDT at 2025-09-23 08:00:00+00:00
+2025-10-25 04:30:51,156 [INFO] Spike signal detected for 1000RATSUSDT at 2025-09-23 08:24:00+00:00
+2025-10-25 04:30:51,165 [INFO] Spike signal detected for NMRUSDT at 2025-09-23 10:24:00+00:00
+2025-10-25 04:30:51,174 [INFO] Spike signal detected for 1000RATSUSDT at 2025-09-23 13:24:00+00:00
+2025-10-25 04:30:51,185 [INFO] Spike signal detected for LISTAUSDT at 2025-09-23 15:16:00+00:00
+2025-10-25 04:30:51,196 [INFO] Spike signal detected for GMXUSDT at 2025-09-23 17:33:00+00:00
+2025-10-25 04:30:51,199 [INFO] PAPER TRADE OPEN: SHORT GMXUSDT at 16.0540 (Size: 5937.52 USDT)
+2025-10-25 04:30:51,205 [INFO] Spike signal detected for ARKUSDT at 2025-09-24 00:11:00+00:00
+2025-10-25 04:30:51,314 [INFO] PAPER TRADE CLOSE: SHORT GMXUSDT at 16.2430. PnL: -74.68 USDT. New Balance: 11800.36 USDT
+2025-10-25 04:30:51,319 [INFO] Spike signal detected for DYDXUSDT at 2025-09-24 05:56:00+00:00
+2025-10-25 04:30:51,323 [INFO] PAPER TRADE OPEN: LONG DYDXUSDT at 0.6450 (Size: 5900.18 USDT)
+2025-10-25 04:30:51,329 [INFO] Spike signal detected for TWTUSDT at 2025-09-24 10:34:00+00:00
+2025-10-25 04:30:51,445 [INFO] PAPER TRADE CLOSE: LONG DYDXUSDT at 0.6370. PnL: -77.87 USDT. New Balance: 11722.49 USDT
+2025-10-25 04:30:51,452 [INFO] Spike signal detected for SFPUSDT at 2025-09-24 10:48:00+00:00
+2025-10-25 04:30:51,461 [INFO] Spike signal detected for SFPUSDT at 2025-09-24 12:23:00+00:00
+2025-10-25 04:30:51,470 [INFO] Spike signal detected for ZECUSDT at 2025-09-24 16:35:00+00:00
+2025-10-25 04:30:51,475 [INFO] PAPER TRADE OPEN: LONG ZECUSDT at 58.5800 (Size: 5861.24 USDT)
+2025-10-25 04:30:51,481 [INFO] Spike signal detected for SNXUSDT at 2025-09-24 20:44:00+00:00
+2025-10-25 04:30:51,598 [INFO] PAPER TRADE CLOSE: LONG ZECUSDT at 57.6600. PnL: -96.70 USDT. New Balance: 11625.79 USDT
+2025-10-25 04:30:51,604 [INFO] Spike signal detected for SNXUSDT at 2025-09-24 22:26:00+00:00
+2025-10-25 04:30:51,613 [INFO] Spike signal detected for SNXUSDT at 2025-09-24 23:10:00+00:00
+2025-10-25 04:30:51,623 [INFO] Spike signal detected for POPCATUSDT at 2025-09-25 07:17:00+00:00
+2025-10-25 04:30:51,627 [INFO] PAPER TRADE OPEN: LONG POPCATUSDT at 0.2283 (Size: 5812.89 USDT)
+2025-10-25 04:30:51,632 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-25 07:41:00+00:00
+2025-10-25 04:30:51,747 [INFO] PAPER TRADE CLOSE: LONG POPCATUSDT at 0.2258. PnL: -68.28 USDT. New Balance: 11557.51 USDT
+2025-10-25 04:30:51,753 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-25 12:39:00+00:00
+2025-10-25 04:30:51,763 [INFO] Spike signal detected for MYROUSDT at 2025-09-25 16:22:00+00:00
+2025-10-25 04:30:51,774 [INFO] Spike signal detected for SNXUSDT at 2025-09-26 07:21:00+00:00
+2025-10-25 04:30:51,782 [INFO] Spike signal detected for SNXUSDT at 2025-09-26 08:11:00+00:00
+2025-10-25 04:30:51,791 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-26 08:41:00+00:00
+2025-10-25 04:30:51,800 [INFO] Spike signal detected for SNXUSDT at 2025-09-26 12:09:00+00:00
+2025-10-25 04:30:51,809 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-26 13:34:00+00:00
+2025-10-25 04:30:51,818 [INFO] Spike signal detected for SNXUSDT at 2025-09-26 15:05:00+00:00
+2025-10-25 04:30:51,827 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-26 15:06:00+00:00
+2025-10-25 04:30:51,835 [INFO] Spike signal detected for SNXUSDT at 2025-09-26 15:49:00+00:00
+2025-10-25 04:30:51,843 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-26 16:34:00+00:00
+2025-10-25 04:30:51,851 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-26 17:25:00+00:00
+2025-10-25 04:30:51,859 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 09:11:00+00:00
+2025-10-25 04:30:51,867 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 10:04:00+00:00
+2025-10-25 04:30:51,875 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 11:11:00+00:00
+2025-10-25 04:30:51,882 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 12:09:00+00:00
+2025-10-25 04:30:51,893 [INFO] Spike signal detected for EDUUSDT at 2025-09-27 12:16:00+00:00
+2025-10-25 04:30:51,903 [INFO] Spike signal detected for EDUUSDT at 2025-09-27 12:59:00+00:00
+2025-10-25 04:30:51,916 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 14:42:00+00:00
+2025-10-25 04:30:51,930 [INFO] Spike signal detected for SKLUSDT at 2025-09-27 15:08:00+00:00
+2025-10-25 04:30:51,943 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 15:43:00+00:00
+2025-10-25 04:30:51,954 [INFO] Spike signal detected for WOOUSDT at 2025-09-27 16:13:00+00:00
+2025-10-25 04:30:51,966 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 16:15:00+00:00
+2025-10-25 04:30:51,975 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 16:15:00+00:00
+2025-10-25 04:30:51,982 [INFO] Spike signal detected for AEVOUSDT at 2025-09-27 16:56:00+00:00
+2025-10-25 04:30:51,990 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 17:09:00+00:00
+2025-10-25 04:30:51,998 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 17:44:00+00:00
+2025-10-25 04:30:52,005 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 18:32:00+00:00
+2025-10-25 04:30:52,013 [INFO] Spike signal detected for 1000SATSUSDT at 2025-09-27 19:32:00+00:00
+2025-10-25 04:30:52,023 [INFO] Spike signal detected for RLCUSDT at 2025-09-28 05:34:00+00:00
+2025-10-25 04:30:52,027 [INFO] PAPER TRADE OPEN: LONG RLCUSDT at 1.0769 (Size: 5778.75 USDT)
+2025-10-25 04:30:52,033 [INFO] Spike signal detected for SUNUSDT at 2025-09-28 12:13:00+00:00
+2025-10-25 04:30:52,147 [INFO] PAPER TRADE CLOSE: LONG RLCUSDT at 1.1380. PnL: +323.11 USDT. New Balance: 11880.62 USDT
+2025-10-25 04:30:52,152 [INFO] Spike signal detected for VOXELUSDT at 2025-09-28 12:35:00+00:00
+2025-10-25 04:30:52,162 [INFO] Spike signal detected for REZUSDT at 2025-09-28 16:50:00+00:00
+2025-10-25 04:30:52,172 [INFO] Spike signal detected for FIDAUSDT at 2025-09-28 20:21:00+00:00
+2025-10-25 04:30:52,182 [INFO] Spike signal detected for ZENUSDT at 2025-09-29 01:24:00+00:00
+2025-10-25 04:30:52,193 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 08:53:00+00:00
+2025-10-25 04:30:52,196 [INFO] PAPER TRADE OPEN: LONG SUPERUSDT at 0.6710 (Size: 5940.31 USDT)
+2025-10-25 04:30:52,204 [INFO] Spike signal detected for SNXUSDT at 2025-09-29 09:12:00+00:00
+2025-10-25 04:30:52,316 [INFO] PAPER TRADE CLOSE: LONG SUPERUSDT at 0.7011. PnL: +261.61 USDT. New Balance: 12142.24 USDT
+2025-10-25 04:30:52,320 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 09:49:00+00:00
+2025-10-25 04:30:52,328 [INFO] Spike signal detected for SNXUSDT at 2025-09-29 10:03:00+00:00
+2025-10-25 04:30:52,336 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 11:05:00+00:00
+2025-10-25 04:30:52,345 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 12:03:00+00:00
+2025-10-25 04:30:52,354 [INFO] Spike signal detected for REZUSDT at 2025-09-29 13:03:00+00:00
+2025-10-25 04:30:52,358 [INFO] PAPER TRADE OPEN: LONG REZUSDT at 0.0124 (Size: 6071.12 USDT)
+2025-10-25 04:30:52,363 [INFO] Spike signal detected for REZUSDT at 2025-09-29 13:36:00+00:00
+2025-10-25 04:30:52,480 [INFO] PAPER TRADE CLOSE: LONG REZUSDT at 0.0129. PnL: +255.16 USDT. New Balance: 12397.40 USDT
+2025-10-25 04:30:52,485 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 14:09:00+00:00
+2025-10-25 04:30:52,494 [INFO] Spike signal detected for SNXUSDT at 2025-09-29 16:08:00+00:00
+2025-10-25 04:30:52,503 [INFO] Spike signal detected for SUPERUSDT at 2025-09-29 16:14:00+00:00
+2025-10-25 04:30:52,514 [INFO] Spike signal detected for SYNUSDT at 2025-09-29 17:00:00+00:00
+2025-10-25 04:30:52,522 [INFO] Spike signal detected for FXSUSDT at 2025-09-30 07:08:00+00:00
+2025-10-25 04:30:52,532 [INFO] Spike signal detected for ZECUSDT at 2025-09-30 09:54:00+00:00
+2025-10-25 04:30:52,535 [INFO] PAPER TRADE OPEN: SHORT ZECUSDT at 63.7900 (Size: 6198.70 USDT)
+2025-10-25 04:30:52,542 [INFO] Spike signal detected for STRKUSDT at 2025-09-30 14:01:00+00:00
+2025-10-25 04:30:52,639 [INFO] PAPER TRADE CLOSE: SHORT ZECUSDT at 64.8700. PnL: -109.95 USDT. New Balance: 12287.45 USDT
+2025-10-25 04:30:52,646 [INFO] Spike signal detected for ZECUSDT at 2025-09-30 14:17:00+00:00
+2025-10-25 04:30:52,655 [INFO] Spike signal detected for ZECUSDT at 2025-09-30 14:53:00+00:00
+2025-10-25 04:30:52,660 [INFO] PAPER TRADE OPEN: LONG ZECUSDT at 75.3200 (Size: 6143.72 USDT)
+2025-10-25 04:30:52,667 [INFO] Spike signal detected for PENDLEUSDT at 2025-09-30 16:37:00+00:00
+2025-10-25 04:30:52,780 [INFO] PAPER TRADE CLOSE: LONG ZECUSDT at 75.8600. PnL: +39.11 USDT. New Balance: 12326.56 USDT
+2025-10-25 04:30:52,786 [INFO] Spike signal detected for SFPUSDT at 2025-09-30 17:42:00+00:00
+2025-10-25 04:30:52,795 [INFO] Spike signal detected for BEAMXUSDT at 2025-09-30 19:54:00+00:00
+2025-10-25 04:30:52,799 [INFO] Database simulation finished.
+2025-10-25 04:30:52,799 [INFO] Shutting down Paper Trader...
+2025-10-25 04:30:52,806 [INFO] Saved 93 trades to paper_trades.csv
+2025-10-25 04:30:52,808 [INFO] Saved equity curve to paper_equity.csv
+2025-10-25 04:30:52,809 [INFO] Shutdown complete.
