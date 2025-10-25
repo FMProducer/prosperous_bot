@@ -1,0 +1,33 @@
+2025-10-25 03:57:58,649 [INFO] Logging to: output\alpha\logs\paper_trader_session.log
+2025-10-25 03:57:58,653 [INFO] Random seed set to 25
+2025-10-25 03:57:58,653 [INFO] Using model from config file: C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth
+2025-10-25 03:57:58,661 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 03:57:58,763 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 03:57:58,765 [INFO] Policy Net with 254.4K parameters created in Agent
+2025-10-25 03:57:58,765 [INFO] Target Net with 254.4K parameters created in Agent
+2025-10-25 03:58:00,538 [INFO] Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-25 03:58:00,538 [INFO] D3QN_PER_Agent initialized.
+2025-10-25 03:58:00,578 [INFO] Model loaded from C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth (checkpoint).
+2025-10-25 03:58:00,578 [INFO] Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-25 03:58:19,210 [INFO] Using 257 symbols for paper trading.
+2025-10-25 03:58:19,211 [INFO] Starting trader in 'database' (high-speed simulation) mode.
+2025-10-25 03:58:19,211 [INFO] Scanning for signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 04:02:56,829 [INFO] Shutdown signal received.
+2025-10-25 04:02:56,829 [INFO] Shutting down Paper Trader...
+2025-10-25 04:02:56,834 [INFO] Saved 0 trades to paper_trades.csv
+2025-10-25 04:02:56,836 [INFO] Saved equity curve to paper_equity.csv
+2025-10-25 04:02:56,836 [INFO] Shutdown complete.
+2025-10-25 04:03:14,178 [INFO] Logging to: output\alpha\logs\paper_trader_session.log
+2025-10-25 04:03:14,181 [INFO] Random seed set to 25
+2025-10-25 04:03:14,181 [INFO] Using model from config file: C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth
+2025-10-25 04:03:14,188 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:03:14,261 [INFO] Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-25 04:03:14,263 [INFO] Policy Net with 254.4K parameters created in Agent
+2025-10-25 04:03:14,264 [INFO] Target Net with 254.4K parameters created in Agent
+2025-10-25 04:03:15,987 [INFO] Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-25 04:03:15,987 [INFO] D3QN_PER_Agent initialized.
+2025-10-25 04:03:16,029 [INFO] Model loaded from C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth (checkpoint).
+2025-10-25 04:03:16,029 [INFO] Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-25 04:03:24,193 [INFO] Using 257 symbols for paper trading.
+2025-10-25 04:03:24,194 [INFO] Starting trader in 'database' (high-speed simulation) mode.
+2025-10-25 04:03:24,194 [INFO] Scanning for signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...

@@ -22,24 +22,6 @@ from test_agent import init_agent
 from trading_environment import TradingEnvironment, logger
 from utils import find_spike_windows, load_config, set_random_seed, setup_logging
 
-
-def setup_logging(cfg: MasterConfig) -> None:
-    log_dir = os.path.join(cfg.paths.output_dir, "paper_trader")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "paper_trader_session.log")
-
-    logger = logging.getLogger()
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] (%(threadName)s) %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
-    )
-    logging.info("[Init] Logging for Paper Trader session started")
-
-
 class PaperTrader:
     def __init__(self, cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None):
         self.cfg = cfg        

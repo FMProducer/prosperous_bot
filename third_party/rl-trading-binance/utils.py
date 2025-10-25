@@ -267,8 +267,7 @@ def setup_logging(session_name: str, cfg: MasterConfig, log_dir_override: Option
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        # handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
-        handlers=[logging.FileHandler(log_file)],
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
     logging.info(f"Logging to: {log_file}")
 
