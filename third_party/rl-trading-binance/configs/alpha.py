@@ -40,25 +40,25 @@ cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.012695  # Снижено с 0.012695
-cfg.backtest.short_action_threshold = 0.009902 # Снижено с 0.009902
-cfg.backtest.close_action_threshold = 0.001141
+cfg.backtest.long_action_threshold = 0.0078056307732368
+cfg.backtest.short_action_threshold = 0.0091301259923296
+cfg.backtest.close_action_threshold = 0.0180067279703063
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
 cfg.backtest.ensemble_max_sigma = 0.01
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-# use_risk_management
-cfg.backtest.use_risk_management = False
-cfg.backtest.stop_loss = 0.01
-cfg.backtest.take_profit = 0.02
-cfg.backtest.trailing_stop = 0.005
+# use_risk_management (from Trial #187)
+cfg.backtest.use_risk_management = True
+cfg.backtest.stop_loss = 0.0153228603723445
+cfg.backtest.take_profit = 0.0447149987567144
+cfg.backtest.trailing_stop = 0.0063520955122146
 cfg.backtest.plot_backtest_balance_curve = True
 # --- NEW: Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
-
+cfg.random_seed = 25 # или любое другое целое число
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None
@@ -132,7 +132,6 @@ cfg.paper.symbols = "ALL"
 cfg.backtest.data_source = "find_spikes"
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # test_data_path можно пока не трогать или приравнять к backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # --- Явное указание пути к модели для бэктеста ---

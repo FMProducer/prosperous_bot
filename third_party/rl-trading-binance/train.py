@@ -351,6 +351,7 @@ def plot_test_distributions(test_metrics: dict, plots_dir: str) -> None:
 
 def main(cfg: MasterConfig = None):
     cfg = cfg or default_cfg
+    import json
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
@@ -362,6 +363,13 @@ def main(cfg: MasterConfig = None):
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
+
+    # --- NEW: Save the full configuration for this training run ---
+    config_save_path = os.path.join(models_dir, "config.json")
+    with open(config_save_path, "w") as f:
+        # Use model_dump and default=str to handle non-serializable types like torch.device
+        json.dump(cfg.model_dump(), f, indent=2, default=str)
+    logging.info(f"Full training configuration saved to: {config_save_path}")
 
     raw_train = load_npz_dataset(
         file_path=cfg.paths.train_data_path,

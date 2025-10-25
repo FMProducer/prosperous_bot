@@ -86,9 +86,15 @@ third_party/FMProducer/
 third_party/Smolin/
 third_party/rl-trading-binance/output/
 third_party/rl-trading-binance/plots/
+Python/Prosperous_Bot/output
 
 # Temporary files
 *.tmp
 *.npz
 *.log
 *.pkl
+*.csv
+*.xlsx
+*.txt
+*.png
+output/alpha/
