@@ -43,12 +43,9 @@ def setup_logging(cfg: MasterConfig) -> None:
 
     logger = logging.getLogger()
 
-    for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
-            return
-
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
+    # Only configure logging if no handlers are present. This prevents overriding parent script's logging.
+    if not logger.hasHandlers():
+        pass # No need to do anything, basicConfig will be called below.
 
     logging.basicConfig(
         level=logging.INFO,

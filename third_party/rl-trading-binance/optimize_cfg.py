@@ -37,8 +37,11 @@ logging.info(f"[Optuna] output dir: {opt_dir}")
 def objective(trial: optuna.Trial):
     cfg = copy.deepcopy(base_cfg)
     cfg.random_seed = 17 + trial.number
-    cfg.paths.extra_model_dir = base_cfg.paths.model_dir
-    cfg.paths.extra_cache_dir = base_cfg.paths.cache_dir
+
+    # --- NEW: Create a unique cache directory for each trial to prevent race conditions ---
+    trial_cache_dir = os.path.join(opt_dir, "trial_caches", f"trial_{trial.number}")
+    os.makedirs(trial_cache_dir, exist_ok=True)
+    cfg.paths.extra_cache_dir = trial_cache_dir
 
     # SEARCH SPACE
     # b.position_fraction = trial.suggest_float("position_frac", 0.1, 1.0, step=0.05)
