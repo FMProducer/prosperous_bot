@@ -1,0 +1,214 @@
+2025-10-24 21:26:45,884 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:26:45,886 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:26:45,887 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:26:45,894 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:26:45,982 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:26:45,984 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:26:45,984 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:26:47,659 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:26:47,659 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:26:47,696 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:26:47,697 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:26:47,697 [INFO] (MainThread) Starting Paper Trader...
+2025-10-24 21:26:50,801 [INFO] (WebSocketThread) Websocket connected
+2025-10-24 21:26:50,801 [INFO] (WebSocketThread) WebSocket connection opened.
+2025-10-24 21:33:22,862 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:33:22,862 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:33:23,023 [WARNING] (WebSocketThread) WebSocket connection closed: None None
+2025-10-24 21:33:23,149 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:33:23,158 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:33:23,158 [INFO] (MainThread) Shutdown complete.
+2025-10-24 21:33:34,639 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:33:34,641 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:33:34,642 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:33:34,649 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:33:34,731 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:33:34,733 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:33:34,733 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:33:36,431 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:33:36,432 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:33:36,469 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:33:36,469 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:33:36,470 [INFO] (MainThread) Starting trader in 'websocket' mode. Connecting to wss://fstream.binance.com/stream?streams=omusdt@kline_1m/1000ratsusdt@kline_1m...
+2025-10-24 21:33:40,645 [INFO] (WebSocketThread) Websocket connected
+2025-10-24 21:33:40,646 [INFO] (WebSocketThread) WebSocket connection opened.
+2025-10-24 21:34:21,150 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:34:21,150 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:34:21,661 [WARNING] (WebSocketThread) WebSocket connection closed: None None
+2025-10-24 21:34:21,668 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:34:21,674 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:34:21,675 [INFO] (MainThread) Shutdown complete.
+2025-10-24 21:34:30,119 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:34:30,122 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:34:30,122 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:34:30,129 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:34:30,211 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:34:30,214 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:34:30,214 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:34:31,945 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:34:31,946 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:34:31,983 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:34:31,984 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:34:31,984 [INFO] (MainThread) Starting trader in 'websocket' mode. Connecting to wss://fstream.binance.com/stream?streams=omusdt@kline_1m/1000ratsusdt@kline_1m...
+2025-10-24 21:34:33,165 [INFO] (WebSocketThread) Websocket connected
+2025-10-24 21:34:33,165 [INFO] (WebSocketThread) WebSocket connection opened.
+2025-10-24 21:35:39,790 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:35:39,790 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:35:40,041 [WARNING] (WebSocketThread) WebSocket connection closed: None None
+2025-10-24 21:35:40,048 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:35:40,053 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:35:40,054 [INFO] (MainThread) Shutdown complete.
+2025-10-24 21:35:52,712 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:35:52,715 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:35:52,716 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:35:52,723 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:35:52,803 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:35:52,805 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:35:52,805 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:35:54,527 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:35:54,527 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:35:54,563 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:35:54,564 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:35:54,564 [INFO] (MainThread) Starting trader in 'database' simulation mode.
+2025-10-24 21:35:54,568 [INFO] (MainThread) Loading all historical data from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 2 symbols...
+2025-10-24 21:35:58,707 [INFO] (MainThread) Loaded 264960 total klines. Starting simulation...
+2025-10-24 21:48:41,020 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:48:41,282 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:48:41,286 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:48:41,288 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:48:41,288 [INFO] (MainThread) Shutdown complete.
+2025-10-24 21:48:51,760 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:48:51,763 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:48:51,763 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:48:51,772 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:48:51,859 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:48:51,861 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:48:51,861 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:48:53,579 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:48:53,579 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:48:53,616 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:48:53,617 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:48:53,617 [INFO] (MainThread) Starting trader in 'database' simulation mode.
+2025-10-24 21:48:53,621 [INFO] (MainThread) Loading all historical data from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 2 symbols...
+2025-10-24 21:48:57,595 [INFO] (MainThread) Loaded 264960 total klines. Starting simulation...
+2025-10-24 21:55:18,988 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:55:19,166 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:55:19,170 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:55:19,171 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:55:19,172 [INFO] (MainThread) Shutdown complete.
+2025-10-24 21:55:28,600 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:55:28,602 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:55:28,602 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:55:28,611 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:55:28,698 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:55:28,700 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:55:28,700 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:55:30,384 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:55:30,384 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:55:30,421 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:55:30,421 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:55:30,422 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 21:55:30,422 [INFO] (MainThread) Starting trader in 'database' simulation mode.
+2025-10-24 21:55:30,426 [INFO] (MainThread) Loading all historical data from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 23 symbols...
+2025-10-24 21:56:19,237 [INFO] (MainThread) Loaded 3047040 total klines. Starting simulation...
+2025-10-24 21:58:56,227 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 21:59:07,166 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 21:59:07,168 [INFO] (MainThread) Random seed set to 25
+2025-10-24 21:59:07,169 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 21:59:07,177 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:59:07,259 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 21:59:07,262 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 21:59:07,262 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 21:59:08,977 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 21:59:08,977 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 21:59:09,016 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 21:59:09,016 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 21:59:09,017 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 21:59:09,017 [INFO] (MainThread) Starting trader in 'database' simulation mode.
+2025-10-24 21:59:09,022 [INFO] (MainThread) Loading all historical data from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 23 symbols...
+2025-10-24 21:59:52,533 [INFO] (MainThread) Loaded 3047040 total klines. Starting simulation...
+2025-10-24 21:59:52,534 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 21:59:52,539 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 21:59:52,541 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 21:59:52,541 [INFO] (MainThread) Shutdown complete.
+2025-10-24 22:02:18,717 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 22:02:18,720 [INFO] (MainThread) Random seed set to 25
+2025-10-24 22:02:18,720 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 22:02:18,727 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:02:18,814 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:02:18,816 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 22:02:18,816 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 22:02:20,515 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 22:02:20,515 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 22:02:20,552 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 22:02:20,553 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 22:02:20,553 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 22:02:20,553 [INFO] (MainThread) Starting trader in 'database' (high-speed simulation) mode.
+2025-10-24 22:02:20,740 [INFO] (MainThread) Finding signals for OMUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:04:08,521 [INFO] (MainThread) Finding signals for 1000RATSUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:05:16,155 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 22:05:16,158 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 22:05:16,162 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 22:05:16,164 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 22:05:16,164 [INFO] (MainThread) Shutdown complete.
+2025-10-24 22:05:56,475 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 22:05:56,477 [INFO] (MainThread) Random seed set to 25
+2025-10-24 22:05:56,477 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 22:05:56,486 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:05:56,571 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:05:56,574 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 22:05:56,574 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 22:05:58,327 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 22:05:58,328 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 22:05:58,368 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 22:05:58,369 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 22:05:58,369 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 22:05:58,370 [INFO] (MainThread) Starting trader in 'database' (high-speed simulation) mode.
+2025-10-24 22:05:58,526 [INFO] (MainThread) Finding signals for OMUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:07:36,203 [INFO] (MainThread) Finding signals for 1000RATSUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:09:12,752 [INFO] (MainThread) Finding signals for KAVAUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:11:00,077 [INFO] (MainThread) Finding signals for FILUSDT from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z...
+2025-10-24 22:11:48,883 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 22:11:48,887 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 22:11:48,892 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 22:11:48,894 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 22:11:48,895 [INFO] (MainThread) Shutdown complete.
+2025-10-24 22:11:57,621 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 22:11:57,624 [INFO] (MainThread) Random seed set to 25
+2025-10-24 22:11:57,624 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 22:11:57,632 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:11:57,718 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:11:57,720 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 22:11:57,720 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 22:11:59,378 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 22:11:59,378 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 22:11:59,419 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 22:11:59,419 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 22:11:59,420 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 22:11:59,420 [INFO] (MainThread) Starting trader in 'database' (high-speed simulation) mode.
+2025-10-24 22:11:59,420 [INFO] (MainThread) Loading all historical data from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 23 symbols...
+2025-10-24 22:12:24,196 [INFO] (MainThread) Loaded 3047040 total klines. Finding signals in memory...
+2025-10-24 22:22:18,497 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 22:22:18,746 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 22:22:18,751 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 22:22:18,752 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 22:22:18,752 [INFO] (MainThread) Shutdown complete.
+2025-10-24 22:22:27,528 [INFO] (MainThread) [Init] Logging for Paper Trader session started
+2025-10-24 22:22:27,531 [INFO] (MainThread) Random seed set to 25
+2025-10-24 22:22:27,531 [INFO] (MainThread) Using latest model from config: output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth
+2025-10-24 22:22:27,539 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:22:27,623 [INFO] (MainThread) Initialized DuelingQNetwork: input=(7, 29, 1), actions=4
+2025-10-24 22:22:27,625 [INFO] (MainThread) Policy Net with 254.4K parameters created in Agent
+2025-10-24 22:22:27,625 [INFO] (MainThread) Target Net with 254.4K parameters created in Agent
+2025-10-24 22:22:29,270 [INFO] (MainThread) Initialized PER buffer with capacity=230000, alpha=0.6
+2025-10-24 22:22:29,270 [INFO] (MainThread) D3QN_PER_Agent initialized.
+2025-10-24 22:22:29,312 [INFO] (MainThread) Model loaded from output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_215254\best.pth (checkpoint).
+2025-10-24 22:22:29,312 [INFO] (MainThread) Loading normalization stats from C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\norm_stats.json
+2025-10-24 22:22:29,313 [INFO] (MainThread) Using 23 symbols from config: ['OMUSDT', '1000RATSUSDT', 'KAVAUSDT', 'FILUSDT', 'POPCATUSDT', 'ZECUSDT', 'LUNA2USDT', 'BRETTUSDT', 'BELUSDT', 'LISTAUSDT', 'ZKUSDT', 'PORTALUSDT', 'AUCTIONUSDT', 'BIGTIMEUSDT', 'TRBUSDT', 'ARKMUSDT', 'TIAUSDT', 'NEOUSDT', 'IMXUSDT', 'AXLUSDT', 'MASKUSDT', 'CATIUSDT', 'REZUSDT']
+2025-10-24 22:22:29,313 [INFO] (MainThread) Starting trader in 'database' (high-speed simulation) mode.
+2025-10-24 22:22:29,313 [INFO] (MainThread) Scanning for signals from 2025-03-01T00:00:00Z to 2025-06-01T00:00:00Z for 23 symbols...
+2025-10-24 22:41:43,000 [INFO] (MainThread) Shutdown signal received.
+2025-10-24 22:41:43,001 [INFO] (MainThread) Shutting down Paper Trader...
+2025-10-24 22:41:43,004 [INFO] (MainThread) Saved 0 trades to paper_trades.csv
+2025-10-24 22:41:43,006 [INFO] (MainThread) Saved equity curve to paper_equity.csv
+2025-10-24 22:41:43,006 [INFO] (MainThread) Shutdown complete.

@@ -1,476 +1,496 @@
-# paper_trader.py (based on backtest_engine.py)
+# paper_trader.py
 
 import datetime as dt
 import json
 import logging
 import os
 import sys
-from collections import defaultdict
+import threading
+import time
+from collections import defaultdict, deque
 from typing import Any, Dict, List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import websocket
+from sqlalchemy import create_engine, text
 
+from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
 from test_agent import init_agent
 from trading_environment import TradingEnvironment
-from utils import (
-    calculate_normalization_stats,
-    create_signal_groups,
-    find_spike_windows,
-    load_config,
-    load_npz_dataset,
-    select_and_arrange_channels,
-    set_random_seed,
-)
+from utils import find_spike_windows, load_config, set_random_seed
 
 
 def setup_logging(cfg: MasterConfig) -> None:
-    """
-    Smart logger setup for backtesting: safe for multiple calls,
-    creates 'backtest_session.log' only if it doesn't already exist.
-    """
-    log_dir = cfg.paths.log_dir
+    log_dir = os.path.join(cfg.paths.output_dir, "paper_trader")
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "backtest_session.log")
+    log_file = os.path.join(log_dir, "paper_trader_session.log")
 
     logger = logging.getLogger()
-
-    for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
-            return
-
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(),
-        ],
+        format="%(asctime)s [%(levelname)s] (%(threadName)s) %(message)s",
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
-    logging.info("[Init] Logging for backtest session started")
+    logging.info("[Init] Logging for Paper Trader session started")
 
 
-class TradeSummary:
-    def __init__(self):
-        self.trade_records = []
+class PaperTrader:
+    def __init__(self, cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None):
+        self.cfg = cfg
+        self.cfg_mod = cfg_mod
+        setup_logging(self.cfg)
+        set_random_seed(self.cfg.random_seed)
 
-    def log_trade(self, info: dict, balance: float):
-        ticker = info.get("ticker")
-        trade_dt = info.get("trade_dt")
-        direction = info.get("direction")
-        trade_amount = info.get("trade_amount")
-        pnl = info.get("trade_realized_pnl")
-        change_pct = (pnl / trade_amount) * 100 if trade_amount else 0.0
-        balance_pct = (pnl / balance) * 100 if balance else 0.0
-        price_delta_pct = info.get("trade_price_delta") * 100
+        self.agent = self._load_agent(model_path_override)
+        self.stats = self._load_stats()
 
-        trade_result = (
-            f": {trade_dt.strftime('%Y-%m-%d %H:%M')} {direction:<5} {ticker:<12} {int(trade_amount):>6}:"
-            f"   {pnl:+7.2f} ({change_pct:+6.2f}%  |{balance_pct:+7.2f}%) PRICE CHANGE: {price_delta_pct:+.2f}%"
+        # --- NEW: Ticker selection logic ---
+        if self.cfg.paper.symbols:
+            self.symbols_to_trade = self.cfg.paper.symbols
+            logging.info(f"Using {len(self.symbols_to_trade)} symbols from config: {self.symbols_to_trade}")
+        else:
+            try:
+                with open("data/tickers.txt", "r") as f:
+                    self.symbols_to_trade = [line.strip() for line in f if line.strip()]
+                logging.info(f"Config `paper.symbols` is empty. Using {len(self.symbols_to_trade)} symbols from data/tickers.txt")
+            except FileNotFoundError:
+                logging.error("`paper.symbols` is empty and data/tickers.txt not found. No symbols to trade.")
+                self.symbols_to_trade = []
+
+        self.ws_url = "wss://fstream.binance.com/stream?streams=" + "/".join(
+            [f"{s.lower()}@kline_1m" for s in self.symbols_to_trade]
         )
-        self.trade_records.append(trade_result)
+        self.ws: websocket.WebSocketApp = None
+        self.ws_thread: threading.Thread = None
 
-    def dump(self):
-        for trade_result in self.trade_records:
-            logging.info(trade_result)
-
-
-class MetricsCollector:
-    def __init__(self):
-        self.pnl_by_day: Dict[dt.date, float] = defaultdict(float)
-        self.pnl_all = []
-        self.changes = []
-        self.drawdowns = []
-        self.trade_amounts = []
-        self.balance_curve: Dict[dt.datetime, Tuple[dt.datetime, float]] = defaultdict()
-        self.total_commission = 0.0
-        self.correct_preds = 0
-        self.total_trades = 0
-        self.total_longs = 0
-        self.total_shorts = 0
-        self.correct_longs = 0
-        self.correct_shorts = 0
-
-    def update(self, signal_dt: dt.datetime, info: dict, balance: float):
-        pnl = info.get("trade_realized_pnl")
-        commission = info.get("total_commission")
-        price_change = info.get("trade_price_delta")
-        drawdown = info.get("max_drawdown")
-        amount = info.get("trade_amount")
-        direction = info.get("direction")
-        correct = info.get("correct_prediction")
-
-        self.pnl_by_day[signal_dt.date()] += pnl
-        self.pnl_all.append(pnl)
-        self.changes.append(price_change)
-        self.drawdowns.append(drawdown)
-        self.trade_amounts.append(amount)
-        self.total_commission += commission
-        self.total_trades += 1
-
-        if direction == "LONG":
-            self.total_longs += 1
-            if correct:
-                self.correct_longs += 1
-        elif direction == "SHORT":
-            self.total_shorts += 1
-            if correct:
-                self.correct_shorts += 1
-
-        if correct:
-            self.correct_preds += 1
-
-        self.balance_curve[signal_dt] = (signal_dt, balance)
-
-    def finalize(self):
-        pnl_all = np.array(self.pnl_all)
-        pnl_by_day = np.array(list(self.pnl_by_day.values()))
-        changes = np.array(self.changes)
-
-        if not self.balance_curve:
-            return {}
-
-        _, balances = zip(*sorted(self.balance_curve.values()))
-        total_change = balances[-1] / balances[0] if balances[0] != 0 else 1.0
-        trade_days = len(pnl_by_day)
-
-        std_pnl_by_day_neg = pnl_by_day[pnl_by_day < 0].std() if np.any(pnl_by_day < 0) else 0.0
-        std_pnl_all_neg = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
-
-        return {
-            "total_commission": f"{(-self.total_commission / balances[0]) * 100:.2f}%" if balances[0] != 0 else "0.00%",
-            "avg_commission": f"{-self.total_commission / self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
-            "max_loss": f"{pnl_all.min():.2f}" if len(pnl_all) > 0 else "0.00",
-            "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
-            "total_trade_days": trade_days,
-            "profit_days": (
-                f"{int((pnl_by_day > 0).sum())} ({(pnl_by_day > 0).sum() / trade_days * 100:.2f}%)"
-                if trade_days > 0
-                else "0 (0.00%)"
-            ),
-            "final_balance_change": f"{(total_change - 1) * 100:.2f}%",
-            "exp_day_change": (
-                f"{(np.power(total_change, 1 / trade_days) - 1) * 100:.2f}%" if trade_days > 0 else "0.00%"
-            ),
-            "max_drawdown": f"{min(self.drawdowns) * 100:.2f}%" if self.drawdowns else "0.00%",
-            "sharpe": (
-                f"{(pnl_by_day.mean() / (pnl_by_day.std() + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
-                if len(pnl_by_day) > 0
-                else "0.00"
-            ),
-            "sortino": (
-                f"{(pnl_by_day.mean() / std_pnl_by_day_neg) * np.sqrt(len(pnl_by_day)):.2f}"
-                if len(pnl_by_day) > 0 and std_pnl_by_day_neg > 1e-9
-                else "0.00"
-            ),
-            "trades_sharpe": (f"{(pnl_all.mean() / (pnl_all.std() + 1e-9)):.2f}" if len(pnl_all) > 0 else "0.00"),
-            "trades_sortino": (
-                f"{(pnl_all.mean() / std_pnl_all_neg):.2f}" if len(pnl_all) > 0 and std_pnl_all_neg > 1e-9
-                else "0.00"
-            ),
-            "accuracy": (f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%"),
-            "total_trades": self.total_trades,
-            "total_longs": self.total_longs,
-            "total_shorts": self.total_shorts,
-            "longs_correct": (
-                f"{self.correct_longs} (0.0%)"
-                if self.total_longs == 0
-                else f"{self.correct_longs} ({(self.correct_longs / self.total_longs) * 100:.1f}%)"
-            ),
-            "shorts_correct": (
-                f"{self.correct_shorts} (0.0%)"
-                if self.total_shorts == 0
-                else f"{self.correct_shorts} ({(self.correct_shorts / self.total_shorts) * 100:.1f}%)"
-            ),
-            "correct_avg_change": (f"{np.mean(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
-            "correct_std_change": (f"{np.std(changes[changes > 0]) * 100:.2f}%" if np.any(changes > 0) else "0.00%"),
-            "incorrect_avg_change": (
-                f"{np.mean(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
-            ),
-            "incorrect_std_change": (
-                f"{np.std(changes[changes <= 0]) * 100:.2f}%" if np.any(changes <= 0) else "0.00%"
-            ),
-            "avg_trade_amount": (f"{np.mean(self.trade_amounts):.2f}" if len(self.trade_amounts) > 0 else "0.00"),
-            "trades_per_day": (f"{self.total_trades / trade_days:.2f}" if trade_days > 0 else "0.00"),
+        # Data buffers: {symbol: deque(maxlen=...)}
+        self.buffer_len = self.cfg.seq.pre_signal_len + self.cfg.seq.post_signal_len + 60  # Add margin
+        self.buffers: Dict[str, deque] = {
+            symbol: deque(maxlen=self.buffer_len) for symbol in self.symbols_to_trade
         }
 
-    def plot_balance(self, path: str):
-        if not self.balance_curve:
+        # Trading state
+        self.balance = self.cfg.market.initial_balance
+        self.open_positions: Dict[str, Dict] = {}
+        self.cooldowns: Dict[str, dt.datetime] = {}
+
+        self.simulated_time: dt.datetime = None
+        # Metrics
+        self.trades_log = []
+        self.equity_curve = []
+
+        self._stop_event = threading.Event()
+
+    def _load_agent(self, model_path_override: str) -> D3QN_PER_Agent:
+        if model_path_override:
+            model_path = model_path_override
+            logging.info(f"Using model from command line: {model_path}")
+        else:
+            model_base = self.cfg.paths.extra_model_dir or self.cfg.paths.model_dir
+            model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
+            best_path = os.path.join(model_folder, "best.pth")
+            model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
+            logging.info(f"Using latest model from config: {model_path}")
+
+        return init_agent(model_path, self.cfg, None)  # No cache for live trading
+
+    def _load_stats(self) -> Dict:
+        stats_path = self.cfg.paths.norm_stats_path or os.path.join(self.cfg.paths.output_dir, "norm_stats.json")
+        if not os.path.exists(stats_path):
+            logging.error(f"Normalization stats not found at path: {stats_path}.")
+            raise RuntimeError(f"Normalization stats not found at path: {stats_path}.")
+
+        logging.info(f"Loading normalization stats from {stats_path}")
+        with open(stats_path, "r") as f:
+            return json.load(f)
+
+    def _on_message(self, ws, message):
+        try:
+            data = json.loads(message)
+            if "stream" not in data:
+                return
+
+            kline_data = data["data"]["k"]
+            if not kline_data["x"]:  # kline is not closed
+                return
+
+            symbol = kline_data["s"]
+            kline_ts = dt.datetime.fromtimestamp(kline_data["t"] / 1000, tz=dt.timezone.utc)
+
+            # This is a simplified bar builder. A production one would be more robust.
+            new_bar = {
+                "ts": kline_ts,
+                "open": float(kline_data["o"]),
+                "high": float(kline_data["h"]),
+                "low": float(kline_data["l"]),
+                "close": float(kline_data["c"]),
+                "volume": float(kline_data["v"]),
+                "volume_weighted_average": float(kline_data["q"]) / (float(kline_data["v"]) + 1e-9),
+                "num_trades": int(kline_data["n"]),
+            }
+
+            self.buffers[symbol].append(new_bar)
+            logging.debug(f"New bar for {symbol} at {kline_ts}. Buffer size: {len(self.buffers[symbol])}")
+
+            # In websocket mode, we check for signals on each new bar
+            df = pd.DataFrame(list(self.buffers[symbol])).set_index("ts")
+            self._find_and_process_spikes(symbol, df, dt.datetime.now(dt.timezone.utc))
+
+        except Exception as e:
+            logging.error(f"Error in _on_message: {e}", exc_info=True)
+
+    def _get_current_time(self) -> dt.datetime:
+        """Возвращает симулированное время в режиме БД или реальное время в режиме WebSocket."""
+        return self.simulated_time if self.cfg.paper.source == "database" else dt.datetime.now(dt.timezone.utc)
+
+    def _on_open(self, ws):
+        logging.info("WebSocket connection opened.")
+
+    def _on_close(self, ws, close_status_code, close_msg):
+        logging.warning(f"WebSocket connection closed: {close_status_code} {close_msg}")
+
+    def _on_error(self, ws, error):
+        logging.error(f"WebSocket error: {error}")
+
+    def _find_and_process_spikes(self, symbol: str, df: pd.DataFrame, current_time: dt.datetime) -> None:
+        """Finds spike signals in a dataframe and processes the latest one."""
+        now = current_time
+
+        if symbol in self.cooldowns and now < self.cooldowns[symbol]:
             return
-        times, balances = zip(*sorted(self.balance_curve.values()))
-        plt.figure(figsize=(12, 6))
-        plt.plot(times, balances, label="Balance", color="blue")
-        plt.xlabel("Time")
-        plt.ylabel("Balance")
-        plt.title("Balance Over Time")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(path, dpi=300)
-        plt.close()
 
-
-def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> bool:
-    long_pass = action == 1 and confidence <= cfg.backtest.long_action_threshold
-    short_pass = action == 2 and confidence <= cfg.backtest.short_action_threshold
-    close_pass = action == 3 and confidence <= cfg.backtest.close_action_threshold
-    pass_adv = long_pass or short_pass or close_pass
-    return pass_adv
-def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tuple[Tuple[str, dt.datetime], np.ndarray]]:
-    dsn = cfg.db.dsn
-    start_utc = cfg_mod.data["time_range"]["start_utc"]
-    end_utc = cfg_mod.data["time_range"]["end_utc"]
-    symbols = cfg_mod.data["symbols"]
-
-    start_ts = int(pd.to_datetime(start_utc, utc=True).timestamp() * 1000)
-    end_ts = int(pd.to_datetime(end_utc, utc=True).timestamp() * 1000)
-
-    conn = psycopg2.connect(dsn)
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    backtest_raw = []
-
-    for symbol in symbols:
-        logging.info(f"Loading data for {symbol}...")
-        cur.execute(
-            f"SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
-            f"FROM v_klines_1m_npz WHERE symbol = %s AND ts >= %s AND ts < %s ORDER BY ts ASC;",
-            (symbol, start_ts, end_ts)
-        )
-        rows = cur.fetchall()
-        if not rows:
-            logging.warning(f"No data for symbol {symbol} in the given time range.")
-            continue
-
-        df = pd.DataFrame(rows)
-        df['ts'] = pd.to_datetime(df['ts'], unit='ms', utc=True)
-        df = df.set_index('ts')
-
-        logging.info(f"Finding spike windows for {symbol}...")
+        # Find spikes. CRITICAL: use_lookahead=False for live trading
         spike_windows = find_spike_windows(
             df,
-            context_minutes=cfg_mod.data["detector"]["context_minutes"],
-            window_minutes=cfg_mod.data["detector"]["window_minutes"],
-            abs_change_threshold_pct=cfg_mod.data["detector"]["abs_change_pct"],
-            contrast_min=cfg_mod.data["detector"]["contrast_min"],
-            cooldown_minutes=cfg_mod.data["detector"]["cooldown_minutes"],
-            use_lookahead=cfg_mod.data["detector"]["use_lookahead"],
+            context_minutes=self.cfg_mod.data["detector"]["context_minutes"],
+            window_minutes=self.cfg_mod.data["detector"]["window_minutes"],
+            abs_change_threshold_pct=self.cfg_mod.data["detector"]["abs_change_pct"],
+            contrast_min=self.cfg_mod.data["detector"]["contrast_min"],
+            cooldown_minutes=0,  # Cooldown is managed externally
+            use_lookahead=False,
         )
 
-        logging.info(f"Found {len(spike_windows)} spike windows for {symbol}.")
+        if not spike_windows:
+            return
 
-        for _, _, session_start, _, _ in spike_windows:
-            signal_dt = session_start
-            seq_start = signal_dt - dt.timedelta(minutes=cfg.seq.pre_signal_len)
-            seq_end = signal_dt + dt.timedelta(minutes=cfg.seq.post_signal_len)
+        # Take the most recent spike signal
+        *_, session_start, _, _ = spike_windows[-1]
+        signal_dt = session_start
 
-            seq_df = df[(df.index >= seq_start) & (df.index < seq_end)]
+        self._process_signal(symbol, signal_dt, df, current_time)
 
-            if len(seq_df) == cfg.seq.full_seq_len:
-                seq_arr = seq_df[cfg.data.expected_channels].to_numpy(dtype=np.float32)
-                backtest_raw.append(((symbol, signal_dt), seq_arr))
+    def _process_signal(self, symbol: str, signal_dt: dt.datetime, df: pd.DataFrame, current_time: dt.datetime = None) -> None:
+        """Processes a single detected signal."""
+        now = current_time or signal_dt
 
-    conn.close()
-    return backtest_raw
+        # Check if this signal is new (not within a cooldown period of live trading)
+        if symbol in self.cooldowns and now < self.cooldowns[symbol]:
+            return # Signal is within cooldown, ignore
+        
+        logging.info(f"Spike signal detected for {symbol} at {signal_dt}")
+        self.cooldowns[symbol] = now + dt.timedelta(minutes=self.cfg_mod.data["detector"]["cooldown_minutes"])
 
-def run_backtest(cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None) -> Dict[str, Any]:
-    cfg.backtest_mode = True
-    setup_logging(cfg)
-    set_random_seed(cfg.random_seed)
+        # Prepare data for inference
+        seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
+        seq_end = signal_dt + dt.timedelta(minutes=self.cfg.seq.post_signal_len)
+        seq_df = df[(df.index >= seq_start) & (df.index < seq_end)]
 
-    backtest_raw = load_from_db_and_prepare_signals(cfg, cfg_mod)
+        if len(seq_df) != self.cfg.seq.full_seq_len:
+            logging.warning(f"Could not form full sequence for {symbol} at {signal_dt}. Got {len(seq_df)} rows.")
+            return
 
-    grouped_backtest_data = create_signal_groups(backtest_raw)
+        session_data = seq_df[self.cfg.data.expected_channels].to_numpy(dtype=np.float32)
 
-    # --- NEW: Логика загрузки/сохранения статистик нормализации ---
-    if cfg.paths.norm_stats_path:
-        stats_path = cfg.paths.norm_stats_path
-    else:
-        stats_path = os.path.join(cfg.paths.output_dir, "norm_stats.json")
-    stats = None
-    if os.path.exists(stats_path):
-        logging.info(f"Loading normalization stats from {stats_path}")
-        with open(stats_path, 'r') as f:
-            stats = json.load(f)
+        # Get action from agent
+        action = self._get_agent_action(session_data)
 
-    if stats is None:
-        logging.info("Normalization stats not found, calculating...")
-        # This part needs train_data, which we don't have when loading from DB directly for backtest
-        # For now, we assume stats are pre-calculated and available.
-        # If not, this will fail.
-        raise RuntimeError("Normalization stats not found. Please generate them first.")
+        # Execute trade
+        if action in [1, 2]:  # LONG or SHORT
+            self._execute_trade(symbol, action, signal_dt)
 
-    if model_path_override:
-        model_path = model_path_override
-        logging.info(f"Using model from command line: {model_path}")
-    else:
-        model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
-        best_path = os.path.join(model_folder, "best.pth")
-        model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
-        logging.info(f"Using latest model from config: {model_path}")
+    def _get_agent_action(self, session_data: np.ndarray) -> int:
+        """Get a trading action from the RL agent."""
+        env = TradingEnvironment(
+            sequences=[session_data],
+            stats=self.stats,
+            render_mode=None,
+            full_seq_len=self.cfg.seq.full_seq_len,
+            num_features=self.cfg.seq.num_features,
+            num_actions=self.cfg.market.num_actions,
+            flat_state_size=self.cfg.seq.flat_state_size,
+            initial_balance=self.cfg.market.initial_balance,
+            pre_signal_len=self.cfg.seq.pre_signal_len,
+            data_channels=self.cfg.data.data_channels,
+            slippage=0,
+            transaction_fee=0,
+            agent_session_len=self.cfg.seq.agent_session_len,
+            agent_history_len=self.cfg.seq.agent_history_len,
+            input_history_len=self.cfg.seq.input_history_len,
+            price_channels=self.cfg.data.price_channels,
+            volume_channels=self.cfg.data.volume_channels,
+            other_channels=self.cfg.data.other_channels,
+            action_history_len=self.cfg.seq.action_history_len,
+            inaction_penalty_ratio=0,
+            backtest_mode=True,
+        )
+        obs, _ = env.reset(options={"forced_index": 0})
 
-    agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
+        # Use advantage-based filtering
+        q_vals = self.agent.select_action(state=obs, training=False, return_qvals=True)
+        adv = q_vals - q_vals[0]
+        action = int(np.argmax(adv))
+        confidence = adv[action]
 
-    if cfg.backtest.clear_disk_cache:
-        agent.clear_disk_cache()
+        if action == 1 and confidence < self.cfg.backtest.long_action_threshold:
+            action = 0
+        elif action == 2 and confidence < self.cfg.backtest.short_action_threshold:
+            action = 0
 
-    result = MetricsCollector()
-    trade_log = TradeSummary()
-    balance = cfg.market.initial_balance
-    open_sessions: List[Dict] = []
+        return action
 
-    logging.info("\n[Starting backtest...]:")
-    thresholds = [
-        cfg.backtest.long_action_threshold,
-        cfg.backtest.short_action_threshold,
-        cfg.backtest.close_action_threshold,
-    ]
+    def _execute_trade(self, symbol: str, action: int, signal_dt: dt.datetime):
+        """Open a paper trade."""
+        if symbol in self.open_positions:
+            logging.warning(f"Already have an open position for {symbol}. Skipping new trade.")
+            return
 
-    for signal_dt, signals in grouped_backtest_data.items():
-        open_sessions = [open_s for open_s in open_sessions if open_s["end_time"] > signal_dt]
-        free_slots = cfg.backtest.max_parallel_sessions - len(open_sessions)
-        if free_slots <= 0:
-            logging.info("Too many tickers received, skipping")
-            continue
+        if len(self.open_positions) >= self.cfg.backtest.max_parallel_sessions:
+            logging.warning("Max parallel sessions reached. Skipping new trade.")
+            return
 
-        selected_signals = signals[:free_slots]
+        direction = "LONG" if action == 1 else "SHORT"
+        position_size = self.balance * self.cfg.backtest.position_fraction
+        entry_price = self.buffers[symbol][-1]["close"]  # Use last close price as entry
+
+        self.open_positions[symbol] = {
+            "direction": direction,
+            "entry_price": entry_price,
+            "entry_time": signal_dt,
+            "size": position_size,
+            "close_time": signal_dt + dt.timedelta(minutes=self.cfg.seq.agent_session_len),
+        }
         logging.info(
-            f": Got {len(signals)} signals @ Date: {signal_dt.date()} Time: {signal_dt.strftime('%H:%M')} For Tickers -> {', '.join(t for t, _ in signals)}"
+            f"PAPER TRADE OPEN: {direction} {symbol} at {entry_price:.4f} (Size: {position_size:.2f} USDT)"
         )
 
-        for ticker_name, session in selected_signals:
-            position_size = balance * cfg.backtest.position_fraction
+    def _update_and_close_positions(self):
+        """Periodically check and close open positions."""
+        now = self._get_current_time()
+        symbols_to_close = []
+        for symbol, pos in self.open_positions.items():
+            if now >= pos["close_time"]:
+                symbols_to_close.append(symbol)
 
-            env = TradingEnvironment(
-                sequences=[session],
-                stats=stats,
-                render_mode=cfg.render_mode,
-                full_seq_len=cfg.seq.full_seq_len,
-                num_features=cfg.seq.num_features,
-                num_actions=cfg.market.num_actions,
-                flat_state_size=cfg.seq.flat_state_size,
-                initial_balance=position_size,
-                pre_signal_len=cfg.seq.pre_signal_len,
-                data_channels=cfg.data.data_channels,
-                slippage=cfg.market.slippage,
-                transaction_fee=cfg.market.transaction_fee,
-                agent_session_len=cfg.seq.agent_session_len,
-                agent_history_len=cfg.seq.agent_history_len,
-                input_history_len=cfg.seq.input_history_len,
-                price_channels=cfg.data.price_channels,
-                volume_channels=cfg.data.volume_channels,
-                other_channels=cfg.data.other_channels,
-                action_history_len=cfg.seq.action_history_len,
-                inaction_penalty_ratio=cfg.market.inaction_penalty_ratio,
-                backtest_mode=cfg.backtest_mode,
-                use_risk_management=cfg.backtest.use_risk_management,
+        for symbol in symbols_to_close:
+            pos = self.open_positions.pop(symbol)
+            current_price = self.buffers[symbol][-1]["close"]
+
+            # Simplified PnL calculation
+            if pos["direction"] == "LONG":
+                pnl = (current_price - pos["entry_price"]) / pos["entry_price"] * pos["size"]
+            else:  # SHORT
+                pnl = (pos["entry_price"] - current_price) / pos["entry_price"] * pos["size"]
+
+            # Apply fees
+            fees = (pos["size"] / pos["entry_price"] * pos["entry_price"] * self.cfg.market.transaction_fee) + \
+                   (pos["size"] / pos["entry_price"] * current_price * self.cfg.market.transaction_fee)
+            net_pnl = pnl - fees
+
+            self.balance += net_pnl
+
+            trade_record = {
+                "symbol": symbol,
+                "direction": pos["direction"],
+                "entry_time": pos["entry_time"].isoformat(),
+                "close_time": now.isoformat(),
+                "entry_price": pos["entry_price"],
+                "close_price": current_price,
+                "pnl": net_pnl,
+                "balance": self.balance,
+            }
+            self.trades_log.append(trade_record)
+            self.equity_curve.append({"ts": now.isoformat(), "balance": self.balance})
+
+            logging.info(
+                f"PAPER TRADE CLOSE: {pos['direction']} {symbol} at {current_price:.4f}. PnL: {net_pnl:+.2f} USDT. New Balance: {self.balance:.2f} USDT"
             )
 
-            obs, _ = env.reset()
-            for step in range(cfg.seq.agent_session_len):
-                cache_key = (ticker_name, signal_dt + dt.timedelta(minutes=step))
-                if cfg.backtest.selection_strategy == "advantage_based_filter":
-                    q_vals = agent.select_action(
-                        state=obs,
-                        training=False,
-                        return_qvals=cfg.backtest.return_qvals,
-                        use_cache=cfg.backtest.use_cache,
-                        cache_key=cache_key,
-                    )
-                    adv = q_vals - q_vals[0]
-                    action = int(np.argmax(adv))
-                    confidence = adv[action]
+    def _run_from_websocket(self):
+        """Starts the WebSocket connection and runs the trader in live mode."""
+        logging.info(f"Starting trader in 'websocket' mode. Connecting to {self.ws_url}...")
+        self.ws = websocket.WebSocketApp(
+            self.ws_url,
+            on_open=self._on_open,
+            on_message=self._on_message,
+            on_error=self._on_error,
+            on_close=self._on_close,
+        )
+        self.ws_thread = threading.Thread(target=self.ws.run_forever, name="WebSocketThread")
+        self.ws_thread.daemon = True
+        self.ws_thread.start()
 
-                    pass_adv = get_pass_advantage(action, confidence, cfg)
-                    if pass_adv:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}"
+        # Main loop for closing positions
+        while not self._stop_event.is_set():
+            self._update_and_close_positions()
+            time.sleep(5)
+
+    def _run_from_database(self):
+        """Runs the trader in simulation mode using historical data from the database."""
+        logging.info("Starting trader in 'database' (high-speed simulation) mode.")
+        start_utc = self.cfg_mod.data["time_range"]["start_utc"]
+        end_utc = self.cfg_mod.data["time_range"]["end_utc"]
+        symbols = self.symbols_to_trade
+
+        all_signals = []
+
+        # 1. Iterate through the time range minute by minute and find signals efficiently.
+        try:
+            logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
+            engine = create_engine(self.cfg.db.dsn)
+            with engine.connect() as conn:
+                # This loop simulates the live environment by stepping through time.
+                current_time = pd.to_datetime(start_utc)
+                end_time = pd.to_datetime(end_utc)
+                
+                pbar = pd.date_range(start=current_time, end=end_time, freq='min')
+                for t in pbar:
+                    # For each minute, check which symbols have a spike.
+                    # This is a placeholder for a more optimized SQL query that would do this on the DB side.
+                    # For now, we load a small window for each symbol to check for a spike.
+                    
+                    # Check cooldowns first to avoid unnecessary DB queries
+                    active_symbols = [s for s in symbols if t >= self.cooldowns.get(s, t)]
+                    if not active_symbols:
+                        continue
+
+                    # Load a small window of data around the current time `t` for all active symbols
+                    window_start = t - dt.timedelta(minutes=self.cfg_mod.data["detector"]["context_minutes"] + self.cfg_mod.data["detector"]["window_minutes"])
+                    
+                    query = text(
+                        "SELECT ts, symbol, close FROM v_klines_1m_npz "
+                        "WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts <= :end_ts ORDER BY ts ASC;"
+                    )
+                    df_batch = pd.read_sql(query, conn, params={
+                        "symbols": active_symbols,
+                        "start_ts": int(window_start.timestamp() * 1000),
+                        "end_ts": int(t.timestamp() * 1000)
+                    })
+
+                    if df_batch.empty:
+                        continue
+                    
+                    df_batch['ts'] = pd.to_datetime(df_batch['ts'], unit='ms', utc=True)
+
+                    for symbol, df_symbol in df_batch.groupby('symbol'):
+                        df_symbol = df_symbol.set_index('ts')
+                        spike_windows = find_spike_windows(
+                            df_symbol,
+                            context_minutes=self.cfg_mod.data["detector"]["context_minutes"],
+                            window_minutes=self.cfg_mod.data["detector"]["window_minutes"],
+                            abs_change_threshold_pct=self.cfg_mod.data["detector"]["abs_change_pct"],
+                            contrast_min=self.cfg_mod.data["detector"]["contrast_min"],
+                            cooldown_minutes=self.cfg_mod.data["detector"]["cooldown_minutes"],
+                            use_lookahead=False,
                         )
-                        action = 0
-                # MC-Dropout (Monte Carlo Dropout)
-                elif cfg.backtest.selection_strategy == "ensemble_q_filter":
-                    q_mean, q_std = agent.predict_ensemble(
-                        state=obs,
-                        training=False,
-                        use_cache=cfg.backtest.use_cache,
-                        cache_key=cache_key,
-                        n_samples=cfg.backtest.ensemble_n_samples,
-                    )
-                    advantage = q_mean - q_mean[0]
-                    action = int(np.argmax(advantage))
-                    confidence = advantage[action]
-                    uncertainty = q_std[action]
+                        
+                        # We only care about signals that happened exactly at time `t`
+                        for *_, session_start, _, _ in spike_windows:
+                            if session_start == t:
+                                all_signals.append({"symbol": symbol, "signal_dt": session_start})
+                                # Apply cooldown immediately
+                                self.cooldowns[symbol] = t + dt.timedelta(minutes=self.cfg_mod.data["detector"]["cooldown_minutes"])
+                                break # Move to the next symbol
 
-                    pass_adv = get_pass_advantage(action, confidence, cfg)
-                    pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
-                    if pass_adv and pass_uncertainty:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}, "
-                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
-                        )
-                        action = 0
+        except Exception as e:
+            logging.error(f"Failed to load historical data from database: {e}", exc_info=True)
+            return
 
-                else:
-                    action = agent.select_action(
-                        state=obs,
-                        training=False,
-                        return_qvals=False,
-                        use_cache=cfg.backtest.use_cache,
-                        cache_key=cache_key,
-                    )
+        # Signals are already chronological. Now we process them.
+        logging.info(f"Found {len(all_signals)} total signals across all symbols. Starting high-speed simulation...")
 
-                obs, _, done, _, info = env.backtest_step(
-                    action=action,
-                    signal_dt=signal_dt,
-                    ticker=ticker_name,
-                    stop_loss=cfg.backtest.stop_loss,
-                    take_profit=cfg.backtest.take_profit,
-                    trailing_stop=cfg.backtest.trailing_stop,
+        for signal in all_signals:
+            # For each found signal, load the full data window required for the agent
+            symbol = signal["symbol"]
+            signal_dt = signal["signal_dt"]
+            
+            seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
+            seq_end = signal_dt + dt.timedelta(minutes=self.cfg.seq.post_signal_len)
+            
+            # This is a targeted query for just one signal's data
+            with engine.connect() as conn:
+                query = text(
+                    "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
+                    "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
                 )
+                df_signal = pd.read_sql(query, conn, params={
+                    "symbol": symbol,
+                    "start_ts": int(seq_start.timestamp() * 1000),
+                    "end_ts": int(seq_end.timestamp() * 1000)
+                })
+            
+            if df_signal.empty or len(df_signal) != self.cfg.seq.full_seq_len:
+                logging.warning(f"Could not fetch complete data for signal {symbol} at {signal_dt}. Skipping.")
+                continue
+            
+            df_signal['ts'] = pd.to_datetime(df_signal['ts'], unit='ms', utc=True)
+            df_signal = df_signal.set_index('ts')
 
-                if info["position_closed"]:
-                    info["ticker"] = ticker_name
-                    trade_log.log_trade(info, balance)
-                    balance += info.get("trade_realized_pnl", 0.0)
-                    result.update(signal_dt + dt.timedelta(minutes=cfg.seq.agent_session_len), info, balance)
-                if done:
-                    break
+            self.simulated_time = signal_dt
+            self._process_signal(symbol, signal_dt, df_signal)
+            self._update_and_close_positions()
 
-            open_sessions.append({"end_time": signal_dt + dt.timedelta(minutes=cfg.seq.agent_session_len)})
+        logging.info("Database simulation finished.")
 
-    agent.save_disk_cache()
+    def run(self):
+        """Start the paper trader based on the configured source."""
+        try:
+            if self.cfg.paper.source == "websocket":
+                self._run_from_websocket()
+            elif self.cfg.paper.source == "database":
+                self._run_from_database()
+            else:
+                logging.error(f"Unknown paper trader source: '{self.cfg.paper.source}'")
+        except KeyboardInterrupt:
+            logging.info("Shutdown signal received.")
+        finally:
+            self.shutdown()
 
-    logging.info("\n[Trades Summary]:")
-    trade_log.dump()
+    def shutdown(self):
+        """Gracefully shut down the paper trader."""
+        logging.info("Shutting down Paper Trader...")
+        self._stop_event.set()
+        if self.ws:
+            self.ws.close()
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.ws_thread.join(timeout=5)
 
-    metrics = result.finalize()
-    logging.info("\n[Final Metrics]:")
-    for name_result, value in metrics.items():
-        logging.info(f": {name_result:>23s} = {value}")
+        # Save metrics
+        output_dir = os.path.join(self.cfg.paths.output_dir, "paper_trader")
+        os.makedirs(output_dir, exist_ok=True)
 
-    if cfg.backtest.plot_backtest_balance_curve:
-        result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
+        trades_df = pd.DataFrame(self.trades_log)
+        trades_df.to_csv(os.path.join(output_dir, "paper_trades.csv"), index=False)
+        logging.info(f"Saved {len(trades_df)} trades to paper_trades.csv")
 
-    return metrics
+        equity_df = pd.DataFrame(self.equity_curve)
+        equity_df.to_csv(os.path.join(output_dir, "paper_equity.csv"), index=False)
+        logging.info(f"Saved equity curve to paper_equity.csv")
+
+        logging.info("Shutdown complete.")
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/alpha.py"
     model_path_arg = sys.argv[2] if len(sys.argv) > 2 else None
 
-    cfg = load_config(config_path) if config_path else default_cfg
-    
     import importlib.util
+
     if config_path:
         spec = importlib.util.spec_from_file_location("experiment_cfg", config_path)
         cfg_mod = importlib.util.module_from_spec(spec)
@@ -480,4 +500,8 @@ if __name__ == "__main__":
         cfg_mod = None
         cfg = default_cfg
 
-    run_backtest(cfg=cfg, cfg_mod=cfg_mod, model_path_override=model_path_arg)
+    if not hasattr(cfg_mod, "data"):
+        from configs import alpha as cfg_mod
+
+    trader = PaperTrader(cfg=cfg, cfg_mod=cfg_mod, model_path_override=model_path_arg)
+    trader.run()

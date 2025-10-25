@@ -1,6 +1,6 @@
 # config.py
 import os
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 import torch
 from pydantic import BaseModel, Field, validator
@@ -24,6 +24,7 @@ class PathConfig(BaseModel):
     test_data_path: str = "data/test_data.npz"
     backtest_data_path: str = "data/backtest_data.npz"
     norm_stats_path: Optional[str] = None
+    model_path: Optional[str] = None # Явный путь к файлу модели (.pth)
 
     @property
     def output_dir(self) -> str:
@@ -199,8 +200,15 @@ class BacktestConfig(BaseModel):
     trailing_stop: float = 0.005
     selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "advantage_based_filter"
     plot_backtest_balance_curve: bool = True
+    data_source: Literal["npz_keys", "find_spikes"] = "npz_keys"
     ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
+
+
+class PaperTraderConfig(BaseModel):
+    source: Literal["websocket", "database"] = "websocket"
+    db_source_speed: float = 0.0  # Seconds to sleep between simulated minutes. 0.0 for max speed.
+    symbols: Optional[Union[List[str], Literal["ALL"]]] = None # None or empty list means use all from tickers.txt
 
 
 class LoggingConfig(BaseModel):
@@ -254,6 +262,7 @@ class MasterConfig(BaseModel):
     debug: DebugConfig = DebugConfig()
     smart: SmartExplorationConfig = SmartExplorationConfig()
     backtest: BacktestConfig = BacktestConfig()
+    paper: PaperTraderConfig = PaperTraderConfig()
     logging: LoggingConfig = LoggingConfig()
     perf: PerformanceConfig = PerformanceConfig()
     db: DbConfig = DbConfig()

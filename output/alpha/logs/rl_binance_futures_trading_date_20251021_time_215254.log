@@ -1,3 +1,0 @@
-2025-10-21 21:52:54,407 [INFO] Logging to: output\alpha\logs\rl_binance_futures_trading_date_20251021_time_215254.log
-2025-10-21 21:52:54,409 [INFO] Random seed set to 25
-2025-10-21 21:52:54,410 [INFO] Loading dataset 'Train' from data/train_data.npz

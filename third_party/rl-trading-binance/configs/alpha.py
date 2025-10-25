@@ -140,7 +140,7 @@ data = {
     # ---- Inference (строгий режим без фоллбэка) ----
     "inference": {
         "policy_loader": "inference_adapter:load_policy",  # module:function
-        "checkpoint_path": r"C:\Python\Prosperous_Bot\third_party\FMProducer\fmproducer_1_eval\saved_models\session_1\best.pth",
+        "checkpoint_path": r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_005510\best.pth",
         "strict": True   # True: без рабочей политики торги пропускаются (никакого Follow-Context)
     },
     # ---- Paper trading (RT/ASAP) ----
@@ -159,3 +159,25 @@ data = {
 
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
+# 
+cfg.paper.source = "database"
+# Список тикеров для симуляции в paper_trader.
+# Если список пустой или None, будут использованы все тикеры из data/tickers.txt
+cfg.paper.symbols = "ALL"
+# cfg.paper.symbols = [
+#     "OMUSDT", "1000RATSUSDT", "KAVAUSDT", "FILUSDT", "POPCATUSDT", "ZECUSDT",
+#     "LUNA2USDT", "BRETTUSDT", "BELUSDT", "LISTAUSDT", "ZKUSDT", "PORTALUSDT",
+#     "AUCTIONUSDT", "BIGTIMEUSDT", "TRBUSDT", "ARKMUSDT", "TIAUSDT", "NEOUSDT",
+#     "IMXUSDT", "AXLUSDT", "MASKUSDT", "CATIUSDT", "REZUSDT"
+# ]
+# Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
+# cfg.paper.db_source_speed = 0.1 
+cfg.backtest.data_source = "find_spikes"
+cfg.paths.train_data_path = "data/train_data_fair.npz"
+cfg.paths.val_data_path = "data/val_data_fair.npz"
+cfg.paths.test_data_path = "data/test_data_fair.npz"
+cfg.paths.backtest_data_path = "data/backtest_data_fair.npz"
+# --- Явное указание пути к модели для бэктеста ---
+# Этот параметр теперь является единственным способом указать модель для бэктеста.
+# Путь должен указывать на конкретный .pth файл.
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_005510\best.pth"

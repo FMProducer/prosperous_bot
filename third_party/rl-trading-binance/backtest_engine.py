@@ -10,6 +10,11 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import psycopg2
+from sqlalchemy import create_engine
+from tqdm import tqdm
+from psycopg2.extras import RealDictCursor
 
 from config import MasterConfig
 from config import cfg as default_cfg
@@ -18,7 +23,9 @@ from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
     create_signal_groups,
+    find_spike_windows,
     load_config,
+    load_npz_dataset_keys,
     load_npz_dataset,
     select_and_arrange_channels,
     set_random_seed,
@@ -148,7 +155,7 @@ class MetricsCollector:
             "max_profit": f"{pnl_all.max():.2f}" if len(pnl_all) > 0 else "0.00",
             "total_trade_days": trade_days,
             "profit_days": (
-                f"{int((pnl_by_day > 0).sum())} ({((pnl_by_day > 0).sum() / trade_days) * 100:.2f}%)"
+                f"{int((pnl_by_day > 0).sum())} ({(pnl_by_day > 0).sum() / trade_days * 100:.2f}%)"
                 if trade_days > 0
                 else "0 (0.00%)"
             ),
@@ -163,12 +170,15 @@ class MetricsCollector:
                 else "0.00"
             ),
             "sortino": (
-                f"{(pnl_by_day.mean() / (std_pnl_by_day_neg + 1e-9)) * np.sqrt(len(pnl_by_day)):.2f}"
-                if len(pnl_by_day) > 0
+                f"{(pnl_by_day.mean() / std_pnl_by_day_neg) * np.sqrt(len(pnl_by_day)):.2f}"
+                if len(pnl_by_day) > 0 and std_pnl_by_day_neg > 1e-9
                 else "0.00"
             ),
-            "trades_sharpe": (f"{pnl_all.mean() / (pnl_all.std() + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
-            "trades_sortino": (f"{pnl_all.mean() / (std_pnl_all_neg + 1e-9):.2f}" if len(pnl_all) > 0 else "0.00"),
+            "trades_sharpe": (f"{(pnl_all.mean() / (pnl_all.std() + 1e-9)):.2f}" if len(pnl_all) > 0 else "0.00"),
+            "trades_sortino": (
+                f"{(pnl_all.mean() / std_pnl_all_neg):.2f}" if len(pnl_all) > 0 and std_pnl_all_neg > 1e-9
+                else "0.00"
+            ),
             "accuracy": (f"{self.correct_preds / self.total_trades * 100:.1f}%" if self.total_trades > 0 else "0.0%"),
             "total_trades": self.total_trades,
             "total_longs": self.total_longs,
@@ -218,25 +228,191 @@ def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> boo
     return pass_adv
 
 
-def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str, Any]:
+def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tuple[Tuple[str, dt.datetime], np.ndarray]]:
+    """
+    Dynamically finds spike signals in the database for the given symbols and time range.
+    This is a high-performance version that loads data once and processes it in memory.
+    """
+    # This function is now re-written to be scalable and memory-efficient.
+    start_utc = cfg_mod.data["time_range"]["start_utc"]
+    end_utc = cfg_mod.data["time_range"]["end_utc"]
+    
+    engine = create_engine(cfg.db.dsn)
+
+    if isinstance(cfg.paper.symbols, list) and cfg.paper.symbols:
+        symbols = cfg.paper.symbols
+    elif cfg.paper.symbols == "ALL":
+        logging.info("`paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...")
+        try:
+            with engine.connect() as conn:
+                from sqlalchemy import text
+                query = text("SELECT DISTINCT symbol FROM v_klines_1m_npz WHERE ts >= :start_ts AND ts < :end_ts")
+                result = conn.execute(query, {
+                    "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+                    "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000)
+                })
+                symbols = [row[0] for row in result]
+        except Exception as e:
+            logging.error(f"Failed to fetch all symbols from DB: {e}", exc_info=True)
+            return []
+    else:
+        try:
+            with open("data/tickers.txt", "r") as f:
+                symbols = [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            logging.error("`paper.symbols` is empty and data/tickers.txt not found. No symbols to trade.")
+            return []
+
+    # --- Step 1: Find all spike moments using an efficient SQL query ---
+    logging.info(f"Scanning for spike signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text
+            # This SQL query uses window functions to find spikes directly in the database.
+            # It's much faster than loading all data into Python.
+            detector_cfg = cfg_mod.data["detector"]
+            query = text(f"""
+            WITH minute_returns AS (
+                SELECT
+                    ts,
+                    symbol,
+                    close,
+                    (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
+                FROM v_klines_1m_npz
+                WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
+            ),
+            rolling_stats AS (
+                SELECT
+                    ts,
+                    symbol,
+                    -- Absolute change over the 'window_minutes'
+                    (close / LAG(close, {detector_cfg['window_minutes']}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
+                    -- Average absolute return in the preceding 'context_minutes'
+                    AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg['context_minutes'] + detector_cfg['window_minutes']} PRECEDING AND {detector_cfg['window_minutes']} PRECEDING) AS avg_abs_ret_pre
+                FROM minute_returns
+            )
+            SELECT ts, symbol
+            FROM rolling_stats
+            WHERE
+                ABS(abs_change) * 100.0 >= :abs_change_pct AND
+                (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
+            ORDER BY ts, symbol;
+            """)
+
+            found_spikes_df = pd.read_sql(query, conn, params={
+                "symbols": symbols,
+                "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+                "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
+                "abs_change_pct": detector_cfg['abs_change_pct'],
+                "contrast_min": detector_cfg['contrast_min'],
+            })
+            found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
+    except Exception as e:
+        logging.error(f"Failed to scan for spikes in database: {e}", exc_info=True)
+        return []
+
+    if found_spikes_df.empty:
+        logging.warning("No spike signals found in the database for the given period.")
+        return []
+
+    logging.info(f"Found {len(found_spikes_df)} potential spike signals. Applying cooldowns...")
+
+    # --- Step 2: Apply cooldown logic in Python ---
+    all_signals = []
+    last_signal_time = {}
+    for index, row in found_spikes_df.iterrows():
+        symbol, signal_dt = row['symbol'], row['ts']
+        if signal_dt > last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
+            all_signals.append((symbol, signal_dt))
+            last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg['cooldown_minutes'])
+
+    # --- Step 3: Load data only for the filtered signals ---
+    logging.info(f"After cooldown, {len(all_signals)} signals remain. Loading session data...")
+    backtest_raw = []
+    with engine.connect() as conn:
+        for symbol, signal_dt in tqdm(all_signals, desc="Loading signal data"):
+            seq_start = signal_dt - dt.timedelta(minutes=cfg.seq.pre_signal_len)
+            seq_end = signal_dt + dt.timedelta(minutes=cfg.seq.post_signal_len)
+            
+            query = text(
+                "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
+                "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
+            )
+            df_signal = pd.read_sql(query, conn, params={
+                "symbol": symbol,
+                "start_ts": int(seq_start.timestamp() * 1000),
+                "end_ts": int(seq_end.timestamp() * 1000)
+            })
+
+            if len(df_signal) == cfg.seq.full_seq_len:
+                seq_arr = df_signal[cfg.data.expected_channels].to_numpy(dtype=np.float32)
+                backtest_raw.append(((symbol, signal_dt), seq_arr))
+
+    logging.info(f"Dynamically found {len(backtest_raw)} total signals.")
+    return backtest_raw
+
+def load_from_db_using_npz_keys(cfg: MasterConfig) -> List[Tuple[Tuple[str, dt.datetime], np.ndarray]]:
+    """
+    Loads session data from the database, but uses the exact signal keys (symbol, datetime)
+    from the reference NPZ file to ensure perfect alignment for backtest comparison.
+    """
+    npz_keys = load_npz_dataset_keys(cfg.paths.backtest_data_path)
+    logging.info(f"Loaded {len(npz_keys)} signal keys from {cfg.paths.backtest_data_path} for DB loading.")
+
+    dsn = cfg.db.dsn
+    conn = psycopg2.connect(dsn)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    backtest_raw = []
+    for symbol, signal_dt in tqdm(npz_keys, desc="Loading sessions from DB using NPZ keys"):
+        seq_start_dt = signal_dt - dt.timedelta(minutes=cfg.seq.pre_signal_len)
+        seq_end_dt = signal_dt + dt.timedelta(minutes=cfg.seq.post_signal_len)
+        start_ts = int(seq_start_dt.timestamp() * 1000)
+        end_ts = int(seq_end_dt.timestamp() * 1000)
+
+        query = (
+            "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
+            "FROM v_klines_1m_npz WHERE symbol = %s AND ts >= %s AND ts < %s ORDER BY ts ASC;"
+        )
+        cur.execute(query, (symbol, start_ts, end_ts))
+        rows = cur.fetchall()
+
+        if len(rows) == cfg.seq.full_seq_len:
+            df = pd.DataFrame(rows)
+            seq_arr = df[cfg.data.expected_channels].to_numpy(dtype=np.float32)
+            backtest_raw.append(((symbol, signal_dt), seq_arr))
+        else:
+            logging.warning(f"Skipping key {(symbol, signal_dt)}: incorrect data length from DB ({len(rows)}).")
+
+    conn.close()
+    logging.info(f"Successfully constructed {len(backtest_raw)} sessions from DB.")
+    return backtest_raw
+
+
+def run_backtest(cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None) -> Dict[str, Any]:
     cfg.backtest_mode = True
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
-    backtest_raw = load_npz_dataset(
-        file_path=cfg.paths.backtest_data_path,
-        name_dataset="Backtest",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
+    data_source = getattr(cfg.backtest, "data_source", "npz_keys")
+    logging.info(f"Backtest data source: '{data_source}'")
+
+    if data_source == "find_spikes":
+        backtest_raw = load_from_db_and_prepare_signals(cfg, cfg_mod)
+    elif data_source == "npz_keys":
+        backtest_raw = load_from_db_using_npz_keys(cfg)
+    else:
+        logging.error(f"Unknown backtest data_source: '{data_source}'. Use 'npz_keys' or 'find_spikes'.")
+        return {}
+
+    if not backtest_raw:
+        logging.error("No data to backtest. Exiting.")
+        return {}
 
     grouped_backtest_data = create_signal_groups(backtest_raw)
 
     # --- NEW: Логика загрузки/сохранения статистик нормализации ---
-    stats_path = os.path.join(cfg.paths.output_dir, "norm_stats.json")
+    stats_path = cfg.paths.norm_stats_path or os.path.join(cfg.paths.output_dir, "norm_stats.json")
     stats = None
     if os.path.exists(stats_path):
         logging.info(f"Loading normalization stats from {stats_path}")
@@ -244,41 +420,18 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
             stats = json.load(f)
 
     if stats is None:
-        logging.info("Normalization stats not found, calculating...")
-        train_raw = load_npz_dataset(
-            file_path=cfg.paths.train_data_path,
-            name_dataset="Train",
-            plot_dir=cfg.paths.plot_dir,
-            debug_max_size=cfg.debug.debug_max_size_data,
-            plot_examples=0,
-            plot_channel_idx=None,
-            pre_signal_len=cfg.seq.pre_signal_len,
-        )
-        train_seqs = []
-        for _, arr in train_raw:
-            sel = select_and_arrange_channels(arr, cfg.data.expected_channels, cfg.data.data_channels)
-            if sel is not None:
-                train_seqs.append(sel)
-        stats = calculate_normalization_stats(
-            train_seqs,
-            cfg.data.data_channels,
-            cfg.data.price_channels,
-            cfg.data.volume_channels,
-            cfg.data.other_channels,
-        )
-        with open(stats_path, 'w') as f:
-            json.dump(stats, f, indent=2)
-        logging.info(f"Normalization stats saved to {stats_path}")
+        logging.error(f"Normalization stats not found at path: {stats_path}. Please generate them first.")
+        raise RuntimeError(f"Normalization stats not found at path: {stats_path}.")
 
     if model_path_override:
         model_path = model_path_override
         logging.info(f"Using model from command line: {model_path}")
+    elif cfg.paths.model_path and os.path.exists(cfg.paths.model_path):
+        model_path = cfg.paths.model_path
+        logging.info(f"Using model from config file: {model_path}")
     else:
-        model_base = cfg.paths.extra_model_dir or cfg.paths.model_dir
-        model_folder = os.path.join(model_base, sorted(os.listdir(model_base))[-1])
-        best_path = os.path.join(model_folder, "best.pth")
-        model_path = best_path if os.path.exists(best_path) else os.path.join(model_folder, "final.pth")
-        logging.info(f"Using latest model from config: {model_path}")
+        logging.error("Model path not specified. Please set `cfg.paths.model_path` in your config file.")
+        raise FileNotFoundError("Model path not specified in the configuration.")
 
     agent = init_agent(model_path, cfg, cfg.paths.extra_cache_dir or cfg.paths.cache_dir)
 
@@ -428,8 +581,21 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/alpha.py"
     model_path_arg = sys.argv[2] if len(sys.argv) > 2 else None
 
-    cfg = load_config(config_path) if config_path else default_cfg
-    run_backtest(cfg=cfg, model_path_override=model_path_arg)
+    import importlib.util
+    if config_path:
+        spec = importlib.util.spec_from_file_location("experiment_cfg", config_path)
+        cfg_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cfg_mod)
+        cfg = cfg_mod.cfg
+    else:
+        cfg_mod = None
+        cfg = default_cfg
+
+    # This part is a fallback for when the script is run without a config that has the 'data' dict
+    if not hasattr(cfg_mod, "data"):
+        from configs import alpha as cfg_mod
+
+    run_backtest(cfg=cfg, cfg_mod=cfg_mod, model_path_override=model_path_arg)

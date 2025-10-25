@@ -110,6 +110,31 @@ def load_npz_dataset(
     return experiences
 
 
+def load_npz_dataset_keys(file_path: str) -> List[Tuple[str, dt.datetime]]:
+    """
+    Loads only the keys (metadata) from an NPZ dataset without loading the large arrays.
+    Returns a list of (symbol, datetime) tuples.
+    """
+    logger.info(f"Loading dataset keys from {file_path}")
+    keys: List[Tuple[str, dt.datetime]] = []
+    try:
+        with np.load(file_path, allow_pickle=True) as data:
+            if "_keys_map_" in data:
+                keys_map = data["_keys_map_"].item()
+                keys = list(keys_map.values())
+            else:
+                # Fallback for older format without a keys map
+                keys = [k for k in data.files if not k.startswith("_")]
+        logger.info(f"Loaded {len(keys)} keys.")
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+    except Exception as e:
+        logger.error(f"Error loading keys from {file_path}: {e}", exc_info=True)
+
+    # Ensure keys are sorted by datetime for deterministic order
+    return sorted(keys, key=lambda x: (x[1], x[0]))
+
+
 def select_and_arrange_channels(
     raw_seq: np.ndarray, file_channels: List[str], use_channels: List[str]
 ) -> Optional[np.ndarray]:
@@ -403,4 +428,3 @@ def find_spike_windows(
         else:
             t += pd.Timedelta(minutes=1)
     return out
-
