@@ -14,8 +14,9 @@ from config import MasterConfig
 from utils import load_config, setup_logging
 
 def objective(trial: optuna.Trial):
-    # Reconstruct the config object from the dictionary stored in user_attrs
-    base_cfg_dict = trial.study.user_attrs["base_cfg"]
+    # Reconstruct the config object from the JSON stored in user_attrs
+    base_cfg_raw = trial.study.user_attrs["base_cfg"]
+    base_cfg_dict = json.loads(base_cfg_raw) if isinstance(base_cfg_raw, str) else base_cfg_raw
     cfg = MasterConfig.model_validate(base_cfg_dict)
     cfg.random_seed = 17 + trial.number
 
@@ -49,7 +50,7 @@ def objective(trial: optuna.Trial):
     cfg.backtest.plot_backtest_balance_curve = False
     # cfg.debug.debug_max_size_data = None
 
-    metrics = run_backtest(cfg=cfg)
+    metrics = run_backtest(cfg=cfg) # model_path_override is not needed for optimization
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 
@@ -92,8 +93,13 @@ def main():
         load_if_exists=False,
     )
 
-    # Store base config and paths in study's user attributes to pass to workers
-    study.set_user_attr("base_cfg", base_cfg.model_dump())
+    # Store base config in study's user attributes.
+    # Pydantic's model_dump_json() fails on torch.device.
+    # The most robust workaround is to dump the Pydantic model to a standard Python dict,
+    # and then use the standard `json` library with `default=str` to forcefully
+    # convert any non-serializable objects (like torch.device) to their string representation.
+    config_dict = base_cfg.model_dump()
+    study.set_user_attr("base_cfg", json.dumps(config_dict, default=str))
     study.set_user_attr("opt_dir", opt_dir)
 
     logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")

@@ -12,6 +12,14 @@ class DeviceConfig(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+    @validator("device", pre=True)
+    @classmethod
+    def validate_device(cls, v):
+        if isinstance(v, str):
+            return torch.device(v)
+        return v
+
+
 
 class PathConfig(BaseModel):
     config_name: str = "alpha"

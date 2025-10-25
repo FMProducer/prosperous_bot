@@ -189,3 +189,56 @@
 2025-10-25 14:17:18,018 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
 2025-10-25 14:21:03,547 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
 2025-10-25 14:21:03,548 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:27:31,146 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:27:31,147 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:31:10,457 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:31:10,457 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:31:11,011 [INFO] [Optuna] starting optimisation -- trials=100 jobs=4
+2025-10-25 14:33:22,603 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:33:22,604 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:33:23,105 [INFO] [Optuna] starting optimisation -- trials=200 jobs=4
+2025-10-25 14:33:23,301 [INFO] Random seed set to 17
+2025-10-25 14:33:23,301 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:33:23,302 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:33:23,333 [INFO] Random seed set to 18
+2025-10-25 14:33:23,334 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:33:23,337 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:33:23,397 [INFO] Random seed set to 19
+2025-10-25 14:33:23,397 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:33:23,398 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:33:23,416 [INFO] Random seed set to 20
+2025-10-25 14:33:23,417 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:33:23,417 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:33:46,006 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:33:46,021 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:33:46,022 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:33:46,022 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:40:22,965 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:40:22,966 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:42:00,965 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:42:00,965 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:42:56,534 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:42:56,534 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:42:57,006 [INFO] [Optuna] starting optimisation -- trials=200 jobs=4
+2025-10-25 14:44:11,749 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:44:11,749 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:44:12,232 [INFO] [Optuna] starting optimisation -- trials=200 jobs=4
+2025-10-25 14:45:19,039 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 14:45:19,039 [INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 14:45:19,511 [INFO] [Optuna] starting optimisation -- trials=200 jobs=4
+2025-10-25 14:45:19,708 [INFO] Random seed set to 18
+2025-10-25 14:45:19,708 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:45:19,709 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:45:19,765 [INFO] Random seed set to 20
+2025-10-25 14:45:19,765 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:45:19,765 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:45:19,858 [INFO] Random seed set to 17
+2025-10-25 14:45:19,858 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:45:19,859 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:45:19,894 [INFO] Random seed set to 19
+2025-10-25 14:45:19,895 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 14:45:19,895 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...
+2025-10-25 14:45:42,163 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:45:42,178 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:45:42,183 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...
+2025-10-25 14:45:42,183 [INFO] Scanning for spike signals from 2025-08-01T00:00:00Z to 2025-10-01T00:00:00Z for 257 symbols...

@@ -1,156 +1,101 @@
-TL;DR: мы остановились на расхождении результатов между `backtest_engine.py` (сегментированный `.npz`) и «непрерывным» потоком (БД/stream), а также на том, что в `inference` используются заглушки нормализации — из-за этого метрики близки к случайным (PF≈1.04). Ниже — пошаговый план «идеальной» адаптации обученной на `.npz` модели к непрерывным данным из локальной БД и затем к real-time WebSocket, с фиксацией артефактов модели (слепка) и воспроизводимости. Требования к структуре проекта/артефактам/выводам соответствуют `SYSTEM_PROMPT.md` и `README.md` в составе RL-агента (пути, логи, артефакты — в `output/<config_name>/`)  .
+TL;DR: Ошибка из-за того, что в `study.set_user_attr("base_cfg", ...)` передавался не-серриализуемый объект (`torch.device`). Фикс: сохраняем базовую конфигурацию в `user_attrs` как JSON-строку (`model_dump_json()`), а в `objective()` парсим обратно в dict. Ниже — минимальный patch и команды запуска.
 
----
-конфигурационный файл обучения 
-"C:\Python\Prosperous_Bot\third_party\rl-trading-binance-source-code\configs\alpha.py"
-статистики нормализации
-"C:\Python\Prosperous_Bot\third_party\FMProducer\fmproducer_1_eval\saved_models\session_1\norm_stats.json"
-# На чём мы остановились
-
-1. **Переход к «непрерывному» источнику** и сравнение с эталоном: вы запускали `backtest_engine.py` на сегментированном `.npz` и пытались добиться сопоставимых результатов на непрерывном фиде (БД/stream). Итог: поведение различается — ключевая причина в расхождении признаков/нормализации и в отсутствии точного воспроизведения «окна контекста + сессии» из тренировки.
-
-2. **paper_trader и «только продажи»**: последний прогон показал, что сигналы смещены (только short), метрики сохраняются в
-   `third_party/rl-trading-binance/output/alpha/metrics.json` и трейды в `.../trades.csv` (из вашего лога) — индикатор неверной нормализации/масштабирования признаков на inference.
-
-3. **Слепок модели (checkpoint) и нормализация**: обученная модель сохранена как
-   `third_party/rl-trading-binance/output/alpha/saved_models/rl_binance_futures_trading_date_20251012_time_052546/best.pth` (по вашему логу). В `inference` фигурировали заглушки для нормировочных статистик (средние/стандарты), что и «ломает» политику в проде (PF≈1.04 при WinRate≈50%), пока не подставим корректные stats из тренировки.
+**Repo-State Header (требуется Ultra-strict):**
+Ветка: `prosperous_bot` (дефолт) — подтверждено через GitHub API. SHA последнего коммита не удалось получить автоматически из-за ограничений доступа к API в этом окружении. Ссылка на репозиторий: [https://github.com/FMProducer/prosperous_bot](https://github.com/FMProducer/prosperous_bot)   
 
 ---
 
-# Как «идеально» адаптировать модель `.npz` к непрерывному потоку
-
-Ниже — пошаговый план (офлайн БД → online WebSocket), в строгом соответствии проектной структуре и артефактам `output/<config_name>/` из документации репозитория  и регламенту отчётности/артефактов из системного промпта (метрики, логи, артефакты → `output/...`) .
-
-## Этап A. Зафиксировать артефакты слепка (repro)
-
-**Цель** — чтобы `inference` видел ровно те же признаки, масштабирование и порядок входов, что и во время тренировки/бэктеста.
-
-1. **Слепок модели**
-
-   * Checkpoint: `best.pth` (указан выше).
-   * Конфиг тренировки: точный `configs/<name>.py`, по которому обучалась модель (например, `configs/alpha.py`).
-   * Версии пакетов/окружение: фиксируйте `requirements.txt` и версии CUDA/PyTorch (файл уже есть в проекте) .
-
-2. **Нормировочные статистики**
-
-   * Извлеките `means`, `stds`, а также min/max, если использовали MinMax/Robust — **ровно в той же последовательности признаков**, что при формировании `.npz`.
-   * Сохраните в JSON: `output/<config>/saved_models/<run_id>/norm_stats.json`.
-
-3. **Отпечаток данных**
-
-   * Запишите метаданные датасета: список тикеров, период, `context_len`, `session_len`, stride/шаг, фильтры волатильности/объёма, порядок каналов (OHLCV, дельта-фичи и т.д.) — в `training_fingerprint.json`.
-   * Это нужно для frame-by-frame «байтового» сопоставления признаков между `.npz` и БД/stream.
-
-4. **Функция feature-builder**
-
-   * Вынесите **единую** функцию преобразования сырья → тензор признаков (ровно как в пайплайне для `.npz`), чтобы она использовалась и при `inference`.
-   * Важно: одинаковый **порядок** столбцов, одинаковая частота (1m), одинаковая обработка пропусков (ffill/0/удаление), одинаковые вычисляемые индикаторы.
-
-## Этап B. Подготовить чтение из БД (офлайн непрерывный фид)
-
-5. **Схема БД и соответствия полей**
-
-   * Требуемые поля на 1m: `open_time_ms` (UTC ms), `open, high, low, close, volume`, доп. для VWAP: `quote_volume`, количество сделок: `trade_count`. У вас эти поля есть (по вашим описаниям).
-   * **Нормировать время**: все timestamp в UTC, свеча `[t, t+60s)` «помечается» временем `t` (ISO-8601 UTC в логах, как требует системный промпт) .
-
-6. **Выборка окон**
-
-   * На symbol-буфер подтягивайте **последние `context_len + session_len` минут** (например, demo: 30+10).
-   * Ровно так же, как в `.npz`: одинаковые правила ресемплинга, одинаковые фильтры/маски.
-
-7. **Формирование признаков и нормализация**
-
-   * Для каждого пополнения окна:
-
-     1. Собираете DataFrame за окно,
-     2. Применяете **ту же** feature-builder функцию,
-     3. Применяете `norm_stats.json` (не заглушки!),
-     4. Получаете тензор `X` точной формы, как в тренировке.
-
-8. **Policy-обёртка inference**
-
-   * `model.eval()`; отключить `ε`-жадность (чисто «greedy»/`return_qvals=False` — как в режиме backtest/inference), зафиксировать seed.
-   * Вызов `agent.act(X) → action` для каждого шага в минуту; состояние среды (позиция/кулдауны/комиссии) ведёт «эмулятор» исполнения (см. «Исполнение» ниже).
-
-9. **Исполнение и правила совмещения**
-
-   * Повторите фильтры из `backtest_engine.py`: комиссии, спрэды/слиппедж, кулдаун, лимиты частоты сигналов, правила закрытия/реверса.
-   * Все результаты логируйте в `output/<config>/stream/` (JSON метрики, `trades.csv`, `equity.csv`) — так требует документация/регламент артефактов  .
-
-## Этап C. Верификация (сопоставление с `.npz`)
-
-10. **Frame-check тест (идентичность входа)**
-
-* Возьмите **точно тот же** период/тикер, что и в `.npz` «Backtest».
-* Сформируйте окно из БД и из `.npz`, посчитайте хэш/MAE разницы по тензору признаков.
-* Цель: `MAE≈0` (допуски только из-за float eps). Несовпадение → ищем расхождения в ресемплинге, timezone, порядке каналов.
-
-11. **Decision-diff тест (идентичность решений)**
-
-* Прогоните бэктест для 2–3 тикеров (в ваших примерах: `OM`, `1000RATS`, `KAVA`) на `.npz` и на БД-окнах.
-* Сравните последовательности `action_t`, затем `trades.csv` и итоговые метрики. Цель: отличия несущественные и объяснимые (ожидаемое совпадение в пределах эффекта округлений/комиссий).
-
-## Этап D. Подключение WebSocket в реальном времени
-
-12. **Сборщик 1m-баров (bar builder)**
-
-* Из тиков/aggTrades формируйте 1-мин свечи:
-
-  * окно начинается в `XX:YY:00` и закрывается в `XX:YY:59.999`,
-  * в конце минуты «фиксация» свечи + запись в БД (опционально) + обновление буфера символа,
-  * поздние тики текущей минуты переписывают `close/high/low/volume` до «фиксации».
-
-13. **Онлайн-pipeline**
-
-* На закрытии каждой минуты:
-
-  1. Обновить буфер,
-  2. Построить признаки (та же функция),
-  3. Применить `norm_stats.json`,
-  4. `agent.act` → `action`,
-  5. Исполнить/логировать,
-  6. Отправить сигнал в downstream (оповещение/Экзекьютор биржи).
-
-14. **Надёжность и backpressure**
-
-* Очереди событий (per-symbol), отсечка максимальной задержки (например, ≤2–3s после закрытия минуты), ретраи при лаге сети.
-* Все временные метки — **ISO-8601 UTC** в логах и отчётах (требование промпта) .
+| Шаг | Действие                                                             | KPI/риск                                                                                      |
+| --- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | Сделать `base_cfg` JSON-совместимой при записи в `study.user_attrs`  | Убираем падение на сериализации (`TypeError: Object of type device is not JSON serializable`) |
+| 2   | В `objective()` читать `base_cfg` из `user_attrs` через `json.loads` | Гарантируем совместимость при `n_jobs>1` и с RDB storage (SQLite)                             |
+| 3   | Перезапустить оптимизацию                                            | Получаем корректные логи и `trials.parquet` без падений                                       |
 
 ---
 
-# Что уже известно о «слепке» вашей обученной модели
+# Пояснение проблемы
 
-* **Checkpoint слепка**: `.../output/alpha/saved_models/rl_binance_futures_trading_date_20251012_time_052546/best.pth` (по вашему логу от 2025-10-12).
-* **Критичная проблема inference**: заглушки нормализации (средние/стандарты не из тренировки) → PF≈1.04, WinRate≈50% (поведение «случайное»).
-* **Вывод**: первым делом извлечь и сохранить реальный `norm_stats.json` из обучающего пайплайна и **использовать его в прод-inference**.
-* **Где хранить артефакты**: всё, включая `norm_stats.json`, `training_fingerprint.json`, логи/метрики stream-прогона — в `output/<config_name>/...` (как в `README.md`/регламенте)  .
+* В `optimize_cfg.py` вы записываете в Optuna user_attrs Python-словарь с полями конфигурации: `study.set_user_attr("base_cfg", base_cfg.model_dump())`. Внутри конфигурации находится объект типа `torch.device`, который стандартный `json.dumps` не умеет сериализовать — отсюда `TypeError` (ваш стек-трейс). Источник в коде: блок записи user_attrs в `main()` и чтение в `objective()`  .
+* В файл `orig_master_cfg.json` вы уже писали так: `json.dump(..., default=str)`, и там проблем нет — но внутри Optuna нет возможности передать `default=str`, поэтому нужно заранее преобразовать в JSON-строку (или рекурсивно приводить к строкам).
 
----
+# Unified diff (≤ 300 строк)
 
-# Пошаговый план (исполнительно)
+**Файл:** `third_party/rl-trading-binance/optimize_cfg.py`  
 
-| Шаг | Действие                                                                                                          | KPI / риск                                                                  |
-| --- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 1   | Экспорт `norm_stats.json` (means/stds) из тренировки и сохранение рядом с `best.pth`.                             | KPI: PF↑, WinRate↑; Риск: несоответствие порядка фич — проверка хэш-тестом. |
-| 2   | Зафиксировать `training_fingerprint.json` (тикеры, периоды, `context_len/session_len`, фильтры, порядок каналов). | KPI: воспроизводимость; Риск: забытые трансформации → рассинхрон.           |
-| 3   | Вынести единую `feature_builder()` и использовать её в offline/online.                                            | KPI: идентичность входа; Риск: дрейф кода между режимами.                   |
-| 4   | Реализовать DB-reader: выборка последних `context_len+session_len` мин, UTC, ресемплинг=обучающий.                | KPI: 0 пропусков; Риск: таймзона/дубликаты.                                 |
-| 5   | Интегрировать `inference_policy` (eval, epsilon=0), «эмулятор» исполнения (комиссии/кулдаун).                     | KPI: PF≥1.30 (бенч), MaxDD<20%; Риск: рассинхрон правил с бэктестом.        |
-| 6   | **Frame-check**: MAE фич `.npz` vs БД ≈ 0 на тестовых окнах.                                                      | KPI: MAE≈0; Риск: скрытые различия ресемплинга.                             |
-| 7   | **Decision-diff**: сравнение последовательностей действий на 2–3 тикерах (OM/1000RATS/KAVA).                      | KPI: совпадение >95%; Риск: плавающий порядок каналов.                      |
-| 8   | Подключить WebSocket и bar-builder 1m, строгая фиксация минут.                                                    | KPI: задержка <3s; Риск: поздние тики/рассинхрон.                           |
-| 9   | Логи/метрики в `output/<config>/stream/` (equity, PF, Sharpe, WinRate, комиссии, funding).                        | KPI: Sharpe≥1.5 (минимум проекта), PF≥1.3, MaxDD<20% ; Риск: дрейф при бою. |
+```diff
+--- a/third_party/rl-trading-binance/optimize_cfg.py
++++ b/third_party/rl-trading-binance/optimize_cfg.py
+@@ -12,6 +12,7 @@
+ import optuna
+ 
+ from backtest_engine import run_backtest
+ from config import MasterConfig
+ from utils import load_config, setup_logging
++import json
+ 
+ def objective(trial: optuna.Trial):
+-    # Reconstruct the config object from the dictionary stored in user_attrs
+-    base_cfg_dict = trial.study.user_attrs["base_cfg"]
++    # Reconstruct the config object from the JSON stored in user_attrs
++    base_cfg_raw = trial.study.user_attrs["base_cfg"]
++    base_cfg_dict = json.loads(base_cfg_raw) if isinstance(base_cfg_raw, str) else base_cfg_raw
+     cfg = MasterConfig.model_validate(base_cfg_dict)
+     cfg.random_seed = 17 + trial.number
+ 
+@@ -79,8 +80,11 @@
+         load_if_exists=False,
+     )
+ 
+-    # Store base config and paths in study's user attributes to pass to workers
+-    study.set_user_attr("base_cfg", base_cfg.model_dump())
++    # Store base config and paths in study's user attributes to pass to workers
++    # IMPORTANT: store as JSON string to avoid non-serializable objects (e.g., torch.device)
++    # Pydantic v2: model_dump_json() returns a JSON string with safe encoders
++    base_cfg_json = base_cfg.model_dump_json()
++    study.set_user_attr("base_cfg", base_cfg_json)
+     study.set_user_attr("opt_dir", opt_dir)
+ 
+     logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
+     start_t = time.time()
+```
 
----
+# Как запустить (Windows, ваш путь)
 
-# Важные технические детали и проверки
+```powershell
+# (из корня репозитория/проекта)
+git checkout -b fix/optuna-json-user-attrs
+git apply --index changes.patch
+git commit -m "fix(optimize_cfg): store base_cfg as JSON in Optuna user_attrs and parse in objective()"
+# локальный прогон
+python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 100 --jobs 4
+```
 
-* **Единица времени:** строго 1m, все метки — UTC ISO-8601 (регламент проекта) .
-* **Символьные соответствия:** тикеры из БД должны ровно совпадать с тикерами `.npz` по названию/истории.
-* **Комиссии и слиппедж:** в online-эмуляторе должны быть те же параметры, что в `backtest_engine.py`, иначе PF «уплывёт».
-* **Зависимости:** используйте версии из `requirements.txt` (особенно `torch`, `numpy`, `pandas`, `gymnasium`) для стабильности входов/форматов .
-* **Артефакты:** сохраняйте все выходы в `output/<config_name>/...` (логи, CSV, графики) — так приняты в проекте структура и отчётность  .
+# Почему это решает проблему
 
----
+* `study.set_user_attr(...)` внутри Optuna сериализует значение через `json.dumps`. Передавая **строку JSON**, мы гарантируем корректную запись (без попытки сериализовать `torch.device`). Чтение — обратное преобразование `json.loads(...)`.
+* Изменения минимальны и не затрагивают вашу логику поиска гиперпараметров, кеши, метрики и выгрузку артефактов (`trials.parquet`, `optuna_history.png`, `pareto.png`)  .
 
-Сразу подготовьте минимальный `stream_inference` пайплайн (без изменения архитектуры/алгоритма): чтение из Д, единый `feature_builder`, подстановка `norm_stats.json`, «эмулятор» исполнения и логи в `output/<config>/stream/`.
+# Быстрая проверка
+
+1. После применения патча ожидаемый вывод в логах:
+
+```
+[INFO] [Optuna] Output dir: output\alpha\optuna_cfg_optimization_results
+[I ...] A new study created in RDB with name: backtest_opt_...
+[INFO] [Optuna] starting optimisation -- trials=100 jobs=4
+...
+```
+
+2. Файлы/артефакты:
+
+* `output\alpha\optuna_cfg_optimization_results\optuna.db`
+* `output\alpha\optuna_cfg_optimization_results\trials.parquet`
+* `output\alpha\optuna_cfg_optimization_results\best_backtest_cfg.json` (если нашлись успешные трейалы)
+* PNG-графики истории и Парето (если `matplotlib` доступен)  .
+
+# Ссылки на специфику проекта (для аудита)
+
+* Требование следовать структуре и Ultra-strict режиму — `SYSTEM_PROMPT.md`  
+* Подтверждение назначения `optimize_cfg.py` и пайплайна — `README.md` (раздел Quickstart, п.5)  
+
+Если нужно, могу дополнительно подготовить вариант с «универсальным» рекурсивным преобразователем словаря (`make_jsonable()`), но текущий фикс через `model_dump_json()` + `json.loads()` — проще и надёжнее для Optuna RDB.
