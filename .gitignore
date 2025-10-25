@@ -89,4 +89,6 @@ third_party/rl-trading-binance/plots/
 
 # Temporary files
 *.tmp
-output/btcusdt_1m_2025_06_29_to_2026_06_29.npz
+*.npz
+*.log
+*.pkl
