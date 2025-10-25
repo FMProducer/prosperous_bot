@@ -1,0 +1,4 @@
+2025-10-25 05:35:01,791 [INFO] [Init] Logging for backtest session started
+2025-10-25 05:35:01,826 [INFO] Random seed set to 17
+2025-10-25 05:35:01,826 [INFO] Backtest data source: 'find_spikes'
+2025-10-25 05:35:01,827 [INFO] `paper.symbols` is 'ALL'. Fetching all available symbols from the database for the given time range...

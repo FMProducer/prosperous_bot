@@ -65,7 +65,7 @@ def objective(trial: optuna.Trial):
     cfg.backtest.plot_backtest_balance_curve = False
     # cfg.debug.debug_max_size_data = None
 
-    metrics = run_backtest(cfg)
+    metrics = run_backtest(cfg=cfg)
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 

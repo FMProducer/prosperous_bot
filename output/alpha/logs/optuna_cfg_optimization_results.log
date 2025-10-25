@@ -1,0 +1,9 @@
+2025-10-25 05:32:00,720 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 05:32:00,720 [INFO] [Optuna] output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 05:32:01,412 [INFO] [Optuna] starting optimisation -- trials=200 jobs=4
+2025-10-25 05:32:47,696 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 05:32:47,696 [INFO] [Optuna] output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 05:32:48,173 [INFO] [Optuna] starting optimisation -- trials=100 jobs=4
+2025-10-25 05:35:01,161 [INFO] Logging to: output\alpha\logs\optuna_cfg_optimization_results.log
+2025-10-25 05:35:01,162 [INFO] [Optuna] output dir: output\alpha\optuna_cfg_optimization_results
+2025-10-25 05:35:01,637 [INFO] [Optuna] starting optimisation -- trials=100 jobs=4

@@ -228,7 +228,7 @@ def get_pass_advantage(action: int, confidence: float, cfg: MasterConfig) -> boo
     return pass_adv
 
 
-def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tuple[Tuple[str, dt.datetime], np.ndarray]]:
+def load_from_db_and_prepare_signals(cfg: MasterConfig) -> List[Tuple[Tuple[str, dt.datetime], np.ndarray]]:
     """
     Dynamically finds spike signals in the database for the given symbols and time range.
     This is a high-performance version that loads data once and processes it in memory.
@@ -290,13 +290,13 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
                     symbol,
                     -- NEW: Conditional logic for lookahead
                     CASE
-                        WHEN {str(detector_cfg.use_lookahead).upper()} THEN
+                        WHEN :use_lookahead THEN
                             (LEAD(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts) / close) - 1 -- Заглядываем вперед
                         ELSE
                             (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 -- Смотрим только в прошлое
                     END AS abs_change,
                     CASE
-                        WHEN {str(detector_cfg.use_lookahead).upper()} THEN
+                        WHEN :use_lookahead THEN
                             AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes} PRECEDING AND 1 PRECEDING) -- Контекст для lookahead
                         ELSE
                             AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) -- Контекст для "честного" режима
@@ -317,6 +317,7 @@ def load_from_db_and_prepare_signals(cfg: MasterConfig, cfg_mod: Any) -> List[Tu
                 "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
                 "abs_change_pct": detector_cfg.abs_change_pct,
                 "contrast_min": detector_cfg.contrast_min,
+                "use_lookahead": detector_cfg.use_lookahead,
             })
             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
     except Exception as e:
@@ -401,20 +402,20 @@ def load_from_db_using_npz_keys(cfg: MasterConfig) -> List[Tuple[Tuple[str, dt.d
     return backtest_raw
 
 
-def run_backtest(cfg: MasterConfig, cfg_mod: Any, model_path_override: str = None) -> Dict[str, Any]:
+def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str, Any]:
     cfg.backtest_mode = True
     setup_logging(cfg)
     set_random_seed(cfg.random_seed)
 
-    data_source = getattr(cfg.backtest, "data_source", "npz_keys")
+    data_source = cfg.backtest.data_source
     logging.info(f"Backtest data source: '{data_source}'")
 
     if data_source == "find_spikes":
-        backtest_raw = load_from_db_and_prepare_signals(cfg, cfg_mod)
-    elif data_source == "npz_keys":
-        backtest_raw = load_from_db_using_npz_keys(cfg)
+        backtest_raw = load_from_db_and_prepare_signals(cfg)
+    elif data_source == "npz_keys" and os.path.exists(cfg.paths.backtest_data_path):
+        backtest_raw = load_npz_dataset(cfg.paths.backtest_data_path, "Backtest", cfg.paths.plot_dir, cfg.debug.debug_max_size_data)
     else:
-        logging.error(f"Unknown backtest data_source: '{data_source}'. Use 'npz_keys' or 'find_spikes'.")
+        logging.error(f"Data source '{data_source}' not found or file '{cfg.paths.backtest_data_path}' is missing.")
         return {}
 
     if not backtest_raw:
@@ -610,4 +611,4 @@ if __name__ == "__main__":
     if not hasattr(cfg_mod, "data"):
         from configs import alpha as cfg_mod
 
-    run_backtest(cfg=cfg, cfg_mod=cfg_mod, model_path_override=model_path_arg)
+    run_backtest(cfg=cfg, model_path_override=model_path_arg)
