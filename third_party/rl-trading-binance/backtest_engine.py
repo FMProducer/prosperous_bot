@@ -44,8 +44,10 @@ def setup_logging(cfg: MasterConfig) -> None:
     logger = logging.getLogger()
 
     # Only configure logging if no handlers are present. This prevents overriding parent script's logging.
-    if not logger.hasHandlers():
-        pass # No need to do anything, basicConfig will be called below.
+    # When run from optimize_cfg with multiprocessing, each process is new.
+    # We check if the root logger has handlers. If so, a parent process configured it.
+    if logging.getLogger().hasHandlers():
+        return
 
     logging.basicConfig(
         level=logging.INFO,

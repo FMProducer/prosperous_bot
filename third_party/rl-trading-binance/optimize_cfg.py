@@ -10,36 +10,17 @@ import time
 import optuna
 
 from backtest_engine import run_backtest
+from config import MasterConfig
 from utils import load_config, setup_logging
 
-parser = argparse.ArgumentParser(description="Optimise BacktestConfig parameters")
-parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
-parser.add_argument("--trials", type=int, default=200, help="Total Optuna trials")
-parser.add_argument("--jobs", type=int, default=4, help="Parallel jobs")
-
-args = parser.parse_args()
-
-base_cfg = load_config(args.cfg_path)
-run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
-
-session_name = "optuna_cfg_optimization_results"
-opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
-os.makedirs(opt_dir, exist_ok=True)
-
-with open(os.path.join(opt_dir, "orig_master_cfg.json"), "w") as f:
-    json.dump(base_cfg.dict(), f, indent=2, default=str)
-
-setup_logging(session_name=session_name, cfg=base_cfg)
-
-logging.info(f"[Optuna] output dir: {opt_dir}")
-
-
 def objective(trial: optuna.Trial):
-    cfg = copy.deepcopy(base_cfg)
+    # Reconstruct the config object from the dictionary stored in user_attrs
+    base_cfg_dict = trial.study.user_attrs["base_cfg"]
+    cfg = MasterConfig.model_validate(base_cfg_dict)
     cfg.random_seed = 17 + trial.number
 
     # --- NEW: Create a unique cache directory for each trial to prevent race conditions ---
-    trial_cache_dir = os.path.join(opt_dir, "trial_caches", f"trial_{trial.number}")
+    trial_cache_dir = os.path.join(trial.study.user_attrs["opt_dir"], "trial_caches", f"trial_{trial.number}")
     os.makedirs(trial_cache_dir, exist_ok=True)
     cfg.paths.extra_cache_dir = trial_cache_dir
 
@@ -60,8 +41,8 @@ def objective(trial: optuna.Trial):
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
 
-    cfg.paths.config_name = f"{base_cfg.paths.config_name}_trial{trial.number:05d}"
-    cfg.paths.base_output_dir = opt_dir
+    cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
+    cfg.paths.base_output_dir = trial.study.user_attrs["opt_dir"]
 
     # for faster runs: skip plotting and example caching
     cfg.data.plot_examples = 0
@@ -73,59 +54,88 @@ def objective(trial: optuna.Trial):
         trial.set_user_attr(k, v)
 
     # TARGET METRICS
-    total_pnl = float(metrics["final_balance_change"].rstrip("%"))
-    accuracy = float(metrics["accuracy"].rstrip("%"))
-    num_trades = int(metrics["total_trades"])
-    # Optuna -> maximize pnl, minimize trades (multiply by -1 to minimize)
-    # return total_pnl, -num_trades
+    total_pnl = float(metrics.get("final_balance_change", "0.0%").rstrip("%"))
+    accuracy = float(metrics.get("accuracy", "0.0%").rstrip("%"))
+    num_trades = int(metrics.get("total_trades", 0))
     return total_pnl, accuracy, -num_trades
 
 
-sampler = optuna.samplers.TPESampler(multivariate=True, warn_independent_sampling=False)
-pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
+def main():
+    parser = argparse.ArgumentParser(description="Optimise BacktestConfig parameters")
+    parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
+    parser.add_argument("--trials", type=int, default=200, help="Total Optuna trials")
+    parser.add_argument("--jobs", type=int, default=4, help="Parallel jobs")
+    args = parser.parse_args()
 
-study = optuna.create_study(
-    directions=["maximize", "maximize", "maximize"],  # pnl ↑,  −trades ↑, accuracy ↑
-    sampler=sampler,
-    pruner=pruner,
-    study_name=f"backtest_opt_{run_stamp}",
-    storage=f"sqlite:///{os.path.join(opt_dir,'optuna.db')}",
-    load_if_exists=False,
-)
+    base_cfg = load_config(args.cfg_path)
+    run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
-start_t = time.time()
-study.optimize(objective, n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
-logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
+    session_name = "optuna_cfg_optimization_results"
+    opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
+    os.makedirs(opt_dir, exist_ok=True)
 
-df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
-df.to_parquet(os.path.join(opt_dir, "trials.parquet"), index=False)
+    with open(os.path.join(opt_dir, "orig_master_cfg.json"), "w") as f:
+        json.dump(base_cfg.model_dump(), f, indent=2, default=str) # Use model_dump for Pydantic v2
 
-# best of Pareto front (rank 0) -> take the first one
-best = [t for t in study.best_trials if t.values is not None][0]
-best_cfg = dict(best.params)
-with open(os.path.join(opt_dir, "best_backtest_cfg.json"), "w") as f:
-    json.dump(best_cfg, f, indent=2)
+    setup_logging(session_name=session_name, cfg=base_cfg)
+    logging.info(f"[Optuna] Output dir: {opt_dir}")
 
-logging.info(f"[Optuna] best trial #{best.number}: PnL={best.values[0]:.2f}%, trades={-best.values[1]}")
-logging.info(f"[Optuna] params: {best_cfg}")
+    sampler = optuna.samplers.TPESampler(multivariate=True, warn_independent_sampling=False)
+    pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
 
-try:
-    import matplotlib
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "maximize"],  # pnl ↑,  accuracy ↑, -trades ↑
+        sampler=sampler,
+        pruner=pruner,
+        study_name=f"backtest_opt_{run_stamp}",
+        storage=f"sqlite:///{os.path.join(opt_dir,'optuna.db')}",
+        load_if_exists=False,
+    )
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from optuna.visualization.matplotlib import plot_optimization_history, plot_pareto_front
+    # Store base config and paths in study's user attributes to pass to workers
+    study.set_user_attr("base_cfg", base_cfg.model_dump())
+    study.set_user_attr("opt_dir", opt_dir)
 
-    ax1 = plot_optimization_history(study, target=lambda t: t.values[0], target_name="Total PnL (%)")
-    fig1 = getattr(ax1, "figure", ax1)
-    fig1.savefig(os.path.join(opt_dir, "optuna_history.png"), dpi=300)
-    plt.close(fig1)
+    logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
+    start_t = time.time()
+    study.optimize(objective, n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
+    logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
 
-    ax2 = plot_pareto_front(study, target_names=["PnL (%)", "-Trades"])
-    fig2 = getattr(ax2, "figure", ax2)
-    fig2.savefig(os.path.join(opt_dir, "pareto.png"), dpi=300)
-    plt.close(fig2)
+    df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
+    df.to_parquet(os.path.join(opt_dir, "trials.parquet"), index=False)
 
-except Exception as e:
-    logging.warning(f"Failed to draw Optuna plots: {e}")
+    # best of Pareto front (rank 0) -> take the first one
+    best_trials = [t for t in study.best_trials if t.values is not None]
+    if best_trials:
+        best = best_trials[0]
+        best_cfg = dict(best.params)
+        with open(os.path.join(opt_dir, "best_backtest_cfg.json"), "w") as f:
+            json.dump(best_cfg, f, indent=2)
+
+        logging.info(f"[Optuna] best trial #{best.number}: PnL={best.values[0]:.2f}%, Accuracy={best.values[1]:.2f}%, trades={-best.values[2] if best.values[2] is not None else 'N/A'}")
+        logging.info(f"[Optuna] params: {best_cfg}")
+    else:
+        logging.warning("[Optuna] No successful trials found to determine the best parameters.")
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from optuna.visualization.matplotlib import plot_optimization_history, plot_pareto_front
+
+        ax1 = plot_optimization_history(study, target=lambda t: t.values[0], target_name="Total PnL (%)")
+        fig1 = getattr(ax1, "figure", ax1)
+        fig1.savefig(os.path.join(opt_dir, "optuna_history.png"), dpi=300)
+        plt.close(fig1)
+
+        ax2 = plot_pareto_front(study, target_names=["PnL (%)", "Accuracy (%)", "-Trades"])
+        fig2 = getattr(ax2, "figure", ax2)
+        fig2.savefig(os.path.join(opt_dir, "pareto.png"), dpi=300)
+        plt.close(fig2)
+
+    except Exception as e:
+        logging.warning(f"Failed to draw Optuna plots: {e}")
+
+if __name__ == "__main__":
+    main()
