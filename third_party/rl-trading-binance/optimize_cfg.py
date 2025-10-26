@@ -161,14 +161,13 @@ def objective(trial: optuna.Trial):
     cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
     
     # risk-management knobs
-    cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
-    if cfg.backtest.use_risk_management:
-        # TSL is now the unified risk parameter. Increased range to allow it to function as a wider SL.
-        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.005, 0.15, log=True)
-    else:
-        cfg.backtest.stop_loss = 0.0
-        cfg.backtest.take_profit = 0.0
-        cfg.backtest.trailing_stop = 0.0
+    # According to the new logic, risk management (unified TSL) is always active.
+    cfg.backtest.use_risk_management = True
+    cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.005, 0.15, log=True)
+
+    # Explicitly set unused parameters to 0 to avoid any legacy effects.
+    cfg.backtest.stop_loss = 0.0
+    cfg.backtest.take_profit = 0.0
 
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
