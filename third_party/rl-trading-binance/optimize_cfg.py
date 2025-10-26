@@ -229,7 +229,7 @@ def main():
         
     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    session_name = "optuna_papertrader_optimization_results"
+    session_name = f"optuna_papertrader_{run_stamp}"
     opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
     os.makedirs(opt_dir, exist_ok=True)
     

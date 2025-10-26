@@ -433,10 +433,11 @@ class PaperTrader:
                 rolling_stats AS (
                     SELECT ts, symbol,
                         (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
-                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
+                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre,
+                        (SELECT volume FROM v_klines_1m_npz v WHERE v.symbol = minute_returns.symbol AND v.ts = minute_returns.ts) as volume
                     FROM minute_returns
                 )
-                SELECT ts, symbol FROM rolling_stats
+                SELECT ts, symbol, volume FROM rolling_stats
                 WHERE ABS(abs_change) * 100.0 >= :abs_change_pct AND (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min;
                 """)
                 
@@ -457,50 +458,75 @@ class PaperTrader:
             # Apply cooldown
             all_signals = []
             last_signal_time = {}
-            for _, row in found_spikes_df.iterrows():
-                symbol, signal_dt = row['symbol'], row['ts']
-                if signal_dt > last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
-                    all_signals.append({"symbol": symbol, "signal_dt": signal_dt})
-                    last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=detector_cfg.cooldown_minutes)
+            # Группируем по времени, чтобы обработать конкурирующие сигналы
+            for signal_dt, group in found_spikes_df.groupby('ts'):
+                # Сортируем сигналы в данный момент времени по объему (по убыванию)
+                sorted_group = group.sort_values(by='volume', ascending=False)
+                
+                processed_in_group = 0
+                for _, row in sorted_group.iterrows():
+                    symbol, volume = row['symbol'], row['volume']
+                    
+                    # Применяем кулдаун для каждого символа индивидуально
+                    if signal_dt <= last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
+                        continue
+
+                    all_signals.append({"symbol": symbol, "signal_dt": signal_dt, "volume": volume})
+                    last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
 
         except Exception as e:
             logging.error(f"Failed to load historical data from database: {e}", exc_info=True)
             return
 
-        # Signals are already chronological. Now we process them.
+        # Сигналы уже отсортированы по времени из-за groupby и исходной сортировки.
         logging.info(f"Found {len(all_signals)} total signals across all symbols. Starting high-speed simulation...")
 
-        engine = create_engine(self.cfg.db.dsn)
+        # Группируем финальный список сигналов по времени для обработки параллельных сессий
+        grouped_signals = defaultdict(list)
         for signal in all_signals:
-            # For each found signal, load the full data window required for the agent
-            symbol = signal["symbol"]
-            signal_dt = signal["signal_dt"]
-            
-            seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
-            seq_end = signal_dt + dt.timedelta(minutes=self.cfg.seq.post_signal_len)
-            
-            # This is a targeted query for just one signal's data
-            with engine.connect() as conn:
-                query = text(
-                    "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
-                    "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
-                )
-                df_signal = pd.read_sql(query, conn, params={
-                    "symbol": symbol,
-                    "start_ts": int(seq_start.timestamp() * 1000),
-                    "end_ts": int(seq_end.timestamp() * 1000)
-                })
-            
-            if df_signal.empty or len(df_signal) != self.cfg.seq.full_seq_len:
-                logging.warning(f"Could not fetch complete data for signal {symbol} at {signal_dt}. Skipping.")
-                continue
-            
-            df_signal['ts'] = pd.to_datetime(df_signal['ts'], unit='ms', utc=True)
-            df_signal = df_signal.set_index('ts')
+            grouped_signals[signal['signal_dt']].append(signal)
 
+        engine = create_engine(self.cfg.db.dsn)
+        # Итерируемся по временным меткам, в каждой из которых может быть несколько сигналов
+        for signal_dt, signals_at_time in tqdm(sorted(grouped_signals.items()), desc="Processing signal groups"):
+            # Обновляем и закрываем старые позиции перед открытием новых
             self.simulated_time = signal_dt
-            self._process_signal(symbol, signal_dt, df_signal)
             self._update_and_close_positions()
+
+            # Отбираем лучшие сигналы (уже отсортированы по объему) в рамках лимита
+            free_slots = self.cfg.backtest.max_parallel_sessions - len(self.open_positions)
+            if free_slots <= 0:
+                continue
+
+            selected_signals = signals_at_time[:free_slots]
+
+            for signal in selected_signals:
+                symbol = signal["symbol"]
+                
+                # Основная проверка кулдауна уже была выполнена при формировании all_signals.
+                # Эта логика теперь обрабатывает только отобранные сигналы.
+                seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
+                seq_end = signal_dt + dt.timedelta(minutes=self.cfg.seq.post_signal_len)
+                
+                with engine.connect() as conn:
+                    query = text(
+                        "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
+                        "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
+                    )
+                    df_signal = pd.read_sql(query, conn, params={
+                        "symbol": symbol,
+                        "start_ts": int(seq_start.timestamp() * 1000),
+                        "end_ts": int(seq_end.timestamp() * 1000)
+                    })
+                
+                if df_signal.empty or len(df_signal) != self.cfg.seq.full_seq_len:
+                    logging.warning(f"Could not fetch complete data for signal {symbol} at {signal_dt}. Skipping.")
+                    continue
+                
+                df_signal['ts'] = pd.to_datetime(df_signal['ts'], unit='ms', utc=True)
+                df_signal = df_signal.set_index('ts')
+
+                self._process_signal(symbol, signal_dt, df_signal, current_time=signal_dt)
 
         logging.info("Database simulation finished.")
 
