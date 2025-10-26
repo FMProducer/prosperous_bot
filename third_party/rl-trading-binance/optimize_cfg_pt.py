@@ -11,59 +11,9 @@ import optuna
 import pandas as pd
 import platform
 
-from paper_trader import PaperTrader  # Изменено
+from backtest_engine import run_backtest
 from config import MasterConfig
 from utils import load_config, setup_logging
-
-def run_papertrade(cfg: MasterConfig, trial_num: int):
-    """
-    Запускает PaperTrader в режиме базы данных и возвращает метрики производительности.
-    """
-    # Устанавливаем уникальный путь вывода для этого испытания, чтобы избежать конфликтов
-    original_base_dir = cfg.paths.base_output_dir
-    original_config_name = cfg.paths.config_name
-
-    trial_output_dir = os.path.join(original_base_dir, f"trial_{trial_num}")
-    os.makedirs(trial_output_dir, exist_ok=True)
-    cfg.paths.base_output_dir = trial_output_dir
-
-    trader = PaperTrader(cfg=cfg, cfg_mod=None, model_path_override=cfg.paths.model_path)
-    trader.run()  # Запускает симуляцию из базы данных
-
-    # --- Сбор и расчет метрик ---
-    metrics = {}
-    trades_path = os.path.join(trial_output_dir, "paper_trader", "paper_trades.csv")
-    equity_path = os.path.join(trial_output_dir, "paper_trader", "paper_equity.csv")
-
-    if os.path.exists(trades_path):
-        trades_df = pd.read_csv(trades_path)
-        metrics["total_trades"] = len(trades_df)
-        if not trades_df.empty:
-            winning_trades = trades_df[trades_df["pnl"] > 0].shape[0]
-            metrics["accuracy"] = f"{(winning_trades / len(trades_df)) * 100:.2f}%"
-        else:
-            metrics["accuracy"] = "0.0%"
-    else:
-        metrics["total_trades"] = 0
-        metrics["accuracy"] = "0.0%"
-
-    if os.path.exists(equity_path):
-        equity_df = pd.read_csv(equity_path)
-        if not equity_df.empty:
-            final_balance = equity_df["balance"].iloc[-1]
-            initial_balance = cfg.market.initial_balance
-            pnl_pct = ((final_balance - initial_balance) / initial_balance) * 100
-            metrics["final_balance_change"] = f"{pnl_pct:.2f}%"
-        else:
-            metrics["final_balance_change"] = "0.0%"
-    else:
-        metrics["final_balance_change"] = "0.0%"
-
-    # Восстанавливаем исходный путь вывода, чтобы не влиять на другие процессы
-    cfg.paths.base_output_dir = original_base_dir
-    cfg.paths.config_name = original_config_name
-    
-    return metrics
 
 def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
     """
@@ -167,36 +117,54 @@ def objective(trial: optuna.Trial):
         trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
     # SEARCH SPACE
+    # b.position_fraction = trial.suggest_float("position_frac", 0.1, 1.0, step=0.05)
+    # b.max_parallel_sessions = trial.suggest_int("max_sessions", 1, 8)
     cfg.backtest.long_action_threshold = trial.suggest_float("long_thr", 0.001, 0.03, log=True)
     cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
-    
-    # risk-management knobs
-    cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
-    if cfg.backtest.use_risk_management:
-        cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
-        cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
-        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+    cfg.backtest.close_action_threshold = trial.suggest_float("close_thr", 0.001, 0.03, log=True)
+    # risk-management knobs only if fields exist in config model
+    if hasattr(cfg.backtest, "use_risk_management"):
+        cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
+        if cfg.backtest.use_risk_management:
+            if hasattr(cfg.backtest, "stop_loss"):
+                cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
+            if hasattr(cfg.backtest, "take_profit"):
+                cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
+            if hasattr(cfg.backtest, "trailing_stop"):
+                cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+        else:
+            # если поля есть — сбросим; если нет — просто зафиксируем в user_attrs
+            if hasattr(cfg.backtest, "stop_loss"): cfg.backtest.stop_loss = 0.0
+            if hasattr(cfg.backtest, "take_profit"): cfg.backtest.take_profit = 0.0
+            if hasattr(cfg.backtest, "trailing_stop"): cfg.backtest.trailing_stop = 0.0
     else:
-        cfg.backtest.stop_loss = 0.0
-        cfg.backtest.take_profit = 0.0
-        cfg.backtest.trailing_stop = 0.0
+        # нет полей — сохраним выбранные значения в user_attrs (для отчётов/аналитики)
+        _use_rm = trial.suggest_categorical("use_rm", [True, False])
+        attrs = {"use_rm": _use_rm}
+        if _use_rm:
+            attrs.update({
+                "stop_loss": trial.suggest_float("stop_loss", 0.005, 0.03),
+                "take_profit": trial.suggest_float("take_profit", 0.01, 0.05),
+                "trailing_stop": trial.suggest_float("trail", 0.001, 0.02),
+            })
+        else:
+            attrs.update({"stop_loss": 0.0, "take_profit": 0.0, "trailing_stop": 0.0})
+        trial.set_user_attr("risk_management", attrs)
 
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
 
     cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
-    # The base output dir for the whole optimization process is already set.
-    # The run_papertrade function will handle trial-specific subdirectories.
+    cfg.paths.base_output_dir = trial.study.user_attrs["opt_dir"]
 
     # for faster runs: skip plotting and example caching
     cfg.data.plot_examples = 0
     cfg.backtest.plot_backtest_balance_curve = False
+    # cfg.debug.debug_max_size_data = None
 
     t0 = time.time()
-    # Изменено: вызываем run_papertrade вместо run_backtest
-    metrics = run_papertrade(cfg=cfg, trial_num=trial.number)
+    metrics = run_backtest(cfg=cfg)  # model_path_override is not needed for optimization
     duration_s = time.time() - t0
-    
     # Persist useful attrs for later analysis/audit
     trial.set_user_attr("duration_s", round(duration_s, 3))
     trial.set_user_attr("random_seed", cfg.random_seed)
@@ -208,37 +176,26 @@ def objective(trial: optuna.Trial):
     total_pnl = float(metrics.get("final_balance_change", "0.0%").rstrip("%"))
     accuracy = float(metrics.get("accuracy", "0.0%").rstrip("%"))
     num_trades = int(metrics.get("total_trades", 0))
-    
-    # Optuna пытается максимизировать, поэтому для минимизации количества сделок мы возвращаем отрицательное значение
     return total_pnl, accuracy, -num_trades
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
+    parser = argparse.ArgumentParser(description="Optimise BacktestConfig parameters")
     parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
-    parser.add_argument("--trials", type=int, default=100, help="Total Optuna trials")
-    parser.add_argument("--jobs", type=int, default=1, help="Parallel jobs. WARNING: High values can lead to race conditions or high memory usage.")
+    parser.add_argument("--trials", type=int, default=200, help="Total Optuna trials")
+    parser.add_argument("--jobs", type=int, default=4, help="Parallel jobs")
     parser.add_argument("--topn", type=int, default=20, help="Top-N rows to save in summary tables")
     args = parser.parse_args()
 
     base_cfg = load_config(args.cfg_path)
-    
-    # --- Важно: Убедитесь, что конфигурация настроена для работы с базой данных ---
-    if not hasattr(base_cfg, 'paper') or base_cfg.paper.source != "database":
-        logging.error("Config error: `cfg.paper.source` must be set to 'database' for this optimization script.")
-        return
-        
     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    session_name = "optuna_papertrader_optimization_results"
+    session_name = "optuna_cfg_optimization_results"
     opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
     os.makedirs(opt_dir, exist_ok=True)
-    
-    # --- Важно: Перенаправляем основной путь вывода в директорию оптимизации ---
-    base_cfg.paths.base_output_dir = opt_dir
 
     with open(os.path.join(opt_dir, "orig_master_cfg.json"), "w") as f:
-        # Используем model_dump() для получения словаря и json.dumps с default=str для обработки несериализуемых типов
-        f.write(json.dumps(base_cfg.model_dump(), default=str, indent=2))
+        json.dump(base_cfg.model_dump(), f, indent=2, default=str) # Use model_dump for Pydantic v2
 
     setup_logging(session_name=session_name, cfg=base_cfg)
     logging.info(f"[Optuna] Output dir: {opt_dir}")
@@ -250,13 +207,16 @@ def main():
         directions=["maximize", "maximize", "maximize"],  # pnl ↑,  accuracy ↑, -trades ↑
         sampler=sampler,
         pruner=pruner,
-        study_name=f"papertrade_opt_{run_stamp}",
+        study_name=f"backtest_opt_{run_stamp}",
         storage=f"sqlite:///{os.path.join(opt_dir,'optuna.db')}",
         load_if_exists=False,
     )
 
-    # Используем model_dump() без mode='json' и json.dumps с default=str
-    # для надежной сериализации, включая torch.device
+    # Store base config in study's user attributes.
+    # Pydantic's model_dump_json() fails on torch.device.
+    # The most robust workaround is to dump the Pydantic model to a standard Python dict,
+    # and then use the standard `json` library with `default=str` to forcefully
+    # convert any non-serializable objects (like torch.device) to their string representation.
     config_dict = base_cfg.model_dump()
     study.set_user_attr("base_cfg", json.dumps(config_dict, default=str))
     study.set_user_attr("opt_dir", opt_dir)
@@ -274,20 +234,22 @@ def main():
     _save_param_importances(study, opt_dir)
     _save_system_info(opt_dir, run_stamp)
 
+    # best of Pareto front (rank 0) -> take the first one
     best_trials = [t for t in study.best_trials if t.values is not None]
     if best_trials:
         best = best_trials[0]
-        best_cfg_params = dict(best.params)
-        with open(os.path.join(opt_dir, "best_papertrade_cfg.json"), "w") as f:
-            json.dump(best_cfg_params, f, indent=2)
+        best_cfg = dict(best.params)
+        with open(os.path.join(opt_dir, "best_backtest_cfg.json"), "w") as f:
+            json.dump(best_cfg, f, indent=2)
 
         logging.info(f"[Optuna] best trial #{best.number}: PnL={best.values[0]:.2f}%, Accuracy={best.values[1]:.2f}%, trades={-best.values[2] if best.values[2] is not None else 'N/A'}")
-        logging.info(f"[Optuna] params: {best_cfg_params}")
+        logging.info(f"[Optuna] params: {best_cfg}")
     else:
         logging.warning("[Optuna] No successful trials found to determine the best parameters.")
 
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from optuna.visualization.matplotlib import plot_optimization_history, plot_pareto_front

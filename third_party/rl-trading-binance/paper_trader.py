@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import websocket
+from tqdm import tqdm
 from sqlalchemy import create_engine, text
 
 from agent import D3QN_PER_Agent
@@ -414,11 +415,12 @@ class PaperTrader:
         
         # --- NEW: Use the efficient SQL query from backtest_engine.py ---
         try:
-            logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")
+            logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")            
             engine = create_engine(self.cfg.db.dsn)
+            all_spikes_dfs = []
             with engine.connect() as conn:
                 detector_cfg = self.cfg.detector
-                # IMPORTANT: For paper trading simulation, we must not look ahead.
+                # ВАЖНО: Для симуляции бумажной торговли мы не должны заглядывать вперед.
                 # The find_spike_windows function already handles this with use_lookahead=False,
                 # but the SQL query needs to be adjusted to find spikes based on past data.
                 # This query is simplified for demonstration; a full real-time replication is complex.
@@ -435,17 +437,22 @@ class PaperTrader:
                     FROM minute_returns
                 )
                 SELECT ts, symbol FROM rolling_stats
-                WHERE ABS(abs_change) * 100.0 >= :abs_change_pct AND (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
-                ORDER BY ts, symbol;
+                WHERE ABS(abs_change) * 100.0 >= :abs_change_pct AND (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min;
                 """)
-                found_spikes_df = pd.read_sql(query, conn, params={
-                    "symbols": symbols,
-                    "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
-                    "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
-                    "abs_change_pct": detector_cfg.abs_change_pct,
-                    "contrast_min": detector_cfg.contrast_min,
-                })
-                found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
+                
+                for symbol in tqdm(symbols, desc="Scanning for spikes"):
+                    df_symbol_spikes = pd.read_sql(query, conn, params={
+                        "symbols": [symbol], # Запрос для одного символа
+                        "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+                        "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
+                        "abs_change_pct": detector_cfg.abs_change_pct,
+                        "contrast_min": detector_cfg.contrast_min,
+                    })
+                    if not df_symbol_spikes.empty:
+                        all_spikes_dfs.append(df_symbol_spikes)
+
+            found_spikes_df = pd.concat(all_spikes_dfs, ignore_index=True).sort_values(by='ts')
+            found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
 
             # Apply cooldown
             all_signals = []
