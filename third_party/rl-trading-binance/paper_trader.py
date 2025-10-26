@@ -320,24 +320,46 @@ class PaperTrader:
             exit_reason = None
             if self.cfg.backtest.use_risk_management and pos["direction"] == "LONG":
                 pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
-                if current_price <= pos["entry_price"] * (1 - self.cfg.backtest.stop_loss):
-                    exit_reason = "SL"
-                elif current_price >= pos["entry_price"] * (1 + self.cfg.backtest.take_profit):
-                    exit_reason = "TP"
-                elif current_price <= pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop):
-                    exit_reason = "TSL"
+                
+                tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
+
+                # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
+                if current_price <= tsl_price:
+                    fee = self.cfg.market.transaction_fee
+                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
+                    if current_price > break_even_price:
+                        exit_reason = "TSL"
+                    else:
+                        exit_reason = "TSL SL"
 
             elif self.cfg.backtest.use_risk_management and pos["direction"] == "SHORT":
                 pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
-                if current_price >= pos["entry_price"] * (1 + self.cfg.backtest.stop_loss):
-                    exit_reason = "SL"
-                elif current_price <= pos["entry_price"] * (1 - self.cfg.backtest.take_profit):
-                    exit_reason = "TP"
-                elif current_price >= pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop):
-                    exit_reason = "TSL"
+
+                tsl_price = pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop)
+
+                # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
+                if current_price >= tsl_price:
+                    fee = self.cfg.market.transaction_fee
+                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
+                    if current_price < break_even_price:
+                        exit_reason = "TSL"
+                    else:
+                        exit_reason = "TSL SL"
 
             if now >= pos["close_time"] and not exit_reason:
-                exit_reason = "Time"
+                fee = self.cfg.market.transaction_fee
+                if pos["direction"] == "LONG":
+                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
+                    if current_price > break_even_price:
+                        exit_reason = "TSL Time"
+                    else:
+                        exit_reason = "Time SL"
+                else:  # SHORT
+                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
+                    if current_price < break_even_price:
+                        exit_reason = "TSL Time"
+                    else:
+                        exit_reason = "Time SL"
 
             if exit_reason:
                 symbols_to_close.append((symbol, exit_reason, current_price, current_ts))

@@ -163,9 +163,8 @@ def objective(trial: optuna.Trial):
     # risk-management knobs
     cfg.backtest.use_risk_management = trial.suggest_categorical("use_rm", [True, False])
     if cfg.backtest.use_risk_management:
-        cfg.backtest.stop_loss = trial.suggest_float("stop_loss", 0.005, 0.03)
-        cfg.backtest.take_profit = trial.suggest_float("take_profit", 0.01, 0.05)
-        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.001, 0.02)
+        # TSL is now the unified risk parameter. Increased range to allow it to function as a wider SL.
+        cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.005, 0.15, log=True)
     else:
         cfg.backtest.stop_loss = 0.0
         cfg.backtest.take_profit = 0.0

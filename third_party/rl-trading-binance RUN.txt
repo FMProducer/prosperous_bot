@@ -1,3 +1,12 @@
+$env:PGPASSWORD="9691"
+
+python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\optimize_cfg.py c:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha.py --trials 4 --jobs 4 --topn 2
+
+python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\backtest_engine.py c:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha.py
+
+python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\paper_trader.py c:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha.py
+
+
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
@@ -9,20 +18,20 @@ python train.py train_best.py
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python test_agent.py
 python test_agent.py run_fmproducer_1.py     *
-*python test_agent.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_002108\best.pth"
+*python test_agent.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251023_time_180344\best.pth"
+python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\test_agent.py c:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha.py
 
 python backtest_engine.py
 python backtest_engine.py run_fmproducer_1.py     *
 python backtest_engine.py backtest_best_optuna.py
 python backtest_engine.py backtest_optimized.py
 python backtest_engine.py configs/alpha.py "output/alpha/saved_models/rl_binance_futures_trading_date_20251019_time_123712/best.pth"
-*python backtest_engine.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251021_time_002108\best.pth"
+*python backtest_engine.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\FMProducer\fmproducer_1_eval\saved_models\session_1\best.pth"
 
 $env:PGPASSWORD="9691"
-python third_party/rl-trading-binance/stream_backtest_engine.py third_party/rl-trading-binance/configs/alpha.py
 python third_party/rl-trading-binance/paper_trader.py third_party/rl-trading-binance/configs/alpha.py
-python C:\Python\Prosperous_Bot\third_party\rl-trading-binance\paper_trader.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha_subset.py
 
+python C:\Python\Prosperous_Bot\third_party\rl-trading-binance\paper_trader.py C:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha_subset.py
 
 pytest --cov=collector backends/postgres_ws/test_collector.py           *
 
