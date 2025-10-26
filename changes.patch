@@ -1,0 +1,185 @@
+diff --git a/third_party/rl-trading-binance/paper_trader.py b/third_party/rl-trading-binance/paper_trader.py
+--- a/third_party/rl-trading-binance/paper_trader.py
++++ b/third_party/rl-trading-binance/paper_trader.py
+@@ -40,16 +40,20 @@
+ class MetricsCollector:  # NEW: added entire MetricsCollector class (from backtest_engine)
+     def __init__(self):
+         self.pnl_by_day: Dict[dt.date, float] = defaultdict(float)
+         self.pnl_all = []
+-        self.changes = []
++        self.changes = []  # signed price change per trade (LONG: +Δp/p, SHORT: -Δp/p)
+         self.drawdowns = []
+         self.trade_amounts = []
+         self.balance_curve: Dict[dt.datetime, Tuple[dt.datetime, float]] = {}
+         self.total_commission = 0.0
+         self.correct_preds = 0
+         self.total_trades = 0
+         self.total_longs = 0
+         self.total_shorts = 0
+         self.correct_longs = 0
+         self.correct_shorts = 0
+     def update(self, signal_dt: dt.datetime, info: dict, balance: float):
+         """Update metrics for each closed trade."""
+-        pnl = info.get("trade_realized_pnl", 0.0)
+-        commission = info.get("total_commission", 0.0)
+-        price_change = info.get("trade_price_delta", 0.0)
+-        drawdown = info.get("max_drawdown", 0.0)
+-        amount = info.get("trade_amount", 0.0)
+-        direction = info.get("direction")
+-        correct = info.get("correct_prediction", False)
++        pnl = float(info.get("trade_realized_pnl", 0.0))
++        commission = float(info.get("total_commission", 0.0))
++        raw_change = float(info.get("trade_price_delta", 0.0))
++        drawdown = float(info.get("max_drawdown", 0.0))
++        amount = float(info.get("trade_amount", 0.0))
++        direction = info.get("direction")
++        correct = bool(info.get("correct_prediction", False))
++        # Signed change: profitable LONG → +, profitable SHORT → +
++        signed_change = raw_change if direction == "LONG" else -raw_change
+         # Daily PnL accumulation
+         self.pnl_by_day[signal_dt.date()] += pnl
+         self.pnl_all.append(pnl)
+-        self.changes.append(price_change)
++        self.changes.append(signed_change)
+         self.drawdowns.append(drawdown)
+         self.trade_amounts.append(amount)
+         self.total_commission += commission
+         self.total_trades += 1
+@@ -76,26 +80,57 @@
+         self.balance_curve[signal_dt] = (signal_dt, balance)
+     def finalize(self) -> Dict[str, Any]:
+         """Compute final metrics after all trades."""
+         if not self.balance_curve:
+             return {}  # no trades executed
+-        pnl_all = np.array(self.pnl_all)
+-        pnl_by_day_vals = np.array(list(self.pnl_by_day.values()))
+-        changes = np.array(self.changes)
+-        # Sort balance curve by time to get initial/final balances
+-        _, balances = zip(*sorted(self.balance_curve.items()))
+-        initial_bal = balances[0][1]
+-        final_bal = balances[-1][1]
++        pnl_all = np.array(self.pnl_all, dtype=np.float64)
++        pnl_by_day_vals = np.array(list(self.pnl_by_day.values()), dtype=np.float64)
++        changes = np.array(self.changes, dtype=np.float64)
++        # Sort balance curve by time to get initial/final balances and equity DD
++        items = sorted(self.balance_curve.items())
++        times = [t for t, _ in items]
++        eq = [v[1] for _, v in items]  # value is (ts, balance)
++        initial_bal = float(eq[0])
++        final_bal = float(eq[-1])
+         total_change = final_bal / initial_bal if initial_bal != 0 else 1.0
+         trade_days = len(pnl_by_day_vals)
++        # Equity max drawdown (peak-to-trough) in ratio (negative or zero)
++        peak = -np.inf
++        dd_min = 0.0
++        for b in eq:
++            if b > peak:
++                peak = b
++            dd = (b / (peak + 1e-9)) - 1.0
++            if dd < dd_min:
++                dd_min = dd
+         # Risk metrics
+         std_neg_daily = pnl_by_day_vals[pnl_by_day_vals < 0].std() if np.any(pnl_by_day_vals < 0) else 0.0
+         std_neg_all = pnl_all[pnl_all < 0].std() if np.any(pnl_all < 0) else 0.0
++        # Profit Factor
++        pos_sum = float(pnl_all[pnl_all > 0].sum()) if pnl_all.size > 0 else 0.0
++        neg_sum = float(-pnl_all[pnl_all < 0].sum()) if np.any(pnl_all < 0) else 0.0
++        if neg_sum == 0.0:
++            pf_str = "inf" if pos_sum > 0 else "0.00"
++        else:
++            pf_str = f"{pos_sum / max(neg_sum, 1e-9):.2f}"
++        # Correct/incorrect masks by realized PnL
++        correct_mask = pnl_all >= 0.0
++        incorrect_mask = pnl_all < 0.0
++        correct_changes = changes[correct_mask] if changes.size else np.array([])
++        incorrect_changes = changes[incorrect_mask] if changes.size else np.array([])
+         return {
+             "total_commission": f"{(-self.total_commission/initial_bal)*100:.2f}%" if initial_bal > 0 else "0.00%",
+             "avg_commission": f"{-self.total_commission/self.total_trades:.2f}" if self.total_trades > 0 else "0.00",
+             "max_loss": f"{pnl_all.min():.2f}" if pnl_all.size > 0 else "0.00",
+             "max_profit": f"{pnl_all.max():.2f}" if pnl_all.size > 0 else "0.00",
+             "total_trade_days": trade_days,
+             "profit_days": (
+                 f"{(pnl_by_day_vals > 0).sum()} ({((pnl_by_day_vals > 0).sum()/trade_days)*100:.2f}%)"
+                 if trade_days > 0 else "0 (0.00%)"
+             ),
+             "final_balance_change": f"{(total_change - 1)*100:.2f}%",
+             "exp_day_change": (
+                 f"{(np.power(total_change, 1/trade_days) - 1)*100:.2f}%" if trade_days > 0 else "0.00%"
+             ),
+-            "max_drawdown": f"{(min(self.drawdowns) if self.drawdowns else 0)*100:.2f}%",
++            "max_drawdown": f"{dd_min*100:.2f}%",
+             "sharpe": (
+                 f"{(pnl_by_day_vals.mean()/(pnl_by_day_vals.std()+1e-9))*np.sqrt(trade_days):.2f}" if trade_days > 0 else "0.00"
+             ),
+             "sortino": (
+                 f"{(pnl_by_day_vals.mean()/(std_neg_daily+1e-9))*np.sqrt(trade_days):.2f}" if trade_days > 0 else "0.00"
+             ),
++            "profit_factor": pf_str,
+             "trades_sharpe": (
+                 f"{pnl_all.mean()/(pnl_all.std()+1e-9):.2f}" if pnl_all.size > 0 else "0.00"
+             ),
+             "trades_sortino": (
+                 f"{pnl_all.mean()/(std_neg_all+1e-9):.2f}" if pnl_all.size > 0 else "0.00"
+             ),
+             "accuracy": f"{(self.correct_preds/self.total_trades*100):.1f}%" if self.total_trades > 0 else "0.0%",
+             "total_trades": self.total_trades,
+             "total_longs": self.total_longs,
+             "total_shorts": self.total_shorts,
+             "longs_correct": (
+                 f"{self.correct_longs} (0.0%)" if self.total_longs == 0 else f"{self.correct_longs} ({(self.correct_longs/self.total_longs)*100:.1f}%)"
+             ),
+             "shorts_correct": (
+                 f"{self.correct_shorts} (0.0%)" if self.total_shorts == 0 else f"{self.correct_shorts} ({(self.correct_shorts/self.total_shorts)*100:.1f}%)"
+             ),
+-            "correct_avg_change": f"{(np.mean(changes[changes > 0])*100):.2f}%" if np.any(changes > 0) else "0.00%",
+-            "correct_std_change": f"{(np.std(changes[changes > 0])*100):.2f}%" if np.any(changes > 0) else "0.00%",
+-            "incorrect_avg_change": f"{(np.mean(changes[changes <= 0])*100):.2f}%" if np.any(changes <= 0) else "0.00%",
+-            "incorrect_std_change": f"{(np.std(changes[changes <= 0])*100):.2f}%" if np.any(changes <= 0) else "0.00%",
++            "correct_avg_change": f"{(np.mean(correct_changes)*100):.2f}%" if correct_changes.size > 0 else "0.00%",
++            "correct_std_change": f"{(np.std(correct_changes)*100):.2f}%" if correct_changes.size > 0 else "0.00%",
++            "incorrect_avg_change": f"{(np.mean(incorrect_changes)*100):.2f}%" if incorrect_changes.size > 0 else "0.00%",
++            "incorrect_std_change": f"{(np.std(incorrect_changes)*100):.2f}%" if incorrect_changes.size > 0 else "0.00%",
+             "avg_trade_amount": f"{(np.mean(self.trade_amounts)):.2f}" if len(self.trade_amounts) > 0 else "0.00",
+             "trades_per_day": f"{(self.total_trades/trade_days):.2f}" if trade_days > 0 else "0.00",
+         }
+     def plot_balance(self, path: str):
+         """Save balance-vs-time curve as an image."""
+         if not self.balance_curve:
+             return
+-        times, balances = zip(*sorted(self.balance_curve.items()))
++        items = sorted(self.balance_curve.items())
++        times = [t for t, _ in items]
++        eq = [v[1] for _, v in items]
+         plt.figure(figsize=(12, 6))
+-        plt.plot(times, [b for _, b in balances], label="Balance", color="blue")
++        plt.plot(times, eq, label="Balance")
+         plt.xlabel("Time")
+         plt.ylabel("Balance")
+         plt.title("Balance Over Time")
+         plt.grid(True)
+         plt.tight_layout()
+         plt.savefig(path, dpi=300)
+         plt.close()
+@@ -266,7 +299,11 @@
+             net_pnl = pnl - fees
+ 
+             self.balance += net_pnl
+ 
+             # Prepare info dict for metrics
++            price_delta = (current_price - pos["entry_price"]) / pos["entry_price"]
++            if pos["direction"] == "SHORT":
++                price_delta = -price_delta
+             info = {
+                 "ticker": symbol,
+                 "trade_dt": close_ts,
+                 "direction": pos["direction"],
+                 "trade_amount": pos["size"],
+-                "trade_realized_pnl": net_pnl,
+-                "trade_price_delta": (current_price - pos["entry_price"]) / pos["entry_price"],
++                "trade_realized_pnl": net_pnl,
++                "trade_price_delta": price_delta,
+                 "max_drawdown": (pos["entry_price"] - pos["min_price"]) / pos["entry_price"] if pos["direction"] == "LONG" else (pos["max_price"] - pos["entry_price"]) / pos["entry_price"],
+                 "total_commission": fees,
+                 "correct_prediction": net_pnl >= 0
+             }
