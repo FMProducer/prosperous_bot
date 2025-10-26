@@ -19,21 +19,15 @@ def run_papertrade(cfg: MasterConfig, trial_num: int):
     """
     Запускает PaperTrader в режиме базы данных и возвращает метрики производительности.
     """
-    # Устанавливаем уникальный путь вывода для этого испытания, чтобы избежать конфликтов
-    original_base_dir = cfg.paths.base_output_dir
-    original_config_name = cfg.paths.config_name
-
-    trial_output_dir = os.path.join(original_base_dir, f"trial_{trial_num}")
-    os.makedirs(trial_output_dir, exist_ok=True)
-    cfg.paths.base_output_dir = trial_output_dir
 
     trader = PaperTrader(cfg=cfg, cfg_mod=None, model_path_override=cfg.paths.model_path)
     trader.run()  # Запускает симуляцию из базы данных
 
     # --- Сбор и расчет метрик ---
     metrics = {}
-    trades_path = os.path.join(trial_output_dir, "paper_trader", "paper_trades.csv")
-    equity_path = os.path.join(trial_output_dir, "paper_trader", "paper_equity.csv")
+    # КОРРЕКЦИЯ: Путь должен учитывать измененное имя конфигурации, которое использует PaperTrader
+    trades_path = os.path.join(cfg.paths.output_dir, "paper_trader", "paper_trades.csv")
+    equity_path = os.path.join(cfg.paths.output_dir, "paper_trader", "paper_equity.csv")
 
     if os.path.exists(trades_path):
         trades_df = pd.read_csv(trades_path)
@@ -59,10 +53,6 @@ def run_papertrade(cfg: MasterConfig, trial_num: int):
     else:
         metrics["final_balance_change"] = "0.0%"
 
-    # Восстанавливаем исходный путь вывода, чтобы не влиять на другие процессы
-    cfg.paths.base_output_dir = original_base_dir
-    cfg.paths.config_name = original_config_name
-    
     return metrics
 
 def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
@@ -184,13 +174,11 @@ def objective(trial: optuna.Trial):
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
 
+    # --- Установка уникальных путей для испытания ---
+    # Это гарантирует, что каждый trial сохраняет свои артефакты в отдельную папку
+    trial_output_dir = os.path.join(trial.study.user_attrs["opt_dir"], f"trial_{trial.number}")
+    cfg.paths.base_output_dir = trial_output_dir
     cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
-    # The base output dir for the whole optimization process is already set.
-    # The run_papertrade function will handle trial-specific subdirectories.
-
-    # for faster runs: skip plotting and example caching
-    cfg.data.plot_examples = 0
-    cfg.backtest.plot_backtest_balance_curve = False
 
     t0 = time.time()
     # Изменено: вызываем run_papertrade вместо run_backtest
