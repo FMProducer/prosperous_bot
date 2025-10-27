@@ -275,6 +275,10 @@ class PaperTrader:
                 rm_state["trailing_max_price"] = entry_price
             else: # SHORT
                 rm_state["trailing_min_price"] = entry_price
+            
+            # Initialize hysteresis state
+            if self.cfg.backtest.delta_p_hysteresis is not None:
+                rm_state["p_at_last_tsl_update"] = 0.0
 
         self.open_positions[symbol] = {
             "direction": direction,
@@ -291,12 +295,10 @@ class PaperTrader:
     def _update_and_close_positions(self):
         """Periodically check and close open positions."""
         now = self._get_current_time()
-        symbols_to_close: List[Tuple[str, str]] = [] # (symbol, exit_reason)
+        symbols_to_close: List[Tuple[str, str, float, dt.datetime]] = [] # (symbol, exit_reason, close_price, close_ts)
 
-        # --- NEW: Enhanced closing logic with Risk Management ---
         for symbol, pos in list(self.open_positions.items()):
-            # --- NEW: Get the correct close price ---
-            # In websocket mode, use the buffer. In DB mode, query the price at close_time.
+            # Get the correct close price
             if self.cfg.paper.source == "websocket":
                 if not self.buffers[symbol]:
                     logging.warning(f"Cannot close position for {symbol}, buffer is empty.")
@@ -306,10 +308,8 @@ class PaperTrader:
             else: # database mode
                 with create_engine(self.cfg.db.dsn).connect() as conn:
                     query = text("SELECT close FROM v_klines_1m_npz WHERE symbol = :symbol AND ts = :ts")
-                    # Use current simulated time to get the price
                     result = conn.execute(query, {"symbol": symbol, "ts": int(now.timestamp() * 1000)}).scalar_one_or_none()
                     if result is None:
-                        # If no price at 'now', maybe the position should have closed earlier. Try pos['close_time'].
                         result = conn.execute(query, {"symbol": symbol, "ts": int(pos['close_time'].timestamp() * 1000)}).scalar_one_or_none()
                         if result is None:
                             logging.warning(f"Could not find close price for {symbol} at {now} or {pos['close_time']}. Skipping check.")
@@ -318,118 +318,97 @@ class PaperTrader:
                     current_ts = now
 
             exit_reason = None
-            if self.cfg.backtest.use_risk_management and pos["direction"] == "LONG":
-                pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
-                
-                # --- NEW: Linear Tapering TSL from DIFF.md ---
-                if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
-                    p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
-                    d0 = self.cfg.backtest.trailing_stop
-                    d_min = self.cfg.backtest.trailing_stop_min
-                    fee = self.cfg.market.transaction_fee
-                    fee_buf = fee * self.cfg.backtest.fee_buffer_mult
-                    
-                    d_eff_raw = p - fee_buf
-                    d_eff = min(max(d_eff_raw, d_min), d0) # clamp
-                    
-                    # The new tsl_price incorporates a break-even concept
-                    tsl_price = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
+            tsl_price = None
 
-                # --- OLD: Fallback to original logic if new params are not set ---
-                else:
-                    tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
-
-                # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
-                if current_price <= tsl_price:
-                    fee = self.cfg.market.transaction_fee
-                    # The break_even_price is now only for determining the exit reason string
-                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
-                    if current_price > break_even_price:
-                        exit_reason = "TSL"
+            # --- Risk Management Logic ---
+            if self.cfg.backtest.use_risk_management:
+                if pos["direction"] == "LONG":
+                    pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
+                    if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                        p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
+                        if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
+                            if self.cfg.backtest.delta_p_hysteresis is not None:
+                                pos['p_at_last_tsl_update'] = p
+                            d0, d_min, fee, fee_buf = self.cfg.backtest.trailing_stop, self.cfg.backtest.trailing_stop_min, self.cfg.market.transaction_fee, self.cfg.market.transaction_fee * self.cfg.backtest.fee_buffer_mult
+                            d_eff = min(max(p - fee_buf, d_min), d0)
+                            pos['tsl_price'] = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
+                        tsl_price = pos.get('tsl_price')
                     else:
-                        exit_reason = "TSL SL"
-
-            elif self.cfg.backtest.use_risk_management and pos["direction"] == "SHORT":
-                pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
-
-                # --- NEW: Linear Tapering TSL from DIFF.md ---
-                if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
-                    p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
-                    d0 = self.cfg.backtest.trailing_stop
-                    d_min = self.cfg.backtest.trailing_stop_min
-                    fee = self.cfg.market.transaction_fee
-                    fee_buf = fee * self.cfg.backtest.fee_buffer_mult
-
-                    d_eff_raw = p - fee_buf
-                    d_eff = min(max(d_eff_raw, d_min), d0) # clamp
-
-                    # The new tsl_price incorporates a break-even concept
-                    tsl_price = min(pos["entry_price"] * (1 - fee_buf), pos["trailing_min_price"] * (1 + d_eff))
+                        tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
                 
-                # --- OLD: Fallback to original logic if new params are not set ---
-                else:
+                elif pos["direction"] == "SHORT":
+                    pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
+
+                    # Set a baseline stop-loss using the simple trailing stop logic. This acts as the initial stop-loss.
                     tsl_price = pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop)
 
-                # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
-                if current_price >= tsl_price:
-                    fee = self.cfg.market.transaction_fee
-                    # The break_even_price is now only for determining the exit reason string
-                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
-                    if current_price < break_even_price:
-                        exit_reason = "TSL"
-                    else:
-                        exit_reason = "TSL SL"
+                    # If advanced linear TSL is configured, attempt to calculate a tighter (lower) stop price.
+                    if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                        p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
+                        
+                        # Only update if profit increases enough to pass the hysteresis threshold.
+                        if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
+                            if self.cfg.backtest.delta_p_hysteresis is not None:
+                                pos['p_at_last_tsl_update'] = p
+                            
+                            d0, d_min, fee, fee_buf = self.cfg.backtest.trailing_stop, self.cfg.backtest.trailing_stop_min, self.cfg.market.transaction_fee, self.cfg.market.transaction_fee * self.cfg.backtest.fee_buffer_mult
+                            d_eff = min(max(p - fee_buf, d_min), d0)
+                            
+                            # Calculate the advanced stop price. Corrected the fee_buf part to be `1 + fee_buf`.
+                            advanced_tsl_price = min(pos["entry_price"] * (1 + fee_buf), pos["trailing_min_price"] * (1 + d_eff))
+                            
+                            # The new stop is the tighter (lower) of the existing stop and the new advanced one.
+                            tsl_price = min(tsl_price, advanced_tsl_price)
 
+                    # Store the calculated tsl_price in the position state for the next iteration.
+                    pos['tsl_price'] = tsl_price
+
+            # --- Unified Position Closing Logic ---
+            if tsl_price is not None:
+                fee = self.cfg.market.transaction_fee
+                if pos["direction"] == "LONG" and current_price <= tsl_price:
+                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
+                    exit_reason = "TSL" if current_price > break_even_price else "TSL SL"
+                elif pos["direction"] == "SHORT" and current_price >= tsl_price:
+                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
+                    exit_reason = "TSL" if current_price < break_even_price else "TSL SL"
+
+            # Time-based exit if no other exit reason was triggered
             if now >= pos["close_time"] and not exit_reason:
                 fee = self.cfg.market.transaction_fee
                 if pos["direction"] == "LONG":
                     break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
-                    if current_price > break_even_price:
-                        exit_reason = "TSL Time"
-                    else:
-                        exit_reason = "Time SL"
+                    exit_reason = "TSL Time" if current_price > break_even_price else "Time SL"
                 else:  # SHORT
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
-                    if current_price < break_even_price:
-                        exit_reason = "TSL Time"
-                    else:
-                        exit_reason = "Time SL"
+                    exit_reason = "TSL Time" if current_price < break_even_price else "Time SL"
 
             if exit_reason:
                 symbols_to_close.append((symbol, exit_reason, current_price, current_ts))
 
+        # --- Process Closed Symbols ---
         for symbol, exit_reason, current_price, close_ts in symbols_to_close:
             if symbol not in self.open_positions:
-                continue # Already closed in this loop
+                continue
             pos = self.open_positions.pop(symbol)
 
             if current_price is None:
                 logging.warning(f"Could not find close price for {symbol} at {close_ts}. Skipping PnL calculation.")
                 continue
 
-            # Simplified PnL calculation
             if pos["direction"] == "LONG":
                 pnl = (current_price - pos["entry_price"]) / pos["entry_price"] * pos["size"]
-            else:  # SHORT
+            else:
                 pnl = (pos["entry_price"] - current_price) / pos["entry_price"] * pos["size"]
 
-            # Apply fees
-            fees = (pos["size"] / pos["entry_price"] * pos["entry_price"] * self.cfg.market.transaction_fee) + \
-                   (pos["size"] / pos["entry_price"] * current_price * self.cfg.market.transaction_fee)
+            fees = (pos["size"] * self.cfg.market.transaction_fee) * 2 # Simplified fee calc
             net_pnl = pnl - fees
-
             self.balance += net_pnl
 
             trade_record = {
-                "symbol": symbol,
-                "direction": pos["direction"],
-                "entry_time": pos["entry_time"].isoformat(),
-                "close_time": close_ts.isoformat(),
-                "entry_price": pos["entry_price"],
-                "close_price": current_price,
-                "pnl": net_pnl,
-                "balance": self.balance,
-                "exit_reason": exit_reason,
+                "symbol": symbol, "direction": pos["direction"], "entry_time": pos["entry_time"].isoformat(),
+                "close_time": close_ts.isoformat(), "entry_price": pos["entry_price"], "close_price": current_price,
+                "pnl": net_pnl, "balance": self.balance, "exit_reason": exit_reason,
             }
             self.trades_log.append(trade_record)
             self.equity_curve.append({"ts": close_ts.isoformat(), "balance": self.balance})

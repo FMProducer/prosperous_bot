@@ -60,6 +60,8 @@ cfg.backtest.plot_backtest_balance_curve = True
 cfg.backtest.trailing_stop_min = 0.002
 # Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
 cfg.backtest.fee_buffer_mult = 2.0
+# --- NEW: Hysteresis for TSL updates ---
+cfg.backtest.delta_p_hysteresis = 0.001
 # --- NEW: Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
