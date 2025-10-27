@@ -320,56 +320,55 @@ class PaperTrader:
             exit_reason = None
             tsl_price = None
 
-            # --- Risk Management Logic ---
+            # --- Risk Management Logic (as per DIFF.md) ---
             if self.cfg.backtest.use_risk_management:
+                d0 = self.cfg.backtest.trailing_stop
+                d_min = self.cfg.backtest.trailing_stop_min
+                fee = self.cfg.market.transaction_fee
+                fee_buf = fee * (self.cfg.backtest.fee_buffer_mult or 2.0)
+
                 if pos["direction"] == "LONG":
                     pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
-                    if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                    # Always set a base TSL for symmetric activation
+                    tsl_price = pos["trailing_max_price"] * (1 - d0)
+
+                    if d_min is not None:
                         p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
                         if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
                             if self.cfg.backtest.delta_p_hysteresis is not None:
                                 pos['p_at_last_tsl_update'] = p
-                            d0, d_min, fee, fee_buf = self.cfg.backtest.trailing_stop, self.cfg.backtest.trailing_stop_min, self.cfg.market.transaction_fee, self.cfg.market.transaction_fee * self.cfg.backtest.fee_buffer_mult
-                            d_eff = min(max(p - fee_buf, d_min), d0)
-                            pos['tsl_price'] = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
-                        tsl_price = pos.get('tsl_price')
-                    else:
-                        tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
-                
+                            
+                            # Correct d_eff formula to narrow the trail
+                            d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
+                            advanced_tsl_price = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
+                            tsl_price = max(tsl_price, advanced_tsl_price)
+
                 elif pos["direction"] == "SHORT":
                     pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
+                    # Always set a base TSL for symmetric activation
+                    tsl_price = pos["trailing_min_price"] * (1 + d0)
 
-                    # Set a baseline stop-loss using the simple trailing stop logic. This acts as the initial stop-loss.
-                    tsl_price = pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop)
-
-                    # If advanced linear TSL is configured, attempt to calculate a tighter (lower) stop price.
-                    if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                    if d_min is not None:
                         p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
-                        
-                        # Only update if profit increases enough to pass the hysteresis threshold.
                         if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
                             if self.cfg.backtest.delta_p_hysteresis is not None:
                                 pos['p_at_last_tsl_update'] = p
                             
-                            d0, d_min, fee, fee_buf = self.cfg.backtest.trailing_stop, self.cfg.backtest.trailing_stop_min, self.cfg.market.transaction_fee, self.cfg.market.transaction_fee * self.cfg.backtest.fee_buffer_mult
-                            d_eff = min(max(p - fee_buf, d_min), d0)
-                            
-                            # Calculate the advanced stop price. Corrected the fee_buf part to be `1 + fee_buf`.
-                            advanced_tsl_price = min(pos["entry_price"] * (1 + fee_buf), pos["trailing_min_price"] * (1 + d_eff))
-                            
-                            # The new stop is the tighter (lower) of the existing stop and the new advanced one.
+                            # Correct d_eff formula to narrow the trail
+                            d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
+                            advanced_tsl_price = min(pos["entry_price"] * (1 - fee_buf), pos["trailing_min_price"] * (1 + d_eff))
                             tsl_price = min(tsl_price, advanced_tsl_price)
-
-                    # Store the calculated tsl_price in the position state for the next iteration.
+                
+                if tsl_price is not None:
                     pos['tsl_price'] = tsl_price
 
             # --- Unified Position Closing Logic ---
-            if tsl_price is not None:
+            if pos.get('tsl_price') is not None:
                 fee = self.cfg.market.transaction_fee
-                if pos["direction"] == "LONG" and current_price <= tsl_price:
+                if pos["direction"] == "LONG" and current_price <= pos['tsl_price']:
                     break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
                     exit_reason = "TSL" if current_price > break_even_price else "TSL SL"
-                elif pos["direction"] == "SHORT" and current_price >= tsl_price:
+                elif pos["direction"] == "SHORT" and current_price >= pos['tsl_price']:
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
                     exit_reason = "TSL" if current_price < break_even_price else "TSL SL"
 

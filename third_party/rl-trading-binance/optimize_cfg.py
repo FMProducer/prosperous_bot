@@ -157,13 +157,25 @@ def objective(trial: optuna.Trial):
         trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
     # SEARCH SPACE
-    cfg.backtest.long_action_threshold = trial.suggest_float("long_thr", 0.001, 0.03, log=True)
-    cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
+    # cfg.backtest.long_action_threshold = trial.suggest_float("long_thr", 0.001, 0.03, log=True)
+    # cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
     
     # risk-management knobs
     # According to the new logic, risk management (unified TSL) is always active.
     cfg.backtest.use_risk_management = True
-    cfg.backtest.trailing_stop = trial.suggest_float("trail", 0.005, 0.15, log=True)
+
+    # --- TSL (Trailing Stop Loss) Parameter Optimization ---
+    # d_min: The floor for the trail distance (e.g., 0.1% to 0.5%).
+    d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
+    cfg.backtest.trailing_stop_min = d_min
+
+    # d0: The initial and maximum trail distance. Must be > d_min.
+    # We set the lower bound to d_min to ensure the constraint is always met.
+    d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
+    cfg.backtest.trailing_stop = d0
+
+    # delta_p_hysteresis: The profit increase required to trigger a TSL update.
+    cfg.backtest.delta_p_hysteresis = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
 
     # Explicitly set unused parameters to 0 to avoid any legacy effects.
     cfg.backtest.stop_loss = 0.0
