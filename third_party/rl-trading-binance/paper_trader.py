@@ -384,7 +384,7 @@ class PaperTrader:
                     exit_reason = "TSL Time" if current_price > break_even_price else "Time SL"
                 else:  # SHORT
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
-                    exit_reason = "TSL Time" if current_price < break_even_price else "Time SL"
+                    exit_reason = "TSL Time" if current_price <= break_even_price else "Time SL"
 
             if exit_reason:
                 symbols_to_close.append((symbol, exit_reason, current_price, current_ts))
