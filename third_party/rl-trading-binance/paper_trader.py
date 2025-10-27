@@ -321,11 +321,28 @@ class PaperTrader:
             if self.cfg.backtest.use_risk_management and pos["direction"] == "LONG":
                 pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
                 
-                tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
+                # --- NEW: Linear Tapering TSL from DIFF.md ---
+                if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                    p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
+                    d0 = self.cfg.backtest.trailing_stop
+                    d_min = self.cfg.backtest.trailing_stop_min
+                    fee = self.cfg.market.transaction_fee
+                    fee_buf = fee * self.cfg.backtest.fee_buffer_mult
+                    
+                    d_eff_raw = p - fee_buf
+                    d_eff = min(max(d_eff_raw, d_min), d0) # clamp
+                    
+                    # The new tsl_price incorporates a break-even concept
+                    tsl_price = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
+
+                # --- OLD: Fallback to original logic if new params are not set ---
+                else:
+                    tsl_price = pos["trailing_max_price"] * (1 - self.cfg.backtest.trailing_stop)
 
                 # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
                 if current_price <= tsl_price:
                     fee = self.cfg.market.transaction_fee
+                    # The break_even_price is now only for determining the exit reason string
                     break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
                     if current_price > break_even_price:
                         exit_reason = "TSL"
@@ -335,11 +352,28 @@ class PaperTrader:
             elif self.cfg.backtest.use_risk_management and pos["direction"] == "SHORT":
                 pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
 
-                tsl_price = pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop)
+                # --- NEW: Linear Tapering TSL from DIFF.md ---
+                if self.cfg.backtest.trailing_stop_min is not None and self.cfg.backtest.fee_buffer_mult is not None:
+                    p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
+                    d0 = self.cfg.backtest.trailing_stop
+                    d_min = self.cfg.backtest.trailing_stop_min
+                    fee = self.cfg.market.transaction_fee
+                    fee_buf = fee * self.cfg.backtest.fee_buffer_mult
+
+                    d_eff_raw = p - fee_buf
+                    d_eff = min(max(d_eff_raw, d_min), d0) # clamp
+
+                    # The new tsl_price incorporates a break-even concept
+                    tsl_price = min(pos["entry_price"] * (1 - fee_buf), pos["trailing_min_price"] * (1 + d_eff))
+                
+                # --- OLD: Fallback to original logic if new params are not set ---
+                else:
+                    tsl_price = pos["trailing_min_price"] * (1 + self.cfg.backtest.trailing_stop)
 
                 # Unified TSL is the only stop mechanism. It can be profitable (TSL) or a loss (TSL SL).
                 if current_price >= tsl_price:
                     fee = self.cfg.market.transaction_fee
+                    # The break_even_price is now only for determining the exit reason string
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
                     if current_price < break_even_price:
                         exit_reason = "TSL"

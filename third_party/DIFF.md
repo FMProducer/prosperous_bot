@@ -1,55 +1,70 @@
-diff --git a/third_party/rl-trading-binance/paper_trader.py b/third_party/rl-trading-binance/paper_trader.py
---- a/third_party/rl-trading-binance/paper_trader.py
-+++ b/third_party/rl-trading-binance/paper_trader.py
-@@ -214,10 +214,20 @@
-         if len(self.open_positions) >= self.cfg.backtest.max_parallel_sessions:
-             logging.warning("Max parallel sessions reached. Skipping new trade.")
-             return
- 
-         direction = "LONG" if action == 1 else "SHORT"
--        position_size = self.balance * self.cfg.backtest.position_fraction
-+        # Reserve capital from free balance (cash) to avoid over-allocation across parallel trades
-+        free_cash = self.balance
-+        position_size = free_cash * self.cfg.backtest.position_fraction
-+        if position_size <= 0:
-+            logging.warning("Insufficient free balance to open position.")
-+            return
- 
-         # --- NEW: Initialize risk management state ---
-         rm_state = {}
-         if self.cfg.backtest.use_risk_management:
-             if direction == "LONG":
-                 rm_state["trailing_max_price"] = entry_price
-             else: # SHORT
-                 rm_state["trailing_min_price"] = entry_price
- 
-         self.open_positions[symbol] = {
-             "direction": direction,
-             "entry_price": entry_price,
-             "entry_time": signal_dt,
-             "size": position_size,
-             "close_time": signal_dt + dt.timedelta(minutes=self.cfg.seq.agent_session_len),
-             "max_price": entry_price,
-             "min_price": entry_price,
-             **rm_state
-         }
-+        # Reserve principal immediately (matches backtest-style cash accounting)
-+        self.balance -= position_size
-+        # Optional: record equity after opening (for more granular plot)
-+        self.equity_curve.append({"ts": signal_dt.isoformat(), "balance": self.balance})
-         logging.info(
-             f"PAPER TRADE OPEN: {direction} {symbol} at {entry_price:.4f} (Size: {position_size:.2f} USDT)"
-         )
-@@ -260,7 +270,8 @@
-             fees = (pos["size"] / pos["entry_price"] * pos["entry_price"] * self.cfg.market.transaction_fee) + \
-                    (pos["size"] / pos["entry_price"] * current_price * self.cfg.market.transaction_fee)
-             net_pnl = pnl - fees
- 
--            self.balance += net_pnl
-+            # Release principal and add realized PnL (entry+exit fees already included in net_pnl)
-+            self.balance += pos["size"] + net_pnl
- 
-             # Prepare info dict for metrics
-             price_delta = (current_price - pos["entry_price"]) / pos["entry_price"]
-             if pos["direction"] == "SHORT":
-                 price_delta = -price_delta
+TL;DR: Без индикаторов и только линейное сужение. В твоём коде TSL-состояние действительно «включается» сразу при входе (инициализируется trailing_max_price/trailing_min_price), но выход по TSL разрешён только после того, как уровень трейла стал не хуже честного безубытка — это видно по условию с break_even_price. Линейно сужающийся трейл решает «позднее включение защиты» и уменьшает отдачу прибыли в пиле.
+Идея простая: чем больше позиция уже в плюсе, тем уже отступ трейла.
+Для LONG:
+HH — максимум со входа (код ведёт trailing_max_price с момента открытия).
+Накопленная доходность: p = max(0, HH/entry − 1).
+Комиссии учитываем как буфер fee_buf ≈ 2·fee (у тебя уже есть честный BE в логике: break_even_price = entry*(1+fee)/(1-fee)).
+Базовый отступ из конфига: d0 = cfg.backtest.trailing_stop (сейчас он фиксированно применяется).
+Линейная формула без индикаторов:
+d_eff_raw = p - fee_buf
+d_eff     = clamp(d_eff_raw, d_min, d0)    # только сужаем, без расширения
+tsl_price = max(entry*(1+fee_buf), HH*(1 - d_eff))
+Пока прибыли мало (p ≤ fee_buf) — отступ ≈ d0 (не душим тренд).
+Как только прибыль покрыла комиссии — отступ начинает монотонно сужаться; защита подтягивается к честному BE и выше.
+Для SHORT всё зеркально (используется trailing_min_price и «плюс» вместо «минус» в формуле).
+Чем это лучше твоей текущей логики
+Критерий	Сейчас	С линейным сужением
+Активация TSL-выхода	TSL разрешён только если tsl_price > break_even_price (LONG) / < для SHORT; иначе — не сработает и остаётся Time/SL.	Защита начнёт сама поджиматься к BE, как только p > fee_buf; выход по TSL становится доступнее и раньше.
+Отдача прибыли в «пиле»	Фиксированный отступ + BE-гейт → защита включается поздно, больше отдаёшь.	Отступ линейно уменьшается — забираешь ближе к локальным максимумам.
+Совместимость с твоей идеей «TSL-only»	Есть ветка отдельного SL и «Time» без маркировки знака PnL.	Убираем отдельный SL/TP, вводим причины TSL/TSL SL/TSL Time/Time SL — чище аналитика и Optuna-разметка.
+
+Какие параметры добавить под Optuna (минимум)
+Все — только в configs/*.py (хардкод запрещён).
+backtest.trailing_stop_min (d_min): нижний пол для отступа трейла (напр. 0.2–0.6%).
+backtest.fee_buffer_mult: множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0).
+backtest.delta_p_hysteresis (опц.): гистерезис по приросту p (0.05–0.30%), чтобы не «дребезжало».
+
+Используем уже существующие:
+backtest.trailing_stop = d0, market.transaction_fee = fee, seq.agent_session_len, пороги long_action_threshold/short_action_threshold — они участвуют в текущих расчётах/фильтрации.
+
+Где менять в коде (точки)
+Файл: third_party/rl-trading-binance/paper_trader.py
+Функция: _update_and_close_positions() — блоки LONG/SHORT: убрать BE-гейт для TSL, добавить расчёт p, d_eff, новый tsl_price, и новые exit_reason (TSL, TSL SL, TSL Time, Time SL). Сейчас там считаются break_even_price/sl_price/tsl_price и ставится exit_reason.
+Функция: _execute_trade() — инициализация trailing_max_price/trailing_min_price уже есть (TSL-состояние «включается» сразу).
+
+Риски/ожидания
+Шаг	Эффект	KPI/риск
+Снятие BE-гейта	Ранние убыточные TSL-выходы на старте	Win-Rate ↓, PF зависит от d_min/d0
+Линейное сужение	Меньше отдачи в пиле, раньше честный BE	PF/Sharpe ↑ при умеренном d_min
+Гистерезис	Убирает «дребезг» обновлений	Метрики стабильнее
+
+TL;DR: Только линейное сужение без каких-либо «опций». Идея простая: чем больше уже заработано в позиции, тем уже делаем трейл. Формула для LONG:
+d_eff(p) = max(0, d0 − p), где d0 = cfg.backtest.trailing_stop (текущий процент трейла), p — накопленная прибыль от входа до текущего максимума (в долях). Новый уровень: TSL = HH·(1 − d_eff). Для SHORT — зеркально через минимум: TSL = LL·(1 + d_eff).
+Сейчас у тебя TSL отслеживается с момента входа, но выход по TSL разрешается только если трейл уже выше честного безубытка — это «задерживает» защиту (см. проверку tsl_price > break_even_price / < для SHORT в _update_and_close_positions).
+LONG:
+entry — цена входа; HH — максимум со входа (в коде ведётся trailing_max_price сразу при открытии).
+Прибыль «накопленная»: p = max(0, HH/entry − 1).
+Ширина трейла: d_eff = max(0, d0 − p) — чем больше p, тем меньше ширина.
+Уровень: TSL = HH·(1 − d_eff).
+Триггер выхода: как только цена ≤ TSL — закрываем. (Без «гейта» по break-even, который сейчас стоит в коде.)
+SHORT (зеркально):
+LL — минимум со входа (trailing_min_price в коде).
+p = max(0, 1 − LL/entry).
+d_eff = max(0, d0 − p).
+TSL = LL·(1 + d_eff).
+Выход: цена ≥ TSL.
+
+Почему это лучше текущего фиксированного трейла:
+Сейчас TSL «следит» за ценой, но разрешён только если он гарантирует безубыток (проверка против break_even_price). И пока это условие не выполнено, остаются SL/Time. Линейное сужение убирает эту задержку: защита естественно «подтягивается» по мере роста прибыли, и фиксация происходит ближе к локальным пикам/минимумам, а не глубоко после отката. См. текущее место расчётов и условий выхода в paper_trader.py::_update_and_close_positions.
+
+Числовой пример (LONG)
+Вход 100, d0 = 2%.
+Цена выросла до 101 → p = +1% → d_eff = max(0, 2% − 1%) = 1%.
+HH = 101 ⇒ TSL = 101·(1 − 1%) = 99.99. Если теперь цена откатит, выходим ближе к пику, а не где-то спустя большой откат.
+Если цена выросла до 103 → p = +3% → d_eff = max(0, 2% − 3%) = 0% ⇒ трейл почти вплотную к максимуму (хвост защищён максимально).
+
+Как это встанет в текущую логику
+Шаг	Действие	KPI/риск
+1	Убрать «гейт безубытка» для TSL (tsl_price > break_even_price / < для SHORT) в _update_and_close_positions()	Ранний доступ к TSL-выходу; меньше отдачи прибыли.
+2	Заменить фиксированный trailing_stop на линейный: d_eff = max(0, d0 − p); LONG: TSL = HH·(1 − d_eff), SHORT: TSL = LL·(1 + d_eff)	PF/Sharpe ↑ в «пиле», хвосты в тренде защищены
+3	Exit reason оставить по твоей новой схеме: TSL / TSL SL / TSL Time / Time SL (зависит от знака PnL при тайм-ауте)	Чистые логи для анализа; сейчас exit_reason и запись trade_record уже есть.

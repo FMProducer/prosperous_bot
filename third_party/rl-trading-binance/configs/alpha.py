@@ -55,6 +55,11 @@ cfg.backtest.stop_loss = 0.0153228603723445
 cfg.backtest.take_profit = 0.0447149987567144
 cfg.backtest.trailing_stop = 0.0063520955122146
 cfg.backtest.plot_backtest_balance_curve = True
+# --- NEW: Linear Trailing Stop Parameters for Optuna ---
+# d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
+cfg.backtest.trailing_stop_min = 0.002
+# Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
+cfg.backtest.fee_buffer_mult = 2.0
 # --- NEW: Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}

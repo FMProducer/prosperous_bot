@@ -206,6 +206,8 @@ class BacktestConfig(BaseModel):
     stop_loss: float = 0.01
     take_profit: float = 0.02
     trailing_stop: float = 0.005
+    trailing_stop_min: Optional[float] = None
+    fee_buffer_mult: Optional[float] = None
     selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "advantage_based_filter"
     plot_backtest_balance_curve: bool = True
     data_source: Literal["npz_keys", "find_spikes"] = "npz_keys"
