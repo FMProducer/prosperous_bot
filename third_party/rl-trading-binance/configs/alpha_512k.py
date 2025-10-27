@@ -137,10 +137,10 @@ cfg.paper.symbols = "ALL"
 # Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
 # cfg.paper.db_source_speed = 0.1 
 cfg.backtest.data_source = "find_spikes"
-cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
+cfg.paths.train_data_path = "../../data/train_data_fair_8m.npz"
+cfg.paths.val_data_path = "../../data/val_data_fair_2m.npz"
 # test_data_path можно пока не трогать или приравнять к backtest
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
+cfg.paths.test_data_path = "../../data/backtest_data_fair_2m.npz" 
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
