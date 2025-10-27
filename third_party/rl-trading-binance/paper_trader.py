@@ -374,7 +374,7 @@ class PaperTrader:
                     exit_reason = "TSL" if current_price > break_even_price else "TSL SL"
                 elif pos["direction"] == "SHORT" and current_price >= pos['tsl_price']:
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
-                    exit_reason = "TSL" if current_price < break_even_price else "TSL SL"
+                    exit_reason = "TSL" if current_price <= break_even_price else "TSL SL"
 
             # Time-based exit if no other exit reason was triggered
             if now >= pos["close_time"] and not exit_reason:
