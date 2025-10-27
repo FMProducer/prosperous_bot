@@ -16,6 +16,19 @@ import websocket
 from tqdm import tqdm
 from sqlalchemy import create_engine, text
 
+# Global cache for SQLAlchemy engines
+_engine_cache = {}
+
+def get_engine(dsn: str):
+    """
+    Creates and caches a SQLAlchemy engine to avoid connection spam during parallel runs.
+    """
+    if dsn not in _engine_cache:
+        # Optuna with multiple jobs creates separate processes.
+        # This ensures each process has its own engine, but it's created only once.
+        _engine_cache[dsn] = create_engine(dsn)
+    return _engine_cache[dsn]
+
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
@@ -101,7 +114,7 @@ class PaperTrader:
             logging.error("Database DSN `cfg.db.dsn` is not configured.")
             return []
         try:
-            engine = create_engine(self.cfg.db.dsn)
+            engine = get_engine(self.cfg.db.dsn)
             with engine.connect() as conn:
                 query = text("SELECT DISTINCT symbol FROM v_klines_1m_npz")
                 result = conn.execute(query)
@@ -306,7 +319,7 @@ class PaperTrader:
                 current_price = self.buffers[symbol][-1]["close"]
                 current_ts = self.buffers[symbol][-1]["ts"]
             else: # database mode
-                with create_engine(self.cfg.db.dsn).connect() as conn:
+                with get_engine(self.cfg.db.dsn).connect() as conn:
                     query = text("SELECT close FROM v_klines_1m_npz WHERE symbol = :symbol AND ts = :ts")
                     result = conn.execute(query, {"symbol": symbol, "ts": int(now.timestamp() * 1000)}).scalar_one_or_none()
                     if result is None:
@@ -454,7 +467,7 @@ class PaperTrader:
         # --- NEW: Use the efficient SQL query from backtest_engine.py ---
         try:
             logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")            
-            engine = create_engine(self.cfg.db.dsn)
+            engine = get_engine(self.cfg.db.dsn)
             all_spikes_dfs = []
             with engine.connect() as conn:
                 detector_cfg = self.cfg.detector
@@ -524,7 +537,7 @@ class PaperTrader:
         for signal in all_signals:
             grouped_signals[signal['signal_dt']].append(signal)
 
-        engine = create_engine(self.cfg.db.dsn)
+        engine = get_engine(self.cfg.db.dsn)
         # Итерируемся по временным меткам, в каждой из которых может быть несколько сигналов
         for signal_dt, signals_at_time in tqdm(sorted(grouped_signals.items()), desc="Processing signal groups"):
             # Обновляем и закрываем старые позиции перед открытием новых
