@@ -329,8 +329,10 @@ class PaperTrader:
 
                 if pos["direction"] == "LONG":
                     pos["trailing_max_price"] = max(pos.get("trailing_max_price", current_price), current_price)
-                    # Always set a base TSL for symmetric activation
-                    tsl_price = pos["trailing_max_price"] * (1 - d0)
+                    # Always set a base TSL for symmetric activation, but keep it monotonic (never loosen)
+                    base_tsl = pos["trailing_max_price"] * (1 - d0)
+                    prev_tsl = pos.get("tsl_price")
+                    tsl_price = max(base_tsl, prev_tsl) if prev_tsl is not None else base_tsl
 
                     if d_min is not None:
                         p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
@@ -345,8 +347,10 @@ class PaperTrader:
 
                 elif pos["direction"] == "SHORT":
                     pos["trailing_min_price"] = min(pos.get("trailing_min_price", current_price), current_price)
-                    # Always set a base TSL for symmetric activation
-                    tsl_price = pos["trailing_min_price"] * (1 + d0)
+                    # Always set a base TSL for symmetric activation, but keep it monotonic (never loosen)
+                    base_tsl = pos["trailing_min_price"] * (1 + d0)
+                    prev_tsl = pos.get("tsl_price")
+                    tsl_price = min(base_tsl, prev_tsl) if prev_tsl is not None else base_tsl
 
                     if d_min is not None:
                         p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
