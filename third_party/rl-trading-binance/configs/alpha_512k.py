@@ -1,4 +1,4 @@
-# configs/alpha.py
+# configs/alpha_512k.py
 from config import MasterConfig
 
 cfg = MasterConfig()
@@ -17,8 +17,8 @@ cfg.model.dropout_p = 0.1
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
-# gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 55_000
+# gradient steps ~ 512_000
+cfg.trainlog.episodes = 110_000
 cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 230_000
@@ -72,13 +72,13 @@ cfg.logging.per_trial_logs = False
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
 
-# ---------------------------
+# --------------------------- 
 # ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
 # Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
 # AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) и новее FP16 даёт ускорение и экономию памяти.
 cfg.perf.use_amp = False
 cfg.perf.amp_dtype = "float16"
-# torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
+# torch.compile: снижает overhead Python-графа; pemilihan "reduce-overhead" — наиболее безопасный.
 cfg.perf.compile_mode = None
 cfg.perf.compile_dynamic = False
 # DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
@@ -101,28 +101,28 @@ cfg.vec.start_method = "spawn"
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шагов до той же ε.
 cfg.vec.scale_epsilon_by_envs = True
 
-# python train.py configs/alpha.py
-# python test_agent.py configs/alpha.py
-# python backtest_engine.py configs/alpha.py
-# python optimize_cfg.py configs/alpha.py
+# python train.py configs/alpha_512k.py
+# python test_agent.py configs/alpha_512k.py
+# python backtest_engine.py configs/alpha_512k.py
+# python optimize_cfg.py configs/alpha_512k.py
 
 # Mini run with 10 short sessions
-# python optimize_cfg.py configs/alpha.py --trials 100 --jobs 1
+# python optimize_cfg.py configs/alpha_512k.py --trials 100 --jobs 1
 
 # Notes: Default metric is values_0; default direction is max.
-# python get_info_from_optuna.py configs/alpha.py --n-best-trials 10
+# python get_info_from_optuna.py configs/alpha_512k.py --n-best-trials 10
 
-# rm -r output/alpha
+# rm -r output/alpha_512k
 
 # Main workflow:
 # Step                              Command
-# 1. Train the model:               python train.py configs/...
-# 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
-# 3. Run optimization:              python optimize_cfg.py configs/...
-# 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
+# 1. Train the model:               python train.py configs/alpha_512k.py
+# 2. Update the cache:              python backtest_engine.py configs/alpha_512k.py  | When running a backtest, set backtest_mode = True
+# 3. Run optimization:              python optimize_cfg.py configs/alpha_512k.py
+# 4. Show and save top-n trials:    python get_info_from_optuna.py configs/alpha_512k.py
 
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
-cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
+cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\output\\alpha_512k\\norm_stats.json"
 # 
 cfg.paper.source = "database"
 # Список тикеров для симуляции в paper_trader.
@@ -144,7 +144,8 @@ cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+# ВАЖНО: После тренировки модели, обновите этот путь на актуальный.
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha_512k\saved_models\<ИМЯ_ПАПКИ_С_ДАТОЙ>\best.pth"
 
 # --- NEW: Spike Detector Configuration ---
 cfg.detector.context_minutes = 30
