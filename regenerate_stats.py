@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 NPZ_FILE_PATH = r"c:\Python\Prosperous_Bot\data\train_data_fair_8m.npz"
 
 # Path where the output stats file will be saved
-OUTPUT_STATS_PATH = r"c:\Python\Prosperous_Bot\output\alpha_512k\norm_stats.json"
+OUTPUT_STATS_PATH = r"c:\Python\Prosperous_Bot\output\alpha_pullback\norm_stats.json"
 
 # Channel configuration (must match the model's training config)
 USE_CHANNELS = [
