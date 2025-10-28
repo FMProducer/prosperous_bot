@@ -145,7 +145,7 @@ cfg.paths.test_data_path = "../../data/backtest_data_fair_2m.npz"
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
 # ВАЖНО: После тренировки модели, обновите этот путь на актуальный.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha_512k\saved_models\<ИМЯ_ПАПКИ_С_ДАТОЙ>\best.pth"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251028_time_010714\best.pth"
 
 # --- NEW: Spike Detector Configuration ---
 cfg.detector.context_minutes = 30
