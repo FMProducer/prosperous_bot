@@ -26,7 +26,7 @@ cfg.rl.learning_rate = 1e-4
 cfg.rl.gamma = 0.995
 # cfg.rl.n_step = 3 # 3-4 is not valid
 cfg.rl.train_start = 12_000
-cfg.rl.target_update_steps = 2_500
+cfg.rl.target_update_freq = 2_500
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
 cfg.seq.agent_history_len = 30
 cfg.seq.agent_session_len = 10
