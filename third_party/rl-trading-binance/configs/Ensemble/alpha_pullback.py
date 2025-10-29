@@ -18,7 +18,7 @@ cfg.model.dropout_p = 0.05
 cfg.trainlog.num_val_ep = 2500
 cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 320_000
+cfg.trainlog.episodes = 70_000
 cfg.trainlog.plot_top_n = 10
 
 cfg.per.buffer_size = 180_000
@@ -26,6 +26,8 @@ cfg.per.buffer_size = 180_000
 cfg.rl.batch_size = 64
 cfg.rl.learning_rate = 3e-4
 cfg.rl.train_start = 12_000
+# альтернативы: "Validation_mean_pnl" и "Validation_mean_reward"
+cfg.trainlog.val_selection_metrics = "Validation_win_rate"
 
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
 cfg.seq.agent_history_len = 20
@@ -37,7 +39,7 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
 cfg.backtest.max_parallel_sessions = 4
-cfg.backtest.position_fraction = 0.38
+cfg.backtest.position_fraction = 0.24
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "ensemble_q_filter"
 cfg.backtest.long_action_threshold = 0.0072
@@ -125,6 +127,8 @@ cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
 # 
 cfg.paper.source = "database"
+# --- NEW: Установка плеча для бумажной торговли ---
+cfg.paper.leverage = 5.0
 # Список тикеров для симуляции в paper_trader.
 # Если список пустой или None, будут использованы все тикеры из data/tickers.txt
 cfg.paper.symbols = "ALL"
@@ -144,7 +148,7 @@ cfg.paths.test_data_path = "../../data/backtest_data_fair_2m.npz"
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251028_time_234736\best.pth"
 
 # --- NEW: Spike Detector Configuration ---
 cfg.detector.context_minutes = 45

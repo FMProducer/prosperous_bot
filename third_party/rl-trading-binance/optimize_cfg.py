@@ -11,8 +11,8 @@ import optuna
 import pandas as pd
 import platform
 
-from paper_trader import PaperTrader  # Изменено
-from config import MasterConfig
+from backtest_engine import run_backtest
+from config import MasterConfig, cfg as default_cfg
 from utils import load_config, setup_logging
 
 def run_papertrade(cfg: MasterConfig, trial_num: int):
@@ -20,40 +20,7 @@ def run_papertrade(cfg: MasterConfig, trial_num: int):
     Запускает PaperTrader в режиме базы данных и возвращает метрики производительности.
     """
 
-    trader = PaperTrader(cfg=cfg, cfg_mod=None, model_path_override=cfg.paths.model_path)
-    trader.run()  # Запускает симуляцию из базы данных
-
-    # --- Сбор и расчет метрик ---
-    metrics = {}
-    # КОРРЕКЦИЯ: Путь должен учитывать измененное имя конфигурации, которое использует PaperTrader
-    trades_path = os.path.join(cfg.paths.output_dir, "paper_trader", "paper_trades.csv")
-    equity_path = os.path.join(cfg.paths.output_dir, "paper_trader", "paper_equity.csv")
-
-    if os.path.exists(trades_path):
-        trades_df = pd.read_csv(trades_path)
-        metrics["total_trades"] = len(trades_df)
-        if not trades_df.empty:
-            winning_trades = trades_df[trades_df["pnl"] > 0].shape[0]
-            metrics["accuracy"] = f"{(winning_trades / len(trades_df)) * 100:.2f}%"
-        else:
-            metrics["accuracy"] = "0.0%"
-    else:
-        metrics["total_trades"] = 0
-        metrics["accuracy"] = "0.0%"
-
-    if os.path.exists(equity_path):
-        equity_df = pd.read_csv(equity_path)
-        if not equity_df.empty:
-            final_balance = equity_df["balance"].iloc[-1]
-            initial_balance = cfg.market.initial_balance
-            pnl_pct = ((final_balance - initial_balance) / initial_balance) * 100
-            metrics["final_balance_change"] = f"{pnl_pct:.2f}%"
-        else:
-            metrics["final_balance_change"] = "0.0%"
-    else:
-        metrics["final_balance_change"] = "0.0%"
-
-    return metrics
+    return run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
 
 def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
     """
@@ -178,8 +145,8 @@ def objective(trial: optuna.Trial):
     cfg.backtest.delta_p_hysteresis = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
 
     # Explicitly set unused parameters to 0 to avoid any legacy effects.
-    cfg.backtest.stop_loss = 0.0
-    cfg.backtest.take_profit = 0.0
+    cfg.backtest.stop_loss = None
+    cfg.backtest.take_profit = None
 
     if cfg.backtest.selection_strategy == "ensemble_q_filter":
         cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
@@ -191,8 +158,7 @@ def objective(trial: optuna.Trial):
     cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
 
     t0 = time.time()
-    # Изменено: вызываем run_papertrade вместо run_backtest
-    metrics = run_papertrade(cfg=cfg, trial_num=trial.number)
+    metrics = run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
     duration_s = time.time() - t0
     
     # Persist useful attrs for later analysis/audit
@@ -203,12 +169,12 @@ def objective(trial: optuna.Trial):
         trial.set_user_attr(k, v)
 
     # TARGET METRICS
-    total_pnl = float(metrics.get("final_balance_change", "0.0%").rstrip("%"))
-    accuracy = float(metrics.get("accuracy", "0.0%").rstrip("%"))
-    num_trades = int(metrics.get("total_trades", 0))
+    sharpe = float(metrics.get("sharpe", -1.0))
+    max_dd_str = metrics.get("max_drawdown", "100.0%").rstrip('%')
+    max_dd = float(max_dd_str) if max_dd_str else 100.0
     
-    # Optuna пытается максимизировать, поэтому для минимизации количества сделок мы возвращаем отрицательное значение
-    return total_pnl, accuracy, -num_trades
+    # Optuna пытается максимизировать, поэтому для минимизации просадки мы возвращаем отрицательное значение
+    return sharpe, -max_dd
 
 def main():
     parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
@@ -220,11 +186,6 @@ def main():
 
     base_cfg = load_config(args.cfg_path)
     
-    # --- Важно: Убедитесь, что конфигурация настроена для работы с базой данных ---
-    if not hasattr(base_cfg, 'paper') or base_cfg.paper.source != "database":
-        logging.error("Config error: `cfg.paper.source` must be set to 'database' for this optimization script.")
-        return
-        
     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     session_name = f"optuna_papertrader_{run_stamp}"
@@ -245,7 +206,7 @@ def main():
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
 
     study = optuna.create_study(
-        directions=["maximize", "maximize", "maximize"],  # pnl ↑,  accuracy ↑, -trades ↑
+        directions=["maximize", "maximize"],  # sharpe ↑, -max_dd ↑ (т.е. min max_dd)
         sampler=sampler,
         pruner=pruner,
         study_name=f"papertrade_opt_{run_stamp}",
@@ -279,7 +240,7 @@ def main():
         with open(os.path.join(opt_dir, "best_papertrade_cfg.json"), "w") as f:
             json.dump(best_cfg_params, f, indent=2)
 
-        logging.info(f"[Optuna] best trial #{best.number}: PnL={best.values[0]:.2f}%, Accuracy={best.values[1]:.2f}%, trades={-best.values[2] if best.values[2] is not None else 'N/A'}")
+        logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, MaxDD={-best.values[1]:.2f}%")
         logging.info(f"[Optuna] params: {best_cfg_params}")
     else:
         logging.warning("[Optuna] No successful trials found to determine the best parameters.")
@@ -295,7 +256,7 @@ def main():
         fig1.savefig(os.path.join(opt_dir, "optuna_history.png"), dpi=300)
         plt.close(fig1)
 
-        ax2 = plot_pareto_front(study, target_names=["PnL (%)", "Accuracy (%)", "-Trades"])
+        ax2 = plot_pareto_front(study, target_names=["Sharpe", "-MaxDD (%)"])
         fig2 = getattr(ax2, "figure", ax2)
         fig2.savefig(os.path.join(opt_dir, "pareto.png"), dpi=300)
         plt.close(fig2)

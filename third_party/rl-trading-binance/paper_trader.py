@@ -332,6 +332,7 @@ class PaperTrader:
 
             exit_reason = None
             tsl_price = None
+            liquidation_price = None
 
             # --- Risk Management Logic (as per DIFF.md) ---
             if self.cfg.backtest.use_risk_management:
@@ -378,6 +379,16 @@ class PaperTrader:
                 
                 if tsl_price is not None:
                     pos['tsl_price'] = tsl_price
+            
+            # --- NEW: Liquidation Logic for Leveraged Trading ---
+            leverage = self.cfg.paper.leverage
+            if leverage > 1.0:
+                # Цена ликвидации - это цена, при которой убыток достигает 100% от выделенной маржи.
+                # PnL% = (current_price / entry_price - 1) * leverage. Loss = -1.
+                # (current_price / entry_price - 1) = -1 / leverage
+                # current_price = entry_price * (1 - 1 / leverage)
+                liquidation_price = pos["entry_price"] * (1 - (1 / leverage)) if pos["direction"] == "LONG" else pos["entry_price"] * (1 + (1 / leverage))
+
 
             # --- Unified Position Closing Logic ---
             if pos.get('tsl_price') is not None:
@@ -388,6 +399,13 @@ class PaperTrader:
                 elif pos["direction"] == "SHORT" and current_price >= pos['tsl_price']:
                     break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
                     exit_reason = "TSL" if current_price <= break_even_price else "TSL SL"
+            
+            # --- NEW: Check for liquidation ---
+            if liquidation_price is not None and not exit_reason:
+                if pos["direction"] == "LONG" and current_price <= liquidation_price:
+                    exit_reason = "LIQUIDATION"
+                elif pos["direction"] == "SHORT" and current_price >= liquidation_price:
+                    exit_reason = "LIQUIDATION"
 
             # Time-based exit if no other exit reason was triggered
             if now >= pos["close_time"] and not exit_reason:
@@ -412,11 +430,20 @@ class PaperTrader:
                 logging.warning(f"Could not find close price for {symbol} at {close_ts}. Skipping PnL calculation.")
                 continue
 
-            if pos["direction"] == "LONG":
-                pnl = (current_price - pos["entry_price"]) / pos["entry_price"] * pos["size"]
-            else:
-                pnl = (pos["entry_price"] - current_price) / pos["entry_price"] * pos["size"]
+            leverage = self.cfg.paper.leverage
 
+            if pos["direction"] == "LONG":
+                # Применяем плечо к расчету PnL
+                pnl = (current_price - pos["entry_price"]) / pos["entry_price"] * pos["size"] * leverage
+            else:
+                pnl = (pos["entry_price"] - current_price) / pos["entry_price"] * pos["size"] * leverage
+            
+            # --- NEW: Handle Liquidation PnL ---
+            # При ликвидации убыток равен 100% от выделенной маржи (размера позиции)
+            if exit_reason == "LIQUIDATION":
+                pnl = -pos["size"]
+
+            # Комиссия рассчитывается от общего объема сделки с плечом
             fees = (pos["size"] * self.cfg.market.transaction_fee) * 2 # Simplified fee calc
             net_pnl = pnl - fees
             self.balance += net_pnl

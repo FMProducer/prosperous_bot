@@ -221,6 +221,7 @@ class PaperTraderConfig(BaseModel):
     source: Literal["websocket", "database"] = "websocket"
     db_source_speed: float = 0.0  # Seconds to sleep between simulated minutes. 0.0 for max speed.
     symbols: Optional[Union[List[str], Literal["ALL"]]] = None # None or empty list means use all from tickers.txt
+    leverage: float = 1.0 # Новое: плечо для бумажной торговли
 
 class DetectorConfig(BaseModel):
     """Spike detector parameters for finding trading signals."""

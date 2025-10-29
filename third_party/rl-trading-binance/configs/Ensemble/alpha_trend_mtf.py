@@ -1,4 +1,4 @@
-# configs/alpha.py
+# alpha_trend_mtf.py
 from config import MasterConfig
 
 cfg = MasterConfig()
@@ -13,61 +13,63 @@ cfg.model.dense_adv = [128, 64]
 # 4 + action_history_len * num_actions
 cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
-cfg.model.dropout_p = 0.1
+cfg.model.dropout_p = 0.10
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 55_000
+cfg.trainlog.episodes = 80_000
 cfg.trainlog.plot_top_n = 10
 
-cfg.per.buffer_size = 230_000
+cfg.per.buffer_size = 300_000
 
-cfg.rl.batch_size = 64
-cfg.rl.learning_rate = 1e-4
-cfg.rl.train_start = 10_000
+cfg.rl.batch_size = 128
+cfg.rl.learning_rate = 2e-4
+cfg.rl.train_start = 18_000
+cfg.rl.gamma = 0.997
+cfg.rl.n_step = 5
 # альтернативы: "Validation_mean_reward" и "Validation_win_rate"
 cfg.trainlog.val_selection_metrics = "Validation_mean_pnl"
 
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
-cfg.seq.agent_history_len = 30
-cfg.seq.agent_session_len = 10
+cfg.seq.agent_history_len = 60
+cfg.seq.agent_session_len = 20
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
     cfg.seq.pre_signal_len = cfg.seq.agent_history_len
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = True
-cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.5
+cfg.backtest.max_parallel_sessions = 3
+cfg.backtest.position_fraction = 0.40
 # ["advantage_based_filter", "ensemble_q_filter"]
-cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.0078056307732368
-cfg.backtest.short_action_threshold = 0.0091301259923296
-cfg.backtest.close_action_threshold = 0.0180067279703063
+cfg.backtest.selection_strategy = "ensemble_q_filter"
+cfg.backtest.long_action_threshold = 0.0080
+cfg.backtest.short_action_threshold = 0.0080
+cfg.backtest.close_action_threshold = 0.014
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
-cfg.backtest.ensemble_max_sigma = 0.01
+cfg.backtest.ensemble_max_sigma = 0.010
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
 # use_risk_management (from Trial #187)
 cfg.backtest.use_risk_management = True
-cfg.backtest.stop_loss = 0.0153228603723445
-cfg.backtest.take_profit = 0.0447149987567144
-cfg.backtest.trailing_stop = 0.018986
+cfg.backtest.stop_loss = None
+cfg.backtest.take_profit = None
+cfg.backtest.trailing_stop = 0.019
 cfg.backtest.plot_backtest_balance_curve = True
 # --- NEW: Linear Trailing Stop Parameters for Optuna ---
 # d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
-cfg.backtest.trailing_stop_min = 0.004740
+cfg.backtest.trailing_stop_min = 0.0047
 # Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
 cfg.backtest.fee_buffer_mult = 2.0
 # --- NEW: Hysteresis for TSL updates ---
-cfg.backtest.delta_p_hysteresis = 0.001890
+cfg.backtest.delta_p_hysteresis = 0.0019
 # --- NEW: Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
-cfg.random_seed = 25 # или любое другое целое число
+cfg.random_seed = 202 # или любое другое целое число
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None
@@ -94,7 +96,7 @@ cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 4
+cfg.vec.num_envs = 3
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
@@ -124,9 +126,11 @@ cfg.vec.scale_epsilon_by_envs = True
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
 
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
-cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\third_party\\rl-trading-binance\\output\\alpha\\norm_stats.json"
+cfg.paths.norm_stats_path = "C:\\Python\\Prosperous_Bot\\output\\alpha_trend_mtf\\norm_stats.json"
 # 
 cfg.paper.source = "database"
+# --- NEW: Установка плеча для бумажной торговли ---
+cfg.paper.leverage = 5.0
 # Список тикеров для симуляции в paper_trader.
 # Если список пустой или None, будут использованы все тикеры из data/tickers.txt
 cfg.paper.symbols = "ALL"
@@ -139,19 +143,19 @@ cfg.paper.symbols = "ALL"
 # Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
 # cfg.paper.db_source_speed = 0.1 
 cfg.backtest.data_source = "find_spikes"
-cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
+cfg.paths.train_data_path = "../../data/train_data_fair_8m.npz"
+cfg.paths.val_data_path = "../../data/val_data_fair_2m.npz"
 # test_data_path можно пока не трогать или приравнять к backtest
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
+cfg.paths.test_data_path = "../../data/backtest_data_fair_2m.npz" 
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251029_time_003546\best.pth"
 
 # --- NEW: Spike Detector Configuration ---
-cfg.detector.context_minutes = 30
-cfg.detector.window_minutes = 10
+cfg.detector.context_minutes = 120
+cfg.detector.window_minutes = 20
 cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
 cfg.detector.abs_change_pct = 5.0
 cfg.detector.contrast_min = 5.0
-cfg.detector.cooldown_minutes = 30
+cfg.detector.cooldown_minutes = 40
