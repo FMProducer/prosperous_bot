@@ -170,11 +170,13 @@ def objective(trial: optuna.Trial):
 
     # TARGET METRICS
     sharpe = float(metrics.get("sharpe", -1.0))
+    sortino = float(metrics.get("sortino", -1.0))
     max_dd_str = metrics.get("max_drawdown", "100.0%").rstrip('%')
     max_dd = float(max_dd_str) if max_dd_str else 100.0
     
     # Optuna пытается максимизировать, поэтому для минимизации просадки мы возвращаем отрицательное значение
-    return sharpe, -max_dd
+    # Теперь у нас три цели: максимизировать Шарп, максимизировать Сортино и минимизировать просадку.
+    return sharpe, sortino, -max_dd
 
 def main():
     parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
@@ -206,7 +208,7 @@ def main():
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
 
     study = optuna.create_study(
-        directions=["maximize", "maximize"],  # sharpe ↑, -max_dd ↑ (т.е. min max_dd)
+        directions=["maximize", "maximize", "maximize"],  # sharpe ↑, sortino ↑, -max_dd ↑ (т.е. min max_dd)
         sampler=sampler,
         pruner=pruner,
         study_name=f"papertrade_opt_{run_stamp}",
@@ -240,8 +242,8 @@ def main():
         with open(os.path.join(opt_dir, "best_papertrade_cfg.json"), "w") as f:
             json.dump(best_cfg_params, f, indent=2)
 
-        logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, MaxDD={-best.values[1]:.2f}%")
-        logging.info(f"[Optuna] params: {best_cfg_params}")
+        logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, Sortino={best.values[1]:.2f}, MaxDD={-best.values[2]:.2f}%")
+        logging.info(f"[Optuna] Best trial params: {best_cfg_params}")
     else:
         logging.warning("[Optuna] No successful trials found to determine the best parameters.")
 
@@ -251,12 +253,12 @@ def main():
         import matplotlib.pyplot as plt
         from optuna.visualization.matplotlib import plot_optimization_history, plot_pareto_front
 
-        ax1 = plot_optimization_history(study, target=lambda t: t.values[0], target_name="Total PnL (%)")
+        ax1 = plot_optimization_history(study, target=lambda t: t.values[0], target_name="Sharpe Ratio")
         fig1 = getattr(ax1, "figure", ax1)
         fig1.savefig(os.path.join(opt_dir, "optuna_history.png"), dpi=300)
         plt.close(fig1)
 
-        ax2 = plot_pareto_front(study, target_names=["Sharpe", "-MaxDD (%)"])
+        ax2 = plot_pareto_front(study, target_names=["Sharpe", "Sortino", "-MaxDD (%)"])
         fig2 = getattr(ax2, "figure", ax2)
         fig2.savefig(os.path.join(opt_dir, "pareto.png"), dpi=300)
         plt.close(fig2)

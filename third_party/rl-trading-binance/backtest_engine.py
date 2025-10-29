@@ -536,15 +536,13 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
                     )
                     adv = q_vals - q_vals[0]
                     action = int(np.argmax(adv))
-                    confidence = adv[action]
 
-                    pass_adv = get_pass_advantage(action, confidence, cfg)
-                    if pass_adv:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}"
-                        )
+                    # Correctly check if the action's confidence meets the threshold
+                    if action == 1 and adv[action] < cfg.backtest.long_action_threshold:
                         action = 0
+                    elif action == 2 and adv[action] < cfg.backtest.short_action_threshold:
+                        action = 0
+
                 # MC-Dropout (Monte Carlo Dropout)
                 elif cfg.backtest.selection_strategy == "ensemble_q_filter":
                     q_mean, q_std = agent.predict_ensemble(
@@ -554,19 +552,32 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
                         cache_key=cache_key,
                         n_samples=cfg.backtest.ensemble_n_samples,
                     )
+                    # Приведение типов и страховка от скаляра
+                    q_mean = np.asarray(q_mean, dtype=np.float32)
+                    if q_mean.ndim == 0:
+                        logging.warning("predict_ensemble returned scalar q_mean; fallback to select_action(return_qvals=True, no-cache).")
+                        # Важно: не используем кеш, т.к. qval_cache может содержать tuple (mean,std) от predict_ensemble
+                        q_vals = agent.select_action(
+                            state=obs, training=False, return_qvals=True,
+                            use_cache=False, cache_key=None
+                        )
+                        q_mean = np.asarray(q_vals, dtype=np.float32)
+                        q_std = np.zeros_like(q_mean, dtype=np.float32)
+                    else:
+                        q_std = np.asarray(q_std, dtype=np.float32) if np.ndim(q_std) else np.zeros_like(q_mean, dtype=np.float32)
+
                     advantage = q_mean - q_mean[0]
                     action = int(np.argmax(advantage))
-                    confidence = advantage[action]
-                    uncertainty = q_std[action]
 
-                    pass_adv = get_pass_advantage(action, confidence, cfg)
-                    pass_uncertainty = uncertainty >= cfg.backtest.ensemble_max_sigma
-                    if pass_adv and pass_uncertainty:
-                        logging.info(
-                            f": REJECTED {['LONG', 'SHORT', 'CLOSE'][action-1]}, "
-                            f"confidence={confidence:.3f} < threshold={thresholds[action-1]}, "
-                            f"uncertainty={uncertainty:.3f} > max_sigma_threshold={cfg.backtest.ensemble_max_sigma}"
-                        )
+                    # Correctly check confidence AND uncertainty
+                    confidence_ok = (
+                        (action == 1 and advantage[action] >= cfg.backtest.long_action_threshold) or
+                        (action == 2 and advantage[action] >= cfg.backtest.short_action_threshold)
+                    )
+
+                    uncertainty_ok = q_std[action] < cfg.backtest.ensemble_max_sigma
+
+                    if not (confidence_ok and uncertainty_ok):
                         action = 0
 
                 else:

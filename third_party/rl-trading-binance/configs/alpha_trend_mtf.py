@@ -40,8 +40,8 @@ if not hasattr(cfg.seq, "pre_signal_len"):
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = False
-cfg.backtest.max_parallel_sessions = 3
-cfg.backtest.position_fraction = 0.40
+cfg.backtest.max_parallel_sessions = 2
+cfg.backtest.position_fraction = 0.50
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "ensemble_q_filter"
 cfg.backtest.long_action_threshold = 0.0080

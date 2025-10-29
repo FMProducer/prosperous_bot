@@ -205,7 +205,9 @@ class D3QN_PER_Agent:
         mean_q, std_q = self.get_mean_std_q(state, n_samples)
         return mean_q, std_q
 
-    def get_mean_std_q(self, state: np.ndarray, n_samples: int = 5) -> Tuple[float, float]:
+    def get_mean_std_q(
+        self, state: np.ndarray, n_samples: int = 5
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # Включаем стохастику (dropout), но сохраняем и восстанавливаем исходный режим
         prev_training = self.policy_net.training
         self.policy_net.train()
@@ -219,7 +221,12 @@ class D3QN_PER_Agent:
         if not prev_training:
             self.policy_net.eval()
         q_arr = np.stack(q_list, axis=0)
-        return float(q_arr.mean()), float(q_arr.std(ddof=1) if n_samples > 1 else 0.0)
+        mean_q = q_arr.mean(axis=0)
+        if n_samples > 1:
+            std_q = q_arr.std(axis=0, ddof=1)
+        else:
+            std_q = np.zeros_like(mean_q)
+        return mean_q, std_q
 
     def store_experience(
         self,

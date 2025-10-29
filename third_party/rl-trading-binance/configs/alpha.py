@@ -41,7 +41,7 @@ cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.5
 # ["advantage_based_filter", "ensemble_q_filter"]
-cfg.backtest.selection_strategy = "advantage_based_filter"
+cfg.backtest.selection_strategy = "ensemble_q_filter"
 cfg.backtest.long_action_threshold = 0.0078056307732368
 cfg.backtest.short_action_threshold = 0.0091301259923296
 cfg.backtest.close_action_threshold = 0.0180067279703063
@@ -124,7 +124,7 @@ cfg.vec.scale_epsilon_by_envs = True
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
 
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
-cfg.paths.norm_stats_path = "output/alpha/norm_stats.json"
+cfg.paths.norm_stats_path = "output/alpha/saved_models/rl_binance_futures_trading_date_20251029_time_182331/norm_stats.json"
 # 
 cfg.paper.source = "database"
 # --- NEW: Установка плеча для бумажной торговли ---
@@ -148,7 +148,7 @@ cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 # --- Явное указание пути к модели для бэктеста ---
 # Этот параметр теперь является единственным способом указать модель для бэктеста.
 # Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+cfg.paths.model_path = r"output\alpha\saved_models\rl_binance_futures_trading_date_20251029_time_182331\best.pth"
 
 # --- NEW: Spike Detector Configuration ---
 cfg.detector.context_minutes = 30
