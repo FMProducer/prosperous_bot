@@ -619,6 +619,7 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
         logging.info(f": {name_result:>23s} = {value}")
 
     if cfg.backtest.plot_backtest_balance_curve:
+        os.makedirs(cfg.paths.plot_dir, exist_ok=True)
         result.plot_balance(os.path.join(cfg.paths.plot_dir, "backtest_balance_curve.png"))
 
     return metrics
