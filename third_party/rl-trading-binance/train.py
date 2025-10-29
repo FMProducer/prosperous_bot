@@ -423,6 +423,13 @@ def main(cfg: MasterConfig = None):
         cfg.data.other_channels,
     )
 
+    # --- NEW: Save normalization stats for this training run ---
+    stats_save_path = os.path.join(models_dir, "norm_stats.json")
+    with open(stats_save_path, "w") as f:
+        json.dump(train_stats, f, indent=4)
+    logging.info(f"Normalization stats saved to: {stats_save_path}")
+
+
     env_kwargs = {
         "sequences": train_seqs,
         "stats": train_stats,
