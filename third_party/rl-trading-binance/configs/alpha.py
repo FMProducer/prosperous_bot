@@ -47,7 +47,7 @@ cfg.backtest.short_action_threshold = 0.0091301259923296
 cfg.backtest.close_action_threshold = 0.0180067279703063
 cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
-cfg.backtest.ensemble_max_sigma = 0.01
+cfg.backtest.ensemble_max_sigma = 0.002582999563187257
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
