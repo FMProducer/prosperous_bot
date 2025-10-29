@@ -1,76 +1,85 @@
-Ниже — параметры для **pullback/контр-тренд** модели. Примените их в своей конфигурации.
+## TL;DR
 
-### Общие
+**Сейчас optimize_cfg.py перебирает 3–4 параметра:** `d_min` (`trailing_stop_min`), `d0` (`trailing_stop`), `delta_p_hyst` (`delta_p_hysteresis`) и, при `selection_strategy="ensemble_q_filter"`, — `max_sigma` (`ensemble_max_sigma`). 
+**Временно выключены, но готовы к добавлению:** `long_action_threshold`, `short_action_threshold` (в коде бэктеста они реально используются для фильтрации действий). 
+**Рекомендуемая стратегия:** поэтапная оптимизация отдельными “функциональными блоками”: (1) неопределённость `max_sigma` → (2) параметры TSL (`d_min,d0,delta_p_hyst`) → (3) пороги `long/short_action_threshold`. Это ускоряет сходимость и снижает риск “перетягивания одеяла” между несвязанными гиперпараметрами.
 
-* `random_seed = 303`
+---
 
-### Обучение / валидация
+## 1) Что сейчас реально оптимизируется (в optimize_cfg.py)
 
-* `trainlog.episodes = 320_000`
-* `trainlog.num_val_ep = 2_500`
-* `trainlog.val_freq = 1_000`
+| Параметр в Optuna       | Связанный cfg-параметр            | Назначение                                         | Где применяется                                                     |
+| ----------------------- | --------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
+| `d_min`                 | `cfg.backtest.trailing_stop_min`  | Нижний пол трейла TSL                              | Бэктест: передаётся в env через `trailing_stop_min` (настройка TSL) |
+| `d0`                    | `cfg.backtest.trailing_stop`      | Начальный/макс. отступ TSL                         | То же                                                               |
+| `delta_p_hyst`          | `cfg.backtest.delta_p_hysteresis` | Гистерезис обновления TSL                          | То же                                                               |
+| `max_sigma` *(условно)* | `cfg.backtest.ensemble_max_sigma` | Максимально допустимая неопределённость Q (фильтр) | В ветке отбора действий `ensemble_q_filter` в backtest_engine.py    |
 
-### RL
+Источник: блок `trial.suggest_float(...)` и присвоения в `objective()` optimize_cfg.py. 
+Мультизадачная цель Optuna: **maximize** (Sharpe, Sortino, –MaxDD). 
 
-* `rl.batch_size = 64`
-* `rl.learning_rate = 3e-4`
-* `rl.gamma = 0.993`
-* `rl.n_step = 3`
-* `rl.train_start = 12_000`
-* `rl.target_update_steps = 2_500`
-* `rl.grad_clip_norm = 1.0`
+---
 
-### Replay / PER
+## 2) Полный перечень параметров, **кандидатов к оптимизации** (включая временно отключённые)
 
-* `per.buffer_size = 180_000`
+**A. Фильтр действий/неопределённости (прямо влияет на вход в сделку)**
 
-### Параллелизм
+* `cfg.backtest.selection_strategy` — категориальный выбор: `"advantage_based_filter"` vs `"ensemble_q_filter"`. (Сейчас фиксируется конфигом; можно поднять в Optuna как `suggest_categorical`.) Логика выбора действия есть для обеих стратегий. 
+* `cfg.backtest.long_action_threshold`, `cfg.backtest.short_action_threshold` — **используются** в обеих ветках как минимальная “уверенность” по преимуществу (advantage). Их нет в текущем search space, но в backtest_engine именно они режут ложные сигналы. Рекомендуется добавить. 
+* `cfg.backtest.ensemble_n_samples` — число сэмплов для MC-Dropout/ансамбля; влияет на стабильность/скорость и качество оценки неопределённости. В backtest_engine передаётся в `predict_ensemble(...)`. 
+* `cfg.backtest.ensemble_max_sigma` — уже частично оптимизируется как `max_sigma` (условно по стратегии). 
 
-* `vec.num_envs = 2`
+**B. Параметры Trailing-Stop (TSL)**
 
-### Детектор (короткий взгляд)
+* `cfg.backtest.trailing_stop_min (d_min)`, `cfg.backtest.trailing_stop (d0)`, `cfg.backtest.delta_p_hysteresis` — **уже в search space**. 
 
-* `detector.context_minutes = 45`
-* `detector.window_minutes = 9`
-* `detector.cooldown_minutes = 18`
-* `detector.use_lookahead = False`  *(для paper/онлайна; True — только для оффлайн-бэктеста/генерации датасетов)*
+**C. Риск-менеджмент сделки / размер позиции**
 
-### Пороги сигналов (шорт-смещение, быстрые выходы)
+* `cfg.backtest.stop_loss`, `cfg.backtest.take_profit` — в optimize_cfg сейчас **обнуляются** (выключены), но env/bтест шаг принимает эти параметры; их можно вернуть в поиск при необходимости. 
+* `cfg.backtest.position_fraction` — доля баланса на позицию; транзитивно влияет на PnL/DD через `initial_balance`. Оптимизируемо, но меняет “уровень риска”, не качество сигналов — использовать осторожно. 
+* `cfg.backtest.use_risk_management` — флаг; можно перебирать (on/off) как сценарный параметр, если хотите сравнить профили риска.
 
-* `signals.long_action_threshold = 0.0072`
-* `signals.short_action_threshold = 0.0070`
-* `signals.close_action_threshold = 0.011`
+**D. Параметры, которые **не стоит** оптимизировать в этом цикле**
 
-### Риск-менеджмент
+* `cfg.backtest.close_action_threshold` — **не используется** в backtest_engine ветвях отбора (поиск по файлу показывает проверки только `long_action_threshold/short_action_threshold`). Добавление в search space эффекта не даст. 
+* Операционные: `use_cache`, `return_qvals`, `clear_disk_cache` — влияют на производительность/стабильность, но не на саму торговую логику.
 
-* `risk.take_profit = None`
-* `risk.trailing_stop = 0.019`
-* `risk.trailing_stop_min = 0.0047`
-* `risk.delta_p_hysteresis = 0.0019`
+---
 
-### Размер позиции
+## 3) Последовательная оптимизация блоками — да, это лучше
 
-* `backtest.position_fraction = 0.38`
+**Предлагаемый порядок и бюджет испытаний (ориентиры для GTX 1070 + i5-6600):**
 
-### Ансамблевый фильтр
+| Шаг | Что оптимизируем             | Пространство                                       | Рекоменд. диапазоны                                                         | Триалы  |
+| --- | ---------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------- | ------- |
+| 1   | Неопределённость             | `ensemble_max_sigma` (+ опц. `ensemble_n_samples`) | sigma: 0.001–0.015 (log); n: 3–9 (int)                                      | 30–60   |
+| 2   | TSL                          | `d_min`, `d0`, `delta_p_hyst`                      | d_min: 0.001–0.005 (log); d0: [d_min, 0.02] (log); hyst: 0.0005–0.005 (log) | 120–200 |
+| 3   | Пороги входа                 | `long_action_threshold`, `short_action_threshold`  | задать узкие лог-диапазоны вокруг текущих значений из `configs/alpha.py`    | 80–150  |
+| 4*  | Размер/SL/TP *(опционально)* | `position_fraction`, `stop_loss`, `take_profit`    | узкие диапазоны; сцен.-проверка                                             | 50–100  |
 
-* `selection_strategy = "ensemble_q_filter"`
-* `ensemble_n_samples = 5`
-* `ensemble_max_sigma = 0.01`
+Пояснения:
+• Шаг 1 стабилизирует отбор действий; иначе TSL и пороги “ловят шум”.
+• Шаг 2 задаёт характер сопровождения; без адекватного TSL тяжело калибровать пороги.
+• Шаг 3 точнит частоту входов.
+• Шаг 4 — **отдельная серия**, т.к. меняет профиль риска, а не качество сигналов.
 
-### Архитектура (короткий контекст)
+---
 
-* `agent_history_len = 20`
-* `agent_session_len = 8`
-* `ACTION_HISTORY_LEN = 2`
-* `cnn_maps = [64, 64, 96]`
-* `kernels = [5, 3, 3]`
-* `strides = [1, 1, 1]`
-* `dropout_p = 0.05`
-* `dense_val = [96, 48]`
-* `dense_adv = [96, 48]`
+## 4) Мини-план действий и риски
 
-**Опционально (если поддерживается в коде):**
+| Шаг | Действие                                                                     | KPI/риск                                                               |
+| --- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | Запустить Optuna только по `max_sigma` (и при желании `ensemble_n_samples`). | ↑Sharpe/Sortino, риск переобучения низкий; быстрый цикл.               |
+| 2   | Зафиксировав (1), оптимизировать `d_min,d0,delta_p_hyst`.                    | ↓Max DD при сохранении PF; риск: переоптимизация под участок рынка.    |
+| 3   | Добавить `long_action_threshold, short_action_threshold`.                    | Контроль частоты входов; риск: снизить WR при слишком низких порогах.  |
+| 4*  | Отдельный эксперимент с `position_fraction/SL/TP`.                           | Меняет риск-профиль; фиксируйте результаты отдельно.                   |
 
-* `risk.break_even_on_profit = True`
-* `risk.break_even_trigger_R = 0.5`
+**Напоминание по метрикам и требованиям проекта:** ориентируйтесь на Sharpe/Sortino/DD, как зафиксировано в проектном SYSTEM_PROMPT и в текущей реализации `optimize_cfg.py` (мультицель: Sharpe↑, Sortino↑, –MaxDD↑).
+
+---
+
+### Быстрые команды
+
+* Базовый запуск:
+  `python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 150 --jobs 1`
+* Сценарий “только sigma”: временно зафиксируйте TSL и пороги в `alpha.py`, оставив в optimize_cfg только `max_sigma`. Затем повторно расширяйте пространство.

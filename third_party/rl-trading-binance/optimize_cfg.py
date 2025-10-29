@@ -58,10 +58,17 @@ def _dump_trials_jsonl(study: "optuna.study.Study", opt_dir: str) -> None:
 
 def _save_top_tables(df: "pd.DataFrame", opt_dir: str, topn: int = 20) -> None:
     """
-    Save top-N trials by PnL (values_0), Accuracy (values_1), and -Trades (values_2).
+    Save top-N trials by:
+      - Sharpe (values_0),
+      - Sortino (values_1),
+      - -Max Drawdown (values_2).
     """
     cols = df.columns
-    targets = [("values_0", "top_by_pnl"), ("values_1", "top_by_accuracy"), ("values_2", "top_by_neg_trades")]
+    targets = [
+        ("values_0", "top_by_sharpe"),
+        ("values_1", "top_by_sortino"),
+        ("values_2", "top_by_neg_maxdd"),
+    ]
     for val_col, stem in targets:
         if val_col in cols:
             top = df.sort_values(val_col, ascending=False).head(topn)
@@ -81,14 +88,22 @@ def _save_pareto(study: "optuna.study.Study", opt_dir: str) -> None:
 
 def _save_param_importances(study: "optuna.study.Study", opt_dir: str) -> None:
     """
-    Save parameter importances for PnL objective (values[0]) if available.
+    Save parameter importances for multi-objective study:
+      - Sharpe (values[0])
+      - Sortino (values[1])
     """
     try:
         from optuna.importance import get_param_importances
-        imp = get_param_importances(study, target=lambda t: t.values[0])
-        with open(os.path.join(opt_dir, "param_importances_pnl.json"), "w", encoding="utf-8") as f:
-            json.dump(imp, f, ensure_ascii=False, indent=2)
-        logging.info("[Optuna] saved param_importances_pnl.json")
+        # Sharpe
+        imp_sharpe = get_param_importances(study, target=lambda t: t.values[0])
+        with open(os.path.join(opt_dir, "param_importances_sharpe.json"), "w", encoding="utf-8") as f:
+            json.dump(imp_sharpe, f, ensure_ascii=False, indent=2)
+        logging.info("[Optuna] saved param_importances_sharpe.json")
+        # Sortino
+        imp_sortino = get_param_importances(study, target=lambda t: t.values[1])
+        with open(os.path.join(opt_dir, "param_importances_sortino.json"), "w", encoding="utf-8") as f:
+            json.dump(imp_sortino, f, ensure_ascii=False, indent=2)
+        logging.info("[Optuna] saved param_importances_sortino.json")
     except Exception as e:
         logging.warning(f"[Optuna] param importances unavailable: {e}")
 
@@ -133,16 +148,16 @@ def objective(trial: optuna.Trial):
 
     # --- TSL (Trailing Stop Loss) Parameter Optimization ---
     # d_min: The floor for the trail distance (e.g., 0.1% to 0.5%).
-    d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
-    cfg.backtest.trailing_stop_min = d_min
+    # d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
+    # cfg.backtest.trailing_stop_min = d_min
 
     # d0: The initial and maximum trail distance. Must be > d_min.
     # We set the lower bound to d_min to ensure the constraint is always met.
-    d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
-    cfg.backtest.trailing_stop = d0
+    # d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
+    # cfg.backtest.trailing_stop = d0
 
     # delta_p_hysteresis: The profit increase required to trigger a TSL update.
-    cfg.backtest.delta_p_hysteresis = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
+    # cfg.backtest.delta_p_hysteresis = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
 
     # Explicitly set unused parameters to 0 to avoid any legacy effects.
     cfg.backtest.stop_loss = None
