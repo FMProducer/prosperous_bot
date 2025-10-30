@@ -523,6 +523,10 @@ def run_backtest(cfg: MasterConfig, model_path_override: str = None) -> Dict[str
                 use_risk_management=cfg.backtest.use_risk_management,
             )
 
+            # align execution timing with config (0 keeps current behavior; 1 = honest next-bar execution)
+            env.exec_delay_bars = getattr(cfg.backtest, "exec_delay_bars", 0)
+            logging.info(f"[Backtest] exec_delay_bars={env.exec_delay_bars}")
+
             obs, _ = env.reset()
             for step in range(cfg.seq.agent_session_len):
                 cache_key = (ticker_name, signal_dt + dt.timedelta(minutes=step))

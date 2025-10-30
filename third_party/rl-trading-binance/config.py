@@ -215,6 +215,7 @@ class BacktestConfig(BaseModel):
     ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
+    exec_delay_bars: int = 0
 
 
 class PaperTraderConfig(BaseModel):

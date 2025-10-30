@@ -99,6 +99,8 @@ class TradingEnvironment(gym.Env):
             if self.use_risk_management:
                 self.trailing_max_price: float = None
                 self.trailing_min_price: float = None
+                self.tsl_price: float = None
+                self.p_at_last_tsl_update: float = 0.0
 
         if self.action_history_len > 0:
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
@@ -196,7 +198,8 @@ class TradingEnvironment(gym.Env):
         return obs, reward, terminated, False, info
 
     def _get_observation(self) -> np.ndarray:
-        end = self.pre_signal_len + self.step_idx
+        exec_delay = getattr(self, "exec_delay_bars", 0)
+        end = self.pre_signal_len + self.step_idx + exec_delay
         start = end - self.agent_history_len
         window = self.current_seq[start:end]
 
@@ -213,7 +216,8 @@ class TradingEnvironment(gym.Env):
 
         unrealized = 0.0
         if self.position != 0:
-            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+            exec_delay = getattr(self, "exec_delay_bars", 0)
+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
             current_price = self.current_seq[price_idx, self.close_idx]
             delta = (current_price - self.entry_price) * self.position
             unrealized = delta / self.entry_price
@@ -247,7 +251,8 @@ class TradingEnvironment(gym.Env):
         }
 
         if self.position != 0:
-            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+            exec_delay = getattr(self, "exec_delay_bars", 0)
+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
             current_price = self.current_seq[price_idx, self.close_idx]
             mark2market = (current_price - self.entry_price) * self.position * (self.balance / self.entry_price)
             info["portfolio_value"] = self.balance + mark2market
@@ -263,6 +268,9 @@ class TradingEnvironment(gym.Env):
         stop_loss: float = 0.02,
         take_profit: float = 0.04,
         trailing_stop: float = 0.01,
+        trailing_stop_min: float = None,
+        fee_buffer_mult: float = None,
+        delta_p_hysteresis: float = None,
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
@@ -273,7 +281,8 @@ class TradingEnvironment(gym.Env):
             elif self.position != 0 and action != 3:
                 action = 3
 
-        price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
+        exec_delay = getattr(self, "exec_delay_bars", 0)
+        price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
         price = self.current_seq[price_idx, self.close_idx]
         position_closed = False
         pnl_change = 0.0
@@ -283,16 +292,50 @@ class TradingEnvironment(gym.Env):
         exit_reason = ""
 
         if self.use_risk_management and self.position != 0:
-            if self.position == 1:
+            d0 = trailing_stop
+            d_min = trailing_stop_min
+            fee = self.transaction_fee
+            fee_buf = fee * (fee_buffer_mult or 2.0)
+            tsl_price = self.tsl_price
+
+            if self.position == 1:  # LONG
                 self.trailing_max_price = max(getattr(self, "trailing_max_price", price), price)
-                sl_trigger = price <= self.entry_price * (1 - stop_loss) if stop_loss is not None else False
-                tp_trigger = price >= self.entry_price * (1 + take_profit) if take_profit is not None else False
-                trailing_trigger = price <= self.trailing_max_price * (1 - trailing_stop)
-            else:
+                base_tsl = self.trailing_max_price * (1 - d0)
+                tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
+
+                if d_min is not None:
+                    p = max(0, self.trailing_max_price / self.entry_price - 1)
+                    if delta_p_hysteresis is None or p > self.p_at_last_tsl_update + delta_p_hysteresis:
+                        if delta_p_hysteresis is not None:
+                            self.p_at_last_tsl_update = p
+                        
+                        d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
+                        advanced_tsl_price = max(self.entry_price * (1 + fee_buf), self.trailing_max_price * (1 - d_eff))
+                        tsl_price = max(tsl_price, advanced_tsl_price)
+                
+                trailing_trigger = price <= tsl_price
+
+            else:  # SHORT
                 self.trailing_min_price = min(getattr(self, "trailing_min_price", price), price)
-                sl_trigger = price >= self.entry_price * (1 + stop_loss) if stop_loss is not None else False
-                tp_trigger = price <= self.entry_price * (1 - take_profit) if take_profit is not None else False
-                trailing_trigger = price >= self.trailing_min_price * (1 + trailing_stop)
+                base_tsl = self.trailing_min_price * (1 + d0)
+                tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
+
+                if d_min is not None:
+                    p = max(0, 1 - self.trailing_min_price / self.entry_price)
+                    if delta_p_hysteresis is None or p > self.p_at_last_tsl_update + delta_p_hysteresis:
+                        if delta_p_hysteresis is not None:
+                            self.p_at_last_tsl_update = p
+                        
+                        d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
+                        advanced_tsl_price = min(self.entry_price * (1 - fee_buf), self.trailing_min_price * (1 + d_eff))
+                        tsl_price = min(tsl_price, advanced_tsl_price)
+
+                trailing_trigger = price >= tsl_price
+
+            self.tsl_price = tsl_price
+            
+            sl_trigger = price <= self.entry_price * (1 - stop_loss) if stop_loss is not None else False
+            tp_trigger = price >= self.entry_price * (1 + take_profit) if take_profit is not None else False
 
             if sl_trigger or tp_trigger or trailing_trigger or self.last_step:
                 action = 3
@@ -313,6 +356,8 @@ class TradingEnvironment(gym.Env):
             self.trade_dt = current_dt
             if self.use_risk_management:
                 self.trailing_max_price = exec_price
+                self.tsl_price = None
+                self.p_at_last_tsl_update = 0.0
             logging.info(
                 f": (LONG) BUY {volume:.8f} {ticker} for {exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}"
             )
@@ -329,6 +374,8 @@ class TradingEnvironment(gym.Env):
             self.trade_dt = current_dt
             if self.use_risk_management:
                 self.trailing_min_price = exec_price
+                self.tsl_price = None
+                self.p_at_last_tsl_update = 0.0
             logging.info(
                 f": (SHORT) SELL {volume:.8f} {ticker} for {exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}"
             )
@@ -390,6 +437,8 @@ class TradingEnvironment(gym.Env):
             if self.use_risk_management:
                 self.trailing_max_price = None
                 self.trailing_min_price = None
+                self.tsl_price = None
+                self.p_at_last_tsl_update = 0.0
         else:
             info = {"position_closed": position_closed}
 

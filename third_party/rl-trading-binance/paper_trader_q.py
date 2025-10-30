@@ -222,11 +222,20 @@ class PaperTrader:
 
         # Get action from agent
         action = self._get_agent_action(session_data)
-        entry_price = df.loc[signal_dt]['close']
+
+        # entry price with optional execution delay (0 keeps current behavior)
+        delay = int(getattr(self.cfg.backtest, "exec_delay_bars", 0))
+        delayed_dt = signal_dt + dt.timedelta(minutes=delay)
+        if delayed_dt in df.index:
+            entry_price = float(df.loc[delayed_dt]["close"])
+            entry_dt_used = delayed_dt
+        else:
+            entry_price = float(df.loc[signal_dt]["close"])
+            entry_dt_used = signal_dt
 
         # Execute trade
         if action in [1, 2]:  # LONG or SHORT
-            self._execute_trade(symbol, action, signal_dt, entry_price)
+            self._execute_trade(symbol, action, signal_dt, entry_price, entry_dt_used, delay)
 
     def _get_agent_action(self, session_data: np.ndarray) -> int:
         """Get a trading action from the RL agent."""
@@ -307,7 +316,7 @@ class PaperTrader:
 
         return action
 
-    def _execute_trade(self, symbol: str, action: int, signal_dt: dt.datetime, entry_price: float):
+    def _execute_trade(self, symbol: str, action: int, signal_dt: dt.datetime, entry_price: float, entry_dt_used: dt.datetime, delay: int):
         """Open a paper trade."""
         if symbol in self.open_positions:
             logging.warning(f"Already have an open position for {symbol}. Skipping new trade.")
@@ -340,9 +349,7 @@ class PaperTrader:
             "close_time": signal_dt + dt.timedelta(minutes=self.cfg.seq.agent_session_len),
             **rm_state
         }
-        logging.info(
-            f"PAPER TRADE OPEN: {direction} {symbol} at {entry_price:.4f} (Size: {position_size:.2f} USDT)"
-        )
+        logging.info(f"Opening position at {entry_dt_used} price={entry_price:.6f} (delay={delay})")
 
     def _update_and_close_positions(self):
         """Periodically check and close open positions."""

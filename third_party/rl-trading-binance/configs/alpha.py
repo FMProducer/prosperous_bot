@@ -46,8 +46,8 @@ cfg.backtest.long_action_threshold = 0.0078056307732368
 cfg.backtest.short_action_threshold = 0.0091301259923296
 cfg.backtest.close_action_threshold = 0.0180067279703063
 cfg.backtest.ensemble_n_samples = 5
-# maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
-cfg.backtest.ensemble_max_sigma = 0.002582999563187257
+# maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
+cfg.backtest.ensemble_max_sigma = 0.0064449245324541046
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
@@ -56,6 +56,8 @@ cfg.backtest.use_risk_management = True
 cfg.backtest.stop_loss = 0.0153228603723445
 cfg.backtest.take_profit = 0.0447149987567144
 cfg.backtest.trailing_stop = 0.018986
+# Execution timing: 0 = current behavior (may inflate returns), 1 = honest next-bar execution
+cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
 # --- NEW: Linear Trailing Stop Parameters for Optuna ---
 # d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
