@@ -6,10 +6,13 @@ import time
 from collections import deque
 from typing import Any, Dict
 import hashlib, tarfile
-import subprocess
+
+# CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
+if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import platform
 import json
-import tarfile
+import subprocess
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -324,7 +327,7 @@ def evaluate_agent(
 
     env.reset(seed=env_seed)
     logging.info(f"--- Starting Evaluation: {split_name}, episodes={num_episodes} ---")
-    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes + 1, desc=f"{split_name} in episodes", leave=False):
+    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes, desc=f"{split_name} in episodes", leave=False):
         logging.info(f"--- Validation episode {ep}/{num_episodes} ---")
         obs, _ = env.reset(seed=None, options=None)
         done = False
@@ -464,7 +467,33 @@ def main(cfg: MasterConfig = None):
     bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
     if cfg.device.device.type == "cuda":
         torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
+    # Детерминизм по умолчанию ВКЛЮЧЕН; отключить: RL_DETERMINISTIC=0
+    det = True
+    env_flag = os.environ.get("RL_DETERMINISTIC")
+    if env_flag is not None:
+        det = env_flag not in ("0", "false", "False", "no", "No")
+    # Разрешаем переопределение из конфига, если поле существует (обратная совместимость)
+    det = bool(getattr(cfg, "deterministic", det)) if hasattr(cfg, "deterministic") else det
+    det = bool(getattr(getattr(cfg, "perf", object()), "deterministic", det))
+    if det:
+        try:
+            import torch.backends.cudnn as cudnn
+            cudnn.deterministic = True
+            torch.use_deterministic_algorithms(True, warn_only=True)
+            logging.info(
+                "Deterministic mode: ON "
+                "(cudnn.deterministic=True, torch.use_deterministic_algorithms; "
+                f"CUBLAS_WORKSPACE_CONFIG={os.environ.get('CUBLAS_WORKSPACE_CONFIG')})"
+            )
+        except Exception as e:
+            logging.warning(f"Deterministic mode setup failed: {e}")
 
+    # Fallback: если model_dir/plot_dir не определены, строим их из base_output_dir
+    base_out = getattr(cfg.paths, "base_output_dir", None)
+    if not hasattr(cfg.paths, "model_dir") or cfg.paths.model_dir in (None, ""):
+        cfg.paths.model_dir = os.path.join(base_out or "output", "alpha", "saved_models")
+    if not hasattr(cfg.paths, "plot_dir") or cfg.paths.plot_dir in (None, ""):
+        cfg.paths.plot_dir = os.path.join(base_out or "output", "alpha", "plots")
     models_dir = os.path.join(cfg.paths.model_dir, session_name)
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
     os.makedirs(models_dir, exist_ok=True)
@@ -620,8 +649,13 @@ def main(cfg: MasterConfig = None):
     for ep in counter:
         if hasattr(train_env, "num_envs"):  # VecEnv путь
             ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
-            loss = agent.learn()  # TODO: при желании выровнять частоту с одиночным режимом (учащать вызовы)
-            ep_losses = [] if loss is None else [loss]
+            # Увеличиваем число градиентных шагов пропорционально собранным переходам
+            steps_to_train = max(1, transitions // cfg.rl.batch_size)
+            ep_losses = []
+            for _ in range(steps_to_train):
+                loss = agent.learn()
+                if loss is not None:
+                    ep_losses.append(loss)
             train_steps += transitions
             info = {"episode_win_rate": ep_win_rate}
         else:

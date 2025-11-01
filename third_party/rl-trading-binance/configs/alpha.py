@@ -17,10 +17,14 @@ cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
 cfg.trainlog.episodes = 1000
 cfg.trainlog.plot_top_n = 10
-cfg.per.buffer_size = 230_000
-cfg.rl.batch_size = 64
+cfg.per.buffer_size = 1_000_000
+cfg.rl.batch_size = 128
 cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 10_000
+# стабильнее целевые обновления
+cfg.rl.target_update_freq = 5000
+# клиппинг градиента для защиты от выбросов
+cfg.rl.max_gradient_norm = 1.0
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
 cfg.trainlog.val_selection_metrics = "Validation_win_rate"
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
@@ -77,14 +81,14 @@ cfg.perf.compile_dynamic = False
 # DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
 cfg.perf.dataloader_num_workers = 4
 cfg.perf.pin_memory = True
-cfg.perf.persistent_workers = False
+cfg.perf.persistent_workers = True
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
-cfg.perf.cudnn_benchmark = True
+cfg.perf.cudnn_benchmark = False
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 4
+cfg.vec.num_envs = 2
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включаем под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
@@ -159,3 +163,9 @@ try:
     cfg.bundle = bundle_cfg
 except ValueError:
     pass # Поле 'bundle' не определено в MasterConfig, но train.py будет использовать bundle_cfg
+
+# ---------- Prioritized Experience Replay (устойчивость) ----------
+cfg.per.per_alpha = 0.6
+cfg.per.per_beta_start = 0.4
+cfg.per.per_beta_frames = 500_000
+cfg.per.per_eps = 1e-6
