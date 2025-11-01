@@ -236,7 +236,7 @@ def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    if not getattr(module.cfg.paths, "config_name", None):
+    if getattr(module.cfg.paths, "config_name", None) is None:
         module.cfg.paths.config_name = cfg_path.stem
     
     if return_module:
