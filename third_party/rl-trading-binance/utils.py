@@ -230,7 +230,7 @@ def apply_normalization(
     return out
 
 
-def load_config(path: str) -> MasterConfig:
+def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
     cfg_path = Path(path)
     spec = importlib.util.spec_from_file_location("experiment_cfg", path)
     module = importlib.util.module_from_spec(spec)
@@ -238,8 +238,11 @@ def load_config(path: str) -> MasterConfig:
 
     if not getattr(module.cfg.paths, "config_name", None):
         module.cfg.paths.config_name = cfg_path.stem
-
-    return module.cfg
+    
+    if return_module:
+        return module.cfg, module
+    else:
+        return module.cfg
 
 
 def setup_logging(session_name: str, cfg: MasterConfig, log_dir_override: Optional[str] = None) -> None:

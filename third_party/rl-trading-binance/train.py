@@ -5,7 +5,11 @@ import sys
 import time
 from collections import deque
 from typing import Any, Dict
-
+import hashlib, tarfile
+import subprocess
+import platform
+import json
+import tarfile
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -25,7 +29,6 @@ from utils import (
     set_random_seed,
     setup_logging,
 )
-
 
 def _make_train_env_fns(env_kwargs, n: int):
     # фабрика копий среды для векторизации
@@ -214,6 +217,98 @@ def plot_training_progress(history: dict, save_dir: str, window_size: int) -> No
     else:
         logging.info("No 'epsilons' data available – skipping epsilon plot.")
 
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _dump_requirements_lock(dst_path: str) -> None:
+    try:
+        out = subprocess.check_output([sys.executable, "-m", "pip", "freeze"], text=True)
+        with open(dst_path, "w", encoding="utf-8") as f:
+            f.write(out)
+        logging.info(f"Saved pip freeze to: {dst_path}")
+    except Exception as e:
+        logging.exception(f"Failed to dump requirements: {e}")
+
+def _dump_torch_env(dst_path: str) -> None:
+    lines = []
+    try:
+        lines.append(f"python={platform.python_version()}")
+        lines.append(f"platform={platform.platform()}")
+        lines.append(f"torch={torch.__version__}")
+        lines.append(f"cuda={getattr(torch.version, 'cuda', None)}")
+        try:
+            import torch.backends.cudnn as cudnn
+            lines.append(f"cudnn={getattr(cudnn, 'version', lambda: None)()}")
+        except Exception:
+            lines.append("cudnn=None")
+        if torch.cuda.is_available():
+            dev = torch.cuda.get_device_name(0)
+            cc = torch.cuda.get_device_capability(0)
+            lines.append(f"gpu={dev}")
+            lines.append(f"gpu_cc={cc}")
+        with open(dst_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(str(x) for x in lines) + "\n")
+        logging.info(f"Saved torch env to: {dst_path}")
+    except Exception as e:
+        logging.exception(f"Failed to dump torch env: {e}")
+
+def _dump_env_flags(cfg: MasterConfig, dst_path: str) -> None:
+    payload = {
+        "random_seed": cfg.random_seed,
+        "determinism": {
+            "cudnn_benchmark": cfg.perf.cudnn_benchmark,
+        },
+        "amp": {
+            "use_amp": cfg.perf.use_amp,
+            "amp_dtype": cfg.perf.amp_dtype,
+        },
+    }
+    with open(dst_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    logging.info(f"Saved env flags to: {dst_path}")
+
+def _build_data_manifest(cfg: MasterConfig) -> Dict[str, Any]:
+    items = []
+    for key, p in {
+        "train_data_path": cfg.paths.train_data_path,
+        "val_data_path": cfg.paths.val_data_path,
+        "test_data_path": cfg.paths.test_data_path,
+    }.items():
+        if p and os.path.exists(p):
+            try:
+                items.append({
+                    "name": key,
+                    "path": p,
+                    "sha256": _sha256(p),
+                    "bytes": os.path.getsize(p),
+                })
+            except Exception as e:
+                logging.warning(f"Manifest: cannot hash {p}: {e}")
+    return {"datasets": items}
+
+def _git_head_sha() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return ""
+
+def _numpy_json_default(obj):
+    """
+    Custom JSON serializer for numpy types.
+    """
+    if isinstance(obj, (np.integer, np.intc, np.intp, np.int8,
+                        np.int16, np.int32, np.int64, np.uint8,
+                        np.uint16, np.uint32, np.uint64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 def evaluate_agent(
     env: TradingEnvironment,
@@ -252,6 +347,11 @@ def evaluate_agent(
         f"{split_name}_win_rate": np.mean(win_rates),
         f"{split_name}_all_pnls": pnls,
     }
+    # для корректной генерации графиков в plot_test_distributions
+    if split_name == "Test":
+        metrics["Test_all_reward"] = rewards
+        metrics["Test_all_win_rate"] = win_rates
+
     if current_episode is not None:
         episode_info = f" Ep_{current_episode}"
     else:
@@ -350,12 +450,18 @@ def plot_test_distributions(test_metrics: dict, plots_dir: str) -> None:
 
 
 def main(cfg: MasterConfig = None):
-    cfg = cfg or default_cfg
-    import json
+    # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
+    if len(sys.argv) > 1:
+        cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
+    else:
+        cfg, cfg_mod = default_cfg, None
+
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
     set_random_seed(cfg.random_seed)
+    # Получаем bundle_cfg из модуля или из cfg для обратной совместимости
+    bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
     if cfg.device.device.type == "cuda":
         torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
 
@@ -364,8 +470,8 @@ def main(cfg: MasterConfig = None):
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
-    # --- NEW: Save the full configuration for this training run ---
-    config_save_path = os.path.join(models_dir, "config.json")
+    # --- Save the full training configuration (immutable copy) ---
+    config_save_path = os.path.join(models_dir, "config_train.json")
     with open(config_save_path, "w") as f:
         # Use model_dump and default=str to handle non-serializable types like torch.device
         json.dump(cfg.model_dump(), f, indent=2, default=str)
@@ -423,7 +529,7 @@ def main(cfg: MasterConfig = None):
         cfg.data.other_channels,
     )
 
-    # --- NEW: Save normalization stats for this training run ---
+    # --- Save normalization stats for this training run ---
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
         json.dump(train_stats, f, indent=4)
@@ -506,6 +612,7 @@ def main(cfg: MasterConfig = None):
     }
 
     best_val_metric = float("-inf")
+    last_val_metrics: Dict[str, Any] = {}
     train_steps = 0
 
     train_env.reset(seed=cfg.global_env_seed)
@@ -562,6 +669,7 @@ def main(cfg: MasterConfig = None):
                 val_env, agent, min(len(val_seqs), cfg.trainlog.num_val_ep), "Validation", ep, cfg.global_env_seed
             )
             val_metric = metrics[cfg.trainlog.val_selection_metrics]
+            last_val_metrics = metrics
             if val_metric > best_val_metric:
                 best_val_metric = val_metric
                 best_path = os.path.join(models_dir, "best.pth")
@@ -575,6 +683,7 @@ def main(cfg: MasterConfig = None):
     logging.info(f"Final model saved: {final_path}")
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
+    test_metrics: Dict[str, Any] = {}
     if test_seqs:
         env_kwargs["sequences"] = test_seqs
         test_env = TradingEnvironment(**env_kwargs)
@@ -601,6 +710,105 @@ def main(cfg: MasterConfig = None):
     if val_env:
         val_env.close()
 
+    # --- Aggregate and persist must-have bundle artifacts in models_dir ---
+    bundle_enabled = getattr(bundle_cfg, "enable", True)
+    if bundle_enabled:
+        # 1) metrics.json
+        bundle_metrics = {
+            "val_selection_metric": cfg.trainlog.val_selection_metrics,
+            "best_val_metric": best_val_metric if best_val_metric != float("-inf") else None,
+            "last_validation": last_val_metrics,
+            "history": {
+                "episodes": history.get("episodes", []),
+                "mean_rewards_N": history.get("mean_rewards_N", []),
+                "mean_losses_N": history.get("mean_losses_N", []),
+                "mean_win_rates_N": history.get("mean_win_rates_N", []),
+            },
+            "test": test_metrics,
+        }
+        with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
+            json.dump(bundle_metrics, f, indent=2, default=_numpy_json_default)
+        # 2) requirements-lock.txt
+        _dump_requirements_lock(os.path.join(models_dir, "requirements-lock.txt"))
+        # 3) torch_env.txt
+        _dump_torch_env(os.path.join(models_dir, "torch_env.txt"))
+        # 4) env_flags.json
+        _dump_env_flags(cfg, os.path.join(models_dir, "env_flags.json"))
+        # 5) data_manifest.json
+        data_manifest = _build_data_manifest(cfg)
+        with open(os.path.join(models_dir, "data_manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(data_manifest, f, indent=2)
+
+        # 6) optional: snapshot кода
+        if getattr(bundle_cfg, "include_code_snapshot", False):
+            snapshot_paths = getattr(bundle_cfg, "code_snapshot_paths", [])
+            snap_path = os.path.join(models_dir, "code_snapshot.tar.gz")
+            try:
+                with tarfile.open(snap_path, "w:gzip") as tar:
+                    for p in snapshot_paths:
+                        if os.path.exists(p):
+                            tar.add(p, arcname=os.path.basename(p))
+                logging.info(f"Code snapshot saved: {snap_path}")
+            except Exception as e:
+                logging.warning(f"Code snapshot failed: {e}")
+
+        # 7) MANIFEST.json (file list + sha256)
+        file_entries = []
+        for fn in sorted(os.listdir(models_dir)):
+            fp = os.path.join(models_dir, fn)
+            if os.path.isfile(fp):
+                try:
+                    file_entries.append({"path": fn, "sha256": _sha256(fp), "bytes": os.path.getsize(fp)})
+                except Exception as e:
+                    logging.warning(f"MANIFEST: failed to hash {fn}: {e}")
+        manifest = {
+            "schema": "MODEL_BUNDLE_V1",
+            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "code_commit": _git_head_sha(),
+            "files": file_entries,
+            "links": {
+                "dataset_sha256": [x["sha256"] for x in data_manifest.get("datasets", [])],
+                "norm_stats": "norm_stats.json",
+                "config_train": "config_train.json",
+            },
+        }
+        with open(os.path.join(models_dir, "MANIFEST.json"), "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        logging.info(f"Bundle manifest written: {os.path.join(models_dir, 'MANIFEST.json')}")
+
+        # 8) Вшиваем META в best.pth / final.pth
+        def _attach_meta_to_checkpoint(path: str, meta: dict):
+            try:
+                ckpt = torch.load(path, map_location="cpu")
+                if isinstance(ckpt, dict) and "state_dict" in ckpt:
+                    ckpt["meta"] = meta
+                else:
+                    ckpt = {"state_dict": ckpt, "meta": meta}
+                torch.save(ckpt, path)
+                logging.info(f"Attached meta to: {path}")
+            except Exception as e:
+                logging.warning(f"Failed to attach meta to {path}: {e}")
+
+        norm_sha = _sha256(os.path.join(models_dir, "norm_stats.json"))
+        cfg_sha  = _sha256(os.path.join(models_dir, "config_train.json"))
+        ds_list  = [x["sha256"] for x in data_manifest.get("datasets", [])]
+        meta = {
+            "dataset_sha256_list": ds_list,
+            "norm_stats_sha256": norm_sha,
+            "config_train_sha256": cfg_sha,
+            "code_commit": _git_head_sha(),
+            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        best_path  = os.path.join(models_dir, "best.pth")
+        final_path = os.path.join(models_dir, "final.pth")
+        if os.path.exists(best_path):
+            _attach_meta_to_checkpoint(best_path, meta)
+        if os.path.exists(final_path):
+            _attach_meta_to_checkpoint(final_path, meta)
+
 
 if __name__ == "__main__":
-    main(cfg=load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg)
+    # cfg_arg = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg
+    # main(cfg=cfg_arg)
+    # Вызываем main без аргументов, т.к. логика загрузки перенесена внутрь
+    main()

@@ -15,7 +15,7 @@ cfg.model.dropout_p = 0.1
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 55_000
+cfg.trainlog.episodes = 1000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 230_000
 cfg.rl.batch_size = 64
@@ -116,7 +116,7 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
 cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
-cfg.paths.norm_stats_path = "output/FMProducer/fmproducer_1_eval/saved_models/session_1/norm_stats.json"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\norm_stats.json"
 cfg.random_seed = 25
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -141,3 +141,21 @@ cfg.detector.cooldown_minutes = 30
 # 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
 # 3. Run optimization:              python optimize_cfg.py configs/...
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
+
+# ---------- Output/bundle paths & flags ----------
+# Явно фиксируем корневые директории для артефактов обучения и графиков.
+cfg.project_name = "rl_binance_futures_trading"
+cfg.paths.base_output_dir = "output/alpha"
+cfg.paths.config_name = "" # Предотвращаем дублирование пути output/alpha/alpha
+
+# Управляющие флаги упаковки (используются в train.py):
+bundle_cfg = type("obj", (), {})()
+bundle_cfg.enable = True
+# При необходимости можно включить snapshot кода; по умолчанию выключено.
+bundle_cfg.include_code_snapshot = False
+bundle_cfg.code_snapshot_paths = ["third_party/rl-trading-binance", "configs", "src", "utils.py"]
+bundle_cfg.extra_files = []
+try:
+    cfg.bundle = bundle_cfg
+except ValueError:
+    pass # Поле 'bundle' не определено в MasterConfig, но train.py будет использовать bundle_cfg
