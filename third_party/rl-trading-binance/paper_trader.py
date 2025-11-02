@@ -279,7 +279,12 @@ class PaperTrader:
             return
 
         direction = "LONG" if action == 1 else "SHORT"
-        position_size = self.balance * self.cfg.backtest.position_fraction
+        order_size_usdt = getattr(self.cfg.backtest, 'order_size_usdt', 0)
+
+        if order_size_usdt > 0:
+            position_size = order_size_usdt
+        else:
+            position_size = self.balance * self.cfg.backtest.position_fraction
 
         # --- NEW: Initialize risk management state ---
         rm_state = {}
@@ -418,6 +423,11 @@ class PaperTrader:
                     exit_reason = "TSL Time" if current_price <= break_even_price else "Time SL"
 
             if exit_reason:
+                # Symmetric informative event log for TSL/Time/LIQUIDATION
+                logging.info(
+                    f"PAPER TRADE EVENT: {exit_reason} {pos['direction']} {symbol} at {current_price:.6f} "
+                    f"(Entry: {pos['entry_price']:.6f}, Size: {pos['size']:.2f} USDT, ts={current_ts})"
+                )
                 symbols_to_close.append((symbol, exit_reason, current_price, current_ts))
 
         # --- Process Closed Symbols ---
@@ -443,8 +453,8 @@ class PaperTrader:
             if exit_reason == "LIQUIDATION":
                 pnl = -pos["size"]
 
-            # Комиссия рассчитывается от общего объема сделки с плечом
-            fees = (pos["size"] * self.cfg.market.transaction_fee) * 2 # Simplified fee calc
+            # Commission is charged on notional (size × leverage), for both entry and exit
+            fees = pos["size"] * self.cfg.paper.leverage * self.cfg.market.transaction_fee * 2
             net_pnl = pnl - fees
             self.balance += net_pnl
 
@@ -457,7 +467,10 @@ class PaperTrader:
             self.equity_curve.append({"ts": close_ts.isoformat(), "balance": self.balance})
 
             logging.info(
-                f"PAPER TRADE CLOSE ({exit_reason}): {pos['direction']} {symbol} at {current_price:.4f}. PnL: {net_pnl:+.2f} USDT. New Balance: {self.balance:.2f} USDT"
+                f"PAPER TRADE CLOSE: {pos['direction']} {symbol} at {current_price:.6f} "
+                f"(Entry: {pos['entry_price']:.6f}, Size: {pos['size']:.2f} USDT, Fees: {fees:.2f} USDT, "
+                f"PnL: {net_pnl:+.2f} USDT, reason={exit_reason}, close_dt={close_ts}) "
+                f"New Balance: {self.balance:.2f} USDT"
             )
 
     def _run_from_websocket(self):
