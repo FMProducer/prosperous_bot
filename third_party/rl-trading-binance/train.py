@@ -865,6 +865,29 @@ def main(cfg: MasterConfig = None):
         if os.path.exists(final_path):
             _attach_meta_to_checkpoint(final_path, meta)
 
+        # ── Краткое резюме метрик в лог (для аудита без открытия файлов)
+        try:
+            _metrics_path = os.path.join(models_dir, "metrics.json")
+            with open(_metrics_path, "r", encoding="utf-8") as _mf:
+                _m = json.load(_mf)
+            _best = _m.get("best_val_metric")
+            _sel  = _m.get("val_selection_metric")
+            _test = _m.get("test", {}) if isinstance(_m, dict) else {}
+            # Adjust keys to match what evaluate_agent produces
+            _test_win_rate = _test.get("Test_win_rate")
+            _test_mean_pnl = _test.get("Test_mean_pnl")
+
+            logging.info(
+                "[SUMMARY] best_val_metric=%s  val_selection_metric=%s  "
+                "test.win_rate=%s  test.mean_pnl=%s",
+                f"{_best:.4f}" if isinstance(_best, float) else _best,
+                _sel,
+                f"{_test_win_rate:.2%}" if isinstance(_test_win_rate, float) else _test_win_rate,
+                f"{_test_mean_pnl:.2f}" if isinstance(_test_mean_pnl, float) else _test_mean_pnl,
+            )
+        except Exception as e:
+            logging.warning(f"[SUMMARY] Failed to log metrics summary: {e}")
+
 
 if __name__ == "__main__":
     # cfg_arg = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg

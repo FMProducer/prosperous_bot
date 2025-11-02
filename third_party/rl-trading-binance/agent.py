@@ -138,6 +138,25 @@ class D3QN_PER_Agent:
         self.mc_uncertainty_guided_explore = bool(mc_uncertainty_guided_explore)
         self.mc_uncertainty_beta = float(mc_uncertainty_beta)
 
+        # ── Лог один раз при инициализации: фиксируем режим обучения (MC или базовый)
+        try:
+            logging.info(
+                "MC-Dropout training config: enable=%s, action_samples=%d, action_agg=%s, "
+                "lcb_k=%.3f, target_mc=%s, target_samples=%d, target_agg=%s, "
+                "uncertainty_guided=%s, uncertainty_beta=%.4f",
+                self.mc_enable,
+                self.mc_n_action_samples,
+                self.mc_action_agg,
+                self.mc_lcb_k,
+                self.mc_use_for_target,
+                self.mc_n_target_samples,
+                self.mc_target_agg,
+                self.mc_uncertainty_guided_explore,
+                self.mc_uncertainty_beta,
+            )
+        except Exception as e:
+            logging.warning(f"MC-Dropout config log failed: {e}")
+
 
         logger.info("D3QN_PER_Agent initialized.")
 
