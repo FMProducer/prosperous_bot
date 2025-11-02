@@ -15,7 +15,7 @@ cfg.model.dropout_p = 0.1
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 12000
+cfg.trainlog.episodes = 110000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 1_000_000
 cfg.rl.batch_size = 128
