@@ -39,6 +39,7 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.4
+cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.0078056307732368
@@ -138,8 +139,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_050729\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_050729\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_071102\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_071102\norm_stats.json"
 cfg.random_seed = 25
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -210,14 +211,6 @@ optuna_search_space = {
     # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
 }
 
-# Для корректной работы сериализации в JSON при передаче в Optuna
-try:
-    # Pydantic v2
-    cfg.model_config['extra'] = 'allow'
-except AttributeError:
-    # Pydantic v1
-    class Config:
-        extra = "allow"
-    cfg.Config = Config
+
 
 cfg.optuna_search_space = optuna_search_space

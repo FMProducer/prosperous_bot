@@ -327,7 +327,12 @@ class PaperTrader:
             return
 
         direction = "LONG" if action == 1 else "SHORT"
-        position_size = self.balance * self.cfg.backtest.position_fraction
+        order_size_usdt = getattr(self.cfg.backtest, 'order_size_usdt', 0)
+
+        if order_size_usdt > 0:
+            position_size = order_size_usdt
+        else:
+            position_size = self.balance * self.cfg.backtest.position_fraction
 
         # --- NEW: Initialize risk management state ---
         rm_state = {}

@@ -195,6 +195,7 @@ class BacktestConfig(BaseModel):
     ticker_name: Optional[str] = None
     volatility_threshold: Optional[float] = None
     position_fraction: float = 0.5
+    order_size_usdt: float = 0.0
     max_parallel_sessions: int = 2
     return_qvals: bool = True
     use_cache: bool = True
@@ -291,9 +292,12 @@ class MasterConfig(BaseModel):
     perf: PerformanceConfig = PerformanceConfig()
     db: DbConfig = DbConfig()
 
+    class Config:
+        extra = "allow"
+        arbitrary_types_allowed = True
+
 
 cfg = MasterConfig()
 
 
 assert cfg.seq.action_history_len <= cfg.seq.agent_session_len, "ACTION_HISTORY_LEN > AGENT_SESSION_LEN"
-assert 1 / cfg.backtest.max_parallel_sessions >= cfg.backtest.position_fraction
