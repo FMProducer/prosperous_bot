@@ -257,12 +257,11 @@ def setup_logging(session_name: str, cfg: MasterConfig, log_dir_override: Option
     """
     if cfg.logging.per_trial_logs and log_dir_override:
         log_dir = os.path.join(log_dir_override, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, f"{session_name}.log")
     else:
         log_dir = cfg.paths.log_dir
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, f"{session_name}.log")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"{session_name}.log")
+    abs_log_file = os.path.abspath(log_file)
 
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -270,9 +269,9 @@ def setup_logging(session_name: str, cfg: MasterConfig, log_dir_override: Option
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+        handlers=[logging.FileHandler(abs_log_file, encoding="utf-8"), logging.StreamHandler()],
     )
-    logging.info(f"Logging to: {log_file}")
+    logging.info(f"Logging to: {abs_log_file}")
 
 
 def calculate_price_change(first_price: float, second_price: float) -> float:

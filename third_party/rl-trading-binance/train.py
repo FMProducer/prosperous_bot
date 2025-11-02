@@ -664,8 +664,17 @@ def main(cfg: MasterConfig = None):
         "mean_win_rates_N": [],
     }
 
-    best_val_metric = float("-inf")
+    # Selection settings (backward-compatible defaults)
+    val_direction = str(getattr(getattr(cfg, "trainlog", object()), "val_selection_direction", "max")).lower()
+    val_min_delta = float(getattr(getattr(cfg, "trainlog", object()), "val_min_delta", 0.0))
+    if val_direction not in ("max", "min"):
+        logging.warning("Unsupported val_selection_direction=%r -> fallback to 'max'", val_direction)
+        val_direction = "max"
+
+    best_val_metric = float("-inf") if val_direction == "max" else float("inf")
     last_val_metrics: Dict[str, Any] = {}
+    best_validation: Dict[str, Any] = {}
+    best_episode: int | None = None
     train_steps = 0
 
     train_env.reset(seed=cfg.global_env_seed)
@@ -729,13 +738,38 @@ def main(cfg: MasterConfig = None):
             )
             val_metric = metrics[cfg.trainlog.val_selection_metrics]
             last_val_metrics = metrics
-            if val_metric > best_val_metric:
+
+            improved = False
+            if val_direction == "max":
+                improved = val_metric > (best_val_metric + val_min_delta)
+            else:  # "min"
+                improved = val_metric < (best_val_metric - val_min_delta)
+
+            if improved:
                 best_val_metric = val_metric
+                best_validation = dict(metrics)  # store full snapshot
+                best_episode = int(ep)
                 best_path = os.path.join(models_dir, "best.pth")
                 agent.save_model(best_path)
-                logging.info(
-                    f"New Best model by {cfg.trainlog.val_selection_metrics} = {val_metric:.2f}. Episode = {ep}: {best_path}"
-                )
+
+                # Human-friendly sidecar with selection info
+                try:
+                    best_info = {
+                        "metric_name": cfg.trainlog.val_selection_metrics,
+                        "direction": val_direction,
+                        "min_delta": val_min_delta,
+                        "value": float(val_metric),
+                        "episode": int(ep),
+                        "saved_path": "best.pth",
+                        "saved_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                    with open(os.path.join(models_dir, "best_model_info.json"), "w", encoding="utf-8") as bf:
+                        json.dump(best_info, bf, indent=2, default=_numpy_json_default)
+                except Exception as e:
+                    logging.warning("Failed to write best_model_info.json: %s", e)
+
+                logging.info("New BEST by %s (dir=%s, Δ>=%.6f): %.6f at ep=%d -> %s",
+                             cfg.trainlog.val_selection_metrics, val_direction, val_min_delta, val_metric, ep, best_path)
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
@@ -749,7 +783,21 @@ def main(cfg: MasterConfig = None):
         model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
         model_path = os.path.join(models_dir, model_name)
         if not os.path.exists(model_path):
-            model_path = final_path
+            if not cfg.debug.use_final_model:
+                err = (
+                    "Отсутствует файл best.pth для финальной оценки при use_final_model=False. "
+                    "Фолбэк на final.pth запрещён.\n"
+                    f"Ожидался файл: {model_path}\n"
+                    "Проверьте: включена ли валидация (cfg.trainlog.validate_model), "
+                    "достигнут ли ep % val_freq == 0, корректен ли ключ cfg.trainlog.val_selection_metrics, "
+                    "и/или были ли улучшения метрики на валидации."
+                )
+                logging.error(err)
+                raise FileNotFoundError(err)
+            else:
+                err = f"Ожидался файл final.pth, но не найден: {model_path}"
+                logging.error(err)
+                raise FileNotFoundError(err)
         agent.load_model(model_path)
         logging.info(f"Testing model: {model_path}")
 
@@ -775,7 +823,16 @@ def main(cfg: MasterConfig = None):
         # 1) metrics.json
         bundle_metrics = {
             "val_selection_metric": cfg.trainlog.val_selection_metrics,
-            "best_val_metric": best_val_metric if best_val_metric != float("-inf") else None,
+            "val_selection_direction": val_direction,
+            "val_min_delta": val_min_delta,
+            "best_val_metric": (
+                None if
+                ((val_direction == "max" and best_val_metric == float("-inf")) or
+                 (val_direction == "min" and best_val_metric == float("inf")))
+                else best_val_metric
+            ),
+            "best_episode": best_episode,
+            "best_validation": best_validation,
             "last_validation": last_val_metrics,
             "history": {
                 "episodes": history.get("episodes", []),

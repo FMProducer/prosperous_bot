@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pth
+*.pyY
 
 # VSCode / PyCharm / IDE settings
 .vscode/

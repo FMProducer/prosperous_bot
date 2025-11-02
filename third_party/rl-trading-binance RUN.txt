@@ -2,7 +2,7 @@ $env:PGPASSWORD="9691"
 
 python C:\Python\Prosperous_Bot\regenerate_stats.py
 
-python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 2 --jobs 2 --topn 1
+python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 40 --jobs 1 --topn 4
 
 python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\backtest_engine.py c:\Python\Prosperous_Bot\third_party\rl-trading-binance\configs\alpha.py
 

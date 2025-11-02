@@ -38,16 +38,16 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.4
+cfg.backtest.position_fraction = 0.5609422401108337
 cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.0078056307732368
-cfg.backtest.short_action_threshold = 0.0091301259923296
+cfg.backtest.long_action_threshold = 0.007
+cfg.backtest.short_action_threshold = 0.007
 # cfg.backtest.close_action_threshold = 0.0180067279703063
 # cfg.backtest.ensemble_n_samples = 1
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
-cfg.backtest.ensemble_max_sigma = 0.0064449245324541046
+# cfg.backtest.ensemble_max_sigma = 0.0064449245324541046
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
@@ -55,17 +55,17 @@ cfg.backtest.clear_disk_cache = False
 cfg.backtest.use_risk_management = True
 # cfg.backtest.stop_loss = 0.0153228603723445
 # cfg.backtest.take_profit = 0.0447149987567144
-cfg.backtest.trailing_stop = 0.018986
+cfg.backtest.trailing_stop = 0.013913282318387437
 # Execution timing: 0 = current behavior (may inflate returns), 1 = honest next-bar execution
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
 # Linear Trailing Stop Parameters for Optuna ---
 # d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
-cfg.backtest.trailing_stop_min = 0.004740
+cfg.backtest.trailing_stop_min = 0.004787697909715133
 # Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
 cfg.backtest.fee_buffer_mult = 2.0
 # Hysteresis for TSL updates ---
-cfg.backtest.delta_p_hysteresis = 0.001890
+cfg.backtest.delta_p_hysteresis = 0.001174815758496933
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
@@ -139,8 +139,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_071102\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_071102\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\norm_stats.json"
 cfg.random_seed = 25
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -167,10 +167,10 @@ cfg.detector.cooldown_minutes = 30
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
 
 # ---------- Output/bundle paths & flags ----------
-# Явно фиксируем корневые директории для артефактов обучения и графиков.
+# Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
 cfg.project_name = "rl_binance_futures_trading"
-cfg.paths.base_output_dir = "output/alpha"
-cfg.paths.config_name = "" # Предотвращаем дублирование пути output/alpha/alpha
+cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
+cfg.paths.config_name = "alpha"
 
 # Управляющие флаги упаковки (используются в train.py):
 bundle_cfg = type("obj", (), {})()

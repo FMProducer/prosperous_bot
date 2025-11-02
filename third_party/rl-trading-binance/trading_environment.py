@@ -333,9 +333,13 @@ class TradingEnvironment(gym.Env):
                 trailing_trigger = price >= tsl_price
 
             self.tsl_price = tsl_price
-            
-            sl_trigger = price <= self.entry_price * (1 - stop_loss) if stop_loss is not None else False
-            tp_trigger = price >= self.entry_price * (1 + take_profit) if take_profit is not None else False
+            # When risk management (TSL) is enabled, standalone SL/TP must not be used.
+            if self.use_risk_management:
+                sl_trigger = False
+                tp_trigger = False
+            else:
+                sl_trigger = price <= self.entry_price * (1 - stop_loss) if stop_loss is not None else False
+                tp_trigger = price >= self.entry_price * (1 + take_profit) if take_profit is not None else False
 
             if sl_trigger or tp_trigger or trailing_trigger or self.last_step:
                 action = 3
