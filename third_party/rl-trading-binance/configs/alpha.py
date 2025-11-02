@@ -13,9 +13,9 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 cfg.model.dropout_p = 0.1
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 12000
+cfg.trainlog.val_freq = 1000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 2000
+cfg.trainlog.episodes = 12000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 1_000_000
 cfg.rl.batch_size = 128
@@ -44,7 +44,7 @@ cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.0078056307732368
 cfg.backtest.short_action_threshold = 0.0091301259923296
 # cfg.backtest.close_action_threshold = 0.0180067279703063
-# cfg.backtest.ensemble_n_samples = 1
+cfg.backtest.ensemble_n_samples = 1
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
 cfg.backtest.ensemble_max_sigma = 0.0064449245324541046
 cfg.backtest.return_qvals = True
