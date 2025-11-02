@@ -13,7 +13,7 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 cfg.model.dropout_p = 0.1
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 2000
+cfg.trainlog.val_freq = 12000
 # Увеличиваем общий горизонт обучения (качество > скорость)
 cfg.trainlog.episodes = 2000
 cfg.trainlog.plot_top_n = 10
@@ -102,15 +102,15 @@ cfg.vec.scale_epsilon_by_envs = True
 # MC-DROPOUT ДЛЯ ОБУЧЕНИЯ — внешний контейнер (не в pydantic RLConfig)
 # ─────────────────────────────────────────────────────────────
 mc_dropout_cfg = type("obj", (), {})()
-mc_dropout_cfg.enable = True                  # включить ансамблевость в обучении
-# Сколько семплов при выборе действия (он-полиси):
-mc_dropout_cfg.n_action_samples = 5
+mc_dropout_cfg.enable = False                 # ВЫКЛ: без MC в обучении
+# Сколько семплов при выборе действия (он-полиси): 1 = без ансамбля
+mc_dropout_cfg.n_action_samples = 1
 # Агрегатор действий: "mean" | "lcb" | "thompson"
 mc_dropout_cfg.action_agg = "mean"
 mc_dropout_cfg.lcb_k = 0.5
-# MC в таргетах (офф-полиси/bootstrap):
-mc_dropout_cfg.use_for_target = True
-mc_dropout_cfg.n_target_samples = 5
+# MC в таргетах (офф-полиси/bootstrap): ВЫКЛ
+mc_dropout_cfg.use_for_target = False
+mc_dropout_cfg.n_target_samples = 1
 # Для таргетов: "mean_max" (рекомендуется) | "max_mean"
 mc_dropout_cfg.target_agg = "mean_max"
 # Необязательная эксплорация от неопределённости:
