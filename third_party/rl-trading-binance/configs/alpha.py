@@ -194,3 +194,30 @@ cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.02
 cfg.eps.eps_decay_frames = 2_000_000
+
+# ─────────────────────────────────────────────────────────────
+# Optuna Search Space (для optimize_cfg.py)
+# ─────────────────────────────────────────────────────────────
+optuna_search_space = {
+    # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
+    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
+    "short_thr":      ("suggest_float", 0.001,  0.03,   True,  "backtest.short_action_threshold"),
+    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
+    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
+    # Для d0 нижняя граница зависит от уже выбранного d_min
+    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
+    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
+    # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
+}
+
+# Для корректной работы сериализации в JSON при передаче в Optuna
+try:
+    # Pydantic v2
+    cfg.model_config['extra'] = 'allow'
+except AttributeError:
+    # Pydantic v1
+    class Config:
+        extra = "allow"
+    cfg.Config = Config
+
+cfg.optuna_search_space = optuna_search_space

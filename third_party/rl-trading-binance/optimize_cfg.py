@@ -138,33 +138,69 @@ def objective(trial: optuna.Trial):
     else:
         trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
-    # SEARCH SPACE
-    # cfg.backtest.long_action_threshold = trial.suggest_float("long_thr", 0.001, 0.03, log=True)
-    # cfg.backtest.short_action_threshold = trial.suggest_float("short_thr", 0.001, 0.03, log=True)
-    
+    # --- DYNAMIC SEARCH SPACE FROM CONFIG ---
+    # Пытаемся взять из восстановленного cfg; если отсутствует — из user_attrs.
+    search_space = getattr(cfg, "optuna_search_space", None)
+    if not search_space:
+        raw_ss = trial.study.user_attrs.get("optuna_search_space")
+        search_space = json.loads(raw_ss) if isinstance(raw_ss, str) else (raw_ss or {})
+    suggested_params = {}
+
+    # Пройдём по параметрам в порядке объявления (dict в Py3.7+ упорядочен)
+    for name, params in search_space.items():
+        # Форматы:
+        #  - ("suggest_float", low, high, log, "a.b.c")
+        #  - ("suggest_int", low, high, False, "a.b.c")
+        #  - ("suggest_categorical", ["x","y"], None, False, "a.b.c")
+        suggest_type, low, high, log_flag, path = params
+
+        # Зависимости: если low — имя ранее предложенного параметра
+        if isinstance(low, str) and low in suggested_params:
+            low = suggested_params[low]
+
+        # Валидации диапазонов (после развёртки зависимостей)
+        if suggest_type in ("suggest_float", "suggest_int"):
+            if low is None or high is None:
+                raise ValueError(f"[Optuna] Param '{name}': low/high must be set for {suggest_type}")
+            if float(high) < float(low):
+                raise ValueError(f"[Optuna] Param '{name}': high({high}) < low({low})")
+            if suggest_type == "suggest_float" and log_flag and float(low) <= 0.0:
+                raise ValueError(f"[Optuna] Param '{name}': log-scale requires low>0 (got {low})")
+
+        # Предложение значения с учётом типа
+        if suggest_type == "suggest_float":
+            value = trial.suggest_float(name, float(low), float(high), log=bool(log_flag))
+        elif suggest_type == "suggest_int":
+            value = trial.suggest_int(name, int(low), int(high), log=bool(log_flag))
+        elif suggest_type == "suggest_categorical":
+            if not isinstance(low, (list, tuple)):
+                raise ValueError(f"[Optuna] Param '{name}': categorical choices must be list/tuple")
+            value = trial.suggest_categorical(name, list(low))
+        else:
+            raise ValueError(f"[Optuna] Unknown suggest_type '{suggest_type}' for param '{name}'")
+
+        suggested_params[name] = value
+
+        # Присвоение в cfg по пути "x.y.z"
+        parts = path.split('.')
+        obj = cfg
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        setattr(obj, parts[-1], value)
+
+    # Лог развёрнутого пространства/значений для аудита
+    logging.info(f"[Optuna] trial#{trial.number} params: {json.dumps(suggested_params, ensure_ascii=False)}")
+
     # risk-management knobs
     # According to the new logic, risk management (unified TSL) is always active.
     cfg.backtest.use_risk_management = True
-
-    # --- TSL (Trailing Stop Loss) Parameter Optimization ---
-    # d_min: The floor for the trail distance (e.g., 0.1% to 0.5%).
-    # d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
-    # cfg.backtest.trailing_stop_min = d_min
-
-    # d0: The initial and maximum trail distance. Must be > d_min.
-    # We set the lower bound to d_min to ensure the constraint is always met.
-    # d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
-    # cfg.backtest.trailing_stop = d0
-
-    # delta_p_hysteresis: The profit increase required to trigger a TSL update.
-    # cfg.backtest.delta_p_hysteresis = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
 
     # Explicitly set unused parameters to 0 to avoid any legacy effects.
     cfg.backtest.stop_loss = None
     cfg.backtest.take_profit = None
 
-    if cfg.backtest.selection_strategy == "ensemble_q_filter":
-        cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
+    # if cfg.backtest.selection_strategy == "ensemble_q_filter":
+    #     cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
 
     # --- Установка уникальных путей для испытания ---
     # Это гарантирует, что каждый trial сохраняет свои артефакты в отдельную папку
@@ -173,7 +209,12 @@ def objective(trial: optuna.Trial):
     cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
 
     t0 = time.time()
-    metrics = run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
+    try:
+        metrics = run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
+    except Exception as e:
+        logging.exception(f"[Optuna] trial#{trial.number} run_backtest failed; returning sentinel metrics")
+        # Сентинелы, чтобы не прерывать всю оптимизацию
+        metrics = {"sharpe": -1.0, "sortino": -1.0, "max_drawdown": "100.0%"}
     duration_s = time.time() - t0
     
     # Persist useful attrs for later analysis/audit
@@ -182,12 +223,33 @@ def objective(trial: optuna.Trial):
     trial.set_user_attr("trial_cache_dir", trial_cache_dir)
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
+    # сохраним параметры трейала в папке трейала
+    try:
+        with open(os.path.join(trial_output_dir, "trial_params.json"), "w", encoding="utf-8") as f:
+            json.dump(suggested_params, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.warning(f"[Optuna] cannot save trial_params.json: {e}")
 
     # TARGET METRICS
     sharpe = float(metrics.get("sharpe", -1.0))
     sortino = float(metrics.get("sortino", -1.0))
-    max_dd_str = metrics.get("max_drawdown", "100.0%").rstrip('%')
-    max_dd = float(max_dd_str) if max_dd_str else 100.0
+
+    # robust max_drawdown parsing: accepts 0.23, 23, "23%", "0.23"
+    def _parse_maxdd(v):
+        if v is None:
+            return 100.0
+        try:
+            if isinstance(v, (int, float)):
+                # если 0..1 — переводим в проценты; если уже в процентах — оставляем
+                return float(v) * 100.0 if 0.0 <= float(v) <= 1.0 else float(v)
+            s = str(v).strip()
+            if s.endswith('%'):
+                s = s[:-1]
+            x = float(s)
+            return x * 100.0 if 0.0 <= x <= 1.0 else x
+        except Exception:
+            return 100.0
+    max_dd = _parse_maxdd(metrics.get("max_drawdown"))
     
     # Optuna пытается максимизировать, поэтому для минимизации просадки мы возвращаем отрицательное значение
     # Теперь у нас три цели: максимизировать Шарп, максимизировать Сортино и минимизировать просадку.
@@ -231,10 +293,11 @@ def main():
         load_if_exists=False,
     )
 
-    # Используем model_dump() без mode='json' и json.dumps с default=str
-    # для надежной сериализации, включая torch.device
     config_dict = base_cfg.model_dump()
+    # Сохраняем базовый cfg и сам search-space отдельно (для независимого восстановления)
     study.set_user_attr("base_cfg", json.dumps(config_dict, default=str))
+    ss = getattr(base_cfg, "optuna_search_space", {})
+    study.set_user_attr("optuna_search_space", json.dumps(ss, default=str))
     study.set_user_attr("opt_dir", opt_dir)
 
     logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
