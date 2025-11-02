@@ -13,18 +13,19 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 cfg.model.dropout_p = 0.1
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
-# gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 3000
+cfg.trainlog.val_freq = 2000
+# Увеличиваем общий горизонт обучения (качество > скорость)
+cfg.trainlog.episodes = 2000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 1_000_000
 cfg.rl.batch_size = 128
-cfg.rl.learning_rate = 1e-4
+# Стабильнее обновления с меньшим шагом
+cfg.rl.learning_rate = 5e-5
 cfg.rl.train_start = 10_000
 # стабильнее целевые обновления
 cfg.rl.target_update_freq = 5000
-# клиппинг градиента для защиты от выбросов
-cfg.rl.max_gradient_norm = 1.0
+# Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
+cfg.rl.max_gradient_norm = 5.0
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
 cfg.trainlog.val_selection_metrics = "Validation_win_rate"
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
@@ -137,8 +138,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\output\alpha\saved_models\rl_binance_futures_trading_date_20251025_time_025141\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_050729\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251102_time_050729\norm_stats.json"
 cfg.random_seed = 25
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -185,5 +186,11 @@ except ValueError:
 # ---------- Prioritized Experience Replay (устойчивость) ----------
 cfg.per.per_alpha = 0.6
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 500_000
+cfg.per.per_beta_frames = 1_000_000
 cfg.per.per_eps = 1e-6
+
+# ---------- Epsilon schedule (качественная, длинная эксплорация) ----------
+# Долго держим исследование; низкий eps_end для аккуратной политики
+cfg.eps.eps_start = 1.0
+cfg.eps.eps_end = 0.02
+cfg.eps.eps_decay_frames = 2_000_000

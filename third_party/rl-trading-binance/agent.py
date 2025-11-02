@@ -444,31 +444,87 @@ class D3QN_PER_Agent:
         Аргумент strict пробрасывается в load_state_dict для гибкости при мелких несовпадениях ключей.
         """
         obj = torch.load(path, map_location=self.device)
-        # Новый формат (чекпоинт)
-        if isinstance(obj, dict) and "policy_state" in obj:
-            self.policy_net.load_state_dict(obj["policy_state"], strict=strict)
-            self.target_net.load_state_dict(obj.get("target_state", obj["policy_state"]), strict=strict)
-            opt_state = obj.get("optimizer_state")
-            if opt_state:
-                try:
-                    self.optimizer.load_state_dict(opt_state)
-                except Exception as e:
-                    logger.warning(f"Optimizer state load skipped: {e}")
-            scaler_state = obj.get("scaler_state")
-            if hasattr(self, "scaler") and scaler_state:
-                try:
-                    self.scaler.load_state_dict(scaler_state)
-                except Exception as e:
-                    logger.warning(f"GradScaler state load skipped: {e}")
-            meta = obj.get("meta", {}) or {}
-            self.total_steps = int(meta.get("total_steps", self.total_steps))
-            self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
-            kind = "checkpoint"
+
+        def _try_load_weights(sd, tag: str):
+            sd = _unwrap_sd(sd)
+            self.policy_net.load_state_dict(sd, strict=strict)
+            self.target_net.load_state_dict(sd, strict=strict)
+            return tag
+
+        def _unwrap_sd(sd):
+            """
+            Превращает любые обёртки в «чистый» state_dict слоёв модели.
+            Поддерживает: {'policy_state': ...}, {'model_state': ...}, {'state_dict': ...}, {'weights': ...}.
+            Если внутри снова лежит чекпоинт, развернёт повторно.
+            """
+            if isinstance(sd, dict):
+                # прямой новый чекпоинт
+                if "policy_state" in sd and isinstance(sd["policy_state"], dict):
+                    return sd["policy_state"]
+                # обёртки старых форматов
+                for k in ("model_state", "state_dict", "weights"):
+                    if k in sd and isinstance(sd[k], dict):
+                        inner = sd[k]
+                        # на случай двойной обёртки
+                        if isinstance(inner, dict) and "policy_state" in inner and isinstance(inner["policy_state"], dict):
+                            return inner["policy_state"]
+                        return inner
+            return sd
+
+        kind = None
+        if isinstance(obj, dict):
+            # 1) Новый полноформатный чекпоинт
+            if "policy_state" in obj:
+                self.policy_net.load_state_dict(_unwrap_sd(obj["policy_state"]), strict=strict)
+                self.target_net.load_state_dict(_unwrap_sd(obj.get("target_state", obj["policy_state"])), strict=strict)
+                opt_state = obj.get("optimizer_state")
+                if opt_state:
+                    try:
+                        self.optimizer.load_state_dict(opt_state)
+                    except Exception as e:
+                        logger.warning(f"Optimizer state load skipped: {e}")
+                scaler_state = obj.get("scaler_state")
+                if hasattr(self, "scaler") and scaler_state:
+                    try:
+                        self.scaler.load_state_dict(scaler_state)
+                    except Exception as e:
+                        logger.warning(f"GradScaler state load skipped: {e}")
+                meta = obj.get("meta", {}) or {}
+                self.total_steps = int(meta.get("total_steps", self.total_steps))
+                self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
+                kind = "checkpoint"
+            else:
+                # 2) Обёрнутые веса разных старых форматов
+                wrapped_sd = obj.get("model_state", None)
+                if wrapped_sd is None and "state_dict" in obj:
+                    wrapped_sd = obj["state_dict"]
+                if wrapped_sd is None and "weights" in obj:
+                    wrapped_sd = obj["weights"]
+                if wrapped_sd is not None:
+                    # Если присутствует отдельный target_state — загрузим его, иначе дублируем policy
+                    self.policy_net.load_state_dict(_unwrap_sd(wrapped_sd), strict=strict)
+                    self.target_net.load_state_dict(_unwrap_sd(obj.get("target_state", wrapped_sd)), strict=strict)
+                    # Не критично: попробуем подтянуть optimizer/scaler, если есть
+                    opt_state = obj.get("optimizer_state")
+                    if opt_state:
+                        try:
+                            self.optimizer.load_state_dict(opt_state)
+                        except Exception as e:
+                            logger.warning(f"Optimizer state load skipped: {e}")
+                    scaler_state = obj.get("scaler_state")
+                    if hasattr(self, "scaler") and scaler_state:
+                        try:
+                            self.scaler.load_state_dict(scaler_state)
+                        except Exception as e:
+                            logger.warning(f"GradScaler state load skipped: {e}")
+                    kind = "wrapped-weights"
+                else:
+                    # 3) Попытка трактовать obj как «голые» веса (редкий случай dict-весов)
+                    kind = _try_load_weights(obj, "weights-only(dict)")
         else:
-            # Старый формат (только веса сети)
-            self.policy_net.load_state_dict(obj, strict=strict)
-            self.target_net.load_state_dict(obj, strict=strict)
-            kind = "weights-only"
+            # 4) Старый «голый» state_dict как OrderedDict/Mapping
+            kind = _try_load_weights(obj, "weights-only")
+
         self.policy_net.eval()
         self.target_net.eval()
         logger.info(f"Model loaded from {path} ({kind}).")
