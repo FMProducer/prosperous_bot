@@ -46,10 +46,17 @@ class D3QN_PER_Agent:
         epsilon: float,
         max_gradient_norm: float,
         backtest_cache_path: str = None,
-        perf_cfg: PerformanceConfig = PerformanceConfig(),
+        perf_cfg: PerformanceConfig = None,
+        # ── НОВОЕ: MC-dropout в обучении
+        mc_enable=False, mc_n_action_samples=1, mc_action_agg="mean", mc_lcb_k=0.5,
+        mc_use_for_target=False, mc_n_target_samples=1, mc_target_agg="mean_max",
+        mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0
     ) -> None:
-        self.device = device
+        # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
+        self.device = torch.device(device)
         self.action_dim = action_dim
+        if perf_cfg is None:
+            perf_cfg = PerformanceConfig()
         model_kwargs = {
             "input_shape": state_shape,
             "action_dim": action_dim,
@@ -62,8 +69,8 @@ class D3QN_PER_Agent:
             "dropout_p": dropout_model,
         }
 
-        self.policy_net = DuelingQNetwork(**model_kwargs).to(device)
-        self.target_net = DuelingQNetwork(**model_kwargs).to(device)
+        self.policy_net = DuelingQNetwork(**model_kwargs).to(self.device)
+        self.target_net = DuelingQNetwork(**model_kwargs).to(self.device)
         
         if perf_cfg.compile_mode:
             logger.info(f"Enabling torch.compile with mode='{perf_cfg.compile_mode}' and dynamic={perf_cfg.compile_dynamic}")
@@ -117,8 +124,20 @@ class D3QN_PER_Agent:
             self.cache_path = os.path.join(backtest_cache_path, "qval_cache.pkl")
             self._load_disk_cache()
 
-        if device.type == "cpu":
+        if self.device.type == "cpu":
             torch.set_flush_denormal(True)
+
+        # ── MC-dropout настройки
+        self.mc_enable = bool(mc_enable)
+        self.mc_n_action_samples = int(mc_n_action_samples)
+        self.mc_action_agg = mc_action_agg
+        self.mc_lcb_k = float(mc_lcb_k)
+        self.mc_use_for_target = bool(mc_use_for_target)
+        self.mc_n_target_samples = int(mc_n_target_samples)
+        self.mc_target_agg = mc_target_agg
+        self.mc_uncertainty_guided_explore = bool(mc_uncertainty_guided_explore)
+        self.mc_uncertainty_beta = float(mc_uncertainty_beta)
+
 
         logger.info("D3QN_PER_Agent initialized.")
 
@@ -130,10 +149,69 @@ class D3QN_PER_Agent:
         use_cache: bool = False,
         cache_key: Optional[Tuple[str, dt.datetime]] = None,
     ) -> Union[int, np.ndarray]:
+        # Базовая ε-жадная логика (epsilon берется из self.eps_* расписания внутри агента)
+        # Если mc_enable=False или training=False — используем обычный путь как прежде.
+        if not (training and self.mc_enable and self.mc_n_action_samples > 1):
+            return self._select_action_base(state, training, return_qvals, use_cache, cache_key)
+
+        # MC-dropout: ансамбль из N проходов онлайн-сети.
+        state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        q_samples = self._q_forward_samples(self.policy_net, state_tensor, self.mc_n_action_samples)  # [N,1,A]
+        q_mean = q_samples.mean(dim=0).squeeze(0)    # [A]
+        q_std  = q_samples.std(dim=0, unbiased=False).squeeze(0)  # [A]
+
+        # Неопределённостно-направляемая эксплорация (опц.)
+        eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
+        if self.mc_uncertainty_guided_explore:
+            # увеличим ε пропорционально неопределённости лучшего действия
+            best_a = int(torch.argmax(q_mean).item())
+            unc = float(q_std[best_a].item())
+            eps = min(1.0, max(0.0, eps + self.mc_uncertainty_beta * unc))
+
+        # Выбор по агрегатору
+        if self.mc_action_agg == "thompson":
+            # Берём один случайный семпл и argmax в нём — стохастическая политика
+            idx = np.random.randint(0, self.mc_n_action_samples)
+            logits = q_samples[idx, 0]  # [A]
+            action = int(torch.argmax(logits).item())
+        elif self.mc_action_agg == "lcb":
+            logits = q_mean - self.mc_lcb_k * q_std
+            action = int(torch.argmax(logits).item())
+        else:  # "mean"
+            action = int(torch.argmax(q_mean).item())
+
+        # Применяем ε-жадность поверх выбора (как раньше)
+        if training and np.random.rand() < eps:
+            action = np.random.randint(0, self.action_dim)
+        
+        if return_qvals:
+            return q_mean.cpu().numpy()
+        return action
+
+    def _q_forward_samples(self, net, state_tensor, n_samples: int):
+        """
+        Выполнить n семплов forward с активным dropout.
+        Возвращает тензор [n, batch(=1), action_dim].
+        """
+        q_list = []
+        was_training = net.training
+        try:
+            net.train(True)  # включаем dropout
+            with torch.no_grad():
+                for _ in range(max(1, n_samples)):
+                    q = net(state_tensor)  # ожидается [1, action_dim]
+                    if q.dim() == 1:
+                        q = q.unsqueeze(0)
+                    q_list.append(q.unsqueeze(0))  # [1,1,A]
+        finally:
+            net.train(was_training)
+        return torch.cat(q_list, dim=0)  # [n,1,A]
+
+    def _select_action_base(self, state, training: bool, return_qvals: bool, use_cache: bool, cache_key: Optional[Tuple[str, dt.datetime]]):
         eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
         if training and np.random.rand() < eps:
-            return np.random.randint(self.policy_net.action_dim)
-
+            return np.random.randint(self.action_dim)
+        
         if use_cache and not training and cache_key is not None:
             if cache_key in self.qval_cache:
                 qvals = self.qval_cache[cache_key]
@@ -144,7 +222,7 @@ class D3QN_PER_Agent:
                     self.qval_cache[cache_key] = qvals
             qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
-
+        
         with torch.no_grad():
             tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
@@ -252,11 +330,35 @@ class D3QN_PER_Agent:
         weights_t = torch.from_numpy(weights).float().to(self.device)
 
         with torch.no_grad():
-            next_actions = self.policy_net(next_states_t).argmax(dim=1)
-            next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+            # Таргеты с учётом MC-dropout (если включено)
+            if self.mc_use_for_target and self.mc_n_target_samples > 1:
+                was_training = self.target_net.training
+                try:
+                    # Переводим target_net в train() для включения dropout-масок
+                    self.target_net.train(True)
+                    # batch_next_states: [B, ...], прогоняем N раз и агрегируем
+                    q_list = []
+                    for _ in range(self.mc_n_target_samples):
+                        q = self.target_net(next_states_t)  # [B, A]
+                        q_list.append(q.unsqueeze(0))           # [1,B,A]
+                    q_stack = torch.cat(q_list, dim=0)         # [N,B,A]
+                    if self.mc_target_agg == "max_mean":
+                        # max_a mean_n Q_n(s',a)
+                        q_mean = q_stack.mean(dim=0)           # [B,A]
+                        next_actions = self.policy_net(next_states_t).argmax(dim=1)
+                        next_q_values = q_mean.gather(1, next_actions.unsqueeze(1)).squeeze(1)
+                    else: # "mean_max"
+                        # mean_n max_a Q_n(s',a)
+                        next_actions = self.policy_net(next_states_t).argmax(dim=1)
+                        next_q_values = q_stack.gather(2, next_actions.view(1, -1, 1).expand(self.mc_n_target_samples, -1, -1)).squeeze(2).mean(dim=0)
+                finally:
+                    self.target_net.train(was_training)
+            else:
+                # ── иначе: старая реализация
+                next_actions = self.policy_net(next_states_t).argmax(dim=1)
+                next_q_values = self.target_net(next_states_t).gather(1, next_actions.unsqueeze(1)).squeeze(1)
             next_q_values[dones_t] = 0.0
             target_q_values = rewards_t + self.gamma * next_q_values
-
         self.optimizer.zero_grad()
 
         if self.use_amp:

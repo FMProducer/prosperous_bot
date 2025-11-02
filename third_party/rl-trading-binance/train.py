@@ -73,6 +73,9 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
         obs_batch = next_obs_b
         done_mask |= dones  # эпизод для каждой под-среды
         step_iters += 1
+        # В каждом "батч-шаге" получаем по одному переходу на среду
+        for _ in range(train_env.num_envs):
+            agent.increment_step()
         # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
         # loss = agent.learn()
         # if loss is not None:
@@ -459,6 +462,9 @@ def main(cfg: MasterConfig = None):
     else:
         cfg, cfg_mod = default_cfg, None
 
+    # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
+    mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
+
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
@@ -623,6 +629,24 @@ def main(cfg: MasterConfig = None):
         max_gradient_norm=cfg.rl.max_gradient_norm,
         backtest_cache_path=None,
         perf_cfg=cfg.perf,
+        # ── НОВОЕ: MC-dropout в обучении (читаем из нескольких источников)
+        **(lambda mc: dict(
+            mc_enable=getattr(mc, "enable", False),
+            mc_n_action_samples=getattr(mc, "n_action_samples", 1),
+            mc_action_agg=getattr(mc, "action_agg", "mean"),
+            mc_lcb_k=getattr(mc, "lcb_k", 0.0),
+            mc_use_for_target=getattr(mc, "use_for_target", False),
+            mc_n_target_samples=getattr(mc, "n_target_samples", 1),
+            mc_target_agg=getattr(mc, "target_agg", "mean_max"),
+            mc_uncertainty_guided_explore=getattr(mc, "uncertainty_guided_explore", False),
+            mc_uncertainty_beta=getattr(mc, "uncertainty_beta", 0.0),
+        ))(
+            # приоритет: cfg.rl.mc_dropout → cfg.mc_dropout → cfg_mod.mc_dropout_cfg → пустой объект
+            getattr(getattr(cfg, "rl", object()), "mc_dropout", None)
+            or getattr(cfg, "mc_dropout", None)
+            or (getattr(cfg_mod, "mc_dropout_cfg", None) if 'cfg_mod' in locals() else None)
+            or object()
+        ),
     )
 
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
@@ -671,6 +695,7 @@ def main(cfg: MasterConfig = None):
                 if loss is not None:
                     ep_losses.append(loss)
                 obs = next_obs
+                agent.increment_step()
                 train_steps += 1
                 ep_reward += reward
 

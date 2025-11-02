@@ -15,7 +15,7 @@ cfg.model.dropout_p = 0.1
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
 # gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 1000
+cfg.trainlog.episodes = 2000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 1_000_000
 cfg.rl.batch_size = 128
@@ -97,6 +97,24 @@ cfg.vec.start_method = "spawn"
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шагов до той же ε.
 cfg.vec.scale_epsilon_by_envs = True
 
+# ─────────────────────────────────────────────────────────────
+# MC-DROPOUT ДЛЯ ОБУЧЕНИЯ — внешний контейнер (не в pydantic RLConfig)
+# ─────────────────────────────────────────────────────────────
+mc_dropout_cfg = type("obj", (), {})()
+mc_dropout_cfg.enable = True                  # включить ансамблевость в обучении
+# Сколько семплов при выборе действия (он-полиси):
+mc_dropout_cfg.n_action_samples = 5
+# Агрегатор действий: "mean" | "lcb" | "thompson"
+mc_dropout_cfg.action_agg = "mean"
+mc_dropout_cfg.lcb_k = 0.5
+# MC в таргетах (офф-полиси/bootstrap):
+mc_dropout_cfg.use_for_target = True
+mc_dropout_cfg.n_target_samples = 5
+# Для таргетов: "mean_max" (рекомендуется) | "max_mean"
+mc_dropout_cfg.target_agg = "mean_max"
+# Необязательная эксплорация от неопределённости:
+mc_dropout_cfg.uncertainty_guided_explore = False
+mc_dropout_cfg.uncertainty_beta = 0.0
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 
 cfg.paper.source = "database"
