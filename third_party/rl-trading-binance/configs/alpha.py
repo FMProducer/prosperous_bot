@@ -15,7 +15,7 @@ cfg.model.dropout_p = 0.0
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 110000
+cfg.trainlog.episodes = 100000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 1_000_000
 cfg.rl.batch_size = 128
@@ -38,8 +38,8 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.5609422401108337
-cfg.backtest.order_size_usdt = 4000.0
+cfg.backtest.position_fraction = 0.4
+cfg.backtest.order_size_usdt = 0.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.008
