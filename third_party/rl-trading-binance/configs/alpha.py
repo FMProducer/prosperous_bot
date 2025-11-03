@@ -42,8 +42,8 @@ cfg.backtest.position_fraction = 0.5609422401108337
 cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.0085
-cfg.backtest.short_action_threshold = 0.0085
+cfg.backtest.long_action_threshold = 0.008
+cfg.backtest.short_action_threshold = 0.008
 # cfg.backtest.close_action_threshold = 0.0180067279703063
 # cfg.backtest.ensemble_n_samples = 1
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
@@ -114,10 +114,9 @@ mc_dropout_cfg.use_for_target = False
 mc_dropout_cfg.n_target_samples = 1
 # Для таргетов: "mean_max" (рекомендуется) | "max_mean"
 mc_dropout_cfg.target_agg = "mean_max"
-# Необязательная эксплорация от неопределённости:
-mc_dropout_cfg.uncertainty_guided_explore = False
-mc_dropout_cfg.uncertainty_beta = 0.0
-cfg.rl.mc_dropout = mc_dropout_cfg
+# ✅ ВЕРНО: хранить контейнер на верхнем уровне MasterConfig (extra='allow').
+# Тренер читает по приоритету: rl.mc_dropout → mc_dropout → cfg_mod.mc_dropout_cfg.
+cfg.mc_dropout = mc_dropout_cfg
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 
 cfg.paper.source = "database"
