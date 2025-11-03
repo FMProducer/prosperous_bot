@@ -368,9 +368,11 @@ def evaluate_agent(
                 action=action,
                 signal_dt=stub_dt,
                 ticker=stub_tk,
-                stop_loss=getattr(cfg.backtest, "stop_loss", 0.02),
-                take_profit=getattr(cfg.backtest, "take_profit", 0.04),
-                trailing_stop=getattr(cfg.backtest, "trailing_stop", 0.01),
+                # TSL-only policy: отключаем отдельные SL/TP по требованию проекта
+                stop_loss=None,
+                take_profit=None,
+                # Если число требуется вашей среде — используем конфиг; иначе None, если логика TSL полностью внутренняя
+                trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
             )
             ep_reward += float(reward or 0.0)
             if info.get("position_closed", False):
@@ -406,10 +408,29 @@ def evaluate_agent(
         peak = max(peak, eq)
         max_dd = max(max_dd, peak - eq)
 
+    # --- Sharpe / Sortino ---
+    # Sharpe: стандартно по σ общих доходностей.
+    # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
+    try:
+        initial_balance = float(getattr(cfg.market, "initial_balance", 10_000.0))
+    except Exception:
+        initial_balance = 10_000.0
+    returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
+    if returns.size > 0:
+        mean_r = float(returns.mean())
+        std_r  = float(returns.std(ddof=1)) if returns.size > 1 else float(returns.std(ddof=0))
+        # Downside semideviation (MAR=0) — без ddof, как в определении Sortino
+        downside = np.minimum(0.0, returns)
+        downside = float(np.sqrt(np.mean(downside * downside)))
+        sharpe   = (mean_r / std_r)      if std_r      > 1e-12 else 0.0
+        sortino  = (mean_r / downside)   if downside   > 1e-12 else (float("inf") if mean_r > 0.0 else 0.0)
+    else:
+        sharpe, sortino = 0.0, 0.0
+
     # лог-сводка
     logging.info(
-        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%+.2f  Trades=%d",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd, total_trades
+        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%+.2f  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd, total_trades, sharpe, sortino
     )
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
@@ -433,6 +454,8 @@ def evaluate_agent(
         f"{L}_trades": int(total_trades),
         f"{L}_tsl_hits": int(tsl_hits),
         f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
+        f"{L}_sharpe":  float(np.clip(sharpe,   -10.0, 10.0)),
+        f"{L}_sortino": float(np.clip(sortino,  -10.0, 10.0)),
     }
     if L == "Test":
         out.update({
@@ -751,7 +774,8 @@ def main(cfg: MasterConfig = None):
         logging.warning("Unsupported val_selection_direction=%r -> fallback to 'max'", val_direction)
         val_direction = "max"
 
-    best_val_metric = float("-inf") if val_direction == "max" else float("inf")
+    # Поддержим мульти-объективный режим: значение лучшей метрики храним как None|float|tuple
+    best_val_metric = None
     last_val_metrics: Dict[str, Any] = {}
     best_validation: Dict[str, Any] = {}
     best_episode: int | None = None
@@ -822,16 +846,54 @@ def main(cfg: MasterConfig = None):
                 cfg.global_env_seed,
                 cfg,
             )
-            val_metric = metrics[str(cfg.trainlog.val_selection_metrics)]
+            # Поддержка single- и multi-objective отбора лучшей модели.
+            # Пример: cfg.trainlog.val_selection_metrics = [
+            #   "Validation_sharpe", "Validation_sortino",
+            #   "Validation_profit_factor", "Validation_win_rate"
+            # ]
+            sel_keys = cfg.trainlog.val_selection_metrics
+
+            # Нормализация направления сравнения: для метрик из этого множества "меньше — лучше"
+            lower_is_better = {
+                "Validation_max_drawdown",
+                "Validation_loss"
+            }
+
+            def _fetch_metric(name: str) -> float:
+                v = metrics.get(name, None)
+                if v is None:
+                    logging.warning(f"[Validation] metric '{name}' is missing in metrics dict — using fallback -inf")
+                    return float("-inf")
+                try:
+                    v = float(v)
+                except Exception:
+                    logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
+                    return float("-inf")
+                return -v if name in lower_is_better else v
+
+            # Лексикографический приоритет по порядку в списке:
+            # сначала ключ[0], затем ключ[1], ...
+            if isinstance(sel_keys, (list, tuple)):
+                val_metric = tuple(_fetch_metric(k) for k in sel_keys)
+            else:
+                val_metric = _fetch_metric(str(sel_keys))
             last_val_metrics = metrics
 
-            improved = False
-            if val_direction == "max":
-                improved = val_metric > (best_val_metric + val_min_delta)
-            else:  # "min"
-                improved = val_metric < (best_val_metric - val_min_delta)
+            # Корректное сравнение tuple/float/None
+            def _is_better(current, best):
+                if best is None:
+                    return True
+                if isinstance(current, tuple) and isinstance(best, tuple):
+                    return current > best
+                if isinstance(current, tuple) and not isinstance(best, tuple):
+                    # Поднимем скаляр "best" до кортежа нулей той же длины
+                    best_tuple = (float(best),) + tuple(0.0 for _ in range(len(current) - 1))
+                    return current > best_tuple
+                if not isinstance(current, tuple) and isinstance(best, tuple):
+                    return False
+                return current > best
 
-            if improved:
+            if _is_better(val_metric, best_val_metric):
                 best_val_metric = val_metric
                 best_validation = dict(metrics)  # store full snapshot
                 best_episode = int(ep)
@@ -840,11 +902,16 @@ def main(cfg: MasterConfig = None):
 
                 # Human-friendly sidecar with selection info
                 try:
+                    # Сериализуем tuple корректно для JSON/человеческого чтения
+                    _val_serializable = (
+                        list(val_metric) if isinstance(val_metric, tuple) else float(val_metric)
+                    )
                     best_info = {
                         "metric_name": cfg.trainlog.val_selection_metrics,
                         "direction": val_direction,
                         "min_delta": val_min_delta,
-                        "value": float(val_metric),
+                        "value": _val_serializable,
+                        "value_primary": (val_metric[0] if isinstance(val_metric, tuple) else float(val_metric)),
                         "episode": int(ep),
                         "saved_path": "best.pth",
                         "saved_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -854,8 +921,17 @@ def main(cfg: MasterConfig = None):
                 except Exception as e:
                     logging.warning("Failed to write best_model_info.json: %s", e)
 
-                logging.info("New BEST by %s (dir=%s, Δ>=%.6f): %.6f at ep=%d -> %s",
-                             cfg.trainlog.val_selection_metrics, val_direction, val_min_delta, val_metric, ep, best_path)
+                # Для логирования используем оригинальные значения, а не инвертированные
+                human_readable_metrics = {k: metrics.get(k, "N/A") for k in sel_keys}
+                logging.info(
+                    "New BEST model found at episode %d (saved to %s)",
+                    ep, best_path
+                )
+                logging.info(
+                    " -> Selection criteria: %s",
+                    cfg.trainlog.val_selection_metrics
+                )
+                logging.info(" -> New best values: %s", human_readable_metrics)
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)

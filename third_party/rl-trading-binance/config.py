@@ -158,9 +158,17 @@ class TrainLogConfig(BaseModel):
         "Validation_mean_reward",
         "Validation_mean_pnl",
         "Validation_win_rate",
+        "Validation_profit_factor",
+        "Validation_max_drawdown",
+        "Validation_sharpe",
+        "Validation_sortino",
         "Validation_all_pnls",
     ]
-    val_selection_metrics: str = "Validation_mean_pnl"
+    # Single- или Multi-объективный выбор (лексикографический порядок при списке)
+    val_selection_metrics: Union[str, List[str]] = "Validation_mean_pnl"
+    # Направление сравнения и минимальное улучшение
+    val_selection_direction: Literal["max", "min"] = "max"
+    val_min_delta: float = 0.0
     test_selection_metrics: str = "Test_all_pnls"
     plot_moving_avg_window: int = 10
     plot_top_n: int = 10
@@ -169,8 +177,14 @@ class TrainLogConfig(BaseModel):
 
     @validator("val_selection_metrics")
     def check_val_metric(cls, v, values):
-        if "available_metrics" in values:
-            assert v in values["available_metrics"], "Selected metric not in AVAILABLE_METRICS"
+        allowed = set(values.get("available_metrics", []))
+        if isinstance(v, str):
+            assert v in allowed, "Selected metric not in AVAILABLE_METRICS"
+        elif isinstance(v, (list, tuple)):
+            assert all(isinstance(x, str) and x in allowed for x in v), \
+                "All selection metrics must be in AVAILABLE_METRICS"
+        else:
+            raise TypeError("val_selection_metrics must be str or list[str]")
         return v
 
 
