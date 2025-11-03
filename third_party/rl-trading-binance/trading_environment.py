@@ -88,6 +88,8 @@ class TradingEnvironment(gym.Env):
         self.balance: float = self.initial_balance
         self.position: int = 0
         self.entry_price: float = 0.0
+        # Фиксируем размер позиции на входе и используем до закрытия
+        self.position_volume: float = 0.0
         self.realized_pnl: float = 0.0
         self.closed_trades: int = 0
         self.profitable_trades: int = 0
@@ -140,6 +142,7 @@ class TradingEnvironment(gym.Env):
             self.position = 1
             self.entry_price = exec_price
             volume = self.balance / exec_price
+            self.position_volume = volume
             pnl_change -= exec_price * volume * self.transaction_fee
 
         elif action == 2 and self.position == 0:
@@ -147,10 +150,11 @@ class TradingEnvironment(gym.Env):
             self.position = -1
             self.entry_price = exec_price
             volume = self.balance / exec_price
+            self.position_volume = volume
             pnl_change -= exec_price * volume * self.transaction_fee
 
         elif action == 3 and self.position != 0:
-            volume = self.balance / self.entry_price
+            volume = self.position_volume
             if self.position == 1:
                 exec_price = price * (1 - self.slippage)
                 trade_pnl = (exec_price - self.entry_price) * volume
@@ -162,6 +166,7 @@ class TradingEnvironment(gym.Env):
             if trade_pnl > 0:
                 self.profitable_trades += 1
             self.position = 0
+            self.position_volume = 0.0
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
@@ -254,11 +259,23 @@ class TradingEnvironment(gym.Env):
             exec_delay = getattr(self, "exec_delay_bars", 0)
             price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
             current_price = self.current_seq[price_idx, self.close_idx]
-            mark2market = (current_price - self.entry_price) * self.position * (self.balance / self.entry_price)
+            # MTM по зафиксированному объёму, а не по "текущий баланс / entry_price"
+            mark2market = (current_price - self.entry_price) * self.position * self.position_volume
             info["portfolio_value"] = self.balance + mark2market
         else:
             info["portfolio_value"] = self.balance
         return info
+
+    def _calculate_effective_trail_distance(
+        self, p: float, d0: float, d_min: float, fee_buf: float
+    ) -> float:
+        """Calculates the effective trailing stop distance based on profit."""
+        # Until fees are covered (p <= fee_buf), use the initial distance d0.
+        if p <= fee_buf:
+            return d0
+        # As profit increases, tighten the trail distance from d0 towards d_min.
+        d_eff = d0 - (p - fee_buf)
+        return max(d_min, d_eff)
 
     def backtest_step(
         self,
@@ -304,15 +321,18 @@ class TradingEnvironment(gym.Env):
                 tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0, self.trailing_max_price / self.entry_price - 1)
-                    if delta_p_hysteresis is None or p > self.p_at_last_tsl_update + delta_p_hysteresis:
+                    p = max(0.0, self.trailing_max_price / self.entry_price - 1.0)
+                    # Гистерезис обновления трала
+                    if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None:
                             self.p_at_last_tsl_update = p
-                        
-                        d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
-                        advanced_tsl_price = max(self.entry_price * (1 + fee_buf), self.trailing_max_price * (1 - d_eff))
+                        # До покрытия комиссий (p <= fee_buf) держим ровно d0 → эквивалент статическому SL
+                        if p <= fee_buf:
+                            d_eff = d0
+                        else:
+                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
-                
                 trailing_trigger = price <= tsl_price
 
             else:  # SHORT
@@ -321,19 +341,19 @@ class TradingEnvironment(gym.Env):
                 tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0, 1 - self.trailing_min_price / self.entry_price)
-                    if delta_p_hysteresis is None or p > self.p_at_last_tsl_update + delta_p_hysteresis:
+                    p = max(0.0, 1.0 - self.trailing_min_price / self.entry_price)
+                    if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None:
                             self.p_at_last_tsl_update = p
-                        
-                        d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
-                        advanced_tsl_price = min(self.entry_price * (1 - fee_buf), self.trailing_min_price * (1 + d_eff))
+                        if p <= fee_buf:
+                            d_eff = d0
+                        else:
+                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                         tsl_price = min(tsl_price, advanced_tsl_price)
-
                 trailing_trigger = price >= tsl_price
 
             self.tsl_price = tsl_price
-            # When risk management (TSL) is enabled, standalone SL/TP must not be used.
             if self.use_risk_management:
                 sl_trigger = False
                 tp_trigger = False
@@ -343,8 +363,15 @@ class TradingEnvironment(gym.Env):
 
             if sl_trigger or tp_trigger or trailing_trigger or self.last_step:
                 action = 3
-                mask_exit_reason = np.array([self.last_step, sl_trigger, tp_trigger, trailing_trigger])
-                exit_reason = self.exit_options[mask_exit_reason][0]
+                # Preliminary exit reason (will be clarified after calculating exec_price/fee)
+                if trailing_trigger:
+                    exit_reason = "TSL"
+                elif sl_trigger:
+                    exit_reason = "SL"
+                elif tp_trigger:
+                    exit_reason = "TP"
+                elif self.last_step:
+                    exit_reason = "FORCED"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
 
@@ -353,6 +380,7 @@ class TradingEnvironment(gym.Env):
             self.position = 1
             self.entry_price = exec_price
             volume = self.balance / exec_price
+            self.position_volume = volume
             fee = exec_price * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
@@ -371,6 +399,7 @@ class TradingEnvironment(gym.Env):
             self.position = -1
             self.entry_price = exec_price
             volume = self.balance / exec_price
+            self.position_volume = volume
             fee = exec_price * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
@@ -386,8 +415,9 @@ class TradingEnvironment(gym.Env):
 
         elif action == 3 and self.position != 0:
             position_closed = True
-            volume = self.balance / self.entry_price
-            if self.position == 1:
+            volume = self.position_volume
+            was_long = (self.position == 1)
+            if was_long:
                 exec_price = price * (1 - self.slippage)
                 trade_pnl = (exec_price - self.entry_price) * volume
                 close_action = "SELL"
@@ -403,12 +433,25 @@ class TradingEnvironment(gym.Env):
             self.total_commission += fee
 
             self.position = 0
+            self.position_volume = 0.0
+
+            # --- Clarify the exit reason for RM mode (as in paper_trader_q.py)
+            if self.use_risk_management:
+                brk = (
+                    self.entry_price * (1 + self.transaction_fee) / (1 - self.transaction_fee)
+                    if was_long else
+                    self.entry_price * (1 - self.transaction_fee) / (1 + self.transaction_fee)
+                )
+                if exit_reason == "TSL":
+                    exit_reason = "TSL" if ((exec_price > brk) if was_long else (exec_price < brk)) else "TSL SL"
+                elif exit_reason == "FORCED":
+                    exit_reason = "TSL Time" if ((exec_price > brk) if was_long else (exec_price < brk)) else "Time SL"
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
         if position_closed:
             logging.info(
-                f": (CLOSE) {close_action} {exit_reason if self.use_risk_management else ''} {volume:.8f} {ticker} for {exec_price:.5f} at "
+                f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {exec_price:.5f} at "
                 f"{current_dt.strftime('%Y-%m-%d %H:%M')} PnL = {self.realized_pnl:+.2f}"
             )
 
@@ -422,16 +465,23 @@ class TradingEnvironment(gym.Env):
         reward = 0.0
 
         if position_closed:
+            # Передаём причину выхода и признак TSL-срабатывания вверх по стеку для расширенной валидации
+            _exit_reason = exit_reason if self.use_risk_management else (exit_reason or "")
             info = {
                 "position_closed": position_closed,
-                "trade_realized_pnl": self.realized_pnl,
+                # ВАЖНО: валидация/бэктест ожидают PnL ИМЕННО ЭТОЙ СДЕЛКИ (net), а не кумулятив эпизода
+                "trade_realized_pnl": (trade_pnl - fee),
+                "trade_commission": fee,
                 "total_commission": self.total_commission,
                 "trade_amount": self.initial_balance,
                 "trade_price_delta": trade_price_delta,
                 "max_drawdown": trade_pnl / self.initial_balance,
-                "correct_prediction": trade_pnl > 0,
+                # WR считаем после учёта комиссии
+                "correct_prediction": (trade_pnl - fee) > 0.0,
                 "direction": self.direction,
                 "trade_dt": self.trade_dt,
+                "exit_reason": _exit_reason,
+                "tsl_triggered": isinstance(_exit_reason, str) and _exit_reason.startswith("TSL"),
             }
 
             self.realized_pnl = 0.0

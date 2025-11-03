@@ -6,6 +6,7 @@ import time
 from collections import deque
 from typing import Any, Dict
 import hashlib, tarfile
+import datetime as dt
 
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
@@ -22,7 +23,7 @@ from tqdm import tqdm, trange
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
-from vec_env import DummyVecEnv
+from vec_env import DummyVecEnv # noqa: F401
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
@@ -31,7 +32,7 @@ from utils import (
     select_and_arrange_channels,
     set_random_seed,
     setup_logging,
-)
+) # noqa: F401
 
 def _make_train_env_fns(env_kwargs, n: int):
     # фабрика копий среды для векторизации
@@ -319,56 +320,127 @@ def _numpy_json_default(obj):
 def evaluate_agent(
     env: TradingEnvironment,
     agent: D3QN_PER_Agent,
-    num_episodes: int,
-    split_name: str,
-    current_episode: int = None,
-    env_seed: int = 17,
+    episodes: int,
+    split_label: str,
+    episode_num: int | None,
+    seed: int | None,
+    cfg: MasterConfig,
 ) -> Dict[str, Any]:
-    rewards = []
-    pnls = []
-    win_rates = []
+    """
+    Greedy-оценка (без ε-эксплорации и MC-Dropout) в backtest-режиме:
+    считает MeanReward/MeanPnL/WinRate/PF/MaxDD, логирует распределение exit_reason и TSL-срабатывания,
+    возвращает словарь с ключами вроде 'Validation_win_rate', 'Test_profit_factor' и т.д.
+    """
+    # ── Жёстко выключаем стохастику выбора действий
+    try:
+        agent.policy_net.eval()
+    except Exception:
+        pass
+    old_eps = getattr(agent, "epsilon", None)
+    old_mc  = getattr(agent, "mc_enable", None)
+    if hasattr(agent, "epsilon"): agent.epsilon = 0.0
+    if hasattr(agent, "mc_enable"): agent.mc_enable = False
 
-    env.reset(seed=env_seed)
-    logging.info(f"--- Starting Evaluation: {split_name}, episodes={num_episodes} ---")
-    for ep in tqdm(range(1, num_episodes + 1), total=num_episodes, desc=f"{split_name} in episodes", leave=False):
-        logging.info(f"--- Validation episode {ep}/{num_episodes} ---")
-        obs, _ = env.reset(seed=None, options=None)
+    # накопители
+    total_reward = 0.0
+    total_trades = 0
+    total_correct = 0
+    trade_pnls: list[float] = []
+    ep_pnls:   list[float] = []
+    ep_rews:   list[float] = []
+    ep_wrs:    list[float] = []
+    exit_counts: Dict[str,int] = {}
+    tsl_hits = 0
+
+    stub_dt = dt.datetime(2000, 1, 1, 0, 0)
+    stub_tk = "VAL"
+
+    for _ in range(int(episodes)):
+        obs, _ = env.reset(seed=seed)
         done = False
         ep_reward = 0.0
+        ep_trades = 0
+        ep_wins   = 0
+        ep_trade_pnls: list[float] = []
         while not done:
             action = agent.select_action(obs, training=False)
-            obs, reward, done, _, info = env.step(action)
-            ep_reward += reward
+            obs, reward, done, _, info = env.backtest_step(
+                action=action,
+                signal_dt=stub_dt,
+                ticker=stub_tk,
+                stop_loss=getattr(cfg.backtest, "stop_loss", 0.02),
+                take_profit=getattr(cfg.backtest, "take_profit", 0.04),
+                trailing_stop=getattr(cfg.backtest, "trailing_stop", 0.01),
+            )
+            ep_reward += float(reward or 0.0)
+            if info.get("position_closed", False):
+                pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
+                ep_trades += 1
+                trade_pnls.append(pnl)
+                ep_trade_pnls.append(pnl)
+                if info.get("correct_prediction", False):
+                    ep_wins += 1
+                reason = (info.get("exit_reason") or "")
+                if reason:
+                    exit_counts[reason] = exit_counts.get(reason, 0) + 1
+                if info.get("tsl_triggered", False) or ("TSL" in reason):
+                    tsl_hits += 1
+        # завершение эпизода
+        total_reward += ep_reward
+        total_trades += ep_trades
+        total_correct += ep_wins
+        ep_pnls.append(sum(ep_trade_pnls))
+        ep_rews.append(ep_reward)
+        ep_wrs.append( ep_wins / max(1, ep_trades) if ep_trades else 0.0 )
 
-        pnl = info.get("episode_realized_pnl", 0.0)
-        win_rate = info.get("episode_win_rate", 0.0)
+    mean_reward = total_reward / max(1, episodes)
+    mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
+    wr_ratio = total_correct / max(1, total_trades)
+    pos_sum = sum(p for p in trade_pnls if p > 0)
+    neg_sum = sum(p for p in trade_pnls if p < 0)
+    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
+    # MaxDD по кумулятивной equity
+    eq = 0.0; peak = 0.0; max_dd = 0.0
+    for p in trade_pnls:
+        eq += p
+        peak = max(peak, eq)
+        max_dd = max(max_dd, peak - eq)
 
-        rewards.append(ep_reward)
-        pnls.append(pnl)
-        win_rates.append(win_rate)
-
-    metrics = {
-        f"{split_name}_mean_reward": np.mean(rewards),
-        f"{split_name}_mean_pnl": np.mean(pnls),
-        f"{split_name}_win_rate": np.mean(win_rates),
-        f"{split_name}_all_pnls": pnls,
-    }
-    # для корректной генерации графиков в plot_test_distributions
-    if split_name == "Test":
-        metrics["Test_all_reward"] = rewards
-        metrics["Test_all_win_rate"] = win_rates
-
-    if current_episode is not None:
-        episode_info = f" Ep_{current_episode}"
-    else:
-        episode_info = ""
+    # лог-сводка
     logging.info(
-        f"---{episode_info} {split_name} Results: mean_reward={metrics[f'{split_name}_mean_reward']:.5f}, "
-        f"Mean PnL: {metrics[f'{split_name}_mean_pnl']:.2f}, "
-        f"Win rate: {metrics[f'{split_name}_win_rate']:.2%} ---"
+        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%+.2f  Trades=%d",
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd, total_trades
     )
-    logging.info(f"--- Finished Evaluation: {split_name} ---")
-    return metrics
+    if exit_counts:
+        logging.info("[%s] Exit reasons: %s", split_label,
+                     {k:int(v) for k,v in sorted(exit_counts.items(), key=lambda x:(-x[1], x[0]))})
+    if total_trades:
+        logging.info("[%s] TSL hits: %d (%.2f%%)", split_label, tsl_hits, 100.0*tsl_hits/max(1,total_trades))
+
+    # вернуть исходные режимы агента
+    if old_eps is not None: agent.epsilon = old_eps
+    if old_mc  is not None: agent.mc_enable = old_mc
+
+    # сформировать словарь под выбор метрики в тренере
+    L = split_label  # "Validation" | "Test"
+    out: Dict[str,Any] = {
+        f"{L}_mean_reward": float(mean_reward),
+        f"{L}_mean_pnl":    float(mean_pnl),
+        f"{L}_win_rate":    float(wr_ratio),            # 0..1 — удобно для отбора
+        f"{L}_win_rate_percent": float(wr_ratio*100.0),
+        f"{L}_profit_factor": float(profit_factor),
+        f"{L}_max_drawdown": float(max_dd),             # положительное число
+        f"{L}_trades": int(total_trades),
+        f"{L}_tsl_hits": int(tsl_hits),
+        f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
+    }
+    if L == "Test":
+        out.update({
+            "Test_all_pnls": ep_pnls,
+            "Test_all_reward": ep_rews,
+            "Test_all_win_rate": ep_wrs,
+        })
+    return out
 
 
 def process_data(raw_list, name_dataset, cfg: MasterConfig):
@@ -599,8 +671,16 @@ def main(cfg: MasterConfig = None):
         logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
     else:
         train_env = TradingEnvironment(**env_kwargs)
-    env_kwargs["sequences"] = val_seqs
-    val_env = TradingEnvironment(**env_kwargs) if val_seqs else None
+    # Валидация: backtest-режим + TSL/exec-delay
+    val_env = None
+    if val_seqs:
+        val_kwargs = dict(env_kwargs)
+        val_kwargs["sequences"] = val_seqs
+        val_kwargs["backtest_mode"] = True
+        val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
+        val_env = TradingEnvironment(**val_kwargs)
+        if hasattr(cfg.backtest, "exec_delay_bars"):
+            setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
 
     agent = D3QN_PER_Agent(
         state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
@@ -734,9 +814,15 @@ def main(cfg: MasterConfig = None):
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
             metrics = evaluate_agent(
-                val_env, agent, min(len(val_seqs), cfg.trainlog.num_val_ep), "Validation", ep, cfg.global_env_seed
+                val_env,
+                agent,
+                min(len(val_seqs), cfg.trainlog.num_val_ep),
+                "Validation",
+                ep,
+                cfg.global_env_seed,
+                cfg,
             )
-            val_metric = metrics[cfg.trainlog.val_selection_metrics]
+            val_metric = metrics[str(cfg.trainlog.val_selection_metrics)]
             last_val_metrics = metrics
 
             improved = False
@@ -778,8 +864,13 @@ def main(cfg: MasterConfig = None):
 
     test_metrics: Dict[str, Any] = {}
     if test_seqs:
-        env_kwargs["sequences"] = test_seqs
-        test_env = TradingEnvironment(**env_kwargs)
+        test_kwargs = dict(env_kwargs)
+        test_kwargs["sequences"] = test_seqs
+        test_kwargs["backtest_mode"] = True
+        test_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
+        test_env = TradingEnvironment(**test_kwargs)
+        if hasattr(cfg.backtest, "exec_delay_bars"):
+            setattr(test_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
         model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
         model_path = os.path.join(models_dir, model_name)
         if not os.path.exists(model_path):
@@ -802,7 +893,13 @@ def main(cfg: MasterConfig = None):
         logging.info(f"Testing model: {model_path}")
 
         test_metrics = evaluate_agent(
-            test_env, agent, min(len(test_seqs), cfg.trainlog.num_val_ep), "Test", None, cfg.global_env_seed
+            test_env,
+            agent,
+            min(len(test_seqs), cfg.trainlog.num_val_ep),
+            "Test",
+            None,
+            cfg.global_env_seed,
+            cfg,
         )
 
         plot_test_distributions(test_metrics, plots_dir)
@@ -931,7 +1028,7 @@ def main(cfg: MasterConfig = None):
             _sel  = _m.get("val_selection_metric")
             _test = _m.get("test", {}) if isinstance(_m, dict) else {}
             # Adjust keys to match what evaluate_agent produces
-            _test_win_rate = _test.get("Test_win_rate")
+            _test_win_rate = _test.get("Test_win_rate") or _test.get("Test_win_rate_percent")
             _test_mean_pnl = _test.get("Test_mean_pnl")
 
             logging.info(

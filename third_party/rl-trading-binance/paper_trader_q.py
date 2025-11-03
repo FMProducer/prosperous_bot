@@ -414,9 +414,12 @@ class PaperTrader:
                             if self.cfg.backtest.delta_p_hysteresis is not None:
                                 pos['p_at_last_tsl_update'] = p
                             
-                            # Correct d_eff formula to narrow the trail
-                            d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
-                            advanced_tsl_price = max(pos["entry_price"] * (1 + fee_buf), pos["trailing_max_price"] * (1 - d_eff))
+                            # LONG: без "кепки" относительно entry; до fee_buf держим d0 (эквивалент статическому SL)
+                            if p <= fee_buf:
+                                d_eff = d0
+                            else:
+                                d_eff = max(d_min, min(d0, d0 - (p - fee_buf)))
+                            advanced_tsl_price = pos["trailing_max_price"] * (1 - d_eff)
                             tsl_price = max(tsl_price, advanced_tsl_price)
 
                 elif pos["direction"] == "SHORT":
@@ -432,9 +435,12 @@ class PaperTrader:
                             if self.cfg.backtest.delta_p_hysteresis is not None:
                                 pos['p_at_last_tsl_update'] = p
                             
-                            # Correct d_eff formula to narrow the trail
-                            d_eff = min(max(d0 - max(0, p - fee_buf), d_min), d0)
-                            advanced_tsl_price = min(pos["entry_price"] * (1 - fee_buf), pos["trailing_min_price"] * (1 + d_eff))
+                            # SHORT: симметрично, без "кепки"; до fee_buf держим d0
+                            if p <= fee_buf:
+                                d_eff = d0
+                            else:
+                                d_eff = max(d_min, min(d0, d0 - (p - fee_buf)))
+                            advanced_tsl_price = pos["trailing_min_price"] * (1 + d_eff)
                             tsl_price = min(tsl_price, advanced_tsl_price)
                 
                 if tsl_price is not None:
