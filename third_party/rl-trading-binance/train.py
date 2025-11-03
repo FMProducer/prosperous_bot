@@ -560,6 +560,8 @@ def main(cfg: MasterConfig = None):
         cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
     else:
         cfg, cfg_mod = default_cfg, None
+    # Disable final testing entirely (user request). Keep training/validation unchanged.
+    DISABLE_FINAL_TEST = True  # do not move to config; enforced safety switch
 
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
@@ -644,6 +646,9 @@ def main(cfg: MasterConfig = None):
         plot_channel_idx=cfg.data.plot_channel_idx,
         pre_signal_len=cfg.seq.pre_signal_len,
     )
+    if DISABLE_FINAL_TEST:
+        # Avoid building test_seqs and any subsequent test evaluation
+        raw_test = []
 
     train_seqs = process_data(raw_train, "Train", cfg)
     val_seqs = process_data(raw_val, "Val", cfg)
@@ -988,7 +993,7 @@ def main(cfg: MasterConfig = None):
 
         test_env.close()
     else:
-        logging.warning("Test data not found – skipping final evaluation.")
+        logging.info("Final testing disabled by request — skipping final evaluation.")
 
     train_env.close()
 
