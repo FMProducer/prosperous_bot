@@ -368,11 +368,12 @@ def evaluate_agent(
                 action=action,
                 signal_dt=stub_dt,
                 ticker=stub_tk,
-                # TSL-only policy: отключаем отдельные SL/TP по требованию проекта
                 stop_loss=None,
                 take_profit=None,
-                # Если число требуется вашей среде — используем конфиг; иначе None, если логика TSL полностью внутренняя
                 trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
+                trailing_stop_min=getattr(cfg.backtest, "trailing_stop_min", None),
+                fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
+                delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
             ep_reward += float(reward or 0.0)
             if info.get("position_closed", False):
@@ -401,12 +402,6 @@ def evaluate_agent(
     pos_sum = sum(p for p in trade_pnls if p > 0)
     neg_sum = sum(p for p in trade_pnls if p < 0)
     profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
-    # MaxDD по кумулятивной equity
-    eq = 0.0; peak = 0.0; max_dd = 0.0
-    for p in trade_pnls:
-        eq += p
-        peak = max(peak, eq)
-        max_dd = max(max_dd, peak - eq)
 
     # --- Sharpe / Sortino ---
     # Sharpe: стандартно по σ общих доходностей.
@@ -415,6 +410,15 @@ def evaluate_agent(
         initial_balance = float(getattr(cfg.market, "initial_balance", 10_000.0))
     except Exception:
         initial_balance = 10_000.0
+
+    # MaxDD по кумулятивной equity
+    eq = 0.0; peak = 0.0; max_dd = 0.0
+    for p in trade_pnls:
+        eq += p
+        peak = max(peak, eq)
+        drawdown_value = peak - eq # Это положительное число
+        max_dd = max(max_dd, drawdown_value / max(1e-9, initial_balance))
+
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
         mean_r = float(returns.mean())
@@ -450,7 +454,8 @@ def evaluate_agent(
         f"{L}_win_rate":    float(wr_ratio),            # 0..1 — удобно для отбора
         f"{L}_win_rate_percent": float(wr_ratio*100.0),
         f"{L}_profit_factor": float(profit_factor),
-        f"{L}_max_drawdown": float(max_dd),             # положительное число
+        # FIX: Возвращаем просадку как отрицательное число, как и принято в индустрии.
+        f"{L}_max_drawdown": -float(max_dd),
         f"{L}_trades": int(total_trades),
         f"{L}_tsl_hits": int(tsl_hits),
         f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
@@ -548,7 +553,6 @@ def plot_test_distributions(test_metrics: dict, plots_dir: str) -> None:
         logging.info(f"Win Rate distribution plot saved: {save_path}")
     else:
         logging.warning("Test_all_win_rate is missing or empty – skipping Win Rate plot.")
-
 
 def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
@@ -701,6 +705,7 @@ def main(cfg: MasterConfig = None):
         val_kwargs["sequences"] = val_seqs
         val_kwargs["backtest_mode"] = True
         val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
+        val_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
         val_env = TradingEnvironment(**val_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
@@ -855,8 +860,7 @@ def main(cfg: MasterConfig = None):
 
             # Нормализация направления сравнения: для метрик из этого множества "меньше — лучше"
             lower_is_better = {
-                "Validation_max_drawdown",
-                "Validation_loss"
+                "Validation_loss" # FIX: max_drawdown теперь отрицательный, поэтому для него "больше - лучше".
             }
 
             def _fetch_metric(name: str) -> float:
@@ -944,6 +948,7 @@ def main(cfg: MasterConfig = None):
         test_kwargs["sequences"] = test_seqs
         test_kwargs["backtest_mode"] = True
         test_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
+        test_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
         test_env = TradingEnvironment(**test_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(test_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
@@ -994,16 +999,17 @@ def main(cfg: MasterConfig = None):
     bundle_enabled = getattr(bundle_cfg, "enable", True)
     if bundle_enabled:
         # 1) metrics.json
+        # NEW: Get human-readable values for the best metric tuple.
+        # This ensures that the final summary log and metrics.json contain the correct, non-inverted values.
+        sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
+        best_val_metric_human = tuple(best_validation.get(k, None) for k in sel_keys) if best_validation else None
+
         bundle_metrics = {
             "val_selection_metric": cfg.trainlog.val_selection_metrics,
             "val_selection_direction": val_direction,
             "val_min_delta": val_min_delta,
-            "best_val_metric": (
-                None if
-                ((val_direction == "max" and best_val_metric == float("-inf")) or
-                 (val_direction == "min" and best_val_metric == float("inf")))
-                else best_val_metric
-            ),
+            # FIX: Store human-readable values, not the internal inverted ones.
+            "best_val_metric": best_val_metric_human,
             "best_episode": best_episode,
             "best_validation": best_validation,
             "last_validation": last_val_metrics,
@@ -1106,11 +1112,12 @@ def main(cfg: MasterConfig = None):
             # Adjust keys to match what evaluate_agent produces
             _test_win_rate = _test.get("Test_win_rate") or _test.get("Test_win_rate_percent")
             _test_mean_pnl = _test.get("Test_mean_pnl")
+            _best_tuple = tuple(_best) if isinstance(_best, list) else (_best,)
 
             logging.info(
                 "[SUMMARY] best_val_metric=%s  val_selection_metric=%s  "
                 "test.win_rate=%s  test.mean_pnl=%s",
-                f"{_best:.4f}" if isinstance(_best, float) else _best,
+                _best_tuple,
                 _sel,
                 f"{_test_win_rate:.2%}" if isinstance(_test_win_rate, float) else _test_win_rate,
                 f"{_test_mean_pnl:.2f}" if isinstance(_test_mean_pnl, float) else _test_mean_pnl,
