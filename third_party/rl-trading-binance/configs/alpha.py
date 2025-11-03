@@ -10,7 +10,7 @@ cfg.model.dense_adv = [128, 64]
 # 4 + action_history_len * num_actions
 cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
-cfg.model.dropout_p = 0.1
+cfg.model.dropout_p = 0.0
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
@@ -42,8 +42,8 @@ cfg.backtest.position_fraction = 0.5609422401108337
 cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.007
-cfg.backtest.short_action_threshold = 0.007
+cfg.backtest.long_action_threshold = 0.0085
+cfg.backtest.short_action_threshold = 0.0085
 # cfg.backtest.close_action_threshold = 0.0180067279703063
 # cfg.backtest.ensemble_n_samples = 1
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
@@ -117,6 +117,7 @@ mc_dropout_cfg.target_agg = "mean_max"
 # Необязательная эксплорация от неопределённости:
 mc_dropout_cfg.uncertainty_guided_explore = False
 mc_dropout_cfg.uncertainty_beta = 0.0
+cfg.rl.mc_dropout = mc_dropout_cfg
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 
 cfg.paper.source = "database"
