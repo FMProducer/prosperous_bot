@@ -105,7 +105,7 @@ cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = True
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
-cfg.perf.cudnn_benchmark = True
+cfg.perf.cudnn_benchmark = False
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
@@ -189,7 +189,7 @@ cfg.detector.cooldown_minutes = 30
 # Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
 cfg.project_name = "rl_binance_futures_trading"
 cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
-cfg.paths.config_name = "alpha"
+cfg.paths.config_name = "alpha_trend_mtf"
 
 # Управляющие флаги упаковки (используются в train.py):
 bundle_cfg = type("obj", (), {})()
