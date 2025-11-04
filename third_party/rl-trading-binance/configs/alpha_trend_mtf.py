@@ -1,10 +1,7 @@
-# alpha_trend_mtf.py
+# configs/alpha.py
 from config import MasterConfig
-
 cfg = MasterConfig()
-
 ACTION_HISTORY_LEN = 3
-
 cfg.model.cnn_maps = [32, 64, 128]
 cfg.model.cnn_kernels = [7, 5, 3]
 cfg.model.cnn_strides = [2, 1, 1]
@@ -17,23 +14,42 @@ cfg.model.dropout_p = 0.10
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
-# gradient steps ~ 241_000 ~ episodes = 24_000
-cfg.trainlog.episodes = 80_000
+# Увеличиваем общий горизонт обучения (качество > скорость)
+cfg.trainlog.episodes = 80000
 cfg.trainlog.plot_top_n = 10
-
-cfg.per.buffer_size = 300_000
-
+cfg.per.buffer_size = 300000
 cfg.rl.batch_size = 128
+# Стабильнее обновления с меньшим шагом
 cfg.rl.learning_rate = 2e-4
-cfg.rl.train_start = 18_000
+cfg.rl.train_start = 18000
 cfg.rl.gamma = 0.997
 cfg.rl.n_step = 5
+# стабильнее целевые обновления
+cfg.rl.target_update_freq = 5000
+# Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
+cfg.rl.max_gradient_norm = 5.0
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
-cfg.trainlog.val_selection_metrics = "Validation_win_rate"
-
+cfg.trainlog.available_metrics=[
+    "Validation_mean_reward",
+    "Validation_mean_pnl",
+    "Validation_win_rate",
+    "Validation_profit_factor",
+    "Validation_max_drawdown",
+    "Validation_all_pnls",
+    "Validation_sharpe",
+    "Validation_sortino",
+]
+# Мультикритериальный отбор с приоритетом на риск-скорректированные метрики
+cfg.trainlog.val_selection_metrics = [
+    "Validation_sharpe",
+    "Validation_sortino",
+    "Validation_profit_factor",
+    "Validation_max_drawdown", # Примечание: для этой метрики нужно минимизировать значение
+    "Validation_win_rate"
+]
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
-cfg.seq.agent_history_len = 60
-cfg.seq.agent_session_len = 20
+cfg.seq.agent_history_len = 30
+cfg.seq.agent_session_len = 10
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
     cfg.seq.pre_signal_len = cfg.seq.agent_history_len
@@ -41,44 +57,42 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.50
+cfg.backtest.position_fraction = 0.4
+cfg.backtest.order_size_usdt = 0.0
 # ["advantage_based_filter", "ensemble_q_filter"]
-cfg.backtest.selection_strategy = "ensemble_q_filter"
-cfg.backtest.long_action_threshold = 0.0080
-cfg.backtest.short_action_threshold = 0.0080
-cfg.backtest.close_action_threshold = 0.014
-cfg.backtest.ensemble_n_samples = 5
-# maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
-cfg.backtest.ensemble_max_sigma = 0.010
+cfg.backtest.selection_strategy = "advantage_based_filter"
+cfg.backtest.long_action_threshold = 0.008
+cfg.backtest.short_action_threshold = 0.008
+# cfg.backtest.close_action_threshold = 0.0180067279703063
+# cfg.backtest.ensemble_n_samples = 1
+# maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
+# cfg.backtest.ensemble_max_sigma = 0.0064449245324541046
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
 # use_risk_management (from Trial #187)
 cfg.backtest.use_risk_management = True
-cfg.backtest.stop_loss = None
-cfg.backtest.take_profit = None
-cfg.backtest.trailing_stop = 0.019
+# cfg.backtest.stop_loss = 0.0153228603723445
+# cfg.backtest.take_profit = 0.0447149987567144
+cfg.backtest.trailing_stop = 0.013913282318387437
+# Execution timing: 0 = current behavior (may inflate returns), 1 = honest next-bar execution
+cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
-# --- NEW: Linear Trailing Stop Parameters for Optuna ---
+# Linear Trailing Stop Parameters for Optuna ---
 # d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
-cfg.backtest.trailing_stop_min = 0.0047
+cfg.backtest.trailing_stop_min = 0.004787697909715133
 # Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
 cfg.backtest.fee_buffer_mult = 2.0
-# --- NEW: Hysteresis for TSL updates ---
-cfg.backtest.delta_p_hysteresis = 0.0019
-# --- NEW: Explicit time range for backtesting ---
+# Hysteresis for TSL updates ---
+cfg.backtest.delta_p_hysteresis = 0.001174815758496933
+# Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
-cfg.random_seed = 202 # или любое другое целое число
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
-
-# ---------------------------
-# ⚡ Performance (hardware-tuned for GTX 1070 + i5-6600)
-# Управление ускорением ТОЛЬКО конфигом, чтобы не ломать кодовую базу.
 # AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) и новее FP16 даёт ускорение и экономию памяти.
 cfg.perf.use_amp = False
 cfg.perf.amp_dtype = "float16"
@@ -88,49 +102,45 @@ cfg.perf.compile_dynamic = False
 # DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
 cfg.perf.dataloader_num_workers = 4
 cfg.perf.pin_memory = True
-cfg.perf.persistent_workers = False
+cfg.perf.persistent_workers = True
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
 cfg.perf.cudnn_benchmark = True
-
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
 cfg.vec.num_envs = 3
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
-# SubprocVecEnv включает прицельно под тяжёлые env/на Linux.
+# SubprocVecEnv включаем под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шагов до той же ε.
 cfg.vec.scale_epsilon_by_envs = True
 
-# python train.py configs/alpha.py
-# python test_agent.py configs/alpha.py
-# python backtest_engine.py configs/alpha.py
-# python optimize_cfg.py configs/alpha.py
-
-# Mini run with 10 short sessions
-# python optimize_cfg.py configs/alpha.py --trials 100 --jobs 1
-
-# Notes: Default metric is values_0; default direction is max.
-# python get_info_from_optuna.py configs/alpha.py --n-best-trials 10
-
-# rm -r output/alpha
-
-# Main workflow:
-# Step                              Command
-# 1. Train the model:               python train.py configs/...
-# 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
-# 3. Run optimization:              python optimize_cfg.py configs/...
-# 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
-
+# ─────────────────────────────────────────────────────────────
+# MC-DROPOUT ДЛЯ ОБУЧЕНИЯ — внешний контейнер (не в pydantic RLConfig)
+# ─────────────────────────────────────────────────────────────
+mc_dropout_cfg = type("obj", (), {})()
+mc_dropout_cfg.enable = False                 # ВЫКЛ: без MC в обучении
+# Сколько семплов при выборе действия (он-полиси): 1 = без ансамбля
+mc_dropout_cfg.n_action_samples = 1
+# Агрегатор действий: "mean" | "lcb" | "thompson"
+mc_dropout_cfg.action_agg = "mean"
+mc_dropout_cfg.lcb_k = 0.5
+# MC в таргетах (офф-полиси/bootstrap): ВЫКЛ
+mc_dropout_cfg.use_for_target = False
+mc_dropout_cfg.n_target_samples = 1
+# Для таргетов: "mean_max" (рекомендуется) | "max_mean"
+mc_dropout_cfg.target_agg = "mean_max"
+# ✅ ВЕРНО: хранить контейнер на верхнем уровне MasterConfig (extra='allow').
+# Тренер читает по приоритету: rl.mc_dropout → mc_dropout → cfg_mod.mc_dropout_cfg.
+cfg.mc_dropout = mc_dropout_cfg
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
-cfg.paths.norm_stats_path = "output/alpha_trend_mtf/norm_stats.json" # Путь уже относительный, оставляем как есть для ясности
-# 
+
 cfg.paper.source = "database"
-# --- NEW: Установка плеча для бумажной торговли ---
-cfg.paper.leverage = 1.0
+# Установка плеча для бумажной торговли
+cfg.paper.leverage = 2.0
 # Список тикеров для симуляции в paper_trader.
 # Если список пустой или None, будут использованы все тикеры из data/tickers.txt
 cfg.paper.symbols = "ALL"
@@ -145,17 +155,81 @@ cfg.paper.symbols = "ALL"
 cfg.backtest.data_source = "find_spikes"
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
-# test_data_path можно пока не трогать или приравнять к backtest
+# test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
-# --- Явное указание пути к модели для бэктеста ---
-# Этот параметр теперь является единственным способом указать модель для бэктеста.
-# Путь должен указывать на конкретный .pth файл.
-cfg.paths.model_path = r"output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251029_time_003546\best.pth"
-
-# --- NEW: Spike Detector Configuration ---
-cfg.detector.context_minutes = 120
-cfg.detector.window_minutes = 20
+# Модель для бэктеста.
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\norm_stats.json"
+cfg.random_seed = 202
+# Spike Detector Configuration
+cfg.detector.context_minutes = 30
+cfg.detector.window_minutes = 10
 cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
 cfg.detector.abs_change_pct = 5.0
 cfg.detector.contrast_min = 5.0
-cfg.detector.cooldown_minutes = 40
+cfg.detector.cooldown_minutes = 30
+
+#   python train.py configs/alpha.py
+#   python test_agent.py configs/alpha.py
+#   python backtest_engine.py configs/alpha.py
+#   python optimize_cfg.py configs/alpha.py
+# Mini run with 10 short sessions
+#   python optimize_cfg.py configs/alpha.py --trials 100 --jobs 1
+# Notes: Default metric is values_0; default direction is max.
+#   python get_info_from_optuna.py configs/alpha.py --n-best-trials 10
+#   rm -r output/alpha
+# Main workflow:
+# Step                              Command
+# 1. Train the model:               python train.py configs/...
+# 2. Update the cache:              python backtest_engine.py configs/...  | When running a backtest, set backtest_mode = True
+# 3. Run optimization:              python optimize_cfg.py configs/...
+# 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
+
+# ---------- Output/bundle paths & flags ----------
+# Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
+cfg.project_name = "rl_binance_futures_trading"
+cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
+cfg.paths.config_name = "alpha"
+
+# Управляющие флаги упаковки (используются в train.py):
+bundle_cfg = type("obj", (), {})()
+bundle_cfg.enable = True
+# При необходимости можно включить snapshot кода; по умолчанию выключено.
+bundle_cfg.include_code_snapshot = False
+bundle_cfg.code_snapshot_paths = ["third_party/rl-trading-binance", "configs", "src", "utils.py"]
+bundle_cfg.extra_files = []
+try:
+    cfg.bundle = bundle_cfg
+except ValueError:
+    pass # Поле 'bundle' не определено в MasterConfig, но train.py будет использовать bundle_cfg
+
+# ---------- Prioritized Experience Replay (устойчивость) ----------
+cfg.per.per_alpha = 0.6
+cfg.per.per_beta_start = 0.4
+cfg.per.per_beta_frames = 1000000
+cfg.per.per_eps = 1e-6
+
+# ---------- Epsilon schedule (качественная, длинная эксплорация) ----------
+# Долго держим исследование; низкий eps_end для аккуратной политики
+cfg.eps.eps_start = 1.0
+cfg.eps.eps_end = 0.02
+cfg.eps.eps_decay_frames = 2000000
+
+# ─────────────────────────────────────────────────────────────
+# Optuna Search Space (для optimize_cfg.py)
+# ─────────────────────────────────────────────────────────────
+optuna_search_space = {
+    # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
+    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
+    "short_thr":      ("suggest_float", 0.001,  0.03,   True,  "backtest.short_action_threshold"),
+    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
+    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
+    # Для d0 нижняя граница зависит от уже выбранного d_min
+    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
+    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
+    # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
+}
+
+
+
+cfg.optuna_search_space = optuna_search_space
