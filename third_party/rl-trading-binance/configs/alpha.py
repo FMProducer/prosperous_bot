@@ -13,15 +13,15 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 cfg.model.dropout_p = 0.0
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
+cfg.trainlog.val_freq = 5000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 55_000
+cfg.trainlog.episodes = 55000
 cfg.trainlog.plot_top_n = 10
-cfg.per.buffer_size = 1_000_000
+cfg.per.buffer_size = 1000000
 cfg.rl.batch_size = 128
 # Стабильнее обновления с меньшим шагом
 cfg.rl.learning_rate = 5e-5
-cfg.rl.train_start = 10_000
+cfg.rl.train_start = 10000
 # стабильнее целевые обновления
 cfg.rl.target_update_freq = 5000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
@@ -204,14 +204,14 @@ except ValueError:
 # ---------- Prioritized Experience Replay (устойчивость) ----------
 cfg.per.per_alpha = 0.6
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 1_000_000
+cfg.per.per_beta_frames = 1000000
 cfg.per.per_eps = 1e-6
 
 # ---------- Epsilon schedule (качественная, длинная эксплорация) ----------
 # Долго держим исследование; низкий eps_end для аккуратной политики
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.02
-cfg.eps.eps_decay_frames = 2_000_000
+cfg.eps.eps_decay_frames = 2000000
 
 # ─────────────────────────────────────────────────────────────
 # Optuna Search Space (для optimize_cfg.py)
