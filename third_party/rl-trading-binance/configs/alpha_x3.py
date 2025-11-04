@@ -1,5 +1,6 @@
 # configs/alpha.py
 from config import MasterConfig
+import os
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 3
 cfg.model.cnn_maps = [32, 64, 128]
@@ -156,8 +157,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\norm_stats.json"
+cfg.paths.model_path = r"output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_021114\best.pth"
+cfg.paths.norm_stats_path = r"output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_021114\norm_stats.json"
 cfg.random_seed = 25
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -231,3 +232,100 @@ optuna_search_space = {
 
 
 cfg.optuna_search_space = optuna_search_space
+
+# ─────────────────────────────────────────────────────────────
+# Q-Ensemble profiles (single file, env-selectable)
+# Выберите профиль через переменную окружения:
+#   Windows:  set RL_PROFILE=trend|pullback|risk
+#   Linux:    export RL_PROFILE=trend|pullback|risk
+# По умолчанию: 'single' (этот файл, alpha.py).
+# ─────────────────────────────────────────────────────────────
+PROFILE = os.getenv("RL_PROFILE", "single").lower()
+
+def _apply_profile(profile: str):
+    # Базовые значения уже заданы выше. Меняем только различающие акценты.
+    if profile == "trend":
+        # --- Settings from alpha_trend_mtf.py ---
+        cfg.model.dropout_p = 0.10
+        cfg.trainlog.val_freq = 1000
+        cfg.trainlog.episodes = 80_000
+        cfg.trainlog.val_selection_metrics = "Validation_win_rate"
+        cfg.per.buffer_size = 300_000
+        cfg.rl.learning_rate = 2e-4
+        cfg.rl.train_start = 18_000
+        cfg.rl.gamma = 0.997
+        cfg.rl.n_step = 5
+        cfg.seq.agent_history_len = 60
+        cfg.seq.agent_session_len = 20
+        cfg.backtest.position_fraction = 0.50
+        cfg.backtest.selection_strategy = "ensemble_q_filter"
+        cfg.backtest.long_action_threshold = 0.0080
+        cfg.backtest.short_action_threshold = 0.0080
+        cfg.backtest.close_action_threshold = 0.014
+        cfg.backtest.ensemble_n_samples = 5
+        cfg.backtest.ensemble_max_sigma = 0.010
+        cfg.backtest.stop_loss = None
+        cfg.backtest.take_profit = None
+        cfg.backtest.trailing_stop = 0.019
+        cfg.backtest.trailing_stop_min = 0.0047
+        cfg.backtest.delta_p_hysteresis = 0.0019
+        cfg.random_seed = 202
+        cfg.perf.cudnn_benchmark = True
+        cfg.vec.num_envs = 3
+        cfg.paper.leverage = 1.0
+        cfg.detector.context_minutes = 120
+        cfg.detector.window_minutes = 20
+        cfg.detector.cooldown_minutes = 40
+        cfg.paths.config_name = "alpha_trend_mtf"
+        cfg.paths.model_path = r"output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251029_time_003546\best.pth"
+        cfg.paths.norm_stats_path = "output/alpha_trend_mtf/norm_stats.json"
+
+    elif profile == "pullback":
+        # --- Settings from alpha_pullback.py ---
+        global ACTION_HISTORY_LEN
+        ACTION_HISTORY_LEN = 2
+        cfg.model.cnn_maps = [64, 64, 96]
+        cfg.model.cnn_kernels = [5, 3, 3]
+        cfg.model.cnn_strides = [1, 1, 1]
+        cfg.model.dense_val = [96, 48]
+        cfg.model.dense_adv = [96, 48]
+        cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
+        cfg.model.dropout_p = 0.05
+        cfg.trainlog.num_val_ep = 2500
+        cfg.trainlog.val_freq = 1000
+        cfg.trainlog.episodes = 70_000
+        cfg.trainlog.val_selection_metrics = "Validation_win_rate"
+        cfg.per.buffer_size = 180_000
+        cfg.rl.batch_size = 64
+        cfg.rl.learning_rate = 3e-4
+        cfg.rl.train_start = 12_000
+        cfg.seq.agent_history_len = 20
+        cfg.seq.agent_session_len = 8
+        cfg.seq.action_history_len = ACTION_HISTORY_LEN
+        cfg.backtest.position_fraction = 0.50
+        cfg.backtest.selection_strategy = "ensemble_q_filter"
+        cfg.backtest.long_action_threshold = 0.0072
+        cfg.backtest.short_action_threshold = 0.0070
+        cfg.backtest.close_action_threshold = 0.011
+        cfg.backtest.ensemble_n_samples = 5
+        cfg.backtest.ensemble_max_sigma = 0.01
+        cfg.backtest.stop_loss = None
+        cfg.backtest.take_profit = None
+        cfg.backtest.trailing_stop = 0.019
+        cfg.backtest.trailing_stop_min = 0.0047
+        cfg.backtest.delta_p_hysteresis = 0.0019
+        cfg.random_seed = 303
+        cfg.perf.cudnn_benchmark = True
+        cfg.paper.leverage = 1.0
+        cfg.detector.context_minutes = 45
+        cfg.detector.window_minutes = 9
+        cfg.detector.cooldown_minutes = 18
+        cfg.paths.config_name = "alpha_pullback"
+        cfg.paths.model_path = r"output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251028_time_234736\best.pth"
+        cfg.paths.norm_stats_path = "output/alpha_pullback/norm_stats.json"
+
+    # Для всех профилей: привести pre_signal_len, если изменяли history_len
+    if not hasattr(cfg.seq, "pre_signal_len") or profile != "single":
+        cfg.seq.pre_signal_len = cfg.seq.agent_history_len
+
+_apply_profile(PROFILE)
