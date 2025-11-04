@@ -810,6 +810,73 @@ def main(cfg: MasterConfig = None):
                 val_metric = _fetch_metric(str(sel_keys))
             last_val_metrics = metrics
 
+            # ── ВАЛИДАЦИОННЫЙ ГЕЙТ: пороги берём ТОЛЬКО из конфигурации
+            # Первично ищем в cfg.trainlog.validation_gate (если у nested-конфига разрешены extra-поля),
+            # иначе — fallback на верхний уровень cfg.validation_gate (MasterConfig.extra='allow').
+            gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
+            if gate is None:
+                gate = getattr(cfg, "validation_gate", None)
+            def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
+                if not g:
+                    return True  # гейт выключен, если не задан в конфиге
+                def _f(name: str, default: float | None = None) -> float:
+                    v = m.get(name, default)
+                    try:
+                        return float(v)
+                    except Exception:
+                        return float("-inf")
+                cur_sharpe  = _f("Validation_sharpe")
+                cur_sortino = _f("Validation_sortino")
+                cur_pf_raw  = m.get("Validation_profit_factor", None)
+                # PF может быть float("inf")
+                try:
+                    cur_pf = float(cur_pf_raw)
+                except Exception:
+                    cur_pf = float("-inf")
+                cur_dd      = _f("Validation_max_drawdown")  # уже отрицательный (−DD)
+                cur_wr      = _f("Validation_win_rate")      # 0..1
+                cur_trades  = int(m.get("Validation_trades", 0) or 0)
+
+                # Параметры из конфига
+                min_sharpe     = g.get("min_sharpe", None)
+                min_sortino    = g.get("min_sortino", None)
+                min_pf         = g.get("min_profit_factor", None)
+                max_dd_at_most = g.get("max_drawdown_at_most", None)
+                min_wr         = g.get("min_win_rate", None)
+                min_trades     = g.get("min_trades", None)
+                deny_inf_pf    = bool(g.get("deny_inf_pf", False))
+
+                # Проверки
+                ok = True
+                if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
+                if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
+                if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
+                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
+                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
+                if (max_dd_at_most is not None) and not (cur_dd   <= float(max_dd_at_most)):     ok = False
+                if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
+                if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
+                if not ok:
+                    try:
+                        logging.info(
+                            "[Validation] Gate FAILED: "
+                            "Sharpe=%.3f (>= %s), Sortino=%.3f (>= %s), PF=%s (>= %s, deny_inf=%s), "
+                            "MaxDD=%.4f (<= %s), WR=%.3f (>= %s), Trades=%d (>= %s)",
+                            cur_sharpe,  min_sharpe,
+                            cur_sortino, min_sortino,
+                            ("inf" if np.isinf(cur_pf) else f"{cur_pf:.4f}"), min_pf, str(deny_inf_pf),
+                            cur_dd, max_dd_at_most,
+                            cur_wr, min_wr,
+                            cur_trades, str(min_trades),
+                        )
+                    except Exception:
+                        logging.info("[Validation] Gate FAILED (see metrics.json for details)")
+                return ok
+
+            # Если гейт не пройден — просто пропускаем обновление best
+            if not _passes_gate(metrics, gate):
+                continue
+
             # Корректное сравнение tuple/float/None
             def _is_better(current, best):
                 if best is None:

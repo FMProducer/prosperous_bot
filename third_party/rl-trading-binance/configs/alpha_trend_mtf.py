@@ -13,7 +13,7 @@ cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 cfg.model.dropout_p = 0.10
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
+cfg.trainlog.val_freq = 500
 # Увеличиваем общий горизонт обучения (качество > скорость)
 cfg.trainlog.episodes = 80000
 cfg.trainlog.plot_top_n = 10
@@ -47,6 +47,19 @@ cfg.trainlog.val_selection_metrics = [
     "Validation_max_drawdown", # Примечание: для этой метрики нужно минимизировать значение
     "Validation_win_rate"
 ]
+# ── Валидационный гейт для отбора best.pth.
+# ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
+# train.py теперь читает fallback из cfg.validation_gate.
+cfg.validation_gate = {
+    "min_sharpe": 0.15,
+    "min_sortino": 0.25,
+    "min_profit_factor": 1.15,
+    # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
+    "max_drawdown_at_most": -0.001,
+    "min_win_rate": 0.49,   # 0..1
+    "min_trades": 40,      # минимум сделок на валидации (ваше требование)
+    "deny_inf_pf": True,    # запрещаем PF=inf
+}
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
 cfg.seq.agent_history_len = 30
 cfg.seq.agent_session_len = 10
@@ -58,11 +71,11 @@ cfg.seq.action_history_len = ACTION_HISTORY_LEN
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
 cfg.backtest.position_fraction = 0.4
-cfg.backtest.order_size_usdt = 0.0
+cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.008
-cfg.backtest.short_action_threshold = 0.008
+cfg.backtest.long_action_threshold = 0.015
+cfg.backtest.short_action_threshold = 0.015
 # cfg.backtest.close_action_threshold = 0.0180067279703063
 # cfg.backtest.ensemble_n_samples = 1
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015) prev: 0.002582999563187257
@@ -74,17 +87,17 @@ cfg.backtest.clear_disk_cache = False
 cfg.backtest.use_risk_management = True
 # cfg.backtest.stop_loss = 0.0153228603723445
 # cfg.backtest.take_profit = 0.0447149987567144
-cfg.backtest.trailing_stop = 0.013913282318387437
+cfg.backtest.trailing_stop = 0.018
 # Execution timing: 0 = current behavior (may inflate returns), 1 = honest next-bar execution
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
 # Linear Trailing Stop Parameters for Optuna ---
 # d_min: нижний пол для отступа трейла (напр. 0.2–0.6%)
-cfg.backtest.trailing_stop_min = 0.004787697909715133
+cfg.backtest.trailing_stop_min = 0.005
 # Множитель для fee_buf = fee_buffer_mult * fee (обычно ~2.0)
 cfg.backtest.fee_buffer_mult = 2.0
 # Hysteresis for TSL updates ---
-cfg.backtest.delta_p_hysteresis = 0.001174815758496933
+cfg.backtest.delta_p_hysteresis = 0.0015
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
@@ -109,7 +122,7 @@ cfg.perf.cudnn_benchmark = False
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 3
+cfg.vec.num_envs = 1
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # SubprocVecEnv включаем под тяжёлые env/на Linux.
 cfg.vec.backend = "dummy"
@@ -158,8 +171,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251104_time_023812\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251104_time_193420\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251104_time_193420\norm_stats.json"
 cfg.random_seed = 202
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
