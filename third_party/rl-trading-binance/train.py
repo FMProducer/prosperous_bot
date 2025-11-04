@@ -249,7 +249,7 @@ def _dump_torch_env(dst_path: str) -> None:
         lines.append(f"cuda={getattr(torch.version, 'cuda', None)}")
         try:
             import torch.backends.cudnn as cudnn
-            lines.append(f"cudnn={getattr(cudnn, 'version', lambda: None)()}")
+            lines.append(f"cudnn={getattr(cudnn, 'version', lambda: None)()})")
         except Exception:
             lines.append("cudnn=None")
         if torch.cuda.is_available():
@@ -480,88 +480,12 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
     return seqs
 
 
-def plot_test_distributions(test_metrics: dict, plots_dir: str) -> None:
-    os.makedirs(plots_dir, exist_ok=True)
-    sns.set_theme(style="whitegrid")
-    logging.info(f"Starting to generate test distribution plots in: {plots_dir}")
-
-    if "Test_all_pnls" in test_metrics and test_metrics["Test_all_pnls"]:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(
-            test_metrics["Test_all_pnls"],
-            kde=True,
-            bins=30,
-            color="tab:blue",
-            edgecolor="black",
-            alpha=0.7,
-        )
-        plt.title("Distribution of Test PnL", fontsize=16, fontweight="bold")
-        plt.xlabel("PnL per Episode", fontsize=14)
-        plt.ylabel("Frequency", fontsize=14)
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
-        plt.tight_layout()
-        save_path = os.path.join(plots_dir, "test_pnl_distribution.png")
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-        logging.info(f"Saved PnL distribution plot: {save_path}")
-    else:
-        logging.warning("Test_all_pnls is missing or empty – skipping PnL plot.")
-
-    if "Test_all_reward" in test_metrics and test_metrics["Test_all_reward"]:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(
-            test_metrics["Test_all_reward"],
-            kde=True,
-            bins=30,
-            color="tab:green",
-            edgecolor="black",
-            alpha=0.7,
-        )
-        plt.title("Distribution of Test Rewards", fontsize=16, fontweight="bold")
-        plt.xlabel("Reward per Episode", fontsize=14)
-        plt.ylabel("Frequency", fontsize=14)
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
-        plt.tight_layout()
-        save_path = os.path.join(plots_dir, "test_reward_distribution.png")
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-        logging.info(f"Reward distribution plot saved: {save_path}")
-    else:
-        logging.warning("Test_all_reward is missing or empty – skipping Reward plot.")
-
-    if "Test_all_win_rate" in test_metrics and test_metrics["Test_all_win_rate"]:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(
-            [wr * 100 for wr in test_metrics["Test_all_win_rate"]],
-            kde=True,
-            bins=30,
-            color="tab:purple",
-            edgecolor="black",
-            alpha=0.7,
-        )
-        plt.title("Distribution of Test Win Rate (%)", fontsize=16, fontweight="bold")
-        plt.xlabel("Win Rate (%) per Episode", fontsize=14)
-        plt.ylabel("Frequency", fontsize=14)
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
-        plt.tight_layout()
-        save_path = os.path.join(plots_dir, "test_win_rate_distribution.png")
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-        logging.info(f"Win Rate distribution plot saved: {save_path}")
-    else:
-        logging.warning("Test_all_win_rate is missing or empty – skipping Win Rate plot.")
-
 def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
     if len(sys.argv) > 1:
         cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
     else:
         cfg, cfg_mod = default_cfg, None
-    # Disable final testing entirely (user request). Keep training/validation unchanged.
-    DISABLE_FINAL_TEST = True  # do not move to config; enforced safety switch
 
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
@@ -646,9 +570,7 @@ def main(cfg: MasterConfig = None):
         plot_channel_idx=cfg.data.plot_channel_idx,
         pre_signal_len=cfg.seq.pre_signal_len,
     )
-    if DISABLE_FINAL_TEST:
-        # Avoid building test_seqs and any subsequent test evaluation
-        raw_test = []
+    raw_test = []
 
     train_seqs = process_data(raw_train, "Train", cfg)
     val_seqs = process_data(raw_val, "Val", cfg)
@@ -947,54 +869,6 @@ def main(cfg: MasterConfig = None):
     logging.info(f"Final model saved: {final_path}")
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
-    test_metrics: Dict[str, Any] = {}
-    if test_seqs:
-        test_kwargs = dict(env_kwargs)
-        test_kwargs["sequences"] = test_seqs
-        test_kwargs["backtest_mode"] = True
-        test_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
-        test_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
-        test_env = TradingEnvironment(**test_kwargs)
-        if hasattr(cfg.backtest, "exec_delay_bars"):
-            setattr(test_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
-        model_name = "final.pth" if cfg.debug.use_final_model else "best.pth"
-        model_path = os.path.join(models_dir, model_name)
-        if not os.path.exists(model_path):
-            if not cfg.debug.use_final_model:
-                err = (
-                    "Отсутствует файл best.pth для финальной оценки при use_final_model=False. "
-                    "Фолбэк на final.pth запрещён.\n"
-                    f"Ожидался файл: {model_path}\n"
-                    "Проверьте: включена ли валидация (cfg.trainlog.validate_model), "
-                    "достигнут ли ep % val_freq == 0, корректен ли ключ cfg.trainlog.val_selection_metrics, "
-                    "и/или были ли улучшения метрики на валидации."
-                )
-                logging.error(err)
-                raise FileNotFoundError(err)
-            else:
-                err = f"Ожидался файл final.pth, но не найден: {model_path}"
-                logging.error(err)
-                raise FileNotFoundError(err)
-        agent.load_model(model_path)
-        logging.info(f"Testing model: {model_path}")
-
-        test_metrics = evaluate_agent(
-            test_env,
-            agent,
-            min(len(test_seqs), cfg.trainlog.num_val_ep),
-            "Test",
-            None,
-            cfg.global_env_seed,
-            cfg,
-        )
-
-        plot_test_distributions(test_metrics, plots_dir)
-        logging.info("All test plots generated successfully.")
-
-        test_env.close()
-    else:
-        logging.info("Final testing disabled by request — skipping final evaluation.")
-
     train_env.close()
 
     if val_env:
@@ -1024,7 +898,6 @@ def main(cfg: MasterConfig = None):
                 "mean_losses_N": history.get("mean_losses_N", []),
                 "mean_win_rates_N": history.get("mean_win_rates_N", []),
             },
-            "test": test_metrics,
         }
         with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(bundle_metrics, f, indent=2, default=_numpy_json_default)
@@ -1106,27 +979,15 @@ def main(cfg: MasterConfig = None):
         if os.path.exists(final_path):
             _attach_meta_to_checkpoint(final_path, meta)
 
-        # ── Краткое резюме метрик в лог (для аудита без открытия файлов)
+        # ── Краткое резюме метрик в лог (для аудита без открытия файлов) — только валидация
         try:
             _metrics_path = os.path.join(models_dir, "metrics.json")
             with open(_metrics_path, "r", encoding="utf-8") as _mf:
                 _m = json.load(_mf)
             _best = _m.get("best_val_metric")
             _sel  = _m.get("val_selection_metric")
-            _test = _m.get("test", {}) if isinstance(_m, dict) else {}
-            # Adjust keys to match what evaluate_agent produces
-            _test_win_rate = _test.get("Test_win_rate") or _test.get("Test_win_rate_percent")
-            _test_mean_pnl = _test.get("Test_mean_pnl")
             _best_tuple = tuple(_best) if isinstance(_best, list) else (_best,)
-
-            logging.info(
-                "[SUMMARY] best_val_metric=%s  val_selection_metric=%s  "
-                "test.win_rate=%s  test.mean_pnl=%s",
-                _best_tuple,
-                _sel,
-                f"{_test_win_rate:.2%}" if isinstance(_test_win_rate, float) else _test_win_rate,
-                f"{_test_mean_pnl:.2f}" if isinstance(_test_mean_pnl, float) else _test_mean_pnl,
-            )
+            logging.info("[SUMMARY] best_val_metric=%s  val_selection_metric=%s", _best_tuple, _sel)
         except Exception as e:
             logging.warning(f"[SUMMARY] Failed to log metrics summary: {e}")
 
