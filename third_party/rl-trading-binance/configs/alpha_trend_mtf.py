@@ -20,12 +20,12 @@ cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 300000
 cfg.rl.batch_size = 128
 # Стабильнее обновления с меньшим шагом
-cfg.rl.learning_rate = 2e-4
+cfg.rl.learning_rate = 1e-4
 cfg.rl.train_start = 18000
-cfg.rl.gamma = 0.997
-cfg.rl.n_step = 5
+cfg.rl.gamma = 0.999
+cfg.rl.n_step = 10
 # стабильнее целевые обновления
-cfg.rl.target_update_freq = 5000
+cfg.rl.target_update_freq = 10000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
 cfg.rl.max_gradient_norm = 5.0
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
