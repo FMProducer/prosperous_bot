@@ -122,9 +122,9 @@ cfg.perf.cudnn_benchmark = False
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 1
+cfg.vec.num_envs = 1 # Количество параллельных сред
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
-# SubprocVecEnv включаем под тяжёлые env/на Linux.
+# "subproc" # Использовать мультипроцессинг
 cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
@@ -171,8 +171,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251104_time_193420\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251104_time_193420\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251105_time_015246\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_trend_mtf\saved_models\rl_binance_futures_trading_date_20251105_time_015246\norm_stats.json"
 cfg.random_seed = 202
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
@@ -243,6 +243,7 @@ optuna_search_space = {
     # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
 }
 
-
-
 cfg.optuna_search_space = optuna_search_space
+
+# Для досрочной остановки
+cfg.trainlog.early_stopping_patience = 15 # Остановить, если нет улучшений в течение 15 валидаций

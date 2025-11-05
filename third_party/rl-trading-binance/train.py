@@ -23,6 +23,7 @@ from tqdm import tqdm, trange
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
+from subproc_vec_env import SubprocVecEnv
 from vec_env import DummyVecEnv # noqa: F401
 from trading_environment import TradingEnvironment
 from utils import (
@@ -621,8 +622,15 @@ def main(cfg: MasterConfig = None):
     }
     # --- TRAIN ENV: single vs vectorized ---
     if cfg.vec.num_envs > 1:
-        train_env = DummyVecEnv(_make_train_env_fns(env_kwargs, cfg.vec.num_envs))
-        logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
+        env_fns = _make_train_env_fns(env_kwargs, cfg.vec.num_envs)
+        if cfg.vec.backend == "subproc":
+            train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
+            logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.num_envs} (start_method='{cfg.vec.start_method}')")
+        elif cfg.vec.backend == "dummy":
+            train_env = DummyVecEnv(env_fns)
+            logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
+        else:
+            raise ValueError(f"Unknown vec.backend: '{cfg.vec.backend}'")
     else:
         train_env = TradingEnvironment(**env_kwargs)
     # Валидация: backtest-режим + TSL/exec-delay
@@ -710,6 +718,12 @@ def main(cfg: MasterConfig = None):
     best_val_metric = None
     last_val_metrics: Dict[str, Any] = {}
     best_validation: Dict[str, Any] = {}
+    # --- Early Stopping ---
+    # Ищем в конфиге, если нет — используем разумные значения по умолчанию
+    early_stopping_patience = int(getattr(getattr(cfg, "trainlog", object()), "early_stopping_patience", 20))
+    # Счётчик валидаций без улучшения
+    no_improvement_count = 0
+
     best_episode: int | None = None
     train_steps = 0
 
@@ -877,21 +891,20 @@ def main(cfg: MasterConfig = None):
             if not _passes_gate(metrics, gate):
                 continue
 
+            logging.info(
+                "[Validation] текущие метрики прошли валидационный гейт"
+            )
+
             # Корректное сравнение tuple/float/None
             def _is_better(current, best):
                 if best is None:
                     return True
-                if isinstance(current, tuple) and isinstance(best, tuple):
-                    return current > best
-                if isinstance(current, tuple) and not isinstance(best, tuple):
-                    # Поднимем скаляр "best" до кортежа нулей той же длины
-                    best_tuple = (float(best),) + tuple(0.0 for _ in range(len(current) - 1))
-                    return current > best_tuple
-                if not isinstance(current, tuple) and isinstance(best, tuple):
-                    return False
                 return current > best
 
             if _is_better(val_metric, best_val_metric):
+                logging.info(
+                    f"[Validation] New best model. Current metric: {val_metric} > Previous best: {best_val_metric}"
+                )
                 best_val_metric = val_metric
                 best_validation = dict(metrics)  # store full snapshot
                 best_episode = int(ep)
@@ -930,6 +943,21 @@ def main(cfg: MasterConfig = None):
                     cfg.trainlog.val_selection_metrics
                 )
                 logging.info(" -> New best values: %s", human_readable_metrics)
+
+                # Сбрасываем счётчик, т.к. нашли улучшение
+                no_improvement_count = 0
+            else:
+                # Улучшения не было, увеличиваем счётчик
+                no_improvement_count += 1
+
+        # --- Проверка условия досрочной остановки ---
+        if val_env and ep % cfg.trainlog.val_freq == 0 and best_episode is not None:
+            if no_improvement_count >= early_stopping_patience:
+                logging.info(
+                    f"[Early Stopping] No improvement for {no_improvement_count} validation checks "
+                    f"(patience={early_stopping_patience}). Stopping training at episode {ep}."
+                )
+                break # Выход из основного цикла обучения
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
