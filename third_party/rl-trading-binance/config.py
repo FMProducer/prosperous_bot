@@ -174,6 +174,7 @@ class TrainLogConfig(BaseModel):
     plot_top_n: int = 10
     plot_metric: str = "pnl"
     iterations: int = 10_000
+    early_stopping_patience: int = 20
 
     @validator("val_selection_metrics")
     def check_val_metric(cls, v, values):
