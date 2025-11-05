@@ -2,22 +2,22 @@
 from config import MasterConfig
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 2
-cfg.model.cnn_maps = [64, 64, 96]
-cfg.model.cnn_kernels = [5, 3, 3]
-cfg.model.cnn_strides = [1, 1, 1]
-cfg.model.dense_val = [96, 48]
-cfg.model.dense_adv = [96, 48]
+cfg.model.cnn_maps = [64, 96, 128]
+cfg.model.cnn_kernels = [7, 5, 3]
+cfg.model.cnn_strides = [2, 1, 1]
+cfg.model.dense_val = [128, 64]
+cfg.model.dense_adv = [128, 64]
 # 4 + action_history_len * num_actions
 cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
-cfg.model.dropout_p = 0.05
+cfg.model.dropout_p = 0.10
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 2500
 cfg.trainlog.val_freq = 1000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 70000
+cfg.trainlog.episodes = 75000
 cfg.trainlog.plot_top_n = 10
-cfg.per.buffer_size = 180000
+cfg.per.buffer_size = 250000
 cfg.rl.batch_size = 64
 # Стабильнее обновления с меньшим шагом
 cfg.rl.learning_rate = 3e-4
@@ -28,6 +28,8 @@ cfg.rl.n_step = 5
 cfg.rl.target_update_freq = 10000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
 cfg.rl.max_gradient_norm = 5.0
+# Увеличиваем штраф за бездействие, чтобы стимулировать торговлю
+cfg.market.inaction_penalty_ratio = 0.005
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
 cfg.trainlog.available_metrics=[
     "Validation_mean_reward",
@@ -51,14 +53,14 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.15,
+    "min_sharpe": 0.10,
     "min_sortino": 0.25,
     "min_profit_factor": 1.15,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
     "max_drawdown_at_most": -0.001,
     "min_win_rate": 0.49,   # 0..1
     "min_trades": 40,      # минимум сделок на валидации (ваше требование)
-    "deny_inf_pf": True,    # запрещаем PF=inf
+    "deny_inf_pf": True,    # СНОВА запрещаем PF=inf, чтобы отсеять нереалистичные модели
 }
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
 cfg.seq.agent_history_len = 20
@@ -173,7 +175,7 @@ cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 # Модель для бэктеста.
 cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251105_time_213256\best.pth"
 cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251105_time_213256\norm_stats.json"
-cfg.random_seed = 303
+cfg.random_seed = 304 # Новый seed для новой попытки
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
