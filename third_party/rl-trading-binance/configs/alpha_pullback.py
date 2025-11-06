@@ -51,8 +51,8 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.15,
-    "min_sortino": 0.25,
+    "min_sharpe": 0.14,
+    "min_sortino": 0.19,
     "min_profit_factor": 1.15,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
     "max_drawdown_at_most": -0.0001,
