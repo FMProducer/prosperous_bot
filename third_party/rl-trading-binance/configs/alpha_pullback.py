@@ -15,21 +15,19 @@ cfg.model.dropout_p = 0.10
 cfg.trainlog.num_val_ep = 2500
 cfg.trainlog.val_freq = 1000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 75000
+cfg.trainlog.episodes = 80000
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 250000
 cfg.rl.batch_size = 64
 # Стабильнее обновления с меньшим шагом
 cfg.rl.learning_rate = 3e-4
-cfg.rl.train_start = 12000
-cfg.rl.gamma = 0.997
+cfg.rl.train_start = 15000
+cfg.rl.gamma = 0.999 # Повышаем "терпеливость" до уровня trend-модели
 cfg.rl.n_step = 5
 # стабильнее целевые обновления
 cfg.rl.target_update_freq = 10000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
 cfg.rl.max_gradient_norm = 5.0
-# Увеличиваем штраф за бездействие, чтобы стимулировать торговлю
-cfg.market.inaction_penalty_ratio = 0.005
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
 cfg.trainlog.available_metrics=[
     "Validation_mean_reward",
@@ -43,28 +41,28 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор с приоритетом на риск-скорректированные метрики
 cfg.trainlog.val_selection_metrics = [
-    "Validation_sharpe",
+    "Validation_sharpe", # Приоритет №1
     "Validation_sortino",
     "Validation_profit_factor",
-    "Validation_max_drawdown", # Примечание: для этой метрики нужно минимизировать значение
-    "Validation_win_rate"
+    "Validation_win_rate",
+    "Validation_max_drawdown"
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.10,
+    "min_sharpe": 0.15,
     "min_sortino": 0.25,
     "min_profit_factor": 1.15,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.001,
+    "max_drawdown_at_most": -0.0001,
     "min_win_rate": 0.49,   # 0..1
     "min_trades": 40,      # минимум сделок на валидации (ваше требование)
-    "deny_inf_pf": True,    # СНОВА запрещаем PF=inf, чтобы отсеять нереалистичные модели
+    "deny_inf_pf": True,    # Возвращаем строгий гейт, отсеиваем нереалистичные модели
 }
 # Удлинённый контекст/сессии для повышения качества (см. коммиты от 2025-10-12)
-cfg.seq.agent_history_len = 20
-cfg.seq.agent_session_len = 8
+cfg.seq.agent_history_len = 30 # Увеличиваем контекст для более качественных решений
+cfg.seq.agent_session_len = 10 # Увеличиваем длину сессии для поиска более длинных движений
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
     cfg.seq.pre_signal_len = cfg.seq.agent_history_len
@@ -173,9 +171,9 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251105_time_213256\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251105_time_213256\norm_stats.json"
-cfg.random_seed = 304 # Новый seed для новой попытки
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251106_time_211458\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_pullback\saved_models\rl_binance_futures_trading_date_20251106_time_211458\norm_stats.json"
+cfg.random_seed = 305 # Новый seed для новой, третьей попытки
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10

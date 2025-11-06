@@ -41,11 +41,11 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор с приоритетом на риск-скорректированные метрики
 cfg.trainlog.val_selection_metrics = [
-    "Validation_max_drawdown", # Приоритет №1: минимизировать просадку
-    "Validation_sharpe",
+    "Validation_sharpe", # Приоритет №1
     "Validation_sortino",
     "Validation_profit_factor",
-    "Validation_win_rate"
+    "Validation_win_rate",
+    "Validation_max_drawdown"
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
@@ -55,14 +55,14 @@ cfg.validation_gate = {
     "min_sortino": 0.45,
     "min_profit_factor": 1.10,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.0005, # Очень строгий лимит на просадку
+    "max_drawdown_at_most": -0.0001, # Строгий, но реалистичный лимит на просадку
     "min_win_rate": 0.50,   # 0..1
     "min_trades": 30,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
-cfg.seq.agent_history_len = 60
-cfg.seq.agent_session_len = 15
+cfg.seq.agent_history_len = 30
+cfg.seq.agent_session_len = 10
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
     cfg.seq.pre_signal_len = cfg.seq.agent_history_len

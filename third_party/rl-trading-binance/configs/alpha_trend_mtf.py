@@ -41,11 +41,11 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор с приоритетом на риск-скорректированные метрики
 cfg.trainlog.val_selection_metrics = [
-    "Validation_sharpe",
+    "Validation_sharpe", # Приоритет №1
     "Validation_sortino",
     "Validation_profit_factor",
-    "Validation_max_drawdown", # Примечание: для этой метрики нужно минимизировать значение
-    "Validation_win_rate"
+    "Validation_win_rate",
+    "Validation_max_drawdown"
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
@@ -55,7 +55,7 @@ cfg.validation_gate = {
     "min_sortino": 0.25,
     "min_profit_factor": 1.15,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.001,
+    "max_drawdown_at_most": -0.0001,
     "min_win_rate": 0.49,   # 0..1
     "min_trades": 40,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
