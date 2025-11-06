@@ -3,8 +3,8 @@ from config import MasterConfig
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 2
 cfg.model.cnn_maps = [64, 96, 128]
-cfg.model.cnn_kernels = [10, 7, 5]
-cfg.model.cnn_strides = [3, 2, 1]
+cfg.model.cnn_kernels = [7, 5, 3]
+cfg.model.cnn_strides = [2, 1, 1]
 cfg.model.dense_val = [128, 64, 32]
 cfg.model.dense_adv = [128, 64, 32]
 # 4 + action_history_len * num_actions
