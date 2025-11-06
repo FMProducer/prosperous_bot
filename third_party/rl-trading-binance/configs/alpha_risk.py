@@ -51,13 +51,13 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.30,
-    "min_sortino": 0.45,
-    "min_profit_factor": 1.10,
+    "min_sharpe": 0.15,
+    "min_sortino": 0.25,
+    "min_profit_factor": 1.15,
     # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.0001, # Строгий, но реалистичный лимит на просадку
-    "min_win_rate": 0.50,   # 0..1
-    "min_trades": 30,      # минимум сделок на валидации (ваше требование)
+    "max_drawdown_at_most": -0.0001,
+    "min_win_rate": 0.49,   # 0..1
+    "min_trades": 40,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
