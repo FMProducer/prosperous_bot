@@ -41,10 +41,11 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор
 cfg.trainlog.val_selection_metrics = [
-    "Validation_sharpe", # Приоритет №1
-    "Validation_sortino",
+    "Validation_mean_pnl",
     "Validation_profit_factor",
     "Validation_win_rate",
+    "Validation_sharpe",
+    "Validation_sortino",
     "Validation_max_drawdown"
 ]
 # ── Валидационный гейт для отбора best.pth.
