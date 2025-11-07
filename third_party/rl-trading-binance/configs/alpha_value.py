@@ -41,8 +41,8 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор
 cfg.trainlog.val_selection_metrics = [
-    "Validation_mean_pnl",
     "Validation_profit_factor",
+    "Validation_mean_pnl",
     "Validation_win_rate",
     "Validation_sharpe",
     "Validation_sortino",
@@ -172,8 +172,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_risk\saved_models\rl_binance_futures_trading_date_20251107_time_003736\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_risk\saved_models\rl_binance_futures_trading_date_20251107_time_003736\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_value\saved_models\rl_binance_futures_trading_date_20251107_time_203943\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_value\saved_models\rl_binance_futures_trading_date_20251107_time_203943\norm_stats.json"
 cfg.random_seed = 404
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
