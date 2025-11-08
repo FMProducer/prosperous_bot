@@ -179,7 +179,7 @@ cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 # Модель для бэктеста.
 cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_031117\best.pth"
 cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_031117\norm_stats.json"
-cfg.random_seed = 404
+cfg.random_seed = 261
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10

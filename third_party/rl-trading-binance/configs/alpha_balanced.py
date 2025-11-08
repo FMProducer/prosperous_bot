@@ -41,24 +41,27 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор
 cfg.trainlog.val_selection_metrics = [
-    "Validation_sharpe", # Приоритет №1
+    "Validation_sharpe",
     "Validation_sortino",
     "Validation_profit_factor",
     "Validation_win_rate",
-    "Validation_max_drawdown"
+    "Validation_max_drawdown",
+    "Validation_mean_pnl"
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.14,
-    "min_sortino": 0.19,
-    "min_profit_factor": 1.15,
-    # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.0001,
-    "min_win_rate": 0.49,   # 0..1
+    "min_sharpe": 0.20,
+    "min_sortino": 0.40,
+    "min_profit_factor": 1.30,
+    # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
+    "max_drawdown_at_most": -0.20,
+    "min_win_rate": 0.51,   # 0..1
     "min_trades": 40,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
+    # НОВОЕ: Запрещаем модели с нулевой просадкой, т.к. это нереалистично.
+    "deny_zero_drawdown": True,
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
 cfg.seq.agent_history_len = 30
@@ -171,9 +174,9 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_risk\saved_models\rl_binance_futures_trading_date_20251107_time_003736\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_risk\saved_models\rl_binance_futures_trading_date_20251107_time_003736\norm_stats.json"
-cfg.random_seed = 404
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\norm_stats.json"
+cfg.random_seed = 182
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
@@ -202,7 +205,7 @@ cfg.detector.cooldown_minutes = 30
 # Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
 cfg.project_name = "rl_binance_futures_trading"
 cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
-cfg.paths.config_name = "alpha_risk"
+cfg.paths.config_name = "alpha_balanced"
 
 # Управляющие флаги упаковки (используются в train.py):
 bundle_cfg = type("obj", (), {})()
