@@ -103,7 +103,7 @@ cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
-cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-10-01T00:00:00Z"}
+cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None

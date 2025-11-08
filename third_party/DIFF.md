@@ -1,171 +1,100 @@
-# Repo-State Header
+Мы строим сложную **двухуровневую систему**, где три одинаковых по архитектуре, но разных по "характеру" гибридных модели (Level 0) предоставляют свои "мнения", а вторая модель (Level 1, мета-модель) учится их комбинировать для принятия финального решения. Это и есть **стекинг (stacking)** .
 
-**Branch:** `prosperous_bot` • **Last commit:** `d50a58c876c3dbc0249ab7137da6b4c8c9e23d41` — *“docs: paper_trader_q”* • **Link:** ([GitHub][1])
+Ваша задача — создать **разнообразие (diversity)** в базовых моделях. Если все три модели будут одинаковыми, ансамбль не будет иметь смысла. Мы сделаем их "специалистами" с разными целями.
 
-**Нормы проекта:** (цитирую обязательные пункты) — перед каждым патчем подтверждаем ветку/коммит; параметры только из `configs/`; правки — unified diff; тест-гейтинг обязателен.
-Архитектура/модули: окружение `TradingEnvironment`, реалистичный бэктестер, настройка через конфиги.
+Вот базовые настройки для каждой части этой системы, учитывая ваши временные рамки.
 
----
+### Архитектура системы
 
-## TL;DR
+*   **Уровень 0: Базовые Модели (3 гибридных агента)**
+    *   Каждый агент — это связка CNN+D3QN.
+    *   Анализирует окно в **30 минут** (30 свечей по 1 минуте).
+    *   Цель: предложить действие (`Buy`, `Sell`, `Hold`) и/или вектор уверенности.
+    *   **Различия**: мы настроим их с разными функциями вознаграждения, чтобы создать "агрессивного", "сбалансированного" и "консервативного" агентов.
 
-Да, даже при `cfg.detector.use_lookahead = False` фьючерсный бэктест всё ещё «подглядывает»: исполнение сделки на первом шаге идёт по **бару t-1** относительно времени сигнала `t` (см. формулу `price_idx = pre_len - 1 + step_idx`), что даёт нереалистичную фору и «тысячные» проценты прибыли.
-Предлагаю **ввести параметр задержки исполнения `exec_delay_bars`** (0 — текущее поведение, 1 — честное исполнение на следующем баре). Это **не ломает** ваши текущие экстремальные проценты (оставим `0` по умолчанию для оптимизаций), но даёт переключатель для «honest mode».
+*   **Уровень 1: Мета-модель (Стекинг-агрегатор)**
+    *   Получает на вход "мнения" трёх базовых агентов.
+    *   Принимает **финальное торговое решение**.
+    *   Обучается на том, чтобы предсказать, какой из агентов (или какая комбинация) будет права в следующей 10-минутной торговой сессии.
 
-Ключевая причина: детектор сигналов без lookahead корректен, но **механика исполнения** в окружении использует цену на `t-1`, тогда как сигнал сформирован на `t`. Потому оптимизация подстраивается под систематическую утечку. 
+***
 
----
+### Шаг 1: Базовые настройки для моделей Уровня 0 (CNN + D3QN)
 
-## Что именно «подглядывает»
+Эти настройки будут общими для всех трёх агентов, за исключением функции вознаграждения.
 
-* В `TradingEnvironment.backtest_step()` цена исполнения берётся по индексу `pre_signal_len - 1 + step_idx`, т.е. на первом тике сдвиг на **бар до сигнала** (`t-1`). 
-* Та же логика индекса цены используется в `_get_observation()` и `_get_info()` (оценка нереализованной PnL), что консистентно, но сохраняет ту же форку. 
-* Детектор `use_lookahead=False` как раз использует прошлое (через лаги), здесь всё ок; проблема именно в **моменте исполнения**, а не в выборке сигналов. (Ваши файлы `backtest_engine.py`/SQL-логика показывают, что окно рассчитывается назад, без LEAD.) 
+#### Настройки для CNN-компонента ("Аналитик")
 
----
+CNN здесь выступает как feature extractor, который "видит" паттерны в данных за последние 30 минут.
 
-## Патч: переключатель «честного» исполнения (без смены текущих результатов)
+*   **Входные данные (`Input Shape`)**: Временной ряд размером `(30, N)`, где `30` — это 30 одноминутных свечей, а `N` — количество признаков на каждую свечу .
+    *   **Признаки (N)**: Как минимум `[Open, High, Low, Close, Volume]`.
+*   **Архитектура (базовая)**:
+    *   **Сверточные слои (1D)**: 2-3 слоя `Conv1D`.
+        *   `filters`: Начните с `32` и `64`.
+        *   `kernel_size`: `3` или `5`.
+        *   Активация: `ReLU`.
+    *   **Пулинг**: `MaxPooling1D` с `pool_size=2` после каждого сверточного слоя для уменьшения размерности.
+    *   **Dropout**: `0.3` после пулинга для борьбы с переобучением на рыночном шуме.
+    *   **Выходной слой CNN**: `Flatten`, за которым следует `Dense` слой, выдающий вектор признаков (например, размером `64`). Этот вектор пойдет на вход D3QN.
 
-### Изменения (минимальные, безопасные):
+#### Настройки для D3QN-компонента ("Трейдер")
 
-1. Добавляем чтение `cfg.backtest.exec_delay_bars` в бэктест-движке и трейдере (для Paper Trader), по умолчанию `0`.
-2. Во всех местах, где берём `price_idx` (= `pre_len - 1 + step_idx`), добавляем `+ exec_delay_bars`.
-3. Для Paper Trader с базой: если `exec_delay_bars > 0`, берём цену **на сигнальном времени + delay минут**; при отсутствии бара — аккуратно откатываемся к `t`.
+*   **Состояние (`State`)**: Вектор, который получает агент для принятия решения. Он должен включать:
+    1.  **Выходной вектор от CNN** (например, 64 значения).
+    2.  **Данные о портфеле**: `[баланс_в_валюте, количество_криптовалюты]`.
+    3.  **Текущая цена** (чтобы понимать абсолютный уровень).
+*   **Действия (`Actions`)**: `[0 - Hold, 1 - Buy, 2 - Sell]`.
+*   **Гиперпараметры D3QN**:
+    *   `learning_rate`: `1e-4` (для сетей Q-значений).
+    *   `gamma` (дисконт-фактор): `0.95`. Учитывая 10-минутное окно, слишком высокое значение не нужно.
+    *   `epsilon_decay`: `0.999`. Коэффициент затухания для探索.
+    *   `replay_buffer_size`: `50,000`.
+    *   `batch_size`: `64`.
 
-Это сохраняет ваши «тысячи %» (оставляем `0`), но позволит в любой момент выставить `1` и полностью убрать подглядывание.
+#### Ключевое различие: Функции вознаграждения (`Reward`)
 
----
+Именно здесь мы создаем **сбалансированный ансамбль**. Цель агента — максимизировать вознаграждение, которое он получает по итогам **10-минутного торгового окна**.
 
-### Unified diff (≤300 строк)
+*   **Агент 1: "Агрессивный"** (Цель — максимальная прибыль)
+    *   **Reward**: Чистое изменение стоимости портфеля через 10 минут.
+    *   `Reward = PortfolioValue(t+10) - PortfolioValue(t) - transaction_costs`.
 
-```diff
-*** a/third_party/rl-trading-binance/trading_environment.py
---- b/third_party/rl-trading-binance/trading_environment.py
-@@
--        price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
-+        exec_delay = getattr(self, "exec_delay_bars", 0)
-+        price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
-         price = self.current_seq[price_idx, self.close_idx]
-@@
--        end = self.pre_signal_len + self.step_idx
-+        exec_delay = getattr(self, "exec_delay_bars", 0)
-+        end = self.pre_signal_len + self.step_idx + exec_delay
-         start = end - self.agent_history_len
-         window = self.current_seq[start:end]
-@@
--        if self.position != 0:
--            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-+        if self.position != 0:
-+            exec_delay = getattr(self, "exec_delay_bars", 0)
-+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
-             current_price = self.current_seq[price_idx, self.close_idx]
-@@
--        if self.position != 0:
--            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-+        if self.position != 0:
-+            exec_delay = getattr(self, "exec_delay_bars", 0)
-+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
-             current_price = self.current_seq[price_idx, self.close_idx]
-```
+*   **Агент 2: "Сбалансированный"** (Цель — прибыль с поправкой на риск)
+    *   **Reward**: Коэффициент Шарпа за 10-минутный период. Это вознаграждает за стабильную прибыль и штрафует за высокую волатильность.
+    *   `Reward = (Mean_of_Returns / Std_of_Returns) * sqrt(annualization_factor)`. Расчитывается по шагам внутри 10-минутного окна.
 
-```diff
-*** a/third_party/rl-trading-binance/backtest_engine.py
---- b/third_party/rl-trading-binance/backtest_engine.py
-@@
--    env = TradingEnvironment(
-+    env = TradingEnvironment(
-         stats=norm_stats,
-         data_channels=cfg.data.channels,
-         price_channels=cfg.data.price_channels,
-         volume_channels=cfg.data.volume_channels,
-         other_channels=cfg.data.other_channels,
-@@
-     )
-+    # align execution timing with config (0 keeps current behavior; 1 = honest next-bar execution)
-+    env.exec_delay_bars = getattr(cfg.backtest, "exec_delay_bars", 0)
-+    logging.info(f"[Backtest] exec_delay_bars={env.exec_delay_bars}")
-```
+*   **Агент 3: "Консервативный"** (Цель — избегание потерь)
+    *   **Reward**: Коэффициент Сортино или просто асимметричная награда. Штраф за убыток гораздо выше, чем награда за эквивалентную прибыль.
+    *   `Reward = Profit if Profit > 0 else Profit * 2.0`. Это заставит агента быть очень осторожным и входить в сделку только при высокой уверенности.
 
-```diff
-*** a/third_party/rl-trading-binance/paper_trader_q.py
---- b/third_party/rl-trading-binance/paper_trader_q.py
-@@
--        # entry price at signal time
--        entry_price = float(df_signal.loc[signal_dt]["close"])
-+        # entry price with optional execution delay (0 keeps current behavior)
-+        delay = int(getattr(self.cfg.backtest, "exec_delay_bars", 0))
-+        delayed_dt = signal_dt + datetime.timedelta(minutes=delay)
-+        if delayed_dt in df_signal.index:
-+            entry_price = float(df_signal.loc[delayed_dt]["close"])
-+            entry_dt_used = delayed_dt
-+        else:
-+            entry_price = float(df_signal.loc[signal_dt]["close"])
-+            entry_dt_used = signal_dt
-@@
--        logging.info(f"Opening position at {signal_dt} price={entry_price:.6f}")
-+        logging.info(f"Opening position at {entry_dt_used} price={entry_price:.6f} (delay={delay})")
-```
+***
 
-```diff
-*** a/third_party/rl-trading-binance/configs/alpha.py
---- b/third_party/rl-trading-binance/configs/alpha.py
-@@
-     cfg.backtest.trailing_stop = 0.01
-+    # Execution timing: 0 = current behavior (may inflate returns), 1 = honest next-bar execution
-+    cfg.backtest.exec_delay_bars = 0
-```
+### Шаг 2: Базовые настройки для Мета-Модели Уровня 1 (Стекинг)
 
----
+Эта модель учится доверять разным базовым агентам в разных рыночных условиях.
 
-## Почему это решает проблему
+*   **Тип модели**: Начните с простого. **Gradient Boosting (XGBoost, LightGBM)** или **Логистическая регрессия** — отличный выбор. Нейросеть здесь будет избыточна.
+*   **Входные данные (`Input`)**: Выходы всех трёх базовых моделей. Например:
+    *   Предположим, каждый D3QN-агент выдает Q-значения для действий `[Hold, Buy, Sell]`.
+    *   Тогда вход для мета-модели — это объединенный вектор: `[Q1_h, Q1_b, Q1_s, Q2_h, Q2_b, Q2_s, Q3_h, Q3_b, Q3_s]` (вектор из 9 значений).
+*   **Целевая переменная (`Target`)**: "Идеальное" действие, которое нужно было совершить. Вычисляется постфактум на исторических данных:
+    *   Для каждого 30-минутного окна вы смотрите на следующие 10 минут и определяете, какое действие (`Buy`, `Sell` или `Hold`) принесло бы максимальную прибыль. Это и будет вашей меткой для обучения мета-модели.
+*   **Процесс обучения**:
+    1.  Обучите трёх базовых агентов на одном наборе исторических данных (`training_set`).
+    2.  Прогоните их на другом наборе данных (`validation_set`), чтобы сгенерировать их предсказания (Q-значения). Эти предсказания станут обучающими данными (`X_meta`) для мета-модели.
+    3.  Рассчитайте "идеальные" действия для `validation_set`, чтобы получить целевую переменную (`y_meta`).
+    4.  Обучите мета-модель (например, XGBoost) на `(X_meta, y_meta)`.
 
-* **Детектор** уже не заглядывает вперёд (`use_lookahead=False`) — он считает изменение/волатильность по прошлым барам, это верно. Проблема была в том, что **вход по цене t-1**, а сигнал по сути «определён» на `t`. Мы синхронизируем **окно наблюдения и бар исполнения** одним параметром, чтобы исключить структурную утечку.
-* В режиме `exec_delay_bars=1` агент на шаге 0 видит историю до `t` (без будущего) и входит по `t+1` — классическая «next bar» семантика.
+### Сводная таблица базовых настроек
 
----
+| Параметр | Модель CNN (внутри каждого агента) | Модель D3QN (внутри каждого агента) | Мета-модель (Стекинг) |
+| :--- | :--- | :--- | :--- |
+| **Входные данные** | `(30, N)` - 30 минут данных + индикаторы | Вектор от CNN + состояние портфеля | Вектор Q-значений от 3-х агентов (размер 9) |
+| **Основная архитектура**| 2-3 слоя Conv1D | 2-потоковая сеть (Value, Advantage) | Gradient Boosting (LightGBM/XGBoost) |
+| **Learning Rate** | `1e-4` (оптимизатор Adam) | `1e-4` (оптимизатор Adam) | `0.05` - `0.1` |
+| **Ключевой параметр** | `kernel_size`: 3-5, `dropout`: 0.3 | `gamma`: 0.95, `epsilon_decay`: 0.999 | `n_estimators`: 100-200, `max_depth`: 3-5 |
+| **Цель/Функция потерь**| Cross-Entropy (если обучается отдельно) | Bellman Equation (Huber Loss) | LogLoss (для классификации действий) |
+| **Уникальная настройка**| - | **Разные функции вознаграждения** (прибыль, Шарп, Сортино) | Обучается на предсказаниях базовых моделей |
 
-## План проверки
-
-| Шаг | Действие                                                                                         | KPI/риск                                                       |
-| --- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| 1   | Применить патч, убедиться что логи показывают `exec_delay_bars=0` (сохранение текущих «тысяч %») | Риск нулевой: поведение идентично текущему                     |
-| 2   | Прогон `optimize_cfg.py` (ваш существующий пайплайн) — результаты не меняем намеренно            | PF/Sharpe прежние; ускорение не затронуто                      |
-| 3   | Сменить `cfg.backtest.exec_delay_bars = 1`, прогнать один эталонный бэктест                      | Ожидаемо упадут «сказочные» проценты, исчезнет утечка/смещение |
-| 4   | Сверка метрик: PF, Sharpe, MaxDD, комиссионные, Win-Rate, Mean PnL                               | Контроль честности симуляции как требование промпта            |
-
----
-
-## Команды для PR (base = `prosperous_bot`)
-
-```bash
-git checkout -b feature/backtest-exec-delay
-git apply --index changes.patch && git commit -m "feat(backtest): add exec_delay_bars to align execution timing; toggle honest next-bar mode"
-git push -u origin feature/backtest-exec-delay
-gh pr create -B prosperous_bot -t "Backtest: exec_delay_bars (toggle honest next-bar execution)" -b "
-### 🎯 Goal
-Добавить управляемую задержку исполнения сделок, чтобы исключить скрытое 'lookahead' в бэктесте.
-### 📝 Implementation Details
-- trading_environment.py: ценовой индекс и окна наблюдения учитывают exec_delay_bars.
-- backtest_engine.py: пробрасываем параметр в env и логируем.
-- paper_trader_q.py: смещение цены входа при симуляции из БД.
-- alpha.py: параметр конфигурации с дефолтом 0 (не ломаем текущие результаты).
-### 📈 KPI/Risk Assessment
-- Sharpe: без изменений при delay=0; честный режим (delay=1) даёт реалистичность, вероятно снижение.
-- Max DD: без изменений при delay=0; пересчёт при delay=1.
-- Profit Factor: без изменений при delay=0; реалистичнее при delay=1.
-### 롤백 계획 (Rollback Plan)
-Параметр-флаг: вернуть exec_delay_bars=0 или revert PR.
----
-Repo: branch 'prosperous_bot', commit d50a58c876c3dbc0249ab7137da6b4c8c9e23d41 (docs: paper_trader_q).
-"
-```
-
----
-
-## Примечания
-
-* Вы правы: можно **сейчас** оставлять delay=0 и оптимизировать параметры — Optuna будет сравнивать конфигурации в одинаковых условиях. Но объективно она будет подгоняться под «форку» раннего входа. Как только перейдёте к реальной торговле/бумажному трейду на стриме — переключите на `1`. Это согласуется с требованиями «честного» бэктеста из README/доков проекта. 
-
-Если хотите, добавлю быстрый smoke-тест `pytest` на корректность индексации (`t` vs `t+1`) и инварианты PnL-логики — по промпту тест-гейтинг обязателен. 
-
-[1]: https://github.com/FMProducer/prosperous_bot/commit/d50a58c876c3dbc0249ab7137da6b4c8c9e23d41 "docs: paper_trader_q · FMProducer/prosperous_bot@d50a58c · GitHub"
+Этот подход сложен в реализации, но методологически очень мощный, так как он не просто усредняет мнения, а **учится, кому из советников доверять в конкретной ситуации.**
