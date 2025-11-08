@@ -55,11 +55,13 @@ cfg.validation_gate = {
     "min_sharpe": 0.20,
     "min_sortino": 0.40,
     "min_profit_factor": 1.30,
-    # Внутри пайплайна DD уже хранится как отрицательная доля (−DD).
-    "max_drawdown_at_most": -0.0001,
+    # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
+    "max_drawdown_at_most": -0.20,
     "min_win_rate": 0.51,   # 0..1
     "min_trades": 40,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
+    # НОВОЕ: Запрещаем модели с нулевой просадкой, т.к. это нереалистично.
+    "deny_zero_drawdown": True,
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
 cfg.seq.agent_history_len = 30
@@ -172,8 +174,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_value\saved_models\rl_binance_futures_trading_date_20251108_time_001519\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_value\saved_models\rl_binance_futures_trading_date_20251108_time_001519\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_031117\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_031117\norm_stats.json"
 cfg.random_seed = 404
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30

@@ -858,6 +858,7 @@ def main(cfg: MasterConfig = None):
                 max_dd_at_most = g.get("max_drawdown_at_most", None)
                 min_wr         = g.get("min_win_rate", None)
                 min_trades     = g.get("min_trades", None)
+                deny_zero_dd   = bool(g.get("deny_zero_drawdown", False))
                 deny_inf_pf    = bool(g.get("deny_inf_pf", False))
 
                 # Проверки
@@ -865,21 +866,24 @@ def main(cfg: MasterConfig = None):
                 if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
                 if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
                 if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
-                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
-                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
-                if (max_dd_at_most is not None) and not (cur_dd   <= float(max_dd_at_most)):     ok = False
+                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False # noqa: E272
+                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False # noqa: E272
+                # ИСПРАВЛЕНО: `cur_dd` должен быть БОЛЬШЕ или РАВЕН порогу (т.к. -0.01 > -0.05).
+                if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False # noqa: E272
+                # НОВОЕ: Запрещаем модели с нулевой просадкой, если флаг установлен.
+                if deny_zero_dd and cur_dd == 0.0:                                                ok = False
                 if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
                 if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
                 if not ok:
                     try:
                         logging.info(
                             "[Validation] Gate FAILED: "
-                            "Sharpe=%.3f (>= %s), Sortino=%.3f (>= %s), PF=%s (>= %s, deny_inf=%s), "
-                            "MaxDD=%.4f (<= %s), WR=%.3f (>= %s), Trades=%d (>= %s)",
+                            "Sharpe=%.3f(>=%s), Sortino=%.3f(>=%s), PF=%s(>=%s, deny_inf=%s), "
+                            "MaxDD=%.4f(>=%s, deny_0=%s), WR=%.3f(>=%s), Trades=%d(>=%s)",
                             cur_sharpe,  min_sharpe,
-                            cur_sortino, min_sortino,
+                            cur_sortino, min_sortino, # noqa: E272
                             ("inf" if np.isinf(cur_pf) else f"{cur_pf:.4f}"), min_pf, str(deny_inf_pf),
-                            cur_dd, max_dd_at_most,
+                            cur_dd, max_dd_at_most, str(deny_zero_dd),
                             cur_wr, min_wr,
                             cur_trades, str(min_trades),
                         )
