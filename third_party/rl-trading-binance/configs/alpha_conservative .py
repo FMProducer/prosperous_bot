@@ -41,11 +41,11 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор
 cfg.trainlog.val_selection_metrics = [
+    "Validation_max_drawdown",
+    "Validation_sortino",
+    "Validation_sharpe",
     "Validation_win_rate",
     "Validation_profit_factor",
-    "Validation_sharpe",
-    "Validation_sortino",
-    "Validation_max_drawdown",
     "Validation_mean_pnl"
 ]
 # ── Валидационный гейт для отбора best.pth.
@@ -205,7 +205,7 @@ cfg.detector.cooldown_minutes = 30
 # Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
 cfg.project_name = "rl_binance_futures_trading"
 cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
-cfg.paths.config_name = "alpha_aggressive"
+cfg.paths.config_name = "alpha_conservative"
 
 # Управляющие флаги упаковки (используются в train.py):
 bundle_cfg = type("obj", (), {})()
