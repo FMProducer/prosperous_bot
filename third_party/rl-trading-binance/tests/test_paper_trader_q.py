@@ -108,6 +108,14 @@ class TestInitialization:
 
     @patch('paper_trader_q.setup_logging')
     @patch('paper_trader_q.init_agent')
+    def test_init_missing_norm_stats_path(self, mock_init, mock_logging, mock_config):
+        mock_config.paths.norm_stats_path = None
+        with patch('os.path.exists', return_value=False):
+            with pytest.raises(RuntimeError, match="Normalization stats path not specified"):
+                PaperTrader(cfg=mock_config, cfg_mod=None)
+
+    @patch('paper_trader_q.setup_logging')
+    @patch('paper_trader_q.init_agent')
     def test_init_with_cfg_mod(self, mock_init, mock_logging, mock_config):
         cfg_mod_str = "paper.leverage=2.0"
         cfg_mod = get_config_mod_from_str(cfg_mod_str)
@@ -190,6 +198,41 @@ class TestInitialization:
                     paper_trader_factory(config=config, agent=mock_agent)
         assert "Failed to get symbols from DB" in caplog.text
 
+    def test_symbol_loading_from_file_read_error(self, mock_agent, caplog):
+        config = MasterConfig(**get_test_config())
+        config.paper.symbols = []
+
+        def open_side_effect(file, mode='r'):
+            if "tickers.txt" in file:
+                raise IOError("Cannot read file")
+            return mock_open(read_data=json.dumps({"means": {}, "stds": {}}))().__enter__()
+
+        with patch('builtins.open', side_effect=open_side_effect), \
+             patch('os.path.exists', return_value=True), \
+             patch('paper_trader_q.init_agent', return_value=mock_agent), \
+             patch('paper_trader_q.setup_logging'):
+            with pytest.raises(SystemExit):
+                paper_trader_factory(config=config, agent=mock_agent)
+        assert "Failed to read symbols from" in caplog.text
+
+    @patch('paper_trader_q.setup_logging')
+    @patch('paper_trader_q.init_agent')
+    def test_init_invalid_stats_file(self, mock_init, mock_logging, mock_config):
+        with patch('os.path.exists', return_value=True), patch(
+            'builtins.open', mock_open(read_data="invalid json")
+        ):
+            with pytest.raises(json.JSONDecodeError):
+                PaperTrader(cfg=mock_config, cfg_mod=None)
+
+    @patch('paper_trader_q.setup_logging')
+    @patch('paper_trader_q.init_agent')
+    def test_init_no_output_dir(self, mock_init, mock_logging, mock_config):
+        mock_config.paths.output_dir = None
+        with patch('os.path.exists', return_value=True), patch(
+            'builtins.open', mock_open(read_data=json.dumps({"means": {}, "stds": {}}))
+        ):
+            PaperTrader(cfg=mock_config, cfg_mod=None) # Should not raise error
+
 
 
 
@@ -215,6 +258,21 @@ class TestPositionManagement:
         
         assert "BTCUSDT" not in trader.open_positions
         assert trader.trades_log[0]["exit_reason"] == "TSL"
+
+    def test_close_position_tsl_long_profit_breakeven(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        break_even_price = entry_price * (1 + trader.cfg.market.transaction_fee) / (1 - trader.cfg.market.transaction_fee)
+
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "trailing_max_price": break_even_price + 100, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": break_even_price - 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "TSL Breakeven"
 
     def test_close_position_tsl_long_loss(self, trader: PaperTrader):
         trader.cfg.backtest.use_risk_management = True
@@ -267,6 +325,21 @@ class TestPositionManagement:
         
         assert "BTCUSDT" not in trader.open_positions
         assert trader.trades_log[0]["exit_reason"] == "TSL"
+
+    def test_close_position_tsl_short_profit_breakeven(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        break_even_price = entry_price * (1 - trader.cfg.market.transaction_fee) / (1 + trader.cfg.market.transaction_fee)
+
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+            "trailing_min_price": break_even_price - 100, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": break_even_price + 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "TSL Breakeven"
 
     def test_close_position_tsl_short_loss(self, trader: PaperTrader):
         trader.cfg.backtest.use_risk_management = True
@@ -332,6 +405,69 @@ class TestPositionManagement:
         assert "BTCUSDT" in trader.open_positions # Position should not be closed
         assert len(trader.trades_log) == 0
 
+    def test_update_trailing_stop_long(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "trailing_max_price": 50500, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        new_high_price = 51000
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": new_high_price}], maxlen=10)
+        trader._update_and_close_positions()
+        assert trader.open_positions["BTCUSDT"]["trailing_max_price"] == new_high_price
+
+    def test_update_trailing_stop_short(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+            "trailing_min_price": 49500, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        new_low_price = 49000
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": new_low_price}], maxlen=10)
+        trader._update_and_close_positions()
+        assert trader.open_positions["BTCUSDT"]["trailing_min_price"] == new_low_price
+
+    def test_close_position_tsl_long_profit_breakeven_not_hit(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        break_even_price = entry_price * (1 + trader.cfg.market.transaction_fee) / (1 - trader.cfg.market.transaction_fee)
+
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "trailing_max_price": break_even_price + 100, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        # Цена падает, но не достигает цены безубыточности
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": break_even_price + 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" in trader.open_positions
+        assert len(trader.trades_log) == 0
+
+    def test_close_position_tsl_short_profit_breakeven_not_hit(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        break_even_price = entry_price * (1 - trader.cfg.market.transaction_fee) / (1 + trader.cfg.market.transaction_fee)
+
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+            "trailing_min_price": break_even_price - 100, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        # Price rises, but not to breakeven
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": break_even_price - 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" in trader.open_positions
+        assert len(trader.trades_log) == 0
+
+
+
+
+
+
 @pytest.fixture
 def trader_for_full_suite(mock_config, mock_agent) -> PaperTrader:
     with (patch('paper_trader_q.init_agent', return_value=mock_agent),
@@ -380,6 +516,19 @@ def test_on_message_invalid_json(trader_for_full_suite: PaperTrader, caplog):
         trader_for_full_suite._on_message(None, "not a json")
         assert "Error in _on_message" in caplog.text
 
+def test_on_message_missing_data_key(trader_for_full_suite: PaperTrader, caplog):
+    msg = json.dumps({"stream": "btcusdt@kline_1m"}) # No 'data' key
+    with caplog.at_level(logging.ERROR):
+        trader_for_full_suite._on_message(None, msg)
+        assert "Error in _on_message" in caplog.text
+        assert "'data' key not in message" in caplog.text
+
+def test_on_message_not_kline(trader_for_full_suite: PaperTrader, caplog):
+    msg = json.dumps({"stream": "btcusdt@depth", "data": {}})
+    with patch.object(trader_for_full_suite, '_find_and_process_spikes') as mock_process:
+        trader_for_full_suite._on_message(None, msg)
+        mock_process.assert_not_called()
+
 def test_websocket_callbacks(trader_for_full_suite: PaperTrader, caplog):
     with caplog.at_level(logging.INFO):
         trader_for_full_suite._on_open(None)
@@ -416,6 +565,15 @@ def test_process_signal_insufficient_data(trader_for_full_suite: PaperTrader, sa
         trader_for_full_suite._process_signal("BTCUSDT", signal_dt, sample_kline_df, signal_dt)
         assert "Could not form full sequence" in caplog.text
 
+def test_process_signal_insufficient_data_for_sequence(trader_for_full_suite: PaperTrader, sample_kline_df, caplog):
+    # Make dataframe too short
+    short_df = sample_kline_df.head(trader_for_full_suite.cfg.seq.pre_signal_len - 1)
+    signal_dt = short_df.index[-1]
+    now = dt.datetime.now(dt.timezone.utc)
+    with caplog.at_level(logging.WARNING):
+        trader_for_full_suite._process_signal("BTCUSDT", signal_dt, short_df, now)
+        assert "Could not form full sequence" in caplog.text
+
 def test_process_signal_position_already_open(trader_for_full_suite: PaperTrader, sample_kline_df, caplog):
     now = dt.datetime.now(dt.timezone.utc)
     trader_for_full_suite.open_positions["BTCUSDT"] = {"direction": "LONG"}
@@ -425,6 +583,18 @@ def test_process_signal_position_already_open(trader_for_full_suite: PaperTrader
         assert "Signal for BTCUSDT ignored, position already open" in caplog.text
         mock_get_action.assert_not_called()
 
+def test_process_signal_success_path(trader_for_full_suite: PaperTrader, sample_kline_df):
+    signal_dt = sample_kline_df.index[20] # Ensure enough data
+    now = dt.datetime.now(dt.timezone.utc)
+
+    with patch.object(trader_for_full_suite, '_get_agent_action', return_value=1) as mock_get_action, \
+         patch.object(trader_for_full_suite, '_execute_trade') as mock_execute_trade:
+
+        trader_for_full_suite._process_signal("BTCUSDT", signal_dt, sample_kline_df, now)
+
+        mock_get_action.assert_called_once()
+        mock_execute_trade.assert_called_once()
+        assert "BTCUSDT" in trader_for_full_suite.cooldowns
 
 @patch('paper_trader_q.TradingEnvironment')
 def test_get_agent_action_advantage_filter(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
@@ -434,6 +604,46 @@ def test_get_agent_action_advantage_filter(mock_env, trader_for_full_suite: Pape
     mock_agent.select_action.return_value = np.array([0.5, 0.8, 0.4])
     action = trader_for_full_suite._get_agent_action(np.random.rand(trader_for_full_suite.cfg.seq.full_seq_len, trader_for_full_suite.cfg.seq.num_features))
     assert action == 1
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_advantage_filter_short(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.short_action_threshold = -0.2 # Negative for short
+    mock_agent.select_action.return_value = np.array([0.5, 0.4, 0.8]) # Q-value for SHORT (idx 2) is highest
+    # Advantage for SHORT: Q_short - max(Q_hold, Q_long) = 0.8 - 0.5 = 0.3. Threshold is -0.2, so it should pass.
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 2 # SHORT
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_advantage_filter_long_fail(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.long_action_threshold = 0.2
+    # Advantage for LONG: Q_long - max(Q_hold, Q_short) = 0.8 - 0.9 = -0.1. Threshold is 0.2, so it should fail.
+    mock_agent.select_action.return_value = np.array([0.9, 0.8, 0.4])
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 0 # HOLD
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_advantage_filter_short_fail(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.short_action_threshold = -0.2
+    # Advantage for SHORT: Q_short - max(Q_hold, Q_long) = 0.8 - 0.9 = -0.1. Threshold is -0.2, so it should fail.
+    mock_agent.select_action.return_value = np.array([0.9, 0.4, 0.8])
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 0 # HOLD
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_advantage_filter_long_fail_on_threshold(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.long_action_threshold = 0.4
+    # Advantage for LONG: Q_long - max(Q_hold, Q_short) = 0.8 - 0.5 = 0.3. Threshold is 0.4, so it should fail.
+    mock_agent.select_action.return_value = np.array([0.5, 0.8, 0.4])
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 0 # HOLD
 
 @patch('paper_trader_q.TradingEnvironment')
 def test_get_agent_action_ensemble_filter(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
@@ -463,6 +673,52 @@ def test_get_agent_action_ensemble_filter_high_uncertainty(mock_env, trader_for_
     assert action == 0
 
 @patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_ensemble_filter_high_uncertainty_short(mock_env, trader_for_full_suite: PaperTrader, mock_agent, caplog):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "ensemble_q_filter"
+    trader_for_full_suite.cfg.backtest.short_action_threshold = -0.2
+    trader_for_full_suite.cfg.backtest.ensemble_max_sigma = 0.05
+    q_mean = np.array([0.5, 0.4, 0.8])
+    q_std = np.array([0.01, 0.03, 0.08]) # High uncertainty for short action
+    mock_agent.predict_ensemble.return_value = (q_mean, q_std)
+    with caplog.at_level(logging.DEBUG):
+        action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+        assert "Action 2 rejected" in caplog.text
+        assert "Uncertainty OK: False" in caplog.text
+    assert action == 0
+
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_ensemble_filter_advantage_fail(mock_env, trader_for_full_suite: PaperTrader, mock_agent, caplog):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "ensemble_q_filter"
+    trader_for_full_suite.cfg.backtest.long_action_threshold = 0.5 # High threshold
+    trader_for_full_suite.cfg.backtest.ensemble_max_sigma = 0.1
+    q_mean = np.array([0.5, 0.8, 0.4]) # Advantage for long is 0.3, which is < 0.5
+    q_std = np.array([0.01, 0.02, 0.03])
+    mock_agent.predict_ensemble.return_value = (q_mean, q_std)
+    with caplog.at_level(logging.DEBUG):
+        action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+        assert "Action 1 rejected" in caplog.text
+        assert "Advantage OK: False" in caplog.text
+    assert action == 0
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_ensemble_filter_short_advantage_fail(mock_env, trader_for_full_suite: PaperTrader, mock_agent, caplog):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "ensemble_q_filter"
+    trader_for_full_suite.cfg.backtest.short_action_threshold = -0.1 # High threshold
+    trader_for_full_suite.cfg.backtest.ensemble_max_sigma = 0.1
+    q_mean = np.array([0.8, 0.4, 0.5]) # Advantage for short is 0.5 - 0.8 = -0.3, which is < -0.1
+    q_std = np.array([0.01, 0.02, 0.03])
+    mock_agent.predict_ensemble.return_value = (q_mean, q_std)
+    with caplog.at_level(logging.DEBUG):
+        action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+        assert "Action 2 rejected" in caplog.text
+        assert "Advantage OK: False" in caplog.text
+    assert action == 0
+
+@patch('paper_trader_q.TradingEnvironment')
 def test_get_agent_action_no_valid_action(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
     mock_env.return_value.reset.return_value = (np.zeros(1), {})
     trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
@@ -481,7 +737,28 @@ def test_get_agent_action_no_advantage(mock_env, trader_for_full_suite: PaperTra
         action = trader_for_full_suite._get_agent_action(np.random.rand(1,1))
         assert "No action met the advantage threshold" in caplog.text
     assert action == 0
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_max_q_strategy(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "max_q"
+    mock_agent.select_action.return_value = np.array([0.5, 0.4, 0.8]) # SHORT has max Q
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 2
+
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_unknown_strategy(mock_env, trader_for_full_suite: PaperTrader, mock_agent, caplog):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "unknown_strategy"
+    mock_agent.select_action.return_value = np.array([0.5, 0.8, 0.4])
+    with caplog.at_level(logging.WARNING):
+        action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+        assert "Unknown selection strategy" in caplog.text
+    assert action == 0 # Should default to HOLD
+
+
 def test_execute_trade_max_parallel(trader_for_full_suite: PaperTrader, caplog):
+    trader_for_full_suite.cfg.backtest.order_size_usdt = 1000 # Set order size to avoid another warning
     trader_for_full_suite.cfg.backtest.max_parallel_sessions = 1
     trader_for_full_suite.open_positions["ETHUSDT"] = {}
     with caplog.at_level(logging.WARNING):
@@ -500,6 +777,12 @@ def test_execute_trade_short_action(trader_for_full_suite: PaperTrader):
     trader_for_full_suite._execute_trade("BTCUSDT", 2, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
     assert trader_for_full_suite.open_positions["BTCUSDT"]["direction"] == "SHORT"
 
+def test_execute_trade_with_position_fraction(trader_for_full_suite: PaperTrader):
+    trader_for_full_suite.cfg.backtest.position_fraction = 0.2 # 20% of balance
+    trader_for_full_suite.balance = 10000
+    trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
+    assert trader_for_full_suite.open_positions["BTCUSDT"]["size"] == 2000 # 0.2 * 10000
+
 def test_execute_trade_with_order_size_usdt(trader_for_full_suite: PaperTrader):
     trader_for_full_suite.cfg.backtest.order_size_usdt = 500
     trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
@@ -512,6 +795,23 @@ def test_execute_trade_with_order_size_usdt_clipped(trader_for_full_suite: Paper
         trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
         assert "exceeds balance" in caplog.text
     assert trader_for_full_suite.open_positions["BTCUSDT"]["size"] == 10000
+
+def test_execute_trade_no_order_size_config(trader_for_full_suite: PaperTrader):
+    # Test default behavior when neither position_fraction nor order_size_usdt is set
+    trader_for_full_suite.cfg.backtest.position_fraction = None
+    trader_for_full_suite.cfg.backtest.order_size_usdt = None
+    trader_for_full_suite.balance = 10000
+    trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
+    # Should default to 10% of balance
+    assert trader_for_full_suite.open_positions["BTCUSDT"]["size"] == 1000
+
+def test_execute_trade_order_size_too_small(trader_for_full_suite: PaperTrader, caplog):
+    trader_for_full_suite.cfg.backtest.order_size_usdt = 5
+    trader_for_full_suite.balance = 10000
+    with caplog.at_level(logging.WARNING):
+        trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
+        assert "Order size 5.0 is less than the minimum of 10 USDT" in caplog.text
+    assert "BTCUSDT" not in trader_for_full_suite.open_positions
 
 def test_close_position_liquidation_long(trader_for_full_suite: PaperTrader):
     trader_for_full_suite.cfg.paper.leverage = 10
@@ -550,7 +850,40 @@ def test_close_position_liquidation_short(trader_for_full_suite: PaperTrader):
     trade = trader_for_full_suite.trades_log[0]
     assert trade["exit_reason"] == "LIQUIDATION"
     fees = 1000 * trader_for_full_suite.cfg.paper.leverage * trader_for_full_suite.cfg.market.transaction_fee * 2
-    assert trader_for_full_suite.balance < initial_balance # PNL is negative
+    expected_pnl = -1000 - fees
+    assert trader_for_full_suite.balance == pytest.approx(initial_balance + expected_pnl)
+
+def test_close_position_with_pnl_calculation(trader_for_full_suite: PaperTrader):
+    entry_price = 50000
+    close_price = 51000
+    size = 1000
+    fee = trader_for_full_suite.cfg.market.transaction_fee
+    leverage = trader_for_full_suite.cfg.paper.leverage
+    initial_balance = trader_for_full_suite.balance
+
+    trader_for_full_suite.open_positions["BTCUSDT"] = {
+        "direction": "LONG", "entry_price": entry_price, "size": size,
+        "entry_time": dt.datetime.now(dt.timezone.utc),
+    }
+    trader_for_full_suite._close_position("BTCUSDT", close_price, "TEST", dt.datetime.now(dt.timezone.utc))
+    expected_pnl = (close_price / entry_price - 1) * size * leverage - (size * leverage * fee * 2)
+    assert trader_for_full_suite.balance == pytest.approx(initial_balance + expected_pnl)
+    assert trader_for_full_suite.trades_log[0]["pnl"] == pytest.approx(expected_pnl)
+
+def test_close_position_with_pnl_calculation_short(trader_for_full_suite: PaperTrader):
+    entry_price = 51000
+    close_price = 50000
+    size = 1000
+    fee = trader_for_full_suite.cfg.market.transaction_fee
+    leverage = trader_for_full_suite.cfg.paper.leverage
+    initial_balance = trader_for_full_suite.balance
+
+    trader_for_full_suite.open_positions["BTCUSDT"] = {
+        "direction": "SHORT", "entry_price": entry_price, "size": size, "entry_time": dt.datetime.now(dt.timezone.utc),
+    }
+    trader_for_full_suite._close_position("BTCUSDT", close_price, "TEST", dt.datetime.now(dt.timezone.utc))
+    expected_pnl = (1 - close_price / entry_price) * size * leverage - (size * leverage * fee * 2)
+    assert trader_for_full_suite.balance == pytest.approx(initial_balance + expected_pnl)
 
 def test_run_websocket_mode(trader_for_full_suite: PaperTrader):
     with patch.object(trader_for_full_suite, '_run_from_websocket') as mock_run_ws:
@@ -633,6 +966,14 @@ def test_run_from_database_db_error(mock_get_engine, mock_read_sql, trader_for_f
     with caplog.at_level(logging.ERROR):
         trader_for_full_suite._run_from_database()
         assert "Failed to fetch data for symbol BTCUSDT" in caplog.text
+
+@patch('paper_trader_q.pd.read_sql')
+@patch('paper_trader_q.get_engine')
+def test_run_from_database_with_data_but_no_spikes(mock_get_engine, mock_read_sql, trader_for_full_suite: PaperTrader, sample_kline_df):
+    trader_for_full_suite.symbols_to_trade = ["BTCUSDT"]
+    mock_read_sql.return_value = sample_kline_df
+    with patch('paper_trader_q.find_spike_windows', return_value=[]):
+        trader_for_full_suite._run_from_database()
 
 if __name__ == "__main__":
     pytest.main([__file__])
