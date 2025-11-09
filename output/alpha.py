@@ -31,26 +31,31 @@ cfg.seq.agent_history_len = 30
 cfg.seq.agent_session_len = 10
 cfg.seq.action_history_len = ACTION_HISTORY_LEN
 
-cfg.backtest_mode = True
+cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.5
+cfg.backtest.position_fraction = 0.4
+cfg.backtest.order_size_usdt = 4000.0
 # ["advantage_based_filter", "ensemble_q_filter"]
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.012695
-cfg.backtest.short_action_threshold = 0.009902
-cfg.backtest.close_action_threshold = 0.001141
-cfg.backtest.ensemble_n_samples = 5
+cfg.backtest.long_action_threshold = 0.001
+cfg.backtest.short_action_threshold = 0.001
+# cfg.backtest.close_action_threshold = 0.001141
+# cfg.backtest.ensemble_n_samples = 5
 # maximum allowed variance (uncertainty) (range: 0.001 to 0.015)
-cfg.backtest.ensemble_max_sigma = 0.01
+# cfg.backtest.ensemble_max_sigma = 0.01
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
 # use_risk_management
-cfg.backtest.use_risk_management = False
-cfg.backtest.stop_loss = 0.01
-cfg.backtest.take_profit = 0.02
-cfg.backtest.trailing_stop = 0.005
+cfg.backtest.use_risk_management = True
+# cfg.backtest.stop_loss = 0.018
+# cfg.backtest.take_profit = 0.02
+cfg.backtest.trailing_stop = 0.018
+cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
+cfg.backtest.trailing_stop_min = 0.005
+cfg.backtest.fee_buffer_mult = 2.0
+cfg.backtest.delta_p_hysteresis = 0.0015
 
 cfg.logging.per_trial_logs = False
 # 1000,  default = None
@@ -106,3 +111,22 @@ cfg.vec.start_method = "spawn"
 # 3. Run optimization:              python optimize_cfg.py configs/...
 # 4. Show and save top-n trials:    python get_info_from_optuna.py configs/...
 
+cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\output\FMProducer\fmproducer_1_eval\saved_models\session_1\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\output\FMProducer\fmproducer_1_eval\saved_models\session_1\norm_stats.json"
+cfg.random_seed = 25
+
+# --- Database Configuration ---
+cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
+
+# --- Paper Trader Configuration ---
+cfg.paper.source = "database" # "websocket" or "database"
+cfg.paper.symbols = "ALL"
+cfg.paper.leverage = 2.0
+# Spike Detector Configuration
+cfg.detector.context_minutes = 30
+cfg.detector.window_minutes = 10
+cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
+cfg.detector.abs_change_pct = 5.0
+cfg.detector.contrast_min = 5.0
+cfg.detector.cooldown_minutes = 30

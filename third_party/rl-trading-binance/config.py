@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Literal, Optional, Union
 
 import torch
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 
 class DeviceConfig(BaseModel):
@@ -12,7 +12,7 @@ class DeviceConfig(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    @validator("device", pre=True)
+    @field_validator("device", mode='before')
     @classmethod
     def validate_device(cls, v):
         if isinstance(v, str):
@@ -33,6 +33,9 @@ class PathConfig(BaseModel):
     backtest_data_path: str = "data/backtest_data.npz"
     norm_stats_path: Optional[str] = None
     model_path: Optional[str] = None # Явный путь к файлу модели (.pth)
+    # Сделаем model_dir и plot_dir изменяемыми полями
+    model_dir: Optional[str] = None
+    plot_dir: Optional[str] = None
 
     @property
     def output_dir(self) -> str:
@@ -42,13 +45,17 @@ class PathConfig(BaseModel):
     def log_dir(self) -> str:
         return os.path.join(self.output_dir, "logs")
 
-    @property
-    def model_dir(self) -> str:
-        return os.path.join(self.output_dir, "saved_models")
-
-    @property
-    def plot_dir(self) -> str:
-        return os.path.join(self.output_dir, "plots")
+    @field_validator("model_dir", "plot_dir", mode='before')
+    @classmethod
+    def set_default_dirs(cls, v: Optional[str], info: ValidationInfo) -> str:
+        if v is None:
+            values = info.data
+            output_dir = os.path.join(values.get("base_output_dir", "output"), values.get("config_name", "alpha"))
+            if info.field_name == "model_dir":
+                return os.path.join(output_dir, "saved_models")
+            if info.field_name == "plot_dir":
+                return os.path.join(output_dir, "plots")
+        return v
 
     @property
     def cache_dir(self) -> str:
@@ -98,7 +105,7 @@ class SequenceConfig(BaseModel):
     def flat_state_size(self) -> int:
         return self.input_history_len * self.num_features + 4
 
-    @validator("full_seq_len")
+    @field_validator("full_seq_len")
     def validate_full_seq_len(cls, v, values):
         if "pre_signal_len" in values and "post_signal_len" in values:
             assert v == values["pre_signal_len"] + values["post_signal_len"], "FULL_SEQ_LEN mismatch"
@@ -176,7 +183,7 @@ class TrainLogConfig(BaseModel):
     iterations: int = 10_000
     early_stopping_patience: int = 20
 
-    @validator("val_selection_metrics")
+    @field_validator("val_selection_metrics")
     def check_val_metric(cls, v, values):
         allowed = set(values.get("available_metrics", []))
         if isinstance(v, str):

@@ -483,7 +483,9 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
 
 def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
-    if len(sys.argv) > 1:
+    if cfg is not None:
+        cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
+    elif len(sys.argv) > 1:
         cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
     else:
         cfg, cfg_mod = default_cfg, None

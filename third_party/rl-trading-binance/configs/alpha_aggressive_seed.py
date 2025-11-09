@@ -5,8 +5,8 @@ ACTION_HISTORY_LEN = 2
 cfg.model.cnn_maps = [64, 96, 128]
 cfg.model.cnn_kernels = [7, 5, 3]
 cfg.model.cnn_strides = [2, 1, 1]
-cfg.model.dense_val = [256, 128, 64]
-cfg.model.dense_adv = [256, 128, 64]
+cfg.model.dense_val = [128, 64, 32]
+cfg.model.dense_adv = [128, 64, 32]
 # 4 + action_history_len * num_actions
 cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4 # 4 + 2*4 = 12
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
@@ -14,14 +14,14 @@ cfg.model.dropout_p = 0.15
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 3500
 cfg.trainlog.val_freq = 1000
-# Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 60000
+# Уменьшаем горизонт обучения для ускоренного поиска seed
+cfg.trainlog.episodes = 20000 # Было 60000 в оригинале, 6000 в вашей версии. 20000 - компромисс.
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 200000
 cfg.rl.batch_size = 64
 # Стабильнее обновления с меньшим шагом
 cfg.rl.learning_rate = 5e-5
-cfg.rl.train_start = 15000
+cfg.rl.train_start = 15000 # Возвращаем оригинальное значение
 cfg.rl.gamma = 0.9995
 cfg.rl.n_step = 20
 # стабильнее целевые обновления
@@ -125,7 +125,7 @@ cfg.perf.cudnn_benchmark = False
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 1 # Количество параллельных сред
+cfg.vec.num_envs = 1 # Возвращаем оригинальное значение для чистоты эксперимента
 # По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
 # "subproc" # Использовать мультипроцессинг
 cfg.vec.backend = "dummy"
@@ -169,14 +169,14 @@ cfg.paper.symbols = "ALL"
 # Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
 # cfg.paper.db_source_speed = 0.1 
 cfg.backtest.data_source = "find_spikes"
-cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
+cfg.paths.train_data_path = "data/train_data_fair_8m.npz" # Возвращаем оригинальный, полный набор данных
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive+\saved_models\rl_binance_futures_trading_date_20251109_time_033836\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive+\saved_models\rl_binance_futures_trading_date_20251109_time_033836\norm_stats.json"
-cfg.random_seed = 261
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\norm_stats.json"
+# cfg.random_seed = 404
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
@@ -205,7 +205,7 @@ cfg.detector.cooldown_minutes = 30
 # Стандартизируем хранение артефактов: third_party/rl-trading-binance/output/<config_name>/
 cfg.project_name = "rl_binance_futures_trading"
 cfg.paths.base_output_dir = "third_party/rl-trading-binance/output"
-cfg.paths.config_name = "alpha_aggressive+"
+cfg.paths.config_name = "alpha_aggressive"
 
 # Управляющие флаги упаковки (используются в train.py):
 bundle_cfg = type("obj", (), {})()
