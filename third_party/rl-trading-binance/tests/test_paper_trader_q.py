@@ -12,11 +12,12 @@ import pandas as pd
 import pytest
 from sqlalchemy import create_engine, text
 
-# Add the parent directory to the path to allow imports
+# This sys.path manipulation is necessary for pytest to find modules in the parent directory.
+# We suppress the Pylance warning because this is a valid approach for this project structure at runtime.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from paper_trader_q import PaperTrader, get_engine
-from config import MasterConfig
+from common.utils import get_config_mod_from_str # type: ignore
+from paper_trader_q import PaperTrader, get_engine # type: ignore
+from config import MasterConfig # type: ignore
 
 # Default config for tests
 def get_test_config() -> Dict[str, Any]:
@@ -107,6 +108,17 @@ class TestInitialization:
 
     @patch('paper_trader_q.setup_logging')
     @patch('paper_trader_q.init_agent')
+    def test_init_with_cfg_mod(self, mock_init, mock_logging, mock_config):
+        cfg_mod_str = "paper.leverage=2.0"
+        cfg_mod = get_config_mod_from_str(cfg_mod_str)
+        with patch('os.path.exists', return_value=True), patch(
+            'builtins.open', mock_open(read_data=json.dumps({"means": {}, "stds": {}}))
+        ):
+            trader = PaperTrader(cfg=mock_config, cfg_mod=cfg_mod)
+        assert trader.cfg.paper.leverage == 2.0
+
+    @patch('paper_trader_q.setup_logging')
+    @patch('paper_trader_q.init_agent')
     def test_init_missing_stats_file(self, mock_init, mock_logging, mock_config):
         with patch('os.path.exists', lambda path: 'stats.json' not in path):
             with pytest.raises(RuntimeError, match="Normalization stats not found"):
@@ -187,6 +199,22 @@ class TestPositionManagement:
         assert "BTCUSDT" not in trader.open_positions
         assert trader.trades_log[0]["exit_reason"] == "TSL"
 
+    def test_close_position_tsl_long_loss(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "trailing_max_price": entry_price, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        
+        tsl_price = entry_price * (1 - trader.cfg.backtest.trailing_stop)
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": tsl_price - 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "TSL"
+
     def test_close_position_time_exit_profit(self, trader: PaperTrader):
         now = dt.datetime.now(dt.timezone.utc)
         entry_price = 50000
@@ -203,6 +231,73 @@ class TestPositionManagement:
         
         assert "BTCUSDT" not in trader.open_positions
         assert trader.trades_log[0]["exit_reason"] == "TSL Time"
+
+    def test_close_position_tsl_short_profit(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+            "trailing_min_price": 49000, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        
+        tsl_price = 49000 * (1 + trader.cfg.backtest.trailing_stop)
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": tsl_price + 1}], maxlen=10)
+        trader.cfg.paper.source = "websocket"
+        
+        trader._update_and_close_positions()
+        
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "TSL"
+
+    def test_close_position_tsl_short_loss(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+            "trailing_min_price": entry_price, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        
+        tsl_price = entry_price * (1 + trader.cfg.backtest.trailing_stop)
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": tsl_price + 1}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "TSL"
+
+    def test_close_position_no_risk_management(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = False
+        now = dt.datetime.now(dt.timezone.utc)
+        entry_price = 50000
+        
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "entry_time": now - dt.timedelta(minutes=10), "close_time": now - dt.timedelta(seconds=1)
+        }
+        trader.buffers["BTCUSDT"] = deque([{"ts": now, "close": entry_price - 100}], maxlen=10) # Price drops
+        trader.cfg.paper.source = "websocket"
+        
+        trader._update_and_close_positions()
+        
+        assert "BTCUSDT" not in trader.open_positions
+        assert trader.trades_log[0]["exit_reason"] == "Time" # Not TSL
+
+    def test_update_positions_no_open_positions(self, trader: PaperTrader):
+        trader.open_positions = {}
+        trader._update_and_close_positions()
+        assert len(trader.trades_log) == 0
+
+    def test_update_positions_no_buffer_data(self, trader: PaperTrader):
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": 50000, "size": 1000,
+            "entry_time": dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=10),
+            "close_time": dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)
+        }
+        trader.buffers["BTCUSDT"] = deque(maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" in trader.open_positions # Position not closed
 
 @pytest.fixture
 def trader_for_full_suite(mock_config, mock_agent) -> PaperTrader:
@@ -269,6 +364,12 @@ def test_find_and_process_spikes(mock_find_spikes, trader_for_full_suite: PaperT
         trader_for_full_suite._find_and_process_spikes("BTCUSDT", sample_kline_df, dt.datetime.now(dt.timezone.utc))
         mock_process_signal.assert_called_once()
 
+@patch('paper_trader_q.find_spike_windows', return_value=[])
+def test_find_and_process_spikes_no_spikes(mock_find_spikes, trader_for_full_suite: PaperTrader, sample_kline_df):
+    with patch.object(trader_for_full_suite, '_process_signal') as mock_process_signal:
+        trader_for_full_suite._find_and_process_spikes("BTCUSDT", sample_kline_df, dt.datetime.now(dt.timezone.utc))
+        mock_process_signal.assert_not_called()
+
 def test_process_signal_cooldown(trader_for_full_suite: PaperTrader, sample_kline_df):
     now = dt.datetime.now(dt.timezone.utc)
     trader_for_full_suite.cooldowns["BTCUSDT"] = now + dt.timedelta(minutes=10)
@@ -281,6 +382,16 @@ def test_process_signal_insufficient_data(trader_for_full_suite: PaperTrader, sa
     with caplog.at_level(logging.WARNING):
         trader_for_full_suite._process_signal("BTCUSDT", signal_dt, sample_kline_df, signal_dt)
         assert "Could not form full sequence" in caplog.text
+
+def test_process_signal_position_already_open(trader_for_full_suite: PaperTrader, sample_kline_df, caplog):
+    now = dt.datetime.now(dt.timezone.utc)
+    trader_for_full_suite.open_positions["BTCUSDT"] = {"direction": "LONG"}
+    with caplog.at_level(logging.DEBUG), \
+         patch.object(trader_for_full_suite, '_get_agent_action') as mock_get_action:
+        trader_for_full_suite._process_signal("BTCUSDT", now, sample_kline_df, now)
+        assert "Signal for BTCUSDT ignored, position already open" in caplog.text
+        mock_get_action.assert_not_called()
+
 
 @patch('paper_trader_q.TradingEnvironment')
 def test_get_agent_action_advantage_filter(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
@@ -318,6 +429,15 @@ def test_get_agent_action_ensemble_filter_high_uncertainty(mock_env, trader_for_
         assert "Uncertainty OK: False" in caplog.text
     assert action == 0
 
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_no_valid_action(mock_env, trader_for_full_suite: PaperTrader, mock_agent):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.long_action_threshold = 0.9
+    mock_agent.select_action.return_value = np.array([0.5, 0.8, 0.4])
+    action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
+    assert action == 0 # HOLD
+
 def test_execute_trade_max_parallel(trader_for_full_suite: PaperTrader, caplog):
     trader_for_full_suite.cfg.backtest.max_parallel_sessions = 1
     trader_for_full_suite.open_positions["ETHUSDT"] = {}
@@ -325,6 +445,17 @@ def test_execute_trade_max_parallel(trader_for_full_suite: PaperTrader, caplog):
         trader_for_full_suite._execute_trade("BTCUSDT", 1, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
         assert "Max parallel sessions reached" in caplog.text
     assert "BTCUSDT" not in trader_for_full_suite.open_positions
+
+def test_execute_trade_hold_action(trader_for_full_suite: PaperTrader):
+    # Action 0 is HOLD
+    trader_for_full_suite._execute_trade("BTCUSDT", 0, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
+    assert "BTCUSDT" not in trader_for_full_suite.open_positions
+    assert len(trader_for_full_suite.trades_log) == 0
+
+def test_execute_trade_short_action(trader_for_full_suite: PaperTrader):
+    # Action 2 is SHORT
+    trader_for_full_suite._execute_trade("BTCUSDT", 2, dt.datetime.now(dt.timezone.utc), 50000, dt.datetime.now(dt.timezone.utc), 0)
+    assert trader_for_full_suite.open_positions["BTCUSDT"]["direction"] == "SHORT"
 
 def test_execute_trade_with_order_size_usdt(trader_for_full_suite: PaperTrader):
     trader_for_full_suite.cfg.backtest.order_size_usdt = 500
@@ -359,6 +490,25 @@ def test_close_position_liquidation_long(trader_for_full_suite: PaperTrader):
     assert trade["pnl"] == -1000 - fees
     assert trader_for_full_suite.balance == initial_balance - 1000 - fees
 
+def test_close_position_liquidation_short(trader_for_full_suite: PaperTrader):
+    trader_for_full_suite.cfg.paper.leverage = 10
+    entry_price = 50000
+    liquidation_price = entry_price * (1 + 1 / trader_for_full_suite.cfg.paper.leverage)
+    trader_for_full_suite.open_positions["BTCUSDT"] = {
+        "direction": "SHORT", "entry_price": entry_price, "size": 1000,
+        "entry_time": dt.datetime.now(dt.timezone.utc),
+        "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+    }
+    trader_for_full_suite.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": liquidation_price + 1}], maxlen=10)
+    trader_for_full_suite.cfg.paper.source = "websocket"
+    initial_balance = trader_for_full_suite.balance
+    trader_for_full_suite._update_and_close_positions()
+    assert "BTCUSDT" not in trader_for_full_suite.open_positions
+    trade = trader_for_full_suite.trades_log[0]
+    assert trade["exit_reason"] == "LIQUIDATION"
+    fees = 1000 * trader_for_full_suite.cfg.paper.leverage * trader_for_full_suite.cfg.market.transaction_fee * 2
+    assert trader_for_full_suite.balance < initial_balance # PNL is negative
+
 def test_run_websocket_mode(trader_for_full_suite: PaperTrader):
     with patch.object(trader_for_full_suite, '_run_from_websocket') as mock_run_ws:
         trader_for_full_suite.cfg.paper.source = "websocket"
@@ -387,6 +537,14 @@ def test_shutdown(mock_makedirs, mock_to_csv, trader_for_full_suite: PaperTrader
     mock_makedirs.assert_called_with(output_dir, exist_ok=True)
     assert mock_to_csv.call_count == 2
 
+@patch('pandas.DataFrame.to_csv')
+@patch('os.makedirs')
+def test_shutdown_no_logs(mock_makedirs, mock_to_csv, trader_for_full_suite: PaperTrader):
+    trader_for_full_suite.trades_log = []
+    trader_for_full_suite.equity_curve = []
+    trader_for_full_suite.shutdown()
+    mock_to_csv.assert_not_called()
+
 @patch('paper_trader_q.websocket.WebSocketApp')
 @patch('threading.Thread')
 @patch('time.sleep', side_effect=InterruptedError)
@@ -404,6 +562,23 @@ def test_run_from_database_no_time_range(mock_get_engine, mock_read_sql, trader_
     with caplog.at_level(logging.ERROR):
         trader_for_full_suite._run_from_database()
         assert "`cfg.backtest.time_range` is not defined" in caplog.text
+
+@patch('paper_trader_q.pd.read_sql')
+@patch('paper_trader_q.get_engine')
+def test_run_from_database_with_data(mock_get_engine, mock_read_sql, trader_for_full_suite: PaperTrader, sample_kline_df):
+    trader_for_full_suite.symbols_to_trade = ["BTCUSDT"]
+    mock_read_sql.return_value = sample_kline_df
+    with patch.object(trader_for_full_suite, '_find_and_process_spikes') as mock_process:
+        trader_for_full_suite._run_from_database()
+        # Check if processing was triggered for the loaded data
+        assert mock_process.call_count > 0
+
+@patch('paper_trader_q.pd.read_sql', side_effect=Exception("DB read error"))
+@patch('paper_trader_q.get_engine')
+def test_run_from_database_db_error(mock_get_engine, mock_read_sql, trader_for_full_suite: PaperTrader, caplog):
+    with caplog.at_level(logging.ERROR):
+        trader_for_full_suite._run_from_database()
+        assert "Failed to fetch data for symbol BTCUSDT" in caplog.text
 
 if __name__ == "__main__":
     pytest.main([__file__])
