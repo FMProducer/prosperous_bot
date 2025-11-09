@@ -177,6 +177,23 @@ class TestInitialization:
             trader = paper_trader_factory(config=config, agent=mock_agent)
         assert trader.symbols_to_trade == ["BTCUSDT", "ETHUSDT"]
 
+    @patch('paper_trader_q.PaperTrader._get_all_symbols_from_db', side_effect=Exception("DB Error"))
+    def test_symbol_loading_all_from_db_exception(self, mock_get_symbols, mock_agent, caplog):
+        config = MasterConfig(**get_test_config())
+        config.paper.symbols = ["ALL"]
+        with patch('paper_trader_q.init_agent', return_value=mock_agent), \
+             patch('os.path.exists', return_value=True), \
+             patch('builtins.open', mock_open(read_data=json.dumps({"means": {}, "stds": {}}))), \
+             patch('paper_trader_q.setup_logging'):
+            with caplog.at_level(logging.ERROR):
+                with pytest.raises(SystemExit):
+                    paper_trader_factory(config=config, agent=mock_agent)
+        assert "Failed to get symbols from DB" in caplog.text
+
+
+
+
+
 class TestPositionManagement:
     def test_close_position_tsl_long_profit(self, trader: PaperTrader):
         trader.cfg.backtest.use_risk_management = True
@@ -298,6 +315,22 @@ class TestPositionManagement:
         trader.buffers["BTCUSDT"] = deque(maxlen=10)
         trader._update_and_close_positions()
         assert "BTCUSDT" in trader.open_positions # Position not closed
+
+    def test_close_position_tsl_not_hit(self, trader: PaperTrader):
+        trader.cfg.backtest.use_risk_management = True
+        entry_price = 50000
+        trader.open_positions["BTCUSDT"] = {
+            "direction": "LONG", "entry_price": entry_price, "size": 1000,
+            "trailing_max_price": 51000, "entry_time": dt.datetime.now(dt.timezone.utc),
+            "close_time": dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)
+        }
+        tsl_price = 51000 * (1 - trader.cfg.backtest.trailing_stop)
+        # Current price is above the TSL price
+        current_price = tsl_price + 100
+        trader.buffers["BTCUSDT"] = deque([{"ts": dt.datetime.now(dt.timezone.utc), "close": current_price}], maxlen=10)
+        trader._update_and_close_positions()
+        assert "BTCUSDT" in trader.open_positions # Position should not be closed
+        assert len(trader.trades_log) == 0
 
 @pytest.fixture
 def trader_for_full_suite(mock_config, mock_agent) -> PaperTrader:
@@ -438,6 +471,16 @@ def test_get_agent_action_no_valid_action(mock_env, trader_for_full_suite: Paper
     action = trader_for_full_suite._get_agent_action(np.random.rand(1, 1))
     assert action == 0 # HOLD
 
+@patch('paper_trader_q.TradingEnvironment')
+def test_get_agent_action_no_advantage(mock_env, trader_for_full_suite: PaperTrader, mock_agent, caplog):
+    mock_env.return_value.reset.return_value = (np.zeros(1), {})
+    trader_for_full_suite.cfg.backtest.selection_strategy = "advantage_based_filter"
+    trader_for_full_suite.cfg.backtest.long_action_threshold = 0.5
+    mock_agent.select_action.return_value = np.array([0.5, 0.8, 0.4]) # Advantage for action 1 is 0.3, which is < 0.5
+    with caplog.at_level(logging.DEBUG):
+        action = trader_for_full_suite._get_agent_action(np.random.rand(1,1))
+        assert "No action met the advantage threshold" in caplog.text
+    assert action == 0
 def test_execute_trade_max_parallel(trader_for_full_suite: PaperTrader, caplog):
     trader_for_full_suite.cfg.backtest.max_parallel_sessions = 1
     trader_for_full_suite.open_positions["ETHUSDT"] = {}
@@ -572,6 +615,17 @@ def test_run_from_database_with_data(mock_get_engine, mock_read_sql, trader_for_
         trader_for_full_suite._run_from_database()
         # Check if processing was triggered for the loaded data
         assert mock_process.call_count > 0
+
+@patch('paper_trader_q.pd.read_sql')
+@patch('paper_trader_q.get_engine')
+def test_run_from_database_no_data(mock_get_engine, mock_read_sql, trader_for_full_suite: PaperTrader, caplog):
+    trader_for_full_suite.symbols_to_trade = ["BTCUSDT"]
+    mock_read_sql.return_value = pd.DataFrame() # Empty dataframe
+    with caplog.at_level(logging.WARNING), \
+         patch.object(trader_for_full_suite, '_find_and_process_spikes') as mock_process:
+        trader_for_full_suite._run_from_database()
+        assert "No data found for symbol BTCUSDT" in caplog.text
+        mock_process.assert_not_called()
 
 @patch('paper_trader_q.pd.read_sql', side_effect=Exception("DB read error"))
 @patch('paper_trader_q.get_engine')
