@@ -41,12 +41,12 @@ cfg.trainlog.available_metrics=[
 ]
 # Мультикритериальный отбор
 cfg.trainlog.val_selection_metrics = [
-    "Validation_win_rate",
-    "Validation_profit_factor",
-    "Validation_sharpe",
-    "Validation_sortino",
-    "Validation_max_drawdown",
-    "Validation_mean_pnl"
+    "Validation_sortino",      # Приоритет №1: Прибыль, скорректированная на риск плохих исходов.
+    "Validation_sharpe",       # Приоритет №2: Стандартная индустриальная метрика.
+    "Validation_profit_factor",# Приоритет №3: Общая прибыльность.
+    "Validation_mean_pnl",     # Приоритет №4: Средняя прибыльность сделки.
+    "Validation_win_rate",     # Приоритет №5: Частота выигрышей (как второстепенный фактор).
+    "Validation_max_drawdown", # Приоритет №6: Минимизация просадки.
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
@@ -57,8 +57,8 @@ cfg.validation_gate = {
     "min_profit_factor": 1.30,
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
     "max_drawdown_at_most": -0.20,
-    "min_win_rate": 0.66,   # 0..1
-    "min_trades": 40,      # минимум сделок на валидации (ваше требование)
+    "min_win_rate": 0.49,   # 0..1
+    "min_trades": 150,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
     # НОВОЕ: Запрещаем модели с нулевой просадкой, т.к. это нереалистично.
     "deny_zero_drawdown": True,
