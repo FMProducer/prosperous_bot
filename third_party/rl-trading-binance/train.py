@@ -357,7 +357,7 @@ def evaluate_agent(
     stub_tk = "VAL"
 
     for _ in range(int(episodes)):
-        obs, _ = env.reset(seed=seed)
+        obs, _ = env.reset(seed=None)
         done = False
         ep_reward = 0.0
         ep_trades = 0
@@ -525,9 +525,9 @@ def main(cfg: MasterConfig = None):
     # Fallback: если model_dir/plot_dir не определены, строим их из base_output_dir
     base_out = getattr(cfg.paths, "base_output_dir", None)
     if not hasattr(cfg.paths, "model_dir") or cfg.paths.model_dir in (None, ""):
-        cfg.paths.model_dir = os.path.join(base_out or "output", "alpha", "saved_models")
+        cfg.paths.model_dir = os.path.join(base_out or "output", cfg.paths.config_name, "saved_models")
     if not hasattr(cfg.paths, "plot_dir") or cfg.paths.plot_dir in (None, ""):
-        cfg.paths.plot_dir = os.path.join(base_out or "output", "alpha", "plots")
+        cfg.paths.plot_dir = os.path.join(base_out or "output", cfg.paths.config_name, "plots")
     models_dir = os.path.join(cfg.paths.model_dir, session_name)
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
     os.makedirs(models_dir, exist_ok=True)

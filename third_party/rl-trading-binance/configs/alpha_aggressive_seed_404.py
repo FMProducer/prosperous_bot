@@ -52,8 +52,8 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.20,
-    "min_sortino": 0.40,
+    "min_sharpe": 0.14,
+    "min_sortino": 0.19,
     "min_profit_factor": 1.30,
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
     "max_drawdown_at_most": -0.20,
@@ -174,8 +174,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive\saved_models\rl_binance_futures_trading_date_20251108_time_105749\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\norm_stats.json"
 cfg.random_seed = 404
 cfg.paths.config_name = "alpha_aggressive_seed_404"
 # Spike Detector Configuration

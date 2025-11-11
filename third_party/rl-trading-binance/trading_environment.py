@@ -204,7 +204,7 @@ class TradingEnvironment(gym.Env):
 
     def _get_observation(self) -> np.ndarray:
         exec_delay = getattr(self, "exec_delay_bars", 0)
-        end = self.pre_signal_len + self.step_idx + exec_delay
+        end = self.pre_signal_len + self.step_idx
         start = end - self.agent_history_len
         window = self.current_seq[start:end]
 
@@ -221,8 +221,9 @@ class TradingEnvironment(gym.Env):
 
         unrealized = 0.0
         if self.position != 0:
-            exec_delay = getattr(self, "exec_delay_bars", 0)
-            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
+            # FIX: Use the last price from the *current* observation window, not a future price.
+            # The observation window ends at `self.pre_signal_len + self.step_idx`, so the last element is at index -1 of that slice.
+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
             current_price = self.current_seq[price_idx, self.close_idx]
             delta = (current_price - self.entry_price) * self.position
             unrealized = delta / self.entry_price
