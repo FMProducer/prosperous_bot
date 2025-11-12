@@ -1,0 +1,66 @@
+{
+  "schema": "MODEL_BUNDLE_V1",
+  "created_utc": "2025-11-09T23:04:52Z",
+  "code_commit": "a53de3f6836d1a4e7d1a2ee8ab8466827ad550ef",
+  "files": [
+    {
+      "path": "best.pth",
+      "sha256": "38871abb4df280185e6e5184b9aca340958d6a4634e72a3f8a62f87383426814",
+      "bytes": 4698823
+    },
+    {
+      "path": "best_model_info.json",
+      "sha256": "e279c9c156f72cb087a7931bd59f09de5c85f63178f62e92d6f31434589e385f",
+      "bytes": 519
+    },
+    {
+      "path": "config_train.json",
+      "sha256": "06dc0e35c62a06ec259e67a011f2c4df0fa690abaf4626129c8badee735423df",
+      "bytes": 7330
+    },
+    {
+      "path": "data_manifest.json",
+      "sha256": "58ec830deef4254a082c1c084f679cc9e02b20cf5ffa8b889a17ba0f553a5777",
+      "bytes": 636
+    },
+    {
+      "path": "env_flags.json",
+      "sha256": "15b736d9ebc1fa9e30bf9b05ca143deac6cecde72dbd9fd3539a1b8aec396eb2",
+      "bytes": 151
+    },
+    {
+      "path": "final.pth",
+      "sha256": "0269ea9b4523ddaf41df4aaedc5d071df6f0d983ab1e62e318a8f3bee8ec9dcb",
+      "bytes": 4698939
+    },
+    {
+      "path": "metrics.json",
+      "sha256": "b5764e57913aab1c14591b67ab9292e2c3aa00d826f64881719bc36530d40639",
+      "bytes": 1885058
+    },
+    {
+      "path": "norm_stats.json",
+      "sha256": "15f04d5c5e8110ba59ec459c8c900d3dae84a979fb618ada6271a3c43bd54ef2",
+      "bytes": 642
+    },
+    {
+      "path": "requirements-lock.txt",
+      "sha256": "240d574db7dde1ec76f960490c94704275d64fa8470f7723ea64c127e6468ecb",
+      "bytes": 1929
+    },
+    {
+      "path": "torch_env.txt",
+      "sha256": "459b530f0728e9756ecfdc2d2185d668b5fcb99a1d864345e44215b04c73f56c",
+      "bytes": 139
+    }
+  ],
+  "links": {
+    "dataset_sha256": [
+      "3adbf51f27c22d55af0da276f010c1373ba269a67f40afbeb36ca82b4e121430",
+      "8038f9068404a45a7ba1e6639a79eb7376319d4ef5f0a1d5b508c386314970cd",
+      "be75cc7547ba46a216e85d7a71dc4c576cc0eee93a33987aa9950e6161a977ce"
+    ],
+    "norm_stats": "norm_stats.json",
+    "config_train": "config_train.json"
+  }
+}

@@ -1,0 +1,309 @@
+{
+  "project_name": "rl_binance_futures_trading",
+  "render_mode": null,
+  "num_envs": 2,
+  "random_seed": 404,
+  "global_env_seed": 17,
+  "backtest_mode": false,
+  "device": {
+    "device": "cuda"
+  },
+  "paths": {
+    "config_name": "alpha_convolutions_seed_404_v2",
+    "base_output_dir": "third_party/rl-trading-binance/output",
+    "extra_model_dir": null,
+    "extra_cache_dir": null,
+    "train_data_path": "data/train_data_fair_8m.npz",
+    "val_data_path": "data/val_data_fair_2m.npz",
+    "test_data_path": "data/backtest_data_fair_2m.npz",
+    "backtest_data_path": "data/backtest_data.npz",
+    "norm_stats_path": null,
+    "model_path": null,
+    "model_dir": "third_party/rl-trading-binance/output\\alpha_convolutions_seed_404_v2\\saved_models",
+    "plot_dir": "third_party/rl-trading-binance/output\\alpha_convolutions_seed_404_v2\\plots"
+  },
+  "vec": {
+    "num_envs": 1,
+    "backend": "dummy",
+    "start_method": "spawn",
+    "scale_epsilon_by_envs": true
+  },
+  "data": {
+    "expected_channels": [
+      "open",
+      "high",
+      "volume_weighted_average",
+      "low",
+      "close",
+      "volume",
+      "num_trades"
+    ],
+    "data_channels": [
+      "open",
+      "high",
+      "volume_weighted_average",
+      "low",
+      "close",
+      "volume",
+      "num_trades"
+    ],
+    "price_channels": [
+      "open",
+      "high",
+      "volume_weighted_average",
+      "low",
+      "close"
+    ],
+    "volume_channels": [
+      "volume",
+      "num_trades"
+    ],
+    "other_channels": [],
+    "plot_examples": 1,
+    "plot_channel_idx": 4
+  },
+  "seq": {
+    "full_seq_len": 150,
+    "pre_signal_len": 90,
+    "post_signal_len": 60,
+    "agent_history_len": 90,
+    "agent_session_len": 10,
+    "action_history_len": 2
+  },
+  "market": {
+    "initial_balance": 10000.0,
+    "transaction_fee": 0.0004,
+    "slippage": 0.00025,
+    "num_actions": 4,
+    "inaction_penalty_ratio": 0.001
+  },
+  "rl": {
+    "gamma": 0.9995,
+    "learning_rate": 4e-05,
+    "batch_size": 64,
+    "target_update_freq": 10000,
+    "train_start": 15000,
+    "max_gradient_norm": 5.0,
+    "n_step": 20,
+    "gamma_n_step_buffer": 0.99
+  },
+  "per": {
+    "buffer_size": 200000,
+    "per_alpha": 0.6,
+    "per_beta_start": 0.4,
+    "per_beta_frames": 1000000,
+    "per_eps": 1e-06
+  },
+  "eps": {
+    "eps_start": 1.0,
+    "eps_end": 0.02,
+    "eps_decay_frames": 2500000
+  },
+  "model": {
+    "cnn_maps": [
+      64,
+      96,
+      128,
+      128,
+      96
+    ],
+    "cnn_kernels": [
+      3,
+      3,
+      3,
+      3,
+      3
+    ],
+    "cnn_strides": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "cnn_dilations": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "dense_val": [
+      128,
+      64,
+      32
+    ],
+    "dense_adv": [
+      128,
+      64,
+      32
+    ],
+    "additional_feats": 12,
+    "dropout_p": 0.2
+  },
+  "trainlog": {
+    "episodes": 60000,
+    "validate_model": true,
+    "val_freq": 1000,
+    "num_val_ep": 3500,
+    "available_metrics": [
+      "Validation_mean_reward",
+      "Validation_mean_pnl",
+      "Validation_win_rate",
+      "Validation_profit_factor",
+      "Validation_max_drawdown",
+      "Validation_all_pnls",
+      "Validation_sharpe",
+      "Validation_sortino"
+    ],
+    "val_selection_metrics": [
+      "Validation_sortino",
+      "Validation_sharpe",
+      "Validation_profit_factor",
+      "Validation_mean_pnl",
+      "Validation_win_rate",
+      "Validation_max_drawdown"
+    ],
+    "val_selection_direction": "max",
+    "val_min_delta": 0.0,
+    "test_selection_metrics": "Test_all_pnls",
+    "plot_moving_avg_window": 10,
+    "plot_top_n": 10,
+    "plot_metric": "pnl",
+    "iterations": 10000,
+    "early_stopping_patience": 10
+  },
+  "debug": {
+    "debug_max_size_data": null,
+    "use_final_model": false
+  },
+  "smart": {
+    "use_strategy": false,
+    "mode": "softmax",
+    "temperature": 1.0,
+    "top_k": null,
+    "initial_threshold": 0.6,
+    "percentile_for_value": 70.0,
+    "window_size_for_value": 500,
+    "min_size_get_dynamic_thresh": 50
+  },
+  "backtest": {
+    "continuous_data": false,
+    "ticker_name": null,
+    "volatility_threshold": null,
+    "position_fraction": 0.4,
+    "order_size_usdt": 4000.0,
+    "max_parallel_sessions": 2,
+    "return_qvals": true,
+    "use_cache": true,
+    "clear_disk_cache": false,
+    "long_action_threshold": 0.015,
+    "short_action_threshold": 0.015,
+    "close_action_threshold": 0.001141,
+    "use_risk_management": true,
+    "stop_loss": 0.01,
+    "take_profit": 0.02,
+    "trailing_stop": 0.018,
+    "trailing_stop_min": 0.005,
+    "fee_buffer_mult": 2.0,
+    "delta_p_hysteresis": 0.0015,
+    "selection_strategy": "advantage_based_filter",
+    "plot_backtest_balance_curve": true,
+    "data_source": "find_spikes",
+    "ensemble_n_samples": 5,
+    "ensemble_max_sigma": 0.01,
+    "time_range": {
+      "start_utc": "2025-08-01T00:00:00Z",
+      "end_utc": "2025-09-30T23:59:00Z"
+    },
+    "exec_delay_bars": 1
+  },
+  "paper": {
+    "source": "database",
+    "db_source_speed": 0.0,
+    "symbols": "ALL",
+    "leverage": 2.0
+  },
+  "logging": {
+    "per_trial_logs": true
+  },
+  "detector": {
+    "context_minutes": 30,
+    "window_minutes": 10,
+    "use_lookahead": false,
+    "abs_change_pct": 5.0,
+    "contrast_min": 5.0,
+    "cooldown_minutes": 30
+  },
+  "perf": {
+    "use_amp": true,
+    "amp_dtype": "float16",
+    "compile_mode": null,
+    "compile_dynamic": false,
+    "cudnn_benchmark": true,
+    "dataloader_num_workers": 0,
+    "pin_memory": true,
+    "persistent_workers": false,
+    "prefetch_factor": 2
+  },
+  "db": {
+    "dsn": "postgresql://postgres:9691@localhost:5432/marketdata"
+  },
+  "deterministic": false,
+  "validation_gate": {
+    "min_sharpe": 0.01,
+    "min_sortino": 0.02,
+    "min_profit_factor": 1.0,
+    "max_drawdown_at_most": -0.7,
+    "min_win_rate": 0.47,
+    "min_trades": 150,
+    "deny_inf_pf": true,
+    "deny_zero_drawdown": true
+  },
+  "mc_dropout": "<experiment_cfg.obj object at 0x00000000441C1D30>",
+  "bundle": "<experiment_cfg.obj object at 0x00000000441C1E80>",
+  "optuna_search_space": {
+    "long_thr": [
+      "suggest_float",
+      0.001,
+      0.03,
+      true,
+      "backtest.long_action_threshold"
+    ],
+    "short_thr": [
+      "suggest_float",
+      0.001,
+      0.03,
+      true,
+      "backtest.short_action_threshold"
+    ],
+    "pos_frac": [
+      "suggest_float",
+      0.1,
+      0.6,
+      false,
+      "backtest.position_fraction"
+    ],
+    "d_min": [
+      "suggest_float",
+      0.001,
+      0.005,
+      true,
+      "backtest.trailing_stop_min"
+    ],
+    "d0": [
+      "suggest_float",
+      "d_min",
+      0.02,
+      true,
+      "backtest.trailing_stop"
+    ],
+    "delta_p_hyst": [
+      "suggest_float",
+      0.0005,
+      0.005,
+      true,
+      "backtest.delta_p_hysteresis"
+    ]
+  }
+}

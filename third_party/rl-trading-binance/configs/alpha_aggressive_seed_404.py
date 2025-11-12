@@ -103,7 +103,7 @@ cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
-cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 cfg.logging.per_trial_logs = True
 # 1000,  default = None
@@ -174,8 +174,8 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\norm_stats.json"
 cfg.random_seed = 404
 cfg.paths.config_name = "alpha_aggressive_seed_404"
 # Spike Detector Configuration

@@ -215,7 +215,10 @@ def apply_normalization(
         if ch in price_channels:
             rel = arr[1:] / (arr[:-1] + 1e-9)
             logs = np.log(np.maximum(rel, 1e-9))
-            normed = (logs - mean) / std
+            normed_logs = (logs - mean) / std
+            # Pad with 0.0 for the first undefined value and match length
+            padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
+            normed = padded_normed[-input_history_len:]
         elif ch in volume_channels:
             logv = np.log(arr + 1.0)
             normed = (logv - mean) / std
@@ -429,3 +432,23 @@ def find_spike_windows(
         else:
             t += pd.Timedelta(minutes=1)
     return out
+
+def preprocess_sequences(
+    sequences: List[np.ndarray],
+    stats: Dict[str, Dict[str, float]],
+    data_channels: List[str],
+    price_channels: List[str],
+    volume_channels: List[str],
+    other_channels: List[str]
+) -> List[np.ndarray]:
+    """Pre-normalize all sequences to avoid runtime overhead."""
+    normalized = []
+    for seq in tqdm(sequences, desc="Normalizing sequences"):
+        norm_seq = apply_normalization(
+            seq, stats, data_channels,
+            price_channels, volume_channels, other_channels,
+            agent_history_len=seq.shape[0],
+            input_history_len=seq.shape[0]
+        )
+        normalized.append(norm_seq)
+    return normalized

@@ -1,4 +1,5 @@
 # configs/alpha.py
+import torch
 from config import MasterConfig
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 2
@@ -9,7 +10,7 @@ cfg.model.cnn_strides = [1, 1, 1, 1, 1]
 cfg.model.dense_val = [128, 64, 32]
 cfg.model.dense_adv = [128, 64, 32]
 # 4 + action_history_len * num_actions
-cfg.model.additional_feats = 4 + ACTION_HISTORY_LEN * 4 # 4 + 2*4 = 12
+cfg.model.additional_feats = 19
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
 cfg.model.dropout_p = 0.2
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
@@ -25,6 +26,7 @@ cfg.rl.learning_rate = 4e-5
 cfg.rl.train_start = 15000
 cfg.rl.gamma = 0.9995
 cfg.rl.n_step = 20
+# cfg.deterministic = False
 # стабильнее целевые обновления
 cfg.rl.target_update_freq = 10000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
@@ -66,7 +68,7 @@ cfg.validation_gate = {
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
 cfg.seq.agent_history_len = 90
-cfg.seq.input_history_len = 90
+# cfg.seq.input_history_len = 90
 cfg.seq.agent_session_len = 10
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
@@ -105,30 +107,31 @@ cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
-cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 cfg.logging.per_trial_logs = True
 # 1000,  default = None
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
-# AMP: экономия VRAM и потенциальный прирост на свертках; на Pascal (GTX 1070) и новее FP16 даёт ускорение и экономию памяти.
-cfg.perf.use_amp = False
+# AMP: Включаем для ускорения на GPU (Tensor Cores).
+cfg.perf.use_amp = True 
 cfg.perf.amp_dtype = "float16"
-# torch.compile: снижает overhead Python-графа; режим "reduce-overhead" — наиболее безопасный.
+# torch.compile: Отключено, т.к. GTX 1070 (CUDA 6.1) не поддерживается компилятором Triton (требуется >= 7.0).
+cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None
 cfg.perf.compile_dynamic = False
-# DataLoader: загрузка с CPU (4 физ. ядра). Для коротких сессий — умеренные значения.
-cfg.perf.dataloader_num_workers = 4
+# DataLoader: num_workers > 0 требует multiprocessing. persistent_workers=True сокращает оверхед.
+cfg.perf.dataloader_num_workers = 0 # Отключить
 cfg.perf.pin_memory = True
-cfg.perf.persistent_workers = True
+cfg.perf.persistent_workers = False
 cfg.perf.prefetch_factor = 2
 # CuDNN Heuristics
-cfg.perf.cudnn_benchmark = False
+cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
 cfg.vec.num_envs = 1 # Количество параллельных сред
-# По умолчанию используем DummyVecEnv (часто быстрее для "лёгких" env).
+# По умолчанию используем "dummy"
 # "subproc" # Использовать мультипроцессинг
 cfg.vec.backend = "dummy"
 cfg.vec.start_method = "spawn"
@@ -176,10 +179,10 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251111_time_191834\norm_stats.json"
+# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\best.pth"
+# cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\norm_stats.json"
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_aggressive_seed_404"
+cfg.paths.config_name = "alpha_convolutions_seed_404_v2"
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10

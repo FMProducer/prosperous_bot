@@ -1,0 +1,22 @@
+{
+  "datasets": [
+    {
+      "name": "train_data_path",
+      "path": "data/train_data_fair_8m.npz",
+      "sha256": "3adbf51f27c22d55af0da276f010c1373ba269a67f40afbeb36ca82b4e121430",
+      "bytes": 22199609
+    },
+    {
+      "name": "val_data_path",
+      "path": "data/val_data_fair_2m.npz",
+      "sha256": "8038f9068404a45a7ba1e6639a79eb7376319d4ef5f0a1d5b508c386314970cd",
+      "bytes": 2566673
+    },
+    {
+      "name": "test_data_path",
+      "path": "data/backtest_data_fair_2m.npz",
+      "sha256": "be75cc7547ba46a216e85d7a71dc4c576cc0eee93a33987aa9950e6161a977ce",
+      "bytes": 3541380
+    }
+  ]
+}

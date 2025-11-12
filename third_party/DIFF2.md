@@ -1,63 +1,80 @@
-Вот полные diff-файлы для внедрения dilated convolutions с расширением RF до 30-90 минут.[1][2]
+Процесс обучения тормозит из-за **критического CPU bottleneck** в препроцессинге данных, вызванного увеличением `agent_history_len` с 30 до 90 минут.[1][2][3][4][5]
 
-## Расчет рецептивного поля
+## Основные проблемы
 
-Для минутного таймфрейма с дилатациями `[1][2][4][8][16]` и ядрами `k=3`:
+**CPU препроцессинг (КРИТИЧЕСКИЙ):** На каждом шаге `_get_observation()` вызывает `apply_normalization` для окна 90×7 элементов, что в 3 раза больше исходного. С 4 параллельными средами это 40 нормализаций на эпизод, каждая включая price_diff, volume scaling и другие операции.[6][4][7][8][1]
 
-**RF = 63 минуты** (формула: $$ 1 + \sum (k-1) \cdot d_i = 1 + 2(1+2+4+8+16) = 63 $$)[3][4][5]
+**Увеличенное рецептивное поле:** Каждое наблюдение теперь 630 элементов вместо 210, требуя больше копирований памяти и CPU→GPU transfers.[2][4]
 
-Это соответствует требованиям минимум 30 и максимум 90 минут для крипто-фьючерсов.[6][7]
+**DummyVecEnv + DataLoader workers:** Конфигурация `DummyVecEnv` (1 процесс) + `num_workers=4` создает GIL contention, так как все workers конкурируют за Python GIL в одном процессе.[7][2][6]
 
-## Основные изменения
+## Немедленное решение (3-5x ускорение)
 
-### 1. alpha_convolutions_seed_404.py
+### 1. Pre-normalize датасет (utils.py)
 
 ```python
-# Добавьте после ACTION_HISTORY_LEN = 2:
-
-cfg.model.cnn_maps = [64, 96, 128, 128, 96]
-cfg.model.cnn_kernels = [3, 3, 3, 3, 3]
-cfg.model.cnn_dilations = [1, 2, 4, 8, 16]  # НОВОЕ
-cfg.model.cnn_strides = [1, 1, 1, 1, 1]
-
-# Измените agent_history_len:
-cfg.seq.agent_history_len = 90  # было 30
-cfg.seq.input_history_len = 90  # НОВОЕ (должно быть добавлено)
+def preprocess_sequences(
+    sequences: List[np.ndarray],
+    stats: Dict[str, Dict[str, float]],
+    data_channels: List[str],
+    price_channels: List[str],
+    volume_channels: List[str],
+    other_channels: List[str]
+) -> List[np.ndarray]:
+    """Pre-normalize all sequences to avoid runtime overhead."""
+    normalized = []
+    for seq in tqdm(sequences, desc="Normalizing sequences"):
+        norm_seq = apply_normalization(
+            seq, stats, data_channels,
+            price_channels, volume_channels, other_channels,
+            agent_history_len=seq.shape[0],
+            input_history_len=seq.shape[0]
+        )
+        normalized.append(norm_seq)
+    return normalized
 ```
 
-### 2. agent.py
+### 2. Применить в train.py (после process_data)
 
 ```python
-class DuelingDQN(nn.Module):
-    def __init__(self, ..., cnn_dilations=None):  # НОВОЕ
-        if cnn_dilations is None:
-            cnn_dilations = [1] * len(cnn_kernels)
-        
-        for out_ch, k, s, d in zip(cnn_maps, cnn_kernels, cnn_strides, cnn_dilations):
-            cnn_layers.append(
-                nn.Conv1d(
-                    in_channels=in_channels,
-                    out_channels=out_ch,
-                    kernel_size=k,
-                    stride=s,
-                    dilation=d,  # НОВОЕ
-                    padding=(k - 1) * d // 2,  # Causal padding
-                )
-            )
-```
+train_seqs = process_data(train_data, "Train", cfg)
+val_seqs = process_data(val_data, "Val", cfg)
 
-### 3. train.py
-
-```python
-agent = D3QN_PER_Agent(
-    ...
-    cnn_dilations=getattr(cfg.model, 'cnn_dilations', None),  # НОВОЕ
-    ...
+# PRE-NORMALIZE
+from utils import preprocess_sequences
+train_seqs = preprocess_sequences(
+    train_seqs, stats,
+    cfg.data.data_channels,
+    cfg.data.price_channels,
+    cfg.data.volume_channels,
+    cfg.data.other_channels
 )
+val_seqs = preprocess_sequences(val_seqs, stats, ...)
 ```
 
-## Преимущества архитектуры
-**Вычислительная эффективность:** Дилатации не увеличивают количество параметров (всегда 9 операций для k=3) и сохраняют latency <50ms.
-**Расширенный контекст:** RF=63 минуты покрывает внутридневные микроструктурные зависимости и трендовые паттерны крипто-фьючерсов.
-**Causal padding:** Формула `(k-1)*d//2` гарантирует, что модель не использует будущие данные для real-time trading.
-Тестируйте с мониторингом `Validation_win_rate >= 0.47` и `Validation_sharpe >= 0.01` согласно валидационному гейту.
+### 3. Упростить trading_environment.py (_get_observation)
+
+```python
+def _get_observation(self):
+    end = self.pre_signal_len + self.step_idx
+    start = end - self.agent_history_len
+    normalized = self.current_seq[start:end]  # УЖЕ НОРМАЛИЗОВАНО!
+    
+    # ... остальной код без изменений
+```
+
+### 4. Отключить DataLoader workers (alpha_convolutions_seed_404.py)
+
+```python
+cfg.perf.dataloader_num_workers = 0  # Отключить
+cfg.perf.persistent_workers = False
+```
+
+## Ожидаемый результат
+
+**До:** 2.43 сек/эпизод → 40 часов до конца[4][5]
+**После:** 0.5-1.0 сек/эпизод → 8-16 часов до конца
+
+**Итоговое ускорение:** 3-5x (с дополнительными оптимизациями до 10x)[9][10][4]
+
+Примените эти изменения немедленно для критического улучшения производительности.[8][6][4]

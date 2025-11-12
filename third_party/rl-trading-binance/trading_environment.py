@@ -40,6 +40,8 @@ class TradingEnvironment(gym.Env):
         inaction_penalty_ratio: float,
         backtest_mode: bool = False,
         use_risk_management: bool = False,
+        position_fraction: float = 1.0,
+        order_size_usdt: float = 0.0,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -64,6 +66,8 @@ class TradingEnvironment(gym.Env):
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
+        self.position_fraction = position_fraction
+        self.order_size_usdt = order_size_usdt
         # Cache frequently used channel index
         self.close_idx = self.data_channels.index("close")
 
@@ -141,7 +145,11 @@ class TradingEnvironment(gym.Env):
             exec_price = price * (1 + self.slippage)
             self.position = 1
             self.entry_price = exec_price
-            volume = self.balance / exec_price
+            if self.order_size_usdt > 0:
+                trade_amount = self.order_size_usdt
+            else:
+                trade_amount = self.balance * self.position_fraction
+            volume = trade_amount / exec_price
             self.position_volume = volume
             pnl_change -= exec_price * volume * self.transaction_fee
 
@@ -149,7 +157,11 @@ class TradingEnvironment(gym.Env):
             exec_price = price * (1 - self.slippage)
             self.position = -1
             self.entry_price = exec_price
-            volume = self.balance / exec_price
+            if self.order_size_usdt > 0:
+                trade_amount = self.order_size_usdt
+            else:
+                trade_amount = self.balance * self.position_fraction
+            volume = trade_amount / exec_price
             self.position_volume = volume
             pnl_change -= exec_price * volume * self.transaction_fee
 
@@ -185,10 +197,13 @@ class TradingEnvironment(gym.Env):
 
         reward = (pnl_change / self.initial_balance) - inaction_penalty
 
-        obs = self._get_observation() if not terminated else np.zeros(self.observation_space.shape, dtype=np.float32)
         info = self._get_info()
 
         if terminated:
+            # Capture the final observation before it's replaced by zeros
+            final_obs = self._get_observation()
+            info["terminal_observation"] = final_obs
+            obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update(
                 {
                     "episode_realized_pnl": self.realized_pnl,
@@ -196,6 +211,8 @@ class TradingEnvironment(gym.Env):
                     "episode_closed_trades": self.closed_trades,
                 }
             )
+        else:
+            obs = self._get_observation()
 
         if self.render_mode == "human":
             self._render_human(info, action, reward)
@@ -203,21 +220,9 @@ class TradingEnvironment(gym.Env):
         return obs, reward, terminated, False, info
 
     def _get_observation(self) -> np.ndarray:
-        exec_delay = getattr(self, "exec_delay_bars", 0)
         end = self.pre_signal_len + self.step_idx
         start = end - self.agent_history_len
-        window = self.current_seq[start:end]
-
-        normalized = apply_normalization(
-            window,
-            self.stats,
-            self.data_channels,
-            self.price_channels,
-            self.volume_channels,
-            self.other_channels,
-            self.agent_history_len,
-            self.input_history_len,
-        )
+        normalized = self.current_seq[start:end]
 
         unrealized = 0.0
         if self.position != 0:
@@ -380,7 +385,11 @@ class TradingEnvironment(gym.Env):
             exec_price = price * (1 + self.slippage)
             self.position = 1
             self.entry_price = exec_price
-            volume = self.balance / exec_price
+            if self.order_size_usdt > 0:
+                trade_amount = self.order_size_usdt
+            else:
+                trade_amount = self.balance * self.position_fraction
+            volume = trade_amount / exec_price
             self.position_volume = volume
             fee = exec_price * volume * self.transaction_fee
             pnl_change -= fee
@@ -399,7 +408,11 @@ class TradingEnvironment(gym.Env):
             exec_price = price * (1 - self.slippage)
             self.position = -1
             self.entry_price = exec_price
-            volume = self.balance / exec_price
+            if self.order_size_usdt > 0:
+                trade_amount = self.order_size_usdt
+            else:
+                trade_amount = self.balance * self.position_fraction
+            volume = trade_amount / exec_price
             self.position_volume = volume
             fee = exec_price * volume * self.transaction_fee
             pnl_change -= fee

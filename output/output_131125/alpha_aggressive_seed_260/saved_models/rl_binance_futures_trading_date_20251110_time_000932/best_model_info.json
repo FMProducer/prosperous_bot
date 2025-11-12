@@ -1,0 +1,24 @@
+{
+  "metric_name": [
+    "Validation_win_rate",
+    "Validation_profit_factor",
+    "Validation_sharpe",
+    "Validation_sortino",
+    "Validation_max_drawdown",
+    "Validation_mean_pnl"
+  ],
+  "direction": "max",
+  "min_delta": 0.0,
+  "value": [
+    0.75,
+    2.2345486604938514,
+    0.3986823620284797,
+    0.6172743302469257,
+    -0.01071541976928711,
+    33.071767807006836
+  ],
+  "value_primary": 0.75,
+  "episode": 14000,
+  "saved_path": "best.pth",
+  "saved_utc": "2025-11-09T22:46:53Z"
+}

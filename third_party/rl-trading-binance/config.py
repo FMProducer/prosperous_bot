@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Literal, Optional, Union
 
 import torch
-from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
 
 
 class DeviceConfig(BaseModel):
@@ -85,6 +85,8 @@ class DataConfig(BaseModel):
     plot_channel_idx: int = 4
 
 
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
+
 class SequenceConfig(BaseModel):
     full_seq_len: int = 150
     pre_signal_len: int = 90
@@ -100,6 +102,10 @@ class SequenceConfig(BaseModel):
     @property
     def input_history_len(self) -> int:
         return self.agent_history_len - 1
+
+    @input_history_len.setter
+    def input_history_len(self, value: int):
+        self.agent_history_len = value
 
     @property
     def flat_state_size(self) -> int:
@@ -150,6 +156,7 @@ class ModelConfig(BaseModel):
     cnn_maps: List[int] = [32, 64, 128]
     cnn_kernels: List[int] = [7, 5, 3]
     cnn_strides: List[int] = [2, 1, 1]
+    cnn_dilations: Optional[List[int]] = None
     dense_val: List[int] = [128, 64]
     dense_adv: List[int] = [128, 64]
     additional_feats: int = 16  # 4 + action_history_len * num_actions

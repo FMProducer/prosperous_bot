@@ -7,7 +7,7 @@ from collections import deque
 from typing import Any, Dict
 import hashlib, tarfile
 import datetime as dt
-
+from functools import partial
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -30,15 +30,15 @@ from utils import (
     calculate_normalization_stats,
     load_config,
     load_npz_dataset,
+    preprocess_sequences,
     select_and_arrange_channels,
     set_random_seed,
     setup_logging,
 ) # noqa: F401
 
-def _make_train_env_fns(env_kwargs, n: int):
-    # фабрика копий среды для векторизации
-    return [lambda ek=env_kwargs: TradingEnvironment(**ek) for _ in range(n)]
-
+def make_env(env_kwargs: dict):
+    """Helper function to create a TradingEnvironment, designed to be picklable."""
+    return TradingEnvironment(**env_kwargs)
 
 def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     """
@@ -593,6 +593,22 @@ def main(cfg: MasterConfig = None):
         cfg.data.other_channels,
     )
 
+    # PRE-NORMALIZE
+    train_seqs = preprocess_sequences(
+        train_seqs, train_stats,
+        cfg.data.data_channels,
+        cfg.data.price_channels,
+        cfg.data.volume_channels,
+        cfg.data.other_channels
+    )
+    val_seqs = preprocess_sequences(
+        val_seqs, train_stats,
+        cfg.data.data_channels,
+        cfg.data.price_channels,
+        cfg.data.volume_channels,
+        cfg.data.other_channels
+    )
+
     # --- Save normalization stats for this training run ---
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
@@ -621,10 +637,12 @@ def main(cfg: MasterConfig = None):
         "other_channels": cfg.data.other_channels,
         "action_history_len": cfg.seq.action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
+        "position_fraction": cfg.backtest.position_fraction,
+        "order_size_usdt": cfg.backtest.order_size_usdt,
     }
     # --- TRAIN ENV: single vs vectorized ---
     if cfg.vec.num_envs > 1:
-        env_fns = _make_train_env_fns(env_kwargs, cfg.vec.num_envs)
+        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(cfg.vec.num_envs)]
         if cfg.vec.backend == "subproc":
             train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
             logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.num_envs} (start_method='{cfg.vec.start_method}')")
@@ -752,7 +770,12 @@ def main(cfg: MasterConfig = None):
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
-                agent.store_experience(obs, action, reward, next_obs, done)
+                # Корректный next_state при done: брать финальное наблюдение из info
+                if done and isinstance(info, dict):
+                    next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs))
+                else:
+                    next_state_to_store = next_obs
+                agent.store_experience(obs, action, reward, next_state_to_store, done)
                 loss = agent.learn()
                 if loss is not None:
                     ep_losses.append(loss)

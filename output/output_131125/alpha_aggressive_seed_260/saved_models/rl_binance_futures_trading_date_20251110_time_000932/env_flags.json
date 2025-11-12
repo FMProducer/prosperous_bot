@@ -1,0 +1,10 @@
+{
+  "random_seed": 260,
+  "determinism": {
+    "cudnn_benchmark": false
+  },
+  "amp": {
+    "use_amp": false,
+    "amp_dtype": "float16"
+  }
+}
