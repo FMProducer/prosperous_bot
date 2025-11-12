@@ -45,6 +45,7 @@ class D3QN_PER_Agent:
         eps_frames: int,
         epsilon: float,
         max_gradient_norm: float,
+        cnn_dilations: Optional[List[int]] = None,
         backtest_cache_path: str = None,
         perf_cfg: PerformanceConfig = None,
         # ── НОВОЕ: MC-dropout в обучении
@@ -63,6 +64,7 @@ class D3QN_PER_Agent:
             "cnn_maps": cnn_maps,
             "cnn_kernels": cnn_kernels,
             "cnn_strides": cnn_strides,
+            "cnn_dilations": cnn_dilations,
             "dense_val": dense_val,
             "dense_adv": dense_adv,
             "additional_feats": additional_feats,

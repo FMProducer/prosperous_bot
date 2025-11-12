@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class DuelingQNetwork(nn.Module):
     """
     Dueling DQN with Dropout layers for estimating epistemic uncertainty.
+    Uses 1D convolutions with dilations.
     """
 
     def __init__(
@@ -23,24 +24,41 @@ class DuelingQNetwork(nn.Module):
         dense_val: List[int],
         dense_adv: List[int],
         additional_feats: int,
+        cnn_dilations: Optional[List[int]] = None,
         dropout_p: float = 0.1,
     ) -> None:
         super().__init__()
         self.input_shape = input_shape
         self.action_dim = action_dim
 
-        channels, history_len, width = input_shape
-        conv_layers = []
-        in_ch = channels
-        for out_ch, kernels, strides in zip(cnn_maps, cnn_kernels, cnn_strides):
-            conv_layers.append(nn.Conv2d(in_ch, out_ch, kernel_size=(kernels, width), stride=(strides, 1)))
-            conv_layers.append(nn.ReLU(inplace=True))
-            conv_layers.append(nn.Dropout(p=dropout_p))
-            in_ch = out_ch
-        self.feature_extractor = nn.Sequential(*conv_layers)
+        channels, history_len, _ = input_shape # width is ignored for Conv1d
+
+        if cnn_dilations is None:
+            cnn_dilations = [1] * len(cnn_kernels)
+
+        cnn_layers = []
+        in_channels = channels
+        for out_ch, k, s, d in zip(cnn_maps, cnn_kernels, cnn_strides, cnn_dilations):
+            # Causal padding for Conv1d
+            padding = (k - 1) * d // 2
+            cnn_layers.append(
+                nn.Conv1d(
+                    in_channels=in_channels,
+                    out_channels=out_ch,
+                    kernel_size=k,
+                    stride=s,
+                    dilation=d,
+                    padding=padding,
+                )
+            )
+            cnn_layers.append(nn.ReLU(inplace=True))
+            cnn_layers.append(nn.Dropout(p=dropout_p))
+            in_channels = out_ch
+        self.feature_extractor = nn.Sequential(*cnn_layers)
 
         with torch.no_grad():
-            dummy = torch.zeros(1, *input_shape)
+            # Dummy input for Conv1d should be (batch, channels, seq_len)
+            dummy = torch.zeros(1, channels, history_len)
             cnn_out = self.feature_extractor(dummy)
             flat_cnn_size = cnn_out.view(1, -1).size(1)
 
@@ -64,15 +82,17 @@ class DuelingQNetwork(nn.Module):
         adv_layers.append(nn.Linear(prev, action_dim))
         self.advantage_stream = nn.Sequential(*adv_layers)
 
-        logger.info(f"Initialized DuelingQNetwork: input={input_shape}, actions={action_dim}")
+        logger.info(f"Initialized DuelingQNetwork (Conv1d): input=(C:{channels}, L:{history_len}), actions={action_dim}")
 
     def forward(self, state: Tensor) -> Tensor:
         batch = state.size(0)
-        history_flat_size = torch.prod(torch.tensor(self.input_shape)).item()
+        # The input state is flat, need to separate history and extra features
+        history_flat_size = self.input_shape[0] * self.input_shape[1] # C * L
         history_part = state[:, :history_flat_size]
         extra_part = state[:, history_flat_size:]
 
-        history_tensor = history_part.view(batch, *self.input_shape)
+        # Reshape for Conv1d: (batch, channels, seq_len)
+        history_tensor = history_part.view(batch, self.input_shape[0], self.input_shape[1])
 
         features = self.feature_extractor(history_tensor)
         features_flat = features.view(batch, -1)

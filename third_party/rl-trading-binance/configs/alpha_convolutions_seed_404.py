@@ -2,8 +2,9 @@
 from config import MasterConfig
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 2
-cfg.model.cnn_maps = [64, 96, 128]
-cfg.model.cnn_kernels = [7, 5, 3, 11, 8]
+cfg.model.cnn_maps = [64, 96, 128, 128, 96]
+cfg.model.cnn_kernels = [3, 3, 3, 3, 3]
+cfg.model.cnn_dilations = [1, 2, 4, 8, 16]
 cfg.model.cnn_strides = [1, 1, 1, 1, 1]
 cfg.model.dense_val = [128, 64, 32]
 cfg.model.dense_adv = [128, 64, 32]
@@ -64,7 +65,8 @@ cfg.validation_gate = {
     "deny_zero_drawdown": True,
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
-cfg.seq.agent_history_len = 30
+cfg.seq.agent_history_len = 90
+cfg.seq.input_history_len = 90
 cfg.seq.agent_session_len = 10
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):

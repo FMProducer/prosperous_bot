@@ -653,6 +653,7 @@ def main(cfg: MasterConfig = None):
         cnn_maps=cfg.model.cnn_maps,
         cnn_kernels=cfg.model.cnn_kernels,
         cnn_strides=cfg.model.cnn_strides,
+        cnn_dilations=getattr(cfg.model, 'cnn_dilations', None),
         dense_val=cfg.model.dense_val,
         dense_adv=cfg.model.dense_adv,
         additional_feats=cfg.model.additional_feats,
