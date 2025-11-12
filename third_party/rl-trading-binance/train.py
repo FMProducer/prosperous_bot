@@ -418,7 +418,9 @@ def evaluate_agent(
         eq += p
         peak = max(peak, eq)
         drawdown_value = peak - eq # Это положительное число
-        max_dd = max(max_dd, drawdown_value / max(1e-9, initial_balance))
+        # ИСПРАВЛЕНО: MaxDD должен считаться относительно пиковой эквити, а не начального баланса.
+        peak_equity = initial_balance + peak
+        max_dd = max(max_dd, drawdown_value / max(1e-9, peak_equity))
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
