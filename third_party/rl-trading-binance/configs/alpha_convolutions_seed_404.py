@@ -26,7 +26,7 @@ cfg.rl.learning_rate = 4e-5
 cfg.rl.train_start = 15000
 cfg.rl.gamma = 0.9995
 cfg.rl.n_step = 20
-# cfg.deterministic = False
+cfg.deterministic = False
 # стабильнее целевые обновления
 cfg.rl.target_update_freq = 10000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
@@ -182,7 +182,7 @@ cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 # cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\best.pth"
 # cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\norm_stats.json"
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_convolutions_seed_404_v2"
+cfg.paths.config_name = "alpha_convolutions_seed_404"
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
