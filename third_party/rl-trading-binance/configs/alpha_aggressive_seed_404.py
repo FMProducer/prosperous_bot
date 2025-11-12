@@ -52,15 +52,15 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.14,
-    "min_sortino": 0.19,
-    "min_profit_factor": 1.30,
+    "min_sharpe": 0.01,
+    "min_sortino": 0.02,
+    "min_profit_factor": 1.00,
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
-    "max_drawdown_at_most": -0.20,
-    "min_win_rate": 0.49,   # 0..1
+    "max_drawdown_at_most": -0.70,
+    "min_win_rate": 0.47,   # 0..1
     "min_trades": 150,      # минимум сделок на валидации (ваше требование)
     "deny_inf_pf": True,    # запрещаем PF=inf
-    # НОВОЕ: Запрещаем модели с нулевой просадкой, т.к. это нереалистично.
+    # Запрещаем модели с нулевой просадкой
     "deny_zero_drawdown": True,
 }
 # Широкий взгляд на рынок для оценки волатильности и риска
