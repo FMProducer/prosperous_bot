@@ -603,21 +603,21 @@ def main(cfg: MasterConfig = None):
         cfg.data.other_channels,
     )
 
-    # PRE-NORMALIZE
-    train_seqs = preprocess_sequences(
-        train_seqs, train_stats,
-        cfg.data.data_channels,
-        cfg.data.price_channels,
-        cfg.data.volume_channels,
-        cfg.data.other_channels
-    )
-    val_seqs = preprocess_sequences(
-        val_seqs, train_stats,
-        cfg.data.data_channels,
-        cfg.data.price_channels,
-        cfg.data.volume_channels,
-        cfg.data.other_channels
-    )
+    # # PRE-NORMALIZE
+    # train_seqs = preprocess_sequences(
+    #     train_seqs, train_stats,
+    #     cfg.data.data_channels,
+    #     cfg.data.price_channels,
+    #     cfg.data.volume_channels,
+    #     cfg.data.other_channels
+    # )
+    # val_seqs = preprocess_sequences(
+    #     val_seqs, train_stats,
+    #     cfg.data.data_channels,
+    #     cfg.data.price_channels,
+    #     cfg.data.volume_channels,
+    #     cfg.data.other_channels
+    # )
 
     # --- Save normalization stats for this training run ---
     stats_save_path = os.path.join(models_dir, "norm_stats.json")

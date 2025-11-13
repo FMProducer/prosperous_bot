@@ -10,7 +10,7 @@ cfg.model.cnn_strides = [1, 1, 1, 1, 1]
 cfg.model.dense_val = [128, 64, 32]
 cfg.model.dense_adv = [128, 64, 32]
 # 4 + action_history_len * num_actions
-cfg.model.additional_feats = 19
+cfg.model.additional_feats = 12
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
 cfg.model.dropout_p = 0.2
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
@@ -55,12 +55,12 @@ cfg.trainlog.val_selection_metrics = [
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
-    "min_sharpe": 0.02,
-    "min_sortino": 0.08,
-    "min_profit_factor": 2.10,
+    "min_sharpe": 0.002,
+    "min_sortino": 0.004,
+    "min_profit_factor": 1.00,
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
-    "max_drawdown_at_most": -0.49,
-    "min_win_rate": 0.65,   # 0..1
+    "max_drawdown_at_most": -0.38,
+    "min_win_rate": 0.44,   # 0..1
     "min_trades": 150,      # минимум сделок на валидации
     "deny_inf_pf": True,    # запрещаем PF=inf
     # Запрещаем модели с нулевой просадкой

@@ -9,6 +9,8 @@ from gymnasium import spaces
 
 from utils import apply_normalization
 
+from utils import apply_normalization
+
 logger = logging.getLogger(__name__)
 
 
@@ -222,7 +224,23 @@ class TradingEnvironment(gym.Env):
     def _get_observation(self) -> np.ndarray:
         end = self.pre_signal_len + self.step_idx
         start = end - self.agent_history_len
-        normalized = self.current_seq[start:end]
+        raw_window = self.current_seq[start:end]
+
+        # Нормализуем срез данных "на лету"
+        normalized = apply_normalization(
+            raw_window,
+            self.stats,
+            self.data_channels,
+            self.price_channels,
+            self.volume_channels,
+            self.other_channels,
+            self.agent_history_len,
+            self.input_history_len,
+        )
+        if normalized is None:
+            # В случае ошибки возвращаем нулевое наблюдение
+            shape = (self.input_history_len, len(self.data_channels))
+            normalized = np.zeros(shape, dtype=np.float32)
 
         unrealized = 0.0
         if self.position != 0:
