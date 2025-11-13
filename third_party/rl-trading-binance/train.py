@@ -436,8 +436,8 @@ def evaluate_agent(
 
     # лог-сводка
     logging.info(
-        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%+.2f  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd, total_trades, sharpe, sortino
+        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.2f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd * 100.0, total_trades, sharpe, sortino
     )
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
