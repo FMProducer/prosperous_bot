@@ -12,25 +12,25 @@ cfg.model.dense_adv = [128, 64, 32]
 # 4 + action_history_len * num_actions
 cfg.model.additional_feats = 12
 # 0 ≤ p < 0.5; typical values are 0.1–0.2
-cfg.model.dropout_p = 0.2
+cfg.model.dropout_p = 0.15
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
-cfg.trainlog.num_val_ep = 3500
-cfg.trainlog.val_freq = 1000
+cfg.trainlog.num_val_ep = 5000
+cfg.trainlog.val_freq = 500
 # Увеличиваем общий горизонт обучения (качество > скорость)
 cfg.trainlog.episodes = 60000
 cfg.trainlog.plot_top_n = 10
-cfg.per.buffer_size = 200000
-cfg.rl.batch_size = 64
+cfg.per.buffer_size = 500000
+cfg.rl.batch_size = 128
 # Стабильнее обновления с меньшим шагом
-cfg.rl.learning_rate = 4e-5
+cfg.rl.learning_rate = 2e-5
 cfg.rl.train_start = 15000
 cfg.rl.gamma = 0.9995
 cfg.rl.n_step = 20
 cfg.deterministic = False
 # стабильнее целевые обновления
-cfg.rl.target_update_freq = 10000
+cfg.rl.target_update_freq = 5000
 # Чуть мягче клиппинг — меньше «зажимаем» обучение, но защищаемся от выбросов
-cfg.rl.max_gradient_norm = 5.0
+cfg.rl.max_gradient_norm = 3.0
 # альтернативы: "Validation_mean_reward" и "Validation_mean_pnl"
 cfg.trainlog.available_metrics=[
     "Validation_mean_reward",
@@ -46,20 +46,16 @@ cfg.trainlog.available_metrics=[
 cfg.trainlog.val_selection_metrics = [
     "Validation_sortino",      # Приоритет №1: Прибыль, скорректированная на риск плохих исходов.
     "Validation_sharpe",       # Приоритет №2: Стандартная индустриальная метрика.
-    "Validation_profit_factor",# Приоритет №3: Общая прибыльность.
-    "Validation_mean_pnl",     # Приоритет №4: Средняя прибыльность сделки.
-    "Validation_win_rate",     # Приоритет №5: Частота выигрышей (как второстепенный фактор).
-    "Validation_max_drawdown", # Приоритет №6: Минимизация просадки.
 ]
 # ── Валидационный гейт для отбора best.pth.
 # ВАЖНО: TrainLogConfig запрещает extra-поля, поэтому кладём гейт на верхний уровень MasterConfig:
 # train.py теперь читает fallback из cfg.validation_gate.
 cfg.validation_gate = {
     "min_sharpe": 0.002,
-    "min_sortino": 0.004,
+    "min_sortino": 0.006,
     "min_profit_factor": 1.00,
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
-    "max_drawdown_at_most": -0.38,
+    "max_drawdown_at_most": -0.25,
     "min_win_rate": 0.44,   # 0..1
     "min_trades": 150,      # минимум сделок на валидации
     "deny_inf_pf": True,    # запрещаем PF=inf
@@ -130,10 +126,10 @@ cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 1 # Количество параллельных сред
+cfg.vec.num_envs = 4 # Количество параллельных сред
 # По умолчанию используем "dummy"
 # "subproc" # Использовать мультипроцессинг
-cfg.vec.backend = "dummy"
+cfg.vec.backend = "subproc"
 cfg.vec.start_method = "spawn"
 # Масштабировать скорость убывания epsilon на количество параллельных сред.
 # Это восстанавливает паритет поведения между single-env и vec-env по числу env-шагов до той же ε.
@@ -179,17 +175,17 @@ cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
 # test_data_path отдельный или тот же что и для backtest
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
 # Модель для бэктеста.
-# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\best.pth"
-# cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_aggressive_seed_404\saved_models\rl_binance_futures_trading_date_20251112_time_170221\norm_stats.json"
+# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_convolutions_seed_404\saved_models\rl_binance_futures_trading_date_20251113_time_230318\best.pth"
+# cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_convolutions_seed_404\saved_models\rl_binance_futures_trading_date_20251113_time_230318\norm_stats.json"
 cfg.random_seed = 404
 cfg.paths.config_name = "alpha_convolutions_seed_404"
 # Spike Detector Configuration
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
 cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
-cfg.detector.abs_change_pct = 5.0
+cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
-cfg.detector.cooldown_minutes = 30
+cfg.detector.cooldown_minutes = 15
 
 #   python train.py configs/alpha.py
 #   python test_agent.py configs/alpha.py
@@ -225,16 +221,16 @@ except ValueError:
     pass # Поле 'bundle' не определено в MasterConfig, но train.py будет использовать bundle_cfg
 
 # ---------- Prioritized Experience Replay (устойчивость) ----------
-cfg.per.per_alpha = 0.6
+cfg.per.per_alpha = 0.7
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 1000000
+cfg.per.per_beta_frames = 50000
 cfg.per.per_eps = 1e-6
 
 # ---------- Epsilon schedule (качественная, длинная эксплорация) ----------
 # Долго держим исследование; низкий eps_end для аккуратной политики
 cfg.eps.eps_start = 1.0
-cfg.eps.eps_end = 0.02
-cfg.eps.eps_decay_frames = 2500000
+cfg.eps.eps_end = 0.05
+cfg.eps.eps_decay_frames = 1000000
 
 # ─────────────────────────────────────────────────────────────
 # Optuna Search Space (для optimize_cfg.py)
@@ -254,4 +250,4 @@ optuna_search_space = {
 cfg.optuna_search_space = optuna_search_space
 
 # Для досрочной остановки
-cfg.trainlog.early_stopping_patience = 15 # Остановить, если нет улучшений в течение 10 валидаций
+cfg.trainlog.early_stopping_patience = 10 # Остановить, если нет улучшений в течение 10 валидаций
