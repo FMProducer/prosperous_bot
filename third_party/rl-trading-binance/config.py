@@ -245,7 +245,7 @@ class BacktestConfig(BaseModel):
     ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
-    exec_delay_bars: int = 0
+    exec_delay_bars: int = 1
 
 
 class PaperTraderConfig(BaseModel):
@@ -258,7 +258,7 @@ class DetectorConfig(BaseModel):
     """Spike detector parameters for finding trading signals."""
     context_minutes: int = 30
     window_minutes: int = 10
-    use_lookahead: bool = True  # Must be False for live trading/paper trading
+    use_lookahead: bool = False  # Must be False for live trading/paper trading
     abs_change_pct: float = 5.0
     contrast_min: float = 5.0
     cooldown_minutes: int = 30

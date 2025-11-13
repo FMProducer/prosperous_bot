@@ -312,7 +312,11 @@ def _numpy_json_default(obj):
                         np.int16, np.int32, np.int64, np.uint8,
                         np.uint16, np.uint32, np.uint64)):
         return int(obj)
-    elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
+    elif isinstance(obj, (np.floating, float)):
+        if np.isinf(obj):
+            return "inf" if obj > 0 else "-inf"
+        if np.isnan(obj):
+            return "nan"
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -815,6 +819,13 @@ def main(cfg: MasterConfig = None):
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
+            if train_steps < cfg.rl.train_start:
+                logging.info(
+                    f"[Validation] Skipped at episode {ep}: "
+                    f"train_steps ({train_steps}) < train_start ({cfg.rl.train_start})"
+                )
+                continue
+
             metrics = evaluate_agent(
                 val_env,
                 agent,

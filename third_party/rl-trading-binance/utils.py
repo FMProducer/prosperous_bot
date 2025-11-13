@@ -379,7 +379,7 @@ def find_spike_windows(
     abs_change_threshold_pct: float = 5.0,
     contrast_min: float = 5.0,
     cooldown_minutes: int = 60,
-    use_lookahead: bool = True,
+    use_lookahead: bool = False,
 ) -> List[Tuple[dt.datetime, dt.datetime, dt.datetime, dt.datetime, float]]:
     """
     По минутным данным df (index=UTC, колонки содержат 'close') возвращает список окон:
