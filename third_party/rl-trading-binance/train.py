@@ -420,7 +420,11 @@ def evaluate_agent(
         drawdown_value = peak - eq # Это положительное число
         # ИСПРАВЛЕНО: MaxDD должен считаться относительно пиковой эквити, а не начального баланса.
         peak_equity = initial_balance + peak
-        max_dd = max(max_dd, drawdown_value / max(1e-9, peak_equity))
+        current_dd = drawdown_value / max(1e-9, peak_equity)
+        # ИСПРАВЛЕНО: Если значение похоже на процент, конвертируем в ratio.
+        if current_dd > 1.0:
+            current_dd /= 100.0
+        max_dd = max(max_dd, current_dd)
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
@@ -436,7 +440,7 @@ def evaluate_agent(
 
     # лог-сводка
     logging.info(
-        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.2f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
+        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
         split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd * 100.0, total_trades, sharpe, sortino
     )
     if exit_counts:
