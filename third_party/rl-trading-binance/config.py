@@ -62,6 +62,25 @@ class PathConfig(BaseModel):
         return os.path.join(self.output_dir, "backtest_qval_cache")
 
 
+class DbConfig(BaseModel):
+    """
+    Конфигурация для загрузки из PostgreSQL БД.
+    """
+    dsn: Optional[str] = Field(default=None, description="DSN для Postgres, напр. 'postgresql://user:pass@localhost:5432/trading_db'")
+    
+    # Периоды для загрузки данных из БД (строки в формате 'YYYY-MM-DD', UTC)
+    train_period_start: str = "2024-01-01"
+    train_period_end: str = "2025-01-01"
+    val_period_start: str = "2025-02-01"
+    val_period_end: str = "2025-03-01"
+    test_period_start: str = "2025-04-01"
+    test_period_end: str = "2025-05-01"
+    
+    symbols: Optional[List[str]] = Field(default=None, description="Список символов; None = все из БД")
+
+
+
+
 class VecConfig(BaseModel):
     """
     Параметры векторизации окружений (Vectorized Environments).
@@ -269,10 +288,6 @@ class LoggingConfig(BaseModel):
     per_trial_logs: bool = False
 
 
-class DbConfig(BaseModel):
-    dsn: Optional[str] = None
-
-
 class PerformanceConfig(BaseModel):
     """
     Переключатели производительности, управляемые из configs/*.py.
@@ -320,7 +335,7 @@ class MasterConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     detector: DetectorConfig = DetectorConfig()
     perf: PerformanceConfig = PerformanceConfig()
-    db: DbConfig = DbConfig()
+    db: DbConfig = Field(default_factory=DbConfig)
 
     class Config:
         extra = "allow"

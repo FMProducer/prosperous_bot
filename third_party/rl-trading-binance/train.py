@@ -29,7 +29,7 @@ from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
     load_config,
-    load_npz_dataset,
+    load_sequences_from_db,
     preprocess_sequences,
     select_and_arrange_channels,
     set_random_seed,
@@ -550,44 +550,15 @@ def main(cfg: MasterConfig = None):
         json.dump(cfg.model_dump(), f, indent=2, default=str)
     logging.info(f"Full training configuration saved to: {config_save_path}")
 
-    raw_train = load_npz_dataset(
-        file_path=cfg.paths.train_data_path,
-        name_dataset="Train",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
+    logging.info("Starting data loading from database...")
+    raw_train = load_sequences_from_db(cfg, "train", cfg.debug.debug_max_size_data)
+    train_seqs = process_data(raw_train, "train", cfg)
 
-    raw_val = (
-        load_npz_dataset(
-            file_path=cfg.paths.val_data_path,
-            name_dataset="Val",
-            plot_dir=cfg.paths.plot_dir,
-            debug_max_size=cfg.debug.debug_max_size_data,
-            plot_examples=cfg.data.plot_examples,
-            plot_channel_idx=cfg.data.plot_channel_idx,
-            pre_signal_len=cfg.seq.pre_signal_len,
-        )
-        if cfg.trainlog.validate_model
-        else []
-    )
+    raw_val = load_sequences_from_db(cfg, "val", cfg.debug.debug_max_size_data)
+    val_seqs = process_data(raw_val, "val", cfg)
 
-    raw_test = load_npz_dataset(
-        file_path=cfg.paths.test_data_path,
-        name_dataset="Test",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
-    raw_test = []
-
-    train_seqs = process_data(raw_train, "Train", cfg)
-    val_seqs = process_data(raw_val, "Val", cfg)
-    test_seqs = process_data(raw_test, "Test", cfg)
+    raw_test = load_sequences_from_db(cfg, "test", cfg.debug.debug_max_size_data)
+    test_seqs = process_data(raw_test, "test", cfg)
 
     if not train_seqs:
         logging.error("No training data – aborting.")
@@ -595,35 +566,31 @@ def main(cfg: MasterConfig = None):
 
     logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
 
-    train_stats = calculate_normalization_stats(
-        train_seqs,
-        cfg.data.data_channels,
-        cfg.data.price_channels,
-        cfg.data.volume_channels,
-        cfg.data.other_channels,
-    )
-
-    # # PRE-NORMALIZE
-    # train_seqs = preprocess_sequences(
-    #     train_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
-    # val_seqs = preprocess_sequences(
-    #     val_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
-
-    # --- Save normalization stats for this training run ---
-    stats_save_path = os.path.join(models_dir, "norm_stats.json")
-    with open(stats_save_path, "w") as f:
-        json.dump(train_stats, f, indent=4)
-    logging.info(f"Normalization stats saved to: {stats_save_path}")
+    # Нормализация stats — вычисляем на train, сохраняем если нужно
+    norm_stats_path = getattr(cfg.paths, "norm_stats_path", None)
+    if norm_stats_path is None or not os.path.exists(norm_stats_path):
+        logging.info("Computing normalization stats from train data...")
+        norm_stats = calculate_normalization_stats(
+            train_seqs,
+            cfg.data.data_channels,
+            cfg.data.price_channels,
+            cfg.data.volume_channels,
+            cfg.data.other_channels
+        )
+        # Сохраняем в base_output_dir или default
+        save_path = norm_stats_path or os.path.join(models_dir, "norm_stats.json")
+        with open(save_path, 'w') as f:
+            json.dump(norm_stats, f, indent=2, default=_numpy_json_default)
+        logging.info(f"Normalization stats saved to {save_path}")
+        # Обновляем cfg для env, если путь был не задан
+        if not hasattr(cfg.paths, "norm_stats_path") or not cfg.paths.norm_stats_path:
+             cfg.paths.norm_stats_path = save_path
+    else:
+        logging.info(f"Loading existing normalization stats from {norm_stats_path}")
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
+    
+    train_stats = norm_stats # для обратной совместимости с остальным кодом
 
 
     env_kwargs = {

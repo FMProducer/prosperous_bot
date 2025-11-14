@@ -106,11 +106,22 @@ cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
 # Explicit time range for backtesting ---
 # This ensures the backtest runs on the correct, unseen data period.
-cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 cfg.logging.per_trial_logs = True
-# 1000,  default = None
-cfg.debug.debug_max_size_data = None
+
+# 1000, default = None
+cfg.debug.debug_max_size_data = 100  # Для теста DB; set None для full после
+
+# DB overrides: periods для split (UTC, YYYY-MM-DD); symbols optional для ускорения
+cfg.db.train_period_start = "2024-01-01"
+cfg.db.train_period_end = "2025-01-01"  # Широкий train для спайков
+cfg.db.val_period_start = "2025-02-01"
+cfg.db.val_period_end = "2025-05-01"  # Pre-backtest val
+cfg.db.test_period_start = "2025-08-01"  # Align с backtest.time_range
+cfg.db.test_period_end = "2025-09-30"
+cfg.db.symbols = None  # None = all; or ["BTCUSDT", "ETHUSDT"] для теста (filter в query)
+
 cfg.debug.use_final_model = False
 # AMP: Включаем для ускорения на GPU (Tensor Cores).
 cfg.perf.use_amp = True 
@@ -173,10 +184,18 @@ cfg.paper.symbols = "ALL"
 # Опционально, для замедления симуляции (0.1 секунды на каждую минуту данных)
 # cfg.paper.db_source_speed = 0.1 
 cfg.backtest.data_source = "find_spikes"
-cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"
-# test_data_path отдельный или тот же что и для backtest
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz" 
+# DB mode: ignore .npz; set None (train.py skips if dsn set)
+cfg.paths.train_data_path = None
+cfg.paths.val_data_path = None
+cfg.paths.test_data_path = None
+cfg.paths.backtest_data_path = None  # Если используется
+
+# Optional: ensure data_channels match DB SELECT (OHLCV + num_trades)
+cfg.data.data_channels = ["open", "high", "low", "close", "volume", "num_trades"]
+cfg.data.price_channels = ["open", "high", "low", "close"]
+cfg.data.volume_channels = ["volume"]
+cfg.data.other_channels = ["num_trades"]  # Для calculate_normalization_stats
+
 # Модель для бэктеста.
 # cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_convolutions_seed_404\saved_models\rl_binance_futures_trading_date_20251113_time_230318\best.pth"
 # cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_convolutions_seed_404\saved_models\rl_binance_futures_trading_date_20251113_time_230318\norm_stats.json"

@@ -1,17 +1,19 @@
 # utils.py
 import datetime as dt
-import importlib.util
+from datetime import datetime
+import pandas as pd
+from sqlalchemy import create_engine
+from typing import Any, Dict, List, Optional, Tuple
 import logging
+import importlib.util
 import os
 import random
 import math
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
 import torch
 from tqdm import tqdm
@@ -452,3 +454,141 @@ def preprocess_sequences(
         )
         normalized.append(norm_seq)
     return normalized
+
+def get_engine(dsn: str):
+    """
+    Создаёт и возвращает SQLAlchemy engine для подключения к Postgres БД.
+    Кэширует engine для повторных вызовов (global _engine_cache).
+    """
+    global _engine_cache
+    if '_engine_cache' not in globals():
+        _engine_cache = {}
+    if dsn not in _engine_cache:
+        if not dsn:
+            raise ValueError("DSN not provided for database connection")
+        _engine_cache[dsn] = create_engine(dsn, pool_pre_ping=True)  # pool_pre_ping для стабильности
+        logger.info(f"Created new SQLAlchemy engine for DSN: {dsn.split('@')[1] if '@' in dsn else dsn}")
+    return _engine_cache[dsn]
+
+def load_sequences_from_db(
+    cfg: MasterConfig,
+    split: str = "train",
+    debug_max_size: Optional[int] = None
+) -> List[Tuple[Tuple[str, datetime], np.ndarray]]:
+    """
+    Загружает сырые минутные бары из Postgres БД (таблица klines_1m),
+    детектирует спайки с find_spike_windows и генерирует sequences.
+    Возвращает формат как load_npz_dataset: List[( (symbol, ctx_start_dt), array )],
+    где array shape (full_seq_len, len(data_channels)).
+    Адаптировано под схему: open_time_ms → timestamp, open_price → open, base_volume → volume.
+    Фильтр: is_closed=true (завершённые свечи).
+    """
+    if not cfg.db.dsn:
+        raise ValueError(f"DB DSN not set in config for split '{split}'. Set cfg.db.dsn.")
+    
+    # Маппинг периодов по split
+    periods = {
+        "train": (cfg.db.train_period_start, cfg.db.train_period_end),
+        "val": (cfg.db.val_period_start, cfg.db.val_period_end),
+        "test": (cfg.db.test_period_start, cfg.db.test_period_end),
+    }
+    if split not in periods:
+        raise ValueError(f"Unknown split: {split}. Use 'train', 'val', or 'test'.")
+    period_start, period_end = periods[split]
+    
+    engine = get_engine(cfg.db.dsn)
+    
+    # Фильтр символов, если задан
+    symbols_filter = ""
+    if cfg.db.symbols:
+        symbols_str = "', '".join(cfg.db.symbols)
+        symbols_filter = f"AND symbol IN ('{symbols_str}')"
+
+    # --- Динамическая генерация SQL-запроса ---
+    DB_COLUMN_MAP = {
+        "open": "open_price", "high": "high_price", "low": "low_price", "close": "close_price",
+        "volume": "base_volume", "num_trades": "trade_count", "quote_volume": "quote_asset_volume",
+        "taker_buy_base_volume": "taker_buy_base_asset_volume",
+        "taker_buy_quote_volume": "taker_buy_quote_asset_volume",
+    }
+    
+    select_expressions = []
+    for channel in cfg.data.data_channels:
+        db_col = DB_COLUMN_MAP.get(channel)
+        if db_col:
+            select_expressions.append(f"{db_col} AS {channel}")
+        else:
+            logger.warning(f"Channel '{channel}' from config is not mapped to a DB column and will be skipped.")
+
+    always_required_cols = {
+        "timestamp_unix_sec": "open_time_ms / 1000",
+        "symbol": "symbol",
+    }
+    final_select_cols = ", ".join(
+        [f"{v} AS {k}" for k, v in always_required_cols.items()] + select_expressions
+    )
+    
+    query = f"""
+    SELECT 
+        {final_select_cols}
+    FROM klines_1m
+    WHERE is_closed = true
+      AND (open_time_ms / 1000)::bigint BETWEEN 
+          EXTRACT(EPOCH FROM '{period_start}'::timestamptz)::bigint 
+          AND EXTRACT(EPOCH FROM '{period_end}'::timestamptz)::bigint
+      {symbols_filter}
+    ORDER BY symbol, open_time_ms
+    """
+    
+    logger.info(f"Executing DB query for {split}: {period_start} to {period_end} ({symbols_filter or 'all symbols'})")
+    df = pd.read_sql(query, engine, parse_dates=False)
+    
+    # Конверт timestamp_unix_sec в datetime UTC
+    df['timestamp'] = pd.to_datetime(df['timestamp_unix_sec'], unit='s', utc=True)
+    df = df.drop('timestamp_unix_sec', axis=1)
+    df = df.sort_values(['symbol', 'timestamp']).set_index('timestamp')
+    
+    if df.empty:
+        raise ValueError(f"No data found in DB for {split} period/symbols. Check dates or table klines_1m.")
+    
+    logger.info(f"Loaded {len(df)} raw bars from DB for {split}")
+    
+    sequences = []
+    # Добавлен tqdm для отслеживания прогресса по символам
+    for symbol, sym_df in tqdm(df.groupby('symbol'), desc=f"Processing symbols for {split}"):
+        if len(sym_df) < cfg.seq.full_seq_len:
+            logger.warning(f"Skipping symbol {symbol}: only {len(sym_df)} bars < full_seq_len {cfg.seq.full_seq_len}")
+            continue
+        
+        spikes = find_spike_windows(
+            sym_df,
+            context_minutes=cfg.seq.pre_signal_len,
+            window_minutes=cfg.seq.agent_session_len,
+            abs_change_threshold_pct=cfg.detector.abs_change_pct,
+            contrast_min=cfg.detector.contrast_min,
+            cooldown_minutes=cfg.detector.cooldown_minutes,
+            use_lookahead=True
+        )
+        
+        for ctx_start, ctx_end, sess_start, sess_end, _ in spikes:
+            full_start = ctx_start - pd.Timedelta(minutes=cfg.seq.pre_signal_len)
+            full_slice = sym_df.loc[full_start:sess_end]
+            
+            if len(full_slice) == cfg.seq.full_seq_len:
+                slice_channels = full_slice[cfg.data.data_channels].values.astype(np.float32)
+                dt_key = (symbol, ctx_start.to_pydatetime())
+                sequences.append((dt_key, slice_channels))
+                
+                if debug_max_size and len(sequences) >= debug_max_size:
+                    break
+            else:
+                logger.debug(f"Skipping spike for {symbol}: slice len {len(full_slice)} != {cfg.seq.full_seq_len}")
+        
+        if debug_max_size and len(sequences) >= debug_max_size:
+            break
+    
+    logger.info(f"Generated {len(sequences)} sequences from DB spikes for {split}")
+    if not sequences:
+        logger.warning(f"No sequences generated for {split}. Check spike params or data volume.")
+    
+    return sequences
