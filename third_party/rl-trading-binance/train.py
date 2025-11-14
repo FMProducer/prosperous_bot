@@ -819,10 +819,14 @@ def main(cfg: MasterConfig = None):
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
-            if train_steps < cfg.rl.train_start:
+            # Use validation_warmup_steps to delay validation until the model is stable
+            validation_warmup_steps = int(getattr(getattr(cfg, "trainlog", object()), "validation_warmup_steps", 0))
+            validation_start_step = cfg.rl.train_start + validation_warmup_steps
+
+            if train_steps < validation_start_step:
                 logging.info(
                     f"[Validation] Skipped at episode {ep}: "
-                    f"train_steps ({train_steps}) < train_start ({cfg.rl.train_start})"
+                    f"train_steps ({train_steps}) < validation_start_step ({validation_start_step})"
                 )
                 continue
 

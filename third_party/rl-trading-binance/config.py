@@ -168,6 +168,7 @@ class TrainLogConfig(BaseModel):
     validate_model: bool = True
     val_freq: int = 1000
     num_val_ep: int = 3500
+    validation_warmup_steps: int = 0
     available_metrics: List[str] = [
         "Validation_mean_reward",
         "Validation_mean_pnl",

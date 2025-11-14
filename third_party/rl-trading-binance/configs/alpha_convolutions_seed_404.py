@@ -16,6 +16,9 @@ cfg.model.dropout_p = 0.15
 # Для устойчивого отбора чекпоинтов на GTX 1070 + 6C/12T
 cfg.trainlog.num_val_ep = 5000
 cfg.trainlog.val_freq = 500
+# Период "прогрева" после train_start, в течение которого валидация пропускается.
+# Позволяет модели стабилизироваться перед первой оценкой.
+cfg.trainlog.validation_warmup_steps = 585000
 # Увеличиваем общий горизонт обучения (качество > скорость)
 cfg.trainlog.episodes = 60000
 cfg.trainlog.plot_top_n = 10
@@ -57,7 +60,7 @@ cfg.validation_gate = {
     # Максимально допустимая просадка (20%). Меньшая просадка = большее число (e.g., -0.10 > -0.20).
     "max_drawdown_at_most": -0.25,
     "min_win_rate": 0.44,   # 0..1
-    "min_trades": 150,      # минимум сделок на валидации
+    "min_trades": 600,      # минимум сделок на валидации
     "deny_inf_pf": True,    # запрещаем PF=inf
     # Запрещаем модели с нулевой просадкой
     "deny_zero_drawdown": True,
