@@ -20,7 +20,7 @@ cfg.trainlog.val_freq = 500
 # Позволяет модели стабилизироваться перед первой оценкой.
 cfg.trainlog.validation_warmup_steps = 585000
 # Увеличиваем общий горизонт обучения (качество > скорость)
-cfg.trainlog.episodes = 60000
+cfg.trainlog.episodes = 50
 cfg.trainlog.plot_top_n = 10
 cfg.per.buffer_size = 500000
 cfg.rl.batch_size = 128
@@ -111,16 +111,19 @@ cfg.backtest.time_range = {"start_utc": "2024-10-01T00:00:00Z", "end_utc": "2025
 cfg.logging.per_trial_logs = True
 
 # 1000, default = None
-cfg.debug.debug_max_size_data = 100  # Для теста DB; set None для full после
+cfg.debug.debug_max_size_data = 20  # Для теста DB; set None для full после
 
 # DB overrides: periods для split (UTC, YYYY-MM-DD); symbols optional для ускорения
-cfg.db.train_period_start = "2024-01-01"
-cfg.db.train_period_end = "2025-01-01"  # Широкий train для спайков
-cfg.db.val_period_start = "2025-02-01"
-cfg.db.val_period_end = "2025-05-01"  # Pre-backtest val
-cfg.db.test_period_start = "2025-08-01"  # Align с backtest.time_range
-cfg.db.test_period_end = "2025-09-30"
-cfg.db.symbols = None  # None = all; or ["BTCUSDT", "ETHUSDT"] для теста (filter в query)
+cfg.db.train_period_start = "2025-05-01"
+cfg.db.train_period_end = "2025-05-31"
+cfg.db.val_period_start = "2025-06-01"
+cfg.db.val_period_end = "2025-06-15"
+cfg.db.test_period_start = "2025-08-01"
+cfg.db.test_period_end = "2025-08-15"
+cfg.db.symbols = [
+    "SYNUSDT", "AIUSDT", "VOXELUSDT", "XVGUSDT", "NFPUSDT", "EDUUSDT", "BEAMXUSDT", 
+    "BANDUSDT", "KSMUSDT", "SAGAUSDT"
+]
 
 cfg.debug.use_final_model = False
 # AMP: Включаем для ускорения на GPU (Tensor Cores).
@@ -140,7 +143,7 @@ cfg.perf.cudnn_benchmark = True
 # ---- Vectorized Environments ----
 # Увеличим количество параллельных сред для ускорения сбора данных.
 # На Windows/спавн backend "subproc" может оказаться медленнее из-за накладных расходов spawn.
-cfg.vec.num_envs = 4 # Количество параллельных сред
+cfg.vec.num_envs = 1 # Количество параллельных сред
 # По умолчанию используем "dummy"
 # "subproc" # Использовать мультипроцессинг
 cfg.vec.backend = "subproc"
@@ -205,9 +208,9 @@ cfg.paths.config_name = "alpha_convolutions_seed_404"
 cfg.detector.context_minutes = 30
 cfg.detector.window_minutes = 10
 cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
-cfg.detector.abs_change_pct = 4.0
-cfg.detector.contrast_min = 5.0
-cfg.detector.cooldown_minutes = 15
+cfg.detector.abs_change_pct = 1.0
+cfg.detector.contrast_min = 2.0
+cfg.detector.cooldown_minutes = 10
 
 #   python train.py configs/alpha.py
 #   python test_agent.py configs/alpha.py
