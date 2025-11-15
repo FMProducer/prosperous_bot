@@ -8,6 +8,7 @@ from typing import Any, Dict
 import hashlib, tarfile
 import datetime as dt
 from functools import partial
+from pathlib import Path
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -35,6 +36,94 @@ from utils import (
     set_random_seed,
     setup_logging,
 ) # noqa: F401
+
+def compute_norm_stats(npz_path: str, num_samples: int = 1000, seed: int = 25) -> dict:
+    """
+    Вычисляет mean/std per channel из subsample train_data (для скорости).
+    num_samples=1000 ~5 сек; full=24229 ~1 мин.
+    Returns: {'mean': list[10], 'std': list[10]}
+    """
+    np.random.seed(seed)
+    d = np.load(npz_path, allow_pickle=True)
+    data_keys = [k for k in d.files if not k.startswith('_')]
+    if len(data_keys) < num_samples:
+        num_samples = len(data_keys)
+    indices = np.random.choice(len(data_keys), num_samples, replace=False)
+    sample_keys = [data_keys[i] for i in indices]
+    
+    all_data = np.stack([d[key].astype(np.float32) for key in tqdm(sample_keys, desc="Computing stats")], axis=0)  # (N,150,10)
+    means = np.mean(all_data, axis=(0,1))  # Mean per channel (10,)
+    stds = np.std(all_data, axis=(0,1)) + 1e-8  # Std per channel, avoid 0
+    
+    d.close()
+    stats = {'mean': means.tolist(), 'std': stds.tolist()}
+    # Save для reuse (optional, но reproducibility)
+    Path('norm_stats.json').write_text(json.dumps(stats, indent=2))
+    logging.info(f"Computed stats saved to norm_stats.json: mean[0]={means[0]:.6f}, std[0]={stds[0]:.6f} ...")
+    return stats
+
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) -> list:
+    """
+    Загружает NPZ, compute/applies z-norm (if stats=None), reshape (10,150,1).
+    Если norm_stats=None: computes from train_path (assume npz_path is train).
+    Returns: list of np.arrays (samples), optional sampling.
+    """
+    if not npz_path or not os.path.exists(npz_path):
+        logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
+        return []
+
+    if norm_stats is None and split_name == 'Train':
+        logging.info("No norm_stats provided: computing from train data...")
+        norm_stats = compute_norm_stats(npz_path)
+    elif norm_stats is None:
+        raise ValueError(f"norm_stats required for {split_name} (not Train)")
+    
+    d = np.load(npz_path, allow_pickle=True)
+    data_keys = [k for k in d.files if not k.startswith('_')]
+    sequences = []
+    logging.info(f"Loading {len(data_keys)} sequences from {split_name}...")
+    
+    # Keys_map (optional для env)
+    keys_map_raw = d.get('_keys_map_')
+    keys_map = {}
+    if keys_map_raw is not None and isinstance(keys_map_raw, np.ndarray) and keys_map_raw.ndim == 0:
+        keys_map = keys_map_raw.item()
+    
+    means = np.array(norm_stats['mean'])  # (10,)
+    stds = np.array(norm_stats['std'])  # (10,)
+    
+    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
+        seq = d[key].astype(np.float32)  # (150,10)
+        if seq.shape[1] != 10:
+            raise ValueError(f"Expected 10 channels, got {seq.shape[1]}")
+        # Z-norm: broadcast per channel
+        seq = (seq - means) / stds
+        # Reshape для CNN: (150,10) → (10,150,1)
+        seq = seq.T  # (10,150)
+        seq = np.expand_dims(seq, -1)  # (10,150,1)
+        sequences.append(seq)
+    
+    # Sampling по config (optional, skip если config недоступен)
+    episodes_per_epoch = len(sequences)  # Default: full
+    try:
+        from config import cfg
+        if hasattr(cfg, 'episodes_per_epoch'):
+            episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')  # cfg.episodes_per_epoch
+        else:
+            episodes_per_epoch = len(sequences)
+        if len(sequences) > episodes_per_epoch:
+            np.random.seed(25)  # Reproducible sampling
+            indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
+            sequences = [sequences[i] for i in sorted(indices)]  # Sorted для consistency
+            print(f"Sampled to {episodes_per_epoch} episodes")
+    except (ImportError, AttributeError):
+        print("Config not available: using full sequences")
+    
+    d.close()
+    if sequences:
+        logging.info(f"Prepared {len(sequences)} sequences, shape: {sequences[0].shape}")
+    return sequences  # Или (sequences, keys_map) если нужно
+
 
 def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
@@ -550,80 +639,40 @@ def main(cfg: MasterConfig = None):
         json.dump(cfg.model_dump(), f, indent=2, default=str)
     logging.info(f"Full training configuration saved to: {config_save_path}")
 
-    raw_train = load_npz_dataset(
-        file_path=cfg.paths.train_data_path,
-        name_dataset="Train",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
+    # --- Data Loading and Preprocessing ---
+    logging.info("Loading and preprocessing data from NPZ files...")
 
-    raw_val = (
-        load_npz_dataset(
-            file_path=cfg.paths.val_data_path,
-            name_dataset="Val",
-            plot_dir=cfg.paths.plot_dir,
-            debug_max_size=cfg.debug.debug_max_size_data,
-            plot_examples=cfg.data.plot_examples,
-            plot_channel_idx=cfg.data.plot_channel_idx,
-            pre_signal_len=cfg.seq.pre_signal_len,
-        )
-        if cfg.trainlog.validate_model
-        else []
-    )
+    train_path = 'data/train_data_fair_8m.npz'
+    val_path = 'data/val_data_fair_8m.npz'
+    train_seqs = load_and_prep_data(train_path, 'Train')  # Auto-computes stats
 
-    raw_test = load_npz_dataset(
-        file_path=cfg.paths.test_data_path,
-        name_dataset="Test",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
-    raw_test = []
+    val_seqs = []
+    norm_stats = None
+    if train_seqs:
+        # Загружаем только что созданную статистику для валидационного сета
+        try:
+            norm_stats = json.load(open('norm_stats.json'))
+            val_seqs = load_and_prep_data(val_path, 'Val', norm_stats)  # Load from file
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.warning(f"Could not load norm_stats.json for validation set. Proceeding without it. Error: {e}")
 
-    train_seqs = process_data(raw_train, "Train", cfg)
-    val_seqs = process_data(raw_val, "Val", cfg)
-    test_seqs = process_data(raw_test, "Test", cfg)
+    test_seqs = [] # Явно очищаем тестовые последовательности
 
     if not train_seqs:
-        logging.error("No training data – aborting.")
+        logging.error("No training data after processing – aborting.")
         return
 
-    logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
+    logging.info(f"Data sizes for this run: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
 
-    train_stats = calculate_normalization_stats(
-        train_seqs,
-        cfg.data.data_channels,
-        cfg.data.price_channels,
-        cfg.data.volume_channels,
-        cfg.data.other_channels,
-    )
-
-    # # PRE-NORMALIZE
-    # train_seqs = preprocess_sequences(
-    #     train_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
-    # val_seqs = preprocess_sequences(
-    #     val_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
+    # Статистика нормализации уже загружена или вычислена, просто присваиваем для сохранения
+    train_stats = norm_stats
 
     # --- Save normalization stats for this training run ---
-    stats_save_path = os.path.join(models_dir, "norm_stats.json")
-    with open(stats_save_path, "w") as f:
-        json.dump(train_stats, f, indent=4)
-    logging.info(f"Normalization stats saved to: {stats_save_path}")
+    if train_stats:
+        stats_save_path = os.path.join(models_dir, "norm_stats.json")
+        with open(stats_save_path, "w") as f:
+            json.dump(train_stats, f, indent=4)
+        logging.info(f"Normalization stats saved to: {stats_save_path}")
 
 
     env_kwargs = {
