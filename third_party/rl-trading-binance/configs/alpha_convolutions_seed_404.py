@@ -190,18 +190,12 @@ logger.info(f"Config channels: data={len(cfg.data.data_channels)}, expected={len
 logger.info(f"Volume channels: {cfg.data.volume_channels}, other={cfg.data.other_channels}")
 
 # Production logging
-cfg.trainlog.plot_freq = 100  # Plot every 100 episodes (less spam)
-cfg.trainlog.verbose_validation = False  # Less verbose
+cfg.trainlog.plot_freq = 500  # Plot every 500 episodes (less spam)
 
 cfg.random_seed = 404
 cfg.paths.config_name = "alpha_convolutions_seed_404"
 # Spike Detector Configuration
 cfg.detector.context_minutes = 90
-cfg.detector.window_minutes = 10
-cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
-cfg.detector.abs_change_pct = 1.0  # 0.5 слишком loose, 1.0 standard (catch significant moves)
-cfg.detector.contrast_min = 2.0    # 1.5 loose for test, 2.0 standard (signal vs noise)
-cfg.detector.cooldown_minutes = 5
 
 #   python train.py configs/alpha.py
 #   python test_agent.py configs/alpha.py
@@ -252,11 +246,6 @@ cfg.eps.eps_decay_frames = 100000  # Gradual decay over training
 cfg.market.slippage = 0.0001  # 0.01% slippage
 cfg.market.transaction_fee = 0.0004  # 0.04% maker/taker fee (Binance futures)
 cfg.market.inaction_penalty_ratio = 0.1  # Penalty for no action
-
-# ---------- Training validation (production) ----------
-cfg.trainlog.validation_gate = True  # Enable quality gate
-cfg.trainlog.save_best_only = True   # Save only best validation
-cfg.trainlog.checkpoint_freq = 500   # Checkpoints every 500 episodes
 
 # ─────────────────────────────────────────────────────────────
 # Optuna Search Space (для optimize_cfg.py)

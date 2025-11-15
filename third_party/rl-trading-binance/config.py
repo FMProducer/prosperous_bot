@@ -207,6 +207,7 @@ class TrainLogConfig(BaseModel):
     plot_moving_avg_window: int = 10
     plot_top_n: int = 10
     plot_metric: str = "pnl"
+    plot_freq: int = 100
     iterations: int = 10_000
     early_stopping_patience: int = 20
 
