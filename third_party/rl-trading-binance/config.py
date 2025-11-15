@@ -62,25 +62,6 @@ class PathConfig(BaseModel):
         return os.path.join(self.output_dir, "backtest_qval_cache")
 
 
-class DbConfig(BaseModel):
-    """
-    Конфигурация для загрузки из PostgreSQL БД.
-    """
-    dsn: Optional[str] = Field(default=None, description="DSN для Postgres, напр. 'postgresql://user:pass@localhost:5432/trading_db'")
-    
-    # Периоды для загрузки данных из БД (строки в формате 'YYYY-MM-DD', UTC)
-    train_period_start: str = "2024-01-01"
-    train_period_end: str = "2025-01-01"
-    val_period_start: str = "2025-02-01"
-    val_period_end: str = "2025-03-01"
-    test_period_start: str = "2025-04-01"
-    test_period_end: str = "2025-05-01"
-    
-    symbols: Optional[List[str]] = Field(default=None, description="Список символов; None = все из БД")
-
-
-
-
 class VecConfig(BaseModel):
     """
     Параметры векторизации окружений (Vectorized Environments).
@@ -95,11 +76,11 @@ class VecConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
-    expected_channels: List[str] = ["open", "high", "low", "close", "volume", "num_trades", "quote_volume"]
+    expected_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close", "volume", "num_trades"]
     data_channels: List[str] = expected_channels.copy()
-    price_channels: List[str] = ["open", "high", "low", "close"]
-    volume_channels: List[str] = ["volume", "quote_volume"]
-    other_channels: List[str] = ["num_trades"]
+    price_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close"]
+    volume_channels: List[str] = ["volume", "num_trades"]
+    other_channels: List[str] = []
     plot_examples: int = 1
     plot_channel_idx: int = 4
 
@@ -207,7 +188,6 @@ class TrainLogConfig(BaseModel):
     plot_moving_avg_window: int = 10
     plot_top_n: int = 10
     plot_metric: str = "pnl"
-    plot_freq: int = 100
     iterations: int = 10_000
     early_stopping_patience: int = 20
 
@@ -289,6 +269,10 @@ class LoggingConfig(BaseModel):
     per_trial_logs: bool = False
 
 
+class DbConfig(BaseModel):
+    dsn: Optional[str] = None
+
+
 class PerformanceConfig(BaseModel):
     """
     Переключатели производительности, управляемые из configs/*.py.
@@ -336,7 +320,7 @@ class MasterConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     detector: DetectorConfig = DetectorConfig()
     perf: PerformanceConfig = PerformanceConfig()
-    db: DbConfig = Field(default_factory=DbConfig)
+    db: DbConfig = DbConfig()
 
     class Config:
         extra = "allow"

@@ -1,20 +1,17 @@
 # utils.py
 import datetime as dt
-from datetime import datetime
-import pandas as pd
-from sqlalchemy import create_engine, text
-from typing import Any, Dict, List, Optional, Tuple
-import logging
-import gc
 import importlib.util
+import logging
 import os
 import random
 import math
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 from tqdm import tqdm
@@ -383,7 +380,6 @@ def find_spike_windows(
     contrast_min: float = 5.0,
     cooldown_minutes: int = 60,
     use_lookahead: bool = False,
-    progress_bar: bool = True,  # Optional tqdm
 ) -> List[Tuple[dt.datetime, dt.datetime, dt.datetime, dt.datetime, float]]:
     """
     По минутным данным df (index=UTC, колонки содержат 'close') возвращает список окон:
@@ -391,75 +387,50 @@ def find_spike_windows(
     * use_lookahead=True — как в бэктесте: спайк оценивается на [t, t+window].
     * use_lookahead=False — реал-режим: спайк оценивается на [t-window, t] (без заглядывания вперёд).
     """
-    import pandas as pd
     if df.empty or "close" not in df.columns:
         return []
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("DataFrame index must be DatetimeIndex (UTC).")
-
-    # Precompute для vectorization (fast rolling на full series)
     s = df["close"].astype(float).copy()
+    # Безопасная монотонная итерация по времени
     s = s.sort_index()
-    n = len(s)
-    if n < context_minutes + window_minutes:
-        return []
-
-    # Rolling minute rets для contrast (window=1 min, but for pre-avg)
-    min_rets = s.pct_change().abs() * 100.0  # % abs change per min
-    pre_avg_abs_rolling = min_rets.rolling(window=context_minutes, min_periods=context_minutes).mean()
-
     out: List[Tuple[dt.datetime, dt.datetime, dt.datetime, dt.datetime, float]] = []
-
     # Границы перебора t: это конец контекста; окно спайка зависит от lookahead
     t0 = s.index.min() + pd.Timedelta(minutes=context_minutes)
     t1 = s.index.max() - pd.Timedelta(minutes=window_minutes if use_lookahead else 0)
-    
-    total_steps = int((t1 - t0).total_seconds() / 60) + 1
-    pbar = tqdm(range(total_steps), desc="Detecting spikes", disable=not progress_bar, leave=False) if progress_bar else range(total_steps)
-
-    last_spike_end = t0 - pd.Timedelta(minutes=cooldown_minutes + 1)
-
-    for step in pbar:
-        t = t0 + pd.Timedelta(minutes=step)
-        if step == 0:
-            first_t = t0 + pd.Timedelta(minutes=0)
-            first_ctx_start = first_t - pd.Timedelta(minutes=context_minutes)
-            logger.info(f"Debug t0={t0}, first_t={first_t}, first_ctx_start={first_ctx_start}, context_duration={(t0 - first_ctx_start).total_seconds()/60} min")
-        if t > t1:
-            break
-
-        if t < last_spike_end + pd.Timedelta(minutes=cooldown_minutes):
-            continue
-
+    t = t0
+    while t <= t1:
+        ctx_start = t - pd.Timedelta(minutes=context_minutes)
+        ctx_end = t
         if use_lookahead:
             win_start = t
             win_end = t + pd.Timedelta(minutes=window_minutes)
         else:
+            # Реал-режим: оцениваем всплеск на [t-window, t], но торговать начинаем с момента t
             win_start = t - pd.Timedelta(minutes=window_minutes)
             win_end = t
-        
+        ctx_slice = s.loc[ctx_start:ctx_end]
         win_slice = s.loc[win_start:win_end]
-        if len(win_slice) < window_minutes:
+        # Требуем почти полную заполненность окна (минутные бары, включительно по краям)
+        if len(ctx_slice) < context_minutes or len(win_slice) < window_minutes:
+            t += pd.Timedelta(minutes=1)
             continue
-
-        t_idx = s.index.get_indexer([t], method='nearest')[0]
-        pre_avg_abs = float(pre_avg_abs_rolling.iloc[t_idx]) if not pd.isna(pre_avg_abs_rolling.iloc[t_idx]) else 0.0
-        
         abs_chg = _abs_change_pct(win_slice)
+        pre_avg_abs = _avg_abs_minute_ret(ctx_slice)
         contrast = abs_chg / max(pre_avg_abs, 1e-9)
-
         if abs_chg >= abs_change_threshold_pct and contrast >= contrast_min:
-            ctx_start = t - pd.Timedelta(minutes=context_minutes)
-            ctx_end = t
+            # Начало торговой сессии:
+            #  - look-ahead=True  -> стартуем с начала окна (t)
+            #  - look-ahead=False -> стартуем с конца окна (t), чтобы не заглядывать в будущее
             session_start = win_start if use_lookahead else win_end
+            # Предзаполним session_end длиной оценочного окна; фактическая длительность может быть переопределена конфигом
             session_end = session_start + pd.Timedelta(minutes=window_minutes)
             out.append((ctx_start.to_pydatetime(), ctx_end.to_pydatetime(),
                         session_start.to_pydatetime(), session_end.to_pydatetime(), abs_chg))
-            last_spike_end = win_end
-        
-        if progress_bar and isinstance(pbar, tqdm):
-            pbar.set_postfix({"t": t.strftime("%H:%M"), "spikes": len(out)})
-
+            # Кулдаун: пропускаем окна вблизи
+            t += pd.Timedelta(minutes=cooldown_minutes)
+        else:
+            t += pd.Timedelta(minutes=1)
     return out
 
 def preprocess_sequences(
@@ -481,216 +452,3 @@ def preprocess_sequences(
         )
         normalized.append(norm_seq)
     return normalized
-
-def get_engine(dsn: str):
-    """
-    Создаёт и возвращает SQLAlchemy engine для подключения к Postgres БД.
-    Кэширует engine для повторных вызовов (global _engine_cache).
-    """
-    global _engine_cache
-    if '_engine_cache' not in globals():
-        _engine_cache = {}
-    if dsn not in _engine_cache:
-        if not dsn:
-            raise ValueError("DSN not provided for database connection")
-        _engine_cache[dsn] = create_engine(dsn, pool_pre_ping=True)  # pool_pre_ping для стабильности
-        logger.info(f"Created new SQLAlchemy engine for DSN: {dsn.split('@')[1] if '@' in dsn else dsn}")
-    return _engine_cache[dsn]
-
-def load_sequences_from_db(
-    cfg: MasterConfig,
-    split: str = "train",
-    debug_max_size: Optional[int] = None
-) -> List[Tuple[Tuple[str, datetime], np.ndarray]]:
-    """
-    Загружает сырые минутные бары из Postgres БД (таблица klines_1m),
-    детектирует спайки с find_spike_windows и генерирует sequences.
-    Возвращает формат как load_npz_dataset: List[( (symbol, ctx_start_dt), array )],
-    где array shape (full_seq_len, len(data_channels)).
-    Адаптировано под схему: open_time_ms → timestamp, open_price → open, base_volume → volume.
-    Фильтр: is_closed=true (завершённые свечи).
-    Batching: Если symbols=None, batch по max_symbols=10 (load/process/del per batch).
-    Query top symbols if all (ORDER BY total_volume DESC LIMIT).
-    """
-    if not cfg.db.dsn:
-        raise ValueError(f"DB DSN not set in config for split '{split}'. Set cfg.db.dsn.")
-    
-    # Маппинг периодов по split
-    periods = {
-        "train": (cfg.db.train_period_start, cfg.db.train_period_end),
-        "val": (cfg.db.val_period_start, cfg.db.val_period_end),
-        "test": (cfg.db.test_period_start, cfg.db.test_period_end),
-    }
-    if split not in periods:
-        raise ValueError(f"Unknown split: {split}. Use 'train', 'val', or 'test'.")
-    period_start, period_end = periods[split]
-    
-    engine = get_engine(cfg.db.dsn)
-    
-    # Get symbols list if None (top N volatile for spikes; adjust N)
-    all_symbols = cfg.db.symbols
-    if all_symbols is None:
-        # Raw query для топ symbols по base_volume sum (volatile markets)
-        top_query = text("""
-        SELECT symbol FROM (
-          SELECT symbol, SUM(base_volume) as total_vol 
-          FROM klines_1m 
-          WHERE is_closed=true AND (open_time_ms / 1000) BETWEEN :start_sec AND :end_sec
-          GROUP BY symbol ORDER BY total_vol DESC LIMIT 10  -- Top 10; increase to 50 for more
-        ) t
-        """)
-        period_start_sec = int(pd.to_datetime(period_start).timestamp())
-        period_end_sec = int(pd.to_datetime(period_end).timestamp())
-        symbols_df = pd.read_sql(top_query, engine, params={"start_sec": period_start_sec, "end_sec": period_end_sec})
-        all_symbols = symbols_df['symbol'].tolist()
-        logger.info(f"Auto-selected top {len(all_symbols)} symbols: {all_symbols}")
-
-    # Фильтр символов, если задан
-    symbols_filter = ""
-    if all_symbols:
-        symbols_str = "', '".join(all_symbols)
-        symbols_filter = f"AND symbol IN ('{symbols_str}')"
-
-    # --- Динамическая генерация SQL-запроса ---
-    DB_COLUMN_MAP = {
-        "open": "open_price", 
-        "high": "high_price", 
-        "low": "low_price", 
-        "close": "close_price",
-        "volume": "base_volume", 
-        "num_trades": "trade_count",
-        "quote_volume": "quote_volume",        # ✅ Схема: quote_volume (raw column)
-    }
-    
-    select_expressions = []
-    for channel in cfg.data.data_channels:
-        db_col = DB_COLUMN_MAP.get(channel)
-        if db_col:
-            select_expressions.append(f"{db_col} AS {channel}")
-        else:
-            logger.warning(f"Channel '{channel}' from config is not mapped to a DB column and will be skipped.")
-    logger.info(f"DB SELECT channels: {len(select_expressions)} = {cfg.data.data_channels}")  # Verify 7 channels
-
-    always_required_cols = {
-        "timestamp_unix_sec": "open_time_ms / 1000",
-        "symbol": "symbol",
-    }
-    final_select_cols = ", ".join(
-        [f"{v} AS {k}" for k, v in always_required_cols.items()] + select_expressions
-    )
-    # logger.info(f"Query will select: {len(always_required_cols)} potential channels, filtered to cfg.data.data_channels={len(cfg.data.data_channels)}")
-    
-    query = f"""
-    SELECT 
-        {final_select_cols}
-    FROM klines_1m
-    WHERE is_closed = true
-      AND (open_time_ms / 1000)::bigint BETWEEN 
-          EXTRACT(EPOCH FROM '{period_start}'::timestamptz)::bigint 
-          AND EXTRACT(EPOCH FROM '{period_end}'::timestamptz)::bigint
-      {symbols_filter}
-    ORDER BY symbol, open_time_ms
-    """
-    
-    logger.info(f"Executing DB query for {split}: {period_start} to {period_end} ({symbols_filter or 'all symbols'})")
-    
-    # Batching: Process symbols по batch_size=10 (del sym_df to free RAM)
-    batch_size = 10  # Adjust: 5 for low RAM, 20 for 32GB+
-    sequences = []
-    total_symbols = len(all_symbols)
-    for i in range(0, total_symbols, batch_size):
-        batch_symbols = all_symbols[i:i+batch_size]
-        logger.info(f"Processing batch {i//batch_size + 1}: symbols {batch_symbols}")
-        
-        in_clause = ','.join("'" + s + "'" for s in batch_symbols)
-        batch_filter = f"AND symbol IN ({in_clause})"
-        batch_query = query.replace(symbols_filter, batch_filter)  # Reuse query template
-        batch_df = pd.read_sql(batch_query, engine, parse_dates=False)
-        
-        # Конверт timestamp_unix_sec в datetime UTC
-        batch_df['timestamp'] = pd.to_datetime(batch_df['timestamp_unix_sec'], unit='s', utc=True)
-        batch_df = batch_df.drop('timestamp_unix_sec', axis=1)
-        batch_df = batch_df.sort_values(['symbol', 'timestamp']).set_index('timestamp')
-        
-        if batch_df.empty:
-            continue
-        
-        logger.info(f"Loaded {len(batch_df)} raw bars from DB for batch")
-        
-        batch_sequences = []
-        for symbol, sym_df in batch_df.groupby('symbol'):
-            if not sym_df.index.is_unique:
-                logger.warning(f"Duplicate timestamps found for {symbol}. Keeping first entry.")
-                sym_df = sym_df[~sym_df.index.duplicated(keep='first')]
-            
-            if len(sym_df) < cfg.seq.full_seq_len:
-                logger.warning(f"Skipping symbol {symbol}: only {len(sym_df)} bars < full_seq_len {cfg.seq.full_seq_len}")
-                continue
-            
-            spikes = find_spike_windows(
-                sym_df,
-                context_minutes=cfg.seq.pre_signal_len,
-                window_minutes=cfg.seq.agent_session_len,
-                abs_change_threshold_pct=cfg.detector.abs_change_pct,
-                contrast_min=cfg.detector.contrast_min,
-                cooldown_minutes=cfg.detector.cooldown_minutes,
-                use_lookahead=True
-            )
-            
-            for ctx_start, ctx_end, sess_start, sess_end, _ in spikes:
-                full_start = ctx_start - pd.Timedelta(minutes=cfg.seq.pre_signal_len)
-                post_extension = cfg.seq.post_signal_len - cfg.seq.agent_session_len
-                full_end = sess_end + pd.Timedelta(minutes=post_extension)
-                full_slice = sym_df.loc[full_start:full_end]
-                
-                actual_len = len(full_slice)
-                expected_len = cfg.seq.full_seq_len
-                tolerance = 100
-                
-                if abs(actual_len - expected_len) <= tolerance:
-                    # Fix shape: Ensure exactly expected_len for env
-                    if actual_len > expected_len:
-                        full_slice = full_slice.iloc[:expected_len]  # Truncate excess
-                        actual_len = expected_len
-                        logger.debug(f"Truncated slice for {symbol}: {actual_len} -> {expected_len}")
-                    elif actual_len < expected_len:
-                        pad_len = expected_len - actual_len
-                        # Pad with forward fill (last values) for gaps
-                        pad_index = pd.date_range(start=full_slice.index[-1] + pd.Timedelta(minutes=1), periods=pad_len, freq='1min')
-                        pad_df = pd.DataFrame(np.tile(full_slice.iloc[-1].values, (pad_len, 1)), index=pad_index, columns=full_slice.columns)
-                        full_slice = pd.concat([full_slice, pad_df])
-                        actual_len = expected_len
-                        logger.debug(f"Padded slice for {symbol}: {actual_len} -> {expected_len}")
-                    
-                    # Type check for ctx_start (datetime.datetime or pd.Timestamp)
-                    if hasattr(ctx_start, 'to_pydatetime'):
-                        ctx_start_dt = ctx_start.to_pydatetime()
-                    else:
-                        ctx_start_dt = ctx_start  # Уже datetime
-                    
-                    slice_channels = full_slice[cfg.data.data_channels].values.astype(np.float32)
-                    dt_key = (symbol, ctx_start_dt)
-                    batch_sequences.append((dt_key, slice_channels))
-                    logger.debug(f"Added sequence {symbol}: shape {slice_channels.shape}")
-                else:
-                    logger.warning(f"Skipping spike for {symbol}: actual_len={actual_len} too far from expected={expected_len}")
-                
-                if debug_max_size and len(sequences + batch_sequences) >= debug_max_size:
-                    break
-            
-            if debug_max_size and len(sequences) + len(batch_sequences) >= debug_max_size:
-                break
-        
-        sequences.extend(batch_sequences)
-        del batch_df
-        gc.collect()
-        logger.info(f"Batch done: +{len(batch_sequences)} sequences (total {len(sequences)})")
-
-        if debug_max_size and len(sequences) >= debug_max_size:
-            break
-    
-    logger.info(f"Generated {len(sequences)} sequences from DB spikes for {split}")
-    if not sequences:
-        logger.warning(f"No sequences generated for {split}. Check spike params or data volume.")
-    
-    return sequences
