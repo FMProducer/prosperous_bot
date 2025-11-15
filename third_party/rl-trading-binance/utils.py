@@ -392,7 +392,6 @@ def find_spike_windows(
     * use_lookahead=False — реал-режим: спайк оценивается на [t-window, t] (без заглядывания вперёд).
     """
     import pandas as pd
-    print(f"Pandas version in use: {pd.__version__}")
     if df.empty or "close" not in df.columns:
         return []
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -422,6 +421,10 @@ def find_spike_windows(
 
     for step in pbar:
         t = t0 + pd.Timedelta(minutes=step)
+        if step == 0:
+            first_t = t0 + pd.Timedelta(minutes=0)
+            first_ctx_start = first_t - pd.Timedelta(minutes=context_minutes)
+            logger.info(f"Debug t0={t0}, first_t={first_t}, first_ctx_start={first_ctx_start}, context_duration={(t0 - first_ctx_start).total_seconds()/60} min")
         if t > t1:
             break
 
@@ -550,10 +553,13 @@ def load_sequences_from_db(
 
     # --- Динамическая генерация SQL-запроса ---
     DB_COLUMN_MAP = {
-        "open": "open_price", "high": "high_price", "low": "low_price", "close": "close_price",
-        "volume": "base_volume", "num_trades": "trade_count", "quote_volume": "quote_asset_volume",
-        "taker_buy_base_volume": "taker_buy_base_asset_volume",
-        "taker_buy_quote_volume": "taker_buy_quote_asset_volume",
+        "open": "open_price", 
+        "high": "high_price", 
+        "low": "low_price", 
+        "close": "close_price",
+        "volume": "base_volume", 
+        "num_trades": "trade_count",
+        "quote_volume": "quote_volume",        # ✅ Схема: quote_volume (raw column)
     }
     
     select_expressions = []
@@ -563,6 +569,7 @@ def load_sequences_from_db(
             select_expressions.append(f"{db_col} AS {channel}")
         else:
             logger.warning(f"Channel '{channel}' from config is not mapped to a DB column and will be skipped.")
+    logger.info(f"DB SELECT channels: {len(select_expressions)} = {cfg.data.data_channels}")  # Verify 7 channels
 
     always_required_cols = {
         "timestamp_unix_sec": "open_time_ms / 1000",
@@ -571,6 +578,7 @@ def load_sequences_from_db(
     final_select_cols = ", ".join(
         [f"{v} AS {k}" for k, v in always_required_cols.items()] + select_expressions
     )
+    # logger.info(f"Query will select: {len(always_required_cols)} potential channels, filtered to cfg.data.data_channels={len(cfg.data.data_channels)}")
     
     query = f"""
     SELECT 
@@ -611,6 +619,10 @@ def load_sequences_from_db(
         
         batch_sequences = []
         for symbol, sym_df in batch_df.groupby('symbol'):
+            if not sym_df.index.is_unique:
+                logger.warning(f"Duplicate timestamps found for {symbol}. Keeping first entry.")
+                sym_df = sym_df[~sym_df.index.duplicated(keep='first')]
+            
             if len(sym_df) < cfg.seq.full_seq_len:
                 logger.warning(f"Skipping symbol {symbol}: only {len(sym_df)} bars < full_seq_len {cfg.seq.full_seq_len}")
                 continue
@@ -627,17 +639,44 @@ def load_sequences_from_db(
             
             for ctx_start, ctx_end, sess_start, sess_end, _ in spikes:
                 full_start = ctx_start - pd.Timedelta(minutes=cfg.seq.pre_signal_len)
-                full_slice = sym_df.loc[full_start:sess_end]
+                post_extension = cfg.seq.post_signal_len - cfg.seq.agent_session_len
+                full_end = sess_end + pd.Timedelta(minutes=post_extension)
+                full_slice = sym_df.loc[full_start:full_end]
                 
-                if len(full_slice) == cfg.seq.full_seq_len:
-                    slice_channels = full_slice[cfg.data.data_channels].values.astype(np.float32)
-                    dt_key = (symbol, ctx_start.to_pydatetime())
-                    batch_sequences.append((dt_key, slice_channels))
+                actual_len = len(full_slice)
+                expected_len = cfg.seq.full_seq_len
+                tolerance = 100
+                
+                if abs(actual_len - expected_len) <= tolerance:
+                    # Fix shape: Ensure exactly expected_len for env
+                    if actual_len > expected_len:
+                        full_slice = full_slice.iloc[:expected_len]  # Truncate excess
+                        actual_len = expected_len
+                        logger.debug(f"Truncated slice for {symbol}: {actual_len} -> {expected_len}")
+                    elif actual_len < expected_len:
+                        pad_len = expected_len - actual_len
+                        # Pad with forward fill (last values) for gaps
+                        pad_index = pd.date_range(start=full_slice.index[-1] + pd.Timedelta(minutes=1), periods=pad_len, freq='1min')
+                        pad_df = pd.DataFrame(np.tile(full_slice.iloc[-1].values, (pad_len, 1)), index=pad_index, columns=full_slice.columns)
+                        full_slice = pd.concat([full_slice, pad_df])
+                        actual_len = expected_len
+                        logger.debug(f"Padded slice for {symbol}: {actual_len} -> {expected_len}")
                     
-                    if debug_max_size and len(sequences) + len(batch_sequences) >= debug_max_size:
-                        break
+                    # Type check for ctx_start (datetime.datetime or pd.Timestamp)
+                    if hasattr(ctx_start, 'to_pydatetime'):
+                        ctx_start_dt = ctx_start.to_pydatetime()
+                    else:
+                        ctx_start_dt = ctx_start  # Уже datetime
+                    
+                    slice_channels = full_slice[cfg.data.data_channels].values.astype(np.float32)
+                    dt_key = (symbol, ctx_start_dt)
+                    batch_sequences.append((dt_key, slice_channels))
+                    logger.debug(f"Added sequence {symbol}: shape {slice_channels.shape}")
                 else:
-                    logger.debug(f"Skipping spike for {symbol}: slice len {len(full_slice)} != {cfg.seq.full_seq_len}")
+                    logger.warning(f"Skipping spike for {symbol}: actual_len={actual_len} too far from expected={expected_len}")
+                
+                if debug_max_size and len(sequences + batch_sequences) >= debug_max_size:
+                    break
             
             if debug_max_size and len(sequences) + len(batch_sequences) >= debug_max_size:
                 break

@@ -95,11 +95,11 @@ class VecConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
-    expected_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close", "volume", "num_trades"]
+    expected_channels: List[str] = ["open", "high", "low", "close", "volume", "num_trades", "quote_volume"]
     data_channels: List[str] = expected_channels.copy()
-    price_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close"]
-    volume_channels: List[str] = ["volume", "num_trades"]
-    other_channels: List[str] = []
+    price_channels: List[str] = ["open", "high", "low", "close"]
+    volume_channels: List[str] = ["volume", "quote_volume"]
+    other_channels: List[str] = ["num_trades"]
     plot_examples: int = 1
     plot_channel_idx: int = 4
 

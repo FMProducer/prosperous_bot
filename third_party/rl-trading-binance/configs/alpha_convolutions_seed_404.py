@@ -1,6 +1,9 @@
 # configs/alpha.py
 import torch
 from config import MasterConfig
+import logging
+
+logger = logging.getLogger(__name__)
 cfg = MasterConfig()
 ACTION_HISTORY_LEN = 2
 cfg.model.cnn_maps = [64, 96, 128, 128, 96]
@@ -68,7 +71,7 @@ cfg.validation_gate = {
 # Широкий взгляд на рынок для оценки волатильности и риска
 cfg.seq.agent_history_len = 90
 # cfg.seq.input_history_len = 90
-cfg.seq.agent_session_len = 10
+cfg.seq.agent_session_len = 60
 # NB: pre_signal_len используется в utils.compute_metrics; согласуем с agent_history_len при отсутствии явной настройки.
 if not hasattr(cfg.seq, "pre_signal_len"):
     cfg.seq.pre_signal_len = cfg.seq.agent_history_len
@@ -121,8 +124,7 @@ cfg.db.val_period_end = "2025-06-15"
 cfg.db.test_period_start = "2025-08-01"
 cfg.db.test_period_end = "2025-08-15"
 cfg.db.symbols = [
-    "SYNUSDT", "AIUSDT", "VOXELUSDT", "XVGUSDT", "NFPUSDT", "EDUUSDT", "BEAMXUSDT", 
-    "BANDUSDT", "KSMUSDT", "SAGAUSDT"
+    "SYNUSDT", "AIUSDT", "VOXELUSDT"
 ]
 
 cfg.debug.use_final_model = False
@@ -193,11 +195,14 @@ cfg.paths.val_data_path = None
 cfg.paths.test_data_path = None
 cfg.paths.backtest_data_path = None  # Если используется
 
-# Optional: ensure data_channels match DB SELECT (OHLCV + num_trades)
-cfg.data.data_channels = ["open", "high", "low", "close", "volume", "num_trades"]
+# 7 channels, match DB SELECT
+cfg.data.data_channels = ["open", "high", "low", "close", "volume", "num_trades", "quote_volume"]
 cfg.data.price_channels = ["open", "high", "low", "close"]
-cfg.data.volume_channels = ["volume"]
-cfg.data.other_channels = ["num_trades"]  # Для calculate_normalization_stats
+cfg.data.volume_channels = ["volume", "quote_volume"]  # Both volumes for log normalization
+cfg.data.other_channels = ["num_trades"]  # Trade count as other
+cfg.data.expected_channels = ["open", "high", "low", "close", "volume", "num_trades", "quote_volume"]  # 7 channels, match DB SELECT
+logger.info(f"Config channels: data={len(cfg.data.data_channels)}, expected={len(cfg.data.expected_channels)}")
+logger.info(f"Volume channels: {cfg.data.volume_channels}, other={cfg.data.other_channels}")
 
 # Модель для бэктеста.
 # cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\third_party\rl-trading-binance\output\alpha_convolutions_seed_404\saved_models\rl_binance_futures_trading_date_20251113_time_230318\best.pth"
@@ -205,12 +210,12 @@ cfg.data.other_channels = ["num_trades"]  # Для calculate_normalization_stats
 cfg.random_seed = 404
 cfg.paths.config_name = "alpha_convolutions_seed_404"
 # Spike Detector Configuration
-cfg.detector.context_minutes = 30
+cfg.detector.context_minutes = 90
 cfg.detector.window_minutes = 10
 cfg.detector.use_lookahead = False # IMPORTANT: This should be True for backtesting/dataset creation
-cfg.detector.abs_change_pct = 1.0
-cfg.detector.contrast_min = 2.0
-cfg.detector.cooldown_minutes = 10
+cfg.detector.abs_change_pct = 0.5
+cfg.detector.contrast_min = 1.5
+cfg.detector.cooldown_minutes = 5
 
 #   python train.py configs/alpha.py
 #   python test_agent.py configs/alpha.py
