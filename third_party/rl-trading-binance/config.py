@@ -270,7 +270,7 @@ class LoggingConfig(BaseModel):
 
 
 class DbConfig(BaseModel):
-    dsn: Optional[str] = None
+    dsn: str = "postgresql://postgres:9691@localhost:5432/marketdata?sslmode=disable"
 
 
 class PerformanceConfig(BaseModel):

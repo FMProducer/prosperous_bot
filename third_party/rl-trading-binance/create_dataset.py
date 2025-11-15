@@ -96,71 +96,53 @@ def create_dataset_from_db(cfg: MasterConfig, cfg_mod: object, time_range: dict,
 
     try:
 
-        with engine.connect() as conn:
-
-            detector_cfg = cfg.detector
-
-            query = text(f"""
-
-WITH minute_returns AS (
-
-    SELECT 
-
+        detector_cfg = cfg.detector
+        total_rows = detector_cfg.context_minutes + detector_cfg.window_minutes
+        query = text(f"""
+WITH returns AS (
+    SELECT
         open_time_ms,
-
-        symbol, 
-
-        close_price AS close, 
-
-        (close_price / LAG(close_price, 1) OVER (PARTITION BY symbol ORDER BY open_time_ms)) - 1 AS ret
-
-    FROM klines_1m 
-
-    WHERE symbol = ANY(:symbols) AND open_time_ms >= :start_ts AND open_time_ms < :end_ts AND is_closed = TRUE
-
-),
-
-rolling_stats AS (
-
-    SELECT 
-
-        open_time_ms, 
-
         symbol,
-
-        ABS( (close_price / AVG(close_price) OVER (PARTITION BY symbol ORDER BY open_time_ms ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING )) - 1 ) AS abs_change,
-
-        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY open_time_ms ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
-
-    FROM klines_1m 
-
+        close_price,
+        ABS( (close_price / LAG(close_price, 1) OVER (PARTITION BY symbol ORDER BY open_time_ms)) - 1 ) AS abs_ret
+    FROM klines_1m
     WHERE symbol = ANY(:symbols) AND open_time_ms >= :start_ts AND open_time_ms < :end_ts AND is_closed = TRUE
-
+),
+rolling_stats AS (
+    SELECT
+        open_time_ms,
+        symbol,
+        ABS( (close_price / AVG(close_price) OVER (PARTITION BY symbol ORDER BY open_time_ms ROWS BETWEEN {total_rows} PRECEDING AND {detector_cfg.window_minutes} PRECEDING )) - 1 ) AS abs_change,
+        AVG(abs_ret) OVER (PARTITION BY symbol ORDER BY open_time_ms ROWS BETWEEN {total_rows} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre
+    FROM returns
 )
-
-SELECT to_timestamp(open_time_ms / 1000.0) AT TIME ZONE 'UTC' AS ts, symbol 
-
+SELECT to_timestamp(open_time_ms / 1000.0) AT TIME ZONE 'UTC' AS ts, symbol
 FROM rolling_stats
-
 WHERE abs_change * 100.0 >= :abs_change_pct AND (abs_change / (avg_abs_ret_pre + 1e-9)) >= :contrast_min
-
 ORDER BY ts, symbol;
-
 """)
 
-            found_spikes_df = pd.read_sql(query, conn, params={
+        params={
+            "symbols": symbols,
+            "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
+            "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
+            "abs_change_pct": detector_cfg.abs_change_pct,
+            "contrast_min": detector_cfg.contrast_min,
+        }
 
-                "symbols": symbols,
-
-                "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
-
-                "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
-
-                "abs_change_pct": detector_cfg.abs_change_pct,
-
-                "contrast_min": detector_cfg.contrast_min,
-
-            })
+        with engine.connect() as conn:
+            if len(symbols) > 50:
+                logging.info("Chunking symbols for faster scan (32 batches)...")
+                chunk_size = 32
+                all_spikes = []
+                for i in tqdm(range(0, len(symbols), chunk_size), desc="Scanning symbol chunks"):
+                    chunk = symbols[i:i+chunk_size]
+                    chunk_params = {**params, "symbols": chunk}
+                    chunk_df = pd.read_sql(query, conn, params=chunk_params)
+                    all_spikes.append(chunk_df)
+                found_spikes_df = pd.concat(all_spikes, ignore_index=True)
+            else:
+                found_spikes_df = pd.read_sql(query, conn, params=params)
 
             found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='s', utc=True)
 
@@ -218,9 +200,9 @@ ORDER BY ts, symbol;
 
                     trade_count AS num_trades,
 
-                    taker_base_volume AS taker_base,
+                    taker_base,
 
-                    taker_quote_volume AS taker_quote
+                    taker_quote
 
                 FROM klines_1m 
 
