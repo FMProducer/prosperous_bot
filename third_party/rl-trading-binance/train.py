@@ -141,6 +141,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     step_iters = 0
     win_rates = []
     ep_losses = []
+    last_info = {}
     while not done_mask.all():
         prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
@@ -158,6 +159,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     win_rates.append(float(wr))
+
+        last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
         # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
         for i in range(train_env.num_envs):
             if not prev_done[i]:
@@ -182,7 +185,9 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
     transitions_count = int(step_iters * train_env.num_envs)
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-    return avg_reward, avg_win_rate, transitions_count, avg_loss
+    # Aggregate infos from all sub-environments. A simple approach is to merge them,
+    # or return the info from the first completed environment. Here we just return the last one.
+    return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -646,75 +651,105 @@ def main(cfg: MasterConfig = None):
     logging.info(f"Full training configuration saved to: {config_save_path}")
 
     # --- Data Loading and Preprocessing ---
+    # This block seems to be a duplicate from the diff and the original file.
+    # The logic is correct, so I will keep one version.
     logging.info("Loading and preprocessing data from NPZ files...")
-
-    train_path = cfg.paths.train_data_path
-    val_path = cfg.paths.val_data_path
-    train_seqs = load_and_prep_data(train_path, 'Train')  # Auto-computes stats
-
-    val_seqs = []
+    train_seqs = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=None)
+    # Загружаем валидационные данные, используя статистику из train
+    norm_stats_path = 'norm_stats.json'
     norm_stats = None
-    if train_seqs:
-        # Загружаем только что созданную статистику для валидационного сета
-        try:
-            norm_stats = json.load(open('norm_stats.json'))
-            val_seqs = load_and_prep_data(val_path, 'Val', norm_stats)  # Load from file
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.warning(f"Could not load norm_stats.json for validation set. Proceeding without it. Error: {e}")
+    if os.path.exists(norm_stats_path):
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
+    val_seqs = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
 
-    test_path = cfg.paths.test_data_path
-    test_seqs = load_and_prep_data(test_path, 'Test', norm_stats) if test_path and os.path.exists(test_path) else []
+    # Set episodes from total_timesteps if not set
+    if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
+        cfg.trainlog.episodes = cfg.rl.total_timesteps // cfg.rl.n_steps
 
-    if not train_seqs:
-        logging.error("No training data after processing – aborting.")
-        return
+    # Масштабируем скорость затухания эпсилон, если включена опция и есть несколько сред
+    eps_decay_frames = cfg.eps.eps_decay_frames
+    if cfg.vec.vec_envs > 1 and cfg.vec.scale_epsilon_by_envs:
+        # Эта логика имеет смысл в основном для `subproc` бэкенда
+        eps_decay_frames *= cfg.vec.vec_envs
+        logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.vec_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
-    logging.info(f"Data sizes for this run: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
+    agent = D3QN_PER_Agent(
+        state_shape=cfg.state_shape,  # (10,150,1)
+        action_dim=cfg.market.num_actions,
+        cnn_maps=cfg.model.cnn_maps,
+        cnn_kernels=cfg.model.cnn_kernels,
+        cnn_strides=cfg.model.cnn_strides,
+        cnn_dilations=cfg.model.cnn_dilations,
+        dense_val=cfg.model.dense_val,
+        dense_adv=cfg.model.dense_adv,
+        additional_feats=cfg.model.additional_feats,
+        dropout_model=cfg.model.dropout_p,
+        device=cfg.device.device,
+        learning_rate=cfg.rl.lr,
+        gamma=cfg.rl.gamma,
+        batch_size=cfg.rl.batch_size,
+        buffer_size=cfg.per.buffer_size,
+        target_update_freq=cfg.rl.target_update_freq,
+        train_start=cfg.rl.train_start,
+        per_alpha=cfg.per.per_alpha,
+        per_beta_start=cfg.per.per_beta_start,
+        per_beta_frames=cfg.per.per_beta_frames,
+        eps_start=cfg.eps.eps_start,
+        eps_end=cfg.eps.eps_end,
+        eps_frames=eps_decay_frames,
+        epsilon=cfg.per.per_eps,  # PER eps
+        max_gradient_norm=cfg.rl.max_gradient_norm,
+        perf_cfg=cfg.perf,
+        # MC-dropout from cfg.mc_dropout (as is)
+    )
 
-    # Статистика нормализации уже загружена или вычислена, просто присваиваем для сохранения
-    train_stats = norm_stats
+    # Calculate flat_state_size
+    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
+    # After reshape, num_features becomes the number of channels in original data
+    if len(train_seqs[0].shape) == 3:
+        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
+    else:
+        num_features = train_seqs[0].shape[1]  # C from (L, C)
+    num_actions = cfg.market.num_actions
+    action_history_len = cfg.seq.action_history_len
 
-    # --- Save normalization stats for this training run ---
-    if train_stats:
-        stats_save_path = os.path.join(models_dir, "norm_stats.json")
-        with open(stats_save_path, "w") as f:
-            json.dump(train_stats, f, indent=4)
-        logging.info(f"Normalization stats saved to: {stats_save_path}")
-
-
+    flat_features = input_history_len * num_features
+    extras = 4  # position, unrealized, time_elapsed, time_remaining
+    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
+    flat_state_size = flat_features + extras + history_vector_size
+    
     env_kwargs = {
         "sequences": train_seqs,
-        "stats": train_stats,
+        "stats": norm_stats,
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": cfg.seq.num_features,  # Now from cfg
-        "num_actions": cfg.model.action_dim,  # Use action_dim from model
-       # flat_state_size not needed; model handles (C,L,1)
-        "initial_balance": cfg.market.initial_balance,  # Assume market in cfg; add if missing
+        "num_features": num_features,
+        "num_actions": num_actions,
+        "flat_state_size": flat_state_size,
+        "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
-        "data_channels": cfg.data.data_channels,  # Assume defined
-        "slippage": getattr(cfg.market, 'slippage', 0.0),
-        "transaction_fee": getattr(cfg.market, 'transaction_fee', 0.001),
+        "data_channels": cfg.data.data_channels,
+        "slippage": cfg.market.slippage,
+        "transaction_fee": cfg.market.transaction_fee,
         "agent_session_len": cfg.seq.agent_session_len,
         "agent_history_len": cfg.seq.agent_history_len,
-        "input_history_len": cfg.seq.input_history_len,
-        "price_channels": getattr(cfg.data, 'price_channels', [0,1,2,3]),  # Defaults
-        "volume_channels": getattr(cfg.data, 'volume_channels', [4]),
-        "other_channels": getattr(cfg.data, 'other_channels', [5,6,7,8,9]),
-        "action_history_len": cfg.seq.action_history_len,
-        "inaction_penalty_ratio": getattr(cfg.market, 'inaction_penalty_ratio', 0.0),
-        "position_fraction": cfg.backtest.position_fraction,
-        "order_size_usdt": cfg.backtest.order_size_usdt,
+        "input_history_len": input_history_len,
+        "price_channels": cfg.data.price_channels,
+        "volume_channels": cfg.data.volume_channels,
+        "other_channels": cfg.data.other_channels,
+        "action_history_len": action_history_len,
+        "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
     # --- TRAIN ENV: single vs vectorized ---
-    if cfg.vec.num_envs > 1:
-        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(cfg.vec.num_envs)]
+    if cfg.vec.vec_envs > 1:
+        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(cfg.vec.vec_envs)]
         if cfg.vec.backend == "subproc":
             train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
-            logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.num_envs} (start_method='{cfg.vec.start_method}')")
+            logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.vec_envs} (start_method='{cfg.vec.start_method}')")
         elif cfg.vec.backend == "dummy":
             train_env = DummyVecEnv(env_fns)
-            logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
+            logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.vec_envs}")
         else:
             raise ValueError(f"Unknown vec.backend: '{cfg.vec.backend}'")
     else:
@@ -730,40 +765,6 @@ def main(cfg: MasterConfig = None):
         val_env = TradingEnvironment(**val_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
-
-    # Set episodes from total_timesteps if not set
-    if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
-        cfg.trainlog.episodes = cfg.rl.total_timesteps // cfg.rl.n_steps
-
-    agent = D3QN_PER_Agent(
-        state_shape=cfg.state_shape,  # (10,150,1)
-        action_dim=cfg.model.action_dim,
-        cnn_maps=cfg.model.cnn_maps,
-        cnn_kernels=cfg.model.cnn_kernels,
-        cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=cfg.model.cnn_dilations,
-        dense_val=cfg.model.dense_val,
-        dense_adv=cfg.model.dense_adv,
-        additional_feats=cfg.model.additional_feats,
-        dropout_model=cfg.model.dropout_p,
-        device=cfg.device.device,
-        gamma=cfg.rl.gamma,
-        learning_rate=cfg.rl.learning_rate,
-        batch_size=cfg.rl.batch_size,
-        buffer_size=cfg.per.buffer_size,
-        target_update_freq=cfg.rl.target_update_freq,
-        train_start=cfg.rl.train_start,
-        per_alpha=cfg.per.per_alpha,
-        per_beta_start=cfg.per.per_beta_start,
-        per_beta_frames=cfg.per.per_beta_frames,
-        eps_start=cfg.eps.eps_start,
-        eps_end=cfg.eps.eps_end,
-        eps_frames=cfg.eps.eps_decay_frames,
-        epsilon=cfg.per.per_eps,  # PER eps
-        max_gradient_norm=cfg.rl.max_grad_norm,
-        perf_cfg=cfg.perf,
-        # MC-dropout from cfg.mc_dropout (as is)
-    )
 
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
     episode_losses_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
@@ -804,7 +805,7 @@ def main(cfg: MasterConfig = None):
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if hasattr(train_env, "num_envs"):  # VecEnv
-            ep_reward, ep_win_rate, transitions, avg_loss = _rollout_vectorized_episode(train_env, agent)
+            ep_reward, ep_win_rate, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent)
             ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
         else:  # Single env
@@ -846,8 +847,9 @@ def main(cfg: MasterConfig = None):
         eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
-        episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
-        history["win_rates"].append(info.get("episode_win_rate", 0.0))
+        current_win_rate = (ep_info if hasattr(train_env, "num_envs") else info).get("episode_win_rate", 0.0)
+        episode_win_rate_deque.append(current_win_rate)
+        history["win_rates"].append(current_win_rate)
         mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
         history["mean_win_rates_N"].append(mean_win_rate_N)
 

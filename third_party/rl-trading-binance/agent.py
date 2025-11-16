@@ -338,10 +338,20 @@ class D3QN_PER_Agent:
         self.replay_buffer.add(state, action, reward, next_state, done)
 
     def learn(self) -> Optional[float]:
-        if len(self.replay_buffer) < self.train_start:
+        # Do not start learning until the buffer has enough transitions.
+        # We take the max of train_start and batch_size to ensure the sample is valid.
+        if len(self.replay_buffer) < max(self.train_start, self.batch_size):
             return None
 
-        (states, actions, rewards, next_states, dones, indices, weights) = self.replay_buffer.sample(self.batch_size)
+        (
+            states,
+            actions,
+            rewards,
+            next_states,
+            dones,
+            indices,
+            weights,
+        ) = self.replay_buffer.sample(self.batch_size)
 
         states_t = torch.from_numpy(states).float().to(self.device)
         actions_t = torch.from_numpy(actions).long().to(self.device)
@@ -385,6 +395,13 @@ class D3QN_PER_Agent:
         if self.use_amp:
             with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                 current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+
+                # Защита от нечисловых значений в Q: если что-то пошло не так,
+                # пропускаем шаг обучения, чтобы не портить сеть и буфер.
+                if not torch.isfinite(current_q_values).all() or not torch.isfinite(target_q_values).all():
+                    logger.warning("Non-finite Q-values detected in AMP branch, skipping learn step")
+                    return None
+
                 loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
                 weighted_loss = (weights_t * loss).mean()
 
@@ -395,6 +412,11 @@ class D3QN_PER_Agent:
             self.scaler.update()
         else:
             current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+
+            if not torch.isfinite(current_q_values).all() or not torch.isfinite(target_q_values).all():
+                logger.warning("Non-finite Q-values detected in FP32 branch, skipping learn step")
+                return None
+
             loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
             weighted_loss = (weights_t * loss).mean()
             weighted_loss.backward()
@@ -402,6 +424,7 @@ class D3QN_PER_Agent:
             self.optimizer.step()
 
         td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()
+        # Здесь td_errors гарантированно конечные (NaN/inf отфильтрованы выше)
         self.replay_buffer.update_priorities(indices, td_errors)
         self.learn_steps += 1
         if self.learn_steps % self.target_update_freq == 0:

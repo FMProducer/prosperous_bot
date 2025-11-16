@@ -8,23 +8,23 @@ cfg = MasterConfig()  # Инициализация пустого Pydantic
 
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
-cfg.state_shape = (10, 150, 1)  # Input для CNN: (C, L, 1)
-cfg.seq.num_features = 10
-cfg.seq.input_history_len = 150
-cfg.seq.full_seq_len = 150  # Episode length (1-min bars)
-cfg.seq.agent_history_len = 90  # Context window
-cfg.seq.agent_session_len = 10  # Action steps per session
+cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно истории 90
+cfg.seq.full_seq_len = 150      # 90 контекст + 60 сессия
+cfg.seq.agent_history_len = 90  # Context window (история)
+cfg.seq.agent_session_len = 60  # Trading session length (60 шагов)
 cfg.seq.action_history_len = 2  # Recent actions feat
-cfg.seq.pre_signal_len = 90  # Align with history
+cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
 cfg.seq.post_signal_len = 60
-cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback)
+
+# Явно фиксируем длину входного окна истории для env/model
+cfg.seq.input_history_len = 90
+cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_8m.npz"  # Или proxy
 cfg.paths.test_data_path = "data/backtest_data_fair_8m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
-cfg.model.cnn_in_channels = 10  # Matches num_channels
 cfg.model.cnn_maps = [32, 64, 128, 128, 64]  # Reduced для GTX1070 (vs [64,96,...])
 cfg.model.cnn_kernels = [3, 3, 3, 3, 3]
 cfg.model.cnn_dilations = [1, 2, 4, 8, 16]  # Receptive ~150+ bars
@@ -33,17 +33,18 @@ cfg.model.dense_val = [256, 128, 64]  # Value head
 cfg.model.dense_adv = [256, 128, 64]  # Advantage/policy head
 cfg.model.additional_feats = 12  # Pos + actions + time
 cfg.model.dropout_p = 0.15
-cfg.model.action_dim = 3  # Discrete: 0=hold, 1=buy, 2=sell
+
+# Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
+cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
 # RL/DQN Params (custom agent)
-cfg.rl.total_timesteps = 1000000  # Full train ~3-5h
-cfg.rl.learning_rate = 3e-4  # AdamW
-cfg.rl.gamma = 0.99  # Discount
-cfg.rl.n_steps = 150  # Steps per rollout (episode len)
+cfg.rl.lr = 3e-4  # AdamW
+cfg.rl.gamma = 0.99         # Discount
+cfg.rl.n_step = 60   # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
-cfg.rl.target_update_freq = 5000  # Soft target? (DQN-style if needed)
-cfg.rl.max_grad_norm = 0.5  # Clip grads
+cfg.rl.target_update_freq = 5000   # Soft target? (DQN-style if needed)
+cfg.rl.max_gradient_norm = 0.5  # Clip grads
 
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 500000
@@ -56,15 +57,16 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 1000000
 
 # Env/Vectorized
-cfg.vec.num_envs = 4  # Parallel (SubprocVecEnv)
-cfg.vec.backend = "subproc"  # Or "dummy" debug
+cfg.vec.vec_envs = 1  # Parallel (SubprocVecEnv)
+cfg.vec.backend = "dummy"  # "subproc" or "dummy" debug
 cfg.vec.start_method = "spawn"
-cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
+cfg.vec.scale_epsilon_by_envs = False  # Adjust eps decay
 
 # Training Log/Validation
 cfg.trainlog.num_val_ep = 2500  # Val episodes (10% train)
 cfg.trainlog.val_freq = 500  # Steps between val
 cfg.trainlog.validation_warmup_steps = 10000  # Skip early val
+cfg.trainlog.total_timesteps = 1000000  # Full train ~3-5h
 cfg.trainlog.episodes = 10000  # Approx total_timesteps / n_steps; adjust as needed
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
@@ -103,7 +105,7 @@ cfg.backtest.delta_p_hysteresis = 0.0015
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
-cfg.perf.use_amp = True  # Mixed precision
+cfg.perf.use_amp = False  # Mixed precision
 cfg.perf.amp_dtype = "float16"
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None  # No torch.compile (old CUDA)
@@ -156,7 +158,7 @@ cfg.optuna_search_space = {
     "short_thr": ("suggest_float", -0.03, -0.001, True, "backtest.short_action_threshold"),
     "pos_frac": ("suggest_float", 0.10, 0.60, False, "backtest.position_fraction"),
     "trailing_stop": ("suggest_float", 0.005, 0.05, True, "backtest.trailing_stop"),
-    "lr": ("suggest_float", 1e-5, 1e-3, True, "rl.learning_rate")
+    "lr": ("suggest_float", 1e-5, 1e-3, True, "rl.lr") # Corrected path
 }
 
 # Spike Detector (data prep; if regenerating)

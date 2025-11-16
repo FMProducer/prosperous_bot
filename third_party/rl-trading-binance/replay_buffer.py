@@ -69,20 +69,28 @@ class PrioritizedReplayBuffer:
         self.size = min(self.size + 1, self.capacity)
         self.frame_idx += 1
 
-    def _retrieve(self, idx: int, sum_priorities: float) -> int:
+    def _retrieve(self, idx: int, s: float) -> int:
+        """Find sample index in tree with cumulative priority s."""
         left = 2 * idx + 1
         right = left + 1
+
         if left >= len(self.tree):
             return idx
-        if sum_priorities <= self.tree[left]:
-            return self._retrieve(left, sum_priorities)
+
+        # If we are in a parent node, check if the cumulative priority s falls
+        # within the range of the left child.
+        if s <= self.tree[left]:
+            return self._retrieve(left, s)
         else:
-            return self._retrieve(right, sum_priorities - self.tree[left])
+            # Otherwise, it's in the right child's range.
+            return self._retrieve(right, s - self.tree[left])
 
     def sample(self, batch_size: int) -> Tuple[np.ndarray, ...]:
         assert self.size >= batch_size, "Not enough samples in buffer"
 
         total_p = self.tree[0]
+        assert total_p > 0.0, "Total priority must be positive in PER buffer"
+
         segment = total_p / batch_size
 
         states, actions, rewards, next_states, dones = [], [], [], [], []
@@ -95,10 +103,20 @@ class PrioritizedReplayBuffer:
         for idx_batch in range(batch_size):
             left_bound_of_segment = segment * idx_batch
             right_bound_of_segment = segment * (idx_batch + 1)
-            cumulative_priority = random.uniform(left_bound_of_segment, right_bound_of_segment)
+            s = random.uniform(left_bound_of_segment, right_bound_of_segment)
 
-            node_idx = self._retrieve(0, cumulative_priority)
+            node_idx = self._retrieve(0, s)
             data_idx = node_idx - (self.tree_capacity - 1)
+
+            # Теоретически при корректной конфигурации дерева:
+            #   0 <= data_idx < self.size <= self.capacity
+            # но на старте обучения или из-за численных артефактов
+            # можем получить индекс >= size. В этом случае
+            # жёстко прижимаем к последнему валидному элементу
+            # И СИНХРОНИЗИРУЕМ node_idx с этим data_idx.
+            if data_idx >= self.size:
+                data_idx = self.size - 1
+                node_idx = data_idx + (self.tree_capacity - 1)
 
             state, action, reward, nxt, done = self.data[data_idx]
             states.append(state)
@@ -123,10 +141,21 @@ class PrioritizedReplayBuffer:
         )
 
     def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray) -> None:
+        """
+        Обновляет приоритеты для выбранных узлов дерева.
+        Если td_error нечисловой (NaN/inf), такой опыт пропускается,
+        чтобы не «заразить» пер-дерево NaN-ами.
+        """
         for idx, error in zip(indices, td_errors):
-            new_p = (abs(error) + self.epsilon) ** self.alpha
-            self._update_tree(int(idx), new_p)
+            err = float(error)
+            if not np.isfinite(err):
+                # Оставляем только debug-лог, чтобы не заспамить WARNING при редких NaN
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Skipping non-finite td_error in PER update: %r", err)
+                continue
 
+            new_p = (abs(err) + self.epsilon) ** self.alpha
+            self._update_tree(int(idx), new_p)
             self.max_priority = max(self.max_priority, new_p)
 
     def __len__(self) -> int:

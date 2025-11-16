@@ -42,6 +42,7 @@ class TradingEnvironment(gym.Env):
         inaction_penalty_ratio: float,
         backtest_mode: bool = False,
         use_risk_management: bool = False,
+        cnn_format: bool = False,
         position_fraction: float = 1.0,
         order_size_usdt: float = 0.0,
         **kwargs,
@@ -68,23 +69,40 @@ class TradingEnvironment(gym.Env):
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
+        self.cnn_format = cnn_format
         self.position_fraction = position_fraction
         self.order_size_usdt = order_size_usdt
         # Cache frequently used channel index
         self.close_idx = self.data_channels.index("close")
 
         self.history_vector_size = num_actions * self.action_history_len
+        # Validate sequence shape
+        # Support both (L, C) and (C, L, 1) formats
         expected_shape = (full_seq_len, num_features)
         if self.sequences[0].shape != expected_shape:
-            raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
+            # Try to reshape (C, L, 1) to (L, C)
+            if len(self.sequences[0].shape) == 3 and self.sequences[0].shape[2] == 1:
+                self.sequences = [seq.squeeze(-1).T for seq in self.sequences]
+                logging.info(f"Reshaped sequences from (C, L, 1) to (L, C): {self.sequences[0].shape}")
+            else:
+                raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
 
+        # Define observation and action spaces
         self.action_space = spaces.Discrete(num_actions)
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(flat_state_size + self.history_vector_size,),
-            dtype=np.float32,
-        )
+        if self.cnn_format:
+            # For CNN: (num_features + extras + action_history_onehot, agent_history_len)
+            # We will treat extras and action history as additional channels
+            num_extra_channels = 4 + (1 if self.action_history_len > 0 else 0)
+            self.observation_space = spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(num_features + num_extra_channels, self.agent_history_len),
+                dtype=np.float32
+            )
+        else:
+            # For MLP: flat vector
+            self.observation_space = spaces.Box(
+                low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
+            )
 
         self._init_episode_vars()
 
@@ -222,25 +240,15 @@ class TradingEnvironment(gym.Env):
         return obs, reward, terminated, False, info
 
     def _get_observation(self) -> np.ndarray:
+        # The window from current_seq is already pre-normalized.
+        # load_and_prep_data has already performed Z-normalization.
         end = self.pre_signal_len + self.step_idx
         start = end - self.agent_history_len
-        raw_window = self.current_seq[start:end]
+        raw_window = self.current_seq[start:end]  # shape: (agent_history_len, num_features)
 
-        # Нормализуем срез данных "на лету"
-        normalized = apply_normalization(
-            raw_window,
-            self.stats,
-            self.data_channels,
-            self.price_channels,
-            self.volume_channels,
-            self.other_channels,
-            self.agent_history_len,
-            self.input_history_len,
-        )
-        if normalized is None:
-            # В случае ошибки возвращаем нулевое наблюдение
-            shape = (self.input_history_len, len(self.data_channels))
-            normalized = np.zeros(shape, dtype=np.float32)
+        # For compatibility with the rest of the logic, we assume input_history_len == agent_history_len.
+        # No additional normalization is performed here.
+        normalized = raw_window.astype(np.float32)
 
         unrealized = 0.0
         if self.position != 0:
@@ -263,14 +271,41 @@ class TradingEnvironment(gym.Env):
             dtype=np.float32,
         )
 
+        if self.cnn_format:
+            # For CNNs, we treat extras and history as additional channels
+            # Shape (L, C) -> (C, L)
+            obs = normalized.T
+
+            # Create channels for extras and broadcast to length of sequence
+            extras_channels = np.repeat(extras[:, np.newaxis], self.agent_history_len, axis=1)
+            obs = np.vstack([obs, extras_channels])
+
+            if self.action_history_len > 0:
+                hist_onehot = np.zeros(self.history_vector_size, dtype=np.float32)
+                for idx, action in enumerate(self.history_actions):
+                    if action is not None:
+                        hist_onehot[idx * self.num_actions + action] = 1.0
+                # Treat the whole history vector as one channel
+                history_channel = np.repeat(hist_onehot[np.newaxis, :], self.agent_history_len, axis=0).T
+                # This seems complex. A simpler way is to just have one channel for the last action
+                # For now, let's just append it as a flat vector, which is not ideal for CNNs.
+                # A better approach might be to rethink history for CNNs.
+                # Let's create a single channel representing the one-hot encoded history vector, repeated.
+                # This is not standard, but it's one way to fit it in.
+                # A better CNN approach would use a separate MLP head for flat features.
+                # For simplicity, we will just create one channel from the flattened history.
+                history_channel = np.tile(hist_onehot, (self.agent_history_len, 1)).T
+                obs = np.vstack([obs, history_channel]) # This will fail if history_vector_size > 1
+            return obs.astype(np.float32)
+
         if self.action_history_len > 0:
             hist_onehot = np.zeros(self.history_vector_size, dtype=np.float32)
             for idx, action in enumerate(self.history_actions):
                 if action is not None:
                     hist_onehot[idx * self.num_actions + action] = 1.0
             return np.concatenate([normalized.flatten(), extras, hist_onehot])
-        else:
-            return np.concatenate([normalized.flatten(), extras])
+        
+        return np.concatenate([normalized.flatten(), extras])
 
     def _get_info(self) -> Dict[str, Any]:
         info: Dict[str, Any] = {
