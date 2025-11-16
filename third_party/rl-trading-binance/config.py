@@ -65,9 +65,9 @@ class PathConfig(BaseModel):
 class VecConfig(BaseModel):
     """
     Параметры векторизации окружений (Vectorized Environments).
-    По умолчанию включаем 2 копии тренеровочной среды и синхронный backend.
+    По умолчанию включаем 4 копии тренеровочной среды и синхронный backend.
     """
-    num_envs: int = 2
+    vec_envs: int = 4  # Для SubprocVecEnv
     backend: Literal["dummy", "subproc"] = "dummy"  # "dummy" = 1 процесс, синхронно
     start_method: Literal["spawn", "fork", "forkserver"] = "spawn"  # безопасно на всех ОС
     # Флаг для масштабирования убывания эпсилон в зависимости от кол-ва сред.
@@ -76,6 +76,7 @@ class VecConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
+    num_channels: int = 10
     expected_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close", "volume", "num_trades"]
     data_channels: List[str] = expected_channels.copy()
     price_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close"]
@@ -94,6 +95,7 @@ class SequenceConfig(BaseModel):
     agent_history_len: int = 30
     agent_session_len: int = 10
     action_history_len: int = 3
+    state_shape: tuple = (10, 150, 1)
 
     @property
     def num_features(self) -> int:
@@ -128,8 +130,9 @@ class MarketConfig(BaseModel):
 
 
 class RLConfig(BaseModel):
+    lr: float = 3e-4
     gamma: float = 0.99
-    learning_rate: float = 1e-4
+    clip_range: float = 0.2
     batch_size: int = 16
     target_update_freq: int = 100
     train_start: int = 10_000
@@ -156,7 +159,7 @@ class ModelConfig(BaseModel):
     cnn_maps: List[int] = [32, 64, 128]
     cnn_kernels: List[int] = [7, 5, 3]
     cnn_strides: List[int] = [2, 1, 1]
-    cnn_dilations: Optional[List[int]] = None
+    cnn_dilations: List[int] = [1, 2, 4, 8]  # Receptive ~60 min
     dense_val: List[int] = [128, 64]
     dense_adv: List[int] = [128, 64]
     additional_feats: int = 16  # 4 + action_history_len * num_actions
@@ -165,6 +168,8 @@ class ModelConfig(BaseModel):
 
 class TrainLogConfig(BaseModel):
     episodes: int = 55_000
+    episodes_per_epoch: int = 10000  # Для sampling/memory
+    total_timesteps: int = 1000000
     validate_model: bool = True
     val_freq: int = 1000
     num_val_ep: int = 3500
@@ -297,7 +302,6 @@ class PerformanceConfig(BaseModel):
 class MasterConfig(BaseModel):
     project_name: str = "rl_binance_futures_trading"
     render_mode: Optional[str] = None
-    num_envs: int = 2
     random_seed: int = 25
     global_env_seed: int = 17
     backtest_mode: bool = True

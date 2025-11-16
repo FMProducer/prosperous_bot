@@ -140,6 +140,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
     step_iters = 0
     win_rates = []
+    ep_losses = []
     while not done_mask.all():
         prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
@@ -167,14 +168,21 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
         # В каждом "батч-шаге" получаем по одному переходу на среду
         for _ in range(train_env.num_envs):
             agent.increment_step()
-        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
-        # loss = agent.learn()
-        # if loss is not None:
-        #     ep_losses.append(loss)
+        
+        # Learn after each batch step (as in single env; adjust freq if needed)
+        loss = agent.learn()
+        if loss is not None:
+            ep_losses.append(loss)
+
+    # Final learn calls if buffer full
+    for _ in range(train_env.num_envs):
+        agent.learn()
+
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
     transitions_count = int(step_iters * train_env.num_envs)
-    return avg_reward, avg_win_rate, transitions_count
+    avg_loss = np.mean(ep_losses) if ep_losses else 0.0
+    return avg_reward, avg_win_rate, transitions_count, avg_loss
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -582,13 +590,11 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
 
 def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
-    if cfg is not None:
-        cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
-    elif len(sys.argv) > 1:
-        cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
-    else:
-        cfg, cfg_mod = default_cfg, None
-
+    from config import cfg as loaded_cfg  # Fallback if no arg
+    if cfg is None:
+        cfg = loaded_cfg
+    cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
+    
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
 
@@ -642,8 +648,8 @@ def main(cfg: MasterConfig = None):
     # --- Data Loading and Preprocessing ---
     logging.info("Loading and preprocessing data from NPZ files...")
 
-    train_path = 'data/train_data_fair_8m.npz'
-    val_path = 'data/val_data_fair_8m.npz'
+    train_path = cfg.paths.train_data_path
+    val_path = cfg.paths.val_data_path
     train_seqs = load_and_prep_data(train_path, 'Train')  # Auto-computes stats
 
     val_seqs = []
@@ -656,7 +662,8 @@ def main(cfg: MasterConfig = None):
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logging.warning(f"Could not load norm_stats.json for validation set. Proceeding without it. Error: {e}")
 
-    test_seqs = [] # Явно очищаем тестовые последовательности
+    test_path = cfg.paths.test_data_path
+    test_seqs = load_and_prep_data(test_path, 'Test', norm_stats) if test_path and os.path.exists(test_path) else []
 
     if not train_seqs:
         logging.error("No training data after processing – aborting.")
@@ -680,22 +687,22 @@ def main(cfg: MasterConfig = None):
         "stats": train_stats,
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": cfg.seq.num_features,
-        "num_actions": cfg.market.num_actions,
-        "flat_state_size": cfg.seq.flat_state_size,
-        "initial_balance": cfg.market.initial_balance,
+        "num_features": cfg.seq.num_features,  # Now from cfg
+        "num_actions": cfg.model.action_dim,  # Use action_dim from model
+       # flat_state_size not needed; model handles (C,L,1)
+        "initial_balance": cfg.market.initial_balance,  # Assume market in cfg; add if missing
         "pre_signal_len": cfg.seq.pre_signal_len,
-        "data_channels": cfg.data.data_channels,
-        "slippage": cfg.market.slippage,
-        "transaction_fee": cfg.market.transaction_fee,
+        "data_channels": cfg.data.data_channels,  # Assume defined
+        "slippage": getattr(cfg.market, 'slippage', 0.0),
+        "transaction_fee": getattr(cfg.market, 'transaction_fee', 0.001),
         "agent_session_len": cfg.seq.agent_session_len,
         "agent_history_len": cfg.seq.agent_history_len,
         "input_history_len": cfg.seq.input_history_len,
-        "price_channels": cfg.data.price_channels,
-        "volume_channels": cfg.data.volume_channels,
-        "other_channels": cfg.data.other_channels,
+        "price_channels": getattr(cfg.data, 'price_channels', [0,1,2,3]),  # Defaults
+        "volume_channels": getattr(cfg.data, 'volume_channels', [4]),
+        "other_channels": getattr(cfg.data, 'other_channels', [5,6,7,8,9]),
         "action_history_len": cfg.seq.action_history_len,
-        "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
+        "inaction_penalty_ratio": getattr(cfg.market, 'inaction_penalty_ratio', 0.0),
         "position_fraction": cfg.backtest.position_fraction,
         "order_size_usdt": cfg.backtest.order_size_usdt,
     }
@@ -724,13 +731,17 @@ def main(cfg: MasterConfig = None):
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
 
+    # Set episodes from total_timesteps if not set
+    if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
+        cfg.trainlog.episodes = cfg.rl.total_timesteps // cfg.rl.n_steps
+
     agent = D3QN_PER_Agent(
-        state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
-        action_dim=cfg.market.num_actions,
+        state_shape=cfg.state_shape,  # (10,150,1)
+        action_dim=cfg.model.action_dim,
         cnn_maps=cfg.model.cnn_maps,
         cnn_kernels=cfg.model.cnn_kernels,
         cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=getattr(cfg.model, 'cnn_dilations', None),
+        cnn_dilations=cfg.model.cnn_dilations,
         dense_val=cfg.model.dense_val,
         dense_adv=cfg.model.dense_adv,
         additional_feats=cfg.model.additional_feats,
@@ -748,28 +759,10 @@ def main(cfg: MasterConfig = None):
         eps_start=cfg.eps.eps_start,
         eps_end=cfg.eps.eps_end,
         eps_frames=cfg.eps.eps_decay_frames,
-        epsilon=cfg.per.per_eps,
-        max_gradient_norm=cfg.rl.max_gradient_norm,
-        backtest_cache_path=None,
+        epsilon=cfg.per.per_eps,  # PER eps
+        max_gradient_norm=cfg.rl.max_grad_norm,
         perf_cfg=cfg.perf,
-        # ── НОВОЕ: MC-dropout в обучении (читаем из нескольких источников)
-        **(lambda mc: dict(
-            mc_enable=getattr(mc, "enable", False),
-            mc_n_action_samples=getattr(mc, "n_action_samples", 1),
-            mc_action_agg=getattr(mc, "action_agg", "mean"),
-            mc_lcb_k=getattr(mc, "lcb_k", 0.0),
-            mc_use_for_target=getattr(mc, "use_for_target", False),
-            mc_n_target_samples=getattr(mc, "n_target_samples", 1),
-            mc_target_agg=getattr(mc, "target_agg", "mean_max"),
-            mc_uncertainty_guided_explore=getattr(mc, "uncertainty_guided_explore", False),
-            mc_uncertainty_beta=getattr(mc, "uncertainty_beta", 0.0),
-        ))(
-            # приоритет: cfg.rl.mc_dropout → cfg.mc_dropout → cfg_mod.mc_dropout_cfg → пустой объект
-            getattr(getattr(cfg, "rl", object()), "mc_dropout", None)
-            or getattr(cfg, "mc_dropout", None)
-            or (getattr(cfg_mod, "mc_dropout_cfg", None) if 'cfg_mod' in locals() else None)
-            or object()
-        ),
+        # MC-dropout from cfg.mc_dropout (as is)
     )
 
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
@@ -810,18 +803,11 @@ def main(cfg: MasterConfig = None):
     train_env.reset(seed=cfg.global_env_seed)
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
-        if hasattr(train_env, "num_envs"):  # VecEnv путь
-            ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
-            # Увеличиваем число градиентных шагов пропорционально собранным переходам
-            steps_to_train = max(1, transitions // cfg.rl.batch_size)
-            ep_losses = []
-            for _ in range(steps_to_train):
-                loss = agent.learn()
-                if loss is not None:
-                    ep_losses.append(loss)
+        if hasattr(train_env, "num_envs"):  # VecEnv
+            ep_reward, ep_win_rate, transitions, avg_loss = _rollout_vectorized_episode(train_env, agent)
+            ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
-            info = {"episode_win_rate": ep_win_rate}
-        else:
+        else:  # Single env
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward = 0.0
             ep_losses = []
@@ -1188,7 +1174,7 @@ def main(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    # cfg_arg = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg
-    # main(cfg=cfg_arg)
-    # Вызываем main без аргументов, т.к. логика загрузки перенесена внутрь
-    main()
+    cfg = None
+    if len(sys.argv) > 1:
+        cfg, _ = load_config(sys.argv[1], return_module=True)
+    main(cfg=cfg)
