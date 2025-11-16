@@ -20,8 +20,8 @@ cfg.seq.post_signal_len = 60
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_8m.npz"  # Или proxy
-cfg.paths.test_data_path = "data/backtest_data_fair_8m.npz"
+cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или proxy
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
