@@ -12,7 +12,9 @@ def _worker(remote, env_fn):
     try:
         while True:
             cmd, data = remote.recv()
-            if cmd == _CMD_RESET:
+            if cmd == "_get_spaces":
+                remote.send((env.action_space, env.observation_space))
+            elif cmd == _CMD_RESET:
                 seed, options = data
                 obs, info = env.reset(seed=seed, options=options)
                 remote.send((obs, info))

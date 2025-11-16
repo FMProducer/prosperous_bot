@@ -13,6 +13,10 @@ class DummyVecEnv:
         assert len(env_fns) >= 1, "Need at least one env_fn"
         self.envs = [fn() for fn in env_fns]
         self.num_envs = len(self.envs)
+        # --- NEW: Expose action_space and observation_space from the base environment ---
+        if self.num_envs > 0:
+            self.action_space = self.envs[0].action_space
+            self.observation_space = self.envs[0].observation_space
 
     def reset(self, seed=None, options=None):
         obs_batch, infos = [], []

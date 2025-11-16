@@ -57,8 +57,8 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 1000000
 
 # Env/Vectorized
-cfg.vec.vec_envs = 1  # Parallel (SubprocVecEnv)
-cfg.vec.backend = "dummy"  # "subproc" or "dummy" debug
+cfg.vec.num_envs = 4  # Parallel (SubprocVecEnv)
+cfg.vec.backend = "subproc"  # "subproc" or "dummy" debug
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = False  # Adjust eps decay
 

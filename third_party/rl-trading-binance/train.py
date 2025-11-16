@@ -135,53 +135,63 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
     - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
     """
-    obs_batch, _ = train_env.reset(seed=None, options=None)
+    reset_out = train_env.reset()
+    if isinstance(reset_out, tuple) and len(reset_out) == 2:
+        obs_batch, _ = reset_out   # (obs, infos)
+    else:
+        obs_batch = reset_out      # на случай старого API
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
-    step_iters = 0
     win_rates = []
     ep_losses = []
     last_info = {}
 
-    # FIX: Создаем и управляем 4-мя отдельными прогресс-барами
+    # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
     pbars = [
-        tqdm(total=agent_session_len, 
-             desc=f"Env {i}", 
-             position=i + 1,  # Позиции от 1 до 4, под основным баром
-             leave=False)
+        tqdm(
+            total=0,            # будем увеличивать total динамически
+            desc=f"Env {i}",
+            position=i + 1,     # строки под основным training-bar
+            unit="ep",
+            leave=False,
+        )
         for i in range(train_env.num_envs)
     ]
 
     while not done_mask.all():
-        prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
-        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
+
         for i in range(train_env.num_envs):
-            if not prev_done[i]: # Обновляем бар, только если окружение еще не завершилось
-                pbars[i].update(1)
             # Корректный next_state при done: брать финальное наблюдение из info
-            if bool(dones[i]) and isinstance(infos[i], dict):
-                next_state = infos[i].get("terminal_observation",
-                               infos[i].get("final_observation", next_obs_b[i]))
-            else:
-                next_state = next_obs_b[i]
-            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
+            # В векторизованном режиме всегда используем batched next_obs_b[i]
+            # чтобы гарантировать одинаковую форму состояний в буфере.
+            next_state = next_obs_b[i]
+
+            # Накапливаем награды для каждого env отдельно
+            ep_reward[i] += float(rewards[i])
+
+            # Жёстко приводим и state, и next_state к плоскому float32-вектору.
+            state_vec = np.asarray(obs_batch[i], dtype=np.float32).reshape(-1)
+            next_state_vec = np.asarray(next_state, dtype=np.float32).reshape(-1)
+
+            agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
-                    # Когда окружение завершается, закрываем его прогресс-бар
-                    pbars[i].close()
+                    # считаем завершённый эпизод для этого env
+                    pbars[i].total += 1
+                    pbars[i].update(1)
+                    pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
                     win_rates.append(float(wr))
 
         last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
+        # Шаги больше не рисуем: бары будут обновляться только при завершении эпизода.
+        prev_done = done_mask.copy()
+
         # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
-        for i in range(train_env.num_envs):
-            if not prev_done[i]:
-                ep_reward[i] += float(rewards[i])
-        obs_batch = next_obs_b
+        obs_batch = next_obs_b # noqa: F841
         done_mask |= dones  # эпизод для каждой под-среды
-        step_iters += 1
         # В каждом "батч-шаге" получаем по одному переходу на среду
         for _ in range(train_env.num_envs):
             agent.increment_step()
@@ -201,7 +211,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
 
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
-    transitions_count = int(step_iters * train_env.num_envs)
+    transitions_count = 0 # This is now handled inside the loop
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
     # Aggregate infos from all sub-environments. A simple approach is to merge them,
     # or return the info from the first completed environment. Here we just return the last one.
@@ -821,7 +831,14 @@ def main(cfg: MasterConfig = None):
     best_episode: int | None = None
     train_steps = 0
 
-    train_env.reset(seed=cfg.global_env_seed)
+    # Инициализация окружения:
+    # для VecEnv API как в smoke_test_4_env (reset() без seed/options),
+    # для одиночного env сохраняем фиксированный seed.
+    if num_envs > 1:
+        train_env.reset()
+    else:
+        train_env.reset(seed=cfg.global_env_seed)
+
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if num_envs > 1:  # VecEnv
