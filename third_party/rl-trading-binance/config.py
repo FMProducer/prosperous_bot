@@ -67,7 +67,7 @@ class VecConfig(BaseModel):
     Параметры векторизации окружений (Vectorized Environments).
     По умолчанию включаем 4 копии тренеровочной среды и синхронный backend.
     """
-    vec_envs: int = 4  # Для SubprocVecEnv
+    num_envs: int = 4  # Количество параллельных сред (SubprocVecEnv)
     backend: Literal["dummy", "subproc"] = "dummy"  # "dummy" = 1 процесс, синхронно
     start_method: Literal["spawn", "fork", "forkserver"] = "spawn"  # безопасно на всех ОС
     # Флаг для масштабирования убывания эпсилон в зависимости от кол-ва сред.

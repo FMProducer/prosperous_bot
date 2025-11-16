@@ -409,11 +409,11 @@ class TradingEnvironment(gym.Env):
                         else:
                             d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
-                        tsl_price = min(tsl_price, advanced_tsl_price)
+                        tsl_price = min(tsl_price, advanced_tsl_price) if tsl_price is not None else advanced_tsl_price
                 trailing_trigger = price >= tsl_price
 
             self.tsl_price = tsl_price
-            if self.use_risk_management:
+            if self.use_risk_management and trailing_stop is not None:
                 sl_trigger = False
                 tp_trigger = False
             else:
@@ -540,9 +540,8 @@ class TradingEnvironment(gym.Env):
                 "trade_realized_pnl": (trade_pnl - fee),
                 "trade_commission": fee,
                 "total_commission": self.total_commission,
-                "trade_amount": self.initial_balance,
+                "trade_amount": self.entry_price * volume,
                 "trade_price_delta": trade_price_delta,
-                "max_drawdown": trade_pnl / self.initial_balance,
                 # WR считаем после учёта комиссии
                 "correct_prediction": (trade_pnl - fee) > 0.0,
                 "direction": self.direction,
@@ -551,8 +550,6 @@ class TradingEnvironment(gym.Env):
                 "tsl_triggered": isinstance(_exit_reason, str) and _exit_reason.startswith("TSL"),
             }
 
-            self.realized_pnl = 0.0
-            self.total_commission = 0.0
             self.direction = None
             self.trade_dt = None
             if self.use_risk_management:

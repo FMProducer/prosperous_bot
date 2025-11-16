@@ -129,7 +129,7 @@ def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
     return TradingEnvironment(**env_kwargs)
 
-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
+def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int):
     """
     Один "батч-эпизод" на N средах:
     - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
@@ -142,12 +142,24 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     win_rates = []
     ep_losses = []
     last_info = {}
+
+    # FIX: Создаем и управляем 4-мя отдельными прогресс-барами
+    pbars = [
+        tqdm(total=agent_session_len, 
+             desc=f"Env {i}", 
+             position=i + 1,  # Позиции от 1 до 4, под основным баром
+             leave=False)
+        for i in range(train_env.num_envs)
+    ]
+
     while not done_mask.all():
         prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
         # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
         for i in range(train_env.num_envs):
+            if not prev_done[i]: # Обновляем бар, только если окружение еще не завершилось
+                pbars[i].update(1)
             # Корректный next_state при done: брать финальное наблюдение из info
             if bool(dones[i]) and isinstance(infos[i], dict):
                 next_state = infos[i].get("terminal_observation",
@@ -158,6 +170,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
+                    # Когда окружение завершается, закрываем его прогресс-бар
+                    pbars[i].close()
                     win_rates.append(float(wr))
 
         last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
@@ -180,6 +194,10 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     # Final learn calls if buffer full
     for _ in range(train_env.num_envs):
         agent.learn()
+
+    # Убедимся, что все прогресс-бары закрыты в конце
+    for pbar in pbars:
+        pbar.close()
 
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -669,10 +687,10 @@ def main(cfg: MasterConfig = None):
 
     # Масштабируем скорость затухания эпсилон, если включена опция и есть несколько сред
     eps_decay_frames = cfg.eps.eps_decay_frames
-    if cfg.vec.vec_envs > 1 and cfg.vec.scale_epsilon_by_envs:
+    if cfg.vec.num_envs > 1 and cfg.vec.scale_epsilon_by_envs:
         # Эта логика имеет смысл в основном для `subproc` бэкенда
-        eps_decay_frames *= cfg.vec.vec_envs
-        logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.vec_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
+        eps_decay_frames *= cfg.vec.num_envs
+        logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
     agent = D3QN_PER_Agent(
         state_shape=cfg.state_shape,  # (10,150,1)
@@ -741,15 +759,17 @@ def main(cfg: MasterConfig = None):
         "action_history_len": action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
+    # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
+    num_envs = getattr(cfg.vec, "num_envs", 1)
     # --- TRAIN ENV: single vs vectorized ---
-    if cfg.vec.vec_envs > 1:
-        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(cfg.vec.vec_envs)]
+    if num_envs > 1:
+        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(num_envs)]
         if cfg.vec.backend == "subproc":
             train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
-            logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.vec_envs} (start_method='{cfg.vec.start_method}')")
+            logging.info(f"Vectorized train env: SubprocVecEnv x{num_envs} (start_method='{cfg.vec.start_method}')")
         elif cfg.vec.backend == "dummy":
             train_env = DummyVecEnv(env_fns)
-            logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.vec_envs}")
+            logging.info(f"Vectorized train env: DummyVecEnv x{num_envs}")
         else:
             raise ValueError(f"Unknown vec.backend: '{cfg.vec.backend}'")
     else:
@@ -804,8 +824,8 @@ def main(cfg: MasterConfig = None):
     train_env.reset(seed=cfg.global_env_seed)
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
-        if hasattr(train_env, "num_envs"):  # VecEnv
-            ep_reward, ep_win_rate, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent)
+        if num_envs > 1:  # VecEnv
+            ep_reward, ep_win_rate, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
             ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
         else:  # Single env
@@ -847,7 +867,7 @@ def main(cfg: MasterConfig = None):
         eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
-        current_win_rate = (ep_info if hasattr(train_env, "num_envs") else info).get("episode_win_rate", 0.0)
+        current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
         episode_win_rate_deque.append(current_win_rate)
         history["win_rates"].append(current_win_rate)
         mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
