@@ -79,7 +79,7 @@ cfg.trainlog.available_metrics = [
     "Validation_profit_factor", "Validation_max_drawdown", "Validation_all_pnls",
     "Validation_sharpe", "Validation_sortino"
 ]
-cfg.trainlog.val_selection_metrics = ["Validation_max_drawdown", "Validation_sortino", "Validation_sharpe"]
+cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_max_drawdown"]
 cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
