@@ -145,6 +145,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     win_rates = []
     ep_losses = []
     last_info = {}
+    transitions_count = 0
 
     # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
     pbars = [
@@ -161,6 +162,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     while not done_mask.all():
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
+
+        transitions_count += train_env.num_envs  # один переход на каждую среду
 
         for i in range(train_env.num_envs):
             # Корректный next_state при done: брать финальное наблюдение из info
@@ -211,7 +214,6 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
 
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
-    transitions_count = 0 # This is now handled inside the loop
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
     # Aggregate infos from all sub-environments. A simple approach is to merge them,
     # or return the info from the first completed environment. Here we just return the last one.

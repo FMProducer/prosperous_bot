@@ -50,24 +50,29 @@ cfg.rl.max_gradient_norm = 	3.0  # Clip grads
 cfg.per.buffer_size = 500000
 cfg.per.per_alpha = 0.7
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 50000
+cfg.per.per_beta_frames = 30000       # 50000 * (600000 / 1000000) ≈ 30000
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 1000000
+cfg.eps.eps_decay_frames = 600000     # чтобы ε-декей шёл на том же интервале реальных шагов
 
 # Env/Vectorized
-cfg.vec.num_envs = 1  # Parallel (SubprocVecEnv)
-cfg.vec.backend = "dummy"  # "subproc" or "dummy" debug
+cfg.vec.num_envs = 4             # 4 параллельные среды
+cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
-cfg.vec.scale_epsilon_by_envs = False  # Adjust eps decay
+cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 5000  # Val episodes (10% train)
-cfg.trainlog.val_freq = 500  # Steps between val
-cfg.trainlog.validation_warmup_steps = 585000  # Skip early val
-cfg.trainlog.total_timesteps = 600000  # Full train ~3-5h
-cfg.trainlog.episodes = 60000  # Approx total_timesteps / n_steps; adjust as needed
+cfg.trainlog.num_val_ep = 5000      # Val episodes (10% train)
+
+# При 4 env один эпизод даёт ~4× больше шагов.
+# Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
+cfg.trainlog.episodes = 15000       # 4× меньше эпизодов при 4 env -> ~тот же total_steps
+cfg.trainlog.total_timesteps = 600000  # Бюджет шагов оставляем прежним
+
+# Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
+cfg.trainlog.val_freq = 125              # было 500; 500 * 15000 / 60000 ≈ 125
+cfg.trainlog.validation_warmup_steps = 150000  # было 585000; прогрев ≈ 1/4 от полного бюджета
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
     "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
