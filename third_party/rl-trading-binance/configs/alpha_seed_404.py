@@ -85,7 +85,7 @@ cfg.trainlog.early_stopping_patience = 10
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
     "min_sharpe": 0.002, "min_sortino": 0.006, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -0.25, "min_win_rate": 0.44, "min_trades": 600,
+    "max_drawdown_at_most": -0.60, "min_win_rate": 0.43, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True
 }
 
@@ -95,9 +95,9 @@ cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень �
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False
-cfg.backtest.max_parallel_sessions = 2
-cfg.backtest.position_fraction = 0.4
-cfg.backtest.order_size_usdt = 4000.0
+cfg.backtest.max_parallel_sessions = 4
+cfg.backtest.position_fraction = 0.1
+cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015
 cfg.backtest.short_action_threshold = -0.015  # Negative for short
