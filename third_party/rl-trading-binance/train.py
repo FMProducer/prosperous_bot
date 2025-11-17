@@ -548,16 +548,15 @@ def evaluate_agent(
     except Exception:
         initial_balance = 10_000.0
 
-    # MaxDD по кумулятивной equity
-    eq = 0.0; peak = 0.0; max_dd = 0.0
-    for p in trade_pnls:
-        eq += p
-        peak = max(peak, eq)
-        drawdown_value = peak - eq # Это положительное число
-        # ИСПРАВЛЕНО: MaxDD должен считаться относительно пиковой эквити, а не начального баланса.
-        peak_equity = initial_balance + peak
-        current_dd = drawdown_value / max(1e-9, peak_equity)
-        max_dd = max(max_dd, current_dd)
+    # ИСПРАВЛЕННЫЙ расчёт MaxDD
+    if len(trade_pnls) > 0:
+        eq_curve = initial_balance + np.cumsum(trade_pnls)
+        running_max = np.maximum.accumulate(eq_curve)
+        running_max = np.maximum(running_max, initial_balance)  # Пик не может быть ниже начального баланса
+        drawdowns = (running_max - eq_curve) / np.maximum(running_max, 1e-9)
+        max_dd = float(np.max(drawdowns))
+    else:
+        max_dd = 0.0
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
