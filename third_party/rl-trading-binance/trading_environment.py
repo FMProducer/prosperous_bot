@@ -45,6 +45,8 @@ class TradingEnvironment(gym.Env):
         cnn_format: bool = False,
         position_fraction: float = 1.0,
         order_size_usdt: float = 0.0,
+        bankruptcy_threshold: float = 0.0,
+        bankruptcy_penalty: float = 1.0,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -72,6 +74,8 @@ class TradingEnvironment(gym.Env):
         self.cnn_format = cnn_format
         self.position_fraction = position_fraction
         self.order_size_usdt = order_size_usdt
+        self.bankruptcy_threshold = bankruptcy_threshold
+        self.bankruptcy_penalty = bankruptcy_penalty
         # Cache frequently used channel index
         self.close_idx = self.data_channels.index("close")
 
@@ -213,11 +217,26 @@ class TradingEnvironment(gym.Env):
             self.history_actions.append(action)
 
         self.step_idx += 1
+        
         terminated = self.step_idx >= self.agent_session_len
-
         reward = (pnl_change / self.initial_balance) - inaction_penalty
+        
+        # --- Bankruptcy Check ---
+        # Calculate current portfolio value (balance + unrealized pnl)
+        portfolio_value = self.balance
+        if self.position != 0:
+            # Use the price for the *next* step's observation as the current mark-to-market price
+            m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+            current_price = self.current_seq[m2m_price_idx, self.close_idx]
+            mark2market = (current_price - self.entry_price) * self.position * self.position_volume
+            portfolio_value += mark2market
 
-        info = self._get_info()
+        info = self._get_info() # Get standard info dictionary
+
+        if portfolio_value <= self.bankruptcy_threshold:
+            reward -= self.bankruptcy_penalty
+            terminated = True
+            info['bankruptcy'] = True
 
         if terminated:
             # Capture the final observation before it's replaced by zeros
@@ -534,16 +553,17 @@ class TradingEnvironment(gym.Env):
         if position_closed:
             # Передаём причину выхода и признак TSL-срабатывания вверх по стеку для расширенной валидации
             _exit_reason = exit_reason if self.use_risk_management else (exit_reason or "")
+            opening_fee = self.entry_price * volume * self.transaction_fee
             info = {
                 "position_closed": position_closed,
                 # ВАЖНО: валидация/бэктест ожидают PnL ИМЕННО ЭТОЙ СДЕЛКИ (net), а не кумулятив эпизода
-                "trade_realized_pnl": (trade_pnl - fee),
-                "trade_commission": fee,
+                "trade_realized_pnl": (trade_pnl - fee - opening_fee),
+                "trade_commission": fee + opening_fee,
                 "total_commission": self.total_commission,
                 "trade_amount": self.entry_price * volume,
                 "trade_price_delta": trade_price_delta,
                 # WR считаем после учёта комиссии
-                "correct_prediction": (trade_pnl - fee) > 0.0,
+                "correct_prediction": (trade_pnl - fee - opening_fee) > 0.0,
                 "direction": self.direction,
                 "trade_dt": self.trade_dt,
                 "exit_reason": _exit_reason,

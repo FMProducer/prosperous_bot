@@ -63,7 +63,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 5000      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 1500      # Val episodes (10% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -79,7 +79,7 @@ cfg.trainlog.available_metrics = [
     "Validation_profit_factor", "Validation_max_drawdown", "Validation_all_pnls",
     "Validation_sharpe", "Validation_sortino"
 ]
-cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe"]
+cfg.trainlog.val_selection_metrics = ["Validation_max_drawdown", "Validation_sortino", "Validation_sharpe"]
 cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
@@ -88,6 +88,10 @@ cfg.validation_gate = {
     "max_drawdown_at_most": -0.25, "min_win_rate": 0.44, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True
 }
+
+# Штраф за банкротство
+cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
+cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False

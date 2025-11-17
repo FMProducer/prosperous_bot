@@ -557,9 +557,6 @@ def evaluate_agent(
         # ИСПРАВЛЕНО: MaxDD должен считаться относительно пиковой эквити, а не начального баланса.
         peak_equity = initial_balance + peak
         current_dd = drawdown_value / max(1e-9, peak_equity)
-        # ИСПРАВЛЕНО: Если значение похоже на процент, конвертируем в ratio.
-        if current_dd > 1.0:
-            current_dd /= 100.0
         max_dd = max(max_dd, current_dd)
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
@@ -770,6 +767,8 @@ def main(cfg: MasterConfig = None):
         "other_channels": cfg.data.other_channels,
         "action_history_len": action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
+        "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
+        "bankruptcy_penalty": cfg.market.bankruptcy_penalty,
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)
