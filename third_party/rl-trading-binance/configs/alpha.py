@@ -9,12 +9,12 @@ cfg = MasterConfig()  # Инициализация пустого Pydantic
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
 cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно истории 90
-cfg.seq.full_seq_len = 150      # 90 контекст + 60 сессия
+cfg.seq.full_seq_len = 120      # 90 контекст + 30 сессия
 cfg.seq.agent_history_len = 90  # Context window (история)
-cfg.seq.agent_session_len = 60  # Trading session length (60 шагов)
+cfg.seq.agent_session_len = 30  # Trading session length (30 шагов)
 cfg.seq.action_history_len = 2  # Recent actions feat
 cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
-cfg.seq.post_signal_len = 60
+cfg.seq.post_signal_len = 30
 
 # Явно фиксируем длину входного окна истории для env/model
 cfg.seq.input_history_len = 90
@@ -40,7 +40,7 @@ cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.99         # Discount
-cfg.rl.n_step = 60   # Steps per rollout == длина торговой сессии
+cfg.rl.n_step = 30   # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
 cfg.rl.target_update_freq = 5000   # Soft target? (DQN-style if needed)
