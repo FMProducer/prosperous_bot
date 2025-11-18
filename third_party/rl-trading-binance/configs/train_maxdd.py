@@ -8,7 +8,6 @@ from typing import Any, Dict
 import hashlib, tarfile
 import datetime as dt
 from functools import partial
-from pathlib import Path
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -37,187 +36,56 @@ from utils import (
     setup_logging,
 ) # noqa: F401
 
-def compute_norm_stats(npz_path: str, num_samples: int = 1000, seed: int = 25) -> dict:
-    """
-    Вычисляет mean/std per channel из subsample train_data (для скорости).
-    num_samples=1000 ~5 сек; full=24229 ~1 мин.
-    Returns: {'mean': list[10], 'std': list[10]}
-    """
-    np.random.seed(seed)
-    d = np.load(npz_path, allow_pickle=True)
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    if len(data_keys) < num_samples:
-        num_samples = len(data_keys)
-    indices = np.random.choice(len(data_keys), num_samples, replace=False)
-    sample_keys = [data_keys[i] for i in indices]
-    
-    all_data = np.stack([d[key].astype(np.float32) for key in tqdm(sample_keys, desc="Computing stats")], axis=0)  # (N,150,10)
-    means = np.mean(all_data, axis=(0,1))  # Mean per channel (10,)
-    stds = np.std(all_data, axis=(0,1)) + 1e-8  # Std per channel, avoid 0
-    
-    d.close()
-    stats = {'mean': means.tolist(), 'std': stds.tolist()}
-    # Save для reuse (optional, но reproducibility)
-    Path('norm_stats.json').write_text(json.dumps(stats, indent=2))
-    logging.info(f"Computed stats saved to norm_stats.json: mean[0]={means[0]:.6f}, std[0]={stds[0]:.6f} ...")
-    return stats
-
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) -> list:
-    """
-    Загружает NPZ, compute/applies z-norm (if stats=None), reshape (10,150,1).
-    Если norm_stats=None: computes from train_path (assume npz_path is train).
-    Returns: list of np.arrays (samples), optional sampling.
-    """
-    if not npz_path or not os.path.exists(npz_path):
-        logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
-        return []
-
-    if norm_stats is None and split_name == 'Train':
-        logging.info("No norm_stats provided: computing from train data...")
-        norm_stats = compute_norm_stats(npz_path)
-    elif norm_stats is None:
-        raise ValueError(f"norm_stats required for {split_name} (not Train)")
-    
-    d = np.load(npz_path, allow_pickle=True)
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    sequences = []
-    logging.info(f"Loading {len(data_keys)} sequences from {split_name}...")
-    
-    # Keys_map (optional для env)
-    keys_map_raw = d.get('_keys_map_')
-    keys_map = {}
-    if keys_map_raw is not None and isinstance(keys_map_raw, np.ndarray) and keys_map_raw.ndim == 0:
-        keys_map = keys_map_raw.item()
-    
-    means = np.array(norm_stats['mean'])  # (10,)
-    stds = np.array(norm_stats['std'])  # (10,)
-    
-    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
-        seq = d[key].astype(np.float32)  # (150,10)
-        if seq.shape[1] != 10:
-            raise ValueError(f"Expected 10 channels, got {seq.shape[1]}")
-        # Z-norm: broadcast per channel
-        seq = (seq - means) / stds
-        # Reshape для CNN: (150,10) → (10,150,1)
-        seq = seq.T  # (10,150)
-        seq = np.expand_dims(seq, -1)  # (10,150,1)
-        sequences.append(seq)
-    
-    # Sampling по config (optional, skip если config недоступен)
-    episodes_per_epoch = len(sequences)  # Default: full
-    try:
-        from config import cfg
-        if hasattr(cfg, 'episodes_per_epoch'):
-            episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')  # cfg.episodes_per_epoch
-        else:
-            episodes_per_epoch = len(sequences)
-        if len(sequences) > episodes_per_epoch:
-            np.random.seed(25)  # Reproducible sampling
-            indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
-            sequences = [sequences[i] for i in sorted(indices)]  # Sorted для consistency
-            print(f"Sampled to {episodes_per_epoch} episodes")
-    except (ImportError, AttributeError):
-        print("Config not available: using full sequences")
-    
-    d.close()
-    if sequences:
-        logging.info(f"Prepared {len(sequences)} sequences, shape: {sequences[0].shape}")
-    return sequences  # Или (sequences, keys_map) если нужно
-
-
 def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
     return TradingEnvironment(**env_kwargs)
 
-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int):
+def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent):
     """
     Один "батч-эпизод" на N средах:
     - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
     - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
     """
-    reset_out = train_env.reset()
-    if isinstance(reset_out, tuple) and len(reset_out) == 2:
-        obs_batch, _ = reset_out   # (obs, infos)
-    else:
-        obs_batch = reset_out      # на случай старого API
+    obs_batch, _ = train_env.reset(seed=None, options=None)
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
+    step_iters = 0
     win_rates = []
-    ep_losses = []
-    last_info = {}
-    transitions_count = 0
-
-    # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
-    pbars = [
-        tqdm(
-            total=0,            # будем увеличивать total динамически
-            desc=f"Env {i}",
-            position=i + 1,     # строки под основным training-bar
-            unit="ep",
-            leave=False,
-        )
-        for i in range(train_env.num_envs)
-    ]
-
     while not done_mask.all():
+        prev_done = done_mask.copy()
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
-
-        transitions_count += train_env.num_envs  # один переход на каждую среду
-
+        # в DQN/пер меры используем done (без разгадки truncated), как и было в одиночной логике
         for i in range(train_env.num_envs):
             # Корректный next_state при done: брать финальное наблюдение из info
-            # В векторизованном режиме всегда используем batched next_obs_b[i]
-            # чтобы гарантировать одинаковую форму состояний в буфере.
-            next_state = next_obs_b[i]
-
-            # Накапливаем награды для каждого env отдельно
-            ep_reward[i] += float(rewards[i])
-
-            # Жёстко приводим и state, и next_state к плоскому float32-вектору.
-            state_vec = np.asarray(obs_batch[i], dtype=np.float32).reshape(-1)
-            next_state_vec = np.asarray(next_state, dtype=np.float32).reshape(-1)
-
-            agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
+            if bool(dones[i]) and isinstance(infos[i], dict):
+                next_state = infos[i].get("terminal_observation",
+                               infos[i].get("final_observation", next_obs_b[i]))
+            else:
+                next_state = next_obs_b[i]
+            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
-                    # считаем завершённый эпизод для этого env
-                    pbars[i].total += 1
-                    pbars[i].update(1)
-                    pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
                     win_rates.append(float(wr))
-
-        last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
-        # Шаги больше не рисуем: бары будут обновляться только при завершении эпизода.
-        prev_done = done_mask.copy()
-
         # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
-        obs_batch = next_obs_b # noqa: F841
+        for i in range(train_env.num_envs):
+            if not prev_done[i]:
+                ep_reward[i] += float(rewards[i])
+        obs_batch = next_obs_b
         done_mask |= dones  # эпизод для каждой под-среды
+        step_iters += 1
         # В каждом "батч-шаге" получаем по одному переходу на среду
         for _ in range(train_env.num_envs):
             agent.increment_step()
-        
-        # Learn after each batch step (as in single env; adjust freq if needed)
-        loss = agent.learn()
-        if loss is not None:
-            ep_losses.append(loss)
-
-    # Final learn calls if buffer full
-    for _ in range(train_env.num_envs):
-        agent.learn()
-
-    # Убедимся, что все прогресс-бары закрыты в конце
-    for pbar in pbars:
-        pbar.close()
-
+        # (Опционально) вызывать шаг обучения на каждом батч-шаге, как в одиночной ветке:
+        # loss = agent.learn()
+        # if loss is not None:
+        #     ep_losses.append(loss)
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
-    avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-    # Aggregate infos from all sub-environments. A simple approach is to merge them,
-    # or return the info from the first completed environment. Here we just return the last one.
-    return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info
+    transitions_count = int(step_iters * train_env.num_envs)
+    return avg_reward, avg_win_rate, transitions_count
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -577,7 +445,7 @@ def evaluate_agent(
     # лог-сводка
     logging.info(
         "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, max_dd * 100.0, total_trades, sharpe, sortino
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, -max_dd * 100.0, total_trades, sharpe, sortino
     )
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
@@ -625,11 +493,13 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
 
 def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
-    from config import cfg as loaded_cfg  # Fallback if no arg
-    if cfg is None:
-        cfg = loaded_cfg
-    cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
-    
+    if cfg is not None:
+        cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
+    elif len(sys.argv) > 1:
+        cfg, cfg_mod = load_config(sys.argv[1], return_module=True)
+    else:
+        cfg, cfg_mod = default_cfg, None
+
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
 
@@ -680,83 +550,90 @@ def main(cfg: MasterConfig = None):
         json.dump(cfg.model_dump(), f, indent=2, default=str)
     logging.info(f"Full training configuration saved to: {config_save_path}")
 
-    # --- Data Loading and Preprocessing ---
-    # This block seems to be a duplicate from the diff and the original file.
-    # The logic is correct, so I will keep one version.
-    logging.info("Loading and preprocessing data from NPZ files...")
-    train_seqs = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=None)
-    # Загружаем валидационные данные, используя статистику из train
-    norm_stats_path = 'norm_stats.json'
-    norm_stats = None
-    if os.path.exists(norm_stats_path):
-        with open(norm_stats_path, 'r') as f:
-            norm_stats = json.load(f)
-    val_seqs = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
-
-    # Set episodes from total_timesteps if not set
-    if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
-        cfg.trainlog.episodes = cfg.rl.total_timesteps // cfg.rl.n_steps
-
-    # Масштабируем скорость затухания эпсилон, если включена опция и есть несколько сред
-    eps_decay_frames = cfg.eps.eps_decay_frames
-    if cfg.vec.num_envs > 1 and cfg.vec.scale_epsilon_by_envs:
-        # Эта логика имеет смысл в основном для `subproc` бэкенда
-        eps_decay_frames *= cfg.vec.num_envs
-        logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
-
-    agent = D3QN_PER_Agent(
-        state_shape=cfg.state_shape,  # (10,150,1)
-        action_dim=cfg.market.num_actions,
-        cnn_maps=cfg.model.cnn_maps,
-        cnn_kernels=cfg.model.cnn_kernels,
-        cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=cfg.model.cnn_dilations,
-        dense_val=cfg.model.dense_val,
-        dense_adv=cfg.model.dense_adv,
-        additional_feats=cfg.model.additional_feats,
-        dropout_model=cfg.model.dropout_p,
-        device=cfg.device.device,
-        learning_rate=cfg.rl.lr,
-        gamma=cfg.rl.gamma,
-        batch_size=cfg.rl.batch_size,
-        buffer_size=cfg.per.buffer_size,
-        target_update_freq=cfg.rl.target_update_freq,
-        train_start=cfg.rl.train_start,
-        per_alpha=cfg.per.per_alpha,
-        per_beta_start=cfg.per.per_beta_start,
-        per_beta_frames=cfg.per.per_beta_frames,
-        eps_start=cfg.eps.eps_start,
-        eps_end=cfg.eps.eps_end,
-        eps_frames=eps_decay_frames,
-        epsilon=cfg.per.per_eps,  # PER eps
-        max_gradient_norm=cfg.rl.max_gradient_norm,
-        perf_cfg=cfg.perf,
-        # MC-dropout from cfg.mc_dropout (as is)
+    raw_train = load_npz_dataset(
+        file_path=cfg.paths.train_data_path,
+        name_dataset="Train",
+        plot_dir=cfg.paths.plot_dir,
+        debug_max_size=cfg.debug.debug_max_size_data,
+        plot_examples=cfg.data.plot_examples,
+        plot_channel_idx=cfg.data.plot_channel_idx,
+        pre_signal_len=cfg.seq.pre_signal_len,
     )
 
-    # Calculate flat_state_size
-    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
-    # After reshape, num_features becomes the number of channels in original data
-    if len(train_seqs[0].shape) == 3:
-        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
-    else:
-        num_features = train_seqs[0].shape[1]  # C from (L, C)
-    num_actions = cfg.market.num_actions
-    action_history_len = cfg.seq.action_history_len
+    raw_val = (
+        load_npz_dataset(
+            file_path=cfg.paths.val_data_path,
+            name_dataset="Val",
+            plot_dir=cfg.paths.plot_dir,
+            debug_max_size=cfg.debug.debug_max_size_data,
+            plot_examples=cfg.data.plot_examples,
+            plot_channel_idx=cfg.data.plot_channel_idx,
+            pre_signal_len=cfg.seq.pre_signal_len,
+        )
+        if cfg.trainlog.validate_model
+        else []
+    )
 
-    flat_features = input_history_len * num_features
-    extras = 4  # position, unrealized, time_elapsed, time_remaining
-    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
-    flat_state_size = flat_features + extras + history_vector_size
-    
+    raw_test = load_npz_dataset(
+        file_path=cfg.paths.test_data_path,
+        name_dataset="Test",
+        plot_dir=cfg.paths.plot_dir,
+        debug_max_size=cfg.debug.debug_max_size_data,
+        plot_examples=cfg.data.plot_examples,
+        plot_channel_idx=cfg.data.plot_channel_idx,
+        pre_signal_len=cfg.seq.pre_signal_len,
+    )
+    raw_test = []
+
+    train_seqs = process_data(raw_train, "Train", cfg)
+    val_seqs = process_data(raw_val, "Val", cfg)
+    test_seqs = process_data(raw_test, "Test", cfg)
+
+    if not train_seqs:
+        logging.error("No training data – aborting.")
+        return
+
+    logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
+
+    train_stats = calculate_normalization_stats(
+        train_seqs,
+        cfg.data.data_channels,
+        cfg.data.price_channels,
+        cfg.data.volume_channels,
+        cfg.data.other_channels,
+    )
+
+    # # PRE-NORMALIZE
+    # train_seqs = preprocess_sequences(
+    #     train_seqs, train_stats,
+    #     cfg.data.data_channels,
+    #     cfg.data.price_channels,
+    #     cfg.data.volume_channels,
+    #     cfg.data.other_channels
+    # )
+    # val_seqs = preprocess_sequences(
+    #     val_seqs, train_stats,
+    #     cfg.data.data_channels,
+    #     cfg.data.price_channels,
+    #     cfg.data.volume_channels,
+    #     cfg.data.other_channels
+    # )
+
+    # --- Save normalization stats for this training run ---
+    stats_save_path = os.path.join(models_dir, "norm_stats.json")
+    with open(stats_save_path, "w") as f:
+        json.dump(train_stats, f, indent=4)
+    logging.info(f"Normalization stats saved to: {stats_save_path}")
+
+
     env_kwargs = {
         "sequences": train_seqs,
-        "stats": norm_stats,
+        "stats": train_stats,
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": num_features,
-        "num_actions": num_actions,
-        "flat_state_size": flat_state_size,
+        "num_features": cfg.seq.num_features,
+        "num_actions": cfg.market.num_actions,
+        "flat_state_size": cfg.seq.flat_state_size,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
         "data_channels": cfg.data.data_channels,
@@ -764,26 +641,24 @@ def main(cfg: MasterConfig = None):
         "transaction_fee": cfg.market.transaction_fee,
         "agent_session_len": cfg.seq.agent_session_len,
         "agent_history_len": cfg.seq.agent_history_len,
-        "input_history_len": input_history_len,
+        "input_history_len": cfg.seq.input_history_len,
         "price_channels": cfg.data.price_channels,
         "volume_channels": cfg.data.volume_channels,
         "other_channels": cfg.data.other_channels,
-        "action_history_len": action_history_len,
+        "action_history_len": cfg.seq.action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
-        "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
-        "bankruptcy_penalty": cfg.market.bankruptcy_penalty,
+        "position_fraction": cfg.backtest.position_fraction,
+        "order_size_usdt": cfg.backtest.order_size_usdt,
     }
-    # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
-    num_envs = getattr(cfg.vec, "num_envs", 1)
     # --- TRAIN ENV: single vs vectorized ---
-    if num_envs > 1:
-        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(num_envs)]
+    if cfg.vec.num_envs > 1:
+        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(cfg.vec.num_envs)]
         if cfg.vec.backend == "subproc":
             train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
-            logging.info(f"Vectorized train env: SubprocVecEnv x{num_envs} (start_method='{cfg.vec.start_method}')")
+            logging.info(f"Vectorized train env: SubprocVecEnv x{cfg.vec.num_envs} (start_method='{cfg.vec.start_method}')")
         elif cfg.vec.backend == "dummy":
             train_env = DummyVecEnv(env_fns)
-            logging.info(f"Vectorized train env: DummyVecEnv x{num_envs}")
+            logging.info(f"Vectorized train env: DummyVecEnv x{cfg.vec.num_envs}")
         else:
             raise ValueError(f"Unknown vec.backend: '{cfg.vec.backend}'")
     else:
@@ -799,6 +674,54 @@ def main(cfg: MasterConfig = None):
         val_env = TradingEnvironment(**val_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
+
+    agent = D3QN_PER_Agent(
+        state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
+        action_dim=cfg.market.num_actions,
+        cnn_maps=cfg.model.cnn_maps,
+        cnn_kernels=cfg.model.cnn_kernels,
+        cnn_strides=cfg.model.cnn_strides,
+        cnn_dilations=getattr(cfg.model, 'cnn_dilations', None),
+        dense_val=cfg.model.dense_val,
+        dense_adv=cfg.model.dense_adv,
+        additional_feats=cfg.model.additional_feats,
+        dropout_model=cfg.model.dropout_p,
+        device=cfg.device.device,
+        gamma=cfg.rl.gamma,
+        learning_rate=cfg.rl.learning_rate,
+        batch_size=cfg.rl.batch_size,
+        buffer_size=cfg.per.buffer_size,
+        target_update_freq=cfg.rl.target_update_freq,
+        train_start=cfg.rl.train_start,
+        per_alpha=cfg.per.per_alpha,
+        per_beta_start=cfg.per.per_beta_start,
+        per_beta_frames=cfg.per.per_beta_frames,
+        eps_start=cfg.eps.eps_start,
+        eps_end=cfg.eps.eps_end,
+        eps_frames=cfg.eps.eps_decay_frames,
+        epsilon=cfg.per.per_eps,
+        max_gradient_norm=cfg.rl.max_gradient_norm,
+        backtest_cache_path=None,
+        perf_cfg=cfg.perf,
+        # ── НОВОЕ: MC-dropout в обучении (читаем из нескольких источников)
+        **(lambda mc: dict(
+            mc_enable=getattr(mc, "enable", False),
+            mc_n_action_samples=getattr(mc, "n_action_samples", 1),
+            mc_action_agg=getattr(mc, "action_agg", "mean"),
+            mc_lcb_k=getattr(mc, "lcb_k", 0.0),
+            mc_use_for_target=getattr(mc, "use_for_target", False),
+            mc_n_target_samples=getattr(mc, "n_target_samples", 1),
+            mc_target_agg=getattr(mc, "target_agg", "mean_max"),
+            mc_uncertainty_guided_explore=getattr(mc, "uncertainty_guided_explore", False),
+            mc_uncertainty_beta=getattr(mc, "uncertainty_beta", 0.0),
+        ))(
+            # приоритет: cfg.rl.mc_dropout → cfg.mc_dropout → cfg_mod.mc_dropout_cfg → пустой объект
+            getattr(getattr(cfg, "rl", object()), "mc_dropout", None)
+            or getattr(cfg, "mc_dropout", None)
+            or (getattr(cfg_mod, "mc_dropout_cfg", None) if 'cfg_mod' in locals() else None)
+            or object()
+        ),
+    )
 
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
     episode_losses_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
@@ -835,21 +758,21 @@ def main(cfg: MasterConfig = None):
     best_episode: int | None = None
     train_steps = 0
 
-    # Инициализация окружения:
-    # для VecEnv API как в smoke_test_4_env (reset() без seed/options),
-    # для одиночного env сохраняем фиксированный seed.
-    if num_envs > 1:
-        train_env.reset()
-    else:
-        train_env.reset(seed=cfg.global_env_seed)
-
+    train_env.reset(seed=cfg.global_env_seed)
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
-        if num_envs > 1:  # VecEnv
-            ep_reward, ep_win_rate, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
-            ep_losses = [avg_loss] if avg_loss > 0 else []
+        if hasattr(train_env, "num_envs"):  # VecEnv путь
+            ep_reward, ep_win_rate, transitions = _rollout_vectorized_episode(train_env, agent)
+            # Увеличиваем число градиентных шагов пропорционально собранным переходам
+            steps_to_train = max(1, transitions // cfg.rl.batch_size)
+            ep_losses = []
+            for _ in range(steps_to_train):
+                loss = agent.learn()
+                if loss is not None:
+                    ep_losses.append(loss)
             train_steps += transitions
-        else:  # Single env
+            info = {"episode_win_rate": ep_win_rate}
+        else:
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward = 0.0
             ep_losses = []
@@ -888,9 +811,8 @@ def main(cfg: MasterConfig = None):
         eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
-        current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
-        episode_win_rate_deque.append(current_win_rate)
-        history["win_rates"].append(current_win_rate)
+        episode_win_rate_deque.append(info.get("episode_win_rate", 0.0))
+        history["win_rates"].append(info.get("episode_win_rate", 0.0))
         mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
         history["mean_win_rates_N"].append(mean_win_rate_N)
 
@@ -1217,7 +1139,7 @@ def main(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    cfg = None
-    if len(sys.argv) > 1:
-        cfg, _ = load_config(sys.argv[1], return_module=True)
-    main(cfg=cfg)
+    # cfg_arg = load_config(sys.argv[1]) if len(sys.argv) > 1 else default_cfg
+    # main(cfg=cfg_arg)
+    # Вызываем main без аргументов, т.к. логика загрузки перенесена внутрь
+    main()
