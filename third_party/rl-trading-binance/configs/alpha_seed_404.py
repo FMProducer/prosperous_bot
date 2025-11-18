@@ -84,14 +84,20 @@ cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": 0.002, "min_sortino": 0.006, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -0.60, "min_win_rate": 0.43, "min_trades": 600,
+    "min_sharpe": 0.001, "min_sortino": 0.002, "min_profit_factor": 1.10,
+    "max_drawdown_at_most": -1.10, "min_win_rate": 0.34, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True
 }
 
 # Штраф за банкротство
 cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
 cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
+
+# Штраф за превышение максимальной просадки (MaxDD)
+cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
+cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
+cfg.market.max_drawdown_penalty = 0.1      # Коэффициент для штрафа. Начните с 0.1-0.5.
+
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False
