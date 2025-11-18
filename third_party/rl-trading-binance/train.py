@@ -548,19 +548,14 @@ def evaluate_agent(
     except Exception:
         initial_balance = 10_000.0
 
-    # MaxDD по кумулятивной equity
-    eq = 0.0; peak = 0.0; max_dd = 0.0
-    for p in trade_pnls:
-        eq += p
-        peak = max(peak, eq)
-        drawdown_value = peak - eq # Это положительное число
-        # ИСПРАВЛЕНО: MaxDD должен считаться относительно пиковой эквити, а не начального баланса.
-        peak_equity = initial_balance + peak
-        current_dd = drawdown_value / max(1e-9, peak_equity)
-        # ИСПРАВЛЕНО: Если значение похоже на процент, конвертируем в ratio.
-        if current_dd > 1.0:
-            current_dd /= 100.0
-        max_dd = max(max_dd, current_dd)
+    # ИСПРАВЛЕНО: MaxDD рассчитывается по кумулятивной эквити, а не по индивидуальным сделкам
+    if trade_pnls:
+        equity_curve = np.cumsum(trade_pnls) + initial_balance
+        peak = np.maximum.accumulate(equity_curve)
+        drawdowns = (equity_curve - peak) / peak  # Фракция (отрицательная)
+        max_dd = float(np.min(drawdowns))  # Самая глубокая просадка (отрицательная)
+    else:
+        max_dd = 0.0
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
@@ -577,7 +572,7 @@ def evaluate_agent(
     # лог-сводка
     logging.info(
         "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, max_dd * 100.0, total_trades, sharpe, sortino
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, abs(max_dd) * 100.0, total_trades, sharpe, sortino
     )
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
@@ -598,7 +593,7 @@ def evaluate_agent(
         f"{L}_win_rate_percent": float(wr_ratio*100.0),
         f"{L}_profit_factor": float(profit_factor),
         # FIX: Возвращаем просадку как отрицательное число, как и принято в индустрии.
-        f"{L}_max_drawdown": -float(max_dd),
+        f"{L}_max_drawdown": float(max_dd),  # Уже отрицательное из расчёта
         f"{L}_trades": int(total_trades),
         f"{L}_tsl_hits": int(tsl_hits),
         f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
