@@ -548,12 +548,23 @@ def evaluate_agent(
     except Exception:
         initial_balance = 10_000.0
 
-    # ИСПРАВЛЕНО: MaxDD рассчитывается по кумулятивной эквити, а не по индивидуальным сделкам
+    # ИСПРАВЛЕНО v2: MaxDD с защитой от деления на маленький peak и клипингом
     if trade_pnls:
         equity_curve = np.cumsum(trade_pnls) + initial_balance
+        
+        # Пики: но не меньше начального баланса (защита от маленького знаменателя)
         peak = np.maximum.accumulate(equity_curve)
-        drawdowns = (equity_curve - peak) / peak  # Фракция (отрицательная)
-        max_dd = float(np.min(drawdowns))  # Самая глубокая просадка (отрицательная)
+        peak = np.maximum(peak, initial_balance)
+        
+        # Просадки относительно пика (фракция)
+        drawdowns = (equity_curve - peak) / peak
+        
+        # Клипим до физически возможных значений: максимум -100% (-1.0)
+        # Если equity = 0, просадка = -100%. Если equity < 0, тоже -100%.
+        drawdowns = np.clip(drawdowns, -1.0, 0.0)
+        
+        # Самая глубокая просадка (минимум из отрицательных)
+        max_dd = float(np.min(drawdowns))
     else:
         max_dd = 0.0
 
