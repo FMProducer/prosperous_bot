@@ -1026,64 +1026,63 @@ def main(cfg: MasterConfig = None):
                 return ok
 
             # Если гейт не пройден — просто пропускаем обновление best
-            if not _passes_gate(metrics, gate):
+            if _passes_gate(metrics, gate):
+                logging.info(
+                    "[Validation] Metrics passed the validation gate."
+                )
+            else:
+                # If the gate is not passed, we skip this validation check for model saving.
+                no_improvement_count += 1
                 continue
 
-            logging.info(
-                "[Validation] текущие метрики прошли валидационный гейт"
-            )
+            # --- NEW: Additional check from cfg.gate ---
+            pf_atleast = getattr(gate, "profit_factor_atleast", None)
+            sortino_atleast = getattr(gate, "sortino_atleast", None)
+            pf = metrics.get("Validation_profit_factor", 0.0)
+            sortino = metrics.get("Validation_sortino", 0.0)
 
-            # Корректное сравнение tuple/float/None
-            def _is_better(current, best):
-                if best is None:
-                    return True
-                return current > best
+            if pf_atleast is not None and sortino_atleast is not None:
+                if (pf >= pf_atleast) and (sortino >= sortino_atleast):
+                    # Корректное сравнение tuple/float/None
+                    def _is_better(current, best):
+                        if best is None:
+                            return True
+                        return current > best
 
-            if _is_better(val_metric, best_val_metric):
-                logging.info(
-                    f"[Validation] New best model. Current metric: {val_metric} > Previous best: {best_val_metric}"
-                )
-                best_val_metric = val_metric
-                best_validation = dict(metrics)  # store full snapshot
-                best_episode = int(ep)
-                best_path = os.path.join(models_dir, "best.pth")
-                agent.save_model(best_path)
+                    if _is_better(val_metric, best_val_metric):
+                        logging.info(
+                            f"[Validation] New best model saved (PF={pf:.4f} >= {pf_atleast}, Sortino={sortino:.4f} >= {sortino_atleast})"
+                        )
+                        best_val_metric = val_metric
+                        best_validation = dict(metrics)  # store full snapshot
+                        best_episode = int(ep)
+                        best_path = os.path.join(models_dir, "best.pth")
+                        agent.save_model(best_path)
 
-                # Human-friendly sidecar with selection info
-                try:
-                    # Сериализуем tuple корректно для JSON/человеческого чтения
-                    _val_serializable = (
-                        list(val_metric) if isinstance(val_metric, tuple) else float(val_metric)
-                    )
-                    best_info = {
-                        "metric_name": cfg.trainlog.val_selection_metrics,
-                        "direction": val_direction,
-                        "min_delta": val_min_delta,
-                        "value": _val_serializable,
-                        "value_primary": (val_metric[0] if isinstance(val_metric, tuple) else float(val_metric)),
-                        "episode": int(ep),
-                        "saved_path": "best.pth",
-                        "saved_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    }
-                    with open(os.path.join(models_dir, "best_model_info.json"), "w", encoding="utf-8") as bf:
-                        json.dump(best_info, bf, indent=2, default=_numpy_json_default)
-                except Exception as e:
-                    logging.warning("Failed to write best_model_info.json: %s", e)
+                        # Human-friendly sidecar with selection info
+                        try:
+                            _val_serializable = (list(val_metric) if isinstance(val_metric, tuple) else float(val_metric))
+                            best_info = {
+                                "metric_name": cfg.trainlog.val_selection_metrics,
+                                "direction": val_direction,
+                                "min_delta": val_min_delta,
+                                "value": _val_serializable,
+                                "value_primary": (val_metric[0] if isinstance(val_metric, tuple) else float(val_metric)),
+                                "episode": int(ep),
+                                "saved_path": "best.pth",
+                                "saved_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            }
+                            with open(os.path.join(models_dir, "best_model_info.json"), "w", encoding="utf-8") as bf:
+                                json.dump(best_info, bf, indent=2, default=_numpy_json_default)
+                        except Exception as e:
+                            logging.warning("Failed to write best_model_info.json: %s", e)
 
-                # Для логирования используем оригинальные значения, а не инвертированные
-                human_readable_metrics = {k: metrics.get(k, "N/A") for k in sel_keys}
-                logging.info(
-                    "New BEST model found at episode %d (saved to %s)",
-                    ep, best_path
-                )
-                logging.info(
-                    " -> Selection criteria: %s",
-                    cfg.trainlog.val_selection_metrics
-                )
-                logging.info(" -> New best values: %s", human_readable_metrics)
-
-                # Сбрасываем счётчик, т.к. нашли улучшение
-                no_improvement_count = 0
+                        # Сбрасываем счётчик, т.к. нашли улучшение
+                        no_improvement_count = 0
+                    else:
+                        no_improvement_count += 1
+                else:
+                    no_improvement_count += 1
             else:
                 # Улучшения не было, увеличиваем счётчик
                 no_improvement_count += 1
