@@ -129,6 +129,10 @@ class MarketConfig(BaseModel):
     inaction_penalty_ratio: float = 0.001
     bankruptcy_threshold: float = 0.0
     bankruptcy_penalty: float = 1.0
+    # Max Drawdown Penalty
+    max_drawdown_threshold: float = -0.20
+    max_drawdown_penalty: float = 0.1
+    max_drawdown_penalty_type: str = "proportional"
 
 
 class RLConfig(BaseModel):
