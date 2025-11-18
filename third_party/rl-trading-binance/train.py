@@ -772,6 +772,9 @@ def main(cfg: MasterConfig = None):
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
         "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
         "bankruptcy_penalty": cfg.market.bankruptcy_penalty,
+        "max_drawdown_threshold": cfg.market.max_drawdown_threshold,
+        "max_drawdown_penalty": cfg.market.max_drawdown_penalty,
+        "max_drawdown_penalty_type": cfg.market.max_drawdown_penalty_type,
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)

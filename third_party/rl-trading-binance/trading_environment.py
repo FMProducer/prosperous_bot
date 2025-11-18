@@ -47,6 +47,10 @@ class TradingEnvironment(gym.Env):
         order_size_usdt: float = 0.0,
         bankruptcy_threshold: float = 0.0,
         bankruptcy_penalty: float = 1.0,
+        # Penalties for max drawdown
+        max_drawdown_threshold: float | None = None,
+        max_drawdown_penalty: float = 0.0,
+        max_drawdown_penalty_type: str = "absolute",
         **kwargs,
     ) -> None:
         if not sequences:
@@ -76,6 +80,9 @@ class TradingEnvironment(gym.Env):
         self.order_size_usdt = order_size_usdt
         self.bankruptcy_threshold = bankruptcy_threshold
         self.bankruptcy_penalty = bankruptcy_penalty
+        self.max_drawdown_threshold = max_drawdown_threshold
+        self.max_drawdown_penalty = max_drawdown_penalty
+        self.max_drawdown_penalty_type = max_drawdown_penalty_type
         # Cache frequently used channel index
         self.close_idx = self.data_channels.index("close")
 
@@ -122,6 +129,10 @@ class TradingEnvironment(gym.Env):
         self.closed_trades: int = 0
         self.profitable_trades: int = 0
         self.last_step: bool = False
+        # Отслеживание просадки
+        self.equity_peak: float = self.initial_balance
+        self.current_max_drawdown: float = 0.0
+        
         if self.backtest_mode:
             self.total_commission: float = 0.0
             self.direction: Optional[str] = None
@@ -230,14 +241,33 @@ class TradingEnvironment(gym.Env):
             current_price = self.current_seq[m2m_price_idx, self.close_idx]
             mark2market = (current_price - self.entry_price) * self.position * self.position_volume
             portfolio_value += mark2market
-
-        info = self._get_info() # Get standard info dictionary
-
+     
+        info = self._get_info()  # Get standard info dictionary
+     
+        # Обновить пик эквити и рассчитать текущую просадку
+        if portfolio_value > self.equity_peak:
+            self.equity_peak = portfolio_value
+     
+        current_drawdown = (portfolio_value - self.equity_peak) / self.equity_peak
+        if current_drawdown < self.current_max_drawdown:
+            self.current_max_drawdown = current_drawdown
+     
+        # Применить штраф за превышение порога просадки
+        drawdown_penalty = 0.0
+        if self.current_max_drawdown < self.max_drawdown_threshold:
+            if self.max_drawdown_penalty_type == 'proportional':
+                # Пропорциональный штраф: чем больше просадка превышает порог, тем больше штраф
+                excess = abs(self.current_max_drawdown - self.max_drawdown_threshold)
+                drawdown_penalty = excess * self.max_drawdown_penalty
+            else:  # constant
+                # Константный штраф
+                drawdown_penalty = self.max_drawdown_penalty
+     
         if portfolio_value <= self.bankruptcy_threshold:
             reward -= self.bankruptcy_penalty
             terminated = True
-            info['bankruptcy'] = True
-
+            info["bankruptcy"] = True
+     
         if terminated:
             # Capture the final observation before it's replaced by zeros
             final_obs = self._get_observation()
@@ -248,14 +278,18 @@ class TradingEnvironment(gym.Env):
                     "episode_realized_pnl": self.realized_pnl,
                     "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
                     "episode_closed_trades": self.closed_trades,
+                    "episode_max_drawdown": self.current_max_drawdown,
                 }
             )
         else:
             obs = self._get_observation()
-
+     
+        # Применить штраф за просадку к награде
+        reward -= drawdown_penalty
+     
         if self.render_mode == "human":
             self._render_human(info, action, reward)
-
+     
         return obs, reward, terminated, False, info
 
     def _get_observation(self) -> np.ndarray:
