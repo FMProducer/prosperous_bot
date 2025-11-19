@@ -553,23 +553,14 @@ def evaluate_agent(
     # --- Sharpe / Sortino ---
     # Sharpe: стандартно по σ общих доходностей.
     # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
-    # ИСПРАВЛЕНО: MaxDD — реальная просадка (до банкротства, если оно случилось)
+    # MaxDD — чистая формула на ДЕНОРМАЛИЗОВАННЫХ значениях
     if trade_pnls:
-        equity_curve = np.cumsum(trade_pnls) + initial_balance
-        
-        # Находим индекс банкротства (первый раз equity <= 0)
-        bankruptcy_mask = equity_curve <= 0
-        if np.any(bankruptcy_mask):
-            bankruptcy_idx = int(np.argmax(bankruptcy_mask))
-            # Рассчитываем просадку только до банкротства (реальная просадка до краха)
-            if bankruptcy_idx > 0:
-                equity_curve = equity_curve[:bankruptcy_idx]  # Обрезаем до банкротства
-        
-        # Рассчитываем MaxDD по equity_curve (до банкротства или по всей, если нет краха)
+        # ИСПРАВЛЕНО: Денормализуем PnL перед расчётом equity_curve
+        denorm_pnls = np.array(trade_pnls) * initial_balance
+        equity_curve = np.cumsum(denorm_pnls) + initial_balance
         peak = np.maximum.accumulate(equity_curve)
-        peak = np.maximum(peak, initial_balance * 0.01)  # Защита от деления на ~0
         drawdowns = (equity_curve - peak) / peak
-        max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+        max_dd = float(np.min(drawdowns))
     else:
         max_dd = 0.0
 

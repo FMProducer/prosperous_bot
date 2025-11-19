@@ -41,7 +41,7 @@ cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 cfg.rl.lr = 2e-5  # AdamW
 cfg.rl.gamma = 0.9995         # Discount
 cfg.rl.n_step = 10   # Steps per rollout == длина торговой сессии
-cfg.rl.batch_size = 16  # Mini-batch (GTX fit)
+cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
 cfg.rl.target_update_freq = 5000   # Soft target? (DQN-style if needed)
 cfg.rl.max_gradient_norm = 	3.0  # Clip grads
