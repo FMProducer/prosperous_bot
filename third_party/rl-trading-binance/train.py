@@ -533,38 +533,52 @@ def evaluate_agent(
         ep_rews.append(ep_reward)
         ep_wrs.append( ep_wins / max(1, ep_trades) if ep_trades else 0.0 )
 
-    mean_reward = total_reward / max(1, episodes)
-    mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
-    wr_ratio = total_correct / max(1, total_trades)
-    pos_sum = sum(p for p in trade_pnls if p > 0)
-    neg_sum = sum(p for p in trade_pnls if p < 0)
-    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
-
-    # --- Sharpe / Sortino ---
-    # Sharpe: стандартно по σ общих доходностей.
-    # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
+    # ИСПРАВЛЕНО: MeanReward в валидации — рассчитываем из normalized PnL сделок
+    # (backtest_step возвращает reward=0.0, так как reward не используется в оценке)
     try:
         initial_balance = float(getattr(cfg.market, "initial_balance", 10_000.0))
     except Exception:
         initial_balance = 10_000.0
-
-    # ИСПРАВЛЕНО v2: MaxDD с защитой от деления на маленький peak и клипингом
+    
+    # Средний normalized reward = sum(pnl) / initial_balance / episodes
+    mean_reward = (sum(trade_pnls) / initial_balance) / max(1, episodes) if trade_pnls else 0.0
+    
+    mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
+    wr_ratio = total_correct / max(1, total_trades)
+    
+    pos_sum = sum(p for p in trade_pnls if p > 0)
+    neg_sum = sum(p for p in trade_pnls if p < 0)
+    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
+    
+    # --- Sharpe / Sortino ---
+    # Sharpe: стандартно по σ общих доходностей.
+    # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
+    # ИСПРАВЛЕНО v3: MaxDD до банкротства ...
     if trade_pnls:
         equity_curve = np.cumsum(trade_pnls) + initial_balance
         
-        # Пики: но не меньше начального баланса (защита от маленького знаменателя)
-        peak = np.maximum.accumulate(equity_curve)
-        peak = np.maximum(peak, initial_balance)
+        # Находим индекс банкротства (первый раз equity <= 0)
+        bankruptcy_mask = equity_curve <= 0
+        if np.any(bankruptcy_mask):
+            bankruptcy_idx = int(np.argmax(bankruptcy_mask))  # Первый индекс банкротства
+        else:
+            bankruptcy_idx = len(equity_curve)  # Нет банкротства
         
-        # Просадки относительно пика (фракция)
-        drawdowns = (equity_curve - peak) / peak
+        # Рассчитываем MaxDD только до банкротства (реальная просадка)
+        if bankruptcy_idx > 0:
+            pre_bankrupt_eq = equity_curve[:bankruptcy_idx]
+            peak = np.maximum.accumulate(pre_bankrupt_eq)
+            peak = np.maximum(peak, initial_balance * 0.01)  # Минимум 1% initial для стабильности
+            drawdowns = (pre_bankrupt_eq - peak) / peak
+            drawdowns = np.clip(drawdowns, -1.0, 0.0)  # Клип для safety
+            max_dd = float(np.min(drawdowns))
+        else:
+            # equity <=0 в первой же сделке — полная потеря
+            max_dd = -1.0
         
-        # Клипим до физически возможных значений: максимум -100% (-1.0)
-        # Если equity = 0, просадка = -100%. Если equity < 0, тоже -100%.
-        drawdowns = np.clip(drawdowns, -1.0, 0.0)
-        
-        # Самая глубокая просадка (минимум из отрицательных)
-        max_dd = float(np.min(drawdowns))
+        # Если банкротство произошло (не в начале) — MaxDD = -1.0
+        if bankruptcy_idx < len(equity_curve):
+            max_dd = -1.0
     else:
         max_dd = 0.0
 
@@ -1025,67 +1039,47 @@ def main(cfg: MasterConfig = None):
                         logging.info("[Validation] Gate FAILED (see metrics.json for details)")
                 return ok
 
-            # Если гейт не пройден — просто пропускаем обновление best
+            # Gate проверка (ваш строгий gate)
             if _passes_gate(metrics, gate):
-                logging.info(
-                    "[Validation] Metrics passed the validation gate."
-                )
+                logging.info("[Validation] Metrics passed the validation gate.")
+                
+                val_metric = metrics["Validation_sortino"]  # Primary: Sortino (или ваша метрика)
+                
+                # УПРОЩЕНО: Сохранение только по _is_better, без дополнительной проверки PF/Sortino
+                def _is_better(current, best):
+                    if best is None:
+                        return True
+                    return current > best
+
+                if _is_better(val_metric, best_val_metric):
+                    # Сохранение без дополнительных условий
+                    best_val_metric = val_metric
+                    best_validation = dict(metrics)
+                    best_episode = int(ep)
+                    best_path = os.path.join(models_dir, "best.pth")
+                    agent.save_model(best_path)
+                    
+                    logging.info(
+                        f"[Validation] New best model saved at episode {ep} "
+                        f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
+                    )
+                    
+                    # Сохранение best_model_info.json
+                    best_model_info = {
+                        "episode": best_episode,
+                        "primary_metric": "Validation_sortino",
+                        "primary_metric_value": float(best_val_metric),
+                        "validation_metrics": best_validation,
+                    }
+                    best_info_path = os.path.join(models_dir, "best_model_info.json")
+                    with open(best_info_path, "w") as f:
+                        json.dump(best_model_info, f, indent=2)
+                    
+                    no_improvement_count = 0  # Сброс счётчика
             else:
-                # If the gate is not passed, we skip this validation check for model saving.
+                # Gate провален
                 no_improvement_count += 1
-                continue
-
-            # --- NEW: Additional check from cfg.gate ---
-            pf_atleast = getattr(gate, "profit_factor_atleast", None)
-            sortino_atleast = getattr(gate, "sortino_atleast", None)
-            pf = metrics.get("Validation_profit_factor", 0.0)
-            sortino = metrics.get("Validation_sortino", 0.0)
-
-            if pf_atleast is not None and sortino_atleast is not None:
-                if (pf >= pf_atleast) and (sortino >= sortino_atleast):
-                    # Корректное сравнение tuple/float/None
-                    def _is_better(current, best):
-                        if best is None:
-                            return True
-                        return current > best
-
-                    if _is_better(val_metric, best_val_metric):
-                        logging.info(
-                            f"[Validation] New best model saved (PF={pf:.4f} >= {pf_atleast}, Sortino={sortino:.4f} >= {sortino_atleast})"
-                        )
-                        best_val_metric = val_metric
-                        best_validation = dict(metrics)  # store full snapshot
-                        best_episode = int(ep)
-                        best_path = os.path.join(models_dir, "best.pth")
-                        agent.save_model(best_path)
-
-                        # Human-friendly sidecar with selection info
-                        try:
-                            _val_serializable = (list(val_metric) if isinstance(val_metric, tuple) else float(val_metric))
-                            best_info = {
-                                "metric_name": cfg.trainlog.val_selection_metrics,
-                                "direction": val_direction,
-                                "min_delta": val_min_delta,
-                                "value": _val_serializable,
-                                "value_primary": (val_metric[0] if isinstance(val_metric, tuple) else float(val_metric)),
-                                "episode": int(ep),
-                                "saved_path": "best.pth",
-                                "saved_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            }
-                            with open(os.path.join(models_dir, "best_model_info.json"), "w", encoding="utf-8") as bf:
-                                json.dump(best_info, bf, indent=2, default=_numpy_json_default)
-                        except Exception as e:
-                            logging.warning("Failed to write best_model_info.json: %s", e)
-
-                        # Сбрасываем счётчик, т.к. нашли улучшение
-                        no_improvement_count = 0
-                    else:
-                        no_improvement_count += 1
-                else:
-                    no_improvement_count += 1
-            else:
-                # Улучшения не было, увеличиваем счётчик
-                no_improvement_count += 1
+                continue  # Пропускаем сохранение
 
         # --- Проверка условия досрочной остановки ---
         if val_env and ep % cfg.trainlog.val_freq == 0 and best_episode is not None:

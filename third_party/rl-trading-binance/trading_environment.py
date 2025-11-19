@@ -263,10 +263,47 @@ class TradingEnvironment(gym.Env):
                 # Константный штраф
                 drawdown_penalty = self.max_drawdown_penalty
      
+        # ИСПРАВЛЕНО: Жёсткое банкротство — завершить эпизод при equity <= threshold
         if portfolio_value <= self.bankruptcy_threshold:
+            # Принудительное закрытие позиции (если открыта)
+            if self.position != 0:
+                m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+                current_price = self.current_seq[m2m_price_idx, self.close_idx]
+                volume = self.position_volume
+                
+                if self.position == 1:  # LONG
+                    exec_price = current_price * (1 - self.slippage)
+                    trade_pnl = (exec_price - self.entry_price) * volume
+                else:  # SHORT (self.position == -1)
+                    exec_price = current_price * (1 + self.slippage)
+                    trade_pnl = (self.entry_price - exec_price) * volume
+                
+                pnl_change = trade_pnl - exec_price * volume * self.transaction_fee
+                
+                # Обновляем счётчики
+                self.closed_trades += 1
+                if trade_pnl > 0:
+                    self.profitable_trades += 1
+                
+                # Закрываем позицию
+                self.position = 0
+                self.position_volume = 0.0
+                
+                # Обновляем reward (не баланс, так как он уже <=0)
+                reward += pnl_change / self.initial_balance
+            
+            # Штраф за банкротство
             reward -= self.bankruptcy_penalty
+            
+            # Завершение эпизода
             terminated = True
+            truncated = False
             info["bankruptcy"] = True
+            info["bankruptcy_equity"] = portfolio_value
+            
+            # ИСПРАВЛЕНО: Используем правильный метод для observation
+            obs = self._get_observation()  # Правильное имя метода (с двумя подчёркиваниями)
+            return obs, reward, terminated, truncated, info
      
         if terminated:
             # Capture the final observation before it's replaced by zeros

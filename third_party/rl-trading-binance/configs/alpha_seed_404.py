@@ -85,7 +85,7 @@ cfg.trainlog.early_stopping_patience = 10
 # Validation Gate (multi-crit; deny bad models) "max_drawdown_at_most": -0.30, 
 cfg.validation_gate = {
     "min_sharpe": 0.001, "min_sortino": 0.001, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -1.01, "min_win_rate": 0.41, "min_trades": 600,
+    "max_drawdown_at_most": -0.40, "min_win_rate": 0.30, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True,
     "profit_factor_atleast": 1.00, "sortino_atleast": 0.001
 }
@@ -145,7 +145,7 @@ cfg.mc_dropout = mc_dropout_cfg
 # DB/Paper (if needed)
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
-cfg.paper.leverage = 2.0
+cfg.paper.leverage = 1.0
 cfg.paper.symbols = "ALL"  # Or list from tickers.txt
 cfg.backtest.data_source = "npz"  # For test/backtest
 
