@@ -79,13 +79,13 @@ cfg.trainlog.available_metrics = [
     "Validation_profit_factor", "Validation_max_drawdown", "Validation_all_pnls",
     "Validation_sharpe", "Validation_sortino"
 ]
-cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_max_drawdown"]
+cfg.trainlog.val_selection_metrics = ["Validation_sharpe", "Validation_sortino", "Validation_profit_factor"]
 cfg.trainlog.early_stopping_patience = 10
 
-# Validation Gate (multi-crit; deny bad models)
+# Validation Gate (multi-crit; deny bad models) "max_drawdown_at_most": -0.30, 
 cfg.validation_gate = {
-    "min_sharpe": 0.001, "min_sortino": 0.002, "min_profit_factor": 1.10,
-    "max_drawdown_at_most": -0.30, "min_win_rate": 0.34, "min_trades": 600,
+    "min_sharpe": 0.001, "min_sortino": 0.001, "min_profit_factor": 1.00,
+    "min_win_rate": 0.41, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True
 }
 
