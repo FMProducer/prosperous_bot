@@ -553,32 +553,23 @@ def evaluate_agent(
     # --- Sharpe / Sortino ---
     # Sharpe: стандартно по σ общих доходностей.
     # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
-    # ИСПРАВЛЕНО v3: MaxDD до банкротства ...
+    # ИСПРАВЛЕНО: MaxDD — реальная просадка (до банкротства, если оно случилось)
     if trade_pnls:
         equity_curve = np.cumsum(trade_pnls) + initial_balance
         
         # Находим индекс банкротства (первый раз equity <= 0)
         bankruptcy_mask = equity_curve <= 0
         if np.any(bankruptcy_mask):
-            bankruptcy_idx = int(np.argmax(bankruptcy_mask))  # Первый индекс банкротства
-        else:
-            bankruptcy_idx = len(equity_curve)  # Нет банкротства
+            bankruptcy_idx = int(np.argmax(bankruptcy_mask))
+            # Рассчитываем просадку только до банкротства (реальная просадка до краха)
+            if bankruptcy_idx > 0:
+                equity_curve = equity_curve[:bankruptcy_idx]  # Обрезаем до банкротства
         
-        # Рассчитываем MaxDD только до банкротства (реальная просадка)
-        if bankruptcy_idx > 0:
-            pre_bankrupt_eq = equity_curve[:bankruptcy_idx]
-            peak = np.maximum.accumulate(pre_bankrupt_eq)
-            peak = np.maximum(peak, initial_balance * 0.01)  # Минимум 1% initial для стабильности
-            drawdowns = (pre_bankrupt_eq - peak) / peak
-            drawdowns = np.clip(drawdowns, -1.0, 0.0)  # Клип для safety
-            max_dd = float(np.min(drawdowns))
-        else:
-            # equity <=0 в первой же сделке — полная потеря
-            max_dd = -1.0
-        
-        # Если банкротство произошло (не в начале) — MaxDD = -1.0
-        if bankruptcy_idx < len(equity_curve):
-            max_dd = -1.0
+        # Рассчитываем MaxDD по equity_curve (до банкротства или по всей, если нет краха)
+        peak = np.maximum.accumulate(equity_curve)
+        peak = np.maximum(peak, initial_balance * 0.01)  # Защита от деления на ~0
+        drawdowns = (equity_curve - peak) / peak
+        max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
     else:
         max_dd = 0.0
 
