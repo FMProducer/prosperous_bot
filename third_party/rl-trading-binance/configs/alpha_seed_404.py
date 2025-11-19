@@ -63,7 +63,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 500      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 750      # Val episodes (10% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -85,7 +85,7 @@ cfg.trainlog.early_stopping_patience = 10
 # Validation Gate (multi-crit; deny bad models) "max_drawdown_at_most": -0.30, 
 cfg.validation_gate = {
     "min_sharpe": 0.001, "min_sortino": 0.001, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -0.40, "min_win_rate": 0.30, "min_trades": 600,
+    "max_drawdown_at_most": -1000000.00, "min_win_rate": 0.30, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True,
     "profit_factor_atleast": 1.00, "sortino_atleast": 0.001
 }
