@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import websocket
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from sqlalchemy import create_engine, text
 
 # Global cache for SQLAlchemy engines
@@ -218,8 +218,23 @@ class PaperTrader:
             logging.warning(f"Could not form full sequence for {symbol} at {signal_dt}. Got {len(seq_df)} rows.")
             return
 
-        session_data = seq_df[self.cfg.data.expected_channels].to_numpy(dtype=np.float32)
+        # --- FIX START ---
+        # Используем список каналов, который мы прописали в alpha_seed_404_pt.py
+        # Это гарантирует, что мы берем все 10 колонок (включая taker_base, taker_quote, dummy)
+        target_channels = getattr(self.cfg.data, "data_channels", None)
+        if target_channels is None:
+             target_channels = self.cfg.data.expected_channels # Fallback
 
+        # Проверка на наличие колонок
+        missing_cols = [c for c in target_channels if c not in seq_df.columns]
+        if missing_cols:
+            logging.warning(f"Missing columns in seq_df: {missing_cols}. Available: {seq_df.columns.tolist()}")
+            # Если dummy нет, добавим его на лету (хотя мы добавляли в process_historical_chunk)
+            if "dummy" in missing_cols:
+                 seq_df["dummy"] = 0.0
+
+        session_data = seq_df[target_channels].to_numpy(dtype=np.float32)
+        # --- FIX END ---
         # Get action from agent
         action = self._get_agent_action(session_data)
 
@@ -236,7 +251,6 @@ class PaperTrader:
         # Execute trade
         if action in [1, 2]:  # LONG or SHORT
             self._execute_trade(symbol, action, signal_dt, entry_price, entry_dt_used, delay)
-
     def _get_agent_action(self, session_data: np.ndarray) -> int:
         """Get a trading action from the RL agent."""
         env = TradingEnvironment(
@@ -244,7 +258,7 @@ class PaperTrader:
             stats=self.stats,
             render_mode=None,
             full_seq_len=self.cfg.seq.full_seq_len,
-            num_features=self.cfg.seq.num_features,
+            num_features=session_data.shape[1],
             num_actions=self.cfg.market.num_actions,
             flat_state_size=self.cfg.seq.flat_state_size,
             initial_balance=self.cfg.market.initial_balance,
@@ -662,7 +676,9 @@ class PaperTrader:
                 
                 with engine.connect() as conn:
                     query = text(
-                        "SELECT ts, open, high, low, close, volume, volume_weighted_average, num_trades "
+                        "SELECT ts, open, high, low, close, volume, "
+                        "volume_weighted_average, num_trades, "
+                        "0.0 as taker_base, 0.0 as taker_quote, 0.0 as dummy "
                         "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
                     )
                     df_signal = pd.read_sql(query, conn, params={
@@ -670,6 +686,9 @@ class PaperTrader:
                         "start_ts": int(seq_start.timestamp() * 1000),
                         "end_ts": int(seq_end.timestamp() * 1000)
                     })
+                
+                # --- FIX: Rename columns to match expected names ---
+                df_signal = df_signal.rename(columns={'q': 'volume_weighted_average', 'n': 'num_trades'})
                 
                 if df_signal.empty or len(df_signal) != self.cfg.seq.full_seq_len:
                     logging.warning(f"Could not fetch complete data for signal {symbol} at {signal_dt}. Skipping.")
@@ -718,6 +737,256 @@ class PaperTrader:
         logging.info(f"Saved equity curve to paper_equity.csv")
 
         logging.info("Shutdown complete.")
+
+
+class PaperTraderDB(PaperTrader):
+    """
+    Расширенная версия для симуляции торговли на исторических данных из БД.
+    Эта версия выполняет симуляцию "свеча за свечой" для более точного моделирования.
+    """
+    
+    def run_db_simulation(self, start_time: str, end_time: str):
+        """
+        Запускает симуляцию на данных из БД построчно (candle-by-candle).
+        """
+        logging.info(f"Starting DB candle-by-candle simulation from {start_time} to {end_time}")
+        
+        engine = get_engine(self.cfg.db.dsn)
+        symbols = self.symbols_to_trade
+        
+        # 1. Загружаем все данные за период одним запросом (или чанками, если памяти мало)
+        # Для оптимизации лучше грузить только нужные колонки
+        query = text("""
+            SELECT open_time_ms as ts, symbol, 
+                   open_price as open, 
+                   high_price as high, 
+                   low_price as low, 
+                   close_price as close, 
+                   base_volume as volume, 
+                   quote_volume as q, 
+                   trade_count as n,
+                   taker_base, 
+                   taker_quote,
+                   0.0 as dummy   -- Заглушка для 10-го канала
+            FROM klines_1m 
+            WHERE open_time_ms >= :start_ts AND open_time_ms <= :end_ts 
+            AND symbol = ANY(:symbols)
+            ORDER BY open_time_ms ASC
+        """)
+        
+        # Конвертируем даты в timestamp ms
+        t_start = int(pd.Timestamp(start_time).timestamp() * 1000)
+        t_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+        
+        logging.info("Fetching historical data for candle-by-candle simulation...")
+        with engine.connect() as conn:
+            # Используем stream или chunks для больших объемов
+            df_iter = pd.read_sql(query, conn, params={
+                "start_ts": t_start, 
+                "end_ts": t_end, 
+                "symbols": symbols
+            }, chunksize=100000) # Chunk size can be tuned
+            
+            for chunk_df in df_iter:
+                self._process_historical_chunk(chunk_df)
+                
+        self.shutdown()
+
+    def _update_and_close_positions_db(self, current_slice: pd.DataFrame):
+        """
+        Checks and closes open positions based on the current data slice.
+        This DB-specific version uses the high/low of the candle for more precise TSL simulation.
+        """
+        now = self.simulated_time
+        if not self.open_positions:
+            return
+
+        slice_indexed = current_slice.set_index('symbol')
+        symbols_to_close: List[Tuple[str, str, float, dt.datetime]] = []  # (symbol, reason, close_price, ts)
+
+        for symbol, pos in list(self.open_positions.items()):
+            if symbol not in slice_indexed.index:
+                continue
+
+            row = slice_indexed.loc[symbol]
+            current_price = float(row['close'])
+            high_price = float(row['high'])
+            low_price = float(row['low'])
+            open_price = float(row['open'])
+            current_ts = now
+
+            exit_reason = None
+            tsl_price = None
+            liquidation_price = None
+            close_price_for_exit = current_price # Default close price
+
+            # --- Risk Management Logic (TSL update) ---
+            if self.cfg.backtest.use_risk_management:
+                d0 = self.cfg.backtest.trailing_stop
+                d_min = self.cfg.backtest.trailing_stop_min
+                fee = self.cfg.market.transaction_fee
+                fee_buf = fee * (self.cfg.backtest.fee_buffer_mult or 2.0)
+
+                if pos["direction"] == "LONG":
+                    # Trailing max price is updated based on the high of the current candle
+                    pos["trailing_max_price"] = max(pos.get("trailing_max_price", high_price), high_price)
+                    base_tsl = pos["trailing_max_price"] * (1 - d0)
+                    prev_tsl = pos.get("tsl_price")
+                    tsl_price = max(base_tsl, prev_tsl) if prev_tsl is not None else base_tsl
+
+                    if d_min is not None:
+                        p = max(0, pos["trailing_max_price"] / pos["entry_price"] - 1)
+                        if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
+                            if self.cfg.backtest.delta_p_hysteresis is not None:
+                                pos['p_at_last_tsl_update'] = p
+                            
+                            if p <= fee_buf:
+                                d_eff = d0
+                            else:
+                                d_eff = max(d_min, min(d0, d0 - (p - fee_buf)))
+                            advanced_tsl_price = pos["trailing_max_price"] * (1 - d_eff)
+                            tsl_price = max(tsl_price, advanced_tsl_price)
+
+                elif pos["direction"] == "SHORT":
+                    # Trailing min price is updated based on the low of the current candle
+                    pos["trailing_min_price"] = min(pos.get("trailing_min_price", low_price), low_price)
+                    base_tsl = pos["trailing_min_price"] * (1 + d0)
+                    prev_tsl = pos.get("tsl_price")
+                    tsl_price = min(base_tsl, prev_tsl) if prev_tsl is not None else base_tsl
+
+                    if d_min is not None:
+                        p = max(0, 1 - pos["trailing_min_price"] / pos["entry_price"])
+                        if self.cfg.backtest.delta_p_hysteresis is None or p > pos.get('p_at_last_tsl_update', 0) + self.cfg.backtest.delta_p_hysteresis:
+                            if self.cfg.backtest.delta_p_hysteresis is not None:
+                                pos['p_at_last_tsl_update'] = p
+                            
+                            if p <= fee_buf:
+                                d_eff = d0
+                            else:
+                                d_eff = max(d_min, min(d0, d0 - (p - fee_buf)))
+                            advanced_tsl_price = pos["trailing_min_price"] * (1 + d_eff)
+                            tsl_price = min(tsl_price, advanced_tsl_price)
+                
+                if tsl_price is not None:
+                    pos['tsl_price'] = tsl_price
+
+            # --- Liquidation Logic ---
+            leverage = self.cfg.paper.leverage
+            if leverage > 1.0:
+                liquidation_price = pos["entry_price"] * (1 - (1 / leverage)) if pos["direction"] == "LONG" else pos["entry_price"] * (1 + (1 / leverage))
+
+            # --- Position Closing Checks ---
+            # Check TSL
+            if pos.get('tsl_price') is not None:
+                fee = self.cfg.market.transaction_fee
+                if pos["direction"] == "LONG" and low_price <= pos['tsl_price']:
+                    close_price_for_exit = min(open_price, pos['tsl_price'])
+                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
+                    exit_reason = "TSL" if close_price_for_exit > break_even_price else "TSL SL"
+                elif pos["direction"] == "SHORT" and high_price >= pos['tsl_price']:
+                    close_price_for_exit = max(open_price, pos['tsl_price'])
+                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
+                    exit_reason = "TSL" if close_price_for_exit <= break_even_price else "TSL SL"
+            
+            # Check Liquidation
+            if liquidation_price is not None and not exit_reason:
+                if pos["direction"] == "LONG" and low_price <= liquidation_price:
+                    exit_reason = "LIQUIDATION"
+                    close_price_for_exit = min(open_price, liquidation_price)
+                elif pos["direction"] == "SHORT" and high_price >= liquidation_price:
+                    exit_reason = "LIQUIDATION"
+                    close_price_for_exit = max(open_price, liquidation_price)
+
+            # Check Time-based exit
+            if now >= pos["close_time"] and not exit_reason:
+                close_price_for_exit = current_price
+                fee = self.cfg.market.transaction_fee
+                if pos["direction"] == "LONG":
+                    break_even_price = pos["entry_price"] * (1 + fee) / (1 - fee)
+                    exit_reason = "TSL Time" if close_price_for_exit > break_even_price else "Time SL"
+                else:  # SHORT
+                    break_even_price = pos["entry_price"] * (1 - fee) / (1 + fee)
+                    exit_reason = "TSL Time" if close_price_for_exit <= break_even_price else "Time SL"
+
+            if exit_reason:
+                logging.info(
+                    f"PAPER TRADE EVENT: {exit_reason} {pos['direction']} {symbol} at {close_price_for_exit:.6f} "
+                    f"(Entry: {pos['entry_price']:.6f}, Size: {pos['size']:.2f} USDT, ts={current_ts})"
+                )
+                symbols_to_close.append((symbol, exit_reason, close_price_for_exit, current_ts))
+
+        # --- Process Closed Symbols ---
+        for symbol, exit_reason, close_price, close_ts in symbols_to_close:
+            if symbol not in self.open_positions:
+                continue
+            pos = self.open_positions.pop(symbol)
+
+            leverage = self.cfg.paper.leverage
+            if pos["direction"] == "LONG":
+                pnl = (close_price - pos["entry_price"]) / pos["entry_price"] * pos["size"] * leverage
+            else:
+                pnl = (pos["entry_price"] - close_price) / pos["entry_price"] * pos["size"] * leverage
+            
+            if exit_reason == "LIQUIDATION":
+                pnl = -pos["size"]
+
+            fees = pos["size"] * self.cfg.paper.leverage * self.cfg.market.transaction_fee * 2
+            net_pnl = pnl - fees
+            self.balance += net_pnl
+
+            trade_record = {
+                "symbol": symbol, "direction": pos["direction"], "entry_time": pos["entry_time"].isoformat(),
+                "close_time": close_ts.isoformat(), "entry_price": pos["entry_price"], "close_price": close_price,
+                "pnl": net_pnl, "balance": self.balance, "exit_reason": exit_reason,
+            }
+            self.trades_log.append(trade_record)
+            self.equity_curve.append({"ts": close_ts.isoformat(), "balance": self.balance})
+
+            logging.info(
+                f"PAPER TRADE CLOSE: {pos['direction']} {symbol} at {close_price:.6f} "
+                f"(Entry: {pos['entry_price']:.6f}, Size: {pos['size']:.2f} USDT, Fees: {fees:.2f} USDT, "
+                f"PnL: {net_pnl:+.2f} USDT, reason={exit_reason}, close_dt={close_ts}) "
+                f"New Balance: {self.balance:.2f} USDT"
+            )
+
+    def _process_historical_chunk(self, df: pd.DataFrame):
+        """
+        Проходит по чанку данных, группируя по времени, чтобы имитировать "тики" рынка,
+        следуя правильному порядку операций.
+        """
+        # Группируем по времени, чтобы подавать данные "срезами" по всем монетам сразу
+        grouped = df.groupby('ts')
+
+        for ts_ms, group in tqdm(grouped, desc="Simulating candles"):
+            current_dt = dt.datetime.fromtimestamp(ts_ms / 1000, tz=dt.timezone.utc)
+            self.simulated_time = current_dt
+
+            # 1. Сначала проверяем выходы (Stop Loss / Take Profit) на основе данных текущей группы свечей
+            # Это имитирует то, что произошло ВНУТРИ этой минуты
+            self._update_and_close_positions_db(group) # <-- Переместить вызов сюда, ДО цикла обновления буферов
+
+            # 2. Затем обновляем буферы (добавляем свечу как "свершившуюся")
+            for _, row in group.iterrows():
+                symbol = row['symbol']
+                new_bar = {
+                    "ts": current_dt,
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]),
+                    "volume_weighted_average": float(row["q"]) / (float(row["volume"]) + 1e-9),
+                    "num_trades": int(row["n"]),
+                    "taker_base": float(row["taker_base"]),
+                    "taker_quote": float(row["taker_quote"]),
+                    "dummy": 0.0
+                }
+                self.buffers[symbol].append(new_bar)
+
+                # 3. Ищем сигналы для входа (на основе уже обновленной истории)
+                if len(self.buffers[symbol]) >= self.cfg.seq.full_seq_len:
+                    df_buffer = pd.DataFrame(list(self.buffers[symbol])).set_index("ts")
+                    self._find_and_process_spikes(symbol, df_buffer, current_dt)
 
 
 if __name__ == "__main__":

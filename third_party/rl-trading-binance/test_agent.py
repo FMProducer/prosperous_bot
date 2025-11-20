@@ -178,18 +178,19 @@ def prepare_sequences(cfg: MasterConfig) -> list:
 
 def init_agent(model_path: str, cfg: MasterConfig, cache_path: str = None) -> D3QN_PER_Agent:
     agent = D3QN_PER_Agent(
-        state_shape=(cfg.seq.num_features, cfg.seq.input_history_len, 1),
+        state_shape=cfg.state_shape,
         action_dim=cfg.market.num_actions,
         cnn_maps=cfg.model.cnn_maps,
         cnn_kernels=cfg.model.cnn_kernels,
         cnn_strides=cfg.model.cnn_strides,
+        cnn_dilations=cfg.model.cnn_dilations,
         dense_val=cfg.model.dense_val,
         dense_adv=cfg.model.dense_adv,
         additional_feats=cfg.model.additional_feats,
         dropout_model=cfg.model.dropout_p,
         device=cfg.device.device,
         gamma=cfg.rl.gamma,
-        learning_rate=cfg.rl.learning_rate,
+        learning_rate=cfg.rl.lr,
         batch_size=cfg.rl.batch_size,
         buffer_size=cfg.per.buffer_size,
         target_update_freq=cfg.rl.target_update_freq,

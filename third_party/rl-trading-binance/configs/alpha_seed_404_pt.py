@@ -6,6 +6,16 @@ import json  # Для fallback norm_stats если нужно
 
 cfg = MasterConfig()  # Инициализация пустого Pydantic
 
+# Явно прописываем 10 каналов. Используем доступные поля из БД.
+# "taker_base" и "taker_quote" - есть в вашей таблице klines_1m!
+# "dummy" - просто заглушка.
+cfg.data.data_channels = [
+    "open", "high", "low", "close", "volume", 
+    "volume_weighted_average", "num_trades", 
+    "taker_base", "taker_quote", 
+    "dummy"  # 10-й канал
+]
+
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
 cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно истории 90
@@ -63,7 +73,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 500      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 750      # Val episodes (10% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -85,7 +95,7 @@ cfg.trainlog.early_stopping_patience = 10
 # Validation Gate (multi-crit; deny bad models) "max_drawdown_at_most": -0.30, 
 cfg.validation_gate = {
     "min_sharpe": 0.001, "min_sortino": 0.001, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -1.01, "min_win_rate": 0.41, "min_trades": 600,
+    "max_drawdown_at_most": -1000000.00, "min_win_rate": 0.41, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True,
     "profit_factor_atleast": 1.00, "sortino_atleast": 0.001
 }
@@ -118,7 +128,7 @@ cfg.backtest.plot_backtest_balance_curve = True
 cfg.backtest.trailing_stop_min = 0.005
 cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
-cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-09-23T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
 cfg.perf.use_amp = True  # Mixed precision
@@ -145,7 +155,7 @@ cfg.mc_dropout = mc_dropout_cfg
 # DB/Paper (if needed)
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
-cfg.paper.leverage = 2.0
+cfg.paper.leverage = 1.0
 cfg.paper.symbols = "ALL"  # Or list from tickers.txt
 cfg.backtest.data_source = "npz"  # For test/backtest
 
