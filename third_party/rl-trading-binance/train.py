@@ -693,6 +693,14 @@ def main(cfg: MasterConfig = None):
     if os.path.exists(norm_stats_path):
         with open(norm_stats_path, 'r') as f:
             norm_stats = json.load(f)
+
+    # --- FIX START: Copy norm_stats to models_dir ---
+    if norm_stats is not None:
+        norm_stats_save_path = os.path.join(models_dir, "norm_stats.json")
+        with open(norm_stats_save_path, "w", encoding="utf-8") as f:
+            json.dump(norm_stats, f, indent=2)
+        logging.info(f"Copied norm_stats.json to: {norm_stats_save_path}")
+    # --- FIX END ---
     val_seqs = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
 
     # Set episodes from total_timesteps if not set
