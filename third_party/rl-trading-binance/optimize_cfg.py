@@ -61,13 +61,13 @@ def _save_top_tables(df: "pd.DataFrame", opt_dir: str, topn: int = 20) -> None:
     Save top-N trials by:
       - Sharpe (values_0),
       - Sortino (values_1),
-      - -Max Drawdown (values_2).
+      - Profit Factor (values_2).
     """
     cols = df.columns
     targets = [
         ("values_0", "top_by_sharpe"),
         ("values_1", "top_by_sortino"),
-        ("values_2", "top_by_neg_maxdd"),
+        ("values_2", "top_by_profit_factor"),
     ]
     for val_col, stem in targets:
         if val_col in cols:
@@ -233,27 +233,10 @@ def objective(trial: optuna.Trial):
     # TARGET METRICS
     sharpe = float(metrics.get("sharpe", -1.0))
     sortino = float(metrics.get("sortino", -1.0))
+    profit_factor = float(metrics.get("profit_factor", 0.0))
 
-    # robust max_drawdown parsing: accepts 0.23, 23, "23%", "0.23"
-    def _parse_maxdd(v):
-        if v is None:
-            return 100.0
-        try:
-            if isinstance(v, (int, float)):
-                # если 0..1 — переводим в проценты; если уже в процентах — оставляем
-                return float(v) * 100.0 if 0.0 <= float(v) <= 1.0 else float(v)
-            s = str(v).strip()
-            if s.endswith('%'):
-                s = s[:-1]
-            x = float(s)
-            return x * 100.0 if 0.0 <= x <= 1.0 else x
-        except Exception:
-            return 100.0
-    max_dd = _parse_maxdd(metrics.get("max_drawdown"))
-    
-    # Optuna пытается максимизировать, поэтому для минимизации просадки мы возвращаем отрицательное значение
-    # Теперь у нас три цели: максимизировать Шарп, максимизировать Сортино и минимизировать просадку.
-    return sharpe, sortino, -max_dd
+    # Теперь у нас три цели: максимизировать Шарп, Сортино и профит-фактор.
+    return sharpe, sortino, profit_factor
 
 def main():
     parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
@@ -320,7 +303,7 @@ def main():
         with open(os.path.join(opt_dir, "best_papertrade_cfg.json"), "w") as f:
             json.dump(best_cfg_params, f, indent=2)
 
-        logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, Sortino={best.values[1]:.2f}, MaxDD={-best.values[2]:.2f}%")
+        logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, Sortino={best.values[1]:.2f}, ProfitFactor={best.values[2]:.2f}")
         logging.info(f"[Optuna] Best trial params: {best_cfg_params}")
     else:
         logging.warning("[Optuna] No successful trials found to determine the best parameters.")
@@ -336,7 +319,7 @@ def main():
         fig1.savefig(os.path.join(opt_dir, "optuna_history.png"), dpi=300)
         plt.close(fig1)
 
-        ax2 = plot_pareto_front(study, target_names=["Sharpe", "Sortino", "-MaxDD (%)"])
+        ax2 = plot_pareto_front(study, target_names=["Sharpe", "Sortino", "Profit Factor"])
         fig2 = getattr(ax2, "figure", ax2)
         fig2.savefig(os.path.join(opt_dir, "pareto.png"), dpi=300)
         plt.close(fig2)

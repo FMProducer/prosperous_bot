@@ -183,11 +183,11 @@ cfg.optuna_search_space = {
     # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
     "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
     "short_thr":      ("suggest_float", -0.03,  -0.001, True,  "backtest.short_action_threshold"),
-    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
-    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
-    # Для d0 нижняя граница зависит от уже выбранного d_min
-    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
-    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
+    # "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
+    # "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
+    # # Для d0 нижняя граница зависит от уже выбранного d_min
+    # "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
+    # "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
     # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
 }
 
@@ -199,8 +199,8 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_220433\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_220433\norm_stats.json"
 
 # Workflow notes (run from root):
 # python train.py --config alpha.py --total_timesteps 10000  # Test
