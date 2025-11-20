@@ -128,7 +128,7 @@ cfg.backtest.plot_backtest_balance_curve = True
 cfg.backtest.trailing_stop_min = 0.005
 cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
-cfg.backtest.time_range = {"start_utc": "2025-09-23T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
 cfg.perf.use_amp = True  # Mixed precision
