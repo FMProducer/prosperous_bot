@@ -730,31 +730,41 @@ class PaperTrader:
                 
                 # Готовим данные ОДИН раз
                 buffer_list = list(self.buffers[symbol])
-                # Берём последние full_seq_len баров (150, не 90!)
-                if len(buffer_list) < min_buffer_len:
-                    continue
-
-                recent_bars = buffer_list[-min_buffer_len:]  # 150 баров
 
                 # Формируем sequence БЕЗ DataFrame и БЕЗ транспонирования
                 target_channels = getattr(self.cfg.data, "data_channels", None)
                 if target_channels is None:
                     target_channels = self.cfg.data.expected_channels
 
-                # Извлекаем данные: форма (time_steps, channels) = (150, 10)
-                try:
-                    session_data = np.array([
-                        [bar[ch] for ch in target_channels]
-                        for bar in recent_bars
-                    ], dtype=np.float32)
-                except KeyError as e:
-                    logging.warning(f"Missing channel {e} for {symbol}, skipping")
+                # Настройки из конфига
+                agent_hist_len = self.cfg.seq.agent_history_len  # 90
+                full_seq_len = self.cfg.seq.full_seq_len        # 150 (или 120)
+                future_len = full_seq_len - agent_hist_len      # 60 (или 30)
+
+                # Проверяем буфер: достаточно ли данных для истории
+                if len(buffer_list) < agent_hist_len:
                     continue
 
-                # НЕ ТРАНСПОНИРУЕМ! TradingEnvironment сделает это сам.
-                # Форма: (150, 10) ✅
+                # Берём только историю (90 шагов)
+                recent_history = buffer_list[-agent_hist_len:]
 
-                # Получаем действие
+                # Формируем массив истории: (90, 10)
+                try:
+                    history_data = np.array([
+                        [bar[ch] for ch in target_channels]
+                        for bar in recent_history
+                    ], dtype=np.float32)
+                except KeyError as e:
+                    continue
+
+                # Создаем полный массив: (150, 10)
+                # Заполняем "будущее" нулями
+                padding = np.zeros((future_len, self.cfg.num_channels), dtype=np.float32)
+                session_data = np.vstack([history_data, padding])  # (90+60, 10) = (150, 10)
+
+                # НЕ ТРАНСПОНИРУЕМ! (TradingEnvironment ждет [Time, Channels])
+
+                # Вызываем агента
                 action = self._get_agent_action(session_data)
 
                 # Логируем для отладки (первые 500 итераций)
@@ -766,7 +776,7 @@ class PaperTrader:
                     continue
 
                 # Entry price — берем последнюю свечу
-                entry_price = float(recent_bars[-1]["close"])
+                entry_price = float(recent_history[-1]["close"])
 
                 # Исполняем сделку
                 self._execute_trade(symbol, action, current_ts, entry_price, current_ts, delay=0)
