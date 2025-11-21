@@ -251,6 +251,62 @@ class PaperTrader:
         # Execute trade
         if action in [1, 2]:  # LONG or SHORT
             self._execute_trade(symbol, action, signal_dt, entry_price, entry_dt_used, delay)
+
+    def _process_signal_continuous(self, symbol: str, signal_dt: dt.datetime, df: pd.DataFrame, current_time: dt.datetime = None) -> None:
+        """
+        Processes continuous trading signal (no spike filter).
+        Called on EVERY candle, not just spikes.
+        """
+        now = current_time or signal_dt
+        
+        # Cooldown check (to avoid re-entering same symbol too quickly)
+        if symbol in self.cooldowns and now < self.cooldowns[symbol]:
+            return
+        
+        # Check if we already have a position for this symbol
+        if symbol in self.open_positions:
+            return
+        
+        # Check if we've hit max parallel sessions
+        if len(self.open_positions) >= self.cfg.backtest.max_parallel_sessions:
+            return
+        
+        # Prepare sequence for agent
+        seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
+        seq_end = signal_dt
+        seq_df = df[(df.index >= seq_start) & (df.index <= seq_end)]
+        
+        if len(seq_df) != self.cfg.seq.full_seq_len:
+            return  # Not enough data yet
+        
+        # Use configured channels
+        target_channels = getattr(self.cfg.data, "data_channels", None)
+        if target_channels is None:
+            target_channels = self.cfg.data.expected_channels
+        
+        missing_cols = [c for c in target_channels if c not in seq_df.columns]
+        if missing_cols:
+            logging.warning(f"Missing columns for {symbol}: {missing_cols}")
+            return
+        
+        session_data = seq_df[target_channels].to_numpy(dtype=np.float32)
+        
+        # Get action from agent
+        action = self._get_agent_action(session_data)
+        
+        # Only open trade if action is LONG(1) or SHORT(2)
+        if action not in [1, 2]:
+            return
+        
+        # Entry price
+        entry_price = float(seq_df.iloc[-1]["close"])
+        entry_dt_used = signal_dt
+        
+        # Execute trade
+        self._execute_trade(symbol, action, signal_dt, entry_price, entry_dt_used, delay=0)
+        
+        # Set cooldown
+        self.cooldowns[symbol] = now + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
     def _get_agent_action(self, session_data: np.ndarray) -> int:
         """Get a trading action from the RL agent."""
         env = TradingEnvironment(
@@ -568,229 +624,259 @@ class PaperTrader:
             time.sleep(5)
 
     def _run_from_database(self):
-        """Runs the trader in simulation mode using historical data from the database."""
-        logging.info("Starting trader in 'database' (high-speed simulation) mode.")
+        """Optimized continuous simulation."""
+        logging.info("Starting CONTINUOUS minute-by-minute database simulation.")
         
         if not hasattr(self.cfg.backtest, "time_range") or not self.cfg.backtest.time_range:
-            logging.error("`cfg.backtest.time_range` is not defined for database simulation. Aborting.")
+            logging.error("`cfg.backtest.time_range` is not defined. Aborting.")
             return
-            
+        
         start_utc = self.cfg.backtest.time_range["start_utc"]
         end_utc = self.cfg.backtest.time_range["end_utc"]
         symbols = self.symbols_to_trade
         
-        # --- NEW: Use the efficient SQL query from backtest_engine.py ---
-        try:
-            logging.info(f"Scanning for signals from {start_utc} to {end_utc} for {len(symbols)} symbols...")            
-            engine = get_engine(self.cfg.db.dsn)
-            all_spikes_dfs = []
-            with engine.connect() as conn:
-                detector_cfg = self.cfg.detector
-                # ВАЖНО: Для симуляции бумажной торговли мы не должны заглядывать вперед.
-                # The find_spike_windows function already handles this with use_lookahead=False,
-                # but the SQL query needs to be adjusted to find spikes based on past data.
-                # This query is simplified for demonstration; a full real-time replication is complex.
-                # For now, we use the same performant query as the backtester, acknowledging this small deviation.
-                query = text(f"""
-                WITH minute_returns AS (
-                    SELECT ts, symbol, close, (close / LAG(close, 1) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS ret
-                    FROM v_klines_1m_npz WHERE symbol = ANY(:symbols) AND ts >= :start_ts AND ts < :end_ts
-                ),
-                rolling_stats AS (
-                    SELECT ts, symbol,
-                        (close / LAG(close, {detector_cfg.window_minutes}) OVER (PARTITION BY symbol ORDER BY ts)) - 1 AS abs_change,
-                        AVG(ABS(ret)) OVER (PARTITION BY symbol ORDER BY ts ROWS BETWEEN {detector_cfg.context_minutes + detector_cfg.window_minutes} PRECEDING AND {detector_cfg.window_minutes} PRECEDING) AS avg_abs_ret_pre,
-                        (SELECT volume FROM v_klines_1m_npz v WHERE v.symbol = minute_returns.symbol AND v.ts = minute_returns.ts) as volume
-                    FROM minute_returns
-                )
-                SELECT ts, symbol, volume FROM rolling_stats
-                WHERE ABS(abs_change) * 100.0 >= :abs_change_pct AND (ABS(abs_change) / (avg_abs_ret_pre + 1e-9)) >= :contrast_min;
-                """)
-                
-                for symbol in tqdm(symbols, desc="Scanning for spikes"):
-                    df_symbol_spikes = pd.read_sql(query, conn, params={
-                        "symbols": [symbol], # Запрос для одного символа
-                        "start_ts": int(pd.to_datetime(start_utc).timestamp() * 1000),
-                        "end_ts": int(pd.to_datetime(end_utc).timestamp() * 1000),
-                        "abs_change_pct": detector_cfg.abs_change_pct,
-                        "contrast_min": detector_cfg.contrast_min,
-                    })
-                    if not df_symbol_spikes.empty:
-                        all_spikes_dfs.append(df_symbol_spikes)
-
-            found_spikes_df = pd.concat(all_spikes_dfs, ignore_index=True).sort_values(by='ts')
-            found_spikes_df['ts'] = pd.to_datetime(found_spikes_df['ts'], unit='ms', utc=True)
-
-            # Apply cooldown
-            all_signals = []
-            last_signal_time = {}
-            # Группируем по времени, чтобы обработать конкурирующие сигналы
-            for signal_dt, group in found_spikes_df.groupby('ts'):
-                # Сортируем сигналы в данный момент времени по объему (по убыванию)
-                sorted_group = group.sort_values(by='volume', ascending=False)
-                
-                processed_in_group = 0
-                for _, row in sorted_group.iterrows():
-                    symbol, volume = row['symbol'], row['volume']
-                    
-                    # Применяем кулдаун для каждого символа индивидуально
-                    if signal_dt <= last_signal_time.get(symbol, dt.datetime.min.replace(tzinfo=dt.timezone.utc)):
-                        continue
-
-                    all_signals.append({"symbol": symbol, "signal_dt": signal_dt, "volume": volume})
-                    last_signal_time[symbol] = signal_dt + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
-
-        except Exception as e:
-            logging.error(f"Failed to load historical data from database: {e}", exc_info=True)
-            return
-
-        # Сигналы уже отсортированы по времени из-за groupby и исходной сортировки.
-        logging.info(f"Found {len(all_signals)} total signals across all symbols. Starting high-speed simulation...")
-
-        # Группируем финальный список сигналов по времени для обработки параллельных сессий
-        grouped_signals = defaultdict(list)
-        for signal in all_signals:
-            grouped_signals[signal['signal_dt']].append(signal)
-
+        logging.info(f"Fetching data for {len(symbols)} symbols from {start_utc} to {end_utc}...")
+        
         engine = get_engine(self.cfg.db.dsn)
-        # Итерируемся по временным меткам, в каждой из которых может быть несколько сигналов
-        for signal_dt, signals_at_time in tqdm(sorted(grouped_signals.items()), desc="Processing signal groups"):
-            # Обновляем и закрываем старые позиции перед открытием новых
-            self.simulated_time = signal_dt
-            self._update_and_close_positions()
-
-            # Отбираем лучшие сигналы (уже отсортированы по объему) в рамках лимита
-            free_slots = self.cfg.backtest.max_parallel_sessions - len(self.open_positions)
-            if free_slots <= 0:
-                continue
-
-            selected_signals = signals_at_time[:free_slots]
-
-            for signal in selected_signals:
-                symbol = signal["symbol"]
+        
+        query = text("""
+            SELECT ts, symbol, open, high, low, close, volume, 
+                   volume_weighted_average, num_trades
+            FROM v_klines_1m_npz
+            WHERE symbol = ANY(:symbols)
+              AND ts >= :start_ts
+              AND ts < :end_ts
+            ORDER BY ts ASC
+        """)
+        
+        start_ts = int(pd.to_datetime(start_utc).timestamp() * 1000)
+        end_ts = int(pd.to_datetime(end_utc).timestamp() * 1000)
+        
+        logging.info(f"Querying DB: ts range [{start_ts}, {end_ts}]")
+        
+        with engine.connect() as conn:
+            df_all = pd.read_sql(query, conn, params={
+                "symbols": symbols,
+                "start_ts": start_ts,
+                "end_ts": end_ts
+            })
+        
+        if df_all.empty:
+            logging.warning("No data found.")
+            return
+        
+        logging.info(f"Loaded {len(df_all)} rows. Starting simulation...")
+        
+        # Добавляем missing колонки
+        df_all['taker_base'] = 0.0
+        df_all['taker_quote'] = 0.0
+        df_all['dummy'] = 0.0
+        df_all['ts_dt'] = pd.to_datetime(df_all['ts'], unit='ms', utc=True)
+        
+        # Группируем
+        grouped = df_all.groupby('ts')
+        
+        # Кэш для проверок
+        min_buffer_len = self.cfg.seq.full_seq_len
+        symbols_ready = set()  # Символы с достаточной историей
+        
+        for idx, (current_ts_ms, group) in enumerate(tqdm(grouped, desc="Continuous simulation")):
+            current_ts = pd.to_datetime(current_ts_ms, unit='ms', utc=True)
+            self.simulated_time = current_ts
+            
+            # 1. Обновляем позиции
+            self._update_and_close_positions_db(group)
+            
+            # 2. Обновляем буферы
+            for _, row in group.iterrows():
+                symbol = row['symbol']
+                new_bar = {
+                    "ts": current_ts,
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]),
+                    "volume_weighted_average": float(row["volume_weighted_average"]),
+                    "num_trades": int(row["num_trades"]),
+                    "taker_base": 0.0,
+                    "taker_quote": 0.0,
+                    "dummy": 0.0
+                }
+                self.buffers[symbol].append(new_bar)
                 
-                # Основная проверка кулдауна уже была выполнена при формировании all_signals.
-                # Эта логика теперь обрабатывает только отобранные сигналы.
-                seq_start = signal_dt - dt.timedelta(minutes=self.cfg.seq.pre_signal_len)
-                seq_end = signal_dt + dt.timedelta(minutes=self.cfg.seq.post_signal_len)
-                
-                with engine.connect() as conn:
-                    query = text(
-                        "SELECT ts, open, high, low, close, volume, "
-                        "volume_weighted_average, num_trades, "
-                        "0.0 as taker_base, 0.0 as taker_quote, 0.0 as dummy "
-                        "FROM v_klines_1m_npz WHERE symbol = :symbol AND ts >= :start_ts AND ts < :end_ts ORDER BY ts ASC;"
-                    )
-                    df_signal = pd.read_sql(query, conn, params={
-                        "symbol": symbol,
-                        "start_ts": int(seq_start.timestamp() * 1000),
-                        "end_ts": int(seq_end.timestamp() * 1000)
-                    })
-                
-                # --- FIX: Rename columns to match expected names ---
-                df_signal = df_signal.rename(columns={'q': 'volume_weighted_average', 'n': 'num_trades'})
-                
-                if df_signal.empty or len(df_signal) != self.cfg.seq.full_seq_len:
-                    logging.warning(f"Could not fetch complete data for signal {symbol} at {signal_dt}. Skipping.")
+                # Отслеживаем готовность символа
+                if len(self.buffers[symbol]) >= min_buffer_len:
+                    symbols_ready.add(symbol)
+            
+            # 3. ОПТИМИЗАЦИЯ: пропускаем итерации, где невозможны новые входы
+            if len(self.open_positions) >= self.cfg.backtest.max_parallel_sessions:
+                continue  # Нет слотов для новых позиций
+            
+            if not symbols_ready:
+                continue  # Буферы ещё не заполнены
+            
+            # 4. Ищем торговые возможности только среди готовых символов
+            for symbol in symbols_ready:
+                # Early exit проверки
+                if symbol in self.open_positions:
                     continue
                 
-                df_signal['ts'] = pd.to_datetime(df_signal['ts'], unit='ms', utc=True)
-                df_signal = df_signal.set_index('ts')
+                if symbol in self.cooldowns and current_ts < self.cooldowns[symbol]:
+                    continue
+                
+                if len(self.open_positions) >= self.cfg.backtest.max_parallel_sessions:
+                    break
+                
+                # Готовим данные ОДИН раз
+                buffer_list = list(self.buffers[symbol])
+                # Берём последние full_seq_len баров (150, не 90!)
+                if len(buffer_list) < min_buffer_len:
+                    continue
 
-                self._process_signal(symbol, signal_dt, df_signal, current_time=signal_dt)
+                recent_bars = buffer_list[-min_buffer_len:]  # 150 баров
 
-        logging.info("Database simulation finished.")
+                # Формируем sequence БЕЗ DataFrame и БЕЗ транспонирования
+                target_channels = getattr(self.cfg.data, "data_channels", None)
+                if target_channels is None:
+                    target_channels = self.cfg.data.expected_channels
 
-    def run(self):
-        """Start the paper trader based on the configured source."""
-        try:
-            if self.cfg.paper.source == "websocket":
-                self._run_from_websocket()
-            elif self.cfg.paper.source == "database":
-                self._run_from_database()
-            else:
-                logging.error(f"Unknown paper trader source: '{self.cfg.paper.source}'")
-        except KeyboardInterrupt:
-            logging.info("Shutdown signal received.")
-        finally:
-            self.shutdown()
+                # Извлекаем данные: форма (time_steps, channels) = (150, 10)
+                try:
+                    session_data = np.array([
+                        [bar[ch] for ch in target_channels]
+                        for bar in recent_bars
+                    ], dtype=np.float32)
+                except KeyError as e:
+                    logging.warning(f"Missing channel {e} for {symbol}, skipping")
+                    continue
 
-    def shutdown(self):
-        """Gracefully shut down the paper trader."""
-        logging.info("Shutting down Paper Trader...")
-        self._stop_event.set()
-        if self.ws:
-            self.ws.close()
-        if self.ws_thread and self.ws_thread.is_alive():
-            self.ws_thread.join(timeout=5)
+                # НЕ ТРАНСПОНИРУЕМ! TradingEnvironment сделает это сам.
+                # Форма: (150, 10) ✅
 
-        # Save metrics
+                # Получаем действие
+                action = self._get_agent_action(session_data)
+
+                # Логируем для отладки (первые 500 итераций)
+                if idx < 500:
+                    logging.info(f"Minute {idx}: {symbol} action={action} at {current_ts}")
+
+                # Только LONG(1) или SHORT(2)
+                if action not in [1, 2]:
+                    continue
+
+                # Entry price — берем последнюю свечу
+                entry_price = float(recent_bars[-1]["close"])
+
+                # Исполняем сделку
+                self._execute_trade(symbol, action, current_ts, entry_price, current_ts, delay=0)
+
+                # Cooldown
+                self.cooldowns[symbol] = current_ts + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
+        
+        logging.info("Continuous simulation finished.")
+
+    def _save_results(self):
+        """Saves the results of the simulation."""
         output_dir = os.path.join(self.cfg.paths.output_dir, "paper_trader")
         os.makedirs(output_dir, exist_ok=True)
 
         trades_df = pd.DataFrame(self.trades_log)
-        trades_df.to_csv(os.path.join(output_dir, "paper_trades.csv"), index=False)
-        logging.info(f"Saved {len(trades_df)} trades to paper_trades.csv")
+        if not trades_df.empty:
+            trades_df.to_csv(os.path.join(output_dir, "paper_trades.csv"), index=False)
+            logging.info(f"Saved {len(trades_df)} trades to paper_trades.csv")
+        else:
+            logging.info("No trades to save.")
 
         equity_df = pd.DataFrame(self.equity_curve)
-        equity_df.to_csv(os.path.join(output_dir, "paper_equity.csv"), index=False)
-        logging.info(f"Saved equity curve to paper_equity.csv")
+        if not equity_df.empty:
+            equity_df.to_csv(os.path.join(output_dir, "paper_equity.csv"), index=False)
+            logging.info(f"Saved equity curve to paper_equity.csv")
+        else:
+            logging.info("No equity curve to save.")
 
-        logging.info("Shutdown complete.")
-
-
-class PaperTraderDB(PaperTrader):
-    """
-    Расширенная версия для симуляции торговли на исторических данных из БД.
-    Эта версия выполняет симуляцию "свеча за свечой" для более точного моделирования.
-    """
-    
-    def run_db_simulation(self, start_time: str, end_time: str):
+    def _process_continuous_step(self, current_ts: int, current_slice_indexed: pd.DataFrame):
         """
-        Запускает симуляцию на данных из БД построчно (candle-by-candle).
+        Processes a single minute of data for all symbols in continuous mode.
         """
-        logging.info(f"Starting DB candle-by-candle simulation from {start_time} to {end_time}")
-        
-        engine = get_engine(self.cfg.db.dsn)
-        symbols = self.symbols_to_trade
-        
-        # 1. Загружаем все данные за период одним запросом (или чанками, если памяти мало)
-        # Для оптимизации лучше грузить только нужные колонки
-        query = text("""
-            SELECT open_time_ms as ts, symbol, 
-                   open_price as open, 
-                   high_price as high, 
-                   low_price as low, 
-                   close_price as close, 
-                   base_volume as volume, 
-                   quote_volume as q, 
-                   trade_count as n,
-                   taker_base, 
-                   taker_quote,
-                   0.0 as dummy   -- Заглушка для 10-го канала
-            FROM klines_1m 
-            WHERE open_time_ms >= :start_ts AND open_time_ms <= :end_ts 
-            AND symbol = ANY(:symbols)
-            ORDER BY open_time_ms ASC
-        """)
-        
-        # Конвертируем даты в timestamp ms
-        t_start = int(pd.Timestamp(start_time).timestamp() * 1000)
-        t_end = int(pd.Timestamp(end_time).timestamp() * 1000)
-        
-        logging.info("Fetching historical data for candle-by-candle simulation...")
-        with engine.connect() as conn:
-            # Используем stream или chunks для больших объемов
-            df_iter = pd.read_sql(query, conn, params={
-                "start_ts": t_start, 
-                "end_ts": t_end, 
-                "symbols": symbols
-            }, chunksize=100000) # Chunk size can be tuned
+        current_dt = pd.to_datetime(current_ts, unit='s', utc=True)
+        self.simulated_time = current_dt
+
+        # 1. Update/close existing positions based on the new candle's data (high/low for TSL)
+        self._update_and_close_positions_db(current_slice_indexed.reset_index())
+
+        # 2. Update data buffers for all symbols in the current slice
+        for symbol, row in current_slice_indexed.iterrows():
+            if symbol not in self.buffers:
+                continue
             
-            for chunk_df in df_iter:
-                self._process_historical_chunk(chunk_df)
+            new_bar = {
+                "ts": current_dt,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+                "volume_weighted_average": float(row.get("vwap", 0.0)),
+                "num_trades": int(row["num_trades"]),
+                "taker_base": float(row.get("takerbase", 0.0)),
+                "taker_quote": float(row.get("takerquote", 0.0)),
+                "dummy": float(row.get("dummy", 0.0))
+            }
+            self.buffers[symbol].append(new_bar)
+
+        # 3. Decide on new trades for symbols without open positions
+        for symbol, row in current_slice_indexed.iterrows():
+            if symbol in self.open_positions:
+                continue
+            if symbol in self.cooldowns and current_dt < self.cooldowns[symbol]:
+                continue
+            if len(self.buffers.get(symbol, [])) < self.cfg.seq.full_seq_len:
+                continue
+
+            buffer_list = list(self.buffers[symbol])
+            relevant_bars = buffer_list[-self.cfg.seq.full_seq_len:]
+            seq_df = pd.DataFrame(relevant_bars).set_index("ts")
+
+            if len(seq_df) != self.cfg.seq.full_seq_len:
+                continue
+
+            target_channels = getattr(self.cfg.data, "data_channels", self.cfg.data.expected_channels)
+            
+            missing_cols = [c for c in target_channels if c not in seq_df.columns]
+            if missing_cols:
+                logging.warning(f"Continuous mode: Missing columns for {symbol}: {missing_cols}. Filling with 0.")
+                for col in missing_cols:
+                    seq_df[col] = 0.0
+
+            # --- FIX START: Correct shape and history length ---
+            
+            # 1. Берем только последние agent_history_len (90), а не full_seq_len (150)
+            # Агент обучался смотреть на последние 90 шагов
+            agent_hist_len = self.cfg.seq.agent_history_len  # 90
+            if len(seq_df) > agent_hist_len:
+                seq_df = seq_df.iloc[-agent_hist_len:]
                 
-        self.shutdown()
+            # 2. Преобразуем в numpy
+            session_data = seq_df[target_channels].to_numpy(dtype=np.float32)
+            
+            # 3. ТРАНСПОНИРУЕМ: (Time, Channels) -> (Channels, Time)
+            # Агент ожидает форму [C, L]
+            session_data = session_data.T  
+            
+            # --- FIX END ---
+
+            action = self._get_agent_action(session_data)
+
+            if action in [1, 2]:
+                signal_dt = current_dt
+                entry_price = float(row["close"])
+                entry_dt_used = signal_dt
+                delay = 0
+
+                self._execute_trade(symbol, action, signal_dt, entry_price, entry_dt_used, delay)
+                
+                self.cooldowns[symbol] = signal_dt + dt.timedelta(minutes=self.cfg.detector.cooldown_minutes)
 
     def _update_and_close_positions_db(self, current_slice: pd.DataFrame):
         """
@@ -948,6 +1034,97 @@ class PaperTraderDB(PaperTrader):
                 f"PnL: {net_pnl:+.2f} USDT, reason={exit_reason}, close_dt={close_ts}) "
                 f"New Balance: {self.balance:.2f} USDT"
             )
+
+    def run(self):
+        """Start the paper trader based on the configured source."""
+        try:
+            if self.cfg.paper.source == "websocket":
+                self._run_from_websocket()
+            elif self.cfg.paper.source == "database":
+                self._run_from_database()
+            else:
+                logging.error(f"Unknown paper trader source: '{self.cfg.paper.source}'")
+        except KeyboardInterrupt:
+            logging.info("Shutdown signal received.")
+        finally:
+            self.shutdown()
+
+    def shutdown(self):
+        """Gracefully shut down the paper trader."""
+        logging.info("Shutting down Paper Trader...")
+        self._stop_event.set()
+        if self.ws:
+            self.ws.close()
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.ws_thread.join(timeout=5)
+
+        # Save metrics
+        output_dir = os.path.join(self.cfg.paths.output_dir, "paper_trader")
+        os.makedirs(output_dir, exist_ok=True)
+
+        trades_df = pd.DataFrame(self.trades_log)
+        trades_df.to_csv(os.path.join(output_dir, "paper_trades.csv"), index=False)
+        logging.info(f"Saved {len(trades_df)} trades to paper_trades.csv")
+
+        equity_df = pd.DataFrame(self.equity_curve)
+        equity_df.to_csv(os.path.join(output_dir, "paper_equity.csv"), index=False)
+        logging.info(f"Saved equity curve to paper_equity.csv")
+
+        logging.info("Shutdown complete.")
+
+
+class PaperTraderDB(PaperTrader):
+    """
+    Расширенная версия для симуляции торговли на исторических данных из БД.
+    Эта версия выполняет симуляцию "свеча за свечой" для более точного моделирования.
+    """
+    
+    def run_db_simulation(self, start_time: str, end_time: str):
+        """
+        Запускает симуляцию на данных из БД построчно (candle-by-candle).
+        """
+        logging.info(f"Starting DB candle-by-candle simulation from {start_time} to {end_time}")
+        
+        engine = get_engine(self.cfg.db.dsn)
+        symbols = self.symbols_to_trade
+        
+        # 1. Загружаем все данные за период одним запросом (или чанками, если памяти мало)
+        # Для оптимизации лучше грузить только нужные колонки
+        query = text("""
+            SELECT open_time_ms as ts, symbol, 
+                   open_price as open, 
+                   high_price as high, 
+                   low_price as low, 
+                   close_price as close, 
+                   base_volume as volume, 
+                   quote_volume as q, 
+                   trade_count as n,
+                   taker_base, 
+                   taker_quote,
+                   0.0 as dummy   -- Заглушка для 10-го канала
+            FROM klines_1m 
+            WHERE open_time_ms >= :start_ts AND open_time_ms <= :end_ts 
+            AND symbol = ANY(:symbols)
+            ORDER BY open_time_ms ASC
+        """)
+        
+        # Конвертируем даты в timestamp ms
+        t_start = int(pd.Timestamp(start_time).timestamp() * 1000)
+        t_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+        
+        logging.info("Fetching historical data for candle-by-candle simulation...")
+        with engine.connect() as conn:
+            # Используем stream или chunks для больших объемов
+            df_iter = pd.read_sql(query, conn, params={
+                "start_ts": t_start, 
+                "end_ts": t_end, 
+                "symbols": symbols
+            }, chunksize=100000) # Chunk size can be tuned
+            
+            for chunk_df in df_iter:
+                self._process_historical_chunk(chunk_df)
+                
+        self.shutdown()
 
     def _process_historical_chunk(self, df: pd.DataFrame):
         """

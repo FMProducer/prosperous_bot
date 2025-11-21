@@ -128,7 +128,7 @@ cfg.backtest.plot_backtest_balance_curve = True
 cfg.backtest.trailing_stop_min = 0.005
 cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
-cfg.backtest.time_range = {"start_utc": "2025-06-01T00:00:00Z", "end_utc": "2025-08-31T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-08-30T00:00:00Z", "end_utc": "2025-08-31T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
 cfg.perf.use_amp = True  # Mixed precision
@@ -199,8 +199,8 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_220433\best.pth"
-cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_220433\norm_stats.json"
+cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
 
 # Workflow notes (run from root):
 # python train.py --config alpha.py --total_timesteps 10000  # Test
