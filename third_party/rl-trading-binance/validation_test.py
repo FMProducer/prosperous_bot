@@ -221,7 +221,14 @@ def run_validation(entry_cfg: MasterConfig):
     exit_counts: Dict[str, int] = {}
     tsl_hits = 0
     
-    num_episodes = len(val_seqs)
+    num_val_ep = cfg.trainlog.num_val_ep
+    if num_val_ep > 0:
+        num_episodes = min(len(val_seqs), num_val_ep)
+        logging.info(f"Validation will be run on {num_episodes} episodes (limited by 'num_val_ep' config).")
+    else:
+        num_episodes = len(val_seqs)
+        logging.info(f"Validation will be run on all {num_episodes} available episodes.")
+
     stub_dt = dt.datetime(2020, 1, 1, 0, 0)
 
     for i in tqdm(range(num_episodes), desc="Running Validation Episodes"):
