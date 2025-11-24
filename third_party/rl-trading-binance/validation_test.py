@@ -231,18 +231,20 @@ def run_validation(entry_cfg: MasterConfig):
 
     stub_dt = dt.datetime(2020, 1, 1, 0, 0)
 
+    # Log initial equity just once before starting all episodes
+    equity_log.append({"timestamp": stub_dt, "equity": cfg.market.initial_balance})
+
     for i in tqdm(range(num_episodes), desc="Running Validation Episodes"):
         obs, info = env.reset(seed=None, options={"forced_index": i})
         
-        episode_start_dt = stub_dt + dt.timedelta(minutes=i * env.agent_session_len)
-        equity_log.append({"timestamp": episode_start_dt, "equity": info['portfolio_value']})
+        # We no longer log equity at the start of every episode
         
         done = False
         while not done:
             action = agent.select_action(obs, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
-                signal_dt=episode_start_dt,
+                signal_dt=stub_dt, # Base dt, env step will add offset
                 ticker="VALIDATION",
                 trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
                 trailing_stop_min=getattr(cfg.backtest, "trailing_stop_min", None),
@@ -250,10 +252,12 @@ def run_validation(entry_cfg: MasterConfig):
                 delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
             
-            step_dt = episode_start_dt + dt.timedelta(minutes=env.step_idx)
-            equity_log.append({"timestamp": step_dt, "equity": env._get_info()['portfolio_value']})
-
             if info.get("position_closed", False):
+                # Use a consistent timestamp based on total trades
+                trade_time = stub_dt + dt.timedelta(minutes=total_trades)
+                # Log equity only after a trade is closed
+                equity_log.append({"timestamp": trade_time, "equity": env._get_info()['portfolio_value']})
+
                 pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
                 trade_pnls.append(pnl)
                 total_trades += 1
@@ -268,7 +272,7 @@ def run_validation(entry_cfg: MasterConfig):
                 
                 trade_info = {
                     'entry_time': info.get('trade_dt'),
-                    'exit_time': step_dt,
+                    'exit_time': trade_time,
                     'direction': info.get('direction'),
                     'amount': info.get('trade_amount'),
                     'pnl_net': pnl,
