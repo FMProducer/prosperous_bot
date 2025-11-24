@@ -10,10 +10,8 @@ cfg = MasterConfig()  # Инициализация пустого Pydantic
 # "taker_base" и "taker_quote" - есть в вашей таблице klines_1m!
 # "dummy" - просто заглушка.
 cfg.data.data_channels = [
-    "open", "high", "low", "close", "volume", 
-    "volume_weighted_average", "num_trades", 
-    "taker_base", "taker_quote", 
-    "dummy"  # 10-й канал
+    "open", "high", "volume_weighted_average", "low", "close", "volume", 
+    "num_trades", "quote_volume", "taker_base", "taker_quote"
 ]
 
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
@@ -46,6 +44,8 @@ cfg.model.dropout_p = 0.15
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
 cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
+cfg.market.transaction_fee = 0.0004
+cfg.market.slippage = 0.00025
 
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 2e-5  # AdamW
@@ -118,6 +118,7 @@ cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015
 cfg.backtest.short_action_threshold = -0.015  # Negative for short
+cfg.backtest.close_action_threshold = 0.001141
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
@@ -128,7 +129,7 @@ cfg.backtest.plot_backtest_balance_curve = True
 cfg.backtest.trailing_stop_min = 0.005
 cfg.backtest.fee_buffer_mult = 2.0
 cfg.backtest.delta_p_hysteresis = 0.0015
-cfg.backtest.time_range = {"start_utc": "2025-08-30T00:00:00Z", "end_utc": "2025-08-31T23:59:00Z"}
+cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
 cfg.perf.use_amp = True  # Mixed precision
@@ -157,7 +158,7 @@ cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
 cfg.paper.leverage = 1.0
 cfg.paper.symbols = "ALL"  # Or list from tickers.txt
-cfg.backtest.data_source = "npz"  # For test/backtest
+cfg.backtest.data_source = "npz_keys"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
