@@ -199,6 +199,8 @@ def run_validation(config_path: str, model_path: str):
 
     # 6. Run Validation Loop
     all_trade_pnls = []
+    stub_dt = dt.datetime(2000, 1, 1, 0, 0)
+    stub_tk = "VALIDATION"
     
     for i in tqdm(range(num_episodes), desc="Validating Episodes"):
         obs, _ = env.reset(options={"forced_index": i})
@@ -217,7 +219,12 @@ def run_validation(config_path: str, model_path: str):
                 'delta_p_hysteresis': cfg['backtest'].get('delta_p_hysteresis'),
             }
             
-            obs, _, terminated, truncated, info = env.backtest_step(action=action, **backtest_kwargs)
+            obs, _, terminated, truncated, info = env.backtest_step(
+                action=action,
+                signal_dt=stub_dt,
+                ticker=stub_tk,
+                **backtest_kwargs
+            )
             done = terminated or truncated
             
             if info.get("position_closed", False):
