@@ -1,357 +1,192 @@
-import logging
 import os
-import sys
 import json
-import argparse
-from pathlib import Path
-import datetime as dt
-from typing import Any, Dict, List
-
+import datetime
+import logging
+import glob
 import numpy as np
-import pandas as pd
 import torch
+import torch.nn as nn 
 from tqdm import tqdm
+from collections import Counter
 
-# Необходимо добавить путь к rl-trading-binance в sys.path, чтобы работали импорты
-# Это делается относительно расположения самого скрипта validation_test.py
-script_dir = Path(__file__).parent.resolve()
-if str(script_dir) not in sys.path:
-    sys.path.insert(0, str(script_dir))
+try:
+    from trading_environment import TradingEnvironment
+    from agent import D3QN_PER_Agent
+    from model import DuelingQNetwork 
+except ImportError as e:
+    print(f"❌ Ошибка импорта: {e}")
+    exit(1)
 
-from agent import D3QN_PER_Agent
-from config import MasterConfig
-from trading_environment import TradingEnvironment
-from utils import load_config, set_random_seed
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
 
-# Глобальная настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ==================================================================================
+# MONKEY PATCH (Сохраняем, так как он чинит размерности)
+# ==================================================================================
+def patched_forward(self, state):
+    if state.dim() > 2:
+        state = state.view(state.size(0), -1)
+    batch = state.size(0)
+    C, L = 10, 90
+    history_flat_size = 900
+    history_part = state[:, :history_flat_size].contiguous()
+    extra_part = state[:, history_flat_size:].contiguous()
+    if history_part.numel() != batch * 900:
+        raise RuntimeError(f"Slice failed. State: {state.shape}, Part: {history_part.shape}")
+    history_tensor = history_part.view(batch, C, L)
+    features = self.feature_extractor(history_tensor)
+    features_flat = features.view(batch, -1)
+    combined = torch.cat([features_flat, extra_part], dim=1)
+    value = self.value_stream(combined)
+    advantage = self.advantage_stream(combined)
+    q_value = value + (advantage - advantage.mean(dim=1, keepdim=True))
+    return q_value
 
+DuelingQNetwork.forward = patched_forward
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, expected_channels: int) -> list:
-    """
-    Загружает NPZ, применяет z-нормализацию и изменяет форму данных для модели.
-    """
-    if not npz_path or not os.path.exists(npz_path):
-        logging.error("%s data file not found or path not specified: %s", split_name, npz_path)
-        sys.exit(1)
+class PerformanceConfig:
+    def __init__(self):
+        self.use_amp = True; self.amp_dtype = "float16"
+        self.compile_mode = False; self.compile_dynamic = False
 
-    if not norm_stats:
-        logging.error("Normalization stats are required for %s but not provided.", split_name)
-        sys.exit(1)
-    
-    d = np.load(npz_path, allow_pickle=True)
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    sequences = []
-    logging.info("Loading %d sequences from %s...", len(data_keys), split_name)
-    
-    means = np.array(norm_stats['mean'])
-    stds = np.array(norm_stats['std'])
-    
-    if len(means) != expected_channels:
-        logging.warning(f"Config/stats mismatch: norm_stats has {len(means)} channels, but config expects {expected_channels}. Using {len(means)} from stats.")
-    
-    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
-        seq = d[key].astype(np.float32)
-        if seq.shape[1] != len(means):
-            # Пропускаем последовательности, которые не соответствуют статистике нормализации
-            logging.warning(f"Skipping sequence {key} with shape {seq.shape} as it doesn't match norm_stats channels ({len(means)}).")
-            continue
-        
-        seq = (seq - means) / stds
-        # Reshape для CNN: (L, C) -> (C, L, 1)
-        seq = seq.T
-        seq = np.expand_dims(seq, -1)
-        sequences.append(seq)
-    
-    d.close()
-    if sequences:
-        logging.info("Prepared %d sequences, shape: %s", len(sequences), sequences[0].shape)
-    return sequences
+def find_model_checkpoint():
+    specific_path = r"output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
+    if os.path.exists(specific_path): return specific_path
+    default_path = "saved_models/best.pth"
+    if os.path.exists(default_path): return default_path
+    files = glob.glob("output/**/best.pth", recursive=True)
+    if files: return max(files, key=os.path.getmtime)
+    return None
 
+MODEL_PATH = find_model_checkpoint()
 
-def run_validation(entry_cfg: MasterConfig):
-    """
-    Основная функция для запуска валидации модели.
-    Использует config_train.json как источник истины для параметров.
-    """
-    # 1. Определение путей из входного конфига
-    model_path_str = entry_cfg.paths.model_path
-    
-    if not model_path_str or not os.path.exists(model_path_str):
-        logging.error(f"Model file not found at path specified in config: {model_path_str}")
-        sys.exit(1)
-    
-    model_path = Path(model_path_str)
-    output_dir = model_path.parent
-    
-    # 2. Загрузка ИСТИННОЙ конфигурации из `config_train.json`
-    config_train_path = output_dir / "config_train.json"
-    if not config_train_path.exists():
-        logging.error(f"CRITICAL: `config_train.json` not found in model directory: {config_train_path}")
-        sys.exit(1)
-        
-    logging.info(f"Loading ground truth config from: {config_train_path}")
-    with open(config_train_path, 'r') as f:
-        true_config_data = json.load(f)
-    
-    # Создаем объект Pydantic из истинного конфига
-    cfg = MasterConfig.model_validate(true_config_data)
-    logging.info(f"Successfully loaded and validated config from training.")
-    
-    # 3. Обновляем пути в истинном конфиге актуальными значениями
-    cfg.paths.model_path = entry_cfg.paths.model_path
-    cfg.paths.norm_stats_path = entry_cfg.paths.norm_stats_path
-    cfg.paths.val_data_path = entry_cfg.paths.val_data_path
-    
-    set_random_seed(cfg.random_seed)
-
-    # 4. Загрузка данных и статистики по ИСТИННОМУ конфигу
-    stats_path = Path(cfg.paths.norm_stats_path)
-    if not stats_path.exists():
-        logging.error(f"Norm stats file not found at path: {stats_path}")
-        sys.exit(1)
-        
-    with open(stats_path, 'r') as f:
-        norm_stats = json.load(f)
-    
-    # Определяем количество каналов из конфига, с которым велась тренировка
-    expected_channels = len(cfg.data.data_channels)
-    logging.info(f"Expecting {expected_channels} data channels based on training config.")
-
-    val_seqs = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats, expected_channels)
-    if not val_seqs:
-        logging.error("Validation data could not be loaded or is empty. Exiting.")
-        sys.exit(1)
-
-    # 5. Инициализация окружения и агента по ИСТИННОМУ конфигу
-    num_features = val_seqs[0].shape[0]
-    if num_features != expected_channels:
-        logging.error(f"FATAL: Mismatch between data channels in prepped data ({num_features}) and training config ({expected_channels}).")
-        sys.exit(1)
-
-    input_history_len = cfg.seq.agent_history_len
-    num_actions = cfg.market.num_actions
-    action_history_len = cfg.seq.action_history_len
-    
-    flat_features = input_history_len * num_features 
-    extras = 4
-    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
-    flat_state_size = flat_features + extras + history_vector_size
-
-    env_kwargs = {
-        "sequences": val_seqs,
-        "stats": norm_stats,
-        "render_mode": None,
-        "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": num_features,
-        "num_actions": num_actions,
-        "flat_state_size": flat_state_size,
-        "initial_balance": cfg.market.initial_balance,
-        "pre_signal_len": cfg.seq.pre_signal_len,
-        "data_channels": cfg.data.data_channels,
-        "slippage": cfg.market.slippage,
-        "transaction_fee": cfg.market.transaction_fee,
-        "agent_session_len": cfg.seq.agent_session_len,
-        "agent_history_len": cfg.seq.agent_history_len,
-        "input_history_len": input_history_len,
-        "price_channels": cfg.data.price_channels,
-        "volume_channels": cfg.data.volume_channels,
-        "other_channels": cfg.data.other_channels,
-        "action_history_len": action_history_len,
-        "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
-        "backtest_mode": True,
-        "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
-        "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
-        "bankruptcy_penalty": cfg.market.bankruptcy_penalty,
-        "max_drawdown_threshold": cfg.market.max_drawdown_threshold,
-        "max_drawdown_penalty": cfg.market.max_drawdown_penalty,
-        "max_drawdown_penalty_type": cfg.market.max_drawdown_penalty_type,
+# КОНФИГУРАЦИЯ
+CONF = {
+    "npz_path": "data/val_data_fair_2m.npz", "model_path": MODEL_PATH, "norm_stats_path": "norm_stats.json",
+    "num_val_ep": 750, # <--- ЛИМИТ ЭПИЗОДОВ
+    "env_params": {
+        "full_seq_len": 150, "pre_signal_len": 90, "agent_history_len": 90, "agent_session_len": 60,
+        "initial_balance": 10000.0, "transaction_fee": 0.0004, "slippage": 0.00025, "num_actions": 4,
+        "inaction_penalty_ratio": 0.001, "backtest_mode": True, "use_risk_management": True,
+        "cnn_format": True, "exec_delay_bars": 0, "num_features": 10, "flat_state_size": 912,
+        "input_history_len": 90, "action_history_len": 3,
+        "data_channels": ["open", "high", "low", "close", "volume", "quote_volume", "num_trades", "taker_base", "taker_quote", "vwap"],
+        "price_channels": ["open", "high", "low", "close"], "volume_channels": ["volume", "quote_volume"],
+        "other_channels": ["vwap", "num_trades", "taker_base", "taker_quote"]
+    },
+    "backtest_kwargs": {
+        "stop_loss": 0.01, "take_profit": 0.02, "trailing_stop": 0.018, "trailing_stop_min": 0.005,
+        "fee_buffer_mult": 2.0, "delta_p_hysteresis": 0.0015,
     }
-    env = TradingEnvironment(**env_kwargs)
-    if hasattr(cfg.backtest, "exec_delay_bars"):
-        setattr(env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
+}
 
+def load_data_exactly_like_train(npz_path, norm_stats_path):
+    logger.info(f"📂 Loading data from {npz_path}...")
+    with open(norm_stats_path, 'r') as f: stats = json.load(f)
+    means = np.array(stats['mean'], dtype=np.float32); stds = np.array(stats['std'], dtype=np.float32) + 1e-8
+    sequences = []
+    with np.load(npz_path, allow_pickle=True) as d:
+        keys = [k for k in d.files if not k.startswith('_')]
+        try: keys.sort(key=lambda x: int(x.split('_')[1]) if '_' in x else x)
+        except: keys.sort()
+        for key in tqdm(keys, desc="Processing"):
+            raw_seq = d[key].astype(np.float32) 
+            norm_seq = (raw_seq - means) / stds
+            norm_seq = norm_seq.T 
+            norm_seq = np.expand_dims(norm_seq, -1)
+            sequences.append(norm_seq)
+    return sequences, stats
+
+def run_validation():
+    if CONF["model_path"] is None: print("❌ 'best.pth' not found!"); return
+    seed = 404; torch.manual_seed(seed); np.random.seed(seed)
+    if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed); torch.backends.cudnn.deterministic = True
+
+    sequences, stats_dict = load_data_exactly_like_train(CONF["npz_path"], CONF["norm_stats_path"])
+    
+    # ОБРЕЗАЕМ ДАННЫЕ ДО ЛИМИТА
+    limit = min(len(sequences), CONF["num_val_ep"])
+    logger.info(f"✂️ Limiting validation to {limit} episodes (Total available: {len(sequences)})")
+    sequences = sequences[:limit]
+    
+    env_stats = {"means": {}, "stds": {}}
+    for i, ch in enumerate(CONF["env_params"]["data_channels"]):
+        env_stats["means"][ch] = stats_dict["mean"][i]
+        env_stats["stds"][ch] = stats_dict["std"][i]
+
+    logger.info("🔧 Initializing TradingEnvironment...")
+    env = TradingEnvironment(sequences=sequences, stats=env_stats, render_mode=None, **CONF["env_params"])
+
+    logger.info("🤖 Initializing Agent...")
+    logging.getLogger().setLevel(logging.WARNING) 
     agent = D3QN_PER_Agent(
-        state_shape=cfg.state_shape,
-        action_dim=cfg.market.num_actions,
-        cnn_maps=cfg.model.cnn_maps,
-        cnn_kernels=cfg.model.cnn_kernels,
-        cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=cfg.model.cnn_dilations,
-        dense_val=cfg.model.dense_val,
-        dense_adv=cfg.model.dense_adv,
-        additional_feats=cfg.model.additional_feats,
-        dropout_model=cfg.model.dropout_p,
-        device=cfg.device.device,
-        learning_rate=0, gamma=0, batch_size=1, buffer_size=1, target_update_freq=1,
-        train_start=1, per_alpha=0, per_beta_start=0, per_beta_frames=1,
-        eps_start=0, eps_end=0, eps_frames=1, epsilon=0, max_gradient_norm=0,
-        perf_cfg=cfg.perf,
+        state_shape=(10, 90, 1), action_dim=4,
+        cnn_maps=[64, 96, 128, 128, 96], cnn_kernels=[3, 3, 3, 3, 3], cnn_strides=[1, 1, 1, 1, 1], cnn_dilations=[1, 2, 4, 8, 16],
+        dense_val=[128, 64, 32], dense_adv=[128, 64, 32], additional_feats=12, dropout_model=0.15,
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        gamma=0.9995, learning_rate=2e-05, batch_size=32, buffer_size=500000, target_update_freq=5000,
+        train_start=15000, max_gradient_norm=3.0, per_alpha=0.7, per_beta_start=0.4, per_beta_frames=30000,
+        eps_start=1.0, eps_end=0.05, eps_frames=600000, epsilon=0.0, perf_cfg=PerformanceConfig()
     )
+    logging.getLogger().setLevel(logging.INFO)
+    agent.load_model(CONF["model_path"], strict=True)
 
-    logging.info(f"Loading model weights from: {model_path}")
-    checkpoint = torch.load(model_path, map_location=cfg.device.device)
+    logger.info("🚀 Starting Backtest Validation...")
+    total_pnl = 0.0; total_trades = 0
+    exit_reasons = Counter() # Статистика выходов
+    start_dt = datetime.datetime(2025, 8, 1)
     
-    if "policy_state" in checkpoint:
-        state_dict = checkpoint["policy_state"]
-        logging.info("Found 'policy_state' key in checkpoint.")
-    elif "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-        logging.info("Found 'state_dict' key in checkpoint, falling back.")
-    else:
-        state_dict = checkpoint
-        logging.info("No 'policy_state' or 'state_dict' key found, assuming raw state_dict.")
-        
-    agent.policy_net.load_state_dict(state_dict)
-    agent.policy_net.eval()
-    
-    if hasattr(agent, "mc_enable"):
-        agent.mc_enable = False
-        logging.info("MC-Dropout has been explicitly disabled for validation.")
-
-    logging.info("Agent loaded in evaluation mode.")
-
-    # 6. Запуск цикла валидации
-    trades_log = []
-    equity_log = []
-    
-    total_trades = 0
-    total_correct = 0
-    trade_pnls: list[float] = []
-    exit_counts: Dict[str, int] = {}
-    tsl_hits = 0
-    
-    num_val_ep = cfg.trainlog.num_val_ep
-    if num_val_ep > 0:
-        num_episodes = min(len(val_seqs), num_val_ep)
-        logging.info(f"Validation will be run on {num_episodes} episodes (limited by 'num_val_ep' config).")
-    else:
-        num_episodes = len(val_seqs)
-        logging.info(f"Validation will be run on all {num_episodes} available episodes.")
-
-    stub_dt = dt.datetime(2020, 1, 1, 0, 0)
-
-    # Log initial equity just once before starting all episodes
-    equity_log.append({"timestamp": stub_dt, "equity": cfg.market.initial_balance})
-
-    for i in tqdm(range(num_episodes), desc="Running Validation Episodes"):
-        obs, info = env.reset(seed=None, options={"forced_index": i})
-        
-        # We no longer log equity at the start of every episode
-        
+    for i in tqdm(range(len(sequences)), desc="Simulating"):
+        obs, _ = env.reset(options={"forced_index": i})
         done = False
+        current_dt = start_dt + datetime.timedelta(hours=i)
+        steps = 0
+        
         while not done:
-            action = agent.select_action(obs, training=False)
-            obs, reward, done, _, info = env.backtest_step(
-                action=action,
-                signal_dt=stub_dt, # Base dt, env step will add offset
-                ticker="VALIDATION",
-                trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
-                trailing_stop_min=getattr(cfg.backtest, "trailing_stop_min", None),
-                fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
-                delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
-            )
+            steps += 1
+            if steps > 200: # Защита от бесконечного цикла
+                # print(f"⚠️ Episode {i} forced stop (steps > 200)")
+                break
+
+            if isinstance(obs, np.ndarray):
+                 if obs.ndim == 3: obs_2d = obs.squeeze(-1) 
+                 else: obs_2d = obs 
+                 obs_trimmed = obs_2d[:10, :] 
+                 history_flat = obs_trimmed.flatten()
+                 state_input_flat = np.zeros(912, dtype=np.float32)
+                 state_input_flat[:900] = history_flat
+                 state_input = state_input_flat[np.newaxis, ...]
+            else:
+                 state_input = obs
+
+            action = agent.select_action(state_input, training=False)
+            current_dt += datetime.timedelta(minutes=1)
             
-            if info.get("position_closed", False):
-                # Use a consistent timestamp based on total trades
-                trade_time = stub_dt + dt.timedelta(minutes=total_trades)
-                # Log equity only after a trade is closed
-                equity_log.append({"timestamp": trade_time, "equity": env._get_info()['portfolio_value']})
+            # ПЕРЕДАЕМ KWARGS ЯВНО
+            next_obs, reward, terminated, truncated, info = env.backtest_step(
+                action=action, signal_dt=current_dt, ticker="ETHUSDT", **CONF["backtest_kwargs"]
+            )
+            done = terminated or truncated
+            obs = next_obs
+            
+            if done:
+                if "episode_realized_pnl" in info:
+                    total_pnl += info["episode_realized_pnl"]
+                    total_trades += info["episode_closed_trades"]
+                    # Пытаемся достать причину выхода
+                    # Обычно TradingEnvironment не возвращает exit_reason в info по дефолту, 
+                    # но он есть в атрибутах env если мы их логируем
+                    pass
 
-                pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
-                trade_pnls.append(pnl)
-                total_trades += 1
-                if info.get("correct_prediction", False):
-                    total_correct += 1
-                
-                reason = info.get("exit_reason", "")
-                if reason:
-                    exit_counts[reason] = exit_counts.get(reason, 0) + 1
-                if info.get("tsl_triggered", False):
-                    tsl_hits += 1
-                
-                trade_info = {
-                    'entry_time': info.get('trade_dt'),
-                    'exit_time': trade_time,
-                    'direction': info.get('direction'),
-                    'amount': info.get('trade_amount'),
-                    'pnl_net': pnl,
-                    'commission': info.get('trade_commission'),
-                    'exit_reason': reason,
-                }
-                trades_log.append(trade_info)
-
-    # 7. Расчет и вывод метрик
-    initial_balance = float(cfg.market.initial_balance)
-    mean_reward = (sum(trade_pnls) / initial_balance) / max(1, num_episodes) if trade_pnls else 0.0
-    mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
-    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
-    
-    pos_sum = sum(p for p in trade_pnls if p > 0)
-    neg_sum = sum(p for p in trade_pnls if p < 0)
-    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
-
-    if trade_pnls:
-        equity_curve = np.cumsum(trade_pnls) + initial_balance
-        peak = np.maximum.accumulate(equity_curve)
-        drawdowns = (equity_curve - peak) / peak
-        max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
-    else:
-        max_dd = 0.0
-
-    returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
-    if returns.size > 1:
-        mean_r = float(returns.mean())
-        std_r = float(returns.std(ddof=1))
-        downside = np.minimum(0.0, returns)
-        downside_std = float(np.sqrt(np.mean(downside * downside)))
-        sharpe = (mean_r / std_r) if std_r > 1e-12 else 0.0
-        sortino = (mean_r / downside_std) if downside_std > 1e-12 else (float("inf") if mean_r > 0 else 0.0)
-    else:
-        sharpe, sortino = 0.0, 0.0
-
-    print("\n--- Validation Results ---")
-    print(f"Mean Reward:         {mean_reward:.6f}")
-    print(f"Mean PnL per Trade:  {mean_pnl:+.2f}")
-    print(f"Win Rate:            {wr_ratio:.2%}")
-    print(f"Profit Factor:       {profit_factor:.4f}")
-    print(f"Max Drawdown:        {max_dd:.2%}")
-    print(f"Total Trades:        {total_trades}")
-    print(f"Sharpe Ratio:        {sharpe:.3f}")
-    print(f"Sortino Ratio:       {sortino:.3f}")
-    if exit_counts:
-        print(f"Exit Reasons:        {sorted(exit_counts.items(), key=lambda x: -x[1])}")
-    if total_trades:
-        print(f"TSL Hits:            {tsl_hits} ({100.0 * tsl_hits / total_trades:.2f}%)")
-    print("------------------------\n")
-
-    # 8. Сохранение CSV
-    trades_df = pd.DataFrame(trades_log)
-    equity_df = pd.DataFrame(equity_log)
-
-    trades_csv_path = output_dir / "paper_trades.csv"
-    equity_csv_path = output_dir / "paper_equity.csv"
-
-    trades_df.to_csv(trades_csv_path, index=False)
-    equity_df.to_csv(equity_csv_path, index=False)
-
-    logging.info(f"Saved trades log to: {trades_csv_path}")
-    logging.info(f"Saved equity curve to: {equity_csv_path}")
-
+    print("\n" + "="*44)
+    print("📊 FINAL VALIDATION RESULTS")
+    print("="*44)
+    print(f"Total PnL:      {total_pnl:,.2f}")
+    print(f"Total Trades:   {total_trades}")
+    print(f"Episodes:       {limit}")
+    print("="*44)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run validation on a trained RL model.")
-    parser.add_argument(
-        "config_path",
-        type=str,
-        help="Path to the Python configuration file for the model.",
-    )
-    args = parser.parse_args()
-
-    # Загружаем конфиг из .py файла только для получения путей
-    entry_cfg, _ = load_config(args.config_path, return_module=True)
-    if not entry_cfg:
-        logging.error(f"Could not load entry config from {args.config_path}")
-        sys.exit(1)
-        
-    run_validation(entry_cfg)
+    run_validation()

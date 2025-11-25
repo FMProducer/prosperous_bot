@@ -400,6 +400,26 @@ class D3QN_PER_Agent:
                 # пропускаем шаг обучения, чтобы не портить сеть и буфер.
                 if not torch.isfinite(current_q_values).all() or not torch.isfinite(target_q_values).all():
                     logger.warning("Non-finite Q-values detected in AMP branch, skipping learn step")
+                    # Расширенное логирование для отладки
+                    def log_stats(name, tensor):
+                        if not torch.is_tensor(tensor): return
+                        finite_tensor = tensor[torch.isfinite(tensor)]
+                        if finite_tensor.numel() == 0:
+                            logger.debug(f"  {name}: all values are non-finite")
+                            return
+                        logger.debug(
+                            f"  {name}: "
+                            f"non-finite={torch.isinf(tensor).sum().item()+torch.isnan(tensor).sum().item()}, "
+                            f"min={finite_tensor.min().item():.4f}, "
+                            f"max={finite_tensor.max().item():.4f}, "
+                            f"mean={finite_tensor.mean().item():.4f}"
+                        )
+
+                    log_stats("states_t", states_t)
+                    log_stats("rewards_t", rewards_t)
+                    log_stats("next_states_t", next_states_t)
+                    log_stats("current_q_values", current_q_values)
+                    log_stats("target_q_values", target_q_values)
                     return None
 
                 loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
@@ -415,6 +435,26 @@ class D3QN_PER_Agent:
 
             if not torch.isfinite(current_q_values).all() or not torch.isfinite(target_q_values).all():
                 logger.warning("Non-finite Q-values detected in FP32 branch, skipping learn step")
+                # Расширенное логирование для отладки
+                def log_stats(name, tensor):
+                    if not torch.is_tensor(tensor): return
+                    finite_tensor = tensor[torch.isfinite(tensor)]
+                    if finite_tensor.numel() == 0:
+                        logger.debug(f"  {name}: all values are non-finite")
+                        return
+                    logger.debug(
+                        f"  {name}: "
+                        f"non-finite={torch.isinf(tensor).sum().item()+torch.isnan(tensor).sum().item()}, "
+                        f"min={finite_tensor.min().item():.4f}, "
+                        f"max={finite_tensor.max().item():.4f}, "
+                        f"mean={finite_tensor.mean().item():.4f}"
+                    )
+
+                log_stats("states_t", states_t)
+                log_stats("rewards_t", rewards_t)
+                log_stats("next_states_t", next_states_t)
+                log_stats("current_q_values", current_q_values)
+                log_stats("target_q_values", target_q_values)
                 return None
 
             loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")

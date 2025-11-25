@@ -121,7 +121,7 @@ cfg.backtest.delta_p_hysteresis = 0.0015
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
-cfg.perf.use_amp = True  # Mixed precision
+cfg.perf.use_amp = False  # Mixed precision
 cfg.perf.amp_dtype = "float16"
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None  # No torch.compile (old CUDA)
@@ -129,7 +129,7 @@ cfg.perf.dataloader_num_workers = 0  # Windows safe
 cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = False
 cfg.perf.prefetch_factor = 2
-cfg.perf.cudnn_benchmark = True
+cfg.perf.cudnn_benchmark = False
 
 # MC-Dropout (ensemble; off by default)
 mc_dropout_cfg = type("obj", (), {})()
@@ -155,7 +155,7 @@ cfg.paths.config_name = "alpha_seed_404"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
-cfg.deterministic = False
+cfg.deterministic = True
 
 # Bundle (for saving artifacts)
 bundle_cfg = type("obj", (), {})()

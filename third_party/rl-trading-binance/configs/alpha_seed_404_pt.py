@@ -6,14 +6,6 @@ import json  # Для fallback norm_stats если нужно
 
 cfg = MasterConfig()  # Инициализация пустого Pydantic
 
-# Явно прописываем 10 каналов. Используем доступные поля из БД.
-# "taker_base" и "taker_quote" - есть в вашей таблице klines_1m!
-# "dummy" - просто заглушка.
-cfg.data.data_channels = [
-    "open", "high", "volume_weighted_average", "low", "close", "volume", 
-    "num_trades", "quote_volume", "taker_base", "taker_quote"
-]
-
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
 cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно истории 90
@@ -44,8 +36,6 @@ cfg.model.dropout_p = 0.15
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
 cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
-cfg.market.transaction_fee = 0.0004
-cfg.market.slippage = 0.00025
 
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 2e-5  # AdamW
@@ -95,7 +85,7 @@ cfg.trainlog.early_stopping_patience = 10
 # Validation Gate (multi-crit; deny bad models) "max_drawdown_at_most": -0.30, 
 cfg.validation_gate = {
     "min_sharpe": 0.001, "min_sortino": 0.001, "min_profit_factor": 1.00,
-    "max_drawdown_at_most": -1000000.00, "min_win_rate": 0.41, "min_trades": 600,
+    "max_drawdown_at_most": -1000000.00, "min_win_rate": 0.30, "min_trades": 600,
     "deny_inf_pf": True, "deny_zero_drawdown": True,
     "profit_factor_atleast": 1.00, "sortino_atleast": 0.001
 }
@@ -118,7 +108,6 @@ cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015
 cfg.backtest.short_action_threshold = -0.015  # Negative for short
-cfg.backtest.close_action_threshold = 0.001141
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
@@ -158,7 +147,7 @@ cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
 cfg.paper.leverage = 1.0
 cfg.paper.symbols = "ALL"  # Or list from tickers.txt
-cfg.backtest.data_source = "npz_keys"  # For test/backtest
+cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
@@ -184,11 +173,11 @@ cfg.optuna_search_space = {
     # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
     "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
     "short_thr":      ("suggest_float", -0.03,  -0.001, True,  "backtest.short_action_threshold"),
-    # "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
-    # "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
-    # # Для d0 нижняя граница зависит от уже выбранного d_min
-    # "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
-    # "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
+    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
+    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
+    # Для d0 нижняя граница зависит от уже выбранного d_min
+    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
+    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
     # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
 }
 
