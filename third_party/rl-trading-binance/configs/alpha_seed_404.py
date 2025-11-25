@@ -44,7 +44,7 @@ cfg.rl.n_step = 10   # Steps per rollout == длина торговой сесс
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
 cfg.rl.target_update_freq = 5000   # Soft target? (DQN-style if needed)
-cfg.rl.max_gradient_norm = 	3.0  # Clip grads
+cfg.rl.max_gradient_norm = 3.0  # Clip grads
 
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 500000
@@ -121,7 +121,7 @@ cfg.backtest.delta_p_hysteresis = 0.0015
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
-cfg.perf.use_amp = False  # Mixed precision
+cfg.perf.use_amp = True  # Mixed precision
 cfg.perf.amp_dtype = "float16"
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None  # No torch.compile (old CUDA)
@@ -155,7 +155,7 @@ cfg.paths.config_name = "alpha_seed_404"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
-cfg.deterministic = True
+cfg.deterministic = False
 
 # Bundle (for saving artifacts)
 bundle_cfg = type("obj", (), {})()
@@ -189,8 +189,8 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_195550\best.pth"
-# cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251118_time_195550\norm_stats.json"
+# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
+# cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
 
 # Workflow notes (run from root):
 # python train.py --config alpha.py --total_timesteps 10000  # Test
