@@ -1,10 +1,10 @@
 # configs/alpha.py — Все параметры RL-тренировки в одном месте
 import torch
-from config import MasterConfig  # Только для BaseModel (пустая shell)
+from config import cfg  # noqa: F401
 from pathlib import Path
 import json  # Для fallback norm_stats если нужно
 
-cfg = MasterConfig()  # Инициализация пустого Pydantic
+
 
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
@@ -15,6 +15,7 @@ cfg.seq.agent_session_len = 30  # Trading session length (60 шагов)
 cfg.seq.action_history_len = 2  # Recent actions feat
 cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
 cfg.seq.post_signal_len = 60
+cfg.seq.state_shape = (10, 90, 1)
 
 # Явно фиксируем длину входного окна истории для env/model
 cfg.seq.input_history_len = 90
