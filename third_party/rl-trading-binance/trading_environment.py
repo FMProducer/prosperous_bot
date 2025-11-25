@@ -403,7 +403,7 @@ class TradingEnvironment(gym.Env):
             "balance": self.balance,
             "position": self.position,
         }
-    
+
         if self.position != 0:
             exec_delay = getattr(self, "exec_delay_bars", 0)
             price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
@@ -411,16 +411,10 @@ class TradingEnvironment(gym.Env):
             # MTM по зафиксированному объёму, а не по "текущий баланс / entry_price"
             mark2market = (current_price - self.entry_price) * self.position * self.position_volume
             info["portfolio_value"] = self.balance + mark2market
-            
-            # --- DEBUG LOGGING ---
-            if self.step_idx % 2 == 0: # Log every 2 steps to see dynamics
-                logger.info(f"[EquityDebug] Step: {self.step_idx}, Balance: {self.balance:.2f}, M2M_PnL: {mark2market:.2f}, PortfolioValue: {info['portfolio_value']:.2f}")
-                logger.info(f"[EquityDebug] ... CurrentPrice: {current_price:.2f}, EntryPrice: {self.entry_price:.2f}, Position: {self.position}, Volume: {self.position_volume:.4f}")
-            # --- END DEBUG LOGGING ---
-                
         else:
             info["portfolio_value"] = self.balance
         return info
+
     def _calculate_effective_trail_distance(
         self, p: float, d0: float, d_min: float, fee_buf: float
     ) -> float:

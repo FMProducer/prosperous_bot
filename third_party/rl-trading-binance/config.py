@@ -113,11 +113,11 @@ class SequenceConfig(BaseModel):
     def flat_state_size(self) -> int:
         return self.input_history_len * self.num_features + 4
 
-    @model_validator(mode="before")
-    def validate_full_seq_len(cls, values: ValidationInfo):
+    @field_validator("full_seq_len")
+    def validate_full_seq_len(cls, v, values):
         if "pre_signal_len" in values and "post_signal_len" in values:
-            values["full_seq_len"] = values["pre_signal_len"] + values["post_signal_len"]
-        return values
+            assert v == values["pre_signal_len"] + values["post_signal_len"], "FULL_SEQ_LEN mismatch"
+        return v
 
 
 class MarketConfig(BaseModel):
@@ -202,17 +202,17 @@ class TrainLogConfig(BaseModel):
     iterations: int = 10_000
     early_stopping_patience: int = 20
 
-    @model_validator(mode="after")
-    def check_val_metric(self) -> "TrainLogConfig":
-        allowed = set(self.available_metrics)
-        metrics = self.val_selection_metrics
-        if isinstance(metrics, str):
-            if metrics not in allowed:
-                raise ValueError(f"val_selection_metrics='{metrics}' is not one of the available metrics: {allowed}")
-        elif isinstance(metrics, list):
-            if not all(m in allowed for m in metrics):
-                raise ValueError(f"Some of val_selection_metrics are not in available_metrics: {metrics}")
-        return self
+    @field_validator("val_selection_metrics")
+    def check_val_metric(cls, v, values):
+        allowed = set(values.get("available_metrics", []))
+        if isinstance(v, str):
+            assert v in allowed, "Selected metric not in AVAILABLE_METRICS"
+        elif isinstance(v, (list, tuple)):
+            assert all(isinstance(x, str) and x in allowed for x in v), \
+                "All selection metrics must be in AVAILABLE_METRICS"
+        else:
+            raise TypeError("val_selection_metrics must be str or list[str]")
+        return v
 
 
 class DebugConfig(BaseModel):
