@@ -9,8 +9,6 @@ from gymnasium import spaces
 
 from utils import apply_normalization
 
-from utils import apply_normalization
-
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +20,7 @@ class TradingEnvironment(gym.Env):
         self,
         sequences: List[np.ndarray],
         stats: Dict[str, Dict[str, float]],
+        keys: List[str],
         render_mode: Optional[str],
         full_seq_len: int,
         num_features: int,
@@ -55,9 +54,14 @@ class TradingEnvironment(gym.Env):
     ) -> None:
         if not sequences:
             raise ValueError("`sequences` must be a non-empty list of arrays")
+        if not keys:
+            raise ValueError("`keys` must be a non-empty list of strings")
+        if len(sequences) != len(keys):
+            raise ValueError("Length of `sequences` and `keys` must be the same")
 
         self.sequences = sequences
         self.stats = stats
+        self.keys = keys
         self.render_mode = render_mode
         self.initial_balance = initial_balance
         self.pre_signal_len = pre_signal_len
@@ -90,7 +94,7 @@ class TradingEnvironment(gym.Env):
         # Validate sequence shape
         # Support both (L, C) and (C, L, 1) formats
         expected_shape = (full_seq_len, num_features)
-        if self.sequences[0].shape != expected_shape:
+        if self.sequences and self.sequences[0].shape != expected_shape:
             # Try to reshape (C, L, 1) to (L, C)
             if len(self.sequences[0].shape) == 3 and self.sequences[0].shape[2] == 1:
                 self.sequences = [seq.squeeze(-1).T for seq in self.sequences]
@@ -119,6 +123,7 @@ class TradingEnvironment(gym.Env):
 
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
+        self.current_asset_name: Optional[str] = None
         self.step_idx: int = 0
         self.balance: float = self.initial_balance
         self.position: int = 0
@@ -147,12 +152,33 @@ class TradingEnvironment(gym.Env):
         if self.action_history_len > 0:
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
 
+    def _get_asset_stats(self) -> Dict[str, float]:
+        """Helper to get stats for the current asset, with a fallback."""
+        if not self.stats:
+            raise ValueError("Normalization stats are not provided to the environment.")
+        
+        asset_stats = self.stats.get(self.current_asset_name)
+        if asset_stats is None:
+            fallback_asset = next(iter(self.stats))
+            logging.warning(
+                f"Stats for asset '{self.current_asset_name}' not found. "
+                f"Falling back to stats of '{fallback_asset}'."
+            )
+            asset_stats = self.stats[fallback_asset]
+        return asset_stats
+
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         super().reset(seed=seed)
         self._init_episode_vars()
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
+        try:
+            self.current_asset_name = self.keys[idx].split('_')[0]
+        except IndexError:
+            logging.error(f"Could not parse asset name from key: {self.keys[idx]}")
+            self.current_asset_name = "UNKNOWN"
+
         obs = self._get_observation()
         info = self._get_info()
 
@@ -176,10 +202,10 @@ class TradingEnvironment(gym.Env):
             price_idx = len(self.current_seq) - 1
         
         # --- Denormalization Setup ---
+        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_idx = self.close_idx
-        close_mean = self.stats['mean'][close_idx]
-        close_std = self.stats['std'][close_idx]
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
         pnl_change = 0.0
@@ -443,10 +469,10 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
         
         # --- Denormalization Setup ---
+        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_idx = self.close_idx
-        close_mean = self.stats['mean'][close_idx]
-        close_std = self.stats['std'][close_idx]
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
 
         position_closed = False
@@ -590,10 +616,14 @@ class TradingEnvironment(gym.Env):
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
+        
+        single_trade_realized_pnl = 0.0
         if position_closed:
+            opening_fee = self.real_entry_price * volume * self.transaction_fee
+            single_trade_realized_pnl = trade_pnl - fee - opening_fee
             logging.info(
                 f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {real_exec_price:.5f} at "
-                f"{current_dt.strftime('%Y-%m-%d %H:%M')} PnL = {self.realized_pnl:+.2f}"
+                f"{current_dt.strftime('%Y-%m-%d %H:%M')} PnL = {single_trade_realized_pnl:+.2f}"
             )
 
         if self.action_history_len > 0:
@@ -606,15 +636,15 @@ class TradingEnvironment(gym.Env):
         reward = 0.0
 
         if position_closed:
-            opening_fee = self.real_entry_price * volume * self.transaction_fee
+            # Note: single_trade_realized_pnl and opening_fee were calculated above
             info = {
                 "position_closed": position_closed,
-                "trade_realized_pnl": (trade_pnl - fee - opening_fee),
+                "trade_realized_pnl": single_trade_realized_pnl,
                 "trade_commission": fee + opening_fee,
                 "total_commission": self.total_commission,
                 "trade_amount": self.real_entry_price * volume,
                 "trade_price_delta": trade_price_delta,
-                "correct_prediction": (trade_pnl - fee - opening_fee) > 0.0,
+                "correct_prediction": single_trade_realized_pnl > 0.0,
                 "direction": self.direction,
                 "trade_dt": self.trade_dt,
                 "exit_reason": exit_reason if self.use_risk_management else "",

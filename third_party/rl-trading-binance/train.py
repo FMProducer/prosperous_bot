@@ -3,8 +3,8 @@ import logging
 import os
 import sys
 import time
-from collections import deque
-from typing import Any, Dict
+from collections import deque, defaultdict
+from typing import Any, Dict, List, Optional
 import hashlib, tarfile
 import datetime as dt
 from functools import partial
@@ -37,93 +37,136 @@ from utils import (
     setup_logging,
 ) # noqa: F401
 
-def compute_norm_stats(npz_path: str, num_samples: int = 1000, seed: int = 25) -> dict:
+def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: int = 25) -> dict:
     """
-    Вычисляет mean/std per channel из subsample train_data (для скорости).
-    num_samples=1000 ~5 сек; full=24229 ~1 мин.
-    Returns: {'mean': list[10], 'std': list[10]}
+    Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
+    Берет случайную выборку `num_samples_per_asset` для каждого тикера для ускорения.
+    Сохраняет результат в `norm_stats.json`.
+    Returns: {'TICKER1': {'mean': [], 'std': []}, 'TICKER2': ...}
     """
     np.random.seed(seed)
-    d = np.load(npz_path, allow_pickle=True)
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    if len(data_keys) < num_samples:
-        num_samples = len(data_keys)
-    indices = np.random.choice(len(data_keys), num_samples, replace=False)
-    sample_keys = [data_keys[i] for i in indices]
-    
-    all_data = np.stack([d[key].astype(np.float32) for key in tqdm(sample_keys, desc="Computing stats")], axis=0)  # (N,150,10)
-    means = np.mean(all_data, axis=(0,1))  # Mean per channel (10,)
-    stds = np.std(all_data, axis=(0,1)) + 1e-8  # Std per channel, avoid 0
-    
-    d.close()
-    stats = {'mean': means.tolist(), 'std': stds.tolist()}
-    # Save для reuse (optional, но reproducibility)
-    Path('norm_stats.json').write_text(json.dumps(stats, indent=2))
-    logging.info(f"Computed stats saved to norm_stats.json: mean[0]={means[0]:.6f}, std[0]={stds[0]:.6f} ...")
-    return stats
+    try:
+        d = np.load(npz_path, allow_pickle=True)
+    except FileNotFoundError:
+        logging.error(f"Файл данных не найден: {npz_path}")
+        return {}
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) -> tuple[list, list]:
+    data_keys = [k for k in d.files if not k.startswith('_')]
+    
+    # Группировка ключей по тикерам
+    asset_keys = defaultdict(list)
+    for key in data_keys:
+        try:
+            asset_name = key.split('_')[0]
+            asset_keys[asset_name].append(key)
+        except IndexError:
+            logging.warning(f"Не удалось извлечь имя актива из ключа: {key}")
+            continue
+            
+    all_stats = {}
+    logging.info(f"Найдено {len(asset_keys)} активов. Расчет статистик...")
+
+    for asset, keys in tqdm(asset_keys.items(), desc="Computing stats per asset"):
+        if len(keys) > num_samples_per_asset:
+            sample_keys = np.random.choice(keys, num_samples_per_asset, replace=False)
+        else:
+            sample_keys = keys
+        
+        try:
+            # Загружаем данные только для выбранных ключей этого ассета
+            asset_data = np.stack([d[key].astype(np.float32) for key in sample_keys], axis=0)
+            
+            if asset_data.ndim == 3 and asset_data.shape[0] > 0: # (N, L, C)
+                means = np.mean(asset_data, axis=(0, 1))
+                stds = np.std(asset_data, axis=(0, 1)) + 1e-8
+                all_stats[asset] = {'mean': means.tolist(), 'std': stds.tolist()}
+            else:
+                logging.warning(f"Неверная форма или пустые данные для ассета {asset}: {asset_data.shape}")
+        except Exception as e:
+            logging.error(f"Ошибка при обработке ассета {asset}: {e}")
+
+
+    d.close()
+    
+    # Сохраняем в файл
+    Path('norm_stats.json').write_text(json.dumps(all_stats, indent=2))
+    logging.info(f"Сохранены статистики для {len(all_stats)} активов в norm_stats.json")
+    return all_stats
+
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
     """
-    Загружает NPZ, compute/applies z-norm (if stats=None), reshape (10,150,1).
-    Если norm_stats=None: computes from train_path (assume npz_path is train).
-    Returns: list of np.arrays (samples), optional sampling.
+    Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
+    Требует предоставления `norm_stats` с данными для каждого актива.
+    Фильтрует активы по списку `allowed_assets`, если он предоставлен.
+    Returns: list of np.arrays (samples), list of keys.
     """
     if not npz_path or not os.path.exists(npz_path):
         logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
         return [], []
 
-    if norm_stats is None and split_name == 'Train':
-        logging.info("No norm_stats provided: computing from train data...")
-        norm_stats = compute_norm_stats(npz_path)
-    elif norm_stats is None:
-        raise ValueError(f"norm_stats required for {split_name} (not Train)")
-    
+    if not norm_stats:
+        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
+
     d = np.load(npz_path, allow_pickle=True)
     data_keys = [k for k in d.files if not k.startswith('_')]
     sequences = []
-    logging.info(f"Loading {len(data_keys)} sequences from {split_name}...")
-    
-    # Keys_map (optional для env)
-    keys_map_raw = d.get('_keys_map_')
-    keys_map = {}
-    if keys_map_raw is not None and isinstance(keys_map_raw, np.ndarray) and keys_map_raw.ndim == 0:
-        keys_map = keys_map_raw.item()
-    
-    means = np.array(norm_stats['mean'])  # (10,)
-    stds = np.array(norm_stats['std'])  # (10,)
+    valid_keys = []
+    logging.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
     
     for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
-        seq = d[key].astype(np.float32)  # (150,10)
-        if seq.shape[1] != 10:
-            raise ValueError(f"Expected 10 channels, got {seq.shape[1]}")
-        # Z-norm: broadcast per channel
+        try:
+            asset_name = key.split('_')[0]
+        except IndexError:
+            logging.warning(f"Пропуск ключа с некорректным форматом: {key}")
+            continue
+        
+        # Фильтрация по списку разрешенных активов
+        if allowed_assets and asset_name not in allowed_assets:
+            continue
+
+        asset_specific_stats = norm_stats.get(asset_name)
+        if asset_specific_stats is None:
+            if not allowed_assets or asset_name in allowed_assets:
+                 logging.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
+            continue
+
+        means = np.array(asset_specific_stats['mean'])
+        stds = np.array(asset_specific_stats['std'])
+        
+        seq = d[key].astype(np.float32)
+        if seq.shape[1] != len(means):
+            logging.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
+            continue
+            
+        # Z-norm по каждому каналу
         seq = (seq - means) / stds
-        # Reshape для CNN: (150,10) → (10,150,1)
-        seq = seq.T  # (10,150)
-        seq = np.expand_dims(seq, -1)  # (10,150,1)
+        # Reshape для CNN: (L, C) -> (C, L, 1)
+        seq = seq.T
+        seq = np.expand_dims(seq, -1)
         sequences.append(seq)
+        valid_keys.append(key)
     
     # Sampling по config (optional, skip если config недоступен)
-    episodes_per_epoch = len(sequences)  # Default: full
+    episodes_per_epoch = len(sequences)
     try:
         from config import cfg
         if hasattr(cfg, 'episodes_per_epoch'):
-            episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')  # cfg.episodes_per_epoch
+            episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')
         else:
             episodes_per_epoch = len(sequences)
         if len(sequences) > episodes_per_epoch:
-            np.random.seed(25)  # Reproducible sampling
+            np.random.seed(25)
             indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
-            sequences = [sequences[i] for i in sorted(indices)]  # Sorted для consistency
-            data_keys = [data_keys[i] for i in sorted(indices)]
+            sequences = [sequences[i] for i in sorted(indices)]
+            valid_keys = [valid_keys[i] for i in sorted(indices)]
             print(f"Sampled to {episodes_per_epoch} episodes")
     except (ImportError, AttributeError):
         print("Config not available: using full sequences")
     
     d.close()
     if sequences:
-        logging.info(f"Prepared {len(sequences)} sequences, shape: {sequences[0].shape}")
-    return sequences, data_keys  # Или (sequences, keys_map) если нужно
+        logging.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
+    return sequences, valid_keys
 
 
 def make_env(env_kwargs: dict):
@@ -377,7 +420,7 @@ def _dump_requirements_lock(dst_path: str) -> None:
 def _dump_torch_env(dst_path: str) -> None:
     lines = []
     try:
-        lines.append(f"python={platform.python_version()}")
+        lines.append(f"python={platform.python_version}()")
         lines.append(f"platform={platform.platform()}")
         lines.append(f"torch={torch.__version__}")
         lines.append(f"cuda={getattr(torch.version, 'cuda', None)}")
@@ -477,8 +520,10 @@ def evaluate_agent(
         pass
     old_eps = getattr(agent, "epsilon", None)
     old_mc  = getattr(agent, "mc_enable", None)
-    if hasattr(agent, "epsilon"): agent.epsilon = 0.0
-    if hasattr(agent, "mc_enable"): agent.mc_enable = False
+    if hasattr(agent, "epsilon"):
+        agent.epsilon = 0.0
+    if hasattr(agent, "mc_enable"):
+        agent.mc_enable = False
 
     # накопители
     total_reward = 0.0
@@ -501,6 +546,7 @@ def evaluate_agent(
         
         # ИСПРАВЛЕНО: Извлекаем дату начала семпла из ключа, а не используем заглушку
         signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
+        ticker_name = "UNKNOWN"
         if keys and i < len(keys):
             try:
                 key_parts = keys[i].split('_')
@@ -510,10 +556,8 @@ def evaluate_agent(
                     start_dt_str = key_parts[1]
                     signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
             except (IndexError, AttributeError, ValueError):
-                ticker_name = "UNKNOWN"
-        else:
-            ticker_name = "VAL"
-
+                logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
+        
         while not done:
             action = agent.select_action(obs, training=False)
             obs, reward, done, _, info = env.backtest_step(
@@ -603,8 +647,10 @@ def evaluate_agent(
         logging.info("[%s] TSL hits: %d (%.2f%%)", split_label, tsl_hits, 100.0*tsl_hits/max(1,total_trades))
 
     # вернуть исходные режимы агента
-    if old_eps is not None: agent.epsilon = old_eps
-    if old_mc  is not None: agent.mc_enable = old_mc
+    if old_eps is not None:
+        agent.epsilon = old_eps
+    if old_mc  is not None:
+        agent.mc_enable = old_mc
 
     # сформировать словарь под выбор метрики в тренере
     L = split_label  # "Validation" | "Test"
@@ -698,25 +744,55 @@ def main(cfg: MasterConfig = None):
     logging.info(f"Full training configuration saved to: {config_save_path}")
 
     # --- Data Loading and Preprocessing ---
-    # This block seems to be a duplicate from the diff and the original file.
-    # The logic is correct, so I will keep one version.
-    logging.info("Loading and preprocessing data from NPZ files...")
-    train_seqs, _ = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=None)
-    # Загружаем валидационные данные, используя статистику из train
+    logging.info("Загрузка и предобработка данных из NPZ файлов...")
+    
     norm_stats_path = 'norm_stats.json'
     norm_stats = None
-    if os.path.exists(norm_stats_path):
-        with open(norm_stats_path, 'r') as f:
-            norm_stats = json.load(f)
+    force_recompute = False
 
-    # --- FIX START: Copy norm_stats to models_dir ---
-    if norm_stats is not None:
+    if os.path.exists(norm_stats_path):
+        logging.info(f"Загрузка существующих статистик из {norm_stats_path}")
+        try:
+            with open(norm_stats_path, 'r') as f:
+                norm_stats = json.load(f)
+            
+            # Проверка структуры файла: он должен быть словарем, и значения должны быть словарями с 'mean' и 'std'
+            if not isinstance(norm_stats, dict) or not norm_stats:
+                logging.warning("Файл norm_stats.json пуст или имеет неверный формат. Будет произведен перерасчет.")
+                force_recompute = True
+            else:
+                first_val = next(iter(norm_stats.values()))
+                if not (isinstance(first_val, dict) and 'mean' in first_val and 'std' in first_val):
+                    logging.warning("Обнаружена устаревшая структура в norm_stats.json. Будет произведен перерасчет.")
+                    force_recompute = True
+        except (json.JSONDecodeError, StopIteration):
+            logging.warning("Ошибка чтения или пустой файл norm_stats.json. Будет произведен перерасчет.")
+            force_recompute = True
+    
+    if force_recompute or norm_stats is None:
+        logging.info(f"Расчет статистик по обучающим данным: {cfg.paths.train_data_path}")
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path)
+
+    # Получаем список разрешенных активов из конфига
+    allowed_assets = getattr(cfg.paper, "symbols", None)
+    if allowed_assets == "ALL":
+        allowed_assets = None  # Используем все активы
+
+    train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=norm_stats, allowed_assets=allowed_assets)
+    
+    if not train_seqs:
+        logging.error("Не удалось загрузить обучающие данные. Проверьте путь к данным и настройку 'cfg.paper.symbols'. Выход.")
+        sys.exit(1)
+
+    # Копируем norm_stats.json в папку с моделью для воспроизводимости
+    if norm_stats:
         norm_stats_save_path = os.path.join(models_dir, "norm_stats.json")
         with open(norm_stats_save_path, "w", encoding="utf-8") as f:
             json.dump(norm_stats, f, indent=2)
-        logging.info(f"Copied norm_stats.json to: {norm_stats_save_path}")
-    # --- FIX END ---
-    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
+        logging.info(f"Скопирован norm_stats.json в: {norm_stats_save_path}")
+
+    # Для валидации используем те же статистики, что были рассчитаны на обучении
+    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, allowed_assets=allowed_assets)
 
     # Set episodes from total_timesteps if not set
     if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
@@ -776,6 +852,7 @@ def main(cfg: MasterConfig = None):
     
     env_kwargs = {
         "sequences": train_seqs,
+        "keys": train_keys,
         "stats": norm_stats,
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
@@ -821,6 +898,8 @@ def main(cfg: MasterConfig = None):
     if val_seqs:
         val_kwargs = dict(env_kwargs)
         val_kwargs["sequences"] = val_seqs
+        val_kwargs["keys"] = val_keys
+        val_kwargs["stats"] = norm_stats
         val_kwargs["backtest_mode"] = True
         val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
         val_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
@@ -1110,7 +1189,7 @@ def main(cfg: MasterConfig = None):
     bundle_enabled = getattr(bundle_cfg, "enable", True)
     if bundle_enabled:
         # 1) metrics.json
-        # NEW: Get human-readable values for the best metric tuple.
+        # NEW: Get human-readable values for the best metric tuple. 
         # This ensures that the final summary log and metrics.json contain the correct, non-inverted values.
         sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
         best_val_metric_human = tuple(best_validation.get(k, None) for k in sel_keys) if best_validation else None
@@ -1194,8 +1273,8 @@ def main(cfg: MasterConfig = None):
             except Exception as e:
                 logging.warning(f"Failed to attach meta to {path}: {e}")
 
-        norm_sha = _sha256(os.path.join(models_dir, "norm_stats.json"))
-        cfg_sha  = _sha256(os.path.join(models_dir, "config_train.json"))
+        norm_sha = _sha256(os.path.join(models_dir, "norm_stats.json")),
+        cfg_sha  = _sha256(os.path.join(models_dir, "config_train.json")),
         ds_list  = [x["sha256"] for x in data_manifest.get("datasets", [])]
         meta = {
             "dataset_sha256_list": ds_list,
