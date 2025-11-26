@@ -75,21 +75,15 @@ class VecConfig(BaseModel):
     scale_epsilon_by_envs: bool = False
 
 
+EXPECTED_CHANNELS = [
+    'open', 'high', 'low', 'close', 'volume', 'quote_volume',
+    'num_trades', 'taker_base', 'taker_quote', 'vwap'
+]
+
 class DataConfig(BaseModel):
     numchannels: int = 10
-    expectedchannels: List[str] = [
-        'open',         # 0
-        'high',         # 1
-        'low',          # 2
-        'close',        # 3
-        'volume',       # 4
-        'quote_volume', # 5
-        'num_trades',   # 6
-        'taker_base',   # 7
-        'taker_quote',  # 8
-        'vwap'          # 9
-    ]
-    datachannels: List[str] = Field(default_factory=lambda: DataConfig.expectedchannels.copy())
+    expectedchannels: List[str] = EXPECTED_CHANNELS
+    datachannels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
     pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
     volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
     otherchannels: List[str] = ['num_trades']
