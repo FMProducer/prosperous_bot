@@ -174,42 +174,65 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
             price_idx = len(self.current_seq) - 1
-        price = self.current_seq[price_idx, self.close_idx]
+        
+        # --- Denormalization Setup ---
+        norm_price = self.current_seq[price_idx, self.close_idx]
+        close_idx = self.close_idx
+        close_mean = self.stats['mean'][close_idx]
+        close_std = self.stats['std'][close_idx]
+        real_price = norm_price * close_std + close_mean
+        
         pnl_change = 0.0
 
-        if action == 1 and self.position == 0:
-            exec_price = price * (1 + self.slippage)
+        # --- Position Opening ---
+        if action == 1 and self.position == 0: # OPEN LONG
+            real_exec_price = real_price * (1 + self.slippage)
+            norm_exec_price = norm_price * (1 + self.slippage)
+
             self.position = 1
-            self.entry_price = exec_price
-            if self.order_size_usdt > 0:
-                trade_amount = self.order_size_usdt
-            else:
-                trade_amount = self.balance * self.position_fraction
-            volume = trade_amount / exec_price
-            self.position_volume = volume
-            pnl_change -= exec_price * volume * self.transaction_fee
+            self.entry_price = norm_exec_price      # Store NORMALIZED price
+            self.real_entry_price = real_exec_price # Store REAL price
 
-        elif action == 2 and self.position == 0:
-            exec_price = price * (1 - self.slippage)
+            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
+            else: trade_amount = self.balance * self.position_fraction
+            
+            volume = trade_amount / real_exec_price
+            self.position_volume = volume
+            
+            fee = real_exec_price * volume * self.transaction_fee
+            pnl_change -= fee
+
+        elif action == 2 and self.position == 0: # OPEN SHORT
+            real_exec_price = real_price * (1 - self.slippage)
+            norm_exec_price = norm_price * (1 - self.slippage)
+
             self.position = -1
-            self.entry_price = exec_price
-            if self.order_size_usdt > 0:
-                trade_amount = self.order_size_usdt
-            else:
-                trade_amount = self.balance * self.position_fraction
-            volume = trade_amount / exec_price
-            self.position_volume = volume
-            pnl_change -= exec_price * volume * self.transaction_fee
+            self.entry_price = norm_exec_price      # Store NORMALIZED price
+            self.real_entry_price = real_exec_price # Store REAL price
 
+            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
+            else: trade_amount = self.balance * self.position_fraction
+            
+            volume = trade_amount / real_exec_price
+            self.position_volume = volume
+            
+            fee = real_exec_price * volume * self.transaction_fee
+            pnl_change -= fee
+
+        # --- Position Closing ---
         elif action == 3 and self.position != 0:
             volume = self.position_volume
-            if self.position == 1:
-                exec_price = price * (1 - self.slippage)
-                trade_pnl = (exec_price - self.entry_price) * volume
-            else:
-                exec_price = price * (1 + self.slippage)
-                trade_pnl = (self.entry_price - exec_price) * volume
-            pnl_change += trade_pnl - exec_price * volume * self.transaction_fee
+            
+            if self.position == 1: # CLOSE LONG
+                real_exec_price = real_price * (1 - self.slippage)
+                trade_pnl = (real_exec_price - self.real_entry_price) * volume
+            else: # CLOSE SHORT
+                real_exec_price = real_price * (1 + self.slippage)
+                trade_pnl = (self.real_entry_price - real_exec_price) * volume
+            
+            fee = real_exec_price * volume * self.transaction_fee
+            pnl_change += trade_pnl - fee
+            
             self.closed_trades += 1
             if trade_pnl > 0:
                 self.profitable_trades += 1
@@ -233,96 +256,64 @@ class TradingEnvironment(gym.Env):
         terminated = self.step_idx >= self.agent_session_len
         reward = (pnl_change / self.initial_balance) - inaction_penalty
         
-        # --- Bankruptcy Check ---
-        # Calculate current portfolio value (balance + unrealized pnl)
+        # --- Bankruptcy & Drawdown Calculation (using real financial values) ---
         portfolio_value = self.balance
         if self.position != 0:
-            # Use the price for the *next* step's observation as the current mark-to-market price
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-            current_price = self.current_seq[m2m_price_idx, self.close_idx]
-            mark2market = (current_price - self.entry_price) * self.position * self.position_volume
+            norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
+            real_m2m_price = norm_m2m_price * close_std + close_mean
+            mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
             portfolio_value += mark2market
      
-        info = self._get_info()  # Get standard info dictionary
+        info = self._get_info()
      
-        # Обновить пик эквити и рассчитать текущую просадку
         if portfolio_value > self.equity_peak:
             self.equity_peak = portfolio_value
      
-        current_drawdown = (portfolio_value - self.equity_peak) / self.equity_peak
+        current_drawdown = (portfolio_value - self.equity_peak) / self.equity_peak if self.equity_peak != 0 else 0.0
         if current_drawdown < self.current_max_drawdown:
             self.current_max_drawdown = current_drawdown
      
-        # Применить штраф за превышение порога просадки
         drawdown_penalty = 0.0
-        if self.current_max_drawdown < self.max_drawdown_threshold:
+        if self.max_drawdown_threshold is not None and self.current_max_drawdown < self.max_drawdown_threshold:
             if self.max_drawdown_penalty_type == 'proportional':
-                # Пропорциональный штраф: чем больше просадка превышает порог, тем больше штраф
                 excess = abs(self.current_max_drawdown - self.max_drawdown_threshold)
                 drawdown_penalty = excess * self.max_drawdown_penalty
-            else:  # constant
-                # Константный штраф
+            else:
                 drawdown_penalty = self.max_drawdown_penalty
      
-        # ИСПРАВЛЕНО: Жёсткое банкротство — завершить эпизод при equity <= threshold
         if portfolio_value <= self.bankruptcy_threshold:
-            # Принудительное закрытие позиции (если открыта)
             if self.position != 0:
-                m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-                current_price = self.current_seq[m2m_price_idx, self.close_idx]
-                volume = self.position_volume
+                # Force close position at current real price for accurate reward
+                real_m2m_price = (self.current_seq[price_idx, self.close_idx] * close_std) + close_mean
+                if self.position == 1:
+                    real_exec_price = real_m2m_price * (1 - self.slippage)
+                    trade_pnl = (real_exec_price - self.real_entry_price) * self.position_volume
+                else:
+                    real_exec_price = real_m2m_price * (1 + self.slippage)
+                    trade_pnl = (self.real_entry_price - real_exec_price) * self.position_volume
                 
-                if self.position == 1:  # LONG
-                    exec_price = current_price * (1 - self.slippage)
-                    trade_pnl = (exec_price - self.entry_price) * volume
-                else:  # SHORT (self.position == -1)
-                    exec_price = current_price * (1 + self.slippage)
-                    trade_pnl = (self.entry_price - exec_price) * volume
-                
-                pnl_change = trade_pnl - exec_price * volume * self.transaction_fee
-                
-                # Обновляем счётчики
-                self.closed_trades += 1
-                if trade_pnl > 0:
-                    self.profitable_trades += 1
-                
-                # Закрываем позицию
-                self.position = 0
-                self.position_volume = 0.0
-                
-                # Обновляем reward (не баланс, так как он уже <=0)
+                fee = real_exec_price * self.position_volume * self.transaction_fee
+                pnl_change = trade_pnl - fee
                 reward += pnl_change / self.initial_balance
             
-            # Штраф за банкротство
             reward -= self.bankruptcy_penalty
-            
-            # Завершение эпизода
             terminated = True
-            truncated = False
             info["bankruptcy"] = True
             info["bankruptcy_equity"] = portfolio_value
             
-            # ИСПРАВЛЕНО: Используем правильный метод для observation
-            obs = self._get_observation()  # Правильное имя метода (с двумя подчёркиваниями)
-            return obs, reward, terminated, truncated, info
-     
         if terminated:
-            # Capture the final observation before it's replaced by zeros
-            final_obs = self._get_observation()
-            info["terminal_observation"] = final_obs
+            info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
-            info.update(
-                {
-                    "episode_realized_pnl": self.realized_pnl,
-                    "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
-                    "episode_closed_trades": self.closed_trades,
-                    "episode_max_drawdown": self.current_max_drawdown,
-                }
-            )
+            info.update({
+                "episode_realized_pnl": self.realized_pnl,
+                "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
+                "episode_closed_trades": self.closed_trades,
+                "episode_max_drawdown": self.current_max_drawdown,
+            })
         else:
             obs = self._get_observation()
      
-        # Применить штраф за просадку к награде
         reward -= drawdown_penalty
      
         if self.render_mode == "human":
