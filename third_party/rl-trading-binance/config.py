@@ -76,14 +76,23 @@ class VecConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
-    num_channels: int = 10
-    expected_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close", "volume", "num_trades"]
-    data_channels: List[str] = expected_channels.copy()
-    price_channels: List[str] = ["open", "high", "volume_weighted_average", "low", "close"]
-    volume_channels: List[str] = ["volume", "num_trades"]
-    other_channels: List[str] = []
-    plot_examples: int = 1
-    plot_channel_idx: int = 4
+    numchannels: int = 10
+    expectedchannels: List[str] = [
+        'open',         # 0
+        'high',         # 1
+        'low',          # 2
+        'close',        # 3
+        'volume',       # 4
+        'quote_volume', # 5
+        'num_trades',   # 6
+        'taker_base',   # 7
+        'taker_quote',  # 8
+        'vwap'          # 9
+    ]
+    datachannels: List[str] = Field(default_factory=lambda: DataConfig.expectedchannels.copy())
+    pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
+    volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
+    otherchannels: List[str] = ['num_trades']
 
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
