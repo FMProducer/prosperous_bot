@@ -696,7 +696,7 @@ def main(cfg: MasterConfig = None):
     # This block seems to be a duplicate from the diff and the original file.
     # The logic is correct, so I will keep one version.
     logging.info("Loading and preprocessing data from NPZ files...")
-    train_seqs = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=None)
+    train_seqs, _ = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=None)
     # Загружаем валидационные данные, используя статистику из train
     norm_stats_path = 'norm_stats.json'
     norm_stats = None
