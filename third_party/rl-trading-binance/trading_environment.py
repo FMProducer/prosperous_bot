@@ -123,6 +123,7 @@ class TradingEnvironment(gym.Env):
         self.balance: float = self.initial_balance
         self.position: int = 0
         self.entry_price: float = 0.0
+        self.real_entry_price: float = 0.0 # Stores real entry price for PnL calculation
         # Фиксируем размер позиции на входе и используем до закрытия
         self.position_volume: float = 0.0
         self.realized_pnl: float = 0.0
@@ -449,14 +450,20 @@ class TradingEnvironment(gym.Env):
 
         exec_delay = getattr(self, "exec_delay_bars", 0)
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
-        price = self.current_seq[price_idx, self.close_idx]
+        
+        # --- Denormalization Setup ---
+        norm_price = self.current_seq[price_idx, self.close_idx]
+        close_idx = self.close_idx
+        close_mean = self.stats['mean'][close_idx]
+        close_std = self.stats['std'][close_idx]
+        real_price = norm_price * close_std + close_mean
+
         position_closed = False
         pnl_change = 0.0
-        exec_price = 0.0
-        trade_price_delta = 0.0
         trade_pnl = None
         exit_reason = ""
 
+        # --- Risk Management (uses normalized prices) ---
         if self.use_risk_management and self.position != 0:
             d0 = trailing_stop
             d_min = trailing_stop_min
@@ -465,150 +472,136 @@ class TradingEnvironment(gym.Env):
             tsl_price = self.tsl_price
 
             if self.position == 1:  # LONG
-                self.trailing_max_price = max(getattr(self, "trailing_max_price", price), price)
+                self.trailing_max_price = max(getattr(self, "trailing_max_price", norm_price), norm_price)
                 base_tsl = self.trailing_max_price * (1 - d0)
                 tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
                     p = max(0.0, self.trailing_max_price / self.entry_price - 1.0)
-                    # Гистерезис обновления трала
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
-                        if delta_p_hysteresis is not None:
-                            self.p_at_last_tsl_update = p
-                        # До покрытия комиссий (p <= fee_buf) держим ровно d0 → эквивалент статическому SL
-                        if p <= fee_buf:
-                            d_eff = d0
-                        else:
-                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
+                        if p <= fee_buf: d_eff = d0
+                        else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
-                trailing_trigger = price <= tsl_price
-
+                trailing_trigger = norm_price <= tsl_price
             else:  # SHORT
-                self.trailing_min_price = min(getattr(self, "trailing_min_price", price), price)
+                self.trailing_min_price = min(getattr(self, "trailing_min_price", norm_price), norm_price)
                 base_tsl = self.trailing_min_price * (1 + d0)
                 tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
                     p = max(0.0, 1.0 - self.trailing_min_price / self.entry_price)
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
-                        if delta_p_hysteresis is not None:
-                            self.p_at_last_tsl_update = p
-                        if p <= fee_buf:
-                            d_eff = d0
-                        else:
-                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
+                        if p <= fee_buf: d_eff = d0
+                        else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                         tsl_price = min(tsl_price, advanced_tsl_price) if tsl_price is not None else advanced_tsl_price
-                trailing_trigger = price >= tsl_price
+                trailing_trigger = norm_price >= tsl_price
 
             self.tsl_price = tsl_price
-            if self.use_risk_management and trailing_stop is not None:
-                sl_trigger = False
-                tp_trigger = False
-            else:
-                sl_trigger = price <= self.entry_price * (1 - stop_loss) if stop_loss is not None else False
-                tp_trigger = price >= self.entry_price * (1 + take_profit) if take_profit is not None else False
+            sl_trigger = False
+            tp_trigger = False
 
-            if sl_trigger or tp_trigger or trailing_trigger or self.last_step:
+            if trailing_trigger or self.last_step:
                 action = 3
-                # Preliminary exit reason (will be clarified after calculating exec_price/fee)
-                if trailing_trigger:
-                    exit_reason = "TSL"
-                elif sl_trigger:
-                    exit_reason = "SL"
-                elif tp_trigger:
-                    exit_reason = "TP"
-                elif self.last_step:
-                    exit_reason = "FORCED"
+                if trailing_trigger: exit_reason = "TSL"
+                elif self.last_step: exit_reason = "FORCED"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
 
-        if action == 1 and self.position == 0:
-            exec_price = price * (1 + self.slippage)
+        # --- Position Opening ---
+        if action == 1 and self.position == 0: # OPEN LONG
+            real_exec_price = real_price * (1 + self.slippage)
+            norm_exec_price = norm_price * (1 + self.slippage)
+            
             self.position = 1
-            self.entry_price = exec_price
-            if self.order_size_usdt > 0:
-                trade_amount = self.order_size_usdt
-            else:
-                trade_amount = self.balance * self.position_fraction
-            volume = trade_amount / exec_price
+            self.entry_price = norm_exec_price      # Store NORMALIZED price for agent
+            self.real_entry_price = real_exec_price # Store REAL price for PnL
+
+            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
+            else: trade_amount = self.balance * self.position_fraction
+            
+            volume = trade_amount / real_exec_price
             self.position_volume = volume
-            fee = exec_price * volume * self.transaction_fee
+            
+            fee = real_exec_price * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
             self.direction = "LONG"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_max_price = exec_price
+                self.trailing_max_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
-            logging.info(
-                f": (LONG) BUY {volume:.8f} {ticker} for {exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}"
-            )
+            logging.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
-        elif action == 2 and self.position == 0:
-            exec_price = price * (1 - self.slippage)
+        elif action == 2 and self.position == 0: # OPEN SHORT
+            real_exec_price = real_price * (1 - self.slippage)
+            norm_exec_price = norm_price * (1 - self.slippage)
+
             self.position = -1
-            self.entry_price = exec_price
-            if self.order_size_usdt > 0:
-                trade_amount = self.order_size_usdt
-            else:
-                trade_amount = self.balance * self.position_fraction
-            volume = trade_amount / exec_price
+            self.entry_price = norm_exec_price      # Store NORMALIZED price
+            self.real_entry_price = real_exec_price # Store REAL price
+
+            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
+            else: trade_amount = self.balance * self.position_fraction
+            
+            volume = trade_amount / real_exec_price
             self.position_volume = volume
-            fee = exec_price * volume * self.transaction_fee
+            
+            fee = real_exec_price * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
             self.direction = "SHORT"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_min_price = exec_price
+                self.trailing_min_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
-            logging.info(
-                f": (SHORT) SELL {volume:.8f} {ticker} for {exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}"
-            )
+            logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
+        # --- Position Closing ---
         elif action == 3 and self.position != 0:
             position_closed = True
             volume = self.position_volume
             was_long = (self.position == 1)
+            
             if was_long:
-                exec_price = price * (1 - self.slippage)
-                trade_pnl = (exec_price - self.entry_price) * volume
+                real_exec_price = real_price * (1 - self.slippage)
+                trade_pnl = (real_exec_price - self.real_entry_price) * volume
                 close_action = "SELL"
-                trade_price_delta = (exec_price - self.entry_price) / self.entry_price
-            else:
-                exec_price = price * (1 + self.slippage)
-                trade_pnl = (self.entry_price - exec_price) * volume
+                trade_price_delta = (real_exec_price - self.real_entry_price) / self.real_entry_price
+            else: # SHORT
+                real_exec_price = real_price * (1 + self.slippage)
+                trade_pnl = (self.real_entry_price - real_exec_price) * volume
                 close_action = "BUY"
-                trade_price_delta = (self.entry_price - exec_price) / self.entry_price
+                trade_price_delta = (self.real_entry_price - real_exec_price) / self.real_entry_price
 
-            fee = exec_price * volume * self.transaction_fee
+            fee = real_exec_price * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
             self.total_commission += fee
 
             self.position = 0
             self.position_volume = 0.0
 
-            # --- Clarify the exit reason for RM mode (as in paper_trader_q.py)
             if self.use_risk_management:
                 brk = (
-                    self.entry_price * (1 + self.transaction_fee) / (1 - self.transaction_fee)
+                    self.real_entry_price * (1 + self.transaction_fee) / (1 - self.transaction_fee)
                     if was_long else
-                    self.entry_price * (1 - self.transaction_fee) / (1 + self.transaction_fee)
+                    self.real_entry_price * (1 - self.transaction_fee) / (1 + self.transaction_fee)
                 )
                 if exit_reason == "TSL":
-                    exit_reason = "TSL" if ((exec_price > brk) if was_long else (exec_price < brk)) else "TSL SL"
+                    exit_reason = "TSL" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "TSL SL"
                 elif exit_reason == "FORCED":
-                    exit_reason = "TSL Time" if ((exec_price > brk) if was_long else (exec_price < brk)) else "Time SL"
+                    exit_reason = "TSL Time" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "Time SL"
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
         if position_closed:
             logging.info(
-                f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {exec_price:.5f} at "
+                f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {real_exec_price:.5f} at "
                 f"{current_dt.strftime('%Y-%m-%d %H:%M')} PnL = {self.realized_pnl:+.2f}"
             )
 
@@ -622,25 +615,20 @@ class TradingEnvironment(gym.Env):
         reward = 0.0
 
         if position_closed:
-            # Передаём причину выхода и признак TSL-срабатывания вверх по стеку для расширенной валидации
-            _exit_reason = exit_reason if self.use_risk_management else (exit_reason or "")
-            opening_fee = self.entry_price * volume * self.transaction_fee
+            opening_fee = self.real_entry_price * volume * self.transaction_fee
             info = {
                 "position_closed": position_closed,
-                # ВАЖНО: валидация/бэктест ожидают PnL ИМЕННО ЭТОЙ СДЕЛКИ (net), а не кумулятив эпизода
                 "trade_realized_pnl": (trade_pnl - fee - opening_fee),
                 "trade_commission": fee + opening_fee,
                 "total_commission": self.total_commission,
-                "trade_amount": self.entry_price * volume,
+                "trade_amount": self.real_entry_price * volume,
                 "trade_price_delta": trade_price_delta,
-                # WR считаем после учёта комиссии
                 "correct_prediction": (trade_pnl - fee - opening_fee) > 0.0,
                 "direction": self.direction,
                 "trade_dt": self.trade_dt,
-                "exit_reason": _exit_reason,
-                "tsl_triggered": isinstance(_exit_reason, str) and _exit_reason.startswith("TSL"),
+                "exit_reason": exit_reason if self.use_risk_management else "",
+                "tsl_triggered": isinstance(exit_reason, str) and exit_reason.startswith("TSL"),
             }
-
             self.direction = None
             self.trade_dt = None
             if self.use_risk_management:

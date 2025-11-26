@@ -62,7 +62,7 @@ def compute_norm_stats(npz_path: str, num_samples: int = 1000, seed: int = 25) -
     logging.info(f"Computed stats saved to norm_stats.json: mean[0]={means[0]:.6f}, std[0]={stds[0]:.6f} ...")
     return stats
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) -> list:
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) -> tuple[list, list]:
     """
     Загружает NPZ, compute/applies z-norm (if stats=None), reshape (10,150,1).
     Если norm_stats=None: computes from train_path (assume npz_path is train).
@@ -70,7 +70,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) 
     """
     if not npz_path or not os.path.exists(npz_path):
         logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
-        return []
+        return [], []
 
     if norm_stats is None and split_name == 'Train':
         logging.info("No norm_stats provided: computing from train data...")
@@ -115,6 +115,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) 
             np.random.seed(25)  # Reproducible sampling
             indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
             sequences = [sequences[i] for i in sorted(indices)]  # Sorted для consistency
+            data_keys = [data_keys[i] for i in sorted(indices)]
             print(f"Sampled to {episodes_per_epoch} episodes")
     except (ImportError, AttributeError):
         print("Config not available: using full sequences")
@@ -122,7 +123,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict = None) 
     d.close()
     if sequences:
         logging.info(f"Prepared {len(sequences)} sequences, shape: {sequences[0].shape}")
-    return sequences  # Или (sequences, keys_map) если нужно
+    return sequences, data_keys  # Или (sequences, keys_map) если нужно
 
 
 def make_env(env_kwargs: dict):
@@ -462,6 +463,7 @@ def evaluate_agent(
     episode_num: int | None,
     seed: int | None,
     cfg: MasterConfig,
+    keys: list = None,
 ) -> Dict[str, Any]:
     """
     Greedy-оценка (без ε-эксплорации и MC-Dropout) в backtest-режиме:
@@ -490,21 +492,29 @@ def evaluate_agent(
     tsl_hits = 0
 
     stub_dt = dt.datetime(2000, 1, 1, 0, 0)
-    stub_tk = "VAL"
 
-    for _ in range(int(episodes)):
-        obs, _ = env.reset(seed=None)
+    for i in range(int(episodes)):
+        obs, _ = env.reset(options={"forced_index": i})
         done = False
         ep_reward = 0.0
         ep_trades = 0
         ep_wins   = 0
         ep_trade_pnls: list[float] = []
+        
+        if keys:
+            try:
+                ticker_name = keys[i].split('_')[0]
+            except (IndexError, AttributeError):
+                ticker_name = "UNKNOWN"
+        else:
+            ticker_name = "VAL"
+
         while not done:
             action = agent.select_action(obs, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
                 signal_dt=stub_dt,
-                ticker=stub_tk,
+                ticker=ticker_name,
                 stop_loss=None,
                 take_profit=None,
                 trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
@@ -555,8 +565,8 @@ def evaluate_agent(
     # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
     # MaxDD — чистая формула на ДЕНОРМАЛИЗОВАННЫХ значениях
     if trade_pnls:
-        # ИСПРАВЛЕНО: Денормализуем PnL перед расчётом equity_curve
-        denorm_pnls = np.array(trade_pnls) * initial_balance
+        # PnL из backtest_step уже в абсолютных значениях (долларах), доп. денормализация не нужна.
+        denorm_pnls = np.array(trade_pnls)
         equity_curve = np.cumsum(denorm_pnls) + initial_balance
         peak = np.maximum.accumulate(equity_curve)
         drawdowns = (equity_curve - peak) / peak
@@ -701,7 +711,7 @@ def main(cfg: MasterConfig = None):
             json.dump(norm_stats, f, indent=2)
         logging.info(f"Copied norm_stats.json to: {norm_stats_save_path}")
     # --- FIX END ---
-    val_seqs = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
+    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats)
 
     # Set episodes from total_timesteps if not set
     if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
@@ -929,6 +939,7 @@ def main(cfg: MasterConfig = None):
                 ep,
                 cfg.global_env_seed,
                 cfg,
+                keys=val_keys,
             )
             # Поддержка single- и multi-objective отбора лучшей модели.
             # Пример: cfg.trainlog.val_selection_metrics = [

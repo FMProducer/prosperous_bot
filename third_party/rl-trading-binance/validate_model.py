@@ -38,6 +38,7 @@ def load_data(data_path: str, norm_stats_path: str):
         raise FileNotFoundError(f"Validation data file not found: {data_path}")
         
     sequences = []
+    keys = []
     with np.load(data_path, allow_pickle=True) as d:
         keys = [k for k in d.files if not k.startswith('_')]
         for key in tqdm(keys, desc="Loading and normalizing data"):
@@ -48,7 +49,7 @@ def load_data(data_path: str, norm_stats_path: str):
             norm_seq = np.expand_dims(norm_seq, -1)
             sequences.append(norm_seq)
             
-    return sequences, stats
+    return sequences, stats, keys
 
 def calculate_and_log_metrics(trade_pnls: list, initial_balance: float, episodes: int, label="Validation"):
     """Calculates and logs key performance metrics."""
@@ -118,11 +119,12 @@ def run_validation(config_path: str, model_path: str):
     val_data_path = os.path.join(subproject_root, cfg['paths']['val_data_path'])
     norm_stats_path = os.path.join(os.path.dirname(model_path), 'norm_stats.json')
     
-    sequences, stats_dict = load_data(val_data_path, norm_stats_path)
+    sequences, stats_dict, keys = load_data(val_data_path, norm_stats_path)
     
     num_episodes = min(cfg['trainlog']['num_val_ep'], len(sequences))
     logger.info(f"Running validation for {num_episodes} episodes.")
     sequences = sequences[:num_episodes]
+    keys = keys[:num_episodes]
 
     # 4. Initialize Environment
     # Calculate flat_state_size based on config
@@ -200,12 +202,16 @@ def run_validation(config_path: str, model_path: str):
     # 6. Run Validation Loop
     all_trade_pnls = []
     stub_dt = dt.datetime(2000, 1, 1, 0, 0)
-    stub_tk = "VALIDATION"
     
     for i in tqdm(range(num_episodes), desc="Validating Episodes"):
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         
+        try:
+            ticker_name = keys[i].split('_')[0]
+        except (IndexError, AttributeError):
+            ticker_name = "UNKNOWN"
+
         while not done:
             action = agent.select_action(obs, training=False)
             
@@ -222,7 +228,7 @@ def run_validation(config_path: str, model_path: str):
             obs, _, terminated, truncated, info = env.backtest_step(
                 action=action,
                 signal_dt=stub_dt,
-                ticker=stub_tk,
+                ticker=ticker_name,
                 **backtest_kwargs
             )
             done = terminated or truncated
