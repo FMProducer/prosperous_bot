@@ -491,8 +491,6 @@ def evaluate_agent(
     exit_counts: Dict[str,int] = {}
     tsl_hits = 0
 
-    stub_dt = dt.datetime(2000, 1, 1, 0, 0)
-
     for i in range(int(episodes)):
         obs, _ = env.reset(options={"forced_index": i})
         done = False
@@ -501,10 +499,17 @@ def evaluate_agent(
         ep_wins   = 0
         ep_trade_pnls: list[float] = []
         
-        if keys:
+        # ИСПРАВЛЕНО: Извлекаем дату начала семпла из ключа, а не используем заглушку
+        signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
+        if keys and i < len(keys):
             try:
-                ticker_name = keys[i].split('_')[0]
-            except (IndexError, AttributeError):
+                key_parts = keys[i].split('_')
+                ticker_name = key_parts[0]
+                # Ожидаемый формат ключа: TICKER_STARTISO_ENDISO
+                if len(key_parts) > 1:
+                    start_dt_str = key_parts[1]
+                    signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
+            except (IndexError, AttributeError, ValueError):
                 ticker_name = "UNKNOWN"
         else:
             ticker_name = "VAL"
@@ -513,7 +518,7 @@ def evaluate_agent(
             action = agent.select_action(obs, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
-                signal_dt=stub_dt,
+                signal_dt=signal_dt_for_step,
                 ticker=ticker_name,
                 stop_loss=None,
                 take_profit=None,
