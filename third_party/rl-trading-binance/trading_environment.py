@@ -115,12 +115,16 @@ class TradingEnvironment(gym.Env):
             )
         else:
             # For MLP: flat vector
-            self.observation_space = spaces.Box(
-                low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
-            )
-
-        self._init_episode_vars()
-
+                    self.observation_space = spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
+                    )
+            
+                    # For shaped reward function
+                    self._position_entry_step = None
+                    self._max_unrealized_pnl = 0.0
+                    self._min_unrealized_pnl = 0.0
+            
+                    self._init_episode_vars()
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
         self.current_asset_name: Optional[str] = None
@@ -138,6 +142,11 @@ class TradingEnvironment(gym.Env):
         # Отслеживание просадки
         self.equity_peak: float = self.initial_balance
         self.current_max_drawdown: float = 0.0
+        
+        # Reset shaped reward tracking
+        self._position_entry_step = None
+        self._max_unrealized_pnl = 0.0
+        self._min_unrealized_pnl = 0.0
         
         if self.backtest_mode:
             self.total_commission: float = 0.0
@@ -280,7 +289,17 @@ class TradingEnvironment(gym.Env):
         self.step_idx += 1
         
         terminated = self.step_idx >= self.agent_session_len
-        reward = (pnl_change / self.initial_balance) - inaction_penalty
+        
+        # Track position metrics for shaped reward
+        self._track_position_metrics(action, prev_position)
+        
+        # Use shaped reward
+        reward = self._calculate_shaped_reward(
+            pnlchange=pnl_change,
+            inaction_penalty=inaction_penalty,
+            action=action,
+            prev_position=prev_position
+        )
         
         # --- Bankruptcy & Drawdown Calculation (using real financial values) ---
         portfolio_value = self.balance
@@ -346,6 +365,105 @@ class TradingEnvironment(gym.Env):
             self._render_human(info, action, reward)
      
         return obs, reward, terminated, False, info
+
+    def _track_position_metrics(self, action: int, prev_position: int):
+        """Tracks metrics related to the current position for shaped rewards."""
+        # Position just opened
+        if self.position != 0 and prev_position == 0:
+            self._position_entry_step = self.step_idx
+            self._max_unrealized_pnl = 0.0
+            self._min_unrealized_pnl = 0.0
+            return
+
+        # Position is open
+        if self.position != 0:
+            # Calculate current unrealized PnL
+            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
+            current_price = self.current_seq[price_idx, self.close_idx]
+            
+            # Denormalize for real PnL calculation
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['mean'][self.close_idx]
+            close_std = asset_stats['std'][self.close_idx]
+            
+            real_current_price = current_price * close_std + close_mean
+            
+            if self.position == 1: # LONG
+                unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
+            else: # SHORT
+                unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
+            
+            # Update max/min unrealized PnL
+            self._max_unrealized_pnl = max(self._max_unrealized_pnl, unrealized_pnl)
+            self._min_unrealized_pnl = min(self._min_unrealized_pnl, unrealized_pnl)
+
+    def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int) -> float:
+        """Calculates a shaped reward to guide agent behavior."""
+        
+        base_reward = pnlchange / self.initial_balance
+        shaped_reward = 0.0
+        
+        # --- Penalties and Bonuses ---
+        # Only apply these when a position is active or just closed
+        if prev_position != 0:
+            
+            # 1. Holding Penalty (Progressive)
+            if self.position != 0 and self._position_entry_step is not None:
+                holding_duration = self.step_idx - self._position_entry_step
+                if holding_duration > 15:
+                    # Check if position is currently at a loss
+                    price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
+                    current_price = self.current_seq[price_idx, self.close_idx]
+                    asset_stats = self._get_asset_stats()
+                    close_mean = asset_stats['mean'][self.close_idx]
+                    close_std = asset_stats['std'][self.close_idx]
+                    real_current_price = current_price * close_std + close_mean
+                    
+                    unrealized_pnl = 0.0
+                    if prev_position == 1: unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
+                    else: unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
+
+                    if unrealized_pnl < 0:
+                        # Progressive penalty: increases the longer you hold a losing trade
+                        penalty_factor = (holding_duration - 15) / self.agent_session_len
+                        holding_penalty = penalty_factor * 0.5 # weight
+                        shaped_reward -= holding_penalty
+
+            # Applied only on close
+            if action == 3:
+                trade_pnl = pnlchange 
+                
+                # 2. Greed Penalty
+                if self._max_unrealized_pnl > 0 and trade_pnl > 0:
+                    profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl if self._max_unrealized_pnl != 0 else 0
+                    if profit_retracement > 0.50:
+                        greed_penalty = profit_retracement * 0.3 # weight
+                        shaped_reward -= greed_penalty
+                
+                # 3. Exit Bonus
+                if self._max_unrealized_pnl > 0 and trade_pnl > 0:
+                    # Bonus for closing near the peak
+                    if (trade_pnl / self._max_unrealized_pnl > 0.80) if self._max_unrealized_pnl != 0 else False:
+                        exit_bonus = 0.15 # base weight
+                        
+                        # Additional bonus for fast profitable exit
+                        if self._position_entry_step is not None:
+                            holding_duration = self.step_idx - self._position_entry_step
+                            if holding_duration < 20:
+                                exit_bonus += 0.10 # total weight 0.25
+                        
+                        shaped_reward += exit_bonus
+
+                # 4. Premature Exit Penalty
+                if self._position_entry_step is not None:
+                    holding_duration = self.step_idx - self._position_entry_step
+                    if holding_duration < 5 and trade_pnl <= 0: # No penalty if exit was profitable
+                        premature_exit_penalty = 0.02 # weight
+                        shaped_reward -= premature_exit_penalty
+
+        # Combine base reward with shaped reward and other penalties
+        final_reward = base_reward + shaped_reward - inaction_penalty
+        return final_reward
 
     def _get_observation(self) -> np.ndarray:
         # The window from current_seq is already pre-normalized.
