@@ -81,12 +81,12 @@ EXPECTED_CHANNELS = [
 ]
 
 class DataConfig(BaseModel):
-    num_channels: int = 10
-    expected_channels: List[str] = EXPECTED_CHANNELS
-    data_channels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
-    price_channels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
-    volume_channels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
-    other_channels: List[str] = ['num_trades']
+    numchannels: int = 10
+    expectedchannels: List[str] = EXPECTED_CHANNELS
+    datachannels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
+    pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
+    volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
+    otherchannels: List[str] = ['num_trades']
 
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
@@ -102,7 +102,7 @@ class SequenceConfig(BaseModel):
 
     @property
     def num_features(self) -> int:
-        return len(DataConfig().data_channels)
+        return len(DataConfig().datachannels)
 
     @property
     def input_history_len(self) -> int:

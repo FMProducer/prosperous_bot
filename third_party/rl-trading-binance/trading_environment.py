@@ -28,15 +28,15 @@ class TradingEnvironment(gym.Env):
         flat_state_size: int,
         initial_balance: float,
         pre_signal_len: int,
-        data_channels: List[str],
+        datachannels: List[str],
         slippage: float,
         transaction_fee: float,
         agent_session_len: int,
         agent_history_len: int,
         input_history_len: int,
-        price_channels: List[str],
-        volume_channels: List[str],
-        other_channels: List[str],
+        pricechannels: List[str],
+        volumechannels: List[str],
+        otherchannels: List[str],
         action_history_len: int,
         inaction_penalty_ratio: float,
         backtest_mode: bool = False,
@@ -65,15 +65,15 @@ class TradingEnvironment(gym.Env):
         self.render_mode = render_mode
         self.initial_balance = initial_balance
         self.pre_signal_len = pre_signal_len
-        self.data_channels = data_channels
+        self.datachannels = datachannels
         self.slippage = slippage
         self.transaction_fee = transaction_fee
         self.agent_session_len = agent_session_len
         self.agent_history_len = agent_history_len
         self.input_history_len = input_history_len
-        self.price_channels = price_channels
-        self.volume_channels = volume_channels
-        self.other_channels = other_channels
+        self.pricechannels = pricechannels
+        self.volumechannels = volumechannels
+        self.otherchannels = otherchannels
         self.action_history_len = action_history_len
         self.num_actions = num_actions
         self.inaction_penalty_ratio = inaction_penalty_ratio
@@ -88,7 +88,7 @@ class TradingEnvironment(gym.Env):
         self.max_drawdown_penalty = max_drawdown_penalty
         self.max_drawdown_penalty_type = max_drawdown_penalty_type
         # Cache frequently used channel index
-        self.close_idx = self.data_channels.index("close")
+        self.close_idx = self.datachannels.index("close")
 
         self.history_vector_size = num_actions * self.action_history_len
         # Validate sequence shape

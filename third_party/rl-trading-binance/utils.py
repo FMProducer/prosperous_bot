@@ -152,9 +152,9 @@ def select_and_arrange_channels(
 def calculate_normalization_stats(
     sequences: List[np.ndarray],
     use_channels: List[str],
-    price_channels: List[str],
-    volume_channels: List[str],
-    other_channels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str],
 ) -> Dict[str, Dict[str, float]]:
     stats: Dict[str, Dict[str, float]] = {"means": {}, "stds": {}}
     if not sequences:
@@ -165,12 +165,12 @@ def calculate_normalization_stats(
     for seq in tqdm(sequences, desc="Calculating normalization stats ...", leave=False):
         for idx, ch in enumerate(use_channels):
             arr = seq[:, idx].astype(np.float64)
-            if ch in price_channels:
+            if ch in pricechannels:
                 changes = arr[1:] / (arr[:-1] + 1e-9)
                 vals = np.log(np.maximum(changes, 1e-9))
-            elif ch in volume_channels:
+            elif ch in volumechannels:
                 vals = np.log(arr + 1.0)
-            elif ch in other_channels:
+            elif ch in otherchannels:
                 vals = arr
             else:
                 continue
@@ -196,9 +196,9 @@ def apply_normalization(
     window: np.ndarray,
     stats: Dict[str, Dict[str, float]],
     use_channels: List[str],
-    price_channels: List[str],
-    volume_channels: List[str],
-    other_channels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str],
     agent_history_len: int,
     input_history_len: int,
 ) -> Optional[np.ndarray]:
@@ -212,18 +212,18 @@ def apply_normalization(
     for i, ch in enumerate(use_channels):
         arr = window[:, i].astype(np.float64)
         mean, std = stats["means"].get(ch, 0.0), stats["stds"].get(ch, 1.0)
-        if ch in price_channels:
+        if ch in pricechannels:
             rel = arr[1:] / (arr[:-1] + 1e-9)
             logs = np.log(np.maximum(rel, 1e-9))
             normed_logs = (logs - mean) / std
             # Pad with 0.0 for the first undefined value and match length
             padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
             normed = padded_normed[-input_history_len:]
-        elif ch in volume_channels:
+        elif ch in volumechannels:
             logv = np.log(arr + 1.0)
             normed = (logv - mean) / std
             normed = normed[-input_history_len:]
-        elif ch in other_channels:
+        elif ch in otherchannels:
             normed = (arr - mean) / std
             normed = normed[-input_history_len:]
         else:
@@ -295,7 +295,7 @@ def compute_metrics(sequences: List[np.ndarray], predictions: np.ndarray, cfg: M
     """
     total_pnls = []
     wins = 0
-    close_idx = cfg.data.data_channels.index("close")
+    close_idx = cfg.data.datachannels.index("close")
 
     for session, direction in zip(sequences, predictions):
         if session.shape[0] <= cfg.seq.pre_signal_len + cfg.seq.agent_session_len:
@@ -384,7 +384,7 @@ def find_spike_windows(
     """
     По минутным данным df (index=UTC, колонки содержат 'close') возвращает список окон:
     (ctx_start, ctx_end, session_start, session_end, abs_change_pct).
-    * use_lookahead=True — как в бэктесте: спайк оценивается на [t, t+window].
+    * use_lookahead=True  — как в бэктесте: спайк оценивается на [t, t+window].
     * use_lookahead=False — реал-режим: спайк оценивается на [t-window, t] (без заглядывания вперёд).
     """
     if df.empty or "close" not in df.columns:
@@ -436,17 +436,17 @@ def find_spike_windows(
 def preprocess_sequences(
     sequences: List[np.ndarray],
     stats: Dict[str, Dict[str, float]],
-    data_channels: List[str],
-    price_channels: List[str],
-    volume_channels: List[str],
-    other_channels: List[str]
+    datachannels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str]
 ) -> List[np.ndarray]:
     """Pre-normalize all sequences to avoid runtime overhead."""
     normalized = []
     for seq in tqdm(sequences, desc="Normalizing sequences"):
         norm_seq = apply_normalization(
-            seq, stats, data_channels,
-            price_channels, volume_channels, other_channels,
+            seq, stats, datachannels,
+            pricechannels, volumechannels, otherchannels,
             agent_history_len=seq.shape[0],
             input_history_len=seq.shape[0]
         )
