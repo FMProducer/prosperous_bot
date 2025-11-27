@@ -680,7 +680,7 @@ def evaluate_agent(
 def process_data(raw_list, name_dataset, cfg: MasterConfig):
     seqs = []
     for _, arr in tqdm(raw_list, desc=f"Selecting and arrange channels for {name_dataset}", leave=False):
-        sel = select_and_arrange_channels(arr, cfg.data.expected_channels, cfg.data.data_channels)
+        sel = select_and_arrange_channels(arr, cfg.data.expectedchannels, cfg.data.datachannels)
         if sel is not None:
             seqs.append(sel)
     return seqs
@@ -861,15 +861,15 @@ def main(cfg: MasterConfig = None):
         "flat_state_size": flat_state_size,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
-        "data_channels": cfg.data.data_channels,
+        "datachannels": cfg.data.datachannels,
         "slippage": cfg.market.slippage,
         "transaction_fee": cfg.market.transaction_fee,
         "agent_session_len": cfg.seq.agent_session_len,
         "agent_history_len": cfg.seq.agent_history_len,
         "input_history_len": input_history_len,
-        "price_channels": cfg.data.price_channels,
-        "volume_channels": cfg.data.volume_channels,
-        "other_channels": cfg.data.other_channels,
+        "pricechannels": cfg.data.pricechannels,
+        "volumechannels": cfg.data.volumechannels,
+        "otherchannels": cfg.data.otherchannels,
         "action_history_len": action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
         "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
