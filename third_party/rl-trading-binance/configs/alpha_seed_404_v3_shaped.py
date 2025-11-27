@@ -133,7 +133,7 @@ cfg.perf.prefetch_factor = 2
 cfg.perf.cudnn_benchmark = False
 
 # MC-Dropout (ensemble; off by default)
-mc_dropout_cfg = type("obj", (), {{}})()
+mc_dropout_cfg = type("obj", (), {})()
 mc_dropout_cfg.enable = False
 mc_dropout_cfg.n_action_samples = 1
 mc_dropout_cfg.action_agg = "mean"
@@ -159,7 +159,7 @@ cfg.debug.use_final_model = False
 cfg.deterministic = False
 
 # Bundle (for saving artifacts)
-bundle_cfg = type("obj", (), {{}})()
+bundle_cfg = type("obj", (), {})()
 bundle_cfg.enable = True
 bundle_cfg.include_code_snapshot = False
 bundle_cfg.code_snapshot_paths = ["train.py", "model.py", "agent.py", "trading_environment.py"]
