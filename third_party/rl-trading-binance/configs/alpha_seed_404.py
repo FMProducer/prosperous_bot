@@ -147,7 +147,7 @@ cfg.mc_dropout = mc_dropout_cfg
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
 cfg.paper.leverage = 1.0
-cfg.paper.symbols = ['ETHUSDT']  # Or "ALL" or list from tickers.txt
+cfg.paper.symbols = "ALL"  # Or "ALL" or list from tickers.txt
 cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
