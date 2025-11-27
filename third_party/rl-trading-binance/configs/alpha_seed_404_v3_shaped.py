@@ -12,7 +12,7 @@ cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно ис�
 cfg.seq.full_seq_len = 150      # 90 контекст + 60 сессия
 cfg.seq.agent_history_len = 90  # Context window (история)
 cfg.seq.agent_session_len = 60  # Trading session length (60 шагов)
-cfg.seq.action_history_len = 5  # Recent actions feat
+cfg.seq.action_history_len = 2  # Recent actions feat
 cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
 cfg.seq.post_signal_len = 60
 cfg.seq.state_shape = (10, 90, 1)
@@ -42,7 +42,7 @@ cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.95         # Discount
 cfg.rl.n_step = 60   # Steps per rollout == длина торговой сессии
-cfg.rl.batch_size = 128  # Mini-batch (GTX fit)
+cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
 cfg.rl.target_update_freq = 2000   # Soft target? (DQN-style if needed)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
@@ -58,7 +58,7 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
-cfg.vec.num_envs = 4             # 4 параллельные среды
+cfg.vec.num_envs = 8             # 4 параллельные среды
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
@@ -125,12 +125,12 @@ cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025
 cfg.perf.use_amp = True  # Mixed precision
 cfg.perf.amp_dtype = "float16"
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-cfg.perf.compile_mode = None  # No torch.compile (old CUDA)
+cfg.perf.compile_mode = None  # None - no torch.compile
 cfg.perf.dataloader_num_workers = 0  # Windows safe
 cfg.perf.pin_memory = True
 cfg.perf.persistent_workers = False
 cfg.perf.prefetch_factor = 2
-cfg.perf.cudnn_benchmark = False
+cfg.perf.cudnn_benchmark = True
 
 # MC-Dropout (ensemble; off by default)
 mc_dropout_cfg = type("obj", (), {})()
