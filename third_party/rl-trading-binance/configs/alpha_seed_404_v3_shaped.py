@@ -58,21 +58,21 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
-cfg.vec.num_envs = 8             # 4 параллельные среды
+cfg.vec.num_envs = 1             # параллельные среды
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 750      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 256      # Val episodes (10% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 15000       # 4× меньше эпизодов при 4 env -> ~тот же total_steps
+cfg.trainlog.episodes = 10000       # 4× меньше эпизодов при 4 env -> ~тот же total_steps
 cfg.trainlog.total_timesteps = 600000  # Бюджет шагов оставляем прежним
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 125              # было 500; 500 * 15000 / 60000 ≈ 125
+cfg.trainlog.val_freq = 1000              # было 500; 500 * 15000 / 60000 ≈ 125
 cfg.trainlog.validation_warmup_steps = 450000
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
@@ -103,7 +103,7 @@ cfg.market.max_drawdown_penalty = 1.0      # Коэффициент для шт�
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False
-cfg.backtest.max_parallel_sessions = 4
+cfg.backtest.max_parallel_sessions = 1
 cfg.backtest.position_fraction = 0.08
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
