@@ -461,6 +461,23 @@ class TradingEnvironment(gym.Env):
                         premature_exit_penalty = 0.05 # weight
                         shaped_reward -= premature_exit_penalty
 
+        # === GRADUATED DRAWDOWN PENALTY ===
+        # Штрафует агента за любую просадку, чем больше просадка - тем жёстче
+        current_dd = self.current_max_drawdown  # Уже вычислен в step()
+        
+        if current_dd < -0.15:  # Critical drawdown > 15%
+            dd_penalty = abs(current_dd) * 20.0  # Очень жёсткий штраф
+        elif current_dd < -0.10:  # Large drawdown 10-15%
+            dd_penalty = abs(current_dd) * 10.0  # Жёсткий штраф
+        elif current_dd < -0.05:  # Moderate drawdown 5-10%
+            dd_penalty = abs(current_dd) * 5.0   # Средний штраф
+        elif current_dd < -0.02:  # Small drawdown 2-5%
+            dd_penalty = abs(current_dd) * 2.0   # Лёгкий штраф
+        else:
+            dd_penalty = 0.0  # No penalty if DD < 2%
+        
+        shaped_reward -= dd_penalty
+
         # Combine base reward with shaped reward and other penalties
         final_reward = base_reward + shaped_reward - inaction_penalty
         return final_reward
