@@ -426,7 +426,7 @@ class TradingEnvironment(gym.Env):
                     if unrealized_pnl < 0:
                         # Progressive penalty: increases the longer you hold a losing trade
                         penalty_factor = (holding_duration - 15) / self.agent_session_len
-                        holding_penalty = penalty_factor * 0.5 # weight
+                        holding_penalty = penalty_factor * 1.0 # weight
                         shaped_reward -= holding_penalty
 
             # Applied only on close
@@ -437,14 +437,14 @@ class TradingEnvironment(gym.Env):
                 if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                     profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl if self._max_unrealized_pnl != 0 else 0
                     if profit_retracement > 0.50:
-                        greed_penalty = profit_retracement * 0.3 # weight
+                        greed_penalty = profit_retracement * 0.9 # weight
                         shaped_reward -= greed_penalty
                 
                 # 3. Exit Bonus
                 if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                     # Bonus for closing near the peak
                     if (trade_pnl / self._max_unrealized_pnl > 0.80) if self._max_unrealized_pnl != 0 else False:
-                        exit_bonus = 0.15 # base weight
+                        exit_bonus = 0.30 # base weight
                         
                         # Additional bonus for fast profitable exit
                         if self._position_entry_step is not None:
@@ -458,7 +458,7 @@ class TradingEnvironment(gym.Env):
                 if self._position_entry_step is not None:
                     holding_duration = self.step_idx - self._position_entry_step
                     if holding_duration < 5 and trade_pnl <= 0: # No penalty if exit was profitable
-                        premature_exit_penalty = 0.02 # weight
+                        premature_exit_penalty = 0.05 # weight
                         shaped_reward -= premature_exit_penalty
 
         # Combine base reward with shaped reward and other penalties

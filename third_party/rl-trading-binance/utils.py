@@ -452,3 +452,65 @@ def preprocess_sequences(
         )
         normalized.append(norm_seq)
     return normalized
+
+def create_validation_episodes(
+    val_sequences: List[np.ndarray],
+    val_keys: List[Tuple[str, dt.datetime]],
+    num_episodes: int = 750,
+    num_symbols: int = 256,
+    min_episodes_per_symbol: int = 1,
+    max_episodes_per_symbol: int = 10,
+    seed: int = 404
+) -> Tuple[List[np.ndarray], List[Tuple[str, dt.datetime]]]:
+    """
+    Performs stratified sampling on the validation set to ensure symbol diversity.
+    """
+    if not val_sequences:
+        return [], []
+
+    # 1. Group episodes by symbol
+    episodes_by_symbol = defaultdict(list)
+    for i, key in enumerate(val_keys):
+        # key can be a string or a tuple. Handle both cases.
+        if isinstance(key, tuple):
+            symbol = key[0]
+        else:
+            symbol = key.split('_')[0]
+        episodes_by_symbol[symbol].append(i)
+
+    # 2. First pass: sample from each symbol group
+    selected_indices = []
+    for symbol, indices in episodes_by_symbol.items():
+        # Determine number of samples for this symbol
+        n_samples = min(len(indices), max_episodes_per_symbol)
+        n_samples = max(n_samples, min_episodes_per_symbol)
+        
+        # Ensure we don't sample more than available
+        n_samples = min(n_samples, len(indices))
+
+        random.seed(seed)
+        selected_indices.extend(random.sample(indices, n_samples))
+
+    # 3. Second pass: if we have more than num_episodes, downsample
+    if len(selected_indices) > num_episodes:
+        random.seed(seed)
+        final_indices = random.sample(selected_indices, num_episodes)
+    else:
+        final_indices = selected_indices
+
+    # 4. Shuffle the final list of indices
+    random.seed(seed)
+    random.shuffle(final_indices)
+
+    # 5. Create the final lists of sequences and keys
+    final_sequences = [val_sequences[i] for i in final_indices]
+    final_keys = [val_keys[i] for i in final_indices]
+
+    # Logging
+    final_symbols = {val_keys[i][0] if isinstance(val_keys[i], tuple) else val_keys[i].split('_')[0] for i in final_indices}
+    logging.info(f"Stratified sampling complete. "
+                 f"Initial episodes: {len(val_sequences)}, "
+                 f"Sampled episodes: {len(final_sequences)}, "
+                 f"Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
+
+    return final_sequences, final_keys

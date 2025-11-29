@@ -17,6 +17,7 @@ import json
 import subprocess
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 from tqdm import tqdm, trange
@@ -29,6 +30,7 @@ from vec_env import DummyVecEnv # noqa: F401
 from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
+    create_validation_episodes,
     load_config,
     load_npz_dataset,
     preprocess_sequences,
@@ -793,6 +795,20 @@ def main(cfg: MasterConfig = None):
 
     # Для валидации используем те же статистики, что были рассчитаны на обучении
     val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, allowed_assets=allowed_assets)
+
+    # Stratified sampling for validation set
+    if val_seqs:
+        # Apply stratified sampling to ensure symbol diversity
+        val_seqs, val_keys = create_validation_episodes(
+            val_sequences=val_seqs,
+            val_keys=val_keys,
+            num_episodes=cfg.trainlog.num_val_ep,
+            num_symbols=256,
+            min_episodes_per_symbol=1,
+            max_episodes_per_symbol=10,
+            seed=cfg.random_seed
+        )
+        logging.info(f"Validation set sampled: {len(val_seqs)} episodes")
 
     # Set episodes from total_timesteps if not set
     if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
