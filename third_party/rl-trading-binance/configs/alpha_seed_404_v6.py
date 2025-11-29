@@ -28,7 +28,7 @@ cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
 cfg.model.cnn_maps = [64, 96, 128, 128, 96]  # Reduced для GTX1070 (vs [64,96,...])
 cfg.model.cnn_kernels = [3, 3, 3, 3, 3]
-cfg.model.cnn_dilations = [1, 2, 4, 6, 9]  # RF=45 баров
+cfg.model.cnn_dilations = [1, 2, 4, 8, 16]  # RF=63 бара
 cfg.model.cnn_strides = [1, 1, 1, 1, 1]
 cfg.model.dense_val = [128, 64, 32]  # Value head
 cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
@@ -64,7 +64,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 750      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 2000      # Val episodes (20% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -81,7 +81,7 @@ cfg.trainlog.available_metrics = [
     "Validation_sharpe", "Validation_sortino"
 ]
 cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_profit_factor"]
-cfg.trainlog.early_stopping_patience = 10
+cfg.trainlog.early_stopping_patience = 30
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
@@ -102,9 +102,9 @@ cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого �
 cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Штраф за превышение максимальной просадки (MaxDD)
-cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
+cfg.market.max_drawdown_threshold = -0.15  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
-cfg.market.max_drawdown_penalty = 1.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+cfg.market.max_drawdown_penalty = 2.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
 
 
 # Backtest/Paper Trader
