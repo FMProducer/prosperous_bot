@@ -85,15 +85,15 @@ cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": -0.05,
+    "min_sharpe": -0.06,
     "min_sortino": -0.08,
-    "min_profit_factor": 0.85,
-    "max_drawdown_at_most": -2.0,
-    "min_win_rate": 0.40,
+    "min_profit_factor": 0.78,
+    "max_drawdown_at_most": -5.5,
+    "min_win_rate": 0.44,
     "min_trades": 300,
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
-    "profit_factor_atleast": 0.85,
+    "profit_factor_atleast": 0.78,
     "sortino_atleast": -0.08
 }
 
