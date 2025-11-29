@@ -129,6 +129,10 @@ class D3QN_PER_Agent:
         if self.device.type == "cpu":
             torch.set_flush_denormal(True)
 
+        # Auxiliary Value Loss parameters
+        self.use_auxiliary_value_loss = True  # Can be made a config parameter
+        self.aux_value_loss_weight = 0.5  # Weight for auxiliary loss
+
         # ── MC-dropout настройки
         self.mc_enable = bool(mc_enable)
         self.mc_n_action_samples = int(mc_n_action_samples)
@@ -394,7 +398,9 @@ class D3QN_PER_Agent:
 
         if self.use_amp:
             with torch.amp.autocast("cuda", dtype=self.amp_dtype):
-                current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+                # Get Q, V, A from policy network
+                q_out, v_out, adv_out = self.policy_net(states_t, return_components=True)
+                current_q_values = q_out.gather(1, actions_t.unsqueeze(1)).squeeze(1)
 
                 # Защита от нечисловых значений в Q: если что-то пошло не так,
                 # пропускаем шаг обучения, чтобы не портить сеть и буфер.
@@ -422,16 +428,33 @@ class D3QN_PER_Agent:
                     log_stats("target_q_values", target_q_values)
                     return None
 
-                loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-                weighted_loss = (weights_t * loss).mean()
+                # Main TD loss
+                td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+                weighted_td_loss = (weights_t * td_loss).mean()
+                
+                # Auxiliary Value Loss: V(s) should be close to mean Q(s,a)
+                if self.use_auxiliary_value_loss:
+                    with torch.no_grad():
+                        # Target for V(s) = mean of current Q-values (no gradient)
+                        target_value = q_out.mean(dim=1, keepdim=True).detach()
+                    
+                    # MSE loss between V(s) and target
+                    aux_value_loss = F.mse_loss(v_out, target_value)
+                    
+                    # Combined loss
+                    weighted_loss = weighted_td_loss + self.aux_value_loss_weight * aux_value_loss
+                else:
+                    weighted_loss = weighted_td_loss
 
-            self.scaler.scale(weighted_loss).backward()
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+                self.scaler.scale(weighted_loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
         else:
-            current_q_values = self.policy_net(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+            # FP32 branch - similar changes
+            q_out, v_out, adv_out = self.policy_net(states_t, return_components=True)
+            current_q_values = q_out.gather(1, actions_t.unsqueeze(1)).squeeze(1)
 
             if not torch.isfinite(current_q_values).all() or not torch.isfinite(target_q_values).all():
                 logger.warning("Non-finite Q-values detected in FP32 branch, skipping learn step")
@@ -457,8 +480,18 @@ class D3QN_PER_Agent:
                 log_stats("target_q_values", target_q_values)
                 return None
 
-            loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-            weighted_loss = (weights_t * loss).mean()
+            # Main TD loss
+            td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+            weighted_td_loss = (weights_t * td_loss).mean()
+            
+            if self.use_auxiliary_value_loss:
+                with torch.no_grad():
+                    target_value = q_out.mean(dim=1, keepdim=True).detach()
+                aux_value_loss = F.mse_loss(v_out, target_value)
+                weighted_loss = weighted_td_loss + self.aux_value_loss_weight * aux_value_loss
+            else:
+                weighted_loss = weighted_td_loss
+            
             weighted_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
             self.optimizer.step()

@@ -140,14 +140,14 @@ class MarketConfig(BaseModel):
 
 class RLConfig(BaseModel):
     lr: float = 3e-4
-    gamma: float = 0.99
+    gamma: float = 0.96  # Reduced from 0.99 for short-term trading (10-60 steps)
     clip_range: float = 0.2
     batch_size: int = 16
     target_update_freq: int = 100
     train_start: int = 10_000
     max_gradient_norm: float = 1.0
     n_step: int = 5
-    gamma_n_step_buffer: float = 0.99
+    gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
 
 
 class PERConfig(BaseModel):

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -84,8 +84,17 @@ class DuelingQNetwork(nn.Module):
 
         logger.info(f"Initialized DuelingQNetwork (Conv1d): input=(C:{channels}, L:{history_len}), actions={action_dim}")
 
-    def forward(self, state: Tensor) -> Tensor:
+    def forward(self, state: Tensor, return_components: bool = False) -> Union[Tensor, Tuple[Tensor, Tensor, Tensor]]:
+        """
+        Args:
+            state: input state tensor
+            return_components: if True, returns (Q, V, A) instead of just Q
+        
+        Returns:
+            Q-values tensor, or (Q, V, A) tuple if return_components=True
+        """
         batch = state.size(0)
+
         # The input state is flat, need to separate history and extra features
         history_flat_size = self.input_shape[0] * self.input_shape[1] # C * L
         history_part = state[:, :history_flat_size]
@@ -101,5 +110,10 @@ class DuelingQNetwork(nn.Module):
 
         value = self.value_stream(combined)
         advantage = self.advantage_stream(combined)
+
         q_value = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        
+        if return_components:
+            return q_value, value, advantage
+        
         return q_value

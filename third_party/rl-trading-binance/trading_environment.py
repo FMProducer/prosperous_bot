@@ -398,89 +398,25 @@ class TradingEnvironment(gym.Env):
             self._min_unrealized_pnl = min(self._min_unrealized_pnl, unrealized_pnl)
 
     def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int) -> float:
-        """Calculates a shaped reward to guide agent behavior."""
-        
+        """
+        Simplified reward function without heuristics.
+        Agent should learn optimal strategy through V(s) and Q(s,a).
+        """
+        # Main reward = normalized PnL
         base_reward = pnlchange / self.initial_balance
-        shaped_reward = 0.0
         
-        # --- Penalties and Bonuses ---
-        # Only apply these when a position is active or just closed
-        if prev_position != 0:
-            
-            # 1. Holding Penalty (Progressive)
-            if self.position != 0 and self._position_entry_step is not None:
-                holding_duration = self.step_idx - self._position_entry_step
-                if holding_duration > 15:
-                    # Check if position is currently at a loss
-                    price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
-                    current_price = self.current_seq[price_idx, self.close_idx]
-                    asset_stats = self._get_asset_stats()
-                    close_mean = asset_stats['mean'][self.close_idx]
-                    close_std = asset_stats['std'][self.close_idx]
-                    real_current_price = current_price * close_std + close_mean
-                    
-                    unrealized_pnl = 0.0
-                    if prev_position == 1: unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
-                    else: unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
-
-                    if unrealized_pnl < 0:
-                        # Progressive penalty: increases the longer you hold a losing trade
-                        penalty_factor = (holding_duration - 15) / self.agent_session_len
-                        holding_penalty = penalty_factor * 1.0 # weight
-                        shaped_reward -= holding_penalty
-
-            # Applied only on close
-            if action == 3:
-                trade_pnl = pnlchange 
-                
-                # 2. Greed Penalty
-                if self._max_unrealized_pnl > 0 and trade_pnl > 0:
-                    profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl if self._max_unrealized_pnl != 0 else 0
-                    if profit_retracement > 0.50:
-                        greed_penalty = profit_retracement * 0.9 # weight
-                        shaped_reward -= greed_penalty
-                
-                # 3. Exit Bonus
-                if self._max_unrealized_pnl > 0 and trade_pnl > 0:
-                    # Bonus for closing near the peak
-                    if (trade_pnl / self._max_unrealized_pnl > 0.80) if self._max_unrealized_pnl != 0 else False:
-                        exit_bonus = 0.30 # base weight
-                        
-                        # Additional bonus for fast profitable exit
-                        if self._position_entry_step is not None:
-                            holding_duration = self.step_idx - self._position_entry_step
-                            if holding_duration < 20:
-                                exit_bonus += 0.10 # total weight 0.25
-                        
-                        shaped_reward += exit_bonus
-
-                # 4. Premature Exit Penalty
-                if self._position_entry_step is not None:
-                    holding_duration = self.step_idx - self._position_entry_step
-                    if holding_duration < 5 and trade_pnl <= 0: # No penalty if exit was profitable
-                        premature_exit_penalty = 0.05 # weight
-                        shaped_reward -= premature_exit_penalty
-
-        # === GRADUATED DRAWDOWN PENALTY ===
-        # Штрафует агента за любую просадку, чем больше просадка - тем жёстче
-        current_dd = self.current_max_drawdown  # Уже вычислен в step()
+        # Inaction penalty (minimal)
+        reward = base_reward - inaction_penalty
         
-        if current_dd < -0.15:  # Critical drawdown > 15%
-            dd_penalty = abs(current_dd) * 20.0  # Очень жёсткий штраф
-        elif current_dd < -0.10:  # Large drawdown 10-15%
-            dd_penalty = abs(current_dd) * 10.0  # Жёсткий штраф
-        elif current_dd < -0.05:  # Moderate drawdown 5-10%
-            dd_penalty = abs(current_dd) * 5.0   # Средний штраф
-        elif current_dd < -0.02:  # Small drawdown 2-5%
-            dd_penalty = abs(current_dd) * 2.0   # Лёгкий штраф
-        else:
-            dd_penalty = 0.0  # No penalty if DD < 2%
+        # Only critical penalty for extreme drawdown >15%
+        # (protection against catastrophic scenarios)
+        current_dd = self.current_max_drawdown
+        if current_dd < -0.15:
+            # Heavy penalty only for critical drawdown
+            dd_penalty = abs(current_dd + 0.15) * 10.0  # Penalty for exceeding threshold
+            reward -= dd_penalty
         
-        shaped_reward -= dd_penalty
-
-        # Combine base reward with shaped reward and other penalties
-        final_reward = base_reward + shaped_reward - inaction_penalty
-        return final_reward
+        return reward
 
     def _get_observation(self) -> np.ndarray:
         # The window from current_seq is already pre-normalized.
