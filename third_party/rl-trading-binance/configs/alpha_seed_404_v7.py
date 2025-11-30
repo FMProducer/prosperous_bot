@@ -121,7 +121,7 @@ cfg.market.risk_reward_ratio_reward = 0.15    # Награда за сделку
 cfg.market.continuous_pain_penalty_ratio = 0.3 # Коэффициент для штрафа. 1.0 - довольно агрессивный штраф.
 
 # Штраф за бездействие (когда нет открытых позиций)
-cfg.market.inaction_penalty_ratio = 0.001 # Меньшее значение поощряет осторожность и выжидание лучших моментов.
+cfg.market.inaction_penalty_ratio = 0.0 # Меньшее значение поощряет осторожность и выжидание лучших моментов.
 
 
 # Backtest/Paper Trader
