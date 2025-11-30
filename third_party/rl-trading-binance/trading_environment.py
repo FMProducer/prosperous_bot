@@ -50,6 +50,11 @@ class TradingEnvironment(gym.Env):
         max_drawdown_threshold: float | None = None,
         max_drawdown_penalty: float = 0.0,
         max_drawdown_penalty_type: str = "absolute",
+        # New reward shaping parameters
+        new_equity_peak_reward: float = 0.0,
+        perfect_entry_reward: float = 0.0,
+        risk_reward_ratio_threshold: float = 3.0,
+        risk_reward_ratio_reward: float = 0.0,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -87,6 +92,11 @@ class TradingEnvironment(gym.Env):
         self.max_drawdown_threshold = max_drawdown_threshold
         self.max_drawdown_penalty = max_drawdown_penalty
         self.max_drawdown_penalty_type = max_drawdown_penalty_type
+        # New reward shaping
+        self.new_equity_peak_reward = new_equity_peak_reward
+        self.perfect_entry_reward = perfect_entry_reward
+        self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
+        self.risk_reward_ratio_reward = risk_reward_ratio_reward
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
 
@@ -315,6 +325,8 @@ class TradingEnvironment(gym.Env):
         info = self._get_info()
      
         if portfolio_value > self.equity_peak:
+            if self.new_equity_peak_reward > 0:
+                reward += self.new_equity_peak_reward
             self.equity_peak = portfolio_value
      
         current_drawdown = (portfolio_value - self.equity_peak) / self.equity_peak if self.equity_peak != 0 else 0.0
@@ -362,6 +374,14 @@ class TradingEnvironment(gym.Env):
             obs = self._get_observation()
      
         reward -= drawdown_penalty
+
+        # НОВОЕ: Штраф за каждый шаг с открытой убыточной позицией (Continuous Penalty for unrealized losses)
+        if self.position != 0:
+            unrealized_pnl = self._calculate_unrealized_pnl()
+            if unrealized_pnl < 0:
+                # Штраф пропорционален убытку
+                pain_penalty = abs(unrealized_pnl) / self.initial_balance * 0.5
+                reward -= pain_penalty
      
         if self.render_mode == "human":
             self._render_human(info, action, reward)
@@ -447,6 +467,18 @@ class TradingEnvironment(gym.Env):
             # 5. Premature Exit Penalty
             if holding_duration < 5 and trade_pnl > 0:
                 shaped_reward -= 0.02
+
+            # 6. NEW: Perfect Entry Reward
+            if self.perfect_entry_reward > 0 and trade_pnl > 0 and self._min_unrealized_pnl >= 0:
+                shaped_reward += self.perfect_entry_reward
+
+            # 7. NEW: Risk/Reward Ratio Reward
+            if self.risk_reward_ratio_reward > 0 and trade_pnl > 0:
+                max_profit = self._max_unrealized_pnl
+                max_loss = abs(self._min_unrealized_pnl)
+                
+                if max_loss > 0 and (max_profit / max_loss) > self.risk_reward_ratio_threshold:
+                    shaped_reward += self.risk_reward_ratio_reward
 
         return base_reward + shaped_reward - inaction_penalty
 
@@ -535,6 +567,33 @@ class TradingEnvironment(gym.Env):
         else:
             info["portfolio_value"] = self.balance
         return info
+
+    def _calculate_unrealized_pnl(self) -> float:
+        """Calculates the unrealized profit or loss for the current open position."""
+        if self.position == 0:
+            return 0.0
+
+        # Determine the correct price index for the current step
+        price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+        
+        # Get the normalized price from the sequence
+        norm_current_price = self.current_seq[price_idx, self.close_idx]
+        
+        # Denormalize the price to get the real price
+        asset_stats = self._get_asset_stats()
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
+        real_current_price = norm_current_price * close_std + close_mean
+        
+        # Calculate PnL based on position direction
+        if self.position == 1:  # LONG
+            unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
+        elif self.position == -1:  # SHORT
+            unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
+        else:
+            unrealized_pnl = 0.0
+            
+        return unrealized_pnl
 
     def _calculate_effective_trail_distance(
         self, p: float, d0: float, d_min: float, fee_buf: float

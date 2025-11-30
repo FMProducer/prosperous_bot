@@ -104,12 +104,18 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # Штраф за банкротство
 cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
-cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
+cfg.market.bankruptcy_penalty = 50.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Штраф за превышение максимальной просадки (MaxDD)
-cfg.market.max_drawdown_threshold = -0.15  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
+cfg.market.max_drawdown_threshold = -0.10  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
-cfg.market.max_drawdown_penalty = 1.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+cfg.market.max_drawdown_penalty = 10.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+
+# Новые награды за формирование поведения (Shaped Rewards)
+cfg.market.new_equity_peak_reward = 0.01      # Награда за достижение нового максимума эквити
+cfg.market.perfect_entry_reward = 0.1         # Награда за прибыльную сделку, которая не уходила в минус
+cfg.market.risk_reward_ratio_threshold = 3.0  # Порог для соотношения риск/прибыль (3:1)
+cfg.market.risk_reward_ratio_reward = 0.15    # Награда за сделку с высоким соотношением риск/прибыль
 
 
 # Backtest/Paper Trader
