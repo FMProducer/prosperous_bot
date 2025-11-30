@@ -29,15 +29,110 @@ from subproc_vec_env import SubprocVecEnv
 from vec_env import DummyVecEnv # noqa: F401
 from trading_environment import TradingEnvironment
 from utils import (
-    calculate_normalization_stats,
-    create_validation_episodes,
-    load_config,
-    load_npz_dataset,
-    preprocess_sequences,
+    setup_logging,
     select_and_arrange_channels,
     set_random_seed,
-    setup_logging,
+    create_validation_episodes,
+    load_config,
 ) # noqa: F401
+
+class TopKCheckpointManager:
+    """
+    Менеджер для сохранения топ-K лучших чекпоинтов с метаданными.
+    
+    Автоматически удаляет худшие чекпоинты при превышении лимита top_k.
+    Сохраняет полные метрики в JSON для последующего анализа.
+    """
+    
+    def __init__(self, save_dir: str, top_k: int = 10, metric_key: str = "Validation_sortino", mode: str = "max"):
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.top_k = top_k
+        self.metric_key = metric_key
+        self.mode = mode
+        self.checkpoints = []  # List of (metric_value, episode, filepath, metrics_dict)
+        
+        logging.info(f"TopKCheckpointManager initialized: save_dir={save_dir}, top_k={top_k}, metric={metric_key}, mode={mode})")
+    
+    def save_checkpoint(self, agent, episode: int, metrics: Dict[str, Any]) -> bool:
+        """
+        Сохраняет чекпоинт, если он входит в топ-K по целевой метрике.
+        
+        Returns:
+            bool: True если чекпоинт сохранён, False если отклонён
+        """
+        
+        metric_value = metrics.get(self.metric_key, None)
+        
+        if metric_value is None:
+            logging.warning(f"Metric '{self.metric_key}' not found in validation metrics. Skipping checkpoint save.")
+            return False
+        
+        try:
+            metric_value = float(metric_value)
+        except (TypeError, ValueError):
+            logging.warning(f"Metric '{self.metric_key}' has non-numeric value: {metric_value}. Skipping.")
+            return False
+        
+        # Создать имя файла с ключевыми метриками
+        sortino = metrics.get("Validation_sortino", 0.0)
+        sharpe = metrics.get("Validation_sharpe", 0.0)
+        trades = metrics.get("Validation_trades", 0)
+        
+        filename = (
+            f"checkpoint_ep{episode:05d}_"
+            f"sortino{sortino:.3f}_"
+            f"sharpe{sharpe:.3f}_"
+            f"trades{trades:.0f}.pth"
+        )
+        filepath = self.save_dir / filename
+        
+        # Сохранить модель
+        try:
+            agent.save_model(str(filepath))
+        except Exception as e:
+            logging.error(f"Failed to save model checkpoint: {e}")
+            return False
+        
+        # Сохранить метаданные отдельно в JSON
+        metadata_path = filepath.with_suffix('.json')
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump({
+                    'episode': episode,
+                    'metrics': metrics,
+                    'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }, f, indent=2, default=_numpy_json_default)
+        except Exception as e:
+            logging.warning(f"Failed to save checkpoint metadata: {e}")
+        
+        # Добавить в список и отсортировать
+        self.checkpoints.append((metric_value, episode, filepath, metrics))
+        self.checkpoints.sort(key=lambda x: x[0], reverse=(self.mode == "max"))
+        
+        # Удалить худшие чекпоинты, если превышен лимит
+        if len(self.checkpoints) > self.top_k:
+            to_remove = self.checkpoints[self.top_k:]
+            for _, _, fpath, _ in to_remove:
+                try:
+                    fpath.unlink(missing_ok=True)
+                    fpath.with_suffix('.json').unlink(missing_ok=True)
+                    logging.debug(f"Removed old checkpoint: {fpath.name}")
+                except Exception as e:
+                    logging.warning(f"Failed to remove checkpoint {fpath}: {e}")
+            
+            self.checkpoints = self.checkpoints[:self.top_k]
+        
+        logging.info(
+            f"[TopK] Saved checkpoint (rank {len([c for c in self.checkpoints if c[0] >= metric_value])}/{len(self.checkpoints)}): "
+            f"{filename} | {self.metric_key}={metric_value:.4f}"
+        )
+        
+        return True
+    
+    def get_best_checkpoint(self) -> Optional[Path]:
+        """Возвращает путь к лучшему чекпоинту"""
+        return self.checkpoints[0][2] if self.checkpoints else None
 
 def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: int = 25) -> dict:
     """
@@ -956,7 +1051,18 @@ def main(cfg: MasterConfig = None):
     no_improvement_count = 0
 
     best_episode: int | None = None
+
     train_steps = 0
+    
+    # --- Top-K Checkpoint Manager ---
+    checkpoint_manager = None
+    if getattr(getattr(cfg, "trainlog", object()), "save_top_k", 0) > 0:
+        checkpoint_manager = TopKCheckpointManager(
+            save_dir=os.path.join(models_dir, "checkpoints"),
+            top_k=cfg.trainlog.save_top_k,
+            metric_key=cfg.trainlog.checkpoint_metric,
+            mode=cfg.trainlog.save_mode
+        )
 
     # Инициализация окружения:
     # для VecEnv API как в smoke_test_4_env (reset() без seed/options),
@@ -1153,29 +1259,33 @@ def main(cfg: MasterConfig = None):
                     return current > best
 
                 if _is_better(val_metric, best_val_metric):
-                    # Сохранение без дополнительных условий
                     best_val_metric = val_metric
                     best_validation = dict(metrics)
                     best_episode = int(ep)
-                    best_path = os.path.join(models_dir, "best.pth")
-                    agent.save_model(best_path)
                     
-                    logging.info(
-                        f"[Validation] New best model saved at episode {ep} "
-                        f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
-                    )
-                    
-                    # Сохранение best_model_info.json
-                    best_model_info = {
-                        "episode": best_episode,
-                        "primary_metric": "Validation_sortino",
-                        "primary_metric_value": float(best_val_metric),
-                        "validation_metrics": best_validation,
-                    }
-                    best_info_path = os.path.join(models_dir, "best_model_info.json")
-                    with open(best_info_path, "w") as f:
-                        json.dump(best_model_info, f, indent=2)
-                    
+                    # Сохранение в top-K менеджер (если включен)
+                    if checkpoint_manager:
+                        checkpoint_manager.save_checkpoint(agent, ep, metrics)
+                    else:
+                        # Fallback: старая логика с одним best.pth
+                        best_path = os.path.join(models_dir, "best.pth")
+                        agent.save_model(best_path)
+                        logging.info(
+                            f"[Validation] New best model saved at episode {ep} "
+                            f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
+                        )
+                        
+                        # Сохранение best_model_info.json
+                        best_model_info = {
+                            "episode": best_episode,
+                            "primary_metric": "Validation_sortino",
+                            "primary_metric_value": float(best_val_metric),
+                            "validation_metrics": best_validation,
+                        }
+                        best_info_path = os.path.join(models_dir, "best_model_info.json")
+                        with open(best_info_path, "w") as f:
+                            json.dump(best_model_info, f, indent=2)
+
                     no_improvement_count = 0  # Сброс счётчика
             else:
                 # Gate провален
@@ -1190,6 +1300,15 @@ def main(cfg: MasterConfig = None):
                     f"(patience={early_stopping_patience}). Stopping training at episode {ep}."
                 )
                 break # Выход из основного цикла обучения
+
+    # После завершения обучения: копировать лучший топ-K чекпоинт в best.pth
+    if checkpoint_manager:
+        best_ckpt = checkpoint_manager.get_best_checkpoint()
+        if best_ckpt:
+            import shutil
+            best_path = os.path.join(models_dir, "best.pth")
+            shutil.copy2(best_ckpt, best_path)
+            logging.info(f"[TopK] Copied best checkpoint to: {best_path}")
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)

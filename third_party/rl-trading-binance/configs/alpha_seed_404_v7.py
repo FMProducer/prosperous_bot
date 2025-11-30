@@ -40,7 +40,7 @@ cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
-cfg.rl.gamma = 0.95         # Discount
+cfg.rl.gamma = 0.96         # Discount
 cfg.rl.n_step = 60   # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
@@ -54,7 +54,7 @@ cfg.per.per_beta_start = 0.4
 cfg.per.per_beta_frames = 400000
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
-cfg.eps.eps_end = 0.05
+cfg.eps.eps_end = 0.01
 cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
@@ -88,21 +88,26 @@ cfg.validation_gate = {
     "min_sharpe": -0.06,
     "min_sortino": -0.08,
     "min_profit_factor": 0.78,
-    "max_drawdown_at_most": -5.5,
-    "min_win_rate": 0.44,
-    "min_trades": 80,
+    "max_drawdown_at_most": -0.9,
+    "min_win_rate": 0.4,
+    "min_trades": 80,  # Ослабленный порог для промежуточных чекпоинтов
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
     "profit_factor_atleast": 0.78,
     "sortino_atleast": -0.08
 }
 
+# Top-K checkpoint saving
+cfg.trainlog.save_top_k = 10  # Сохранять топ-10 моделей
+cfg.trainlog.checkpoint_metric = "Validation_sortino"  # Основная метрика для ранжирования
+cfg.trainlog.save_mode = "max"  # Максимизировать метрику
+
 # Штраф за банкротство
 cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
 cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Штраф за превышение максимальной просадки (MaxDD)
-cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
+cfg.market.max_drawdown_threshold = -0.15  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
 cfg.market.max_drawdown_penalty = 1.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
 
