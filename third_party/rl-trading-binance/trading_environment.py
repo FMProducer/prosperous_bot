@@ -218,6 +218,7 @@ class TradingEnvironment(gym.Env):
         real_price = norm_price * close_std + close_mean
         
         pnl_change = 0.0
+        trade_pnl = 0.0
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
@@ -298,7 +299,8 @@ class TradingEnvironment(gym.Env):
             pnlchange=pnl_change,
             inaction_penalty=inaction_penalty,
             action=action,
-            prev_position=prev_position
+            prev_position=prev_position,
+            trade_pnl=trade_pnl
         )
         
         # --- Bankruptcy & Drawdown Calculation (using real financial values) ---
@@ -397,26 +399,56 @@ class TradingEnvironment(gym.Env):
             self._max_unrealized_pnl = max(self._max_unrealized_pnl, unrealized_pnl)
             self._min_unrealized_pnl = min(self._min_unrealized_pnl, unrealized_pnl)
 
-    def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int) -> float:
-        """
-        Simplified reward function without heuristics.
-        Agent should learn optimal strategy through V(s) and Q(s,a).
-        """
-        # Main reward = normalized PnL
+    def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int, trade_pnl: float) -> float:
         base_reward = pnlchange / self.initial_balance
+        shaped_reward = 0.0
         
-        # Inaction penalty (minimal)
-        reward = base_reward - inaction_penalty
+        holding_duration = 0
+        if self._position_entry_step is not None:
+            holding_duration = self.step_idx - self._position_entry_step
+
+        # 1. Holding Penalty (Progressive)
+        # Applied when the position is still open
+        if self.position != 0 and self._position_entry_step is not None:
+            if holding_duration > 15:
+                # Calculate unrealized PnL to check if the position is at a loss
+                price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
+                current_price = self.current_seq[price_idx, self.close_idx]
+                
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                real_current_price = current_price * close_std + close_mean
+                
+                if self.position == 1: # LONG
+                    unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
+                else: # SHORT
+                    unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
+
+                if unrealized_pnl < 0:  # Position at loss
+                    penalty_factor = (holding_duration - 15) / self.agent_session_len
+                    shaped_reward -= penalty_factor * 0.5
         
-        # Only critical penalty for extreme drawdown >15%
-        # (protection against catastrophic scenarios)
-        current_dd = self.current_max_drawdown
-        if current_dd < -0.15:
-            # Heavy penalty only for critical drawdown
-            dd_penalty = abs(current_dd + 0.15) * 10.0  # Penalty for exceeding threshold
-            reward -= dd_penalty
-        
-        return reward
+        # Penalties and bonuses applied upon closing a position
+        if action == 3 and prev_position != 0:
+            # 2. Greed Penalty + 3. Exit Bonus
+            if self._max_unrealized_pnl > 0 and trade_pnl > 0:
+                profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl
+                if profit_retracement > 0.50:
+                    shaped_reward -= profit_retracement * 0.3
+                
+                if trade_pnl >= self._max_unrealized_pnl * 0.80:
+                    exit_bonus = 0.15
+                    # 4. Fast Exit Bonus
+                    if holding_duration < 20:
+                        exit_bonus += 0.10
+                    shaped_reward += exit_bonus
+            
+            # 5. Premature Exit Penalty
+            if holding_duration < 5 and trade_pnl > 0:
+                shaped_reward -= 0.02
+
+        return base_reward + shaped_reward - inaction_penalty
 
     def _get_observation(self) -> np.ndarray:
         # The window from current_seq is already pre-normalized.
