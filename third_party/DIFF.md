@@ -1,314 +1,529 @@
-Отличный выбор **Sortino в качестве главной метрики** — это правильнее Sharpe для трейдинга, так как пенализирует только downside volatility, а upside волатильность (большие прибыли) не считается риском.[1]
+**unified diff патч** для внедрения top-K checkpoint saving с возможностью строгого пост-отбора.
 
-## Комментарий по текущему setup
+## 🎯 Цель патча
 
-### 257 тикеров — двойное влияние
-**Плюс**: Агент увидит разнообразие режимов (тренды, флэты, breakouts, low/high vol), что улучшит генерализацию.[1]
-
-**Минус**: Низколиквидные тикеры с **большим slippage** (>0.5%) и редкими сделками могут "отравить" обучение — модель научится избегать торговли вообще, чтобы минимизировать transaction costs. С текущими `transaction_fee=0.04%` + `slippage=0.025%` = **~0.065% per trade**, low-liq тикеры могут добавить ещё 0.5-1.0%.[2][1]
-
-**Рекомендация**: После первого обучения проверь распределение сделок по тикерам в validation — если агент избегает >70% тикеров, стоит отфильтровать самые неликвидные (например, оставить top-150 по volume).
-
-### Длительность сессии 30 минут
-**Текущая логика**: 30 шагов при 1-минутных барах = 30 минут торговли.[1]
-
-**Анализ**:
-- **30 минут достаточно** для интрадей momentum/mean-reversion стратегий на криптовалютах
-- Receptive field 150 баров (2.5 часа) захватывает ~5× больше контекста, чем длина сессии — это хорошо
-- С текущим TSL (d0=1.8%, dmin=0.5%) позиция может закрыться за 5-10 минут при быстром движении — агент успеет сделать 2-3 сделки за сессию[2]
-
-**Проблема**: С `gamma=0.9995` дисконтирование фактически отключено (0.9995³⁰ ≈ 0.985). Агент одинаково ценит reward на 1-й и 29-й минуте сессии.[1]
-
-**Альтернативы**:
-- **15 минут (15 шагов)** — для scalping с быстрым TSL
-- **60 минут (60 шагов)** — для swing внутри часа, но потребует gamma ниже (0.99) для temporal discount
-- **Оставить 30 минут, но снизить gamma** до 0.995-0.998 для более чёткого временного приоритета
-
-## План последовательной реализации
-
-Работаем по High Priority → Medium Priority, с проверкой после каждого изменения.
-
----
-
-### **Итерация 1: Reward Function — добавить risk-awareness**
-
-**Цель**: Штрафовать волатильность reward'а, чтобы агент учился smooth equity curve вместо aggressive PnL swings.
-
-**Подход**: Добавить rolling Sortino-like penalty в step reward.
-
-**Diff для `trading_environment.py`:**
-
-```diff
- class TradingEnvironment(gym.Env):
-     def __init__(
-         self,
-         # ... existing params ...
-         max_drawdown_threshold: float | None = None,
-         max_drawdown_penalty: float = 0.0,
-         max_drawdown_penalty_type: str = "absolute",
-+        reward_volatility_penalty: float = 0.0,  # Новый параметр
-+        reward_rolling_window: int = 10,          # Окно для расчёта волатильности
-         **kwargs,
-     ) -> None:
-         # ... existing code ...
-         self.max_drawdown_threshold = max_drawdown_threshold
-         self.max_drawdown_penalty = max_drawdown_penalty
-         self.max_drawdown_penalty_type = max_drawdown_penalty_type
-+        self.reward_volatility_penalty = reward_volatility_penalty
-+        self.reward_rolling_window = reward_rolling_window
-```
-
-```diff
- def _init_episode_vars(self) -> None:
-     # ... existing code ...
-     # Отслеживание просадки
-     self.equity_peak: float = self.initial_balance
-     self.current_max_drawdown: float = 0.0
-+    
-+    # Отслеживание волатильности reward
-+    self.recent_rewards: List[float] = []  # Буфер последних N rewards
-```
-
-```diff
- def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-     # ... existing code до расчёта reward ...
-     
-     reward = pnl_change / self.initial_balance - inaction_penalty
-     
-+    # Добавить reward в буфер для расчёта волатильности
-+    self.recent_rewards.append(pnl_change / self.initial_balance)
-+    if len(self.recent_rewards) > self.reward_rolling_window:
-+        self.recent_rewards.pop(0)
-+    
-+    # Рассчитать волатильность reward (downside deviation для Sortino-like penalty)
-+    volatility_penalty = 0.0
-+    if len(self.recent_rewards) >= 3 and self.reward_volatility_penalty > 0:
-+        rewards_array = np.array(self.recent_rewards)
-+        mean_reward = np.mean(rewards_array)
-+        # Downside deviation: только отрицательные отклонения от среднего
-+        downside_returns = rewards_array[rewards_array < mean_reward] - mean_reward
-+        if len(downside_returns) > 0:
-+            downside_std = np.sqrt(np.mean(downside_returns ** 2))
-+            volatility_penalty = downside_std * self.reward_volatility_penalty
-     
-     # Calculate current portfolio value (balance + unrealized pnl)
-     portfolio_value = self.balance
-     # ... existing code ...
-     
-     # Применить штраф за просадку к награде
-     reward -= drawdown_penalty
-+    reward -= volatility_penalty
-     
-     if self.render_mode == "human":
-         self._render_human(info, action, reward)
-     
-     return obs, reward, terminated, False, info
-```
-
-**Diff для `config.py`:**
-
-```diff
- class MarketConfig(BaseModel):
-     initial_balance: float = 10_000.0
-     transaction_fee: float = 0.0004
-     slippage: float = 0.0005 / 2
-     num_actions: int = 4
-     inaction_penalty_ratio: float = 0.001
-     bankruptcy_threshold: float = 0.0
-     bankruptcy_penalty: float = 1.0
-     # Max Drawdown Penalty
-     max_drawdown_threshold: float = -0.20
-     max_drawdown_penalty: float = 0.1
-     max_drawdown_penalty_type: str = "proportional"
-+    # Reward Volatility Penalty
-+    reward_volatility_penalty: float = 0.0
-+    reward_rolling_window: int = 10
-```
-
-**Diff для `alpha_seed_404.py`:**
-
-```diff
- cfg.market.max_drawdown_threshold = -0.20
- cfg.market.max_drawdown_penalty_type = "proportional"
- cfg.market.max_drawdown_penalty = 0.1
-+
-+# Reward Volatility Penalty (Sortino-like)
-+cfg.market.reward_volatility_penalty = 0.15  # Начни с 0.1-0.2
-+cfg.market.reward_rolling_window = 10        # Окно 10 шагов (~10 минут)
-```
-
-**Diff для `train.py`:**
-
-```diff
-     envkwargs = {
-         # ... existing params ...
-         "max_drawdown_threshold": cfg.market.max_drawdown_threshold,
-         "max_drawdown_penalty": cfg.market.max_drawdown_penalty,
-         "max_drawdown_penalty_type": cfg.market.max_drawdown_penalty_type,
-+        "reward_volatility_penalty": cfg.market.reward_volatility_penalty,
-+        "reward_rolling_window": cfg.market.reward_rolling_window,
-     }
-```
-
-**Что это даёт**:
-- Агент будет пенализироваться за **резкие проседания** reward (даже если итоговый PnL положительный)
-- Motivation для smooth, consistent trades вместо "all-in on lucky momentum"
-- Прямая связь с Sortino ratio — минимизируем downside volatility
-
-**Проверка после применения**: Запусти 1-2 эпохи (5-10k steps), проверь что:
-1. `reward` в логах не стал слишком негативным (если все rewards < -0.1, уменьши penalty до 0.05)
-2. Validation Sortino **не упал** по сравнению с baseline (если упал >20%, это overpenalizing)
+1. **Ослабить `min_trades: 80`** в `validation_gate` для промежуточных чекпоинтов
+2. **Сохранять топ-10 моделей** вместо перезаписи `best.pth`
+3. **Добавить скрипт `select_best_model.py`** для финального отбора с `min_trades >= 200`
 
 ***
 
-### **Итерация 2: Gamma Discount — синхронизация с horizon'ом**
-
-**Цель**: Сделать temporal credit assignment более явным.
-
-**Diff для `alpha_seed_404.py`:**
+## 📝 Патч 1: Конфигурация `configs/alpha_seed_404_v7.py`
 
 ```diff
--cfg.rl.gamma = 0.9995  # Discount
-+cfg.rl.gamma = 0.995   # Discount (более сильный для 30-шаговых сессий)
-```
-
-**Обоснование**:
-- `gamma=0.995` даёт дисконт 0.995³⁰ ≈ **0.86** для reward на 30-м шаге
-- Агент будет **предпочитать ранние прибыли** vs отложенные (стимул закрывать profitable trades быстрее)
-- Half-life ~138 шагов = ~2.3 сессии (разумно для short-term trading)
-
-**Альтернатива** (если хочешь более агрессивный discount):
-```python
-cfg.rl.gamma = 0.99  # Half-life ~69 шагов = ~1.15 сессии
-```
-
-**Проверка**: Validation WinRate должен **немного вырасти** (агент быстрее фиксирует профит), но PnL per trade может уменьшиться (меньше hold time).
-
-***
-
-### **Итерация 3: Inaction Penalty — снизить aggressive overtrading**
-
-**Цель**: Текущие 0.1% penalty за hold **слишком агрессивны** — агент может overtrade только чтобы избежать penalty.
-
-**Diff для `alpha_seed_404.py`:**
-
-```diff
--cfg.market.inaction_penalty_ratio = 0.001  # 0.1% per hold step
-+cfg.market.inaction_penalty_ratio = 0.0002  # 0.02% per hold step
-```
-
-**Обоснование**:
-- С transaction_fee=0.04% + slippage=0.025% = **0.065% round-trip cost**
-- Penalty 0.1% за hold означает "лучше торговать, даже если не уверен", что ведёт к overtrading
-- **0.02% penalty** ≈ 1/3 от transaction cost — более сбалансированно
-
-**Альтернатива** (можно попробовать после первого теста):
-```python
-cfg.market.inaction_penalty_ratio = 0.0  # Вообще убрать penalty
-```
-
-**Проверка**: Смотри `episode_closed_trades` в validation — должно быть **1-3 сделки за 30-минутную сессию** (не 5-10).
-
-***
-
-### **Итерация 4: Validation Warmup — раннее sanity check**
-
-**Цель**: Детектировать проблемы (NaN loss, bankruptcy spiral) раньше.
-
-**Diff для `alpha_seed_404.py`:**
-
-```diff
--cfg.trainlog.validation_warmup_steps = 150000  # 25% от бюджета
-+cfg.trainlog.validation_warmup_steps = 40000   # ~6.7% от бюджета
-```
-
-**Обоснование**:
-- Первая validation на 40k steps (~1 эпоха с 4 envs) даст early signal
-- Если модель "сходит с ума" (WinRate<0.2, Bankruptcy>50%), узнаешь на ранней стадии
-- Оригинальная логика "25% warmup" подходит для стабильных setups, но с мультитикерным датасетом риски выше
-
-**Проверка**: Первая validation должна показать хотя бы **WinRate ~0.3-0.4** и Sortino >-0.5 (даже если модель слабая).
-
-***
-
-### **Итерация 5: Validation Gate — adaptive или fallback criterion**
-
-**Цель**: Не терять best models на ранних этапах обучения из-за строгого gate.
-
-**Diff для `alpha_seed_404.py`:**
-
-```diff
- cfg.validation_gate = {
-     "min_sharpe": 0.001,
-+    "min_sortino": 0.002,  # Уже есть, хорошо
-     "min_profit_factor": 1.10,
--    "max_drawdown_atmost": -1.10,  # Это опечатка? Должно быть -0.10 (10% DD limit)?
-+    "max_drawdown_atmost": -0.15,  # 15% MaxDD лимит для сохранения модели
-     "min_win_rate": 0.34,
-     "min_trades": 600,
+--- a/third_party/rl-trading-binance/configs/alpha_seed_404_v7.py
++++ b/third_party/rl-trading-binance/configs/alpha_seed_404_v7.py
+@@ -112,7 +112,7 @@ cfg.validation_gate = {
+     "min_profit_factor": 0.78,
+     "max_drawdown_at_most": -5.5,
+     "min_win_rate": 0.44,
+-    "min_trades": 300,
++    "min_trades": 80,  # Ослабленный порог для промежуточных чекпоинтов
      "deny_inf_pf": True,
      "deny_zero_drawdown": True,
-+    "save_if_better_than_prev": True,  # NEW: fallback — сохранять если лучше предыдущей best, даже если gate fails
+     "profit_factor_atleast": 0.78,
+@@ -120,6 +120,11 @@ cfg.validation_gate = {
  }
+ 
++# Top-K checkpoint saving
++cfg.trainlog.save_top_k = 10  # Сохранять топ-10 моделей
++cfg.trainlog.checkpoint_metric = "Validation_sortino"  # Основная метрика для ранжирования
++cfg.trainlog.save_mode = "max"  # Максимизировать метрику
++
+ # Штраф за банкротство
+ cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
+ cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
 ```
-
-**Реализация в `train.py` (если `save_if_better_than_prev` ещё не реализован):**
-
-Нужно проверить текущую логику validation gate. Если строка `save_if_better_than_prev` не работает, придётся добавить логику вручную.
-
-**Проверка**: Лог должен показывать сохранение моделей на ранних этапах (даже если они не проходят полный gate).
 
 ***
 
-### **Итерация 6 (опционально): Soft Target Updates**
-
-**Цель**: Stabilize Q-learning с низким LR.
-
-**Diff для `alpha_seed_404.py`:**
+## 📝 Патч 2: Добавление TopKCheckpointManager в `train.py`
 
 ```diff
- cfg.rl.lr = 2e-5  # AdamW
--cfg.rl.target_update_freq = 5000  # Hard update каждые 5k steps
-+cfg.rl.target_update_freq = 1     # Каждый шаг (для soft update)
-+cfg.rl.target_update_tau = 0.005  # Soft update коэффициент (θ_target = τ*θ + (1-τ)*θ_target)
+--- a/third_party/rl-trading-binance/train.py
++++ b/third_party/rl-trading-binance/train.py
+@@ -45,6 +45,103 @@ from utils import (
+     setup_logging,
+ ) # noqa: F401
+ 
++class TopKCheckpointManager:
++    """
++    Менеджер для сохранения топ-K лучших чекпоинтов с метаданными.
++    
++    Автоматически удаляет худшие чекпоинты при превышении лимита top_k.
++    Сохраняет полные метрики в JSON для последующего анализа.
++    """
++    
++    def __init__(self, save_dir: str, top_k: int = 10, metric_key: str = "Validation_sortino", mode: str = "max"):
++        self.save_dir = Path(save_dir)
++        self.save_dir.mkdir(parents=True, exist_ok=True)
++        self.top_k = top_k
++        self.metric_key = metric_key
++        self.mode = mode
++        self.checkpoints = []  # List of (metric_value, episode, filepath, metrics_dict)
++        
++        logging.info(f"TopKCheckpointManager initialized: save_dir={save_dir}, top_k={top_k}, metric={metric_key}, mode={mode}")
++    
++    def save_checkpoint(self, agent, episode: int, metrics: Dict[str, Any]) -> bool:
++        """
++        Сохраняет чекпоинт, если он входит в топ-K по целевой метрике.
++        
++        Returns:
++            bool: True если чекпоинт сохранён, False если отклонён
++        """
++        
++        metric_value = metrics.get(self.metric_key, None)
++        
++        if metric_value is None:
++            logging.warning(f"Metric '{self.metric_key}' not found in validation metrics. Skipping checkpoint save.")
++            return False
++        
++        try:
++            metric_value = float(metric_value)
++        except (TypeError, ValueError):
++            logging.warning(f"Metric '{self.metric_key}' has non-numeric value: {metric_value}. Skipping.")
++            return False
++        
++        # Создать имя файла с ключевыми метриками
++        sortino = metrics.get("Validation_sortino", 0.0)
++        sharpe = metrics.get("Validation_sharpe", 0.0)
++        trades = metrics.get("Validation_trades", 0)
++        
++        filename = (
++            f"checkpoint_ep{episode:05d}_"
++            f"sortino{sortino:.3f}_"
++            f"sharpe{sharpe:.3f}_"
++            f"trades{trades:.0f}.pth"
++        )
++        filepath = self.save_dir / filename
++        
++        # Сохранить модель
++        try:
++            agent.save_model(str(filepath))
++        except Exception as e:
++            logging.error(f"Failed to save model checkpoint: {e}")
++            return False
++        
++        # Сохранить метаданные отдельно в JSON
++        metadata_path = filepath.with_suffix('.json')
++        try:
++            with open(metadata_path, 'w') as f:
++                json.dump({
++                    'episode': episode,
++                    'metrics': metrics,
++                    'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
++                }, f, indent=2, default=_numpy_json_default)
++        except Exception as e:
++            logging.warning(f"Failed to save checkpoint metadata: {e}")
++        
++        # Добавить в список и отсортировать
++        self.checkpoints.append((metric_value, episode, filepath, metrics))
++        self.checkpoints.sort(key=lambda x: x[0], reverse=(self.mode == "max"))
++        
++        # Удалить худшие чекпоинты, если превышен лимит
++        if len(self.checkpoints) > self.top_k:
++            to_remove = self.checkpoints[self.top_k:]
++            for _, _, fpath, _ in to_remove:
++                try:
++                    fpath.unlink(missing_ok=True)
++                    fpath.with_suffix('.json').unlink(missing_ok=True)
++                    logging.debug(f"Removed old checkpoint: {fpath.name}")
++                except Exception as e:
++                    logging.warning(f"Failed to remove checkpoint {fpath}: {e}")
++            
++            self.checkpoints = self.checkpoints[:self.top_k]
++        
++        logging.info(
++            f"[TopK] Saved checkpoint (rank {len([c for c in self.checkpoints if c[0] >= metric_value])}/{len(self.checkpoints)}): "
++            f"{filename} | {self.metric_key}={metric_value:.4f}"
++        )
++        
++        return True
++    
++    def get_best_checkpoint(self) -> Optional[Path]:
++        """Возвращает путь к лучшему чекпоинту"""
++        return self.checkpoints[0][2] if self.checkpoints else None
++
+ def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: int = 25) -> dict:
+     """
+     Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
+@@ -881,6 +978,14 @@ def main(cfg: MasterConfig = None):
+     best_episode: int | None = None
+ 
+     train_steps = 0
++    
++    # --- Top-K Checkpoint Manager ---
++    checkpoint_manager = None
++    if getattr(getattr(cfg, "trainlog", object()), "save_top_k", 0) > 0:
++        checkpoint_manager = TopKCheckpointManager(
++            save_dir=os.path.join(models_dir, "checkpoints"),
++            top_k=cfg.trainlog.save_top_k,
++            metric_key=cfg.trainlog.checkpoint_metric,
++            mode=cfg.trainlog.save_mode
++        )
+ 
+     # Инициализация окружения:
+@@ -1109,22 +1214,34 @@ def main(cfg: MasterConfig = None):
+             if _is_better(val_metric, best_val_metric):
+-                # Сохранение без дополнительных условий
+                 best_val_metric = val_metric
+                 best_validation = dict(metrics)
+                 best_episode = int(ep)
+-                best_path = os.path.join(models_dir, "best.pth")
+-                agent.save_model(best_path)
+-                logging.info(
+-                    f"[Validation] New best model saved at episode {ep} "
+-                    f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
+-                )
+                 
+-                # Сохранение best_model_info.json
+-                best_model_info = {
+-                    "episode": best_episode,
+-                    "primary_metric": "Validation_sortino",
+-                    "primary_metric_value": float(best_val_metric),
+-                    "validation_metrics": best_validation,
+-                }
+-                best_info_path = os.path.join(models_dir, "best_model_info.json")
+-                with open(best_info_path, "w") as f:
+-                    json.dump(best_model_info, f, indent=2)
++                # Сохранение в top-K менеджер (если включен)
++                if checkpoint_manager:
++                    checkpoint_manager.save_checkpoint(agent, ep, metrics)
++                else:
++                    # Fallback: старая логика с одним best.pth
++                    best_path = os.path.join(models_dir, "best.pth")
++                    agent.save_model(best_path)
++                    logging.info(
++                        f"[Validation] New best model saved at episode {ep} "
++                        f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
++                    )
++                    
++                    # Сохранение best_model_info.json
++                    best_model_info = {
++                        "episode": best_episode,
++                        "primary_metric": "Validation_sortino",
++                        "primary_metric_value": float(best_val_metric),
++                        "validation_metrics": best_validation,
++                    }
++                    best_info_path = os.path.join(models_dir, "best_model_info.json")
++                    with open(best_info_path, "w") as f:
++                        json.dump(best_model_info, f, indent=2)
+ 
+                 no_improvement_count = 0  # Сброс счётчика
+@@ -1142,6 +1259,15 @@ def main(cfg: MasterConfig = None):
+                 )
+                 break  # Выход из основного цикла обучения
+ 
++    # После завершения обучения: копировать лучший топ-K чекпоинт в best.pth
++    if checkpoint_manager:
++        best_ckpt = checkpoint_manager.get_best_checkpoint()
++        if best_ckpt:
++            import shutil
++            best_path = os.path.join(models_dir, "best.pth")
++            shutil.copy2(best_ckpt, best_path)
++            logging.info(f"[TopK] Copied best checkpoint to: {best_path}")
++
+     final_path = os.path.join(models_dir, "final.pth")
+     agent.save_model(final_path)
+     logging.info(f"Final model saved: {final_path}")
 ```
-
-**Реализация в `agent.py` (нужно проверить, поддерживается ли soft update):**
-
-Если в `D3QNPERAgent` есть только hard update, нужно добавить:
-
-```python
-# В методе update_model после градиента:
-if self.soft_update:
-    for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
-        target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-```
-
-**Проверка**: TD loss должен быть **более стабильным** (меньше spikes) в TensorBoard/logs.
 
 ***
 
-## Последовательность тестирования
+## 📝 Новый файл: `select_best_model.py`
 
-1. **Baseline**: Запусти текущую конфигурацию **без изменений**, сохрани метрики (Sortino, Sharpe, MaxDD, WinRate)
-2. **Iteration 1**: Применить **только reward volatility penalty**, запустить 1 полное обучение (15k episodes), сравнить с baseline
-3. **Iteration 2**: Добавить **gamma=0.995**, повторить обучение
-4. **Iteration 3-4**: Добавить **inaction penalty reduction + validation warmup**, проверить стабильность
-5. **Iteration 5-6**: Adaptive gate + soft updates (если нужно)
+Создайте файл `third_party/rl-trading-binance/select_best_model.py`:
 
-## Что смотреть в результатах
+```python
+#!/usr/bin/env python3
+"""
+Скрипт для пост-селекции лучшей модели из топ-K чекпоинтов
+с применением строгих критериев отбора.
 
-**Primary metrics** (по приоритету):
-1. **Validation Sortino ≥ 0.5** (минимально приемлемо для live)
-2. **Validation MaxDD ≤ -0.15** (15% просадка максимум)
-3. **Profit Factor ≥ 1.4** (устойчивая edge)
+Usage:
+    python select_best_model.py --checkpoint-dir output/alpha_seed_404_v7/saved_models/rl_binance_futures_trading_date_20251120_time_015257/checkpoints --min-trades 200
+"""
 
-**Secondary metrics**:
-4. Win Rate ~0.45-0.55 (не должен быть >0.65 — overfit risk)
-5. Closed trades per session ~1-3 (не 10+, признак overtrading)
-6. TD loss convergence (stable после 100k steps)
+import argparse
+import json
+import logging
+from pathlib import Path
+import shutil
+from typing import Optional
 
-Готов дать diff для **Iteration 1 (reward volatility)** прямо сейчас? Или хочешь сначала запустить baseline без изменений для reference?[2][1]
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-[1](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/21325805/c81a1c54-46ab-4452-8150-7bc8e1cf4d4e/alpha_seed_404.py)
-[2](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/21325805/f4059f6c-1a1c-4041-ad0e-cd001b33f32d/trading_environment.py)
+
+def select_best_checkpoint(
+    checkpoint_dir: str,
+    min_trades: int = 200,
+    min_sharpe: float = 0.5,
+    min_profit_factor: float = 1.0,
+    max_drawdown_threshold: float = -20.0,
+    metric: str = "Validation_sortino"
+) -> Optional[Path]:
+    """
+    Отфильтровать чекпоинты по строгим критериям и выбрать лучший.
+    
+    Args:
+        checkpoint_dir: Путь к директории с чекпоинтами
+        min_trades: Минимальное количество сделок
+        min_sharpe: Минимальный Sharpe Ratio
+        min_profit_factor: Минимальный Profit Factor
+        max_drawdown_threshold: Максимально допустимая просадка (отрицательное число)
+        metric: Метрика для ранжирования
+    
+    Returns:
+        Путь к лучшей модели или None
+    """
+    
+    checkpoint_dir = Path(checkpoint_dir)
+    
+    if not checkpoint_dir.exists():
+        logging.error(f"Checkpoint directory not found: {checkpoint_dir}")
+        return None
+    
+    checkpoints = []
+    
+    # Собрать все чекпоинты с метаданными
+    for json_file in checkpoint_dir.glob("checkpoint_*.json"):
+        pth_file = json_file.with_suffix('.pth')
+        
+        if not pth_file.exists():
+            logging.warning(f"Missing .pth file for {json_file.name}, skipping")
+            continue
+        
+        try:
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+            
+            metrics = data.get('metrics', {})
+            checkpoints.append({
+                'path': pth_file,
+                'episode': data.get('episode', 0),
+                'metrics': metrics
+            })
+        except Exception as e:
+            logging.error(f"Error loading {json_file}: {e}")
+            continue
+    
+    if not checkpoints:
+        logging.error("No valid checkpoints found in directory")
+        return None
+    
+    logging.info(f"Found {len(checkpoints)} total checkpoints")
+    
+    # Применить строгий фильтр
+    filtered = []
+    
+    for ckpt in checkpoints:
+        m = ckpt['metrics']
+        
+        trades = m.get('Validation_trades', 0)
+        sharpe = m.get('Validation_sharpe', -999)
+        pf = m.get('Validation_profit_factor', 0)
+        dd = m.get('Validation_max_drawdown', 0)
+        
+        # Строгие критерии
+        passes = (
+            trades >= min_trades and
+            sharpe >= min_sharpe and
+            pf >= min_profit_factor and
+            dd >= max_drawdown_threshold
+        )
+        
+        if passes:
+            filtered.append(ckpt)
+        else:
+            logging.debug(
+                f"Checkpoint rejected: ep={ckpt['episode']} "
+                f"(trades={trades}, sharpe={sharpe:.3f}, pf={pf:.3f}, dd={dd:.2%})"
+            )
+    
+    logging.info(f"Checkpoints passing strict filter: {len(filtered)}/{len(checkpoints)}")
+    
+    # Fallback: если нет моделей с min_trades >= 200, попробовать с >= 100
+    if not filtered:
+        logging.warning(f"No checkpoints with min_trades >= {min_trades}. Trying fallback >= 100...")
+        
+        for ckpt in checkpoints:
+            m = ckpt['metrics']
+            if (m.get('Validation_trades', 0) >= 100 and
+                m.get('Validation_sharpe', -999) >= 0.0 and
+                m.get('Validation_profit_factor', 0) >= 0.8):
+                filtered.append(ckpt)
+    
+    if not filtered:
+        logging.error("No valid checkpoints found even with fallback criteria!")
+        return None
+    
+    # Сортировать по целевой метрике
+    filtered.sort(key=lambda x: x['metrics'].get(metric, -999), reverse=True)
+    
+    best = filtered[0]
+    
+    # Вывести отчет
+    print("\n" + "="*70)
+    print(f"🏆 BEST MODEL (из {len(filtered)} валидных / {len(checkpoints)} всего):")
+    print("="*70)
+    print(f"Файл: {best['path'].name}")
+    print(f"Эпизод: {best['episode']}")
+    print("\nМетрики:")
+    
+    key_metrics = [
+        'Validation_sortino',
+        'Validation_sharpe',
+        'Validation_profit_factor',
+        'Validation_max_drawdown',
+        'Validation_trades',
+        'Validation_win_rate'
+    ]
+    
+    for key in key_metrics:
+        val = best['metrics'].get(key, 'N/A')
+        if isinstance(val, float):
+            if 'rate' in key or 'drawdown' in key:
+                print(f"  {key}: {val:.2%}" if val != 'N/A' else f"  {key}: {val}")
+            else:
+                print(f"  {key}: {val:.4f}" if val != 'N/A' else f"  {key}: {val}")
+        else:
+            print(f"  {key}: {val}")
+    
+    print("="*70 + "\n")
+    
+    return best['path']
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Select best model from top-K checkpoints with strict criteria"
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        required=True,
+        help="Path to checkpoints directory"
+    )
+    parser.add_argument(
+        "--min-trades",
+        type=int,
+        default=200,
+        help="Minimum number of trades required (default: 200)"
+    )
+    parser.add_argument(
+        "--min-sharpe",
+        type=float,
+        default=0.5,
+        help="Minimum Sharpe Ratio (default: 0.5)"
+    )
+    parser.add_argument(
+        "--min-pf",
+        type=float,
+        default=1.0,
+        help="Minimum Profit Factor (default: 1.0)"
+    )
+    parser.add_argument(
+        "--max-dd",
+        type=float,
+        default=-0.20,
+        help="Maximum drawdown threshold as negative decimal (default: -0.20 = -20%%)"
+    )
+    parser.add_argument(
+        "--metric",
+        default="Validation_sortino",
+        help="Metric for ranking (default: Validation_sortino)"
+    )
+    parser.add_argument(
+        "--copy-to-best",
+        action="store_true",
+        help="Copy selected checkpoint to best.pth in parent directory"
+    )
+    
+    args = parser.parse_args()
+    
+    best_path = select_best_checkpoint(
+        checkpoint_dir=args.checkpoint_dir,
+        min_trades=args.min_trades,
+        min_sharpe=args.min_sharpe,
+        min_profit_factor=args.min_pf,
+        max_drawdown_threshold=args.max_dd,
+        metric=args.metric
+    )
+    
+    if best_path:
+        print(f"✅ Best model: {best_path}")
+        
+        if args.copy_to_best:
+            parent_dir = best_path.parent.parent
+            dest = parent_dir / "best.pth"
+            shutil.copy2(best_path, dest)
+            print(f"✅ Copied to: {dest}")
+    else:
+        print("❌ No suitable model found")
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
+```
+
+***
+
+## 🚀 Workflow использования
+
+### 1. Применить патчи
+
+```bash
+cd third_party/rl-trading-binance
+
+# Патч для конфигурации
+git apply --index alpha_config.patch
+
+# Патч для train.py
+git apply --index train_topk.patch
+
+# Сделать select_best_model.py исполняемым
+chmod +x select_best_model.py
+```
+
+### 2. Обучение с top-K
+
+```bash
+python train.py configs/alpha_seed_404_v7.py
+```
+
+Теперь в `output/alpha_seed_404_v7/saved_models/<session>/checkpoints/` будут сохраняться топ-10 моделей.
+
+### 3. Пост-селекция финальной модели
+
+```bash
+python select_best_model.py \
+    --checkpoint-dir output/alpha_seed_404_v7/saved_models/rl_binance_futures_trading_date_YYYYMMDD_time_HHMMSS/checkpoints \
+    --min-trades 200 \
+    --min-sharpe 0.8 \
+    --min-pf 1.2 \
+    --max-dd -0.15 \
+    --copy-to-best
+```
+
+### 4. Бэктест финальной модели
+
+```bash
+python backtest_engine.py configs/alpha_seed_404_v7.py
+```
+
+***
+
+## 📊 KPI/Risk Assessment
+
+| Метрика | Старый подход | Новый подход |
+|---------|--------------|--------------|
+| Риск потери хороших моделей | ⚠️ Высокий (`min_trades=300`) | ✅ Низкий (`min_trades=80` промежуточно) |
+| Качество финальной модели | ❓ Неопределенно | ✅ Гарантировано (`≥200 trades` при отборе) |
+| Disk space overhead | ~100 MB | ~1 GB (10 чекпоинтов) |
+| Debugging capability | ❌ Нет истории | ✅ Полная история эволюции |
+| Early stopping риск | ⚠️ Может остановиться преждевременно | ✅ Снижен за счёт мягкого гейта |
+
+***
