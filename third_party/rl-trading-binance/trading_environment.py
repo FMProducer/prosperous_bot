@@ -55,6 +55,7 @@ class TradingEnvironment(gym.Env):
         perfect_entry_reward: float = 0.0,
         risk_reward_ratio_threshold: float = 3.0,
         risk_reward_ratio_reward: float = 0.0,
+        continuous_pain_penalty_ratio: float = 0.0,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -97,6 +98,7 @@ class TradingEnvironment(gym.Env):
         self.perfect_entry_reward = perfect_entry_reward
         self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
         self.risk_reward_ratio_reward = risk_reward_ratio_reward
+        self.continuous_pain_penalty_ratio = continuous_pain_penalty_ratio
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
 
@@ -376,11 +378,11 @@ class TradingEnvironment(gym.Env):
         reward -= drawdown_penalty
 
         # НОВОЕ: Штраф за каждый шаг с открытой убыточной позицией (Continuous Penalty for unrealized losses)
-        if self.position != 0:
+        if self.position != 0 and self.continuous_pain_penalty_ratio > 0:
             unrealized_pnl = self._calculate_unrealized_pnl()
             if unrealized_pnl < 0:
                 # Штраф пропорционален убытку
-                pain_penalty = abs(unrealized_pnl) / self.initial_balance * 0.5
+                pain_penalty = abs(unrealized_pnl) / self.initial_balance * self.continuous_pain_penalty_ratio
                 reward -= pain_penalty
      
         if self.render_mode == "human":
