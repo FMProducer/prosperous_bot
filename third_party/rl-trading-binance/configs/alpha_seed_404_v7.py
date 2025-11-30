@@ -109,7 +109,7 @@ cfg.market.bankruptcy_penalty = 50.0    # Размер штрафа (очень 
 # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_threshold = -0.10  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
-cfg.market.max_drawdown_penalty = 20.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+cfg.market.max_drawdown_penalty = 10.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
 
 # Новые награды за формирование поведения (Shaped Rewards)
 cfg.market.new_equity_peak_reward = 0.01      # Награда за достижение нового максимума эквити
@@ -118,10 +118,10 @@ cfg.market.risk_reward_ratio_threshold = 3.0  # Порог для соотнош
 cfg.market.risk_reward_ratio_reward = 0.15    # Награда за сделку с высоким соотношением риск/прибыль
 
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 1.0 # Коэффициент для штрафа. 1.0 - довольно агрессивный штраф.
+cfg.market.continuous_pain_penalty_ratio = 0.3 # Коэффициент для штрафа. 1.0 - довольно агрессивный штраф.
 
 # Штраф за бездействие (когда нет открытых позиций)
-cfg.market.inaction_penalty_ratio = 0.05 # Меньшее значение поощряет осторожность и выжидание лучших моментов.
+cfg.market.inaction_penalty_ratio = 0.001 # Меньшее значение поощряет осторожность и выжидание лучших моментов.
 
 
 # Backtest/Paper Trader
