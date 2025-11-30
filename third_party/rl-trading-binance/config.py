@@ -136,6 +136,11 @@ class MarketConfig(BaseModel):
     max_drawdown_threshold: float = -0.20
     max_drawdown_penalty: float = 0.1
     max_drawdown_penalty_type: str = "proportional"
+    new_equity_peak_reward: float = 0.01      # Награда за достижение нового максимума эквити
+    perfect_entry_reward: float = 0.1         # Награда за прибыльную сделку, которая не уходила в минус
+    risk_reward_ratio_threshold: float = 3.0  # Порог для соотношения риск/прибыль (3:1)
+    risk_reward_ratio_reward: float = 0.15    # Награда за сделку с высоким соотношением риск/прибыль
+    continuous_pain_penalty_ratio: float = 1.0 # Коэффициент для штрафа. 1.0 - довольно агрессивный штраф.
 
 
 class RLConfig(BaseModel):
@@ -204,6 +209,9 @@ class TrainLogConfig(BaseModel):
     plot_metric: str = "pnl"
     iterations: int = 10_000
     early_stopping_patience: int = 20
+    save_top_k: int = 10  # Сохранять топ-10 моделей
+    checkpoint_metric: str = "Validation_mean_pnl"  # Основная метрика для ранжирования
+    save_mode: Literal["max", "min"] = "max"  # Максимизировать или минимизировать метрику
 
     @field_validator("val_selection_metrics")
     def check_val_metric(cls, v, values):
