@@ -342,8 +342,20 @@ class TradingEnvironment(gym.Env):
                 drawdown_penalty = excess * self.max_drawdown_penalty
             else:
                 drawdown_penalty = self.max_drawdown_penalty
+            
+            # НОВОЕ: Принудительно завершить эпизод
+            reward -= drawdown_penalty
+            terminated = True
+            info["max_drawdown_exceeded"] = True
+            info["terminal_observation"] = self._get_observation()
+            obs = np.zeros(self.observation_space.shape, dtype=np.float32)
+            
+            if self.render_mode == "human":
+                self._render_human(info, action, reward)
+            return obs, reward, terminated, False, info
      
-        if portfolio_value <= self.bankruptcy_threshold:
+        # Проверка bankruptcy только если эпизод ещё не завершён
+        if not terminated and portfolio_value <= self.bankruptcy_threshold:
             if self.position != 0:
                 # Force close position at current real price for accurate reward
                 real_m2m_price = (self.current_seq[price_idx, self.close_idx] * close_std) + close_mean
@@ -796,12 +808,52 @@ class TradingEnvironment(gym.Env):
 
         self.step_idx += 1
         terminated = self.step_idx >= self.agent_session_len
-        obs = self._get_observation() if not terminated else np.zeros(self.observation_space.shape, dtype=np.float32)
+        
+        info = {}
         reward = 0.0
+        # НОВОЕ: Проверка банкротства (как в step())
+        if not terminated:
+            # Рассчитать portfolio_value
+            portfolio_value = self.balance
+            if self.position != 0:
+                m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+                norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                real_m2m_price = norm_m2m_price * close_std + close_mean
+                mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
+                portfolio_value += mark2market
+            
+            # Проверка банкротства (аналогично step())
+            if portfolio_value <= self.bankruptcy_threshold:
+                # Принудительно закрыть позицию для корректного PnL
+                if self.position != 0:
+                    volume = self.position_volume
+                    if self.position == 1:  # LONG
+                        real_exec_price = real_price * (1 - self.slippage)
+                        trade_pnl = (real_exec_price - self.real_entry_price) * volume
+                    else:  # SHORT
+                        real_exec_price = real_price * (1 + self.slippage)
+                        trade_pnl = (self.real_entry_price - real_exec_price) * volume
+                    
+                    fee = real_exec_price * volume * self.transaction_fee
+                    pnl_change = trade_pnl - fee
+                    self.balance += pnl_change
+                    self.position = 0
+                    self.position_volume = 0.0
+                
+                # Применить штраф и завершить
+                reward = -self.bankruptcy_penalty
+                terminated = True
+                info["bankruptcy"] = True
+                info["bankruptcy_equity"] = portfolio_value
+        
+        obs = self._get_observation() if not terminated else np.zeros(self.observation_space.shape, dtype=np.float32)
 
         if position_closed:
             # Note: single_trade_realized_pnl and opening_fee were calculated above
-            info = {
+            trade_info = {
                 "position_closed": position_closed,
                 "trade_realized_pnl": single_trade_realized_pnl,
                 "trade_commission": fee + opening_fee,
@@ -814,6 +866,7 @@ class TradingEnvironment(gym.Env):
                 "exit_reason": exit_reason if self.use_risk_management else "",
                 "tsl_triggered": isinstance(exit_reason, str) and exit_reason.startswith("TSL"),
             }
+            info.update(trade_info)
             self.direction = None
             self.trade_dt = None
             if self.use_risk_management:
@@ -822,7 +875,7 @@ class TradingEnvironment(gym.Env):
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
         else:
-            info = {"position_closed": position_closed}
+            info["position_closed"] = position_closed
 
         return obs, reward, terminated, False, info
 

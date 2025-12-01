@@ -38,6 +38,11 @@ cfg.model.dropout_p = 0.20
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
 cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
+# Market/Position Sizing (для обучения, НЕ только backtest!)
+cfg.market.position_fraction = 0.10  # 10% баланса на сделку
+cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
+cfg.market.slippage = 0.0002
+
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.96         # Discount
@@ -103,7 +108,8 @@ cfg.trainlog.checkpoint_metric = "Validation_sortino"  # Основная мет
 cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # Штраф за банкротство
-cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
+cfg.market.bankruptcy_threshold = 2000.0  # USDT: останов если portfolio_value < $2,000
+# Это означает: потеря 80% депозита → немедленный останов
 cfg.market.bankruptcy_penalty = 50.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Штраф за превышение максимальной просадки (MaxDD)

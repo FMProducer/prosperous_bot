@@ -973,6 +973,7 @@ def main(cfg: MasterConfig = None):
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
         "datachannels": cfg.data.datachannels,
+        "positionfraction": cfg.market.position_fraction,
         "slippage": cfg.market.slippage,
         "transaction_fee": cfg.market.transaction_fee,
         "agent_session_len": cfg.seq.agent_session_len,
