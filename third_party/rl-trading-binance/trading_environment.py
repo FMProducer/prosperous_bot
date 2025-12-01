@@ -99,6 +99,8 @@ class TradingEnvironment(gym.Env):
         self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
         self.risk_reward_ratio_reward = risk_reward_ratio_reward
         self.continuous_pain_penalty_ratio = continuous_pain_penalty_ratio
+        self.seed_value = seed
+        self.seed_value = seed
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
 
@@ -189,6 +191,8 @@ class TradingEnvironment(gym.Env):
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        if seed is None:
+            seed = self.seed_value
         super().reset(seed=seed)
         self._init_episode_vars()
 

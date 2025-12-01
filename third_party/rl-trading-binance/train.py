@@ -134,13 +134,15 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: int = 25) -> dict:
+def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -> dict:
     """
     Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
     Берет случайную выборку `num_samples_per_asset` для каждого тикера для ускорения.
     Сохраняет результат в `norm_stats.json`.
     Returns: {'TICKER1': {'mean': [], 'std': []}, 'TICKER2': ...}
     """
+    num_samples_per_asset = cfg.data.norm_num_samples_per_asset
+    seed = cfg.data.norm_seed
     np.random.seed(seed)
     try:
         d = np.load(npz_path, allow_pickle=True)
@@ -186,11 +188,11 @@ def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: i
     d.close()
     
     # Сохраняем в файл
-    Path('norm_stats.json').write_text(json.dumps(all_stats, indent=2))
-    logging.info(f"Сохранены статистики для {len(all_stats)} активов в norm_stats.json")
+    Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
+    logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
     return all_stats
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
     """
     Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
     Требует предоставления `norm_stats` с данными для каждого актива.
@@ -243,20 +245,6 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         sequences.append(seq)
         valid_keys.append(key)
     
-    # Sampling по config
-    episodes_per_epoch = len(sequences)
-    if hasattr(cfg, 'episodes_per_epoch') and cfg.episodes_per_epoch:
-        episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')
-    else:
-        episodes_per_epoch = len(sequences)
-        
-    if len(sequences) > episodes_per_epoch:
-        np.random.seed(cfg.random_seed)
-        indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
-        sequences = [sequences[i] for i in sorted(indices)]
-        valid_keys = [valid_keys[i] for i in sorted(indices)]
-        print(f"Sampled to {episodes_per_epoch} episodes")
-
     d.close()
     if sequences:
         logging.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
@@ -280,6 +268,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         obs_batch = reset_out      # на случай старого API
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
+    ep_reward_per_episode = []
     win_rates = []
     ep_losses = []
     last_info = {}
@@ -309,6 +298,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             # В векторизованном режиме всегда используем batched next_obs_b[i]
             # чтобы гарантировать одинаковую форму состояний в буфере.
             next_state = next_obs_b[i]
+            if dones[i] and isinstance(infos[i], dict):
+                next_state = infos[i].get("terminal_observation", infos[i].get("final_observation", next_state))
 
             # Накапливаем награды для каждого env отдельно
             ep_reward[i] += float(rewards[i])
@@ -320,6 +311,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
             if bool(dones[i]) and isinstance(infos[i], dict):
                 episode_infos.append(infos[i])
+                ep_reward_per_episode.append(ep_reward[i])
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     # считаем завершённый эпизод для этого env
@@ -327,6 +319,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                     pbars[i].update(1)
                     pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
                     win_rates.append(float(wr))
+                
+                ep_reward[i] = 0.0
 
         last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
         # Шаги больше не рисуем: бары будут обновляться только при завершении эпизода.
@@ -338,15 +332,11 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         # В каждом "батч-шаге" получаем по одному переходу на среду
         for _ in range(train_env.num_envs):
             agent.increment_step()
-        
-        # Learn after each batch step (as in single env; adjust freq if needed)
+
+        # Один вызов обучения на batched шаг.
         loss = agent.learn()
         if loss is not None:
             ep_losses.append(loss)
-
-    # Final learn calls if buffer full
-    for _ in range(train_env.num_envs):
-        agent.learn()
 
     # Убедимся, что все прогресс-бары закрыты в конце
     for pbar in pbars:
@@ -359,7 +349,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         bankruptcy_rate = bankruptcy_count / total_episodes
         logging.info(f"Bankruptcy Rate: {bankruptcy_rate:.2%}")
 
-    avg_reward = float(ep_reward.mean())
+    avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
     # Aggregate infos from all sub-environments. A simple approach is to merge them,
@@ -723,12 +713,18 @@ def evaluate_agent(
     # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
     # MaxDD — чистая формула на ДЕНОРМАЛИЗОВАННЫХ значениях
     if trade_pnls:
-        # PnL из backtest_step уже в абсолютных значениях (долларах), доп. денормализация не нужна.
-        denorm_pnls = np.array(trade_pnls)
-        equity_curve = np.cumsum(denorm_pnls) + initial_balance
-        peak = np.maximum.accumulate(equity_curve)
-        drawdowns = (equity_curve - peak) / peak
-        max_dd = float(np.min(drawdowns))
+        denorm_pnls = np.array(trade_pnls, dtype=np.float64)
+        equity = float(initial_balance)
+        peak = float(initial_balance)
+        max_dd = 0.0
+        for pnl in denorm_pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            if peak > 0.0:
+                dd = (equity - peak) / peak
+                if dd < max_dd:
+                    max_dd = dd
     else:
         max_dd = 0.0
 
@@ -811,11 +807,6 @@ def main(cfg: MasterConfig = None):
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
-    set_random_seed(cfg.random_seed)
-    # Получаем bundle_cfg из модуля или из cfg для обратной совместимости
-    bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
-    if cfg.device.device.type == "cuda":
-        torch.backends.cudnn.benchmark = cfg.perf.cudnn_benchmark
     # Детерминизм по умолчанию ВКЛЮЧЕН; отключить: RL_DETERMINISTIC=0
     det = True
     env_flag = os.environ.get("RL_DETERMINISTIC")
@@ -824,18 +815,9 @@ def main(cfg: MasterConfig = None):
     # Разрешаем переопределение из конфига, если поле существует (обратная совместимость)
     det = bool(getattr(cfg, "deterministic", det)) if hasattr(cfg, "deterministic") else det
     det = bool(getattr(getattr(cfg, "perf", object()), "deterministic", det))
-    if det:
-        try:
-            import torch.backends.cudnn as cudnn
-            cudnn.deterministic = True
-            torch.use_deterministic_algorithms(True, warn_only=True)
-            logging.info(
-                "Deterministic mode: ON "
-                "(cudnn.deterministic=True, torch.use_deterministic_algorithms; "
-                f"CUBLAS_WORKSPACE_CONFIG={os.environ.get('CUBLAS_WORKSPACE_CONFIG')})"
-            )
-        except Exception as e:
-            logging.warning(f"Deterministic mode setup failed: {e}")
+    set_random_seed(cfg.random_seed, det)
+    # Получаем bundle_cfg из модуля или из cfg для обратной совместимости
+    bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
 
     # Fallback: если model_dir/plot_dir не определены, строим их из base_output_dir
     base_out = getattr(cfg.paths, "base_output_dir", None)
@@ -858,7 +840,7 @@ def main(cfg: MasterConfig = None):
     # --- Data Loading and Preprocessing ---
     logging.info("Загрузка и предобработка данных из NPZ файлов...")
     
-    norm_stats_path = 'norm_stats.json'
+    norm_stats_path = getattr(cfg.paths, "normstatspath", "norm_stats.json")
     norm_stats = None
     force_recompute = False
 
@@ -882,16 +864,31 @@ def main(cfg: MasterConfig = None):
             force_recompute = True
     
     if force_recompute or norm_stats is None:
-        logging.info(f"Расчет статистик по обучающим данным: {cfg.paths.train_data_path}")
-        norm_stats = compute_norm_stats(cfg.paths.train_data_path, seed=cfg.random_seed)
+        logging.info("%s normstats: compute_norm_stats", cfg.paths.train_data_path)
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
 
     # Получаем список разрешенных активов из конфига
     allowed_assets = getattr(cfg.paper, "symbols", None)
     if allowed_assets == "ALL":
         allowed_assets = None  # Используем все активы
 
-    train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=norm_stats, cfg=cfg, allowed_assets=allowed_assets)
-    
+    train_seqs, train_keys = load_and_prep_data(
+        cfg.paths.train_data_path, "Train", norm_stats=norm_stats, allowed_assets=allowed_assets
+    )
+
+    episodes_per_epoch = getattr(cfg.trainlog, "episodesperepoch", None)
+    if episodes_per_epoch is not None and len(train_seqs) > episodes_per_epoch:
+        rng = np.random.default_rng(cfg.random_seed)
+        indices = rng.choice(len(train_seqs), episodes_per_epoch, replace=False)
+        indices = sorted(indices.tolist())
+        train_seqs = [train_seqs[i] for i in indices]
+        train_keys = [train_keys[i] for i in indices]
+        logging.info(
+            "Sampled train set down to %d episodes from %d",
+            episodes_per_epoch,
+            len(indices),
+        )
+
     if not train_seqs:
         logging.error("Не удалось загрузить обучающие данные. Проверьте путь к данным и настройку 'cfg.paper.symbols'. Выход.")
         sys.exit(1)
@@ -904,7 +901,7 @@ def main(cfg: MasterConfig = None):
         logging.info(f"Скопирован norm_stats.json в: {norm_stats_save_path}")
 
     # Для валидации используем те же статистики, что были рассчитаны на обучении
-    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, cfg=cfg, allowed_assets=allowed_assets)
+    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, allowed_assets=allowed_assets)
 
     # Stratified sampling for validation set
     if val_seqs:
@@ -1009,7 +1006,8 @@ def main(cfg: MasterConfig = None):
     num_envs = getattr(cfg.vec, "num_envs", 1)
     # --- TRAIN ENV: single vs vectorized ---
     if num_envs > 1:
-        env_fns = [partial(make_env, env_kwargs=env_kwargs) for _ in range(num_envs)]
+        base_seed = cfg.global_env_seed
+        env_fns = [partial(make_env, env_kwargs={**env_kwargs, "seed": base_seed + i}) for i in range(num_envs)]
         if cfg.vec.backend == "subproc":
             train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
             logging.info(f"Vectorized train env: SubprocVecEnv x{num_envs} (start_method='{cfg.vec.start_method}')")
@@ -1087,6 +1085,12 @@ def main(cfg: MasterConfig = None):
         train_env.reset()
     else:
         train_env.reset(seed=cfg.global_env_seed)
+
+    gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
+    if gate is None:
+        gate = getattr(cfg, "validation_gate", None)
+    if gate:
+        logging.info(f"Validation gate: {gate}")
 
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
@@ -1170,12 +1174,7 @@ def main(cfg: MasterConfig = None):
             # ]
             sel_keys = cfg.trainlog.val_selection_metrics
 
-            # Нормализация направления сравнения: для метрик из этого множества "меньше — лучше"
-            lower_is_better = {
-                "Validation_loss" # FIX: max_drawdown теперь отрицательный, поэтому для него "больше - лучше".
-            }
-
-            def _fetch_metric(name: str) -> float:
+            def _fetch_metric(name: str, lower_is_better: bool) -> float:
                 v = metrics.get(name, None)
                 if v is None:
                     logging.warning(f"[Validation] metric '{name}' is missing in metrics dict — using fallback -inf")
@@ -1185,22 +1184,10 @@ def main(cfg: MasterConfig = None):
                 except Exception:
                     logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
                     return float("-inf")
-                return -v if name in lower_is_better else v
-
-            # Лексикографический приоритет по порядку в списке:
-            # сначала ключ[0], затем ключ[1], ...
-            if isinstance(sel_keys, (list, tuple)):
-                val_metric = tuple(_fetch_metric(k) for k in sel_keys)
-            else:
-                val_metric = _fetch_metric(str(sel_keys))
+                return -v if lower_is_better else v
             last_val_metrics = metrics
 
             # ── ВАЛИДАЦИОННЫЙ ГЕЙТ: пороги берём ТОЛЬКО из конфигурации
-            # Первично ищем в cfg.trainlog.validation_gate (если у nested-конфига разрешены extra-поля),
-            # иначе — fallback на верхний уровень cfg.validation_gate (MasterConfig.extra='allow').
-            gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
-            if gate is None:
-                gate = getattr(cfg, "validation_gate", None)
             def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
                 if not g:
                     return True  # гейт выключен, если не задан в конфиге
@@ -1265,8 +1252,13 @@ def main(cfg: MasterConfig = None):
             # Gate проверка (ваш строгий gate)
             if _passes_gate(metrics, gate):
                 logging.info("[Validation] Metrics passed the validation gate.")
-                
-                val_metric = metrics["Validation_sortino"]  # Primary: Sortino (или ваша метрика)
+
+                # FIX from DIFF3.md: Restore multi-objective selection
+                sel_keys = cfg.trainlog.val_selection_metrics
+                if isinstance(sel_keys, (list, tuple)):
+                    val_metric = tuple(_fetch_metric(k, lower_is_better=(val_direction == "min")) for k in sel_keys)
+                else:
+                    val_metric = _fetch_metric(str(sel_keys), lower_is_better=(val_direction == "min"))
                 
                 # УПРОЩЕНО: Сохранение только по _is_better, без дополнительной проверки PF/Sortino
                 def _is_better(current, best):
@@ -1303,6 +1295,8 @@ def main(cfg: MasterConfig = None):
                             json.dump(best_model_info, f, indent=2)
 
                     no_improvement_count = 0  # Сброс счётчика
+                else:
+                    no_improvement_count += 1
             else:
                 # Gate провален
                 no_improvement_count += 1

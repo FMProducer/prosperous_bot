@@ -87,6 +87,8 @@ class DataConfig(BaseModel):
     pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
     volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
     otherchannels: List[str] = ['num_trades']
+    norm_num_samples_per_asset: int = 1000
+    norm_seed: int = 25
 
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
