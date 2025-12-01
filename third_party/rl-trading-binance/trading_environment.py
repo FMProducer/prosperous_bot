@@ -56,6 +56,7 @@ class TradingEnvironment(gym.Env):
         risk_reward_ratio_threshold: float = 3.0,
         risk_reward_ratio_reward: float = 0.0,
         continuous_pain_penalty_ratio: float = 0.0,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -99,7 +100,6 @@ class TradingEnvironment(gym.Env):
         self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
         self.risk_reward_ratio_reward = risk_reward_ratio_reward
         self.continuous_pain_penalty_ratio = continuous_pain_penalty_ratio
-        self.seed_value = seed
         self.seed_value = seed
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
