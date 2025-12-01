@@ -684,6 +684,16 @@ class TradingEnvironment(gym.Env):
         trade_pnl = None
         exit_reason = ""
 
+        # --- CRITICAL FIX: Balance check BEFORE position opening ---
+        MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
+        if action in [1, 2] and self.position == 0:
+            if self.balance <= self.bankruptcy_threshold * MIN_SAFE_FRACTION:
+                logging.debug(
+                    f"[Backtest] Balance {self.balance:.2f} too close to "
+                    f"bankruptcy {self.bankruptcy_threshold:.2f}. Forcing HOLD."
+                )
+                action = 0  # Force HOLD
+
         # --- Risk Management (uses normalized prices) ---
         if self.use_risk_management and self.position != 0:
             d0 = trailing_stop
@@ -741,8 +751,11 @@ class TradingEnvironment(gym.Env):
             self.entry_price = norm_exec_price      # Store NORMALIZED price for agent
             self.real_entry_price = real_exec_price # Store REAL price for PnL
 
-            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
-            else: trade_amount = self.balance * self.position_fraction
+            if self.order_size_usdt > 0:
+                trade_amount = min(self.order_size_usdt, self.balance * 0.95)
+            else:
+                trade_amount = self.balance * self.position_fraction
+            trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
             volume = trade_amount / real_exec_price
             self.position_volume = volume
@@ -766,8 +779,11 @@ class TradingEnvironment(gym.Env):
             self.entry_price = norm_exec_price      # Store NORMALIZED price
             self.real_entry_price = real_exec_price # Store REAL price
 
-            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
-            else: trade_amount = self.balance * self.position_fraction
+            if self.order_size_usdt > 0:
+                trade_amount = min(self.order_size_usdt, self.balance * 0.95)
+            else:
+                trade_amount = self.balance * self.position_fraction
+            trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
             volume = trade_amount / real_exec_price
             self.position_volume = volume
