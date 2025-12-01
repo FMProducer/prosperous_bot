@@ -115,7 +115,7 @@ cfg.market.bankruptcy_penalty = 50.0    # Размер штрафа (очень 
 # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
-cfg.market.max_drawdown_penalty = 10.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+cfg.market.max_drawdown_penalty = 30.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
 
 # Новые награды за формирование поведения (Shaped Rewards)
 cfg.market.new_equity_peak_reward = 0.01      # Награда за достижение нового максимума эквити
