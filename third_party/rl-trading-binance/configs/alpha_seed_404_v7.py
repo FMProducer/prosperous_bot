@@ -39,7 +39,7 @@ cfg.model.dropout_p = 0.20
 cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
-cfg.market.position_fraction = 0.10  # 10% баланса на сделку
+cfg.market.position_fraction = 0.50  # 10% баланса на сделку
 cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
 cfg.market.slippage = 0.0002
 
@@ -133,7 +133,7 @@ cfg.market.inaction_penalty_ratio = 0.0 # Меньшее значение поо
 # Backtest/Paper Trader
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 8
-cfg.backtest.position_fraction = 0.10
+cfg.backtest.position_fraction = 0.50
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015

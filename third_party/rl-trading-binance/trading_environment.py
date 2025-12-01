@@ -231,41 +231,69 @@ class TradingEnvironment(gym.Env):
         
         pnl_change = 0.0
         trade_pnl = 0.0
+        reward = 0.0  # Initialize reward
+
+        # --- Risk-based Balance Check ---
+        MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
+        if action in [1, 2] and self.position == 0:
+            if self.balance < self.bankruptcy_threshold * MIN_SAFE_FRACTION:
+                logging.debug(
+                    f"Balance {self.balance:.2f} is too close to bankruptcy threshold "
+                    f"({self.bankruptcy_threshold:.2f}). Forcing HOLD."
+                )
+                action = 0  # Force HOLD
+                reward -= 0.01 # Penalize attempt
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
-            real_exec_price = real_price * (1 + self.slippage)
-            norm_exec_price = norm_price * (1 + self.slippage)
+            if self.order_size_usdt > 0:
+                trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
+            else:
+                trade_amount = self.balance * self.position_fraction
+                trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
 
-            self.position = 1
-            self.entry_price = norm_exec_price      # Store NORMALIZED price
-            self.real_entry_price = real_exec_price # Store REAL price
+            if trade_amount > 0:
+                real_exec_price = real_price * (1 + self.slippage)
+                norm_exec_price = norm_price * (1 + self.slippage)
 
-            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
-            else: trade_amount = self.balance * self.position_fraction
-            
-            volume = trade_amount / real_exec_price
-            self.position_volume = volume
-            
-            fee = real_exec_price * volume * self.transaction_fee
-            pnl_change -= fee
+                self.position = 1
+                self.entry_price = norm_exec_price      # Store NORMALIZED price
+                self.real_entry_price = real_exec_price # Store REAL price
+                
+                volume = trade_amount / real_exec_price
+                self.position_volume = volume
+                
+                fee = real_exec_price * volume * self.transaction_fee
+                pnl_change -= fee
+            else:
+                # Balance too small for a trade, force HOLD and penalize
+                action = 0
+                reward = -0.01
 
         elif action == 2 and self.position == 0: # OPEN SHORT
-            real_exec_price = real_price * (1 - self.slippage)
-            norm_exec_price = norm_price * (1 - self.slippage)
+            if self.order_size_usdt > 0:
+                trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
+            else:
+                trade_amount = self.balance * self.position_fraction
+                trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
 
-            self.position = -1
-            self.entry_price = norm_exec_price      # Store NORMALIZED price
-            self.real_entry_price = real_exec_price # Store REAL price
+            if trade_amount > 0:
+                real_exec_price = real_price * (1 - self.slippage)
+                norm_exec_price = norm_price * (1 - self.slippage)
 
-            if self.order_size_usdt > 0: trade_amount = self.order_size_usdt
-            else: trade_amount = self.balance * self.position_fraction
-            
-            volume = trade_amount / real_exec_price
-            self.position_volume = volume
-            
-            fee = real_exec_price * volume * self.transaction_fee
-            pnl_change -= fee
+                self.position = -1
+                self.entry_price = norm_exec_price      # Store NORMALIZED price
+                self.real_entry_price = real_exec_price # Store REAL price
+
+                volume = trade_amount / real_exec_price
+                self.position_volume = volume
+                
+                fee = real_exec_price * volume * self.transaction_fee
+                pnl_change -= fee
+            else:
+                # Balance too small for a trade, force HOLD and penalize
+                action = 0
+                reward = -0.01
 
         # --- Position Closing ---
         elif action == 3 and self.position != 0:
@@ -289,6 +317,27 @@ class TradingEnvironment(gym.Env):
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
+
+        # BANKRUPTCY CHECK: Strict balance validation
+        if self.balance <= self.bankruptcy_threshold:
+            logging.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
+            
+            # Force-close any open positions with slippage penalty
+            if self.position != 0:
+                slippage_penalty = 0.05  # 5% adverse slippage
+                liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
+                liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
+                                   if self.position == 1 
+                                   else (self.real_entry_price - liquidation_price) * self.position_volume)
+                self.balance += liquidation_pnl
+            
+            self.balance = max(0.0, self.balance)  # Cannot go negative
+            reward = -self.bankruptcy_penalty
+            terminated = True
+            info = self._get_info()
+            info['bankruptcy'] = True
+            obs = np.zeros(self.observation_space.shape, dtype=np.float32)
+            return obs, reward, terminated, False, info
 
         if action == 0 and prev_position == 0:
             inaction_penalty = self.inaction_penalty_ratio
@@ -315,7 +364,7 @@ class TradingEnvironment(gym.Env):
             trade_pnl=trade_pnl
         )
         
-        # --- Bankruptcy & Drawdown Calculation (using real financial values) ---
+        # --- Drawdown Calculation (using real financial values) ---
         portfolio_value = self.balance
         if self.position != 0:
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
@@ -353,27 +402,6 @@ class TradingEnvironment(gym.Env):
             if self.render_mode == "human":
                 self._render_human(info, action, reward)
             return obs, reward, terminated, False, info
-     
-        # Проверка bankruptcy только если эпизод ещё не завершён
-        if not terminated and portfolio_value <= self.bankruptcy_threshold:
-            if self.position != 0:
-                # Force close position at current real price for accurate reward
-                real_m2m_price = (self.current_seq[price_idx, self.close_idx] * close_std) + close_mean
-                if self.position == 1:
-                    real_exec_price = real_m2m_price * (1 - self.slippage)
-                    trade_pnl = (real_exec_price - self.real_entry_price) * self.position_volume
-                else:
-                    real_exec_price = real_m2m_price * (1 + self.slippage)
-                    trade_pnl = (self.real_entry_price - real_exec_price) * self.position_volume
-                
-                fee = real_exec_price * self.position_volume * self.transaction_fee
-                pnl_change = trade_pnl - fee
-                reward += pnl_change / self.initial_balance
-            
-            reward -= self.bankruptcy_penalty
-            terminated = True
-            info["bankruptcy"] = True
-            info["bankruptcy_equity"] = portfolio_value
             
         if terminated:
             info["terminal_observation"] = self._get_observation()

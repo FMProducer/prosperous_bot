@@ -287,6 +287,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     ep_losses = []
     last_info = {}
     transitions_count = 0
+    episode_infos = []
 
     # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
     pbars = [
@@ -321,6 +322,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
 
             agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
             if bool(dones[i]) and isinstance(infos[i], dict):
+                episode_infos.append(infos[i])
                 wr = infos[i].get("episode_win_rate", None)
                 if wr is not None:
                     # считаем завершённый эпизод для этого env
@@ -352,6 +354,13 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     # Убедимся, что все прогресс-бары закрыты в конце
     for pbar in pbars:
         pbar.close()
+
+    # --- Bankruptcy Rate Metric ---
+    bankruptcy_count = sum(1 for info in episode_infos if info.get('bankruptcy', False))
+    total_episodes = len(episode_infos)
+    if total_episodes > 0:
+        bankruptcy_rate = bankruptcy_count / total_episodes
+        logging.info(f"Bankruptcy Rate: {bankruptcy_rate:.2%}")
 
     avg_reward = float(ep_reward.mean())
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -632,6 +641,7 @@ def evaluate_agent(
     ep_wrs:    list[float] = []
     exit_counts: Dict[str,int] = {}
     tsl_hits = 0
+    bankruptcy_episodes = 0
 
     for i in range(int(episodes)):
         obs, _ = env.reset(options={"forced_index": i})
@@ -640,6 +650,7 @@ def evaluate_agent(
         ep_trades = 0
         ep_wins   = 0
         ep_trade_pnls: list[float] = []
+        is_bankrupt = False
         
         # ИСПРАВЛЕНО: Извлекаем дату начала семпла из ключа, а не используем заглушку
         signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
@@ -669,6 +680,8 @@ def evaluate_agent(
                 delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
             ep_reward += float(reward or 0.0)
+            if info.get("bankruptcy", False):
+                is_bankrupt = True
             if info.get("position_closed", False):
                 pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
                 ep_trades += 1
@@ -682,6 +695,8 @@ def evaluate_agent(
                 if info.get("tsl_triggered", False) or ("TSL" in reason):
                     tsl_hits += 1
         # завершение эпизода
+        if is_bankrupt:
+            bankruptcy_episodes += 1
         total_reward += ep_reward
         total_trades += ep_trades
         total_correct += ep_wins
@@ -732,10 +747,12 @@ def evaluate_agent(
     else:
         sharpe, sortino = 0.0, 0.0
 
+    bankruptcy_rate = bankruptcy_episodes / max(1, episodes)
+
     # лог-сводка
     logging.info(
-        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, abs(max_dd) * 100.0, total_trades, sharpe, sortino
+        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f  Bankruptcy=%.2f%%",
+        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, abs(max_dd) * 100.0, total_trades, sharpe, sortino, bankruptcy_rate * 100.0
     )
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
@@ -764,6 +781,7 @@ def evaluate_agent(
         f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
         f"{L}_sharpe":  float(np.clip(sharpe,   -10.0, 10.0)),
         f"{L}_sortino": float(np.clip(sortino,  -10.0, 10.0)),
+        f"{L}_bankruptcy_rate": float(bankruptcy_rate),
     }
     if L == "Test":
         out.update({
