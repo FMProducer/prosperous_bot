@@ -125,6 +125,7 @@ class SequenceConfig(BaseModel):
 
 class MarketConfig(BaseModel):
     initial_balance: float = 10_000.0
+    position_fraction: float = 1.0  # Доля баланса для входа в позицию
     transaction_fee: float = 0.0004
     # 0.01% – 0.05% (1–5 bps -> basis points) 1 bps = 0.01% = 0.0001
     slippage: float = 0.0005 / 2

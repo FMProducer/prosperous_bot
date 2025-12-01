@@ -113,7 +113,7 @@ cfg.market.bankruptcy_threshold = 2000.0  # USDT: останов если portfo
 cfg.market.bankruptcy_penalty = 50.0    # Размер штрафа (очень большая отрицательная награда)
 
 # Штраф за превышение максимальной просадки (MaxDD)
-cfg.market.max_drawdown_threshold = -0.10  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
+cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
 cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
 cfg.market.max_drawdown_penalty = 10.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
 
@@ -133,7 +133,7 @@ cfg.market.inaction_penalty_ratio = 0.0 # Меньшее значение поо
 # Backtest/Paper Trader
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 8
-cfg.backtest.position_fraction = 0.08
+cfg.backtest.position_fraction = 0.10
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015
