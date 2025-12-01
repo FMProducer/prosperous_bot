@@ -190,7 +190,7 @@ def compute_norm_stats(npz_path: str, num_samples_per_asset: int = 1000, seed: i
     logging.info(f"Сохранены статистики для {len(all_stats)} активов в norm_stats.json")
     return all_stats
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
     """
     Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
     Требует предоставления `norm_stats` с данными для каждого актива.
@@ -243,23 +243,20 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed
         sequences.append(seq)
         valid_keys.append(key)
     
-    # Sampling по config (optional, skip если config недоступен)
+    # Sampling по config
     episodes_per_epoch = len(sequences)
-    try:
-        from config import cfg
-        if hasattr(cfg, 'episodes_per_epoch'):
-            episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')
-        else:
-            episodes_per_epoch = len(sequences)
-        if len(sequences) > episodes_per_epoch:
-            np.random.seed(25)
-            indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
-            sequences = [sequences[i] for i in sorted(indices)]
-            valid_keys = [valid_keys[i] for i in sorted(indices)]
-            print(f"Sampled to {episodes_per_epoch} episodes")
-    except (ImportError, AttributeError):
-        print("Config not available: using full sequences")
-    
+    if hasattr(cfg, 'episodes_per_epoch') and cfg.episodes_per_epoch:
+        episodes_per_epoch = getattr(cfg, 'episodes_per_epoch')
+    else:
+        episodes_per_epoch = len(sequences)
+        
+    if len(sequences) > episodes_per_epoch:
+        np.random.seed(cfg.random_seed)
+        indices = np.random.choice(len(sequences), episodes_per_epoch, replace=False)
+        sequences = [sequences[i] for i in sorted(indices)]
+        valid_keys = [valid_keys[i] for i in sorted(indices)]
+        print(f"Sampled to {episodes_per_epoch} episodes")
+
     d.close()
     if sequences:
         logging.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
@@ -886,14 +883,14 @@ def main(cfg: MasterConfig = None):
     
     if force_recompute or norm_stats is None:
         logging.info(f"Расчет статистик по обучающим данным: {cfg.paths.train_data_path}")
-        norm_stats = compute_norm_stats(cfg.paths.train_data_path)
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, seed=cfg.random_seed)
 
     # Получаем список разрешенных активов из конфига
     allowed_assets = getattr(cfg.paper, "symbols", None)
     if allowed_assets == "ALL":
         allowed_assets = None  # Используем все активы
 
-    train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=norm_stats, allowed_assets=allowed_assets)
+    train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats=norm_stats, cfg=cfg, allowed_assets=allowed_assets)
     
     if not train_seqs:
         logging.error("Не удалось загрузить обучающие данные. Проверьте путь к данным и настройку 'cfg.paper.symbols'. Выход.")
@@ -907,7 +904,7 @@ def main(cfg: MasterConfig = None):
         logging.info(f"Скопирован norm_stats.json в: {norm_stats_save_path}")
 
     # Для валидации используем те же статистики, что были рассчитаны на обучении
-    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, allowed_assets=allowed_assets)
+    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, cfg=cfg, allowed_assets=allowed_assets)
 
     # Stratified sampling for validation set
     if val_seqs:
