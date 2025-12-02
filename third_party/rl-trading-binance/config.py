@@ -144,6 +144,19 @@ class MarketConfig(BaseModel):
     risk_reward_ratio_threshold: float = 3.0  # Порог для соотношения риск/прибыль (3:1)
     risk_reward_ratio_reward: float = 0.15    # Награда за сделку с высоким соотношением риск/прибыль
     continuous_pain_penalty_ratio: float = 1.0 # Коэффициент для штрафа. 1.0 - довольно агрессивный штраф.
+    good_exit_bonus: float = 0.0
+    fast_exit_bonus: float = 0.0
+    low_balance_penalty: float = 0.0
+    bankruptcy_slippage_penalty: float = 0.0
+    holding_penalty_multiplier: float = 0.0
+    greed_penalty_multiplier: float = 0.0
+    premature_exit_penalty: float = 0.0
+    # Thresholds for shaped rewards (previously hardcoded)
+    holding_penalty_threshold: int = 15
+    greed_penalty_threshold: float = 0.50
+    exit_quality_threshold: float = 0.80
+    fast_exit_threshold: int = 20
+    premature_exit_threshold: int = 5
 
 
 class RLConfig(BaseModel):
