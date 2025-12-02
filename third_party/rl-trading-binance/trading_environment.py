@@ -56,6 +56,16 @@ class TradingEnvironment(gym.Env):
         risk_reward_ratio_threshold: float = 3.0,
         risk_reward_ratio_reward: float = 0.0,
         continuous_pain_penalty_ratio: float = 0.0,
+
+        # Shaped rewards/penalties (previously hardcoded)
+        good_exit_bonus: float = 0.0,
+        fast_exit_bonus: float = 0.0,
+        low_balance_penalty: float = 0.0,
+        bankruptcy_slippage_penalty: float = 0.0,
+        holding_penalty_multiplier: float = 0.0,
+        greed_penalty_multiplier: float = 0.0,
+        premature_exit_penalty: float = 0.0,
+        
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -100,6 +110,16 @@ class TradingEnvironment(gym.Env):
         self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
         self.risk_reward_ratio_reward = risk_reward_ratio_reward
         self.continuous_pain_penalty_ratio = continuous_pain_penalty_ratio
+        
+        # Shaped rewards/penalties (previously hardcoded)
+        self.good_exit_bonus = good_exit_bonus
+        self.fast_exit_bonus = fast_exit_bonus
+        self.low_balance_penalty = low_balance_penalty
+        self.bankruptcy_slippage_penalty = bankruptcy_slippage_penalty
+        self.holding_penalty_multiplier = holding_penalty_multiplier
+        self.greed_penalty_multiplier = greed_penalty_multiplier
+        self.premature_exit_penalty = premature_exit_penalty
+        
         self.seed_value = seed
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
@@ -246,7 +266,7 @@ class TradingEnvironment(gym.Env):
                     f"({self.bankruptcy_threshold:.2f}). Forcing HOLD."
                 )
                 action = 0  # Force HOLD
-                reward -= 0.01 # Penalize attempt
+                reward -= self.low_balance_penalty # Penalize attempt
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
@@ -272,7 +292,7 @@ class TradingEnvironment(gym.Env):
             else:
                 # Balance too small for a trade, force HOLD and penalize
                 action = 0
-                reward = -0.01
+                reward = -self.low_balance_penalty
 
         elif action == 2 and self.position == 0: # OPEN SHORT
             if self.order_size_usdt > 0:
@@ -297,7 +317,7 @@ class TradingEnvironment(gym.Env):
             else:
                 # Balance too small for a trade, force HOLD and penalize
                 action = 0
-                reward = -0.01
+                reward = -self.low_balance_penalty
 
         # --- Position Closing ---
         elif action == 3 and self.position != 0:
@@ -328,7 +348,7 @@ class TradingEnvironment(gym.Env):
             
             # Force-close any open positions with slippage penalty
             if self.position != 0:
-                slippage_penalty = 0.05  # 5% adverse slippage
+                slippage_penalty = self.bankruptcy_slippage_penalty
                 liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
                 liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
                                    if self.position == 1 
@@ -493,7 +513,7 @@ class TradingEnvironment(gym.Env):
 
                 if unrealized_pnl < 0:  # Position at loss
                     penalty_factor = (holding_duration - 15) / self.agent_session_len
-                    shaped_reward -= penalty_factor * 0.5
+                    shaped_reward -= penalty_factor * self.holding_penalty_multiplier
         
         # Penalties and bonuses applied upon closing a position
         if action == 3 and prev_position != 0:
@@ -501,18 +521,18 @@ class TradingEnvironment(gym.Env):
             if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                 profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl
                 if profit_retracement > 0.50:
-                    shaped_reward -= profit_retracement * 0.3
+                    shaped_reward -= profit_retracement * self.greed_penalty_multiplier
                 
                 if trade_pnl >= self._max_unrealized_pnl * 0.80:
-                    exit_bonus = 0.15
+                    exit_bonus = self.good_exit_bonus
                     # 4. Fast Exit Bonus
                     if holding_duration < 20:
-                        exit_bonus += 0.10
+                        exit_bonus += self.fast_exit_bonus
                     shaped_reward += exit_bonus
             
             # 5. Premature Exit Penalty
             if holding_duration < 5 and trade_pnl > 0:
-                shaped_reward -= 0.02
+                shaped_reward -= self.premature_exit_penalty
 
             # 6. NEW: Perfect Entry Reward
             if self.perfect_entry_reward > 0 and trade_pnl > 0 and self._min_unrealized_pnl >= 0:

@@ -38,7 +38,7 @@ from utils import (
 
 class TopKCheckpointManager:
     """
-    Менеджер для сохранения топ-K лучших чекпоинтов с метаданными.
+    Менеджер для сохранения топ-K лучших чекпоинтов с метаданными. 
     
     Автоматически удаляет худшие чекпоинты при превышении лимита top_k.
     Сохраняет полные метрики в JSON для последующего анализа.
@@ -56,7 +56,7 @@ class TopKCheckpointManager:
     
     def save_checkpoint(self, agent, episode: int, metrics: Dict[str, Any]) -> bool:
         """
-        Сохраняет чекпоинт, если он входит в топ-K по целевой метрике.
+        Сохраняет чекпоинт, если он входит в топ-K по целевой метрике. 
         
         Returns:
             bool: True если чекпоинт сохранён, False если отклонён
@@ -1001,6 +1001,18 @@ def main(cfg: MasterConfig = None):
         "max_drawdown_threshold": cfg.market.max_drawdown_threshold,
         "max_drawdown_penalty": cfg.market.max_drawdown_penalty,
         "max_drawdown_penalty_type": cfg.market.max_drawdown_penalty_type,
+        "new_equity_peak_reward": cfg.market.new_equity_peak_reward,
+        "perfect_entry_reward": cfg.market.perfect_entry_reward,
+        "risk_reward_ratio_threshold": cfg.market.risk_reward_ratio_threshold,
+        "risk_reward_ratio_reward": cfg.market.risk_reward_ratio_reward,
+        "continuous_pain_penalty_ratio": cfg.market.continuous_pain_penalty_ratio,
+        "good_exit_bonus": cfg.market.good_exit_bonus,
+        "fast_exit_bonus": cfg.market.fast_exit_bonus,
+        "low_balance_penalty": cfg.market.low_balance_penalty,
+        "bankruptcy_slippage_penalty": cfg.market.bankruptcy_slippage_penalty,
+        "holding_penalty_multiplier": cfg.market.holding_penalty_multiplier,
+        "greed_penalty_multiplier": cfg.market.greed_penalty_multiplier,
+        "premature_exit_penalty": cfg.market.premature_exit_penalty,
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)
