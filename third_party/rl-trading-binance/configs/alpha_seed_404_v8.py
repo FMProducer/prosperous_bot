@@ -38,6 +38,11 @@ cfg.model.dropout_p = 0.20
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
 cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
+# Market/Position Sizing (для обучения, НЕ только backtest!)
+cfg.market.position_fraction = 0.10  # 10% баланса на сделку
+cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
+cfg.market.slippage = 0.0002
+
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.95         # Discount
@@ -58,13 +63,13 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
-cfg.vec.num_envs = 8             # 4 параллельные среды
+cfg.vec.num_envs = 8             # параллельные среды
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 750      # Val episodes (10% train)
+cfg.trainlog.num_val_ep = 750      # Val episodes (20% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -80,31 +85,72 @@ cfg.trainlog.available_metrics = [
     "Validation_profit_factor", "Validation_max_drawdown", "Validation_all_pnls",
     "Validation_sharpe", "Validation_sortino"
 ]
-cfg.trainlog.val_selection_metrics = ["Validation_sharpe", "Validation_sortino", "Validation_profit_factor"]
+cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_profit_factor"]
 cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": 0.01, "min_sortino": 0.01, "min_profit_factor": 1.10,
-    "max_drawdown_at_most": -0.45, "min_win_rate": 0.40, "min_trades": 600,
-    "deny_inf_pf": True, "deny_zero_drawdown": True,
-    "profit_factor_atleast": 1.10, "sortino_atleast": 0.01
+    "min_sharpe": 0.01,
+    "min_sortino": 0.01,
+    "min_profit_factor": 1.10,
+    "max_drawdown_at_most": -0.45,
+    "min_win_rate": 0.4,
+    "min_trades": 200,  # Ослабленный порог для промежуточных чекпоинтов
+    "deny_inf_pf": True,
+    "deny_zero_drawdown": True,
+    "profit_factor_atleast": 1.10,
+    "sortino_atleast": 0.01
 }
 
-# Штраф за банкротство
-cfg.market.bankruptcy_threshold = 0.0  # Порог, ниже которого эквити считается банкротом
-cfg.market.bankruptcy_penalty = 1.0    # Размер штрафа (очень большая отрицательная награда)
+# Top-K checkpoint saving
+cfg.trainlog.save_top_k = 10  # Сохранять топ-10 моделей
+cfg.trainlog.checkpoint_metric = "Validation_sortino"  # Основная метрика для ранжирования
+cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
+# --- Shaped Rewards & Penalties ---
+
+# --- Bonuses ---
+# Награда за достижение нового максимума эквити
+cfg.market.new_equity_peak_reward = 0.005
+# Награда за прибыльную сделку, которая не уходила в минус
+cfg.market.perfect_entry_reward = 0.05
+# Порог для соотношения риск/прибыль (3:1)
+cfg.market.risk_reward_ratio_threshold = 3.0
+# Награда за сделку с высоким соотношением риск/прибыль
+cfg.market.risk_reward_ratio_reward = 0.075
+# Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
+cfg.market.good_exit_bonus = 0.15
+# Дополнительный бонус за быстрый выход (< 20 шагов)
+cfg.market.fast_exit_bonus = 0.10
+
+# --- Penalties ---
+# Штраф за банкротство
+cfg.market.bankruptcy_threshold = 0.0
+cfg.market.bankruptcy_penalty = 1.0
+# Штрафное проскальзывание при принудительной ликвидации
+cfg.market.bankruptcy_slippage_penalty = 0.05
 # Штраф за превышение максимальной просадки (MaxDD)
-cfg.market.max_drawdown_threshold = -0.20  # Порог просадки (-20%). Штраф применяется, если MaxDD < этого значения.
-cfg.market.max_drawdown_penalty_type = "proportional"  # 'proportional' или 'constant'.
-cfg.market.max_drawdown_penalty = 1.0      # Коэффициент для штрафа. Начните с 0.1-0.5.
+cfg.market.max_drawdown_threshold = -0.20
+cfg.market.max_drawdown_penalty_type = "proportional"
+cfg.market.max_drawdown_penalty = 1.0
+# Штраф за удержание убыточной позиции (каждый шаг)
+cfg.market.continuous_pain_penalty_ratio = 0.05
+# Штраф за бездействие (когда нет открытых позиций)
+cfg.market.inaction_penalty_ratio = 0.0
+# Штраф за попытку торговли с низким балансом
+cfg.market.low_balance_penalty = 0.01
+# Множитель для прогрессивного штрафа за удержание убыточной позиции
+cfg.market.holding_penalty_multiplier = 0.5
+# "Штраф за жадность" (незафиксированная прибыль)
+cfg.market.greed_penalty_multiplier = 0.3
+# Штраф за преждевременный выход (удержание < 5 шагов)
+cfg.market.premature_exit_penalty = 0.02
 
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False
 cfg.backtest.max_parallel_sessions = 4
-cfg.backtest.position_fraction = 0.08
+cfg.backtest.position_fraction = 0.10
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
 cfg.backtest.long_action_threshold = 0.015
@@ -152,14 +198,14 @@ cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_seed_404_v3_shaped"
+cfg.paths.config_name = "alpha_seed_404_v8"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
 cfg.deterministic = False
 
 # Bundle (for saving artifacts)
-bundle_cfg = type("obj", (), {})()
+bundle_cfg = type("obj", (), {})
 bundle_cfg.enable = True
 bundle_cfg.include_code_snapshot = False
 bundle_cfg.code_snapshot_paths = ["train.py", "model.py", "agent.py", "trading_environment.py"]
