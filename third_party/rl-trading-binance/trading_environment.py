@@ -65,7 +65,12 @@ class TradingEnvironment(gym.Env):
         holding_penalty_multiplier: float = 0.0,
         greed_penalty_multiplier: float = 0.0,
         premature_exit_penalty: float = 0.0,
-        
+        # Thresholds for shaped rewards (previously hardcoded)
+        holding_penalty_threshold: int = 15,
+        greed_penalty_threshold: float = 0.50,
+        exit_quality_threshold: float = 0.80,
+        fast_exit_threshold: int = 20,
+        premature_exit_threshold: int = 5,
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -120,6 +125,13 @@ class TradingEnvironment(gym.Env):
         self.greed_penalty_multiplier = greed_penalty_multiplier
         self.premature_exit_penalty = premature_exit_penalty
         
+        # Thresholds
+        self.holding_penalty_threshold = holding_penalty_threshold
+        self.greed_penalty_threshold = greed_penalty_threshold
+        self.exit_quality_threshold = exit_quality_threshold
+        self.fast_exit_threshold = fast_exit_threshold
+        self.premature_exit_threshold = premature_exit_threshold
+
         self.seed_value = seed
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
@@ -496,7 +508,7 @@ class TradingEnvironment(gym.Env):
         # 1. Holding Penalty (Progressive)
         # Applied when the position is still open
         if self.position != 0 and self._position_entry_step is not None:
-            if holding_duration > 15:
+            if holding_duration > self.holding_penalty_threshold:
                 # Calculate unrealized PnL to check if the position is at a loss
                 price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
                 current_price = self.current_seq[price_idx, self.close_idx]
@@ -512,7 +524,7 @@ class TradingEnvironment(gym.Env):
                     unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
 
                 if unrealized_pnl < 0:  # Position at loss
-                    penalty_factor = (holding_duration - 15) / self.agent_session_len
+                    penalty_factor = (holding_duration - self.holding_penalty_threshold) / self.agent_session_len
                     shaped_reward -= penalty_factor * self.holding_penalty_multiplier
         
         # Penalties and bonuses applied upon closing a position
@@ -520,18 +532,18 @@ class TradingEnvironment(gym.Env):
             # 2. Greed Penalty + 3. Exit Bonus
             if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                 profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl
-                if profit_retracement > 0.50:
+                if profit_retracement > self.greed_penalty_threshold:
                     shaped_reward -= profit_retracement * self.greed_penalty_multiplier
                 
-                if trade_pnl >= self._max_unrealized_pnl * 0.80:
+                if trade_pnl >= self._max_unrealized_pnl * self.exit_quality_threshold:
                     exit_bonus = self.good_exit_bonus
                     # 4. Fast Exit Bonus
-                    if holding_duration < 20:
+                    if holding_duration < self.fast_exit_threshold:
                         exit_bonus += self.fast_exit_bonus
                     shaped_reward += exit_bonus
             
             # 5. Premature Exit Penalty
-            if holding_duration < 5 and trade_pnl > 0:
+            if holding_duration < self.premature_exit_threshold and trade_pnl > 0:
                 shaped_reward -= self.premature_exit_penalty
 
             # 6. NEW: Perfect Entry Reward

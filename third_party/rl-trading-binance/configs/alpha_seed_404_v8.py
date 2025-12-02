@@ -146,6 +146,17 @@ cfg.market.greed_penalty_multiplier = 0.3
 # Штраф за преждевременный выход (удержание < 5 шагов)
 cfg.market.premature_exit_penalty = 0.02
 
+# --- Thresholds for Shaped Rewards ---
+# Порог времени удержания для начала прогрессивного штрафа (шагов)
+cfg.market.holding_penalty_threshold = 15
+# Порог отката прибыли для штрафа за жадность (0.50 = 50%)
+cfg.market.greed_penalty_threshold = 0.50
+# Порог качества выхода для бонуса (0.80 = 80% от максимальной прибыли)
+cfg.market.exit_quality_threshold = 0.80
+# Порог для бонуса за быстрый выход (шагов)
+cfg.market.fast_exit_threshold = 20
+# Порог для штрафа за преждевременный выход (шагов)
+cfg.market.premature_exit_threshold = 5
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False
