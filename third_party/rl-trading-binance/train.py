@@ -719,6 +719,7 @@ def evaluate_agent(
     total_duration = time.time() - start_time
     win_count = total_correct
     loss_count = total_trades - total_correct
+    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
 
     if all_trades_info:
         gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
@@ -732,14 +733,48 @@ def evaluate_agent(
         avg_holding_time = np.mean(holding_times) if holding_times else 0.0
         max_holding_time = max(holding_times) if holding_times else 0.0
         min_holding_time = min(holding_times) if holding_times else 0.0
-        avg_trade_duration_bars = avg_holding_time
+        
+        # Calculate trading time in days
+        bars_per_day = 1440  # 24 hours * 60 minutes
+        trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
+        
+        try:
+            initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
+        except Exception:
+            initial_balance = 10000.0
+        
+        # Calculate derived metrics
+        if trade_pnls:
+            avg_win_size = np.mean([p for p in trade_pnls if p > 0]) if any(p > 0 for p in trade_pnls) else 0.0
+            avg_loss_size = np.mean([p for p in trade_pnls if p < 0]) if any(p < 0 for p in trade_pnls) else 0.0
+            win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size < -1e-6 else float('inf')
+            expectancy = (wr_ratio * avg_win_size) - ((1 - wr_ratio) * abs(avg_loss_size))
+        else:
+            avg_win_size = 0.0
+            avg_loss_size = 0.0
+            win_loss_ratio = 0.0
+            expectancy = 0.0
+        
+        commission_pct = (total_commission / abs(gross_pnl)) * 100 if abs(gross_pnl) > 1e-6 else 0.0
+        roi_percent = (net_pnl / initial_balance) * 100 if initial_balance > 0 else 0.0
+        roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
     else:
         gross_pnl = net_pnl = avg_pnl_per_trade = 0.0
         best_trade = worst_trade = 0.0
-        avg_holding_time = max_holding_time = min_holding_time = 0.0
-        avg_trade_duration_bars = 0.0
+        avg_holding_time = 0.0
+        max_holding_time = 0.0
+        min_holding_time = 0.0
+        trading_time_days = 0.0
+        avg_win_size = 0.0
+        avg_loss_size = 0.0
+        win_loss_ratio = 0.0
+        expectancy = 0.0
+        commission_pct = 0.0
+        roi_percent = 0.0
+        roi_annualized = 0.0
+        # wr_ratio already defined above
 
-    pnl_per_day = net_pnl / (total_duration / 86400) if total_duration > 0 else 0.0
+    pnl_per_day = net_pnl / trading_time_days if trading_time_days > 0 else 0.0
 
     # ИСПРАВЛЕНО: MeanReward в валидации — рассчитываем из normalized PnL сделок
     # (backtest_step возвращает reward=0.0, так как reward не используется в оценке)
@@ -752,7 +787,6 @@ def evaluate_agent(
     mean_reward = (sum(trade_pnls) / initial_balance) / max(1, episodes) if trade_pnls else 0.0
     
     mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
-    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
     
     pos_sum = sum(p for p in trade_pnls if p > 0)
     neg_sum = sum(p for p in trade_pnls if p < 0)
@@ -805,11 +839,16 @@ def evaluate_agent(
         f"[{split_label}] Avg Hold: {avg_holding_time:.2f} bars | "
         f"Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars"
     )
-    logging.info(
-        f"[{split_label}] Total Duration: {total_duration:.2f}s | Bars processed: {total_bars_processed} | "
-        f"PnL/Day: {pnl_per_day:.2f}"
-    )
-
+    # Enhanced metrics output
+    logging.info(f"[{split_label}] Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | "
+                 f"Trading Days: {trading_time_days:.1f}")
+    logging.info(f"[{split_label}] PnL/Day: {pnl_per_day:.2f} USDT | "
+                 f"ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
+    logging.info(f"[{split_label}] Commission: {commission_pct:.1f}% of gross | "
+                 f"Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | "
+                 f"W/L Ratio: {win_loss_ratio:.2f}")
+    logging.info(f"[{split_label}] Expectancy/Trade: {expectancy:.2f} USDT")
+    
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
                      {k:int(v) for k,v in sorted(exit_counts.items(), key=lambda x:(-x[1], x[0]))})
@@ -854,7 +893,14 @@ def evaluate_agent(
         f"{L}_min_holding_time": float(min_holding_time),
         f"{L}_total_duration_seconds": float(total_duration),
         f"{L}_bars_processed": int(total_bars_processed),
-        f"{L}_avg_trade_duration_bars": float(avg_trade_duration_bars),
+        f"{L}_trading_time_days": float(trading_time_days),
+        f"{L}_roi_percent": float(roi_percent),
+        f"{L}_roi_annualized": float(roi_annualized),
+        f"{L}_commission_percent": float(commission_pct),
+        f"{L}_avg_win_size": float(avg_win_size),
+        f"{L}_avg_loss_size": float(avg_loss_size),
+        f"{L}_win_loss_ratio": float(win_loss_ratio),
+        f"{L}_expectancy": float(expectancy),
     }
     if L == "Test":
         out.update({
