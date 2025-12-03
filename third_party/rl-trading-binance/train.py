@@ -629,6 +629,16 @@ def evaluate_agent(
     exit_counts: Dict[str,int] = {}
     tsl_hits = 0
     bankruptcy_episodes = 0
+    
+    # Дополнительные метрики
+    all_trades_info = []
+    total_commission = 0.0
+    long_trades = 0
+    short_trades = 0
+    holding_times = []
+    total_bars_processed = 0
+    start_time = time.time()
+
 
     for i in range(int(episodes)):
         obs, _ = env.reset(options={"forced_index": i})
@@ -667,6 +677,7 @@ def evaluate_agent(
                 delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
             ep_reward += float(reward or 0.0)
+            total_bars_processed += 1
             if info.get("bankruptcy", False):
                 is_bankrupt = True
             if info.get("position_closed", False):
@@ -681,6 +692,19 @@ def evaluate_agent(
                     exit_counts[reason] = exit_counts.get(reason, 0) + 1
                 if info.get("tsl_triggered", False) or ("TSL" in reason):
                     tsl_hits += 1
+                
+                # Сбор расширенной информации о сделках
+                all_trades_info.append(info)
+                total_commission += info.get('trade_commission', 0.0)
+                direction = info.get('direction', '')
+                if direction == 'LONG':
+                    long_trades += 1
+                elif direction == 'SHORT':
+                    short_trades += 1
+                
+                if 'holding_duration_bars' in info:
+                    holding_times.append(info['holding_duration_bars'])
+
         # завершение эпизода
         if is_bankrupt:
             bankruptcy_episodes += 1
@@ -690,6 +714,32 @@ def evaluate_agent(
         ep_pnls.append(sum(ep_trade_pnls))
         ep_rews.append(ep_reward)
         ep_wrs.append( ep_wins / max(1, ep_trades) if ep_trades else 0.0 )
+
+    # --- Расчет дополнительных метрик ---
+    total_duration = time.time() - start_time
+    win_count = total_correct
+    loss_count = total_trades - total_correct
+
+    if all_trades_info:
+        gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
+        net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
+        avg_pnl_per_trade = net_pnl / len(all_trades_info) if all_trades_info else 0.0
+        
+        trade_pnls_all = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+        best_trade = max(trade_pnls_all) if trade_pnls_all else 0.0
+        worst_trade = min(trade_pnls_all) if trade_pnls_all else 0.0
+        
+        avg_holding_time = np.mean(holding_times) if holding_times else 0.0
+        max_holding_time = max(holding_times) if holding_times else 0.0
+        min_holding_time = min(holding_times) if holding_times else 0.0
+        avg_trade_duration_bars = avg_holding_time
+    else:
+        gross_pnl = net_pnl = avg_pnl_per_trade = 0.0
+        best_trade = worst_trade = 0.0
+        avg_holding_time = max_holding_time = min_holding_time = 0.0
+        avg_trade_duration_bars = 0.0
+
+    pnl_per_day = net_pnl / (total_duration / 86400) if total_duration > 0 else 0.0
 
     # ИСПРАВЛЕНО: MeanReward в валидации — рассчитываем из normalized PnL сделок
     # (backtest_step возвращает reward=0.0, так как reward не используется в оценке)
@@ -702,16 +752,13 @@ def evaluate_agent(
     mean_reward = (sum(trade_pnls) / initial_balance) / max(1, episodes) if trade_pnls else 0.0
     
     mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
-    wr_ratio = total_correct / max(1, total_trades)
+    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
     
     pos_sum = sum(p for p in trade_pnls if p > 0)
     neg_sum = sum(p for p in trade_pnls if p < 0)
     profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
     
     # --- Sharpe / Sortino ---
-    # Sharpe: стандартно по σ общих доходностей.
-    # Sortino: downside semideviation (MAR=0): sqrt(mean(min(0, r)^2)).
-    # MaxDD — чистая формула на ДЕНОРМАЛИЗОВАННЫХ значениях
     if trade_pnls:
         denorm_pnls = np.array(trade_pnls, dtype=np.float64)
         equity = float(initial_balance)
@@ -732,7 +779,6 @@ def evaluate_agent(
     if returns.size > 0:
         mean_r = float(returns.mean())
         std_r  = float(returns.std(ddof=1)) if returns.size > 1 else float(returns.std(ddof=0))
-        # Downside semideviation (MAR=0) — без ddof, как в определении Sortino
         downside = np.minimum(0.0, returns)
         downside = float(np.sqrt(np.mean(downside * downside)))
         sharpe   = (mean_r / std_r)      if std_r      > 1e-12 else 0.0
@@ -742,11 +788,28 @@ def evaluate_agent(
 
     bankruptcy_rate = bankruptcy_episodes / max(1, episodes)
 
-    # лог-сводка
+    # --- Расширенный лог ---
     logging.info(
-        "[%s] MeanReward=%.6f  MeanPnL=%+.2f  WinRate=%.2f%%  PF=%.4f  MaxDD=%.4f%%  Trades=%d  Sharpe=%.3f  Sortino=%.3f  Bankruptcy=%.2f%%",
-        split_label, mean_reward, mean_pnl, wr_ratio*100.0, profit_factor, abs(max_dd) * 100.0, total_trades, sharpe, sortino, bankruptcy_rate * 100.0
+        f"[{split_label}] Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, "
+        f"Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio*100:.2f}% | PF: {profit_factor:.4f}"
     )
+    logging.info(
+        f"[{split_label}] Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | "
+        f"Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}"
+    )
+    logging.info(
+        f"[{split_label}] Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | "
+        f"MaxDD: {abs(max_dd)*100:.2f}% | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}"
+    )
+    logging.info(
+        f"[{split_label}] Avg Hold: {avg_holding_time:.2f} bars | "
+        f"Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars"
+    )
+    logging.info(
+        f"[{split_label}] Total Duration: {total_duration:.2f}s | Bars processed: {total_bars_processed} | "
+        f"PnL/Day: {pnl_per_day:.2f}"
+    )
+
     if exit_counts:
         logging.info("[%s] Exit reasons: %s", split_label,
                      {k:int(v) for k,v in sorted(exit_counts.items(), key=lambda x:(-x[1], x[0]))})
@@ -760,21 +823,38 @@ def evaluate_agent(
         agent.mc_enable = old_mc
 
     # сформировать словарь под выбор метрики в тренере
-    L = split_label  # "Validation" | "Test"
+    L = split_label
     out: Dict[str,Any] = {
         f"{L}_mean_reward": float(mean_reward),
         f"{L}_mean_pnl":    float(mean_pnl),
-        f"{L}_win_rate":    float(wr_ratio),            # 0..1 — удобно для отбора
+        f"{L}_win_rate":    float(wr_ratio),
         f"{L}_win_rate_percent": float(wr_ratio*100.0),
         f"{L}_profit_factor": float(profit_factor),
-        # FIX: Возвращаем просадку как отрицательное число, как и принято в индустрии.
-        f"{L}_max_drawdown": float(max_dd),  # Уже отрицательное из расчёта
+        f"{L}_max_drawdown": float(max_dd),
         f"{L}_trades": int(total_trades),
         f"{L}_tsl_hits": int(tsl_hits),
         f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
         f"{L}_sharpe":  float(np.clip(sharpe,   -10.0, 10.0)),
         f"{L}_sortino": float(np.clip(sortino,  -10.0, 10.0)),
         f"{L}_bankruptcy_rate": float(bankruptcy_rate),
+        # Новые метрики
+        f"{L}_gross_pnl": float(gross_pnl),
+        f"{L}_net_pnl": float(net_pnl),
+        f"{L}_total_commission": float(total_commission),
+        f"{L}_avg_pnl_per_trade": float(avg_pnl_per_trade),
+        f"{L}_pnl_per_day": float(pnl_per_day),
+        f"{L}_best_trade": float(best_trade),
+        f"{L}_worst_trade": float(worst_trade),
+        f"{L}_long_trades": int(long_trades),
+        f"{L}_short_trades": int(short_trades),
+        f"{L}_win_trades": int(win_count),
+        f"{L}_loss_trades": int(loss_count),
+        f"{L}_avg_holding_time": float(avg_holding_time),
+        f"{L}_max_holding_time": float(max_holding_time),
+        f"{L}_min_holding_time": float(min_holding_time),
+        f"{L}_total_duration_seconds": float(total_duration),
+        f"{L}_bars_processed": int(total_bars_processed),
+        f"{L}_avg_trade_duration_bars": float(avg_trade_duration_bars),
     }
     if L == "Test":
         out.update({

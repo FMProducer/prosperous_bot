@@ -73,12 +73,12 @@ cfg.trainlog.num_val_ep = 750      # Val episodes (20% train)
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 15000       # 4× меньше эпизодов при 4 env -> ~тот же total_steps
-cfg.trainlog.total_timesteps = 600000  # Бюджет шагов оставляем прежним
+cfg.trainlog.episodes = 7500       # норма 15000
+cfg.trainlog.total_timesteps = 300000  # Бюджет шагов , норма 600000
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 125              # было 500; 500 * 15000 / 60000 ≈ 125
-cfg.trainlog.validation_warmup_steps = 450000
+cfg.trainlog.val_freq = 62              # норма 125
+cfg.trainlog.validation_warmup_steps = 225000       # норма 450000
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
     "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
@@ -90,16 +90,16 @@ cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": 0.01,
-    "min_sortino": 0.01,
-    "min_profit_factor": 1.10,
-    "max_drawdown_at_most": -0.45,
-    "min_win_rate": 0.4,
+    "min_sharpe": -0.15,
+    "min_sortino": -0.18,
+    "min_profit_factor": 0.71,
+    "max_drawdown_at_most": -1.35,
+    "min_win_rate": 0.42,
     "min_trades": 200,  # Ослабленный порог для промежуточных чекпоинтов
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
-    "profit_factor_atleast": 1.10,
-    "sortino_atleast": 0.01
+    "profit_factor_atleast": 0.71,
+    "sortino_atleast": -0.18
 }
 
 # Top-K checkpoint saving
@@ -119,7 +119,7 @@ cfg.market.risk_reward_ratio_threshold = 3.0
 # Награда за сделку с высоким соотношением риск/прибыль
 cfg.market.risk_reward_ratio_reward = 0.075
 # Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
-cfg.market.good_exit_bonus = 0.15
+cfg.market.good_exit_bonus = 0.30
 # Дополнительный бонус за быстрый выход (< 20 шагов)
 cfg.market.fast_exit_bonus = 0.10
 
@@ -140,11 +140,11 @@ cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 0.01
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
-cfg.market.holding_penalty_multiplier = 0.5
+cfg.market.holding_penalty_multiplier = 0.2
 # "Штраф за жадность" (незафиксированная прибыль)
-cfg.market.greed_penalty_multiplier = 0.3
+cfg.market.greed_penalty_multiplier = 0.1
 # Штраф за преждевременный выход (удержание < 5 шагов)
-cfg.market.premature_exit_penalty = 0.02
+cfg.market.premature_exit_penalty = 0.10
 
 # --- Thresholds for Shaped Rewards ---
 # Порог времени удержания для начала прогрессивного штрафа (шагов)

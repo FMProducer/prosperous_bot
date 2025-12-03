@@ -805,6 +805,7 @@ class TradingEnvironment(gym.Env):
                 self.trailing_max_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
+            self._position_entry_step = self.step_idx  # Запомнить шаг входа
             logging.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         elif action == 2 and self.position == 0: # OPEN SHORT
@@ -833,6 +834,7 @@ class TradingEnvironment(gym.Env):
                 self.trailing_min_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
+            self._position_entry_step = self.step_idx  # Запомнить шаг входа
             logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         # --- Position Closing ---
@@ -932,6 +934,7 @@ class TradingEnvironment(gym.Env):
         obs = self._get_observation() if not terminated else np.zeros(self.observation_space.shape, dtype=np.float32)
 
         if position_closed:
+            holding_duration = self.step_idx - (self._position_entry_step or 0)
             # Note: single_trade_realized_pnl and opening_fee were calculated above
             trade_info = {
                 "position_closed": position_closed,
@@ -945,6 +948,8 @@ class TradingEnvironment(gym.Env):
                 "trade_dt": self.trade_dt,
                 "exit_reason": exit_reason if self.use_risk_management else "",
                 "tsl_triggered": isinstance(exit_reason, str) and exit_reason.startswith("TSL"),
+                "holding_duration_bars": holding_duration,
+                "holding_duration_minutes": holding_duration,
             }
             info.update(trade_info)
             self.direction = None
