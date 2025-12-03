@@ -90,16 +90,16 @@ cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": -0.15,
-    "min_sortino": -0.18,
-    "min_profit_factor": 0.71,
-    "max_drawdown_at_most": -1.35,
-    "min_win_rate": 0.42,
+    "min_sharpe": -0.14,
+    "min_sortino": -0.17,
+    "min_profit_factor": 0.65,
+    "max_drawdown_at_most": -1.00,
+    "min_win_rate": 0.43,
     "min_trades": 200,  # Ослабленный порог для промежуточных чекпоинтов
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
-    "profit_factor_atleast": 0.71,
-    "sortino_atleast": -0.18
+    "profit_factor_atleast": 0.65,
+    "sortino_atleast": -0.17
 }
 
 # Top-K checkpoint saving
@@ -134,7 +134,7 @@ cfg.market.max_drawdown_threshold = -0.20
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.05
+cfg.market.continuous_pain_penalty_ratio = 0.12
 # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
@@ -144,7 +144,7 @@ cfg.market.holding_penalty_multiplier = 0.2
 # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.greed_penalty_multiplier = 0.1
 # Штраф за преждевременный выход (удержание < 5 шагов)
-cfg.market.premature_exit_penalty = 0.10
+cfg.market.premature_exit_penalty = 0.15
 
 # --- Thresholds for Shaped Rewards ---
 # Порог времени удержания для начала прогрессивного штрафа (шагов)
@@ -156,7 +156,7 @@ cfg.market.exit_quality_threshold = 0.80
 # Порог для бонуса за быстрый выход (шагов)
 cfg.market.fast_exit_threshold = 20
 # Порог для штрафа за преждевременный выход (шагов)
-cfg.market.premature_exit_threshold = 5
+cfg.market.premature_exit_threshold = 8
 
 # Backtest/Paper Trader
 cfg.backtest_mode = False

@@ -500,32 +500,49 @@ class TradingEnvironment(gym.Env):
     def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int, trade_pnl: float) -> float:
         base_reward = pnlchange / self.initial_balance
         shaped_reward = 0.0
-        
+
+        # 1. Бонус за HOLD в низкой волатильности (ИСПРАВЛЕНО)
+        if action == 0 and prev_position == 0:  # HOLD вне позиции
+            if self.step_idx >= 5:
+                end_idx = self.pre_signal_len + self.step_idx
+                start_idx = end_idx - 5
+                recent_prices = self.current_seq[start_idx:end_idx, self.close_idx]
+                
+                # Денормализовать для корректного расчёта
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                real_prices = recent_prices * close_std + close_mean
+                
+                # Вычислить процентное изменение
+                price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
+                
+                # Если изменение < 0.5% за 5 минут → флэт
+                if price_change_pct < 0.005:  # < 0.5%
+                    shaped_reward += 0.002  # Бонус за HOLD
+
         holding_duration = 0
         if self._position_entry_step is not None:
             holding_duration = self.step_idx - self._position_entry_step
 
-        # 1. Holding Penalty (Progressive)
-        # Applied when the position is still open
+        # 2. Holding Penalty (Progressive) and Bonus
         if self.position != 0 and self._position_entry_step is not None:
-            if holding_duration > self.holding_penalty_threshold:
-                # Calculate unrealized PnL to check if the position is at a loss
-                price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
-                current_price = self.current_seq[price_idx, self.close_idx]
+            unrealized_pnl = self._calculate_unrealized_pnl()
+            
+            # Штраф за удержание убыточной позиции
+            if holding_duration > self.holding_penalty_threshold and unrealized_pnl < 0:
+                penalty_factor = (holding_duration - self.holding_penalty_threshold) / self.agent_session_len
+                shaped_reward -= penalty_factor * self.holding_penalty_multiplier
+            
+            # Бонус за удержание прибыльной позиции (УЛУЧШЕНО)
+            if unrealized_pnl > 0 and holding_duration > 5:
+                # Проверить, что прибыль не откатывается
+                profit_retracement = (self._max_unrealized_pnl - unrealized_pnl) / max(self._max_unrealized_pnl, 1e-8)
                 
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
-                real_current_price = current_price * close_std + close_mean
-                
-                if self.position == 1: # LONG
-                    unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
-                else: # SHORT
-                    unrealized_pnl = (self.real_entry_price - real_current_price) * self.position_volume
-
-                if unrealized_pnl < 0:  # Position at loss
-                    penalty_factor = (holding_duration - self.holding_penalty_threshold) / self.agent_session_len
-                    shaped_reward -= penalty_factor * self.holding_penalty_multiplier
+                # Давать бонус только если откат < 20%
+                if profit_retracement < 0.20:
+                    holding_bonus = (holding_duration / self.agent_session_len) * 0.02
+                    shaped_reward += holding_bonus
         
         # Penalties and bonuses applied upon closing a position
         if action == 3 and prev_position != 0:
