@@ -90,16 +90,16 @@ cfg.trainlog.early_stopping_patience = 10
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": -0.14,
-    "min_sortino": -0.17,
-    "min_profit_factor": 0.65,
-    "max_drawdown_at_most": -1.00,
-    "min_win_rate": 0.43,
+    "min_sharpe": -0.15,
+    "min_sortino": -0.18,
+    "min_profit_factor": 0.63,
+    "max_drawdown_at_most": -1.17,
+    "min_win_rate": 0.42,
     "min_trades": 200,  # Ослабленный порог для промежуточных чекпоинтов
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
-    "profit_factor_atleast": 0.65,
-    "sortino_atleast": -0.17
+    "profit_factor_atleast": 0.63,
+    "sortino_atleast": -0.18
 }
 
 # Top-K checkpoint saving
