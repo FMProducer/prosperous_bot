@@ -151,12 +151,17 @@ class MarketConfig(BaseModel):
     holding_penalty_multiplier: float = 0.0
     greed_penalty_multiplier: float = 0.0
     premature_exit_penalty: float = 0.0
+    profit_holding_bonus: float = 0.0
+    premature_profit_exit_penalty: float = 0.0
+    holding_loss_penalty: float = 0.0
     # Thresholds for shaped rewards (previously hardcoded)
     holding_penalty_threshold: int = 15
     greed_penalty_threshold: float = 0.50
     exit_quality_threshold: float = 0.80
     fast_exit_threshold: int = 20
     premature_exit_threshold: int = 5
+    profit_exit_threshold: int = 5
+    loss_exit_threshold: int = 3
 
 
 class RLConfig(BaseModel):
