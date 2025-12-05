@@ -146,10 +146,10 @@ cfg.market.greed_penalty_multiplier = 0.1
 
 # --- НОВАЯ АСИММЕТРИЧНАЯ ЛОГИКА ---
 # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
-cfg.market.premature_profit_exit_penalty = 0.20
+cfg.market.premature_profit_exit_penalty = 0.10
 
 # Штраф за долгое удержание УБЫТОЧНОЙ позиции (> loss_exit_threshold шагов)
-cfg.market.holding_loss_penalty = 0.15
+cfg.market.holding_loss_penalty = 0.08
 
 # Порог времени удержания для прибыльных позиций (минимум для выхода без штрафа)
 cfg.market.profit_exit_threshold = 5  # bars
