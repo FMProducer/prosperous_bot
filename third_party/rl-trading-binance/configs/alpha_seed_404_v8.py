@@ -144,7 +144,7 @@ cfg.market.holding_penalty_multiplier = 0.2
 # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.greed_penalty_multiplier = 0.1
 # Штраф за преждевременный выход (удержание < 5 шагов)
-cfg.market.premature_exit_penalty = 0.15
+cfg.market.premature_exit_penalty = 0.25
 
 # --- Thresholds for Shaped Rewards ---
 # Порог времени удержания для начала прогрессивного штрафа (шагов)
