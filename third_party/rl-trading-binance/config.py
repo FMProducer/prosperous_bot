@@ -154,6 +154,13 @@ class MarketConfig(BaseModel):
     profit_holding_bonus: float = 0.0
     premature_profit_exit_penalty: float = 0.0
     holding_loss_penalty: float = 0.0
+    
+    # === V12 GRADIENT REWARD COMPONENTS ===
+    base_reward_scale: float = 0.0
+    holding_cost: float = 0.0
+    exit_bonus: float = 0.0
+    greed_penalty: float = 0.0
+
     # Thresholds for shaped rewards (previously hardcoded)
     holding_penalty_threshold: int = 15
     greed_penalty_threshold: float = 0.50
