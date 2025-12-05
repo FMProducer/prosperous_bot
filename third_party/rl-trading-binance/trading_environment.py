@@ -65,7 +65,6 @@ class TradingEnvironment(gym.Env):
         holding_penalty_multiplier: float = 0.0,
         greed_penalty_multiplier: float = 0.0,
         premature_exit_penalty: float = 0.0,
-        profit_holding_bonus: float = 0.0,
         # Thresholds for shaped rewards (previously hardcoded)
         holding_penalty_threshold: int = 15,
         greed_penalty_threshold: float = 0.50,
@@ -125,7 +124,6 @@ class TradingEnvironment(gym.Env):
         self.holding_penalty_multiplier = holding_penalty_multiplier
         self.greed_penalty_multiplier = greed_penalty_multiplier
         self.premature_exit_penalty = premature_exit_penalty
-        self.profit_holding_bonus = profit_holding_bonus
         
         # Thresholds
         self.holding_penalty_threshold = holding_penalty_threshold
@@ -548,13 +546,6 @@ class TradingEnvironment(gym.Env):
         
         # Penalties and bonuses applied upon closing a position
         if action == 3 and prev_position != 0:
-            # --- NEW: Profit Holding Bonus ---
-            # Reward agent for holding profitable positions
-            if self.profit_holding_bonus > 0 and trade_pnl > 0:
-                # Bonus is proportional to holding duration
-                holding_bonus = holding_duration * self.profit_holding_bonus
-                shaped_reward += holding_bonus
-
             # 2. Greed Penalty + 3. Exit Bonus
             if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                 profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl

@@ -146,9 +146,6 @@ cfg.market.greed_penalty_multiplier = 0.1
 # Штраф за преждевременный выход (удержание < 5 шагов)
 cfg.market.premature_exit_penalty = 0.15
 
-# НОВАЯ НАГРАДА: Бонус за удержание прибыльной позиции (за каждый шаг в прибыли)
-cfg.market.profit_holding_bonus = 0.02
-
 # --- Thresholds for Shaped Rewards ---
 # Порог времени удержания для начала прогрессивного штрафа (шагов)
 cfg.market.holding_penalty_threshold = 15
