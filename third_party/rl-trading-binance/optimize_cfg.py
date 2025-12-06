@@ -164,7 +164,13 @@ def objective(trial: optuna.Trial):
 
         # Предложение значения с учётом типа
         if suggest_type == "suggest_float":
-            value = trial.suggest_float(name, float(low), float(high), log=bool(log_flag))
+            # NEW: Handle negative log-scale by sampling positive and negating
+            if log_flag and (float(low) < 0 or float(high) < 0):
+                # Sample positive magnitude from log scale
+                pos_val = trial.suggest_float(name, abs(float(high)), abs(float(low)), log=True)
+                value = -pos_val # Negate to get the desired range
+            else:
+                value = trial.suggest_float(name, float(low), float(high), log=bool(log_flag))
         elif suggest_type == "suggest_int":
             value = trial.suggest_int(name, int(low), int(high), log=bool(log_flag))
         elif suggest_type == "suggest_categorical":
@@ -200,6 +206,9 @@ def objective(trial: optuna.Trial):
     # --- Установка уникальных путей для испытания ---
     # Это гарантирует, что каждый trial сохраняет свои артефакты в отдельную папку
     trial_output_dir = os.path.join(trial.study.user_attrs["opt_dir"], f"trial_{trial.number}")
+    # === ДОБАВИТЬ ЭТУ СТРОКУ! ===
+    os.makedirs(trial_output_dir, exist_ok=True)
+
     cfg.paths.base_output_dir = trial_output_dir
     cfg.paths.config_name = f"{cfg.paths.config_name}_trial{trial.number:05d}"
 
