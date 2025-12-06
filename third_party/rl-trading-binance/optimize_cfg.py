@@ -227,8 +227,46 @@ def objective(trial: optuna.Trial):
         )
     except Exception as e:
         logging.exception(f"[Optuna] trial#{trial.number} validation failed")
-        metrics = {"sharpe": -1.0, "sortino": -1.0, "profit_factor": 0.0}
+        metrics = {"sharpe": -1.0, "sortino": -1.0, "profitfactor": 0.0}
     
+    # === ДОБАВИТЬ ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ===
+    logging.info("=" * 80)
+    logging.info(f"[Optuna Trial #{trial.number}] VALIDATION RESULTS")
+    logging.info("=" * 80)
+    
+    # Основные метрики
+    sharpe = metrics.get("sharpe", 0.0)
+    sortino = metrics.get("sortino", 0.0)
+    pf = metrics.get("profitfactor", 0.0)
+    maxdd = metrics.get("maxdrawdown", 0.0)
+    winrate = metrics.get("winrate", 0.0)
+    trades = metrics.get("trades", 0)
+    netpnl = metrics.get("netpnl", 0.0)
+    
+    logging.info(f"[Optuna] Sharpe: {sharpe:.4f} | Sortino: {sortino:.4f} | PF: {pf:.4f}")
+    logging.info(f"[Optuna] MaxDD: {abs(maxdd):.2%} | WinRate: {winrate:.2%} | Trades: {trades}")
+    logging.info(f"[Optuna] Net PnL: {netpnl:.2f} USDT")
+    
+    # Дополнительные метрики если есть
+    if "grosspnl" in metrics:
+        logging.info(f"[Optuna] Gross PnL: {metrics['grosspnl']:.2f} USDT")
+    if "commission" in metrics:
+        logging.info(f"[Optuna] Commission: {metrics['commission']:.2f} USDT")
+    if "avgtrade" in metrics:
+        logging.info(f"[Optuna] Avg/Trade: {metrics['avgtrade']:.2f} USDT")
+    if "besttrade" in metrics:
+        logging.info(f"[Optuna] Best Trade: +{metrics['besttrade']:.2f} | Worst: {metrics.get('worsttrade', 0.0):.2f}")
+    if "avghold" in metrics:
+        logging.info(f"[Optuna] Avg Hold: {metrics['avghold']:.2f} bars (Min: {metrics.get('minhold', 0)}, Max: {metrics.get('maxhold', 0)})")
+    if "roi" in metrics:
+        logging.info(f"[Optuna] ROI: {metrics['roi']:.2%}")
+    if "longtrades" in metrics and "shorttrades" in metrics:
+        logging.info(f"[Optuna] Long: {metrics['longtrades']} | Short: {metrics['shorttrades']} | Win: {metrics.get('wincount', 0)} | Loss: {metrics.get('losscount', 0)}")
+    if "expectancy" in metrics:
+        logging.info(f"[Optuna] Expectancy/Trade: {metrics['expectancy']:.2f} USDT")
+    
+    logging.info("=" * 80)
+
     duration_s = time.time() - t0
     
     # Persist useful attrs for later analysis/audit
@@ -247,7 +285,7 @@ def objective(trial: optuna.Trial):
     # TARGET METRICS
     sharpe = float(metrics.get("sharpe", -1.0))
     sortino = float(metrics.get("sortino", -1.0))
-    profit_factor = float(metrics.get("profit_factor", 0.0))
+    profit_factor = float(metrics.get("profitfactor", 0.0))
 
     # Теперь у нас три цели: максимизировать Шарп, Сортино и профит-фактор.
     return sharpe, sortino, profit_factor

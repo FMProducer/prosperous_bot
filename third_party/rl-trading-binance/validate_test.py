@@ -543,15 +543,6 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
     flat_state_size = (env_params["agent_history_len"] * env_params["num_features"]) + 4 + (env_params["num_actions"] * env_params["action_history_len"])
     env_params["flat_state_size"] = flat_state_size
     
-    backtest_kwargs = {
-        "stop_loss": None,
-        "take_profit": None,
-        "trailing_stop": backtest_cfg.get("trailing_stop"),
-        "trailing_stop_min": backtest_cfg.get("trailing_stop_min"),
-        "fee_buffer_mult": backtest_cfg.get("fee_buffer_mult"),
-        "delta_p_hysteresis": backtest_cfg.get("delta_p_hysteresis"),
-    }
-    
     # Создание окружения и агента (код остается как в оригинале)
     env = TradingEnvironment(sequences=sequences, stats=all_stats, keys=keys, render_mode=None, **env_params)
     
@@ -585,6 +576,17 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
     )
     
     agent.load_model(model_path, strict=True)
+    
+    # Теперь ПОСЛЕ merge создаём backtest_kwargs:
+    backtest_cfg = train_cfg_dict.get("backtest", {})  # ← Обновлённый!
+    backtest_kwargs = {
+        "stop_loss": None,
+        "take_profit": None,
+        "trailing_stop": backtest_cfg.get("trailing_stop"),  # ← Теперь с override!
+        "trailing_stop_min": backtest_cfg.get("trailing_stop_min"),
+        "fee_buffer_mult": backtest_cfg.get("fee_buffer_mult"),
+        "delta_p_hysteresis": backtest_cfg.get("delta_p_hysteresis"),
+    }
     
     # Запуск симуляции (без прогресс-бара для Optuna)
     logging.getLogger().setLevel(logging.WARNING)  # Отключить INFO логи
@@ -632,20 +634,42 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
 
     # --- Metrics Calculation ---
     totaltrades = len(alltradesinfo)
+    loss_count = sum(1 for t in alltradesinfo if t.get('trade_realized_pnl', 0.0) <= 0)
     win_count = sum(1 for t in alltradesinfo if t.get('trade_realized_pnl', 0.0) > 0)
     wr_ratio = win_count / max(1, totaltrades)
     
     trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in alltradesinfo]
     net_pnl = sum(trade_pnls)
+    grosspnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in alltradesinfo)
+    totalcommission = sum(t.get('trade_commission', 0.0) for t in alltradesinfo)
+    avgpnlpertrade = net_pnl / max(1, totaltrades)
+    besttrade = max(trade_pnls) if trade_pnls else 0.0
+    worsttrade = min(trade_pnls) if trade_pnls else 0.0
+    
+    holding_times = [t.get('holding_duration_bars', 0) for t in alltradesinfo]
+    avgholdingtime = np.mean(holding_times) if holding_times else 0.0
+    maxholdingtime = max(holding_times) if holding_times else 0.0
+    minholdingtime = min(holding_times) if holding_times else 0.0
+    
+    initial_balance = env_params["initial_balance"]
+    roipercent = (net_pnl / initial_balance) * 100 if initial_balance > 0 else 0.0
+    
+    longtrades = sum(1 for t in alltradesinfo if t.get('direction') == 'LONG')
+    shorttrades = sum(1 for t in alltradesinfo if t.get('direction') == 'SHORT')
     
     pos_pnls = [p for p in trade_pnls if p > 0]
     neg_pnls = [p for p in trade_pnls if p < 0]
+    avgwinsize = np.mean(pos_pnls) if pos_pnls else 0.0
+    avglosssize = np.mean(neg_pnls) if neg_pnls else 0.0
+    winlossratio = abs(avgwinsize / avglosssize) if avglosssize != 0 else float('inf')
+    expectancy = (wr_ratio * avgwinsize) + ((1 - wr_ratio) * avglosssize) if totaltrades > 0 else 0.0
+    
     profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
     
     # Max Drawdown
     equity_curve = np.cumsum([env_params["initial_balance"]] + trade_pnls)
     peak = np.maximum.accumulate(equity_curve)
-    drawdown = (equity_curve - peak) / peak
+    drawdown = (equity_curve - peak) / peak if len(peak) > 0 and np.all(peak != 0) else np.zeros_like(equity_curve)
     max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
     
     # Sharpe & Sortino
@@ -662,11 +686,30 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
     return {
         "sharpe": float(sharpe),
         "sortino": float(sortino),
-        "profit_factor": float(profit_factor),
-        "max_drawdown": float(max_dd),
-        "win_rate": float(wr_ratio),
+        "profitfactor": float(profit_factor),
+        "maxdrawdown": float(max_dd),
+        "winrate": float(wr_ratio),
         "trades": int(totaltrades),
-        "net_pnl": float(net_pnl)
+        "netpnl": float(net_pnl),
+        
+        # Дополнительные метрики
+        "grosspnl": float(grosspnl),
+        "commission": float(totalcommission),
+        "avgtrade": float(avgpnlpertrade),
+        "besttrade": float(besttrade),
+        "worsttrade": float(worsttrade),
+        "avghold": float(avgholdingtime),
+        "maxhold": float(maxholdingtime),
+        "minhold": float(minholdingtime),
+        "roi": float(roipercent / 100.0),  # В долях (0.5 = 50%)
+        "longtrades": int(longtrades),
+        "shorttrades": int(shorttrades),
+        "wincount": int(win_count),
+        "losscount": int(loss_count),
+        "avgwinsize": float(avgwinsize),
+        "avglosssize": float(avglosssize),
+        "winlossratio": float(winlossratio),
+        "expectancy": float(expectancy),
     }
 
 
