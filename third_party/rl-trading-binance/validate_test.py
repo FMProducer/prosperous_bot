@@ -1,5 +1,8 @@
 import os
 import sys
+# Set CUBLAS workspace config to ensure determinism, must be done before torch import
+if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import json
 import datetime
 import logging
