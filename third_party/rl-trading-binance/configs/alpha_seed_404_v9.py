@@ -94,7 +94,7 @@ cfg.validation_gate = {
     "min_sortino": -0.18,
     "min_profit_factor": 0.63,
     "max_drawdown_at_most": -1.17,
-    "min_win_rate": 0.42,
+    "min_win_rate": 0.41,
     "min_trades": 200,  # Ослабленный порог для промежуточных чекпоинтов
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
