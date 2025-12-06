@@ -400,5 +400,249 @@ def run_validation():
     print("="*44)
 
 
+def run_validation_with_config(config_path: str, model_path: str = None, override_params: dict = None) -> dict:
+    """
+    Программный запуск валидации с возможностью override параметров.
+    
+    Args:
+        config_path: путь к конфиг-файлу
+        model_path: путь к модели (опционально, будет искать автоматически)
+        override_params: dict с параметрами для override (например, market.* параметры)
+    
+    Returns:
+        dict с метриками: sharpe, sortino, profit_factor, max_drawdown, win_rate, trades, net_pnl
+    """
+    user_cfg_module = load_config_from_path(config_path)
+    
+    # === OVERRIDE PARAMETERS (для Optuna) ===
+    if override_params:
+        for path, value in override_params.items():
+            parts = path.split('.')
+            obj = user_cfg_module
+            for part in parts[:-1]:
+                obj = getattr(obj, part)
+            setattr(obj, parts[-1], value)
+            logger.debug(f"[Override] {path} = {value}")
+    
+    if not model_path:
+        model_path = find_model_checkpoint(user_cfg_module)
+    
+    if not model_path:
+        raise FileNotFoundError("'best.pth' model file not found.")
+    
+    train_cfg_dict = load_true_config(model_path)
+    if not train_cfg_dict:
+        raise FileNotFoundError("Could not load config_train.json from model's directory.")
+    
+    # === MERGE OVERRIDES INTO train_cfg_dict ===
+    if override_params:
+        for path, value in override_params.items():
+            parts = path.split('.')
+            obj = train_cfg_dict
+            for part in parts[:-1]:
+                if part not in obj:
+                    obj[part] = {}
+                obj = obj[part]
+            obj[parts[-1]] = value
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    norm_stats_path = os.path.join(os.path.dirname(model_path), "norm_stats.json")
+    val_data_path = train_cfg_dict.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
+    
+    if not os.path.isabs(val_data_path):
+        val_data_path = os.path.join(script_dir, val_data_path)
+    
+    paper_symbols = train_cfg_dict.get("paper", {}).get("symbols", "ALL")
+    sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
+    
+    trainlog_cfg = train_cfg_dict.get("trainlog", {})
+    sequences, keys = create_validation_episodes(
+        val_sequences=sequences,
+        val_keys=keys,
+        num_episodes=trainlog_cfg.get("num_val_ep", 150),  # Для Optuna используем меньше эпизодов
+        seed=train_cfg_dict.get("random_seed", 404)
+    )
+    
+    seq_cfg = train_cfg_dict.get("seq", {})
+    data_cfg = train_cfg_dict.get("data", {})
+    market_cfg = train_cfg_dict.get("market", {})
+    backtest_cfg = train_cfg_dict.get("backtest", {})
+    model_cfg = train_cfg_dict.get("model", {})
+    rl_cfg = train_cfg_dict.get("rl", {})
+    per_cfg = train_cfg_dict.get("per", {})
+    eps_cfg = train_cfg_dict.get("eps", {})
+    
+    input_history_len = seq_cfg.get("input_history_len") or seq_cfg.get("agent_history_len", 90)
+    
+    env_params = {
+        "full_seq_len": seq_cfg.get("full_seq_len", 150),
+        "pre_signal_len": seq_cfg.get("pre_signal_len", 90),
+        "agent_history_len": seq_cfg.get("agent_history_len", 90),
+        "agent_session_len": seq_cfg.get("agent_session_len", 60),
+        "input_history_len": input_history_len,
+        "initial_balance": market_cfg.get("initial_balance", 10000.0),
+        "transaction_fee": market_cfg.get("transaction_fee"),
+        "slippage": market_cfg.get("slippage", 0.0002),
+        "num_actions": market_cfg.get("num_actions", 4),
+        "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
+        "position_fraction": market_cfg.get("position_fraction", 0.1),
+        "order_size_usdt": backtest_cfg.get("order_size_usdt", 0.0),
+        "backtest_mode": True,
+        "use_risk_management": backtest_cfg.get("use_risk_management", False),
+        "cnn_format": False,
+        "num_features": data_cfg.get("numchannels", 10),
+        "action_history_len": seq_cfg.get("action_history_len", 2),
+        "datachannels": data_cfg.get("datachannels", []),
+        "pricechannels": data_cfg.get("pricechannels", []),
+        "volumechannels": data_cfg.get("volumechannels", []),
+        "otherchannels": data_cfg.get("otherchannels", []),
+        # === НАГРАДЫ/ШТРАФЫ (из market_cfg) ===
+        "new_equity_peak_reward": market_cfg.get("new_equity_peak_reward", 0.005),
+        "perfect_entry_reward": market_cfg.get("perfect_entry_reward", 0.05),
+        "risk_reward_ratio_threshold": market_cfg.get("risk_reward_ratio_threshold", 3.0),
+        "risk_reward_ratio_reward": market_cfg.get("risk_reward_ratio_reward", 0.075),
+        "good_exit_bonus": market_cfg.get("good_exit_bonus", 0.30),
+        "fast_exit_bonus": market_cfg.get("fast_exit_bonus", 0.10),
+        "bankruptcy_threshold": market_cfg.get("bankruptcy_threshold", 0.0),
+        "bankruptcy_penalty": market_cfg.get("bankruptcy_penalty", 1.0),
+        "bankruptcy_slippage_penalty": market_cfg.get("bankruptcy_slippage_penalty", 0.05),
+        "max_drawdown_threshold": market_cfg.get("max_drawdown_threshold", -0.20),
+        "max_drawdown_penalty_type": market_cfg.get("max_drawdown_penalty_type", "proportional"),
+        "max_drawdown_penalty": market_cfg.get("max_drawdown_penalty", 1.0),
+        "continuous_pain_penalty_ratio": market_cfg.get("continuous_pain_penalty_ratio", 0.12),
+        "low_balance_penalty": market_cfg.get("low_balance_penalty", 0.01),
+        "holding_penalty_multiplier": market_cfg.get("holding_penalty_multiplier", 0.2),
+        "greed_penalty_multiplier": market_cfg.get("greed_penalty_multiplier", 0.1),
+        "premature_exit_penalty": market_cfg.get("premature_exit_penalty", 0.25),
+        "holding_penalty_threshold": market_cfg.get("holding_penalty_threshold", 15),
+        "greed_penalty_threshold": market_cfg.get("greed_penalty_threshold", 0.50),
+        "exit_quality_threshold": market_cfg.get("exit_quality_threshold", 0.80),
+        "fast_exit_threshold": market_cfg.get("fast_exit_threshold", 20),
+        "premature_exit_threshold": market_cfg.get("premature_exit_threshold", 8),
+        "profit_exit_threshold": market_cfg.get("profit_exit_threshold", 8),
+        "loss_exit_threshold": market_cfg.get("loss_exit_threshold", 3),
+    }
+    
+    flat_state_size = (env_params["agent_history_len"] * env_params["num_features"]) + 4 + (env_params["num_actions"] * env_params["action_history_len"])
+    env_params["flat_state_size"] = flat_state_size
+    
+    backtest_kwargs = {
+        "stop_loss": None,
+        "take_profit": None,
+        "trailing_stop": backtest_cfg.get("trailing_stop"),
+        "trailing_stop_min": backtest_cfg.get("trailing_stop_min"),
+        "fee_buffer_mult": backtest_cfg.get("fee_buffer_mult"),
+        "delta_p_hysteresis": backtest_cfg.get("delta_p_hysteresis"),
+    }
+    
+    # Создание окружения и агента (код остается как в оригинале)
+    env = TradingEnvironment(sequences=sequences, stats=all_stats, keys=keys, render_mode=None, **env_params)
+    
+    agent = D3QN_PER_Agent(
+        state_shape=train_cfg_dict.get("state_shape", [10, 90, 1]),
+        action_dim=env_params["num_actions"],
+        cnn_maps=model_cfg.get("cnn_maps", []),
+        cnn_kernels=model_cfg.get("cnn_kernels", []),
+        cnn_strides=model_cfg.get("cnn_strides", []),
+        cnn_dilations=model_cfg.get("cnn_dilations", []),
+        dense_val=model_cfg.get("dense_val", []),
+        dense_adv=model_cfg.get("dense_adv", []),
+        additional_feats=model_cfg.get("additional_feats", 12),
+        dropout_model=model_cfg.get("dropout_p", 0.0),
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        gamma=rl_cfg.get("gamma", 0.99),
+        learning_rate=rl_cfg.get("lr", 1e-4),
+        batch_size=rl_cfg.get("batch_size", 32),
+        buffer_size=per_cfg.get("buffer_size", 100000),
+        target_update_freq=rl_cfg.get("target_update_freq", 1000),
+        train_start=rl_cfg.get("train_start", 1000),
+        max_gradient_norm=rl_cfg.get("max_gradient_norm", 1.0),
+        per_alpha=per_cfg.get("per_alpha", 0.6),
+        per_beta_start=per_cfg.get("per_beta_start", 0.4),
+        per_beta_frames=per_cfg.get("per_beta_frames", 100000),
+        eps_start=eps_cfg.get("eps_start", 1.0),
+        eps_end=eps_cfg.get("eps_end", 0.05),
+        eps_frames=eps_cfg.get("eps_decay_frames", 100000),
+        epsilon=0.0,
+        perf_cfg=PerformanceConfig()
+    )
+    
+    agent.load_model(model_path, strict=True)
+    
+    # Запуск симуляции (без прогресс-бара для Optuna)
+    all_trades_info = []
+    total_bars_processed = 0
+    
+    for i in range(len(sequences)):
+        obs, _ = env.reset(options={"forced_index": i})
+        done = False
+        signal_dt_for_step = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+        ticker_name = "UNKNOWN"
+        
+        if keys and i < len(keys):
+            try:
+                key_parts = keys[i].split('_')
+                ticker_name = key_parts[0]
+                if len(key_parts) > 1:
+                    start_dt_str = key_parts[1]
+                    signal_dt_for_step = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+            except (IndexError, AttributeError, ValueError):
+                pass
+        
+        while not done:
+            action = agent.select_action(obs, training=False)
+            next_obs, reward, terminated, truncated, info = env.backtest_step(
+                action=action,
+                signal_dt=signal_dt_for_step,
+                ticker=ticker_name,
+                **backtest_kwargs
+            )
+            done = terminated or truncated
+            obs = next_obs
+            total_bars_processed += 1
+            
+            if info.get("position_closed", False):
+                all_trades_info.append(info)
+    
+    # Расчет метрик (код как в оригинале)
+    total_trades = len(all_trades_info)
+    win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
+    wr_ratio = win_count / max(1, total_trades)
+    
+    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+    net_pnl = sum(trade_pnls)
+    
+    pos_pnls = [p for p in trade_pnls if p > 0]
+    neg_pnls = [p for p in trade_pnls if p < 0]
+    profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
+    
+    # Max Drawdown
+    equity_curve = np.cumsum([env_params["initial_balance"]] + trade_pnls)
+    peak = np.maximum.accumulate(equity_curve)
+    drawdown = (equity_curve - peak) / peak
+    max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
+    
+    # Sharpe & Sortino
+    returns = np.array(trade_pnls) / env_params["initial_balance"]
+    if len(returns) > 1:
+        mean_r = np.mean(returns)
+        std_r = np.std(returns, ddof=1)
+        downside_std = np.std(returns[returns < 0], ddof=1) if len(returns[returns < 0]) > 1 else 1e-9
+        sharpe = (mean_r / std_r) if std_r > 1e-9 else 0.0
+        sortino = (mean_r / downside_std) if downside_std > 1e-9 else 0.0
+    else:
+        sharpe, sortino = 0.0, 0.0
+    
+    return {
+        "sharpe": float(sharpe),
+        "sortino": float(sortino),
+        "profit_factor": float(profit_factor),
+        "max_drawdown": float(max_dd),
+        "win_rate": float(wr_ratio),
+        "trades": int(total_trades),
+        "net_pnl": float(net_pnl)
+    }
+
+
 if __name__ == "__main__":
     run_validation()

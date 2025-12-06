@@ -242,16 +242,68 @@ except ValueError:
     pass  # Fallback in train.py
 
 # Optuna Search Space (for hyperopt if needed; backtest thresholds)
+# cfg.optuna_search_space = {
+#     # --- Backtest/Risk Params ---
+#     # "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"), # Будет использоваться позже
+#     # "short_thr":      ("suggest_float", -0.03,  -0.001, True,  "backtest.short_action_threshold"), # Будет использоваться позже
+#     # "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "market.position_fraction"), # Исправлен путь на market.*
+#     # "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
+#     # "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
+#     # "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
+#     # "fee_buffer_mult": ("suggest_float", 1.5, 5.0, False, "backtest.fee_buffer_mult"),
+#     # "use_risk_management": ("suggest_categorical", [True, False], None, False, "backtest.use_risk_management"),
+#
+#     # --- Shaped Rewards (Bonuses) ---
+#     # "risk_reward_reward": ("suggest_float", 0.0, 0.2, False, "market.risk_reward_ratio_reward"),
+#     # "fast_exit_bonus":    ("suggest_float", 0.0, 0.2, False, "market.fast_exit_bonus"),
+#
+#     # --- Shaped Rewards (Penalties) ---
+#     # "inaction_penalty":   ("suggest_float", 0.0, 0.001, True, "market.inaction_penalty_ratio"),
+#     # "bankruptcy_penalty": ("suggest_float", 0.5, 2.0, False, "market.bankruptcy_penalty"),
+#     # "low_balance_penalty": ("suggest_float", 0.0, 0.05, False, "market.low_balance_penalty"),
+#     # "holding_penalty_mult": ("suggest_float", 0.0, 0.5, False, "market.holding_penalty_multiplier"),
+#     # "premature_exit_penalty": ("suggest_float", 0.0, 0.5, False, "market.premature_exit_penalty"),
+#
+#     # --- Shaped Rewards (Thresholds) ---
+#     # "risk_reward_thr":    ("suggest_float", 2.0, 5.0, False, "market.risk_reward_ratio_threshold"),
+#     # "max_dd_thr":         ("suggest_float", -0.4, -0.1, False, "market.max_drawdown_threshold"),
+#     # "holding_penalty_thr": ("suggest_int", 5, 30, False, "market.holding_penalty_threshold"),
+#     # "greed_penalty_thr":  ("suggest_float", 0.3, 0.8, False, "market.greed_penalty_threshold"),
+#     # "exit_quality_thr":   ("suggest_float", 0.5, 0.95, False, "market.exit_quality_threshold"),
+#     # "fast_exit_thr":      ("suggest_int", 5, 40, False, "market.fast_exit_threshold"),
+#     # "premature_exit_thr": ("suggest_int", 3, 20, False, "market.premature_exit_threshold"),
+# }
+
+# Optuna Search Space: Shaped Rewards & Penalties
 cfg.optuna_search_space = {
-    # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
-    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
-    "short_thr":      ("suggest_float", -0.03,  -0.001, True,  "backtest.short_action_threshold"),
-    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
-    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
-    # Для d0 нижняя граница зависит от уже выбранного d_min
-    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
-    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
-    # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
+    # --- Rewards ---
+    "new_equity_peak_reward": ("suggest_float", 0.0,    0.02,  False, "market.new_equity_peak_reward"),
+    "good_exit_bonus":        ("suggest_float", 0.1,    0.5,   False, "market.good_exit_bonus"),
+    "perfect_entry_reward":   ("suggest_float", 0.0,    0.1,   False, "market.perfect_entry_reward"),
+    "risk_reward_reward":     ("suggest_float", 0.0,    0.2,   False, "market.risk_reward_ratio_reward"),
+    "fast_exit_bonus":        ("suggest_float", 0.0,    0.2,   False, "market.fast_exit_bonus"),
+
+    # --- Penalties ---
+    "continuous_pain_penalty": ("suggest_float", 0.0,    0.3,   False, "market.continuous_pain_penalty_ratio"),
+    "greed_penalty":           ("suggest_float", 0.0,    0.3,   False, "market.greed_penalty_multiplier"),
+    "holding_loss_penalty":    ("suggest_float", 0.0,    0.1,   False, "market.holding_loss_penalty"),
+    "max_dd_penalty":          ("suggest_float", 0.5,    2.0,   False, "market.max_drawdown_penalty"),
+    "inaction_penalty":        ("suggest_float", 0.0,    0.001, True,  "market.inaction_penalty_ratio"),
+    "bankruptcy_penalty":      ("suggest_float", 0.5,    2.0,   False, "market.bankruptcy_penalty"),
+    "low_balance_penalty":     ("suggest_float", 0.0,    0.05,  False, "market.low_balance_penalty"),
+    "holding_penalty_mult":    ("suggest_float", 0.0,    0.5,   False, "market.holding_penalty_multiplier"),
+    "premature_exit_penalty":  ("suggest_float", 0.0,    0.5,   False, "market.premature_exit_penalty"),
+
+    # --- Thresholds ---
+    "profit_exit_thr":      ("suggest_int",   3,    15,   False, "market.profit_exit_threshold"),
+    "loss_exit_thr":        ("suggest_int",   1,    10,   False, "market.loss_exit_threshold"),
+    "risk_reward_thr":      ("suggest_float", 2.0,  5.0,  False, "market.risk_reward_ratio_threshold"),
+    "max_dd_thr":           ("suggest_float", -0.4, -0.1, False, "market.max_drawdown_threshold"),
+    "holding_penalty_thr":  ("suggest_int",   5,    30,   False, "market.holding_penalty_threshold"),
+    "greed_penalty_thr":    ("suggest_float", 0.3,  0.8,  False, "market.greed_penalty_threshold"),
+    "exit_quality_thr":     ("suggest_float", 0.5,  0.95, False, "market.exit_quality_threshold"),
+    "fast_exit_thr":        ("suggest_int",   5,    40,   False, "market.fast_exit_threshold"),
+    "premature_exit_thr":   ("suggest_int",   3,    20,   False, "market.premature_exit_threshold"),
 }
 
 # Spike Detector (data prep; if regenerating)

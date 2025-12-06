@@ -278,6 +278,7 @@ def main():
 
     config_dict = base_cfg.model_dump()
     # Сохраняем базовый cfg и сам search-space отдельно (для независимого восстановления)
+    study.set_user_attr("config_path", args.cfg_path)
     study.set_user_attr("base_cfg", json.dumps(config_dict, default=str))
     ss = getattr(base_cfg, "optuna_search_space", {})
     study.set_user_attr("optuna_search_space", json.dumps(ss, default=str))
