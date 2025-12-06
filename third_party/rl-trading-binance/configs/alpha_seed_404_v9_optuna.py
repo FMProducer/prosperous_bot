@@ -69,7 +69,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 150  # Вместо 750 - быстрая валидация
+cfg.trainlog.num_val_ep = 30  # Вместо 750 - быстрая валидация
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.

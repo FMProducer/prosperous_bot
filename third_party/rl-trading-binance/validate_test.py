@@ -570,8 +570,10 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
     agent.load_model(model_path, strict=True)
     
     # Запуск симуляции (без прогресс-бара для Optuna)
-    all_trades_info = []
-    total_bars_processed = 0
+    logging.getLogger().setLevel(logging.WARNING)  # Отключить INFO логи
+
+    alltradesinfo = []
+    totalbarsprocessed = 0
     
     for i in range(len(sequences)):
         obs, _ = env.reset(options={"forced_index": i})
@@ -599,17 +601,19 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
             )
             done = terminated or truncated
             obs = next_obs
-            total_bars_processed += 1
+            totalbarsprocessed += 1
             
             if info.get("position_closed", False):
-                all_trades_info.append(info)
+                alltradesinfo.append(info)
+
+    logging.getLogger().setLevel(logging.INFO)  # Включить обратно
+
+    # --- Metrics Calculation ---
+    totaltrades = len(alltradesinfo)
+    win_count = sum(1 for t in alltradesinfo if t.get('trade_realized_pnl', 0.0) > 0)
+    wr_ratio = win_count / max(1, totaltrades)
     
-    # Расчет метрик (код как в оригинале)
-    total_trades = len(all_trades_info)
-    win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
-    wr_ratio = win_count / max(1, total_trades)
-    
-    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in alltradesinfo]
     net_pnl = sum(trade_pnls)
     
     pos_pnls = [p for p in trade_pnls if p > 0]
@@ -639,7 +643,7 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
         "profit_factor": float(profit_factor),
         "max_drawdown": float(max_dd),
         "win_rate": float(wr_ratio),
-        "trades": int(total_trades),
+        "trades": int(totaltrades),
         "net_pnl": float(net_pnl)
     }
 
