@@ -1165,7 +1165,6 @@ def main(cfg: MasterConfig = None):
         val_kwargs["stats"] = norm_stats
         val_kwargs["backtest_mode"] = True
         val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
-        val_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
         val_env = TradingEnvironment(**val_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
