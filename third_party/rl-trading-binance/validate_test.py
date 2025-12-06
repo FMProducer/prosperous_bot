@@ -219,7 +219,7 @@ def run_validation():
         "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
         "position_fraction": market_cfg.get("position_fraction", 0.1),
         "order_size_usdt": backtest_cfg.get("order_size_usdt", 0.0),
-        "backtest_mode": True,
+        "backtest_mode": False,
         "use_risk_management": backtest_cfg.get("use_risk_management", False),
         "cnn_format": False,
         "num_features": data_cfg.get("numchannels", 10),
@@ -279,8 +279,8 @@ def run_validation():
 
     logger.info("🚀 Starting Backtest Validation...")
     
-    all_trades_info = []
-    total_bars_processed = 0
+    alltradesinfo = []
+    totalbarsprocessed = 0
     start_time = time.time()
     
     logging.getLogger().setLevel(logging.ERROR)
@@ -290,6 +290,7 @@ def run_validation():
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         
+        # Эти переменные оставляем для совместимости, но они не используются в step()
         signal_dt_for_step = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
         if keys and i < len(keys):
@@ -300,79 +301,85 @@ def run_validation():
                     start_dt_str = key_parts[1]
                     signal_dt_for_step = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
             except (IndexError, AttributeError, ValueError) as e:
-                logger.warning(f"Could not parse ticker/date from key: {keys[i]} due to {e}")
-
+                pass
+    
+        prev_closed_trades = 0
         while not done:
             action = agent.select_action(obs, training=False)
-            next_obs, reward, terminated, truncated, info = env.backtest_step(
-                action=action, 
-                signal_dt=signal_dt_for_step,
-                ticker=ticker_name, 
-                **backtest_kwargs
-            )
+            next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             obs = next_obs
-            total_bars_processed += 1
+            totalbarsprocessed += 1
             
-            if info.get("position_closed", False):
-                all_trades_info.append(info)
+            if env.closed_trades > prev_closed_trades:
+                prev_closed_trades = env.closed_trades
+                trade_info = {
+                    "trade_realized_pnl": env.realized_pnl,
+                    "position_closed": True,
+                }
+                alltradesinfo.append(trade_info)
         
         pbar.set_postfix({
-            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}", 
-            "Trds": len(all_trades_info)
+            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in alltradesinfo):,.0f}", 
+            "Trds": len(alltradesinfo)
         })
 
     logging.getLogger().setLevel(logging.INFO)
 
     # --- Metrics Calculation ---
     total_duration = time.time() - start_time
-    total_trades = len(all_trades_info)
-    win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
-    loss_count = total_trades - win_count
-    wr_ratio = win_count / max(1, total_trades)
+    totaltrades = len(alltradesinfo)
 
-    gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
-    net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
-    total_commission = sum(t.get('trade_commission', 0.0) for t in all_trades_info)
-    avg_pnl_per_trade = net_pnl / max(1, total_trades)
+    # ← ИЗМЕНЕНО: используем финальный баланс вместо суммы сделок
+    final_balance = env.balance
+    initial_balance = env_params["initial_balance"]
+    netpnl = final_balance - initial_balance
 
-    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
-    best_trade = max(trade_pnls) if trade_pnls else 0.0
-    worst_trade = min(trade_pnls) if trade_pnls else 0.0
+    # ← ИЗМЕНЕНО: вычисляем дельту PnL между сделками
+    tradepnls = []
+    prev_pnl = 0.0
+    for t in alltradesinfo:
+        current_pnl = t.get("trade_realized_pnl", 0.0)
+        trade_delta = current_pnl - prev_pnl
+        tradepnls.append(trade_delta)
+        prev_pnl = current_pnl
 
-    long_trades = sum(1 for t in all_trades_info if t.get('direction') == 'LONG')
-    short_trades = sum(1 for t in all_trades_info if t.get('direction') == 'SHORT')
+    # Остальное остаётся без изменений
+    wincount = sum(1 for p in tradepnls if p > 0)
+    wrratio = wincount / max(1, totaltrades)
 
-    holding_times = [t.get('holding_duration_bars', 0) for t in all_trades_info]
+    pospnls = [p for p in tradepnls if p > 0]
+    negpnls = [p for p in tradepnls if p < 0]
+    profitfactor = sum(pospnls) / max(1e-9, abs(sum(negpnls)))
+    
+    loss_count = totaltrades - wincount
+    avg_pnl_per_trade = netpnl / max(1, totaltrades)
+    best_trade = max(tradepnls) if tradepnls else 0.0
+    worst_trade = min(tradepnls) if tradepnls else 0.0
+    long_trades = sum(1 for t in alltradesinfo if t.get('direction') == 'LONG')
+    short_trades = sum(1 for t in alltradesinfo if t.get('direction') == 'SHORT')
+    holding_times = [t.get('holding_duration_bars', 0) for t in alltradesinfo]
     avg_holding_time = np.mean(holding_times) if holding_times else 0.0
     max_holding_time = max(holding_times) if holding_times else 0.0
     min_holding_time = min(holding_times) if holding_times else 0.0
-
     bars_per_day = 1440
-    trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
-    pnl_per_day = net_pnl / max(1, trading_time_days)
-
-    initial_balance = env_params["initial_balance"]
-    roi_percent = (net_pnl / initial_balance) * 100
+    trading_time_days = totalbarsprocessed / bars_per_day if bars_per_day > 0 else 0.0
+    pnl_per_day = netpnl / max(1, trading_time_days)
+    roi_percent = (netpnl / initial_balance) * 100
     roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
-    
-    pos_pnls = [p for p in trade_pnls if p > 0]
-    neg_pnls = [p for p in trade_pnls if p < 0]
-    avg_win_size = np.mean(pos_pnls) if pos_pnls else 0.0
-    avg_loss_size = np.mean(neg_pnls) if neg_pnls else 0.0
+    avg_win_size = np.mean(pospnls) if pospnls else 0.0
+    avg_loss_size = np.mean(negpnls) if negpnls else 0.0
     win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size != 0 else float('inf')
-    expectancy = (wr_ratio * avg_win_size) + ((1 - wr_ratio) * avg_loss_size)
-    
-    profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
+    expectancy = (wrratio * avg_win_size) + ((1 - wrratio) * avg_loss_size)
 
     # Max Drawdown
-    equity_curve = np.cumsum([initial_balance] + trade_pnls)
+    equity_curve = np.cumsum([initial_balance] + tradepnls)
     peak = np.maximum.accumulate(equity_curve)
     drawdown = (equity_curve - peak) / peak
     max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
 
     # Sharpe & Sortino
-    returns = np.array(trade_pnls) / initial_balance
+    returns = np.array(tradepnls) / initial_balance
     if len(returns) > 1:
         mean_r = np.mean(returns)
         std_r = np.std(returns, ddof=1)
@@ -382,21 +389,21 @@ def run_validation():
     else:
         sharpe, sortino = 0.0, 0.0
 
-    tsl_hits = sum(1 for t in all_trades_info if t.get('tsl_triggered', False))
+    tsl_hits = sum(1 for t in alltradesinfo if t.get('tsl_triggered', False))
 
     # --- Print Results ---
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
     print("="*44)
-    print(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
-    print(f"Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
+    print(f"Trades: {totaltrades} (Long: {long_trades}, Short: {short_trades}, Win: {wincount}, Loss: {loss_count}) | WinRate: {wrratio:.2%} | PF: {profitfactor:.4f}")
+    print(f"Net PnL: {netpnl:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
     print(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}")
     print(f"Avg Hold: {avg_holding_time:.2f} bars | Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars")
-    print(f"Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | Trading Days: {trading_time_days:.1f}")
+    print(f"Duration: {total_duration:.2f}s | Bars: {totalbarsprocessed} | Trading Days: {trading_time_days:.1f}")
     print(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
-    print(f"Commission: {(total_commission / max(1e-9, abs(gross_pnl)))*100:.1f}% of gross | Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
+    print(f"Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
     print(f"Expectancy/Trade: {expectancy:.2f} USDT")
-    print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
+    print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, totaltrades):.2%})")
     print("="*44)
 
 
@@ -487,7 +494,7 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
         "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
         "position_fraction": market_cfg.get("position_fraction", 0.1),
         "order_size_usdt": backtest_cfg.get("order_size_usdt", 0.0),
-        "backtest_mode": True,
+        "backtest_mode": False,
         "use_risk_management": backtest_cfg.get("use_risk_management", False),
         "cnn_format": False,
         "num_features": data_cfg.get("numchannels", 10),
@@ -591,43 +598,56 @@ def run_validation_with_config(config_path: str, model_path: str = None, overrid
             except (IndexError, AttributeError, ValueError):
                 pass
         
+        prev_closed_trades = 0
         while not done:
             action = agent.select_action(obs, training=False)
-            next_obs, reward, terminated, truncated, info = env.backtest_step(
-                action=action,
-                signal_dt=signal_dt_for_step,
-                ticker=ticker_name,
-                **backtest_kwargs
-            )
+            next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             obs = next_obs
             totalbarsprocessed += 1
             
-            if info.get("position_closed", False):
-                alltradesinfo.append(info)
+            if env.closed_trades > prev_closed_trades:
+                prev_closed_trades = env.closed_trades
+                trade_info = {
+                    "trade_realized_pnl": env.realized_pnl,
+                    "position_closed": True,
+                }
+                alltradesinfo.append(trade_info)
 
     logging.getLogger().setLevel(logging.INFO)  # Включить обратно
 
     # --- Metrics Calculation ---
     totaltrades = len(alltradesinfo)
-    win_count = sum(1 for t in alltradesinfo if t.get('trade_realized_pnl', 0.0) > 0)
+
+    # Используем финальный баланс вместо суммы сделок
+    final_balance = env.balance
+    initial_balance = env_params["initial_balance"]
+    net_pnl = final_balance - initial_balance
+
+    # Вычисляем дельту PnL между сделками
+    tradepnls = []
+    prev_pnl = 0.0
+    for t in alltradesinfo:
+        current_pnl = t.get("trade_realized_pnl", 0.0)
+        trade_delta = current_pnl - prev_pnl
+        tradepnls.append(trade_delta)
+        prev_pnl = current_pnl
+
+    win_count = sum(1 for p in tradepnls if p > 0)
     wr_ratio = win_count / max(1, totaltrades)
     
-    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in alltradesinfo]
-    net_pnl = sum(trade_pnls)
-    
-    pos_pnls = [p for p in trade_pnls if p > 0]
-    neg_pnls = [p for p in trade_pnls if p < 0]
+    pos_pnls = [p for p in tradepnls if p > 0]
+    neg_pnls = [p for p in tradepnls if p < 0]
     profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
     
     # Max Drawdown
-    equity_curve = np.cumsum([env_params["initial_balance"]] + trade_pnls)
+    equity_curve = np.cumsum([initial_balance] + tradepnls)
     peak = np.maximum.accumulate(equity_curve)
     drawdown = (equity_curve - peak) / peak
     max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
     
     # Sharpe & Sortino
-    returns = np.array(trade_pnls) / env_params["initial_balance"]
+    returns = np.array(tradepnls) / initial_balance
     if len(returns) > 1:
         mean_r = np.mean(returns)
         std_r = np.std(returns, ddof=1)
