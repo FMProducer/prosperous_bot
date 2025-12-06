@@ -244,14 +244,14 @@ except ValueError:
 
 # Optuna Search Space (for hyperopt if needed; backtest thresholds)
 cfg.optuna_search_space = {
-    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
-    "short_thr":      ("suggest_float", -0.03,  -0.001, False, "backtest.short_action_threshold"), # Log scale is not for negative values
-    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "market.position_fraction"),
+#    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
+#    "short_thr":      ("suggest_float", -0.03,  -0.001, False, "backtest.short_action_threshold"), # Log scale is not for negative values
+#    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "market.position_fraction"),
     "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
     "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
     "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
     "fee_buffer_mult": ("suggest_float", 1.5, 5.0, False, "backtest.fee_buffer_mult"),
-    "use_risk_management": ("suggest_categorical", [True, False], None, False, "backtest.use_risk_management"),
+#    "use_risk_management": ("suggest_categorical", [True, False], None, False, "backtest.use_risk_management"),
 }
 
 # Optuna Search Space: Shaped Rewards & Penalties
