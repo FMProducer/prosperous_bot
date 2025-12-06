@@ -11,16 +11,11 @@ import optuna
 import pandas as pd
 import platform
 
-from backtest_engine import run_backtest
+from validate_test import run_validation_with_config
 from config import MasterConfig, cfg as default_cfg
 from utils import load_config, setup_logging
 
-def run_papertrade(cfg: MasterConfig, trial_num: int):
-    """
-    Запускает PaperTrader в режиме базы данных и возвращает метрики производительности.
-    """
 
-    return run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
 
 def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
     """
@@ -210,11 +205,21 @@ def objective(trial: optuna.Trial):
 
     t0 = time.time()
     try:
-        metrics = run_backtest(cfg=cfg, model_path_override=cfg.paths.model_path)
+        # Создаём override_params из suggested_params
+        override_params = {}
+        for name, params in search_space.items():
+            _, _, _, _, path = params
+            override_params[path] = suggested_params[name]
+        
+        metrics = run_validation_with_config(
+            config_path=trial.study.user_attrs["config_path"],
+            model_path=cfg.paths.model_path,
+            override_params=override_params
+        )
     except Exception as e:
-        logging.exception(f"[Optuna] trial#{trial.number} run_backtest failed; returning sentinel metrics")
-        # Сентинелы, чтобы не прерывать всю оптимизацию
-        metrics = {"sharpe": -1.0, "sortino": -1.0, "max_drawdown": "100.0%"}
+        logging.exception(f"[Optuna] trial#{trial.number} validation failed")
+        metrics = {"sharpe": -1.0, "sortino": -1.0, "profit_factor": 0.0}
+    
     duration_s = time.time() - t0
     
     # Persist useful attrs for later analysis/audit
@@ -276,9 +281,9 @@ def main():
         load_if_exists=False,
     )
 
-    config_dict = base_cfg.model_dump()
-    # Сохраняем базовый cfg и сам search-space отдельно (для независимого восстановления)
     study.set_user_attr("config_path", args.cfg_path)
+
+    config_dict = base_cfg.model_dump()
     study.set_user_attr("base_cfg", json.dumps(config_dict, default=str))
     ss = getattr(base_cfg, "optuna_search_space", {})
     study.set_user_attr("optuna_search_space", json.dumps(ss, default=str))

@@ -220,7 +220,7 @@ cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
 cfg.paper.leverage = 1.0
 cfg.paper.symbols = "ALL"  # Or "ALL" or list from tickers.txt
-cfg.backtest.data_source = "npz"  # For test/backtest
+cfg.backtest.data_source = "npz_keys"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
@@ -288,7 +288,7 @@ cfg.optuna_search_space = {
     "greed_penalty":           ("suggest_float", 0.0,    0.3,   False, "market.greed_penalty_multiplier"),
     "holding_loss_penalty":    ("suggest_float", 0.0,    0.1,   False, "market.holding_loss_penalty"),
     "max_dd_penalty":          ("suggest_float", 0.5,    2.0,   False, "market.max_drawdown_penalty"),
-    "inaction_penalty":        ("suggest_float", 0.0,    0.001, True,  "market.inaction_penalty_ratio"),
+    "inaction_penalty": ("suggest_float", 1e-6, 0.001, True, "market.inaction_penalty_ratio"),
     "bankruptcy_penalty":      ("suggest_float", 0.5,    2.0,   False, "market.bankruptcy_penalty"),
     "low_balance_penalty":     ("suggest_float", 0.0,    0.05,  False, "market.low_balance_penalty"),
     "holding_penalty_mult":    ("suggest_float", 0.0,    0.5,   False, "market.holding_penalty_multiplier"),
