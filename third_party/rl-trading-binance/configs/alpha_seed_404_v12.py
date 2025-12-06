@@ -51,18 +51,18 @@ cfg.market.slippage = 0.0002
 # ============= RL/DQN PARAMS =============
 # (custom agent)
 
-cfg.rl.lr = 3e-4  # AdamW
+cfg.rl.lr = 5e-4  # AdamW
 cfg.rl.gamma = 0.95  # Discount
 cfg.rl.n_step = 60  # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
-cfg.rl.target_update_freq = 2000  # Soft target? (DQN-style if needed)
+cfg.rl.target_update_freq = 10000  # Soft target? (DQN-style if needed)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 
 # ============= DQN-SPECIFIC (PER/epsilon) =============
 
 cfg.per.buffer_size = 1000000
-cfg.per.per_alpha = 0.6
+cfg.per.per_alpha = 0.4
 cfg.per.per_beta_start = 0.4
 cfg.per.per_beta_frames = 400000
 cfg.per.per_eps = 1e-6
@@ -127,7 +127,7 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # --- Базовые параметры ---
 cfg.market.base_reward_scale = 0.01  # Масштаб базовой награды
-cfg.market.holding_cost = 0.0001  # Линейный cost за удержание
+cfg.market.holding_cost = 0.0  # Линейный cost за удержание
 
 # --- GRADIENT EXIT BONUS (НОВОЕ v12) ---
 cfg.market.exit_bonus = 0.05

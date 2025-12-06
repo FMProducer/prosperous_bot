@@ -146,19 +146,19 @@ cfg.market.greed_penalty_multiplier = 0.1
 
 # --- НОВАЯ АСИММЕТРИЧНАЯ ЛОГИКА ---
 # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
-cfg.market.premature_profit_exit_penalty = 0.10
+cfg.market.premature_profit_exit_penalty = 0.0
 
 # Штраф за долгое удержание УБЫТОЧНОЙ позиции (> loss_exit_threshold шагов)
-cfg.market.holding_loss_penalty = 0.08
+cfg.market.holding_loss_penalty = 0.0
 
 # Порог времени удержания для прибыльных позиций (минимум для выхода без штрафа)
-cfg.market.profit_exit_threshold = 5  # bars
+cfg.market.profit_exit_threshold = 8  # bars
 
 # Порог времени удержания для убыточных позиций (максимум для выхода без штрафа)
 cfg.market.loss_exit_threshold = 3  # bars
 
 # --- СТАРЫЕ ПАРАМЕТРЫ (отключены) ---
-cfg.market.premature_exit_penalty = 0.0  # Заменен на premature_profit_exit_penalty
+cfg.market.premature_exit_penalty = 0.25  # Заменен на premature_profit_exit_penalty
 cfg.market.profit_holding_bonus = 0.0    # Заменен на асимметричную логику
 
 # --- Thresholds for Shaped Rewards ---

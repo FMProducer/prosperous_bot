@@ -64,23 +64,13 @@ class TradingEnvironment(gym.Env):
         bankruptcy_slippage_penalty: float = 0.0,
         holding_penalty_multiplier: float = 0.0,
         greed_penalty_multiplier: float = 0.0,
-        # NEW: Asymmetric penalties
-        premature_profit_exit_penalty: float = 0.0,
-        holding_loss_penalty: float = 0.0,
-        # OLD: Kept for compatibility (set to 0.0)
         premature_exit_penalty: float = 0.0,
-        profit_holding_bonus: float = 0.0,
-        
         # Thresholds for shaped rewards (previously hardcoded)
         holding_penalty_threshold: int = 15,
         greed_penalty_threshold: float = 0.50,
         exit_quality_threshold: float = 0.80,
         fast_exit_threshold: int = 20,
         premature_exit_threshold: int = 5,
-
-        # NEW: Thresholds for asymmetric logic
-        profit_exit_threshold: int = 5,
-        loss_exit_threshold: int = 3,
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -133,23 +123,14 @@ class TradingEnvironment(gym.Env):
         self.bankruptcy_slippage_penalty = bankruptcy_slippage_penalty
         self.holding_penalty_multiplier = holding_penalty_multiplier
         self.greed_penalty_multiplier = greed_penalty_multiplier
-        # NEW: Asymmetric penalties
-        self.premature_profit_exit_penalty = premature_profit_exit_penalty
-        self.holding_loss_penalty = holding_loss_penalty
-        # OLD: Kept for compatibility
         self.premature_exit_penalty = premature_exit_penalty
-        self.profit_holding_bonus = profit_holding_bonus
         
-
         # Thresholds
         self.holding_penalty_threshold = holding_penalty_threshold
         self.greed_penalty_threshold = greed_penalty_threshold
         self.exit_quality_threshold = exit_quality_threshold
         self.fast_exit_threshold = fast_exit_threshold
         self.premature_exit_threshold = premature_exit_threshold
-        # NEW: Thresholds for asymmetric logic
-        self.profit_exit_threshold = profit_exit_threshold
-        self.loss_exit_threshold = loss_exit_threshold
 
         self.seed_value = seed
         # Cache frequently used channel index
@@ -565,33 +546,22 @@ class TradingEnvironment(gym.Env):
         
         # Penalties and bonuses applied upon closing a position
         if action == 3 and prev_position != 0:
-
-            # --- НОВАЯ АСИММЕТРИЧНАЯ ЛОГИКА ---
-            # 1. Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции
-            if self.premature_profit_exit_penalty > 0 and trade_pnl > 0:
-                if holding_duration < self.profit_exit_threshold:
-                    shaped_reward -= self.premature_profit_exit_penalty
-            
-            # 2. Штраф за долгое удержание УБЫТОЧНОЙ позиции
-            if self.holding_loss_penalty > 0 and trade_pnl < 0:
-                if holding_duration > self.loss_exit_threshold:
-                    shaped_reward -= self.holding_loss_penalty
-
             # 2. Greed Penalty + 3. Exit Bonus
             if self._max_unrealized_pnl > 0 and trade_pnl > 0:
                 profit_retracement = (self._max_unrealized_pnl - trade_pnl) / self._max_unrealized_pnl
-                # Greed penalty only if retracement is significant
-                if self.greed_penalty_multiplier > 0 and profit_retracement > self.greed_penalty_threshold:
+                if profit_retracement > self.greed_penalty_threshold:
                     shaped_reward -= profit_retracement * self.greed_penalty_multiplier
                 
-                if self.good_exit_bonus > 0 and trade_pnl >= self._max_unrealized_pnl * self.exit_quality_threshold:
+                if trade_pnl >= self._max_unrealized_pnl * self.exit_quality_threshold:
                     exit_bonus = self.good_exit_bonus
-
                     # 4. Fast Exit Bonus
                     if holding_duration < self.fast_exit_threshold:
                         exit_bonus += self.fast_exit_bonus
-
                     shaped_reward += exit_bonus
+            
+            # 5. Premature Exit Penalty
+            if holding_duration < self.premature_exit_threshold and trade_pnl > 0:
+                shaped_reward -= self.premature_exit_penalty
 
             # 6. NEW: Perfect Entry Reward
             if self.perfect_entry_reward > 0 and trade_pnl > 0 and self._min_unrealized_pnl >= 0:
