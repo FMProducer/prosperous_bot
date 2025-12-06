@@ -4,6 +4,9 @@ import json
 import datetime
 import logging
 import glob
+import time
+import random
+from collections import defaultdict
 import numpy as np
 import torch
 import torch.nn as nn 
@@ -26,6 +29,39 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 class PerformanceConfig:
     def __init__(self):
         self.use_amp = True; self.amp_dtype = "float16"; self.compile_mode = False; self.compile_dynamic = False
+
+def create_validation_episodes(
+    val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404
+):
+    if not val_sequences:
+        return [], []
+    episodes_by_symbol = defaultdict(list)
+    for i, key in enumerate(val_keys):
+        symbol = key.split('_')[0]
+        episodes_by_symbol[symbol].append(i)
+    
+    selected_indices = []
+    for symbol, indices in episodes_by_symbol.items():
+        n_samples = min(len(indices), max_episodes_per_symbol)
+        random.seed(seed)
+        selected_indices.extend(random.sample(indices, n_samples))
+    
+    if len(selected_indices) > num_episodes:
+        random.seed(seed)
+        final_indices = random.sample(selected_indices, num_episodes)
+    else:
+        final_indices = selected_indices
+    
+    random.seed(seed)
+    random.shuffle(final_indices)
+    
+    final_sequences = [val_sequences[i] for i in final_indices]
+    final_keys = [val_keys[i] for i in final_indices]
+    
+    final_symbols = {val_keys[i].split('_')[0] for i in final_indices}
+    logging.info(f"Stratified sampling complete. Sampled episodes: {len(final_sequences)}, Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
+    
+    return final_sequences, final_keys
 
 def load_config_from_path(config_path):
     if not os.path.exists(config_path):
@@ -55,7 +91,6 @@ def find_model_checkpoint(cfg=None):
     return None
 
 def load_true_config(model_path):
-    """Loads the config_train.json from the model's directory."""
     if model_path is None: return None
     model_dir = os.path.dirname(model_path)
     config_path = os.path.join(model_dir, "config_train.json")
@@ -149,10 +184,13 @@ def run_validation():
     paper_symbols = train_cfg_dict.get("paper", {}).get("symbols", "ALL")
     sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
     
-    num_val_ep = train_cfg_dict.get("trainlog", {}).get("num_val_ep", 750)
-    limit = min(len(sequences), num_val_ep)
-    sequences = sequences[:limit]
-    keys = keys[:limit]
+    trainlog_cfg = train_cfg_dict.get("trainlog", {})
+    sequences, keys = create_validation_episodes(
+        val_sequences=sequences,
+        val_keys=keys,
+        num_episodes=trainlog_cfg.get("num_val_ep", 750),
+        seed=train_cfg_dict.get("random_seed", 404)
+    )
 
     seq_cfg = train_cfg_dict.get("seq", {})
     data_cfg = train_cfg_dict.get("data", {})
@@ -236,8 +274,9 @@ def run_validation():
 
     logger.info("🚀 Starting Backtest Validation...")
     
-    total_pnl = 0
-    total_trades = 0
+    all_trades_info = []
+    total_bars_processed = 0
+    start_time = time.time()
     
     logging.getLogger().setLevel(logging.ERROR)
     pbar = tqdm(range(len(sequences)), desc="Simulating")
@@ -246,9 +285,6 @@ def run_validation():
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         
-        ep_trades = 0
-        ep_pnl = 0
-
         signal_dt_for_step = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
         if keys and i < len(keys):
@@ -271,25 +307,93 @@ def run_validation():
             )
             done = terminated or truncated
             obs = next_obs
+            total_bars_processed += 1
             
             if info.get("position_closed", False):
-                ep_trades += 1
-                ep_pnl += info.get("trade_realized_pnl", 0.0)
-
-        total_trades += ep_trades
-        total_pnl += ep_pnl
+                all_trades_info.append(info)
         
-        pbar.set_postfix({"PnL": f"{total_pnl:,.0f}", "Trds": total_trades})
+        pbar.set_postfix({
+            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}", 
+            "Trds": len(all_trades_info)
+        })
 
     logging.getLogger().setLevel(logging.INFO)
 
+    # --- Metrics Calculation ---
+    total_duration = time.time() - start_time
+    total_trades = len(all_trades_info)
+    win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
+    loss_count = total_trades - win_count
+    wr_ratio = win_count / max(1, total_trades)
+
+    gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
+    net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
+    total_commission = sum(t.get('trade_commission', 0.0) for t in all_trades_info)
+    avg_pnl_per_trade = net_pnl / max(1, total_trades)
+
+    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+    best_trade = max(trade_pnls) if trade_pnls else 0.0
+    worst_trade = min(trade_pnls) if trade_pnls else 0.0
+
+    long_trades = sum(1 for t in all_trades_info if t.get('direction') == 'LONG')
+    short_trades = sum(1 for t in all_trades_info if t.get('direction') == 'SHORT')
+
+    holding_times = [t.get('holding_duration_bars', 0) for t in all_trades_info]
+    avg_holding_time = np.mean(holding_times) if holding_times else 0.0
+    max_holding_time = max(holding_times) if holding_times else 0.0
+    min_holding_time = min(holding_times) if holding_times else 0.0
+
+    bars_per_day = 1440
+    trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
+    pnl_per_day = net_pnl / max(1, trading_time_days)
+
+    initial_balance = env_params["initial_balance"]
+    roi_percent = (net_pnl / initial_balance) * 100
+    roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
+    
+    pos_pnls = [p for p in trade_pnls if p > 0]
+    neg_pnls = [p for p in trade_pnls if p < 0]
+    avg_win_size = np.mean(pos_pnls) if pos_pnls else 0.0
+    avg_loss_size = np.mean(neg_pnls) if neg_pnls else 0.0
+    win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size != 0 else float('inf')
+    expectancy = (wr_ratio * avg_win_size) + ((1 - wr_ratio) * avg_loss_size)
+    
+    profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
+
+    # Max Drawdown
+    equity_curve = np.cumsum([initial_balance] + trade_pnls)
+    peak = np.maximum.accumulate(equity_curve)
+    drawdown = (equity_curve - peak) / peak
+    max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
+
+    # Sharpe & Sortino
+    returns = np.array(trade_pnls) / initial_balance
+    if len(returns) > 1:
+        mean_r = np.mean(returns)
+        std_r = np.std(returns, ddof=1)
+        downside_std = np.std(returns[returns < 0], ddof=1) if len(returns[returns < 0]) > 1 else 1e-9
+        sharpe = (mean_r / std_r) if std_r > 1e-9 else 0.0
+        sortino = (mean_r / downside_std) if downside_std > 1e-9 else 0.0
+    else:
+        sharpe, sortino = 0.0, 0.0
+
+    tsl_hits = sum(1 for t in all_trades_info if t.get('tsl_triggered', False))
+
+    # --- Print Results ---
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
     print("="*44)
-    print(f"Total PnL:      {total_pnl:,.2f}")
-    print(f"Total Trades:   {total_trades}")
-    print(f"Episodes:       {len(sequences)}")
+    print(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
+    print(f"Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
+    print(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}")
+    print(f"Avg Hold: {avg_holding_time:.2f} bars | Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars")
+    print(f"Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | Trading Days: {trading_time_days:.1f}")
+    print(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
+    print(f"Commission: {(total_commission / max(1e-9, abs(gross_pnl)))*100:.1f}% of gross | Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
+    print(f"Expectancy/Trade: {expectancy:.2f} USDT")
+    print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
     print("="*44)
+
 
 if __name__ == "__main__":
     run_validation()
