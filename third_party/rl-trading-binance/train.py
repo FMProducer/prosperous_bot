@@ -1489,9 +1489,17 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                     best_episode = int(ep)
                     
                     # FIX: Don't save best.pth here - will be copied from checkpoint at the end
+                    if isinstance(val_metric, tuple):
+                        # Multi-objective: val_metric is a tuple
+                        val_str = f"metrics={val_metric}"
+                    else:
+                        # Single objective: val_metric is a float
+                        val_str = f"{cfg.trainlog.val_selection_metrics}={val_metric:.4f}"
+
                     logging.info(
                         f"[Validation] ✨ New best found at episode {ep}: "
-                        f"Sortino={val_metric:.4f}, PF={metrics.get('Validation/profit_factor', 0):.4f}, "
+                        f"{val_str}, "
+                        f"PF={metrics.get('Validation/profit_factor', 0):.4f}, "
                         f"MaxDD={metrics.get('Validation/max_drawdown', 0):.4f}"
                     )
 
