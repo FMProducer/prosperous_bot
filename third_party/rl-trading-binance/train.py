@@ -941,8 +941,8 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
             # LONG specialist configuration
             cfg.market.num_actions = 2  # HOLD, LONG only
             cfg.market.allowed_directions = ['LONG']
-            cfg.training_filter_direction = 'LONG'
-            cfg.training_price_threshold = 0.01  # +1% minimum price increase
+            # cfg.training_filter_direction = 'LONG'
+            # cfg.training_price_threshold = 0.01  # +1% minimum price increase
             
             # Append to config name for separate output directories
             cfg.paths.config_name = f"{cfg.paths.config_name}_LONG"
@@ -964,8 +964,8 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
             # SHORT specialist configuration
             cfg.market.num_actions = 2  # HOLD, SHORT only
             cfg.market.allowed_directions = ['SHORT']
-            cfg.training_filter_direction = 'SHORT'
-            cfg.training_price_threshold = -0.01  # -1% minimum price decrease
+            # cfg.training_filter_direction = 'SHORT'
+            # cfg.training_price_threshold = -0.01  # -1% minimum price decrease
             
             # Append to config name for separate output directories
             cfg.paths.config_name = f"{cfg.paths.config_name}_SHORT"
@@ -1121,6 +1121,26 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         eps_decay_frames *= cfg.vec.num_envs
         logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
+    # Calculate flat_state_size
+    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
+    # After reshape, num_features becomes the number of channels in original data
+    if len(train_seqs[0].shape) == 3:
+        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
+    else:
+        num_features = train_seqs[0].shape[1]  # C from (L, C)
+    num_actions = cfg.market.num_actions
+    action_history_len = cfg.seq.action_history_len
+
+    flat_features = input_history_len * num_features
+    extras = 4  # position, unrealized, time_elapsed, time_remaining
+    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
+    flat_state_size = flat_features + extras + history_vector_size
+
+    # Update cfg.model.additional_feats for ensemble mode compatibility
+    cfg.model.additional_feats = extras + history_vector_size
+    logging.info(f"✅ Updated cfg.model.additional_feats = {cfg.model.additional_feats} "
+                 f"(extras={extras} + history_vector={history_vector_size})")
+
     agent = D3QN_PER_Agent(
         state_shape=cfg.state_shape,  # (10,150,1)
         action_dim=cfg.market.num_actions,
@@ -1150,21 +1170,6 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         perf_cfg=cfg.perf,
         # MC-dropout from cfg.mc_dropout (as is)
     )
-
-    # Calculate flat_state_size
-    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
-    # After reshape, num_features becomes the number of channels in original data
-    if len(train_seqs[0].shape) == 3:
-        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
-    else:
-        num_features = train_seqs[0].shape[1]  # C from (L, C)
-    num_actions = cfg.market.num_actions
-    action_history_len = cfg.seq.action_history_len
-
-    flat_features = input_history_len * num_features
-    extras = 4  # position, unrealized, time_elapsed, time_remaining
-    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
-    flat_state_size = flat_features + extras + history_vector_size
     
     env_kwargs = {
         "sequences": train_seqs,

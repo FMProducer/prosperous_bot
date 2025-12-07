@@ -32,7 +32,8 @@ cfg.model.cnn_dilations = [1, 2, 4, 8, 16, 28]  # RF=87 bars (96.7% coverage)
 cfg.model.cnn_strides = [1, 1, 1, 1, 1, 1]  # +1 layer
 cfg.model.dense_val = [128, 64, 32]  # Value head
 cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
-cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
+# cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
+# cfg.model.additional_feats будет пересчитан в train.py
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ

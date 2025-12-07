@@ -133,6 +133,10 @@ class MarketConfig(BaseModel):
     slippage: float = 0.0005 / 2
     num_actions: int = 4
     inaction_penalty_ratio: float = 0.001
+
+    # Ensemble mode parameters
+    allowed_directions: Optional[List[str]] = None  # ['LONG'], ['SHORT'], or None (both)
+
     bankruptcy_threshold: float = 0.0
     bankruptcy_penalty: float = 1.0
     # Max Drawdown Penalty
