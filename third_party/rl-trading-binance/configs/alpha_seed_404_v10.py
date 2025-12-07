@@ -263,6 +263,29 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
+# ============================================================================
+# ENSEMBLE TRAINING MODE
+# ============================================================================
+# Режим обучения специализированных агентов для ensemble
+# None      - обычный агент (3 действия: HOLD, LONG, SHORT)
+# 'LONG'    - LONG specialist (2 действия: HOLD, LONG)
+# 'SHORT'   - SHORT specialist (2 действия: HOLD, SHORT)
+
+cfg.ensemble_mode = None  # None | 'LONG' | 'SHORT'
+
+# Автоматические настройки (заполняются в train.py на основе ensemble_mode):
+cfg.training_filter_direction = None  # 'LONG' | 'SHORT' | None
+cfg.training_price_threshold = 0.01   # Порог изменения цены для фильтрации эпизодов
+
+# Reward бонусы для специалистов (применяются автоматически):
+cfg.ensemble_long_perfect_entry_reward = 0.08   # Было 0.05 для обычного
+cfg.ensemble_long_good_exit_bonus = 0.40        # Было 0.30
+cfg.ensemble_short_perfect_entry_reward = 0.10  # Выше - SHORT сложнее
+cfg.ensemble_short_good_exit_bonus = 0.50       # Выше - SHORT сложнее
+cfg.ensemble_short_win_multiplier = 1.3         # Дополнительный бонус за SHORT wins
+
+# ============================================================================
+
 # cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
 # cfg.paths.norm_stats_path = r"C:\Python\Prosper_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
 
@@ -270,3 +293,9 @@ cfg.detector.cooldown_minutes = 60
 # python train.py --config alpha.py --total_timesteps 10000  # Test
 # python train.py --config alpha.py  # Full
 # python paper_trader_q.py --model rl_model.pth --config alpha.py  # Backtest
+
+# Ensemble workflow:
+# python train.py configs/alpha_seed_404_v10.py --ensemble_mode LONG   # Обучить LONG specialist
+# python train.py configs/alpha_seed_404_v10.py --ensemble_mode SHORT  # Обучить SHORT specialist
+# python validate_test.py --config configs/alpha_seed_404_v10.py --ensemble \
+#     --long_model output/.../best_LONG.pth --short_model output/.../best_SHORT.pth
