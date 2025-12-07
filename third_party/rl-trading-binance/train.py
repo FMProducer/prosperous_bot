@@ -1139,6 +1139,8 @@ def main(cfg: MasterConfig = None):
         "holding_penalty_multiplier": cfg.market.holding_penalty_multiplier,
         "greed_penalty_multiplier": cfg.market.greed_penalty_multiplier,
         "premature_exit_penalty": cfg.market.premature_exit_penalty,
+        "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
+        "close_action_index": getattr(cfg.market, "close_action_index", None),
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)

@@ -81,6 +81,8 @@ class TradingEnvironment(gym.Env):
         # NEW: Thresholds for asymmetric logic
         profit_exit_threshold: int = 5,
         loss_exit_threshold: int = 3,
+        allow_opposite_trades: bool = True, # НОВЫЙ ПАРАМЕТР
+        close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -150,6 +152,13 @@ class TradingEnvironment(gym.Env):
         # NEW: Thresholds for asymmetric logic
         self.profit_exit_threshold = profit_exit_threshold
         self.loss_exit_threshold = loss_exit_threshold
+        self.allow_opposite_trades = allow_opposite_trades
+
+        # Определяем индекс действия "закрыть"
+        self.close_action = close_action_index
+        if self.close_action is None:
+            self.close_action = self.num_actions - 1 if self.num_actions > 3 else -1 # -1 если close отключен
+
 
         self.seed_value = seed
         # Cache frequently used channel index
@@ -266,12 +275,15 @@ class TradingEnvironment(gym.Env):
         assert self.current_seq is not None, "reset() must be called before step()"
         prev_position = self.position
 
+        # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
+        close_action = self.close_action
+
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
             if self.position == 0 and action in {1, 2}:
                 action = 0
-            elif self.position != 0 and action != 3:
-                action = 3
+            elif self.position != 0 and action != close_action and close_action != -1:
+                action = close_action
 
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
@@ -284,6 +296,19 @@ class TradingEnvironment(gym.Env):
         close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
+        # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
+        if not self.allow_opposite_trades:
+            is_long = self.position > 0
+            is_short = self.position < 0
+
+            # Если есть LONG, запрещаем SHORT (действие 2)
+            if is_long and action == 2:
+                action = 0  # Заменяем на HOLD
+            # Если есть SHORT, запрещаем LONG (действие 1)
+            elif is_short and action == 1:
+                action = 0  # Заменяем на HOLD
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
         pnl_change = 0.0
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
@@ -351,7 +376,7 @@ class TradingEnvironment(gym.Env):
                 reward = -self.low_balance_penalty
 
         # --- Position Closing ---
-        elif action == 3 and self.position != 0:
+        elif action == close_action and self.position != 0 and close_action != -1:
             volume = self.position_volume
             
             if self.position == 1: # CLOSE LONG
@@ -564,7 +589,9 @@ class TradingEnvironment(gym.Env):
                     shaped_reward += holding_bonus
         
         # Penalties and bonuses applied upon closing a position
-        if action == 3 and prev_position != 0:
+        # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
+        close_action = self.close_action
+        if action == close_action and prev_position != 0 and close_action != -1:
 
             # --- НОВАЯ АСИММЕТРИЧНАЯ ЛОГИКА ---
             # 1. Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции

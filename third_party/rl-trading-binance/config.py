@@ -162,6 +162,8 @@ class MarketConfig(BaseModel):
     premature_exit_threshold: int = 5
     profit_exit_threshold: int = 5
     loss_exit_threshold: int = 3
+    allow_opposite_trades: bool = True
+    close_action_index: Optional[int] = None # Индекс для действия "закрыть". Если None, используется num_actions - 1.
 
 
 class RLConfig(BaseModel):

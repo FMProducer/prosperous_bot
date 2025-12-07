@@ -9,12 +9,12 @@ import json  # Для fallback norm_stats если нужно
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
 cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно истории 90
-cfg.seq.full_seq_len = 150      # 90 контекст + 60 сессия
+cfg.seq.full_seq_len = 100      # 90 контекст + 10 сессия
 cfg.seq.agent_history_len = 90  # Context window (история)
-cfg.seq.agent_session_len = 60  # Trading session length (60 шагов)
+cfg.seq.agent_session_len = 10  # Trading session length (10 шагов)
 cfg.seq.action_history_len = 2  # Recent actions feat
 cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
-cfg.seq.post_signal_len = 60
+cfg.seq.post_signal_len = 10
 cfg.seq.state_shape = (10, 90, 1)
 
 # Явно фиксируем длину входного окна истории для env/model
@@ -32,21 +32,22 @@ cfg.model.cnn_dilations = [1, 2, 4, 6, 9]  # RF=45 баров
 cfg.model.cnn_strides = [1, 1, 1, 1, 1]
 cfg.model.dense_val = [128, 64, 32]  # Value head
 cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
-cfg.model.additional_feats = 12  # Pos + actions + time
+cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
-cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
+cfg.market.num_actions = 3  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку
 cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
 cfg.market.slippage = 0.0002
+cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
 
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.95         # Discount
-cfg.rl.n_step = 60   # Steps per rollout == длина торговой сессии
+cfg.rl.n_step = 10   # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 15000  # Warmup steps
 cfg.rl.target_update_freq = 2000   # Soft target? (DQN-style if needed)
@@ -184,7 +185,7 @@ cfg.backtest.short_action_threshold = -0.015  # Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = False
+cfg.backtest.use_risk_management = False # Отключаем, если TSL не используется в обучении
 cfg.backtest.trailing_stop = 0.018
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
