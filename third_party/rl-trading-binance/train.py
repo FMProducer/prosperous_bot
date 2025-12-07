@@ -920,12 +920,79 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
     return seqs
 
 
-def main(cfg: MasterConfig = None):
+def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
     from config import cfg as loaded_cfg  # Fallback if no arg
     if cfg is None:
         cfg = loaded_cfg
     cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
+
+    # ============================================================================
+    # ENSEMBLE MODE CONFIGURATION
+    # ============================================================================
+    ensemble_mode = ensemble_mode_arg if ensemble_mode_arg else getattr(cfg, 'ensemble_mode', None)
+    
+    if ensemble_mode:
+        print(f"\n{'='*80}")
+        print(f"🎯 ENSEMBLE MODE: Training {ensemble_mode} specialist")
+        print(f"{'='*80}\n")
+        
+        if ensemble_mode == 'LONG':
+            # LONG specialist configuration
+            cfg.market.num_actions = 2  # HOLD, LONG only
+            cfg.market.allowed_directions = ['LONG']
+            cfg.training_filter_direction = 'LONG'
+            cfg.training_price_threshold = 0.01  # +1% minimum price increase
+            
+            # Append to config name for separate output directories
+            cfg.paths.config_name = f"{cfg.paths.config_name}_LONG"
+            
+            # Apply LONG specialist reward bonuses
+            if hasattr(cfg, 'ensemble_long_perfect_entry_reward'):
+                cfg.market.perfect_entry_reward = cfg.ensemble_long_perfect_entry_reward
+            if hasattr(cfg, 'ensemble_long_good_exit_bonus'):
+                cfg.market.good_exit_bonus = cfg.ensemble_long_good_exit_bonus
+            
+            print(f"✅ num_actions: {cfg.market.num_actions}")
+            print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
+            print(f"✅ filter_direction: {cfg.training_filter_direction}")
+            print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
+            print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
+            print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
+            
+        elif ensemble_mode == 'SHORT':
+            # SHORT specialist configuration
+            cfg.market.num_actions = 2  # HOLD, SHORT only
+            cfg.market.allowed_directions = ['SHORT']
+            cfg.training_filter_direction = 'SHORT'
+            cfg.training_price_threshold = -0.01  # -1% minimum price decrease
+            
+            # Append to config name for separate output directories
+            cfg.paths.config_name = f"{cfg.paths.config_name}_SHORT"
+            
+            # Apply SHORT specialist reward bonuses (higher - SHORT is harder!)
+            if hasattr(cfg, 'ensemble_short_perfect_entry_reward'):
+                cfg.market.perfect_entry_reward = cfg.ensemble_short_perfect_entry_reward
+            if hasattr(cfg, 'ensemble_short_good_exit_bonus'):
+                cfg.market.good_exit_bonus = cfg.ensemble_short_good_exit_bonus
+            if hasattr(cfg, 'ensemble_short_win_multiplier'):
+                # This will be used in reward calculation (if implemented in environment)
+                cfg.market.short_win_multiplier = cfg.ensemble_short_win_multiplier
+            
+            print(f"✅ num_actions: {cfg.market.num_actions}")
+            print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
+            print(f"✅ filter_direction: {cfg.training_filter_direction}")
+            print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
+            print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
+            print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
+            if hasattr(cfg.market, 'short_win_multiplier'):
+                print(f"✅ short_win_multiplier: {cfg.market.short_win_multiplier}")
+        
+        print(f"\n{'='*80}\n")
+    else:
+        print("\n🎯 STANDARD MODE: Training full agent (HOLD, LONG, SHORT)\n")
+    
+    # ============================================================================
     
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
@@ -1103,10 +1170,16 @@ def main(cfg: MasterConfig = None):
         "sequences": train_seqs,
         "keys": train_keys,
         "stats": norm_stats,
+        
+        # Ensemble mode parameters
+        "num_actions": cfg.market.num_actions,
+        "allowed_directions": getattr(cfg.market, 'allowed_directions', None),
+        "filter_direction": getattr(cfg, 'training_filter_direction', None),
+        "price_threshold": getattr(cfg, 'training_price_threshold', 0.01),
+
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": num_features,
-        "num_actions": num_actions,
         "flat_state_size": flat_state_size,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
@@ -1574,6 +1647,13 @@ def main(cfg: MasterConfig = None):
         if os.path.exists(final_path):
             _attach_meta_to_checkpoint(final_path, meta)
 
+        print("\n" + "="*80)
+        print("🎉 Training completed!")
+        if ensemble_mode:
+            print(f"📦 Model saved: output/{cfg.paths.config_name}/best.pth")
+            print(f"💡 Train the other specialist and use ensemble inference!")
+        print("="*80)
+
         # ── Краткое резюме метрик в лог (для аудита без открытия файлов) — только валидация
         try:
             _metrics_path = os.path.join(models_dir, "metrics.json")
@@ -1588,7 +1668,14 @@ def main(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    cfg = None
-    if len(sys.argv) > 1:
-        cfg, _ = load_config(sys.argv[1], return_module=True)
-    main(cfg=cfg)
+    import argparse
+    parser = argparse.ArgumentParser(description="Train RL trading agent")
+    parser.add_argument("config", type=str, help="Path to config file")
+    parser.add_argument("--ensemble_mode", type=str, choices=['LONG', 'SHORT'], default=None,
+                        help="Train specialist agent: LONG or SHORT")
+    args = parser.parse_args()
+    
+    cfg, _ = load_config(args.config, return_module=True)
+    
+    # Pass ensemble_mode to main. It will be handled there.
+    main(cfg=cfg, ensemble_mode_arg=args.ensemble_mode)
