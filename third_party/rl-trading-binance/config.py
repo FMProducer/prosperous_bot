@@ -119,13 +119,9 @@ class SequenceConfig(BaseModel):
         return self.input_history_len * self.num_features + 4
 
     @field_validator("full_seq_len")
-    @classmethod
-    def validate_full_seq_len(cls, v, info: ValidationInfo):
-        if info.data:
-            pre = info.data.get("pre_signal_len")
-            post = info.data.get("post_signal_len")
-            if pre is not None and post is not None:
-                assert v == pre + post, "FULL_SEQ_LEN mismatch"
+    def validate_full_seq_len(cls, v, values):
+        if "pre_signal_len" in values and "post_signal_len" in values:
+            assert v == values["pre_signal_len"] + values["post_signal_len"], "FULL_SEQ_LEN mismatch"
         return v
 
 
@@ -239,17 +235,15 @@ class TrainLogConfig(BaseModel):
     save_mode: Literal["max", "min"] = "max"  # Максимизировать или минимизировать метрику
 
     @field_validator("val_selection_metrics")
-    @classmethod
-    def check_val_metric(cls, v, info: ValidationInfo):
-        if info.data:
-            allowed = set(info.data.get("available_metrics", []))
-            if isinstance(v, str):
-                assert v in allowed, "Selected metric not in AVAILABLE_METRICS"
-            elif isinstance(v, (list, tuple)):
-                assert all(isinstance(x, str) and x in allowed for x in v), \
-                    "All selection metrics must be in AVAILABLE_METRICS"
-            else:
-                raise TypeError("val_selection_metrics must be str or list[str]")
+    def check_val_metric(cls, v, values):
+        allowed = set(values.get("available_metrics", []))
+        if isinstance(v, str):
+            assert v in allowed, "Selected metric not in AVAILABLE_METRICS"
+        elif isinstance(v, (list, tuple)):
+            assert all(isinstance(x, str) and x in allowed for x in v), \
+                "All selection metrics must be in AVAILABLE_METRICS"
+        else:
+            raise TypeError("val_selection_metrics must be str or list[str]")
         return v
 
 
@@ -296,7 +290,6 @@ class BacktestConfig(BaseModel):
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
     exec_delay_bars: int = 1
-    mask_close_action: bool = False  # True = агент не может закрывать (только TSL)
 
 
 class PaperTraderConfig(BaseModel):

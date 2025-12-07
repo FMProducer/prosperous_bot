@@ -1023,4 +1023,4 @@ class TradingEnvironment(gym.Env):
             )
 
     def close(self) -> None:
-        logger.info("TradingEnvironment closed.")
+        logger.info("TradingEnvironment closed.") 
