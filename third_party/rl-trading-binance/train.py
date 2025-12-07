@@ -1483,29 +1483,17 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                     best_validation = dict(metrics)
                     best_episode = int(ep)
                     
+                    # FIX: Don't save best.pth here - will be copied from checkpoint at the end
+                    logging.info(
+                        f"[Validation] ✨ New best found at episode {ep}: "
+                        f"Sortino={val_metric:.4f}, PF={metrics.get('Validation/profit_factor', 0):.4f}, "
+                        f"MaxDD={metrics.get('Validation/max_drawdown', 0):.4f}"
+                    )
+
                     # Сохранение в top-K менеджер (если включен)
                     if checkpoint_manager:
                         checkpoint_manager.save_checkpoint(agent, ep, metrics)
-                    else:
-                        # Fallback: старая логика с одним best.pth
-                        best_path = os.path.join(models_dir, "best.pth")
-                        agent.save_model(best_path)
-                        logging.info(
-                            f"[Validation] New best model saved at episode {ep} "
-                            f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
-                        )
-                        
-                        # Сохранение best_model_info.json
-                        best_model_info = {
-                            "episode": best_episode,
-                            "primary_metric": "Validation_sortino",
-                            "primary_metric_value": float(best_val_metric),
-                            "validation_metrics": best_validation,
-                        }
-                        best_info_path = os.path.join(models_dir, "best_model_info.json")
-                        with open(best_info_path, "w") as f:
-                            json.dump(best_model_info, f, indent=2)
-
+                    
                     no_improvement_count = 0  # Сброс счётчика
                 else:
                     no_improvement_count += 1
