@@ -49,7 +49,7 @@ cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.95         # Discount
 cfg.rl.n_step = 10   # Steps per rollout == длина торговой сессии
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
-cfg.rl.train_start = 15000  # Warmup steps
+cfg.rl.train_start = 5000  # Warmup steps (уменьшено)
 cfg.rl.target_update_freq = 2000   # Soft target? (DQN-style if needed)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 
@@ -79,7 +79,7 @@ cfg.trainlog.total_timesteps = 300000  # Бюджет шагов , норма 60
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
 cfg.trainlog.val_freq = 62              # норма 125
-cfg.trainlog.validation_warmup_steps = 225000       # норма 450000
+cfg.trainlog.validation_warmup_steps = 10000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
     "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
