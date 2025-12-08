@@ -96,7 +96,14 @@ class TradingEnvironment(gym.Env):
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
-        self.sequences = sequences
+        # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
+        # Переворачиваем график вверх ногами, чтобы падающий рынок выглядел как растущий.
+        # Это позволяет агенту использовать паттерны "покупки на дне" как "продажу на хае".
+        if filter_direction == 'SHORT' or (allowed_directions and 'SHORT' in allowed_directions and 'LONG' not in allowed_directions):
+            logging.info("🔄 MIRROR MODE: Inverting sequences for SHORT agent (Up is Down)")
+            self.sequences = [-1.0 * seq for seq in sequences]
+        else:
+            self.sequences = sequences
         self.stats = stats
         self.keys = keys
         self.render_mode = render_mode

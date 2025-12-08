@@ -629,7 +629,6 @@ def evaluate_agent(
     exit_counts: Dict[str,int] = {}
     tsl_hits = 0
     bankruptcy_episodes = 0
-    equity_curve = []
     
     # Дополнительные метрики
     all_trades_info = []
@@ -639,11 +638,6 @@ def evaluate_agent(
     holding_times = []
     total_bars_processed = 0
     start_time = time.time()
-    
-    try:
-        initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
-    except Exception:
-        initial_balance = 10000.0
 
 
     for i in range(int(episodes)):
@@ -654,10 +648,6 @@ def evaluate_agent(
         ep_wins   = 0
         ep_trade_pnls: list[float] = []
         is_bankrupt = False
-        
-        # For MaxDD calculation
-        current_equity = initial_balance
-        equity_curve.append(current_equity)
         
         # ИСПРАВЛЕНО: Извлекаем дату начала семпла из ключа, а не используем заглушку
         signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
@@ -690,12 +680,6 @@ def evaluate_agent(
             total_bars_processed += 1
             if info.get("bankruptcy", False):
                 is_bankrupt = True
-            
-            # --- CORRECT EQUITY CURVE CALCULATION ---
-            # Update equity with realized PnL from this step
-            current_equity += float(info.get("pnl_change", 0.0))
-            equity_curve.append(current_equity)
-            
             if info.get("position_closed", False):
                 pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
                 ep_trades += 1
@@ -754,6 +738,11 @@ def evaluate_agent(
         bars_per_day = 1440  # 24 hours * 60 minutes
         trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
         
+        try:
+            initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
+        except Exception:
+            initial_balance = 10000.0
+        
         # Calculate derived metrics
         if trade_pnls:
             avg_win_size = np.mean([p for p in trade_pnls if p > 0]) if any(p > 0 for p in trade_pnls) else 0.0
@@ -804,17 +793,21 @@ def evaluate_agent(
     profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
     
     # --- Sharpe / Sortino ---
-    # --- Max Drawdown from Equity Curve ---
-    if equity_curve:
-        equity_arr = np.array(equity_curve, dtype=np.float64)
-        peak_arr = np.maximum.accumulate(equity_arr)
+    if trade_pnls:
+        denorm_pnls = np.array(trade_pnls, dtype=np.float64)
+        equity = float(initial_balance)
+        peak = float(initial_balance)
         max_dd = 0.0
-        # Avoid division by zero if peak is zero
-        drawdowns = (equity_arr - peak_arr) / np.where(peak_arr == 0, 1, peak_arr)
-        max_dd = np.min(drawdowns) if drawdowns.size > 0 else 0.0
+        for pnl in denorm_pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            if peak > 0.0:
+                dd = (equity - peak) / peak
+                if dd < max_dd:
+                    max_dd = dd
     else:
         max_dd = 0.0
-
 
     returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
     if returns.size > 0:
