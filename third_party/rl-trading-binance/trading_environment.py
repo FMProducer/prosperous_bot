@@ -344,47 +344,17 @@ class TradingEnvironment(gym.Env):
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before step()"
         
-        # Проверка валидности действия для ensemble mode
-        if action >= self.num_actions:
-            raise ValueError(f"Invalid action {action} for num_actions={self.num_actions}")
-
-        # Маппинг действий в зависимости от режима
-        if self.num_actions == 2:
-            # Specialist mode (LONG или SHORT only)
-            if self.allowed_directions == ['LONG']:
-                # Action 0=HOLD, 1=LONG
-                action_name = 'HOLD' if action == 0 else 'LONG'
-            elif self.allowed_directions == ['SHORT']:
-                # Action 0=HOLD, 1=SHORT
-                action_name = 'HOLD' if action == 0 else 'SHORT'
+        # FIX: Interpret binary actions based on allowed directions
+        if self.num_actions == 2 and action == 1:
+            # For binary agent: 0=Hold, 1=Active.
+            # We need to map 'Active' to the correct physical action.
+            if self.allowed_directions == ['SHORT']:
+                mapped_action = 2 # Map to OPEN SHORT
+            elif self.allowed_directions == ['LONG']:
+                mapped_action = 1 # Map to OPEN LONG
             else:
-                raise ValueError(f"Invalid allowed_directions for num_actions=2: {self.allowed_directions}")
+                mapped_action = 1 # Fallback (should not happen in specialist mode)
         else:
-            # Full mode (3+ actions)
-            if action < 3:
-                action_name = ['HOLD', 'LONG', 'SHORT'][action]
-            elif action == self.close_action:
-                action_name = 'CLOSE'
-            else:
-                raise ValueError(f"Invalid action {action} for num_actions={self.num_actions}")
-
-        # Проверить что действие разрешено
-        if action_name == 'LONG' and 'LONG' not in self.allowed_directions:
-            raise ValueError(f"LONG action not allowed. allowed_directions={self.allowed_directions}")
-        if action_name == 'SHORT' and 'SHORT' not in self.allowed_directions:
-            raise ValueError(f"SHORT action not allowed. allowed_directions={self.allowed_directions}")
-
-        # Преобразовать action_name обратно в числовое действие для существующей логики
-        if action_name == 'HOLD':
-            mapped_action = 0
-        elif action_name == 'LONG':
-            mapped_action = 1
-        elif action_name == 'SHORT':
-            mapped_action = 2
-        elif action_name == 'CLOSE':
-            mapped_action = self.close_action
-        else:
-            # Should not happen
             mapped_action = action
 
         prev_position = self.position
@@ -887,6 +857,14 @@ class TradingEnvironment(gym.Env):
         delta_p_hysteresis: float = None,
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
+
+        # --- FIX: Map specialist agent actions (0/1) to physical actions ---
+        if self.num_actions == 2 and action == 1:
+            if self.allowed_directions == ['SHORT']:
+                action = 2 # Map Active -> SHORT
+            elif self.allowed_directions == ['LONG']:
+                action = 1 # Map Active -> LONG
+        # -------------------------------------------------------------------
 
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
