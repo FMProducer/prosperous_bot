@@ -858,6 +858,8 @@ class TradingEnvironment(gym.Env):
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
+        original_agent_action = action  # Сохраняем исходное действие агента
+
         # --- FIX: Map specialist agent actions (0/1) to physical actions ---
         if self.num_actions == 2 and action == 1:
             if self.allowed_directions == ['SHORT']:
@@ -870,8 +872,8 @@ class TradingEnvironment(gym.Env):
         if self.last_step:
             if self.position == 0 and action in {1, 2}:
                 action = 0
-            elif self.position != 0 and action != 3:
-                action = 3
+            elif self.position != 0 and action != self.close_action and self.close_action != -1:
+                action = self.close_action
 
         exec_delay = getattr(self, "exec_delay_bars", 0)
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
@@ -940,7 +942,7 @@ class TradingEnvironment(gym.Env):
             tp_trigger = False
 
             if trailing_trigger or self.last_step:
-                action = 3
+                action = self.close_action if self.close_action != -1 else 3
                 if trailing_trigger: exit_reason = "TSL"
                 elif self.last_step: exit_reason = "FORCED"
 
@@ -1006,7 +1008,7 @@ class TradingEnvironment(gym.Env):
             logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         # --- Position Closing ---
-        elif action == 3 and self.position != 0:
+        elif action == self.close_action and self.position != 0 and self.close_action != -1:
             position_closed = True
             volume = self.position_volume
             was_long = (self.position == 1)
@@ -1054,7 +1056,7 @@ class TradingEnvironment(gym.Env):
 
         if self.action_history_len > 0:
             self.history_actions.pop(0)
-            self.history_actions.append(action)
+            self.history_actions.append(original_agent_action)
 
         self.step_idx += 1
         terminated = self.step_idx >= self.agent_session_len
