@@ -293,42 +293,65 @@ def run_validation():
     if not train_cfg_dict:
         print("❌ Could not load the ground truth config_train.json from the model's directory.")
         return
+    
+    # --- CRITICAL: Use the ground truth config for all parameters ---
+    # The user-provided .py config is only for finding the model and as a fallback.
+    # We will now use the dictionary loaded from config_train.json.
+    cfg = train_cfg_dict
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # For ensemble, norm_stats could be different. Assume they are the same and load from long_model path.
     norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
     
-    val_data_path = train_cfg_dict.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
+    val_data_path = cfg.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
     if not os.path.isabs(val_data_path):
         val_data_path = os.path.join(script_dir, val_data_path)
 
     logger.info(f"ℹ️ Using Validation Data: {val_data_path}")
     logger.info(f"ℹ️ Using Normalization Stats: {norm_stats_path}")
 
-    paper_symbols = train_cfg_dict.get("paper", {}).get("symbols", "ALL")
+    paper_symbols = cfg.get("paper", {}).get("symbols", "ALL")
     sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
     
-    trainlog_cfg = train_cfg_dict.get("trainlog", {})
+    trainlog_cfg = cfg.get("trainlog", {})
     sequences, keys = create_validation_episodes(
         val_sequences=sequences,
         val_keys=keys,
-        num_episodes=trainlog_cfg.get("num_val_ep", 750),
-        seed=train_cfg_dict.get("random_seed", 404)
+        num_episodes=trainlog_cfg.get("num_val_ep", 750), # Use num_val_ep from the training config
+        seed=cfg.get("random_seed", 404)
     )
 
-    seq_cfg = train_cfg_dict.get("seq", {})
-    data_cfg = train_cfg_dict.get("data", {})
-    market_cfg = train_cfg_dict.get("market", {})
-    backtest_cfg = train_cfg_dict.get("backtest", {})
-    model_cfg = train_cfg_dict.get("model", {})
-    rl_cfg = train_cfg_dict.get("rl", {})
-    per_cfg = train_cfg_dict.get("per", {})
-    eps_cfg = train_cfg_dict.get("eps", {})
+    seq_cfg = cfg.get("seq", {})
+    data_cfg = cfg.get("data", {})
+    market_cfg = cfg.get("market", {})
+    backtest_cfg = cfg.get("backtest", {})
+    model_cfg = cfg.get("model", {})
+    rl_cfg = cfg.get("rl", {})
+    per_cfg = cfg.get("per", {})
+    eps_cfg = cfg.get("eps", {})
 
-    def create_agent(action_dim):
+    # --- FIX: Determine action_dim for specialist agents ---
+    # The action_dim for specialists (2) is different from the ensemble (3) or a full agent.
+    # We need to instantiate the agent with the correct action_dim it was trained with.
+    def get_specialist_action_dim(model_p):
+        if model_p:
+            path_str = str(model_p).upper()
+            if '_LONG' in path_str:
+                logger.info("💡 Detected LONG specialist model. Setting action_dim=2.")
+                return 2
+            if '_SHORT' in path_str:
+                logger.info("💡 Detected SHORT specialist model. Setting action_dim=2.")
+                return 2
+        return market_cfg.get("num_actions", 3) # Default for full/ensemble agent
+
+    def create_agent(action_dim, additional_feats_override):
+        config_feats = cfg.get("model", {}).get("additional_feats", -1)
+        if config_feats != additional_feats_override:
+            logger.info(f"ℹ️ Overriding 'additional_feats' from config ({config_feats}) with calculated value ({additional_feats_override}).")
+    
         return D3QN_PER_Agent(
-            state_shape=train_cfg_dict.get("state_shape", [10, 90, 1]),
+            state_shape=cfg.get("state_shape", [10, 90, 1]),
             action_dim=action_dim,
             cnn_maps=model_cfg.get("cnn_maps", []),
             cnn_kernels=model_cfg.get("cnn_kernels", []),
@@ -336,7 +359,7 @@ def run_validation():
             cnn_dilations=model_cfg.get("cnn_dilations", []),
             dense_val=model_cfg.get("dense_val", []),
             dense_adv=model_cfg.get("dense_adv", []),
-            additional_feats=model_cfg.get("additional_feats", 12),
+            additional_feats=additional_feats_override,
             dropout_model=model_cfg.get("dropout_p", 0.0),
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             gamma=rl_cfg.get("gamma", 0.99),
@@ -355,25 +378,29 @@ def run_validation():
             epsilon=0.0,
             perf_cfg=PerformanceConfig()
         )
-
+    
     # ============================================================================ 
     # LOAD AGENT(S)
     # ============================================================================ 
-    
+        
     if args.ensemble:
         print(f"\n{'='*80}")
         print("🎯 ENSEMBLE MODE")
         print(f"{'='*80}")
         
+        action_history_len = seq_cfg.get("action_history_len", 2)
+        # action_dim is 2 for specialists, so this is 4 + (2 * 2) = 8
+        true_additional_feats = 4 + (2 * action_history_len)
+    
         # Load LONG specialist
         print(f"\n📦 Loading LONG specialist from: {args.long_model}")
-        agent_long = create_agent(action_dim=2)
+        agent_long = create_agent(action_dim=2, additional_feats_override=true_additional_feats)
         agent_long.load_model(args.long_model, strict=True)
         print("✅ LONG specialist loaded")
         
         # Load SHORT specialist
         print(f"\n📦 Loading SHORT specialist from: {args.short_model}")
-        agent_short = create_agent(action_dim=2)
+        agent_short = create_agent(action_dim=2, additional_feats_override=true_additional_feats)
         agent_short.load_model(args.short_model, strict=True)
         print("✅ SHORT specialist loaded")
         
@@ -387,11 +414,19 @@ def run_validation():
         
     else:
         print(f"\n📦 Loading single agent model from: {model_path}")
-        num_actions_env = market_cfg.get("num_actions", 4)
-        agent = create_agent(action_dim=num_actions_env)
+        
+        # --- FIX: Calculate the true number of additional features ---
+        num_actions_env = get_specialist_action_dim(model_path)
+        action_history_len = seq_cfg.get("action_history_len", 2)
+        true_additional_feats = 4 + (num_actions_env * action_history_len)
+    
+        agent = create_agent(action_dim=num_actions_env, additional_feats_override=true_additional_feats)
         agent.load_model(model_path, strict=True)
+        
+        # --- CRITICAL FIX: Ensure Eval Mode explicitly ---
+        agent.policy_net.eval()
+        # -------------------------------------------------
         print("✅ Model loaded successfully")
-
     # ============================================================================ 
 
     input_history_len = seq_cfg.get("input_history_len") or seq_cfg.get("agent_history_len", 90)
@@ -405,7 +440,7 @@ def run_validation():
         "initial_balance": market_cfg.get("initial_balance", 10000.0),
         "transaction_fee": market_cfg.get("transaction_fee"),
         "slippage": market_cfg.get("slippage", 0.0002),
-        "num_actions": num_actions_env,
+        "num_actions": agent.action_dim if not args.ensemble else 3, # Use agent's action_dim for single, 3 for ensemble
         "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
         "position_fraction": market_cfg.get("position_fraction", 0.1),
         "order_size_usdt": backtest_cfg.get("order_size_usdt", 0.0),
@@ -418,6 +453,11 @@ def run_validation():
         "pricechannels": data_cfg.get("pricechannels", []),
         "volumechannels": data_cfg.get("volumechannels", []),
         "otherchannels": data_cfg.get("otherchannels", []),
+        
+        # --- SYNC FIX: Market Rules ---
+        "allow_opposite_trades": market_cfg.get("allow_opposite_trades", False),
+        "allowed_directions": market_cfg.get("allowed_directions", None), # Default to None (All) if missing
+        # ------------------------------
     }
     
     flat_state_size = (env_params["agent_history_len"] * env_params["num_features"]) + 4 + (env_params["num_actions"] * env_params["action_history_len"])
@@ -461,7 +501,8 @@ def run_validation():
                 logger.warning(f"Could not parse ticker/date from key: {keys[i]} due to {e}")
 
         while not done:
-            action = agent.select_action(obs, training=False)
+            # Explicitly disable cache to ensure fresh forward pass like in training validation
+            action = agent.select_action(obs, training=False, use_cache=False)
             next_obs, reward, terminated, truncated, info = env.backtest_step(
                 action=action, 
                 signal_dt=signal_dt_for_step,

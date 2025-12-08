@@ -37,7 +37,7 @@ cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
-cfg.market.num_actions = 3  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
+cfg.market.num_actions = 2  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку
