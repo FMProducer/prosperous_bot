@@ -1488,7 +1488,14 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                     best_validation = dict(metrics)
                     best_episode = int(ep)
                     
-                    # FIX: Don't save best.pth here - will be copied from checkpoint at the end
+                    # Save best.pth immediately when best result is achieved
+                    best_path = os.path.join(models_dir, "best.pth")
+                    agent.save_model(best_path)
+                    logging.info(
+                        f"✅ Updated best.pth at episode {ep} "
+                        f"({cfg.trainlog.val_selection_metrics}={best_val_metric:.4f})"
+                    )
+
                     if isinstance(val_metric, tuple):
                         # Multi-objective: val_metric is a tuple
                         val_str = f"metrics={val_metric}"
@@ -1524,14 +1531,13 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                 )
                 break # Выход из основного цикла обучения
 
-    # После завершения обучения: копировать лучший топ-K чекпоинт в best.pth
+    # После завершения обучения: best.pth уже сохранен, проверяем наличие
     if checkpoint_manager:
-        best_ckpt = checkpoint_manager.get_best_checkpoint()
-        if best_ckpt:
-            import shutil
-            best_path = os.path.join(models_dir, "best.pth")
-            shutil.copy2(best_ckpt, best_path)
-            logging.info(f"[TopK] Copied best checkpoint to: {best_path}")
+        best_path = os.path.join(models_dir, "best.pth")
+        if os.path.exists(best_path):
+            logging.info(f"[TopK] best.pth already saved at episode {best_episode}")
+        else:
+            logging.warning(f"[TopK] best.pth not found - no best model was saved during training")
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
