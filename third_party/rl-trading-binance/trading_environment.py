@@ -369,6 +369,8 @@ class TradingEnvironment(gym.Env):
             elif self.position != 0 and mapped_action != close_action and close_action != -1:
                 mapped_action = close_action
 
+        closing_triggered = (action == 3) # Явный сигнал закрытия
+
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
             price_idx = len(self.current_seq) - 1
@@ -460,7 +462,7 @@ class TradingEnvironment(gym.Env):
                 reward = -self.low_balance_penalty
 
         # --- Position Closing ---
-        elif mapped_action == close_action and self.position != 0 and close_action != -1:
+        elif (closing_triggered or (mapped_action == close_action and close_action != -1)) and self.position != 0:
             volume = self.position_volume
             
             if self.position == 1: # CLOSE LONG
@@ -570,6 +572,29 @@ class TradingEnvironment(gym.Env):
             return obs, reward, terminated, False, info
             
         if terminated:
+            # --- CRITICAL FIX: Force-close open positions at episode end for TRAINING ---
+            if self.position != 0:
+                # Get current price for closing the position
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
+                norm_price = self.current_seq[price_idx, self.close_idx]
+                real_price = norm_price * close_std + close_mean
+
+                # Calculate PnL for the final trade
+                if self.position == 1: # Close LONG
+                    trade_pnl = (real_price - self.real_entry_price) * self.position_volume
+                else: # Close SHORT
+                    trade_pnl = (self.real_entry_price - real_price) * self.position_volume
+                
+                fee = real_price * self.position_volume * self.transaction_fee
+                pnl_change = trade_pnl - fee
+                self.balance += pnl_change
+                self.realized_pnl += pnl_change
+                reward += pnl_change / self.initial_balance # Add final PnL to the last reward
+                self.position = 0 # Reset position
+
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
@@ -868,12 +893,16 @@ class TradingEnvironment(gym.Env):
                 action = 1 # Map Active -> LONG
         # -------------------------------------------------------------------
 
+        # Force Close Logic
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
             if self.position == 0 and action in {1, 2}:
                 action = 0
-            elif self.position != 0 and action != self.close_action and self.close_action != -1:
-                action = self.close_action
+            elif self.position != 0 and action != 3:
+                action = 3 # Force Close
+
+        # --- FIX: Explicitly mark closing triggered ---
+        closing_triggered = (action == 3)
 
         exec_delay = getattr(self, "exec_delay_bars", 0)
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
@@ -908,45 +937,49 @@ class TradingEnvironment(gym.Env):
             fee_buf = fee * (fee_buffer_mult or 2.0)
             tsl_price = self.tsl_price
 
+            # --- FIX: Use REAL prices for risk management ---
+            real_entry_price = self.real_entry_price
+
             if self.position == 1:  # LONG
-                self.trailing_max_price = max(getattr(self, "trailing_max_price", norm_price), norm_price)
+                self.trailing_max_price = max(getattr(self, "trailing_max_price", real_price), real_price)
                 base_tsl = self.trailing_max_price * (1 - d0)
                 tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0.0, self.trailing_max_price / self.entry_price - 1.0)
+                    p = max(0.0, self.trailing_max_price / real_entry_price - 1.0)
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
                         if p <= fee_buf: d_eff = d0
                         else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
-                trailing_trigger = norm_price <= tsl_price
+                trailing_trigger = real_price <= tsl_price
             else:  # SHORT
-                self.trailing_min_price = min(getattr(self, "trailing_min_price", norm_price), norm_price)
+                self.trailing_min_price = min(getattr(self, "trailing_min_price", real_price), real_price)
                 base_tsl = self.trailing_min_price * (1 + d0)
                 tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0.0, 1.0 - self.trailing_min_price / self.entry_price)
+                    p = max(0.0, 1.0 - self.trailing_min_price / real_entry_price)
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
                         if p <= fee_buf: d_eff = d0
                         else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                         tsl_price = min(tsl_price, advanced_tsl_price) if tsl_price is not None else advanced_tsl_price
-                trailing_trigger = norm_price >= tsl_price
+                trailing_trigger = real_price >= tsl_price
 
             self.tsl_price = tsl_price
             sl_trigger = False
             tp_trigger = False
 
-            if trailing_trigger or self.last_step:
+            if trailing_trigger:
                 action = self.close_action if self.close_action != -1 else 3
-                if trailing_trigger: exit_reason = "TSL"
-                elif self.last_step: exit_reason = "FORCED"
+                exit_reason = "TSL"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
+        if self.last_step and self.position != 0:
+            action = self.close_action if self.close_action != -1 else 3
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
@@ -972,7 +1005,7 @@ class TradingEnvironment(gym.Env):
             self.direction = "LONG"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_max_price = norm_exec_price
+                self.trailing_max_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
@@ -1001,14 +1034,14 @@ class TradingEnvironment(gym.Env):
             self.direction = "SHORT"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_min_price = norm_exec_price
+                self.trailing_min_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
             logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         # --- Position Closing ---
-        elif action == self.close_action and self.position != 0 and self.close_action != -1:
+        elif (closing_triggered or (action == self.close_action and self.close_action != -1)) and self.position != 0:
             position_closed = True
             volume = self.position_volume
             was_long = (self.position == 1)
@@ -1036,8 +1069,10 @@ class TradingEnvironment(gym.Env):
                     self.real_entry_price * (1 + self.transaction_fee) / (1 - self.transaction_fee)
                     if was_long else
                     self.real_entry_price * (1 - self.transaction_fee) / (1 + self.transaction_fee)
-                )
-                if exit_reason == "TSL":
+                ) # --- FIX: Set exit_reason correctly for forced close ---
+                if self.last_step and not exit_reason:
+                    exit_reason = "FORCED"
+                elif exit_reason == "TSL":
                     exit_reason = "TSL" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "TSL SL"
                 elif exit_reason == "FORCED":
                     exit_reason = "TSL Time" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "Time SL"
