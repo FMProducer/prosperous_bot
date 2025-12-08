@@ -540,7 +540,9 @@ class TradingEnvironment(gym.Env):
 
         if self.action_history_len > 0:
             self.history_actions.pop(0)
-            self.history_actions.append(mapped_action)
+            # FIX: Store raw agent action (0..num_actions-1), not mapped physical action
+            # This prevents IndexError in _get_observation when num_actions=2 but mapped_action=2
+            self.history_actions.append(action)
 
         self.step_idx += 1
         
