@@ -276,7 +276,7 @@ cfg.ensemble_mode = None  # None | 'LONG' | 'SHORT'
 
 # Автоматические настройки (заполняются в train.py на основе ensemble_mode):
 cfg.training_filter_direction = None  # 'LONG' | 'SHORT' | None
-cfg.training_price_threshold = 0.01   # Порог изменения цены для фильтрации эпизодов
+# cfg.training_price_threshold = 0.01   # Порог изменения цены для фильтрации эпизодов
 
 # Reward бонусы для специалистов (применяются автоматически):
 cfg.ensemble_long_perfect_entry_reward = 0.08   # Было 0.05 для обычного

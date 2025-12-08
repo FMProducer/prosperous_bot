@@ -956,7 +956,7 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
             print(f"✅ num_actions: {cfg.market.num_actions}")
             print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
             print(f"✅ filter_direction: {cfg.training_filter_direction}")
-            print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
+            # print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
             print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
             print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
             
@@ -982,7 +982,7 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
             print(f"✅ num_actions: {cfg.market.num_actions}")
             print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
             print(f"✅ filter_direction: {cfg.training_filter_direction}")
-            print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
+            # print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
             print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
             print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
             if hasattr(cfg.market, 'short_win_multiplier'):
@@ -1180,7 +1180,7 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         "num_actions": cfg.market.num_actions,
         "allowed_directions": getattr(cfg.market, 'allowed_directions', None),
         "filter_direction": getattr(cfg, 'training_filter_direction', None),
-        "price_threshold": getattr(cfg, 'training_price_threshold', 0.01),
+        # "price_threshold": getattr(cfg, 'training_price_threshold', 0.01),
 
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
@@ -1491,9 +1491,15 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                     # Save best.pth immediately when best result is achieved
                     best_path = os.path.join(models_dir, "best.pth")
                     agent.save_model(best_path)
+                    
+                    # Safe formatting for logging (handle tuple/float)
+                    metric_val_str = f"{best_val_metric}"
+                    if isinstance(best_val_metric, (float, int)):
+                        metric_val_str = f"{best_val_metric:.4f}"
+
                     logging.info(
                         f"✅ Updated best.pth at episode {ep} "
-                        f"({cfg.trainlog.val_selection_metrics}={best_val_metric:.4f})"
+                        f"({cfg.trainlog.val_selection_metrics}={metric_val_str})"
                     )
 
                     if isinstance(val_metric, tuple):
