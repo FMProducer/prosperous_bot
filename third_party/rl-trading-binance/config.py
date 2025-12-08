@@ -158,6 +158,10 @@ class MarketConfig(BaseModel):
     profit_holding_bonus: float = 0.0
     premature_profit_exit_penalty: float = 0.0
     holding_loss_penalty: float = 0.0
+    
+    # --- ENSEMBLE SPECIFIC ---
+    short_win_multiplier: float = 1.0 # Multiplier for Short wins rewards
+
     # Thresholds for shaped rewards (previously hardcoded)
     holding_penalty_threshold: int = 15
     greed_penalty_threshold: float = 0.50
