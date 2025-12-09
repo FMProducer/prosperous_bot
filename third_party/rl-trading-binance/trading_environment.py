@@ -84,6 +84,7 @@ class TradingEnvironment(gym.Env):
         allow_opposite_trades: bool = True, # НОВЫЙ ПАРАМЕТР
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
+        allowed_directions: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -96,10 +97,39 @@ class TradingEnvironment(gym.Env):
         self.sequences = sequences
         self.stats = stats
         self.keys = keys
+        self.datachannels = datachannels
+
+        if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
+            filter_direction = kwargs['filter_direction']
+            logging.info(f"Filtering sequences for direction: {filter_direction}")
+            
+            original_count = len(self.sequences)
+            filtered_sequences = []
+            filtered_keys = []
+            
+            close_idx = self.datachannels.index("close")
+
+            for seq, key in zip(self.sequences, self.keys):
+                start_price = seq[0, close_idx]
+                end_price = seq[-1, close_idx]
+                
+                if filter_direction == 'LONG' and end_price > start_price:
+                    filtered_sequences.append(seq)
+                    filtered_keys.append(key)
+                elif filter_direction == 'SHORT' and end_price < start_price:
+                    filtered_sequences.append(seq)
+                    filtered_keys.append(key)
+
+            if not filtered_sequences:
+                logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
+            else:
+                self.sequences = filtered_sequences
+                self.keys = filtered_keys
+                logging.info(f"Filtered sequences: {original_count} -> {len(self.sequences)}")
+
         self.render_mode = render_mode
         self.initial_balance = initial_balance
         self.pre_signal_len = pre_signal_len
-        self.datachannels = datachannels
         self.slippage = slippage
         self.transaction_fee = transaction_fee
         self.agent_session_len = agent_session_len
@@ -153,6 +183,7 @@ class TradingEnvironment(gym.Env):
         self.profit_exit_threshold = profit_exit_threshold
         self.loss_exit_threshold = loss_exit_threshold
         self.allow_opposite_trades = allow_opposite_trades
+        self.allowed_directions = allowed_directions
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -326,54 +357,56 @@ class TradingEnvironment(gym.Env):
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
-            if self.order_size_usdt > 0:
-                trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
-            else:
-                trade_amount = self.balance * self.position_fraction
-                trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
+            if not self.allowed_directions or 'LONG' in self.allowed_directions:
+                if self.order_size_usdt > 0:
+                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
+                else:
+                    trade_amount = self.balance * self.position_fraction
+                    trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
 
-            if trade_amount > 0:
-                real_exec_price = real_price * (1 + self.slippage)
-                norm_exec_price = norm_price * (1 + self.slippage)
+                if trade_amount > 0:
+                    real_exec_price = real_price * (1 + self.slippage)
+                    norm_exec_price = norm_price * (1 + self.slippage)
 
-                self.position = 1
-                self.entry_price = norm_exec_price      # Store NORMALIZED price
-                self.real_entry_price = real_exec_price # Store REAL price
-                
-                volume = trade_amount / real_exec_price
-                self.position_volume = volume
-                
-                fee = real_exec_price * volume * self.transaction_fee
-                pnl_change -= fee
-            else:
-                # Balance too small for a trade, force HOLD and penalize
-                action = 0
-                reward = -self.low_balance_penalty
+                    self.position = 1
+                    self.entry_price = norm_exec_price      # Store NORMALIZED price
+                    self.real_entry_price = real_exec_price # Store REAL price
+                    
+                    volume = trade_amount / real_exec_price
+                    self.position_volume = volume
+                    
+                    fee = real_exec_price * volume * self.transaction_fee
+                    pnl_change -= fee
+                else:
+                    # Balance too small for a trade, force HOLD and penalize
+                    action = 0
+                    reward = -self.low_balance_penalty
 
         elif action == 2 and self.position == 0: # OPEN SHORT
-            if self.order_size_usdt > 0:
-                trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
-            else:
-                trade_amount = self.balance * self.position_fraction
-                trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
+            if not self.allowed_directions or 'SHORT' in self.allowed_directions:
+                if self.order_size_usdt > 0:
+                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
+                else:
+                    trade_amount = self.balance * self.position_fraction
+                    trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
 
-            if trade_amount > 0:
-                real_exec_price = real_price * (1 - self.slippage)
-                norm_exec_price = norm_price * (1 - self.slippage)
+                if trade_amount > 0:
+                    real_exec_price = real_price * (1 - self.slippage)
+                    norm_exec_price = norm_price * (1 - self.slippage)
 
-                self.position = -1
-                self.entry_price = norm_exec_price      # Store NORMALIZED price
-                self.real_entry_price = real_exec_price # Store REAL price
+                    self.position = -1
+                    self.entry_price = norm_exec_price      # Store NORMALIZED price
+                    self.real_entry_price = real_exec_price # Store REAL price
 
-                volume = trade_amount / real_exec_price
-                self.position_volume = volume
-                
-                fee = real_exec_price * volume * self.transaction_fee
-                pnl_change -= fee
-            else:
-                # Balance too small for a trade, force HOLD and penalize
-                action = 0
-                reward = -self.low_balance_penalty
+                    volume = trade_amount / real_exec_price
+                    self.position_volume = volume
+                    
+                    fee = real_exec_price * volume * self.transaction_fee
+                    pnl_change -= fee
+                else:
+                    # Balance too small for a trade, force HOLD and penalize
+                    action = 0
+                    reward = -self.low_balance_penalty
 
         # --- Position Closing ---
         elif action == close_action and self.position != 0 and close_action != -1:
@@ -852,6 +885,12 @@ class TradingEnvironment(gym.Env):
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
 
+        # --- STRICT DIRECTION CONTROL ---
+        if action == 1 and self.allowed_directions and 'LONG' not in self.allowed_directions:
+            action = 0  # Force HOLD
+        if action == 2 and self.allowed_directions and 'SHORT' not in self.allowed_directions:
+            action = 0  # Force HOLD
+
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
             real_exec_price = real_price * (1 + self.slippage)
@@ -1050,4 +1089,4 @@ class TradingEnvironment(gym.Env):
             )
 
     def close(self) -> None:
-        logger.info("TradingEnvironment closed.") 
+        logger.info("TradingEnvironment closed.")

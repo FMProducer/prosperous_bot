@@ -639,8 +639,9 @@ def evaluate_agent(
     total_bars_processed = 0
     start_time = time.time()
 
+    num_eval_episodes = len(env.sequences)
 
-    for i in range(int(episodes)):
+    for i in range(int(num_eval_episodes)):
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         ep_reward = 0.0
@@ -784,7 +785,7 @@ def evaluate_agent(
         initial_balance = 10_000.0
     
     # Средний normalized reward = sum(pnl) / initial_balance / episodes
-    mean_reward = (sum(trade_pnls) / initial_balance) / max(1, episodes) if trade_pnls else 0.0
+    mean_reward = (sum(trade_pnls) / initial_balance) / max(1, num_eval_episodes) if trade_pnls else 0.0
     
     mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
     
@@ -820,7 +821,7 @@ def evaluate_agent(
     else:
         sharpe, sortino = 0.0, 0.0
 
-    bankruptcy_rate = bankruptcy_episodes / max(1, episodes)
+    bankruptcy_rate = bankruptcy_episodes / max(1, num_eval_episodes)
 
     # --- Расширенный лог ---
     logging.info(
@@ -1141,6 +1142,8 @@ def main(cfg: MasterConfig = None):
         "premature_exit_penalty": cfg.market.premature_exit_penalty,
         "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
         "close_action_index": getattr(cfg.market, "close_action_index", None),
+        "filter_direction": getattr(cfg.market, "filter_direction", None),
+        "allowed_directions": getattr(cfg.market, "allowed_directions", None),  # <--- ДОБАВИТЬ ЭТО
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)

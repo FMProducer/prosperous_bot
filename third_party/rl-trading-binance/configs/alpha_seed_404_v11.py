@@ -57,12 +57,12 @@ cfg.market.allow_opposite_trades = False # Запрещаем закрытие �
 if AGENT_MODE == "LONG_ONLY":
     cfg.market.allowed_directions = ['LONG']
     # Опционально: Фильтровать данные только для Long (если нужно)
-    # cfg.market.filter_direction = 'LONG' 
+    cfg.market.filter_direction = 'LONG' 
     
 elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
     # Опционально: Фильтровать данные только для Short (чтобы учиться на падениях)
-    # cfg.market.filter_direction = 'SHORT'
+    cfg.market.filter_direction = 'SHORT'
     
 else: # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
@@ -297,3 +297,7 @@ cfg.detector.cooldown_minutes = 60
 # python train.py --config alpha.py --total_timesteps 10000  # Test
 # python train.py --config alpha.py  # Full
 # python paper_trader_q.py --model rl_model.pth --config alpha.py  # Backtest
+
+# --- FORCE SHORT ONLY FOR ONGOING TRAINING ---
+cfg.market.allowed_directions = ['SHORT']
+print("✅ Overriding allowed_directions to SHORT only for this training session.")
