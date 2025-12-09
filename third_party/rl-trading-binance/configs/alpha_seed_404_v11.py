@@ -32,12 +32,11 @@ cfg.model.cnn_dilations = [1, 2, 4, 8, 16, 28]  # RF=87 bars (96.7% coverage)
 cfg.model.cnn_strides = [1, 1, 1, 1, 1, 1]  # +1 layer
 cfg.model.dense_val = [128, 64, 32]  # Value head
 cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
-# cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
-# cfg.model.additional_feats будет пересчитан в train.py
+cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
-cfg.market.num_actions = 2  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
+cfg.market.num_actions = 3  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку
@@ -226,7 +225,7 @@ cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_seed_404_v11"
+cfg.paths.config_name = "alpha_seed_404_v10"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
@@ -264,29 +263,6 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-# ============================================================================
-# ENSEMBLE TRAINING MODE
-# ============================================================================
-# Режим обучения специализированных агентов для ensemble
-# None      - обычный агент (3 действия: HOLD, LONG, SHORT)
-# 'LONG'    - LONG specialist (2 действия: HOLD, LONG)
-# 'SHORT'   - SHORT specialist (2 действия: HOLD, SHORT)
-
-cfg.ensemble_mode = None  # None | 'LONG' | 'SHORT'
-
-# Автоматические настройки (заполняются в train.py на основе ensemble_mode):
-cfg.training_filter_direction = None  # 'LONG' | 'SHORT' | None
-# cfg.training_price_threshold = 0.01   # Порог изменения цены для фильтрации эпизодов
-
-# Reward бонусы для специалистов (применяются автоматически):
-cfg.ensemble_long_perfect_entry_reward = 0.08   # Было 0.05 для обычного
-cfg.ensemble_long_good_exit_bonus = 0.40        # Было 0.30
-cfg.ensemble_short_perfect_entry_reward = 0.10  # Выше - SHORT сложнее
-cfg.ensemble_short_good_exit_bonus = 0.50       # Выше - SHORT сложнее
-cfg.ensemble_short_win_multiplier = 1.3         # Дополнительный бонус за SHORT wins
-
-# ============================================================================
-
 # cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
 # cfg.paths.norm_stats_path = r"C:\Python\Prosper_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
 
@@ -294,9 +270,3 @@ cfg.ensemble_short_win_multiplier = 1.3         # Дополнительный �
 # python train.py --config alpha.py --total_timesteps 10000  # Test
 # python train.py --config alpha.py  # Full
 # python paper_trader_q.py --model rl_model.pth --config alpha.py  # Backtest
-
-# Ensemble workflow:
-# python train.py configs/alpha_seed_404_v10.py --ensemble_mode LONG   # Обучить LONG specialist
-# python train.py configs/alpha_seed_404_v10.py --ensemble_mode SHORT  # Обучить SHORT specialist
-# python validate_test.py --config configs/alpha_seed_404_v10.py --ensemble \
-#     --long_model output/.../best_LONG.pth --short_model output/.../best_SHORT.pth
