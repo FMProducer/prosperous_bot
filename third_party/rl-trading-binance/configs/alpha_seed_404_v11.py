@@ -4,6 +4,15 @@ from config import cfg  # noqa: F401
 from pathlib import Path
 import json  # Для fallback norm_stats если нужно
 
+# --- AGENT MODE SELECTOR ---
+# UNIVERSAL:  Trade both directions (Default)
+# LONG_ONLY:  Force Long trades only (Train specialist)
+# SHORT_ONLY: Force Short trades only (Train specialist)
+# AGENT_MODE = "UNIVERSAL" 
+# AGENT_MODE = "LONG_ONLY"
+AGENT_MODE = "SHORT_ONLY"
+
+print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
 
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
@@ -43,6 +52,24 @@ cfg.market.position_fraction = 0.10  # 10% баланса на сделку
 cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
 cfg.market.slippage = 0.0002
 cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
+
+# --- MODE CONFIGURATION ---
+if AGENT_MODE == "LONG_ONLY":
+    cfg.market.allowed_directions = ['LONG']
+    # Опционально: Фильтровать данные только для Long (если нужно)
+    # cfg.market.filter_direction = 'LONG' 
+    
+elif AGENT_MODE == "SHORT_ONLY":
+    cfg.market.allowed_directions = ['SHORT']
+    # Опционально: Фильтровать данные только для Short (чтобы учиться на падениях)
+    # cfg.market.filter_direction = 'SHORT'
+    
+else: # UNIVERSAL
+    cfg.market.allowed_directions = ['LONG', 'SHORT']
+    cfg.market.filter_direction = None # Все данные
+
+# num_actions остается 3, чтобы сохранить совместимость весов модели!
+# 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW

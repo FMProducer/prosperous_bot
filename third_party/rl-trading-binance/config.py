@@ -129,8 +129,12 @@ class MarketConfig(BaseModel):
     initial_balance: float = 10_000.0
     position_fraction: float = 1.0  # Доля баланса для входа в позицию
     transaction_fee: float = 0.0004
-    # 0.01% – 0.05% (1–5 bps -> basis points) 1 bps = 0.01% = 0.0001
-    slippage: float = 0.0005 / 2
+    slippage: float = 0.0002
+    
+    # Добавляем новые поля для управления режимами агента
+    allowed_directions: list[str] = ["LONG", "SHORT"]
+    filter_direction: str | None = None
+    
     num_actions: int = 4
     inaction_penalty_ratio: float = 0.001
     bankruptcy_threshold: float = 0.0
