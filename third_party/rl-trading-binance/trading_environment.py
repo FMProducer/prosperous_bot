@@ -84,9 +84,6 @@ class TradingEnvironment(gym.Env):
         allow_opposite_trades: bool = True, # НОВЫЙ ПАРАМЕТР
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
-        allowed_directions: Optional[List[str]] = None,
-        filter_direction: Optional[str] = None,
-        price_threshold: float = 0.01,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -96,14 +93,7 @@ class TradingEnvironment(gym.Env):
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
-        # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
-        # Переворачиваем график вверх ногами, чтобы падающий рынок выглядел как растущий.
-        # Это позволяет агенту использовать паттерны "покупки на дне" как "продажу на хае".
-        if filter_direction == 'SHORT' or (allowed_directions and 'SHORT' in allowed_directions and 'LONG' not in allowed_directions):
-            logging.info("🔄 MIRROR MODE: Inverting sequences for SHORT agent (Up is Down)")
-            self.sequences = [-1.0 * seq for seq in sequences]
-        else:
-            self.sequences = sequences
+        self.sequences = sequences
         self.stats = stats
         self.keys = keys
         self.render_mode = render_mode
@@ -164,12 +154,6 @@ class TradingEnvironment(gym.Env):
         self.loss_exit_threshold = loss_exit_threshold
         self.allow_opposite_trades = allow_opposite_trades
 
-        # Ensemble mode parameters
-        self.allowed_directions = allowed_directions if allowed_directions else ['LONG', 'SHORT']
-        self.filter_direction = filter_direction
-        self.price_threshold = price_threshold
-        self.full_seq_len = full_seq_len
-
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
         if self.close_action is None:
@@ -194,17 +178,6 @@ class TradingEnvironment(gym.Env):
 
         # Define observation and action spaces
         self.action_space = spaces.Discrete(num_actions)
-
-        # Фильтровать эпизоды если задан filter_direction
-        if self.filter_direction:
-            self.valid_episode_indices = self._filter_episodes_by_direction(
-                self.sequences, self.filter_direction, self.price_threshold
-            )
-            if len(self.sequences) > 0:
-                print(f"🔍 Filtered {len(self.valid_episode_indices)} {self.filter_direction}-friendly episodes "
-                      f"out of {len(self.sequences)} total")
-        else:
-            self.valid_episode_indices = None
         if self.cnn_format:
             # For CNN: (num_features + extras + action_history_onehot, agent_history_len)
             # We will treat extras and action history as additional channels
@@ -277,63 +250,13 @@ class TradingEnvironment(gym.Env):
             asset_stats = self.stats[fallback_asset]
         return asset_stats
 
-    def _filter_episodes_by_direction(self, sequences: List[np.ndarray], direction: str, threshold: float) -> List[int]:
-        """
-        Фильтрует эпизоды по направлению движения цены
-        
-        Args:
-            sequences: массив данных
-            direction: 'LONG' или 'SHORT'
-            threshold: порог изменения цены (положительный для LONG, отрицательный для SHORT)
-        
-        Returns:
-            list: индексы подходящих эпизодов
-        """
-        filtered_indices = []
-        for i, seq in enumerate(sequences):
-            # Индекс начала торговой сессии (после pre_signal_len)
-            session_start_idx = self.pre_signal_len
-            session_end_idx = session_start_idx + self.agent_session_len
-            
-            if session_end_idx >= len(seq):
-                continue
-            
-            # Получить цены close в торговой сессии
-            price_start = seq[session_start_idx, self.close_idx]
-            price_end = seq[session_end_idx - 1, self.close_idx]
-            
-            if price_start == 0: continue
-
-            # Рассчитать изменение цены
-            price_change = (price_end - price_start) / price_start
-            
-            # Фильтровать по направлению
-            if direction == 'LONG' and price_change > threshold:
-                filtered_indices.append(i)
-            elif direction == 'SHORT' and price_change < threshold:
-                # threshold для SHORT уже должен быть отрицательным (например -0.01)
-                filtered_indices.append(i)
-        
-        return filtered_indices
-
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         if seed is None:
             seed = self.seed_value
         super().reset(seed=seed)
         self._init_episode_vars()
 
-        if options is None:
-            if self.valid_episode_indices is not None and len(self.valid_episode_indices) > 0:
-                # Использовать только отфильтрованные эпизоды
-                idx = self.np_random.choice(self.valid_episode_indices)
-            else:
-                # Обычный random sampling
-                if len(self.sequences) == 0:
-                    raise ValueError("Cannot reset environment with no sequences.")
-                idx = self.np_random.integers(0, len(self.sequences))
-        else:
-            idx = options["forced_index"]
-
+        idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
         try:
             self.current_asset_name = self.keys[idx].split('_')[0]
@@ -350,20 +273,6 @@ class TradingEnvironment(gym.Env):
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before step()"
-        
-        # FIX: Interpret binary actions based on allowed directions
-        if self.num_actions == 2 and action == 1:
-            # For binary agent: 0=Hold, 1=Active.
-            # We need to map 'Active' to the correct physical action.
-            if self.allowed_directions == ['SHORT']:
-                mapped_action = 2 # Map to OPEN SHORT
-            elif self.allowed_directions == ['LONG']:
-                mapped_action = 1 # Map to OPEN LONG
-            else:
-                mapped_action = 1 # Fallback (should not happen in specialist mode)
-        else:
-            mapped_action = action
-
         prev_position = self.position
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
@@ -371,12 +280,10 @@ class TradingEnvironment(gym.Env):
 
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
-            if self.position == 0 and mapped_action in {1, 2}:
-                mapped_action = 0
-            elif self.position != 0 and mapped_action != close_action and close_action != -1:
-                mapped_action = close_action
-
-        closing_triggered = (action == 3) # Явный сигнал закрытия
+            if self.position == 0 and action in {1, 2}:
+                action = 0
+            elif self.position != 0 and action != close_action and close_action != -1:
+                action = close_action
 
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
@@ -395,11 +302,11 @@ class TradingEnvironment(gym.Env):
             is_short = self.position < 0
 
             # Если есть LONG, запрещаем SHORT (действие 2)
-            if is_long and mapped_action == 2:
-                mapped_action = 0  # Заменяем на HOLD
+            if is_long and action == 2:
+                action = 0  # Заменяем на HOLD
             # Если есть SHORT, запрещаем LONG (действие 1)
-            elif is_short and mapped_action == 1:
-                mapped_action = 0  # Заменяем на HOLD
+            elif is_short and action == 1:
+                action = 0  # Заменяем на HOLD
         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
         pnl_change = 0.0
@@ -408,17 +315,17 @@ class TradingEnvironment(gym.Env):
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
-        if mapped_action in [1, 2] and self.position == 0:
+        if action in [1, 2] and self.position == 0:
             if self.balance < self.bankruptcy_threshold * MIN_SAFE_FRACTION:
                 logging.debug(
                     f"Balance {self.balance:.2f} is too close to bankruptcy threshold "
                     f"({self.bankruptcy_threshold:.2f}). Forcing HOLD."
                 )
-                mapped_action = 0  # Force HOLD
+                action = 0  # Force HOLD
                 reward -= self.low_balance_penalty # Penalize attempt
 
         # --- Position Opening ---
-        if mapped_action == 1 and self.position == 0: # OPEN LONG
+        if action == 1 and self.position == 0: # OPEN LONG
             if self.order_size_usdt > 0:
                 trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
             else:
@@ -440,10 +347,10 @@ class TradingEnvironment(gym.Env):
                 pnl_change -= fee
             else:
                 # Balance too small for a trade, force HOLD and penalize
-                mapped_action = 0
+                action = 0
                 reward = -self.low_balance_penalty
 
-        elif mapped_action == 2 and self.position == 0: # OPEN SHORT
+        elif action == 2 and self.position == 0: # OPEN SHORT
             if self.order_size_usdt > 0:
                 trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
             else:
@@ -465,11 +372,11 @@ class TradingEnvironment(gym.Env):
                 pnl_change -= fee
             else:
                 # Balance too small for a trade, force HOLD and penalize
-                mapped_action = 0
+                action = 0
                 reward = -self.low_balance_penalty
 
         # --- Position Closing ---
-        elif (closing_triggered or (mapped_action == close_action and close_action != -1)) and self.position != 0:
+        elif action == close_action and self.position != 0 and close_action != -1:
             volume = self.position_volume
             
             if self.position == 1: # CLOSE LONG
@@ -512,15 +419,13 @@ class TradingEnvironment(gym.Env):
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             return obs, reward, terminated, False, info
 
-        if mapped_action == 0 and prev_position == 0:
+        if action == 0 and prev_position == 0:
             inaction_penalty = self.inaction_penalty_ratio
         else:
             inaction_penalty = 0.0
 
         if self.action_history_len > 0:
             self.history_actions.pop(0)
-            # FIX: Store raw agent action (0..num_actions-1), not mapped physical action
-            # This prevents IndexError in _get_observation when num_actions=2 but mapped_action=2
             self.history_actions.append(action)
 
         self.step_idx += 1
@@ -528,13 +433,13 @@ class TradingEnvironment(gym.Env):
         terminated = self.step_idx >= self.agent_session_len
         
         # Track position metrics for shaped reward
-        self._track_position_metrics(mapped_action, prev_position)
+        self._track_position_metrics(action, prev_position)
         
         # Use shaped reward
         reward = self._calculate_shaped_reward(
             pnlchange=pnl_change,
             inaction_penalty=inaction_penalty,
-            action=mapped_action,
+            action=action,
             prev_position=prev_position,
             trade_pnl=trade_pnl
         )
@@ -575,33 +480,10 @@ class TradingEnvironment(gym.Env):
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             
             if self.render_mode == "human":
-                self._render_human(info, mapped_action, reward)
+                self._render_human(info, action, reward)
             return obs, reward, terminated, False, info
             
         if terminated:
-            # --- CRITICAL FIX: Force-close open positions at episode end for TRAINING ---
-            if self.position != 0:
-                # Get current price for closing the position
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
-                price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
-                norm_price = self.current_seq[price_idx, self.close_idx]
-                real_price = norm_price * close_std + close_mean
-
-                # Calculate PnL for the final trade
-                if self.position == 1: # Close LONG
-                    trade_pnl = (real_price - self.real_entry_price) * self.position_volume
-                else: # Close SHORT
-                    trade_pnl = (self.real_entry_price - real_price) * self.position_volume
-                
-                fee = real_price * self.position_volume * self.transaction_fee
-                pnl_change = trade_pnl - fee
-                self.balance += pnl_change
-                self.realized_pnl += pnl_change
-                reward += pnl_change / self.initial_balance # Add final PnL to the last reward
-                self.position = 0 # Reset position
-
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
@@ -624,7 +506,7 @@ class TradingEnvironment(gym.Env):
                 reward -= pain_penalty
      
         if self.render_mode == "human":
-            self._render_human(info, mapped_action, reward)
+            self._render_human(info, action, reward)
      
         return obs, reward, terminated, False, info
 
@@ -890,26 +772,12 @@ class TradingEnvironment(gym.Env):
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
-        original_agent_action = action  # Сохраняем исходное действие агента
-
-        # --- FIX: Map specialist agent actions (0/1) to physical actions ---
-        if self.num_actions == 2 and action == 1:
-            if self.allowed_directions == ['SHORT']:
-                action = 2 # Map Active -> SHORT
-            elif self.allowed_directions == ['LONG']:
-                action = 1 # Map Active -> LONG
-        # -------------------------------------------------------------------
-
-        # Force Close Logic
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
             if self.position == 0 and action in {1, 2}:
                 action = 0
             elif self.position != 0 and action != 3:
-                action = 3 # Force Close
-
-        # --- FIX: Explicitly mark closing triggered ---
-        closing_triggered = (action == 3)
+                action = 3
 
         exec_delay = getattr(self, "exec_delay_bars", 0)
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
@@ -944,49 +812,45 @@ class TradingEnvironment(gym.Env):
             fee_buf = fee * (fee_buffer_mult or 2.0)
             tsl_price = self.tsl_price
 
-            # --- FIX: Use REAL prices for risk management ---
-            real_entry_price = self.real_entry_price
-
             if self.position == 1:  # LONG
-                self.trailing_max_price = max(getattr(self, "trailing_max_price", real_price), real_price)
+                self.trailing_max_price = max(getattr(self, "trailing_max_price", norm_price), norm_price)
                 base_tsl = self.trailing_max_price * (1 - d0)
                 tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0.0, self.trailing_max_price / real_entry_price - 1.0)
+                    p = max(0.0, self.trailing_max_price / self.entry_price - 1.0)
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
                         if p <= fee_buf: d_eff = d0
                         else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
-                trailing_trigger = real_price <= tsl_price
+                trailing_trigger = norm_price <= tsl_price
             else:  # SHORT
-                self.trailing_min_price = min(getattr(self, "trailing_min_price", real_price), real_price)
+                self.trailing_min_price = min(getattr(self, "trailing_min_price", norm_price), norm_price)
                 base_tsl = self.trailing_min_price * (1 + d0)
                 tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
 
                 if d_min is not None:
-                    p = max(0.0, 1.0 - self.trailing_min_price / real_entry_price)
+                    p = max(0.0, 1.0 - self.trailing_min_price / self.entry_price)
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
                         if p <= fee_buf: d_eff = d0
                         else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                         tsl_price = min(tsl_price, advanced_tsl_price) if tsl_price is not None else advanced_tsl_price
-                trailing_trigger = real_price >= tsl_price
+                trailing_trigger = norm_price >= tsl_price
 
             self.tsl_price = tsl_price
             sl_trigger = False
             tp_trigger = False
 
-            if trailing_trigger:
-                action = self.close_action if self.close_action != -1 else 3
-                exit_reason = "TSL"
+            if trailing_trigger or self.last_step:
+                action = 3
+                if trailing_trigger: exit_reason = "TSL"
+                elif self.last_step: exit_reason = "FORCED"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
-        if self.last_step and self.position != 0:
-            action = self.close_action if self.close_action != -1 else 3
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
@@ -1012,7 +876,7 @@ class TradingEnvironment(gym.Env):
             self.direction = "LONG"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_max_price = real_exec_price
+                self.trailing_max_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
@@ -1041,14 +905,14 @@ class TradingEnvironment(gym.Env):
             self.direction = "SHORT"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_min_price = real_exec_price
+                self.trailing_min_price = norm_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
             logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         # --- Position Closing ---
-        elif (closing_triggered or (action == self.close_action and self.close_action != -1)) and self.position != 0:
+        elif action == 3 and self.position != 0:
             position_closed = True
             volume = self.position_volume
             was_long = (self.position == 1)
@@ -1076,10 +940,8 @@ class TradingEnvironment(gym.Env):
                     self.real_entry_price * (1 + self.transaction_fee) / (1 - self.transaction_fee)
                     if was_long else
                     self.real_entry_price * (1 - self.transaction_fee) / (1 + self.transaction_fee)
-                ) # --- FIX: Set exit_reason correctly for forced close ---
-                if self.last_step and not exit_reason:
-                    exit_reason = "FORCED"
-                elif exit_reason == "TSL":
+                )
+                if exit_reason == "TSL":
                     exit_reason = "TSL" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "TSL SL"
                 elif exit_reason == "FORCED":
                     exit_reason = "TSL Time" if ((real_exec_price > brk) if was_long else (real_exec_price < brk)) else "Time SL"
@@ -1098,7 +960,7 @@ class TradingEnvironment(gym.Env):
 
         if self.action_history_len > 0:
             self.history_actions.pop(0)
-            self.history_actions.append(original_agent_action)
+            self.history_actions.append(action)
 
         self.step_idx += 1
         terminated = self.step_idx >= self.agent_session_len
@@ -1188,4 +1050,4 @@ class TradingEnvironment(gym.Env):
             )
 
     def close(self) -> None:
-        logger.info("TradingEnvironment closed.")
+        logger.info("TradingEnvironment closed.") 

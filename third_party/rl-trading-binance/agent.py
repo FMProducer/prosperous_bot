@@ -58,12 +58,6 @@ class D3QN_PER_Agent:
         self.action_dim = action_dim
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
-
-        # --- CRITICAL FIX for size mismatch ---
-        # The `additional_feats` parameter should be used directly.
-        # It is calculated and provided by the calling script (train.py or validate_test.py)
-        # and must match the value used during the original training.
-        # DO NOT recalculate it here.
         model_kwargs = {
             "input_shape": state_shape,
             "action_dim": action_dim,
@@ -73,7 +67,7 @@ class D3QN_PER_Agent:
             "cnn_dilations": cnn_dilations,
             "dense_val": dense_val,
             "dense_adv": dense_adv,
-            "additional_feats": int(additional_feats), # Ensure it's an integer
+            "additional_feats": additional_feats,
             "dropout_p": dropout_model,
         }
 
@@ -180,14 +174,6 @@ class D3QN_PER_Agent:
         use_cache: bool = False,
         cache_key: Optional[Tuple[str, dt.datetime]] = None,
     ) -> Union[int, np.ndarray]:
-        
-        # --- STABILITY FIX: Explicit Mode Switching ---
-        if training:
-            self.policy_net.train()
-        else:
-            self.policy_net.eval()
-        # ----------------------------------------------
-
         # Базовая ε-жадная логика (epsilon берется из self.eps_* расписания внутри агента)
         # Если mc_enable=False или training=False — используем обычный путь как прежде.
         if not (training and self.mc_enable and self.mc_n_action_samples > 1):

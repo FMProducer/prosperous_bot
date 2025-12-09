@@ -920,79 +920,12 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
     return seqs
 
 
-def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
+def main(cfg: MasterConfig = None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
     from config import cfg as loaded_cfg  # Fallback if no arg
     if cfg is None:
         cfg = loaded_cfg
     cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
-
-    # ============================================================================
-    # ENSEMBLE MODE CONFIGURATION
-    # ============================================================================
-    ensemble_mode = ensemble_mode_arg if ensemble_mode_arg else getattr(cfg, 'ensemble_mode', None)
-    
-    if ensemble_mode:
-        print(f"\n{'='*80}")
-        print(f"🎯 ENSEMBLE MODE: Training {ensemble_mode} specialist")
-        print(f"{'='*80}\n")
-        
-        if ensemble_mode == 'LONG':
-            # LONG specialist configuration
-            cfg.market.num_actions = 2  # HOLD, LONG only
-            cfg.market.allowed_directions = ['LONG']
-            # cfg.training_filter_direction = 'LONG'
-            # cfg.training_price_threshold = 0.01  # +1% minimum price increase
-            
-            # Append to config name for separate output directories
-            cfg.paths.config_name = f"{cfg.paths.config_name}_LONG"
-            
-            # Apply LONG specialist reward bonuses
-            if hasattr(cfg, 'ensemble_long_perfect_entry_reward'):
-                cfg.market.perfect_entry_reward = cfg.ensemble_long_perfect_entry_reward
-            if hasattr(cfg, 'ensemble_long_good_exit_bonus'):
-                cfg.market.good_exit_bonus = cfg.ensemble_long_good_exit_bonus
-            
-            print(f"✅ num_actions: {cfg.market.num_actions}")
-            print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
-            print(f"✅ filter_direction: {cfg.training_filter_direction}")
-            # print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
-            print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
-            print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
-            
-        elif ensemble_mode == 'SHORT':
-            # SHORT specialist configuration
-            cfg.market.num_actions = 2  # HOLD, SHORT only
-            cfg.market.allowed_directions = ['SHORT']
-            # cfg.training_filter_direction = 'SHORT'
-            # cfg.training_price_threshold = -0.01  # -1% minimum price decrease
-            
-            # Append to config name for separate output directories
-            cfg.paths.config_name = f"{cfg.paths.config_name}_SHORT"
-            
-            # Apply SHORT specialist reward bonuses (higher - SHORT is harder!)
-            if hasattr(cfg, 'ensemble_short_perfect_entry_reward'):
-                cfg.market.perfect_entry_reward = cfg.ensemble_short_perfect_entry_reward
-            if hasattr(cfg, 'ensemble_short_good_exit_bonus'):
-                cfg.market.good_exit_bonus = cfg.ensemble_short_good_exit_bonus
-            if hasattr(cfg, 'ensemble_short_win_multiplier'):
-                # This will be used in reward calculation (if implemented in environment)
-                cfg.market.short_win_multiplier = cfg.ensemble_short_win_multiplier
-            
-            print(f"✅ num_actions: {cfg.market.num_actions}")
-            print(f"✅ allowed_directions: {cfg.market.allowed_directions}")
-            print(f"✅ filter_direction: {cfg.training_filter_direction}")
-            # print(f"✅ price_threshold: {cfg.training_price_threshold:+.2%}")
-            print(f"✅ perfect_entry_reward: {cfg.market.perfect_entry_reward}")
-            print(f"✅ good_exit_bonus: {cfg.market.good_exit_bonus}")
-            if hasattr(cfg.market, 'short_win_multiplier'):
-                print(f"✅ short_win_multiplier: {cfg.market.short_win_multiplier}")
-        
-        print(f"\n{'='*80}\n")
-    else:
-        print("\n🎯 STANDARD MODE: Training full agent (HOLD, LONG, SHORT)\n")
-    
-    # ============================================================================
     
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
@@ -1121,26 +1054,6 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         eps_decay_frames *= cfg.vec.num_envs
         logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
-    # Calculate flat_state_size
-    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
-    # After reshape, num_features becomes the number of channels in original data
-    if len(train_seqs[0].shape) == 3:
-        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
-    else:
-        num_features = train_seqs[0].shape[1]  # C from (L, C)
-    num_actions = cfg.market.num_actions
-    action_history_len = cfg.seq.action_history_len
-
-    flat_features = input_history_len * num_features
-    extras = 4  # position, unrealized, time_elapsed, time_remaining
-    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
-    flat_state_size = flat_features + extras + history_vector_size
-
-    # Update cfg.model.additional_feats for ensemble mode compatibility
-    cfg.model.additional_feats = extras + history_vector_size
-    logging.info(f"✅ Updated cfg.model.additional_feats = {cfg.model.additional_feats} "
-                 f"(extras={extras} + history_vector={history_vector_size})")
-
     agent = D3QN_PER_Agent(
         state_shape=cfg.state_shape,  # (10,150,1)
         action_dim=cfg.market.num_actions,
@@ -1170,21 +1083,30 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         perf_cfg=cfg.perf,
         # MC-dropout from cfg.mc_dropout (as is)
     )
+
+    # Calculate flat_state_size
+    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
+    # After reshape, num_features becomes the number of channels in original data
+    if len(train_seqs[0].shape) == 3:
+        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
+    else:
+        num_features = train_seqs[0].shape[1]  # C from (L, C)
+    num_actions = cfg.market.num_actions
+    action_history_len = cfg.seq.action_history_len
+
+    flat_features = input_history_len * num_features
+    extras = 4  # position, unrealized, time_elapsed, time_remaining
+    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
+    flat_state_size = flat_features + extras + history_vector_size
     
     env_kwargs = {
         "sequences": train_seqs,
         "keys": train_keys,
         "stats": norm_stats,
-        
-        # Ensemble mode parameters
-        "num_actions": cfg.market.num_actions,
-        "allowed_directions": getattr(cfg.market, 'allowed_directions', None),
-        "filter_direction": getattr(cfg, 'training_filter_direction', None),
-        # "price_threshold": getattr(cfg, 'training_price_threshold', 0.01),
-
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": num_features,
+        "num_actions": num_actions,
         "flat_state_size": flat_state_size,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
@@ -1488,38 +1410,29 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                     best_validation = dict(metrics)
                     best_episode = int(ep)
                     
-                    # Save best.pth immediately when best result is achieved
-                    best_path = os.path.join(models_dir, "best.pth")
-                    agent.save_model(best_path)
-                    
-                    # Safe formatting for logging (handle tuple/float)
-                    metric_val_str = f"{best_val_metric}"
-                    if isinstance(best_val_metric, (float, int)):
-                        metric_val_str = f"{best_val_metric:.4f}"
-
-                    logging.info(
-                        f"✅ Updated best.pth at episode {ep} "
-                        f"({cfg.trainlog.val_selection_metrics}={metric_val_str})"
-                    )
-
-                    if isinstance(val_metric, tuple):
-                        # Multi-objective: val_metric is a tuple
-                        val_str = f"metrics={val_metric}"
-                    else:
-                        # Single objective: val_metric is a float
-                        val_str = f"{cfg.trainlog.val_selection_metrics}={val_metric:.4f}"
-
-                    logging.info(
-                        f"[Validation] ✨ New best found at episode {ep}: "
-                        f"{val_str}, "
-                        f"PF={metrics.get('Validation/profit_factor', 0):.4f}, "
-                        f"MaxDD={metrics.get('Validation/max_drawdown', 0):.4f}"
-                    )
-
                     # Сохранение в top-K менеджер (если включен)
                     if checkpoint_manager:
                         checkpoint_manager.save_checkpoint(agent, ep, metrics)
-                    
+                    else:
+                        # Fallback: старая логика с одним best.pth
+                        best_path = os.path.join(models_dir, "best.pth")
+                        agent.save_model(best_path)
+                        logging.info(
+                            f"[Validation] New best model saved at episode {ep} "
+                            f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
+                        )
+                        
+                        # Сохранение best_model_info.json
+                        best_model_info = {
+                            "episode": best_episode,
+                            "primary_metric": "Validation_sortino",
+                            "primary_metric_value": float(best_val_metric),
+                            "validation_metrics": best_validation,
+                        }
+                        best_info_path = os.path.join(models_dir, "best_model_info.json")
+                        with open(best_info_path, "w") as f:
+                            json.dump(best_model_info, f, indent=2)
+
                     no_improvement_count = 0  # Сброс счётчика
                 else:
                     no_improvement_count += 1
@@ -1537,13 +1450,14 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
                 )
                 break # Выход из основного цикла обучения
 
-    # После завершения обучения: best.pth уже сохранен, проверяем наличие
+    # После завершения обучения: копировать лучший топ-K чекпоинт в best.pth
     if checkpoint_manager:
-        best_path = os.path.join(models_dir, "best.pth")
-        if os.path.exists(best_path):
-            logging.info(f"[TopK] best.pth already saved at episode {best_episode}")
-        else:
-            logging.warning(f"[TopK] best.pth not found - no best model was saved during training")
+        best_ckpt = checkpoint_manager.get_best_checkpoint()
+        if best_ckpt:
+            import shutil
+            best_path = os.path.join(models_dir, "best.pth")
+            shutil.copy2(best_ckpt, best_path)
+            logging.info(f"[TopK] Copied best checkpoint to: {best_path}")
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
@@ -1660,13 +1574,6 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
         if os.path.exists(final_path):
             _attach_meta_to_checkpoint(final_path, meta)
 
-        print("\n" + "="*80)
-        print("🎉 Training completed!")
-        if ensemble_mode:
-            print(f"📦 Model saved: output/{cfg.paths.config_name}/best.pth")
-            print(f"💡 Train the other specialist and use ensemble inference!")
-        print("="*80)
-
         # ── Краткое резюме метрик в лог (для аудита без открытия файлов) — только валидация
         try:
             _metrics_path = os.path.join(models_dir, "metrics.json")
@@ -1681,14 +1588,7 @@ def main(cfg: MasterConfig = None, ensemble_mode_arg: str = None):
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Train RL trading agent")
-    parser.add_argument("config", type=str, help="Path to config file")
-    parser.add_argument("--ensemble_mode", type=str, choices=['LONG', 'SHORT'], default=None,
-                        help="Train specialist agent: LONG or SHORT")
-    args = parser.parse_args()
-    
-    cfg, _ = load_config(args.config, return_module=True)
-    
-    # Pass ensemble_mode to main. It will be handled there.
-    main(cfg=cfg, ensemble_mode_arg=args.ensemble_mode)
+    cfg = None
+    if len(sys.argv) > 1:
+        cfg, _ = load_config(sys.argv[1], return_module=True)
+    main(cfg=cfg)

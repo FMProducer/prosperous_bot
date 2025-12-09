@@ -133,10 +133,6 @@ class MarketConfig(BaseModel):
     slippage: float = 0.0005 / 2
     num_actions: int = 4
     inaction_penalty_ratio: float = 0.001
-
-    # Ensemble mode parameters
-    allowed_directions: Optional[List[str]] = None  # ['LONG'], ['SHORT'], or None (both)
-
     bankruptcy_threshold: float = 0.0
     bankruptcy_penalty: float = 1.0
     # Max Drawdown Penalty
@@ -158,10 +154,6 @@ class MarketConfig(BaseModel):
     profit_holding_bonus: float = 0.0
     premature_profit_exit_penalty: float = 0.0
     holding_loss_penalty: float = 0.0
-    
-    # --- ENSEMBLE SPECIFIC ---
-    short_win_multiplier: float = 1.0 # Multiplier for Short wins rewards
-
     # Thresholds for shaped rewards (previously hardcoded)
     holding_penalty_threshold: int = 15
     greed_penalty_threshold: float = 0.50
