@@ -9,8 +9,8 @@ import json  # Для fallback norm_stats если нужно
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-# AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "LONG_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
@@ -252,7 +252,7 @@ cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_seed_404_v10"
+cfg.paths.config_name = "alpha_seed_404_v11_LONG"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
