@@ -483,7 +483,12 @@ class TradingEnvironment(gym.Env):
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
             norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
             real_m2m_price = norm_m2m_price * close_std + close_mean
-            mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
+            if self.position == 1: # LONG
+                mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
+            elif self.position == -1: # SHORT
+                mark2market = (self.real_entry_price - real_m2m_price) * self.position_volume
+            else:
+                mark2market = 0.0
             portfolio_value += mark2market
      
         info = self._get_info()
@@ -1017,7 +1022,12 @@ class TradingEnvironment(gym.Env):
                 close_mean = asset_stats['mean'][self.close_idx]
                 close_std = asset_stats['std'][self.close_idx]
                 real_m2m_price = norm_m2m_price * close_std + close_mean
-                mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
+                if self.position == 1: # LONG
+                    mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
+                elif self.position == -1: # SHORT
+                    mark2market = (self.real_entry_price - real_m2m_price) * self.position_volume
+                else:
+                    mark2market = 0.0
                 portfolio_value += mark2market
             
             # Проверка банкротства (аналогично step())
