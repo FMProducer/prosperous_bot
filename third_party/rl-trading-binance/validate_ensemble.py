@@ -261,10 +261,12 @@ def run_validation():
     
     # Auto-fill arguments from config if not provided
     if args.ensemble:
-        if not args.long_model and hasattr(user_cfg_module.paths, 'long_model_path'):
-            args.long_model = user_cfg_module.paths.long_model_path
-        if not args.short_model and hasattr(user_cfg_module.paths, 'short_model_path'):
-            args.short_model = user_cfg_module.paths.short_model_path
+        ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
+        if ensemble_cfg_obj:
+            if not args.long_model and hasattr(ensemble_cfg_obj, 'long_model_path'):
+                args.long_model = ensemble_cfg_obj.long_model_path
+            if not args.short_model and hasattr(ensemble_cfg_obj, 'short_model_path'):
+                args.short_model = ensemble_cfg_obj.short_model_path
             
     # Validate arguments
     if args.ensemble:
@@ -298,7 +300,10 @@ def run_validation():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # For ensemble, norm_stats could be different. Assume they are the same and load from long_model path or config
-    if hasattr(user_cfg_module.paths, 'norm_stats_path') and os.path.exists(user_cfg_module.paths.norm_stats_path):
+    ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
+    if ensemble_cfg_obj and hasattr(ensemble_cfg_obj, 'norm_stats_path') and os.path.exists(ensemble_cfg_obj.norm_stats_path):
+        norm_stats_path = ensemble_cfg_obj.norm_stats_path
+    elif hasattr(user_cfg_module.paths, 'norm_stats_path') and os.path.exists(user_cfg_module.paths.norm_stats_path):
         norm_stats_path = user_cfg_module.paths.norm_stats_path
     else:
         norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
