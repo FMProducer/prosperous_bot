@@ -155,6 +155,7 @@ def main():
     rl_cfg = cfg.get("rl_config", {})
     backtest_kwargs = cfg.get("backtest_kwargs", {})
     per_cfg = cfg.get("per_config", {})
+    ensemble_cfg = cfg.get("ensemble_config", {}) # Читаем из JSON (после dump) или объекта
     eps_cfg = cfg.get("eps", {})
     
     # Override Environment parameters for Ensemble Mode
@@ -199,7 +200,7 @@ def main():
             short_model_path=args.short_model,
             state_shape=train_cfg_dict.get('state_shape', (10, 90, 1)),
             device=device,
-            threshold=0.02, # Start with conservative threshold
+            threshold=ensemble_cfg.get('threshold', 0.02), # Load from config or default
             agent_params=agent_params
         )
     else:

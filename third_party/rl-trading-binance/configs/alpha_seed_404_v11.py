@@ -300,9 +300,14 @@ cfg.detector.cooldown_minutes = 60
 # --- ENSEMBLE CONFIGURATION ---
 class EnsembleConfig:
     pass
-
 cfg.ensemble = EnsembleConfig()
-cfg.ensemble.mode = "tier1_agreement" # Режим работы (на будущее)
+# cfg.ensemble.mode = "tier1_agreement" # Режим работы (на будущее)
 cfg.ensemble.threshold = 0.02 # Q-Value difference threshold (Confidence)
 cfg.ensemble.agreement_threshold = 0.0 # Если понадобится второй порог
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
+# --- ENSEMBLE MODEL PATHS ---
+# Используйте для запуска validate_ensemble.py
+cfg.paths.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
+cfg.paths.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
+# norm_stats берём из папки Long модели (можно использовать любой из двух)
+cfg.paths.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
