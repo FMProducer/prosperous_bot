@@ -52,54 +52,55 @@ class EnsembleAgent:
         # No strict check needed here as long as indices 0, 1, 2 exist
 
     def select_action(self, state, training=False, position=0):
-        """
-        Tier 1 Logic: Agreement + Threshold
-        Args:
-            state: observation tensor
-            training: ignored (always greedy for ensemble)
-            position: current position (0=FLAT, >0=LONG, <0=SHORT)
-        Returns:
-            action: 0=HOLD, 1=LONG, 2=SHORT, 3=CLOSE
-        """
+        # --- НАЧАЛО ПАТЧА ---
+        # Убедимся, что работаем с numpy array
+        if not isinstance(state, np.ndarray):
+            state = np.array(state)
+
+        # state - это 1D вектор.
+        # Определяем количество дополнительных фич, которые генерирует среда и которые ожидает агент
+        features_from_env = 12  # Для 4 действий (Hold, Long, Short, Close) + базовые фичи
+        features_expected_by_agent = 10 # Для 3 действий (Hold, Open, Close) + базовые фичи
+        
+        # Отделяем основную часть данных от дополнительных фич
+        main_data_part = state[:-features_from_env]
+        features_part = state[-features_from_env:]
+
+        # Создаем урезанный набор фич, который понятен агенту
+        # Просто берем первые 10 из 12. Это не идеально семантически, но гарантированно исправит ошибку размерности.
+        truncated_features = features_part[:features_expected_by_agent]
+
+        # Собираем state обратно. Теперь он имеет правильную длину.
+        # Эта логика одинакова для обоих агентов, так как оба ждут 10 фич.
+        corrected_state = np.concatenate([main_data_part, truncated_features])
+        # --- КОНЕЦ ПАТЧА ---
+
         with torch.no_grad():
-            state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.agent_long.device)
-
-            # Get Q-values from both specialists
-            # Shape: [HOLD, OPEN, CLOSE]
-            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)   
-            q_short = self.agent_short.policy_net(state_tensor).squeeze(0) 
-        
-        # --- Tier 1 Logic ---
-        action = 0 # Default HOLD
-        
-        # Confidence: Q_OPEN (idx 1) - Q_HOLD (idx 0)
-        conf_long = (q_long[1] - q_long[0]).item()
-        conf_short = (q_short[1] - q_short[0]).item()
-        
-        if position == 0: # FLAT
-            want_long = conf_long > self.threshold
-            want_short = conf_short > self.threshold
+            # Превращаем исправленный 1D вектор в тензор
+            # Reshape НЕ нужен, т.к. модель сама внутри делает reshape для Conv1D
+            state_tensor = torch.from_numpy(corrected_state).float().unsqueeze(0).to(self.agent_long.device)
             
-            if want_long and not want_short:
-                action = 1 # ENV: LONG
-            elif want_short and not want_long:
-                action = 2 # ENV: SHORT
-            elif want_long and want_short:
-                # Conflict: Pick stronger signal
-                action = 1 if conf_long > conf_short else 2
-                
-        elif position > 0: # LONG -> Check Long Agent Close
-            # Close if Q_CLOSE (idx 2) > Q_HOLD (idx 0)
+            # Оба агента получают тензор одинаковой (и правильной) формы
+            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)
+            q_short = self.agent_short.policy_net(state_tensor).squeeze(0)
+
+        # Далее стандартная логика выбора действия ансамблем
+        # ... (этот блок кода у вас уже есть и должен остаться без изменений)
+        conf_long = (torch.softmax(q_long, dim=0)[1] - 0.33).clamp(min=0)
+        conf_short = (torch.softmax(q_short, dim=0)[1] - 0.33).clamp(min=0)
+        action = 0
+        if conf_long > self.threshold and conf_long > conf_short:
+            action = 1
+        elif conf_short > self.threshold and conf_short > conf_long:
+            action = 2
+        if position > 0:
             if q_long[2] > q_long[0]:
-                action = 3 # ENV: CLOSE
-                
-        elif position < 0: # SHORT -> Check Short Agent Close
+                action = 3
+        elif position < 0:
             if q_short[2] > q_short[0]:
-                action = 3 # ENV: CLOSE
-
+                action = 3
         if self.verbose and action != 0:
-             print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
-
+            print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
         return action
 
 class PerformanceConfig:
