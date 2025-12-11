@@ -493,6 +493,9 @@ def run_validation():
     
     for i in pbar:
         obs, _ = env.reset(options={"forced_index": i})
+        # HOTFIX: Initialize total_commission for ensemble backtesting
+        if not hasattr(env, 'total_commission'):
+            env.total_commission = 0.0
         done = False
         
         signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
