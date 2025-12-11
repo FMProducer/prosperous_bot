@@ -1,128 +1,106 @@
-import os
-import sys
-# Set CUBLAS workspace config to ensure determinism, must be done before torch import
-if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-import json
-import datetime
-import logging
-import glob
-import time
-import random
+"""
+Cкрипт для валидации производительности ансамбля и одиночных агентов на отложенных данных.
+"""
 import argparse
-from collections import defaultdict
-import numpy as np
+import json
+import logging
+import time
+import datetime
+import sys
+import importlib.util
 import torch
-import torch.nn as nn 
 from tqdm import tqdm
+import numpy as np
+import pandas as pd
+import sys
+import os
+import glob
+import random
+from collections import defaultdict
 from importlib.machinery import SourceFileLoader
 
-try:
-    from trading_environment import TradingEnvironment
-    from agent import D3QN_PER_Agent
-    from model import DuelingQNetwork 
-except ImportError as e:
-    print(f"❌ Ошибка импорта: {e}")
-    exit(1)
+# Assuming these are the correct paths from the project structure
+from trading_environment import TradingEnvironment
+from agent import D3QN_PER_Agent as D3QNPERAgent
+from utils import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+# --- Setup Logging ---
+# setup_logging(filename='output/validation.log', level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
-logging.getLogger("PIL").setLevel(logging.WARNING)
-
-# ============================================================================ 
-# ENSEMBLE AGENT
-# ============================================================================ 
 
 class EnsembleAgent:
     """
-    Ensemble agent combining LONG and SHORT specialists
-    Uses consensus mechanism to select best action
+    Tier 1 Ensemble: Direction Agreement + Threshold
+    Combines a Long-Only Specialist (3 actions) and a Short-Only Specialist (3 actions).
     """
-    
-    def __init__(self, agent_long, agent_short, verbose=False):
+    def __init__(self, agent_long, agent_short, threshold=0.02, verbose=False):
         """
         Args:
-            agent_long: D3QN_PER_Agent trained on LONG-only (action_dim=2)
-            agent_short: D3QN_PER_Agent trained on SHORT-only (action_dim=2)
+            agent_long: D3QN_PER_Agent trained on LONG-only (action_dim=3)
+            agent_short: D3QN_PER_Agent trained on SHORT-only (action_dim=3)
+            threshold: Confidence threshold (Q_OPEN - Q_HOLD)
             verbose: Print Q-values for debugging
         """
         self.agent_long = agent_long
         self.agent_short = agent_short
+        self.threshold = threshold
         self.verbose = verbose
-        
+
         # Verify agents have correct action_dim
-        if agent_long.action_dim != 2 or agent_short.action_dim != 2:
-            raise ValueError(
-                f"Ensemble requires specialists with action_dim=2. "
-                f"Got LONG={agent_long.action_dim}, SHORT={agent_short.action_dim}"
-            )
-    
-    def select_action(self, state, training=False):
+        # Specialists usually have 3 actions: HOLD, OPEN, CLOSE
+        # No strict check needed here as long as indices 0, 1, 2 exist
+
+    def select_action(self, state, training=False, position=0):
         """
-        Consensus decision between LONG and SHORT specialists
-        
+        Tier 1 Logic: Agreement + Threshold
         Args:
             state: observation tensor
             training: ignored (always greedy for ensemble)
-        
+            position: current position (0=FLAT, >0=LONG, <0=SHORT)
         Returns:
-            action: 0=HOLD, 1=LONG, 2=SHORT
+            action: 0=HOLD, 1=LONG, 2=SHORT, 3=CLOSE
         """
         with torch.no_grad():
             state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.agent_long.device)
+
             # Get Q-values from both specialists
-            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)    # Shape: [2] = [Q_hold, Q_long]
-            q_short = self.agent_short.policy_net(state_tensor).squeeze(0)  # Shape: [2] = [Q_hold, Q_short]
-            
-            # Average HOLD opinion from both agents
-            q_hold_avg = (q_long[0] + q_short[0]) / 2.0
-            
-            # Construct combined Q-vector for 3 actions
-            q_combined = torch.tensor([
-                q_hold_avg.item(),  # Action 0: HOLD (consensus)
-                q_long[1].item(),   # Action 1: LONG (from LONG specialist)
-                q_short[1].item()   # Action 2: SHORT (from SHORT specialist)
-            ])
-            
-            # Debug output
-            if self.verbose:
-                print(f"  Q_LONG:  HOLD={q_long[0].item():.4f}, LONG={q_long[1].item():.4f}")
-                print(f"  Q_SHORT: HOLD={q_short[0].item():.4f}, SHORT={q_short[1].item():.4f}")
-                print(f"  Combined: HOLD={q_combined[0]:.4f}, LONG={q_combined[1]:.4f}, SHORT={q_combined[2]:.4f}")
-            
-            # Select action with highest Q-value
-            action = q_combined.argmax().item()
-            
-            return action
-    
-    def get_action_confidence(self, state):
-        """
-        Get action and confidence score
+            # Shape: [HOLD, OPEN, CLOSE]
+            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)   
+            q_short = self.agent_short.policy_net(state_tensor).squeeze(0) 
         
-        Returns:
-            action: selected action
-            confidence: difference between best and second-best Q-value
-        """
-        with torch.no_grad():
-            state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.agent_long.device)
-            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)
-            q_short = self.agent_short.policy_net(state_tensor).squeeze(0)
+        # --- Tier 1 Logic ---
+        action = 0 # Default HOLD
+        
+        # Confidence: Q_OPEN (idx 1) - Q_HOLD (idx 0)
+        conf_long = (q_long[1] - q_long[0]).item()
+        conf_short = (q_short[1] - q_short[0]).item()
+        
+        if position == 0: # FLAT
+            want_long = conf_long > self.threshold
+            want_short = conf_short > self.threshold
             
-            q_hold_avg = (q_long[0] + q_short[0]) / 2.0
-            q_combined = torch.tensor([
-                q_hold_avg.item(),
-                q_long[1].item(),
-                q_short[1].item()
-            ])
-            
-            # Calculate confidence
-            sorted_q = torch.sort(q_combined, descending=True)[0]
-            confidence = (sorted_q[0] - sorted_q[1]).item()
-            
-            action = q_combined.argmax().item()
-            
-            return action, confidence
+            if want_long and not want_short:
+                action = 1 # ENV: LONG
+            elif want_short and not want_long:
+                action = 2 # ENV: SHORT
+            elif want_long and want_short:
+                # Conflict: Pick stronger signal
+                action = 1 if conf_long > conf_short else 2
+                
+        elif position > 0: # LONG -> Check Long Agent Close
+            # Close if Q_CLOSE (idx 2) > Q_HOLD (idx 0)
+            if q_long[2] > q_long[0]:
+                action = 3 # ENV: CLOSE
+                
+        elif position < 0: # SHORT -> Check Short Agent Close
+            if q_short[2] > q_short[0]:
+                action = 3 # ENV: CLOSE
+
+        if self.verbose and action != 0:
+             print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
+
+        return action
 
 class PerformanceConfig:
     def __init__(self):
@@ -133,6 +111,7 @@ def create_validation_episodes(
 ):
     if not val_sequences:
         return [], []
+    
     episodes_by_symbol = defaultdict(list)
     for i, key in enumerate(val_keys):
         symbol = key.split('_')[0]
@@ -149,16 +128,15 @@ def create_validation_episodes(
         final_indices = random.sample(selected_indices, num_episodes)
     else:
         final_indices = selected_indices
-    
+        
     random.seed(seed)
     random.shuffle(final_indices)
     
     final_sequences = [val_sequences[i] for i in final_indices]
     final_keys = [val_keys[i] for i in final_indices]
-    
     final_symbols = {val_keys[i].split('_')[0] for i in final_indices}
-    logging.info(f"Stratified sampling complete. Sampled episodes: {len(final_sequences)}, Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
     
+    logging.info(f"Stratified sampling complete. Sampled episodes: {len(final_sequences)}, Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
     return final_sequences, final_keys
 
 def load_config_from_path(config_path):
@@ -172,91 +150,100 @@ def find_model_checkpoint(model_path_arg, cfg=None):
     if model_path_arg and os.path.exists(model_path_arg):
         logger.info(f"ℹ️ Using model path from command line: {model_path_arg}")
         return model_path_arg
-
+    
     if cfg and hasattr(cfg, 'paths') and hasattr(cfg.paths, 'model_path') and os.path.exists(cfg.paths.model_path):
         logger.info(f"ℹ️ Using model path from config: {cfg.paths.model_path}")
         return cfg.paths.model_path
-    
+        
     model_dir_from_cfg = "."
     if cfg and hasattr(cfg, 'paths') and cfg.paths.model_path:
         model_dir_from_cfg = os.path.dirname(cfg.paths.model_path)
-
+    
     search_path = os.path.join(model_dir_from_cfg, "best.pth")
     if os.path.exists(search_path):
         return search_path
-    
+        
     files = glob.glob(os.path.join(model_dir_from_cfg, "**", "best.pth"), recursive=True)
     if files:
         latest_file = max(files, key=os.path.getmtime)
         logger.info(f"ℹ️ Found latest model checkpoint: {latest_file}")
         return latest_file
+        
     return None
 
 def load_true_config(model_path):
     if model_path is None: return None
     model_dir = os.path.dirname(model_path)
     config_path = os.path.join(model_dir, "config_train.json")
+    
     if os.path.exists(config_path):
         logger.info(f"ℹ️ Loading ground truth config from: {config_path}")
         with open(config_path, 'r') as f:
             return json.load(f)
+            
     logger.warning(f"⚠️ config_train.json not found in model directory.")
     return None
 
 def load_and_normalize_data(npz_path, norm_stats_path, paper_symbols_cfg):
     logger.info(f"📂 Loading data from {npz_path}...")
+    
     if not os.path.exists(npz_path):
         raise FileNotFoundError(f"Data file not found: {npz_path}")
+        
     if not os.path.exists(norm_stats_path):
         raise FileNotFoundError(f"Normalization stats file not found: {norm_stats_path}")
-
+        
     with open(norm_stats_path, 'r') as f:
         all_stats = json.load(f)
-
+        
     allowed_assets = paper_symbols_cfg
     if allowed_assets == "ALL":
         allowed_assets = None
-
+        
     d = np.load(npz_path, allow_pickle=True)
     data_keys = [k for k in d.files if not k.startswith('_')]
+    
     sequences = []
     valid_keys = []
     
     logger.info(f"Normalizing data for specified symbols: {allowed_assets or 'ALL'}")
+    
     for key in tqdm(data_keys, desc="Normalizing validation data"):
         try:
             asset_name = key.split('_')[0]
         except IndexError:
             continue
-        
+            
         if allowed_assets and asset_name not in allowed_assets:
             continue
-
+            
         asset_specific_stats = all_stats.get(asset_name)
         if asset_specific_stats is None:
             continue
-
+            
         means = np.array(asset_specific_stats['mean'])
         stds = np.array(asset_specific_stats['std'])
         
         seq = d[key].astype(np.float32)
+        
         if seq.shape[1] != len(means):
             continue
             
         seq = (seq - means) / (stds + 1e-8)
         sequences.append(seq)
         valid_keys.append(key)
-    
+        
     d.close()
+    
     if not sequences:
         raise ValueError("No validation sequences were loaded. Check data path and symbol configuration.")
+        
     logger.info(f"Prepared {len(sequences)} validation sequences.")
-    
     return sequences, all_stats, valid_keys
 
 def run_validation():
     parser = argparse.ArgumentParser(description="Validate/test RL agent")
-    parser.add_argument("--config", type=str, required=True, help="Path to config file")
+    parser.add_argument("config", type=str, help="Path to config file (e.g. configs/alpha_seed_404_v11.py)")
     parser.add_argument("--model", type=str, help="Path to model checkpoint (for single agent)")
     parser.add_argument("--mode", type=str, choices=['val', 'test'], default='val', help="Validation or test mode")
     
@@ -264,64 +251,81 @@ def run_validation():
     parser.add_argument("--ensemble", action='store_true', help="Use ensemble of LONG and SHORT specialists")
     parser.add_argument("--long_model", type=str, help="Path to LONG specialist checkpoint")
     parser.add_argument("--short_model", type=str, help="Path to SHORT specialist checkpoint")
+    parser.add_argument("--threshold", type=float, default=None, help="Ensemble confidence threshold (overrides config)")
     parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values during ensemble inference")
     
     args = parser.parse_args()
     
+    # --- Load User Config (for paths) ---
+    user_cfg_module = load_config_from_path(args.config)
+    
+    # Auto-fill arguments from config if not provided
+    if args.ensemble:
+        if not args.long_model and hasattr(user_cfg_module.paths, 'long_model_path'):
+            args.long_model = user_cfg_module.paths.long_model_path
+        if not args.short_model and hasattr(user_cfg_module.paths, 'short_model_path'):
+            args.short_model = user_cfg_module.paths.short_model_path
+            
     # Validate arguments
     if args.ensemble:
         if not args.long_model or not args.short_model:
-            parser.error("--ensemble requires --long_model and --short_model")
-        if args.model:
-            print("⚠️  Warning: --model ignored in ensemble mode")
-    elif not args.model:
+            parser.error("--ensemble requires --long_model and --short_model (via CLI or config)")
+    
+    if args.model:
+        print("⚠️  Warning: --model ignored in ensemble mode")
+    elif not args.model and not args.ensemble:
         # In single-agent mode, we can try to find the model automatically
-        pass
-
-    user_cfg_module = load_config_from_path(args.config)
+        if hasattr(user_cfg_module.paths, 'model_path'):
+             args.model = user_cfg_module.paths.model_path
     
     # Determine the primary model path for loading configs etc.
     # In ensemble mode, we can use the long model as the reference.
     primary_model_path_arg = args.long_model if args.ensemble else args.model
     model_path = find_model_checkpoint(primary_model_path_arg, user_cfg_module)
-
+    
     if not args.ensemble and not model_path:
         print("❌ 'best.pth' model file not found for single agent mode.")
         return
-
+        
     train_cfg_dict = load_true_config(model_path or args.long_model)
     if not train_cfg_dict:
         print("❌ Could not load the ground truth config_train.json from the model's directory.")
         return
-    
-    # --- CRITICAL: Use the ground truth config for all parameters ---
-    # The user-provided .py config is only for finding the model and as a fallback.
-    # We will now use the dictionary loaded from config_train.json.
-    cfg = train_cfg_dict
 
+    # --- CRITICAL: Use the ground truth config for all parameters ---
+    cfg = train_cfg_dict
+    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # For ensemble, norm_stats could be different. Assume they are the same and load from long_model path.
-    norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
+    # For ensemble, norm_stats could be different. Assume they are the same and load from long_model path or config
+    if hasattr(user_cfg_module.paths, 'norm_stats_path') and os.path.exists(user_cfg_module.paths.norm_stats_path):
+        norm_stats_path = user_cfg_module.paths.norm_stats_path
+    else:
+        norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
     
-    val_data_path = cfg.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
+    if hasattr(user_cfg_module.paths, 'val_data_path'):
+        val_data_path = user_cfg_module.paths.val_data_path
+    else:
+        val_data_path = cfg.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
+    
     if not os.path.isabs(val_data_path):
         val_data_path = os.path.join(script_dir, val_data_path)
-
+        
     logger.info(f"ℹ️ Using Validation Data: {val_data_path}")
     logger.info(f"ℹ️ Using Normalization Stats: {norm_stats_path}")
-
+    
     paper_symbols = cfg.get("paper", {}).get("symbols", "ALL")
     sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
     
     trainlog_cfg = cfg.get("trainlog", {})
+    
     sequences, keys = create_validation_episodes(
         val_sequences=sequences,
         val_keys=keys,
         num_episodes=trainlog_cfg.get("num_val_ep", 750), # Use num_val_ep from the training config
         seed=cfg.get("random_seed", 404)
     )
-
+    
     seq_cfg = cfg.get("seq", {})
     data_cfg = cfg.get("data", {})
     market_cfg = cfg.get("market", {})
@@ -330,150 +334,99 @@ def run_validation():
     rl_cfg = cfg.get("rl", {})
     per_cfg = cfg.get("per", {})
     eps_cfg = cfg.get("eps", {})
-
-    # --- FIX: Determine action_dim for specialist agents ---
-    # The action_dim for specialists (2) is different from the ensemble (3) or a full agent.
-    # We need to instantiate the agent with the correct action_dim it was trained with.
-    def get_specialist_action_dim(model_p):
-        if model_p:
-            path_str = str(model_p).upper()
-            if '_LONG' in path_str:
-                logger.info("💡 Detected LONG specialist model. Setting action_dim=2.")
-                return 2
-            if '_SHORT' in path_str:
-                logger.info("💡 Detected SHORT specialist model. Setting action_dim=2.")
-                return 2
-        return market_cfg.get("num_actions", 3) # Default for full/ensemble agent
-
-    def create_agent(action_dim, additional_feats_override):
-        config_feats = cfg.get("model", {}).get("additional_feats", -1)
-        if config_feats != additional_feats_override:
-            logger.info(f"ℹ️ Overriding 'additional_feats' from config ({config_feats}) with calculated value ({additional_feats_override}).")
     
-        return D3QN_PER_Agent(
-            state_shape=cfg.get("state_shape", [10, 90, 1]),
+    # --- Get Ensemble Params ---
+    ensemble_cfg = getattr(user_cfg_module, 'ensemble', None)
+    threshold_val = 0.02 # Default
+    if args.threshold is not None:
+        threshold_val = args.threshold
+    elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'):
+        threshold_val = ensemble_cfg.threshold
+
+    # --- Env Params ---
+    env_params = {
+        "sequences": sequences,
+        "stats": all_stats,
+        "keys": keys,
+        "render_mode": None,
+        "num_actions": 3, 
+        "allowed_directions": market_cfg.get("allowed_directions", ['LONG', 'SHORT']),
+        "filter_direction": market_cfg.get("filter_direction", None),
+        "transaction_fee": market_cfg.get("transaction_fee", 0.0004),
+        "slippage": market_cfg.get("slippage", 0.0002),
+        "position_fraction": market_cfg.get("position_fraction", 0.1)
+    }
+
+    if args.ensemble:
+        # Ensemble needs full environment
+        env_params["num_actions"] = 4 # HOLD, LONG, SHORT, CLOSE
+        env_params["allowed_directions"] = ['LONG', 'SHORT']
+        env_params["filter_direction"] = None
+
+    logger.info("🌍 Initializing TradingEnvironment...")
+    env = TradingEnvironment(**env_params)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"💻 Using device: {device}")
+    
+    # --- Helper to create/load agent ---
+    def create_agent(action_dim, additional_feats_override=None):
+        true_add_feats = additional_feats_override or model_cfg.get("additional_feats", 12)
+        return D3QNPERAgent(
+            state_shape=seq_cfg.get("state_shape", (10, 90, 1)),
             action_dim=action_dim,
-            cnn_maps=model_cfg.get("cnn_maps", []),
-            cnn_kernels=model_cfg.get("cnn_kernels", []),
-            cnn_strides=model_cfg.get("cnn_strides", []),
-            cnn_dilations=model_cfg.get("cnn_dilations", []),
-            dense_val=model_cfg.get("dense_val", []),
-            dense_adv=model_cfg.get("dense_adv", []),
-            additional_feats=additional_feats_override,
-            dropout_model=model_cfg.get("dropout_p", 0.0),
-            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+            cnn_maps=model_cfg.get("cnn_maps"),
+            cnn_kernels=model_cfg.get("cnn_kernels"),
+            cnn_strides=model_cfg.get("cnn_strides"),
+            cnn_dilations=model_cfg.get("cnn_dilations"),
+            dense_val=model_cfg.get("dense_val"),
+            dense_adv=model_cfg.get("dense_adv"),
+            additional_feats=true_add_feats,
+            dropout_p=model_cfg.get("dropout_p", 0.0),
+            device=device,
             gamma=rl_cfg.get("gamma", 0.99),
             learning_rate=rl_cfg.get("lr", 1e-4),
             batch_size=rl_cfg.get("batch_size", 32),
-            buffer_size=per_cfg.get("buffer_size", 100000),
-            target_update_freq=rl_cfg.get("target_update_freq", 1000),
-            train_start=rl_cfg.get("train_start", 1000),
-            max_gradient_norm=rl_cfg.get("max_gradient_norm", 1.0),
-            per_alpha=per_cfg.get("per_alpha", 0.6),
-            per_beta_start=per_cfg.get("per_beta_start", 0.4),
-            per_beta_frames=per_cfg.get("per_beta_frames", 100000),
-            eps_start=eps_cfg.get("eps_start", 1.0),
-            eps_end=eps_cfg.get("eps_end", 0.05),
-            eps_frames=eps_cfg.get("eps_decay_frames", 100000),
-            epsilon=0.0,
+            buffer_size=100,
             perf_cfg=PerformanceConfig()
         )
-    
-    # ============================================================================ 
-    # LOAD AGENT(S)
-    # ============================================================================ 
-        
+
     if args.ensemble:
-        print(f"\n{'='*80}")
-        print("🎯 ENSEMBLE MODE")
-        print(f"{'='*80}")
+        logger.info("🎭 Initializing Ensemble Agent...")
         
-        action_history_len = seq_cfg.get("action_history_len", 2)
-        # action_dim is 2 for specialists, so this is 4 + (2 * 2) = 8
-        true_additional_feats = 4 + (2 * action_history_len)
-    
-        # Load LONG specialist
-        print(f"\n📦 Loading LONG specialist from: {args.long_model}")
-        agent_long = create_agent(action_dim=2, additional_feats_override=true_additional_feats)
-        agent_long.load_model(args.long_model, strict=True)
-        print("✅ LONG specialist loaded")
+        def load_specialist(path, name):
+            logger.info(f"  Loading {name} specialist from {path}...")
+            agent = create_agent(action_dim=3) # SPECIALIST has 3 actions
+            agent.load_model(path)
+            agent.policy_net.eval()
+            return agent
+
+        long_agent = load_specialist(args.long_model, "LONG")
+        short_agent = load_specialist(args.short_model, "SHORT")
         
-        # Load SHORT specialist
-        print(f"\n📦 Loading SHORT specialist from: {args.short_model}")
-        agent_short = create_agent(action_dim=2, additional_feats_override=true_additional_feats)
-        agent_short.load_model(args.short_model, strict=True)
-        print("✅ SHORT specialist loaded")
-        
-        # Create ensemble
-        agent = EnsembleAgent(agent_long, agent_short, verbose=args.ensemble_verbose)
-        print(f"\n✅ Ensemble agent created")
-        print(f"{'='*80}\n")
-        
-        # Environment for ensemble (full 3 actions)
-        num_actions_env = 3
+        agent = EnsembleAgent(long_agent, short_agent, threshold=threshold_val, verbose=args.ensemble_verbose)
+        logger.info("✅ Ensemble Agent ready.")
         
     else:
+        # Single Agent Init
         print(f"\n📦 Loading single agent model from: {model_path}")
         
-        # --- FIX: Calculate the true number of additional features ---
-        num_actions_env = get_specialist_action_dim(model_path)
+        def get_specialist_action_dim(model_path):
+            # Hack/Heuristic to determine action dim if not in config
+            # But usually 3
+            return 3
+
+        num_actions_env = 3 # Default for single
+        if "SHORT_ONLY" in model_path or "LONG_ONLY" in model_path:
+             num_actions_env = 3
+        
         action_history_len = seq_cfg.get("action_history_len", 2)
         true_additional_feats = 4 + (num_actions_env * action_history_len)
-    
+        
         agent = create_agent(action_dim=num_actions_env, additional_feats_override=true_additional_feats)
         agent.load_model(model_path, strict=True)
-        
-        # --- CRITICAL FIX: Ensure Eval Mode explicitly ---
         agent.policy_net.eval()
-        # -------------------------------------------------
         print("✅ Model loaded successfully")
-    # ============================================================================ 
-
-    input_history_len = seq_cfg.get("input_history_len") or seq_cfg.get("agent_history_len", 90)
-
-    env_params = {
-        "full_seq_len": seq_cfg.get("full_seq_len", 150),
-        "pre_signal_len": seq_cfg.get("pre_signal_len", 90),
-        "agent_history_len": seq_cfg.get("agent_history_len", 90),
-        "agent_session_len": seq_cfg.get("agent_session_len", 60),
-        "input_history_len": input_history_len,
-        "initial_balance": market_cfg.get("initial_balance", 10000.0),
-        "transaction_fee": market_cfg.get("transaction_fee"),
-        "slippage": market_cfg.get("slippage", 0.0002),
-        "num_actions": agent.action_dim if not args.ensemble else 3, # Use agent's action_dim for single, 3 for ensemble
-        "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
-        "position_fraction": market_cfg.get("position_fraction", 0.1),
-        "order_size_usdt": backtest_cfg.get("order_size_usdt", 0.0),
-        "backtest_mode": True,
-        "use_risk_management": backtest_cfg.get("use_risk_management", False),
-        "cnn_format": False,
-        "num_features": data_cfg.get("numchannels", 10),
-        "action_history_len": seq_cfg.get("action_history_len", 2),
-        "datachannels": data_cfg.get("datachannels", []),
-        "pricechannels": data_cfg.get("pricechannels", []),
-        "volumechannels": data_cfg.get("volumechannels", []),
-        "otherchannels": data_cfg.get("otherchannels", []),
-        
-        # --- SYNC FIX: Market Rules ---
-        "allow_opposite_trades": market_cfg.get("allow_opposite_trades", False),
-        "allowed_directions": market_cfg.get("allowed_directions", None), # Default to None (All) if missing
-        # ------------------------------
-    }
-    
-    flat_state_size = (env_params["agent_history_len"] * env_params["num_features"]) + 4 + (env_params["num_actions"] * env_params["action_history_len"])
-    env_params["flat_state_size"] = flat_state_size
-
-    backtest_kwargs = {
-        "stop_loss": None,
-        "take_profit": None,
-        "trailing_stop": backtest_cfg.get("trailing_stop"),
-        "trailing_stop_min": backtest_cfg.get("trailing_stop_min"),
-        "fee_buffer_mult": backtest_cfg.get("fee_buffer_mult"),
-        "delta_p_hysteresis": backtest_cfg.get("delta_p_hysteresis"),
-    }
-
-    logger.info("🔧 Initializing TradingEnvironment...")
-    env = TradingEnvironment(sequences=sequences, stats=all_stats, keys=keys, render_mode=None, **env_params)
 
     logger.info("🚀 Starting Backtest Validation...")
     
@@ -482,42 +435,47 @@ def run_validation():
     start_time = time.time()
     
     logging.getLogger().setLevel(logging.ERROR)
+    
     pbar = tqdm(range(len(sequences)), desc="Simulating")
     
     for i in pbar:
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         
-        signal_dt_for_step = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+        signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
+        
         if keys and i < len(keys):
             try:
                 key_parts = keys[i].split('_')
                 ticker_name = key_parts[0]
                 if len(key_parts) > 1:
                     start_dt_str = key_parts[1]
-                    signal_dt_for_step = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+                    signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
             except (IndexError, AttributeError, ValueError) as e:
-                logger.warning(f"Could not parse ticker/date from key: {keys[i]} due to {e}")
+                pass # logger.warning(f"Could not parse ticker/date: {e}")
 
         while not done:
-            # Explicitly disable cache to ensure fresh forward pass like in training validation
-            action = agent.select_action(obs, training=False, use_cache=False)
+            if args.ensemble:
+                action = agent.select_action(obs, training=False, position=env.position)
+            else:
+                action = agent.select_action(obs, training=False)
+            
             next_obs, reward, terminated, truncated, info = env.backtest_step(
-                action=action, 
-                signal_dt=signal_dt_for_step,
-                ticker=ticker_name, 
-                **backtest_kwargs
+                action=action,
+                signal_dt=signal_dt,
+                ticker=ticker_name
             )
+            
+            if info.get('trade_closed', False):
+                all_trades_info.append(info)
+                
             done = terminated or truncated
             obs = next_obs
             total_bars_processed += 1
             
-            if info.get("position_closed", False):
-                all_trades_info.append(info)
-        
         pbar.set_postfix({
-            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}", 
+            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}",
             "Trds": len(all_trades_info)
         })
 
@@ -529,29 +487,29 @@ def run_validation():
     win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
     loss_count = total_trades - win_count
     wr_ratio = win_count / max(1, total_trades)
-
+    
     gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
     net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
     total_commission = sum(t.get('trade_commission', 0.0) for t in all_trades_info)
     avg_pnl_per_trade = net_pnl / max(1, total_trades)
-
+    
     trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
     best_trade = max(trade_pnls) if trade_pnls else 0.0
     worst_trade = min(trade_pnls) if trade_pnls else 0.0
-
+    
     long_trades = sum(1 for t in all_trades_info if t.get('direction') == 'LONG')
     short_trades = sum(1 for t in all_trades_info if t.get('direction') == 'SHORT')
-
+    
     holding_times = [t.get('holding_duration_bars', 0) for t in all_trades_info]
     avg_holding_time = np.mean(holding_times) if holding_times else 0.0
     max_holding_time = max(holding_times) if holding_times else 0.0
     min_holding_time = min(holding_times) if holding_times else 0.0
-
+    
     bars_per_day = 1440
     trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
     pnl_per_day = net_pnl / max(1, trading_time_days)
-
-    initial_balance = env_params["initial_balance"]
+    
+    initial_balance = env.initial_balance if hasattr(env, 'initial_balance') else 10000
     roi_percent = (net_pnl / initial_balance) * 100
     roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
     
@@ -560,17 +518,15 @@ def run_validation():
     avg_win_size = np.mean(pos_pnls) if pos_pnls else 0.0
     avg_loss_size = np.mean(neg_pnls) if neg_pnls else 0.0
     win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size != 0 else float('inf')
-    expectancy = (wr_ratio * avg_win_size) + ((1 - wr_ratio) * avg_loss_size)
     
+    expectancy = (wr_ratio * avg_win_size) + ((1 - wr_ratio) * avg_loss_size)
     profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
-
-    # Max Drawdown
+    
     equity_curve = np.cumsum([initial_balance] + trade_pnls)
     peak = np.maximum.accumulate(equity_curve)
     drawdown = (equity_curve - peak) / peak
     max_dd = np.min(drawdown) if len(drawdown) > 0 else 0.0
-
-    # Sharpe & Sortino
+    
     returns = np.array(trade_pnls) / initial_balance
     if len(returns) > 1:
         mean_r = np.mean(returns)
@@ -580,15 +536,14 @@ def run_validation():
         sortino = (mean_r / downside_std) if downside_std > 1e-9 else 0.0
     else:
         sharpe, sortino = 0.0, 0.0
-
+        
     tsl_hits = sum(1 for t in all_trades_info if t.get('tsl_triggered', False))
 
-    # --- Print Results ---
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
     print("="*44)
     if args.ensemble:
-        print(f"Mode: ENSEMBLE (LONG + SHORT specialists)")
+        print(f"Mode: ENSEMBLE (LONG + SHORT specialists) | Thresh: {threshold_val}")
     else:
         print(f"Mode: Single agent")
     print(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
@@ -601,7 +556,6 @@ def run_validation():
     print(f"Expectancy/Trade: {expectancy:.2f} USDT")
     print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
     print("="*44)
-
 
 if __name__ == "__main__":
     run_validation()
