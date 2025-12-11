@@ -52,40 +52,53 @@ class EnsembleAgent:
         # No strict check needed here as long as indices 0, 1, 2 exist
 
     def select_action(self, state, training=False, position=0):
-        # --- НАЧАЛО ПАТЧА ---
-        # Убедимся, что работаем с numpy array
+        # --- Умный маппинг фич для long/short агентов ---
         if not isinstance(state, np.ndarray):
-            state = np.array(state)
+            state = np.array(state, dtype=np.float32)
 
-        # state - это 1D вектор.
-        # Определяем количество дополнительных фич, которые генерирует среда и которые ожидает агент
-        features_from_env = 12  # Для 4 действий (Hold, Long, Short, Close) + базовые фичи
-        features_expected_by_agent = 10 # Для 3 действий (Hold, Open, Close) + базовые фичи
+        # 1. Разбираем state на Data (для CNN) и Features (для Dense)
+        # Архитектура модели: state_shape = (10, 90, 1), additional_feats = 10 или 12
+        seq_len = 90
+        n_channels_data = 10
+        data_size = n_channels_data * seq_len
         
-        # Отделяем основную часть данных от дополнительных фич
-        main_data_part = state[:-features_from_env]
-        features_part = state[-features_from_env:]
+        state_long, state_short = state, state # Fallback
 
-        # Создаем урезанный набор фич, который понятен агенту
-        # Просто берем первые 10 из 12. Это не идеально семантически, но гарантированно исправит ошибку размерности.
-        truncated_features = features_part[:features_expected_by_agent]
+        if state.shape[0] > data_size:
+            data_part = state[:data_size]
+            features_part = state[data_size:]
 
-        # Собираем state обратно. Теперь он имеет правильную длину.
-        # Эта логика одинакова для обоих агентов, так как оба ждут 10 фич.
-        corrected_state = np.concatenate([main_data_part, truncated_features])
-        # --- КОНЕЦ ПАТЧА ---
+            # 2. Анализируем и корректируем фичи.
+            # Среда (Ensemble) генерирует историю для 4 действий -> 4 базовые фичи + (4 действия * 2 шага) = 12 фич.
+            # Специалисты (Long/Short) обучены на истории для 3 действий -> 4 базовые фичи + (3 действия * 2 шага) = 10 фич.
+            if len(features_part) == 12:
+                base_feats = features_part[:4]
+                history_feats = features_part[4:] # 8 элементов
+
+                # История в среде: [Step1_H, Step1_L, Step1_S, Step1_C, Step2_H, Step2_L, Step2_S, Step2_C]
+                # Индексы:           0        1        2        3        4        5        6        7
+
+                # Long-агент ожидает [H, L, C] -> удаляем 'S' (индексы 2 и 6)
+                mask_long = [0, 1, 3, 4, 5, 7]
+                hist_long = history_feats[mask_long] # -> 6 элементов
+                feats_long = np.concatenate([base_feats, hist_long])
+                state_long = np.concatenate([data_part, feats_long])
+
+                # Short-агент ожидает [H, S, C] -> удаляем 'L' (индексы 1 и 5)
+                mask_short = [0, 2, 3, 4, 6, 7]
+                hist_short = history_feats[mask_short] # -> 6 элементов
+                feats_short = np.concatenate([base_feats, hist_short])
+                state_short = np.concatenate([data_part, feats_short])
 
         with torch.no_grad():
-            # Превращаем исправленный 1D вектор в тензор
-            # Reshape НЕ нужен, т.к. модель сама внутри делает reshape для Conv1D
-            state_tensor = torch.from_numpy(corrected_state).float().unsqueeze(0).to(self.agent_long.device)
+            # 3. Прогоняем каждый state через соответствующую сеть
+            state_tensor_long = torch.from_numpy(state_long).float().unsqueeze(0).to(self.agent_long.device)
+            state_tensor_short = torch.from_numpy(state_short).float().unsqueeze(0).to(self.agent_short.device)
             
-            # Оба агента получают тензор одинаковой (и правильной) формы
-            q_long = self.agent_long.policy_net(state_tensor).squeeze(0)
-            q_short = self.agent_short.policy_net(state_tensor).squeeze(0)
+            q_long = self.agent_long.policy_net(state_tensor_long).squeeze(0)
+            q_short = self.agent_short.policy_net(state_tensor_short).squeeze(0)
 
-        # Далее стандартная логика выбора действия ансамблем
-        # ... (этот блок кода у вас уже есть и должен остаться без изменений)
+        # 4. Стандартная логика выбора действия ансамблем
         conf_long = (torch.softmax(q_long, dim=0)[1] - 0.33).clamp(min=0)
         conf_short = (torch.softmax(q_short, dim=0)[1] - 0.33).clamp(min=0)
         action = 0
@@ -93,14 +106,18 @@ class EnsembleAgent:
             action = 1
         elif conf_short > self.threshold and conf_short > conf_long:
             action = 2
-        if position > 0:
-            if q_long[2] > q_long[0]:
+        
+        # Логика закрытия позиции
+        if position > 0: # Если в длинной позиции
+            if q_long[2] > q_long[0]: # Если Q(CLOSE) > Q(HOLD) для Long-агента
                 action = 3
-        elif position < 0:
-            if q_short[2] > q_short[0]:
+        elif position < 0: # Если в короткой позиции
+            if q_short[2] > q_short[0]: # Если Q(CLOSE) > Q(HOLD) для Short-агента
                 action = 3
+                
         if self.verbose and action != 0:
             print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
+            
         return action
 
 class PerformanceConfig:

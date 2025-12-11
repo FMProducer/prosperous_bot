@@ -302,7 +302,7 @@ class EnsembleConfig:
     pass
 cfg.ensemble = EnsembleConfig()
 # cfg.ensemble.mode = "tier1_agreement" # Режим работы (на будущее)
-cfg.ensemble.threshold = 0.02 # Q-Value difference threshold (Confidence)
+cfg.ensemble.threshold = 0.0 # Q-Value difference threshold (Confidence)
 cfg.ensemble.agreement_threshold = 0.0 # Если понадобится второй порог
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 # --- ENSEMBLE MODEL ---
