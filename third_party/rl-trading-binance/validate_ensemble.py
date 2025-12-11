@@ -349,11 +349,44 @@ def run_validation():
         threshold_val = ensemble_cfg.threshold
 
     # --- Env Params ---
+    # Retrieve base parameters from config sections
+    num_channels = cfg.get("num_channels", 10)
+    
+    # FIX: Generate list of channel names required by TradingEnvironment
+    # It needs to find "close" in this list.
+    default_datachannels = ['open', 'high', 'low', 'close', 'volume']
+    if num_channels > 5:
+        default_datachannels += [f"feat_{i}" for i in range(5, num_channels)]
+
     env_params = {
         "sequences": sequences,
         "stats": all_stats,
         "keys": keys,
         "render_mode": None,
+        
+        # --- Missing Required Arguments for TradingEnvironment ---
+        "full_seq_len": seq_cfg.get("full_seq_len", 150),
+        "num_features": num_channels,
+        "flat_state_size": 0, 
+        "initial_balance": market_cfg.get("initial_balance", 10000.0),
+        "pre_signal_len": seq_cfg.get("pre_signal_len", 90),
+        
+        # FIX: datachannels must be a LIST of strings, containing "close"
+        "datachannels": data_cfg.get("datachannels", default_datachannels),
+        
+        "agent_session_len": seq_cfg.get("agent_session_len", 60),
+        "agent_history_len": seq_cfg.get("agent_history_len", 90),
+        "input_history_len": seq_cfg.get("input_history_len", 90),
+        
+        # Channel definitions (Indices)
+        "pricechannels": [0, 1, 2, 3], 
+        "volumechannels": [4],
+        "otherchannels": list(range(5, num_channels)),
+        
+        "action_history_len": seq_cfg.get("action_history_len", 2),
+        "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
+
+        # --- Standard Params ---
         "num_actions": 3, 
         "allowed_directions": market_cfg.get("allowed_directions", ['LONG', 'SHORT']),
         "filter_direction": market_cfg.get("filter_direction", None),
@@ -377,6 +410,7 @@ def run_validation():
     # --- Helper to create/load agent ---
     def create_agent(action_dim, additional_feats_override=None):
         true_add_feats = additional_feats_override or model_cfg.get("additional_feats", 12)
+        
         return D3QNPERAgent(
             state_shape=seq_cfg.get("state_shape", (10, 90, 1)),
             action_dim=action_dim,
@@ -387,13 +421,26 @@ def run_validation():
             dense_val=model_cfg.get("dense_val"),
             dense_adv=model_cfg.get("dense_adv"),
             additional_feats=true_add_feats,
-            dropout_p=model_cfg.get("dropout_p", 0.0),
+            # dropout_p=model_cfg.get("dropout_p", 0.0), # Removed as requested by error
             device=device,
             gamma=rl_cfg.get("gamma", 0.99),
             learning_rate=rl_cfg.get("lr", 1e-4),
             batch_size=rl_cfg.get("batch_size", 32),
-            buffer_size=100,
-            perf_cfg=PerformanceConfig()
+            buffer_size=100, # Small buffer for val
+            perf_cfg=PerformanceConfig(),
+            
+            # --- Missing Args from Error Message ---
+            dropout_model=model_cfg.get("dropout_p", 0.0), # Maybe called dropout_model?
+            target_update_freq=rl_cfg.get("target_update_freq", 1000),
+            train_start=rl_cfg.get("train_start", 1000),
+            per_alpha=per_cfg.get("alpha", 0.6),
+            per_beta_start=per_cfg.get("beta_start", 0.4),
+            per_beta_frames=per_cfg.get("beta_frames", 10000),
+            eps_start=eps_cfg.get("eps_start", 1.0),
+            eps_end=eps_cfg.get("eps_end", 0.01),
+            eps_frames=eps_cfg.get("eps_frames", 10000),
+            epsilon=eps_cfg.get("eps_start", 1.0), # Initial epsilon
+            max_gradient_norm=rl_cfg.get("max_gradient_norm", 1.0)
         )
 
     if args.ensemble:
