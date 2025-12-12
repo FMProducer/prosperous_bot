@@ -631,25 +631,38 @@ def run_validation():
 
                     # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
                     if long_wants_open and short_wants_open:
-                        # Если кто-то уже в сделке, закрываем его. Новым сделкам хода нет.
-                        final_act_l = 3 if long_is_active else 0
-                        final_act_s = 3 if short_is_active else 0
-                        if long_is_active or short_is_active:
-                            print(f"[{ticker_name}] Event: Conflict vote (L=1, S=2). Forcing close on existing positions.")
-                            cooldown_until_step = current_step + conflict_cooldown_bars
-                    # Сценарий 2: Нет прямого конфликта, рассматриваем перекрестное закрытие
+                        if long_is_active:
+                            # Long активен, закрываем его и даем Short открыть позицию.
+                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Long and opening Short.")
+                            final_act_l = 3
+                            final_act_s = 2 # Разрешаем Short открыть
+                        elif short_is_active:
+                            # Short активен, закрываем его и даем Long открыть позицию.
+                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Short and opening Long.")
+                            final_act_s = 3
+                            final_act_l = 1 # Разрешаем Long открыть
+                        else:
+                            # Никто не активен. Ничего не делаем.
+                            print(f"[{ticker_name}] Event: Conflict vote. No active positions. Holding.")
+                            final_act_l = 0
+                            final_act_s = 0
+                        
+                        # Cooldown применяется в любом случае конфликта.
+                        cooldown_until_step = current_step + conflict_cooldown_bars
+
+                    # Сценарий 2: Нет прямого конфликта, проверяем перекрестное закрытие
                     else:
                         # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
                         if long_wants_open and short_is_active:
                             print(f"[{ticker_name}] Event: Long vote closes existing Short position.")
-                            final_act_s = 3 # Принудительно закрыть Short
-                            cooldown_until_step = current_step + conflict_cooldown_bars
+                            final_act_s = 3   # Принудительно закрыть Short
+                            final_act_l = 0   # Long-агент должен ждать, его сигнал был использован для закрытия Short
 
                         # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
-                        if short_wants_open and long_is_active:
+                        elif short_wants_open and long_is_active:
                             print(f"[{ticker_name}] Event: Short vote closes existing Long position.")
-                            final_act_l = 3 # Принудительно закрыть Long
-                            cooldown_until_step = current_step + conflict_cooldown_bars
+                            final_act_l = 3   # Принудительно закрыть Long
+                            final_act_s = 0   # Short-агент должен ждать, его сигнал был использован для закрытия Long
                 
                 # 3. EXECUTION
                 # -- Long Env --

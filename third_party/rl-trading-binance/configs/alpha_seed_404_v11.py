@@ -317,9 +317,9 @@ cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 # --- НОВЫЙ ПАРАМЕТР ---
 # Если True, отключает логику, при которой открытие позиции одним агентом
 # принудительно закрывает позицию другого. Сделки закрываются только по окончании сессии.
-cfg.ensemble.disable_cross_close = True
+cfg.ensemble.disable_cross_close = False
 
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 0
+cfg.ensemble.conflict_cooldown_bars = 60
