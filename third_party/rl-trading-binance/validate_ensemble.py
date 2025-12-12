@@ -30,94 +30,123 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class EnsembleAgent:
-    """
-    Tier 1 Ensemble: Direction Agreement + Threshold
-    Combines a Long-Only Specialist (3 actions) and a Short-Only Specialist (3 actions).
-    """
-    def __init__(self, agent_long, agent_short, threshold=0.02, verbose=False):
-        """
-        Args:
-            agent_long: D3QN_PER_Agent trained on LONG-only (action_dim=3)
-            agent_short: D3QN_PER_Agent trained on SHORT-only (action_dim=3)
-            threshold: Confidence threshold (Q_OPEN - Q_HOLD)
-            verbose: Print Q-values for debugging
-        """
-        self.agent_long = agent_long
-        self.agent_short = agent_short
+    def __init__(self, long_agent_path, short_agent_path, device, agent_creator, threshold=0.02, verbose=False):
+        self.device = device
         self.threshold = threshold
         self.verbose = verbose
+        self.agent_creator = agent_creator
+        
+        logger.info(f"🎭 Initializing Ensemble Agent...")
+        logger.info(f"  Loading LONG specialist from {long_agent_path}...")
+        self.agent_long = self._load_agent(long_agent_path, "LONG")
+        
+        logger.info(f"  Loading SHORT specialist from {short_agent_path}...")
+        self.agent_short = self._load_agent(short_agent_path, "SHORT")
+        
+        logger.info("✅ Ensemble Agent ready.")
 
-        # Verify agents have correct action_dim
-        # Specialists usually have 3 actions: HOLD, OPEN, CLOSE
-        # No strict check needed here as long as indices 0, 1, 2 exist
+    def _load_agent(self, path, name):
+        # Helper to load agent. Assumes D3QN_PER_Agent class structure.
+        # We need to reconstruct the agent with the same config as training.
+        # Ideally, we load the config from the checkpoint folder.
+        
+        # For simplicity, we assume the current global cfg matches the agent structure
+        # OR we rely on the agent to load its own weights into the architecture created by 'create_agent'
+        
+        # Load checkpoint to check args if needed (optional)
+        # checkpoint = torch.load(path, map_location=self.device)
+        
+        agent = self.agent_creator(action_dim=3) # Specialists have 3 actions
+        agent.load_model(path)
+        agent.policy_net.eval()
+        return agent
 
     def select_action(self, state, training=False, position=0):
-        # --- Умный маппинг фич для long/short агентов ---
+        # 1. Ensure state is numpy and 1D/2D handled
         if not isinstance(state, np.ndarray):
-            state = np.array(state, dtype=np.float32)
-
-        # 1. Разбираем state на Data (для CNN) и Features (для Dense)
-        # Архитектура модели: state_shape = (10, 90, 1), additional_feats = 10 или 12
-        seq_len = 90
-        n_channels_data = 10
-        data_size = n_channels_data * seq_len
-        
-        state_long, state_short = state, state # Fallback
-
-        if state.shape[0] > data_size:
-            data_part = state[:data_size]
-            features_part = state[data_size:]
-
-            # 2. Анализируем и корректируем фичи.
-            # Среда (Ensemble) генерирует историю для 4 действий -> 4 базовые фичи + (4 действия * 2 шага) = 12 фич.
-            # Специалисты (Long/Short) обучены на истории для 3 действий -> 4 базовые фичи + (3 действия * 2 шага) = 10 фич.
-            if len(features_part) == 12:
-                base_feats = features_part[:4]
-                history_feats = features_part[4:] # 8 элементов
-
-                # История в среде: [Step1_H, Step1_L, Step1_S, Step1_C, Step2_H, Step2_L, Step2_S, Step2_C]
-                # Индексы:           0        1        2        3        4        5        6        7
-
-                # Long-агент ожидает [H, L, C] -> удаляем 'S' (индексы 2 и 6)
-                mask_long = [0, 1, 3, 4, 5, 7]
-                hist_long = history_feats[mask_long] # -> 6 элементов
-                feats_long = np.concatenate([base_feats, hist_long])
-                state_long = np.concatenate([data_part, feats_long])
-
-                # Short-агент ожидает [H, S, C] -> удаляем 'L' (индексы 1 и 5)
-                mask_short = [0, 2, 3, 4, 6, 7]
-                hist_short = history_feats[mask_short] # -> 6 элементов
-                feats_short = np.concatenate([base_feats, hist_short])
-                state_short = np.concatenate([data_part, feats_short])
-
-        with torch.no_grad():
-            # 3. Прогоняем каждый state через соответствующую сеть
-            state_tensor_long = torch.from_numpy(state_long).float().unsqueeze(0).to(self.agent_long.device)
-            state_tensor_short = torch.from_numpy(state_short).float().unsqueeze(0).to(self.agent_short.device)
+            state = np.array(state)
             
-            q_long = self.agent_long.policy_net(state_tensor_long).squeeze(0)
-            q_short = self.agent_short.policy_net(state_tensor_short).squeeze(0)
+        # If flattened (1D), we might need to be careful. 
+        # But the main issue is Feature Mapping.
+        
+        # Constants
+        SEQ_LEN = 90
+        NUM_CHANNELS_DATA = 10 # OHLCV...
+        DATA_SIZE = NUM_CHANNELS_DATA * SEQ_LEN # 900
+        
+        # Prepare inputs for specialists
+        state_long = state.copy()
+        state_short = state.copy()
+        
+        # Handle Feature Mismatch (Env 4 actions vs Agent 3 actions)
+        # Assuming state is 1D (Flattened)
+        if state.ndim == 1 and state.shape[0] > DATA_SIZE:
+            # Extract parts
+            data_part = state[:DATA_SIZE]
+            features_part = state[DATA_SIZE:]
+            
+            # Env Features (12): 
+            # [Pos, Entry, PnL, R_Inv] (4) + [H, L, S, C] * 2 steps (8)
+            # Indices in features_part:
+            # Base: 0, 1, 2, 3
+            # History Step 1: 4(H), 5(L), 6(S), 7(C)
+            # History Step 2: 8(H), 9(L), 10(S), 11(C)
+            
+            # Long Agent wants: [Base] + [H, L, C] (Skip S)
+            # Mask to keep: 0-3, 4,5,7, 8,9,11
+            mask_long = [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
+            
+            # Short Agent wants: [Base] + [H, S, C] (Skip L)
+            # Mask to keep: 0-3, 4,6,7, 8,10,11
+            mask_short = [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
+            
+            # Apply masks safely (check bounds)
+            if len(features_part) >= 12:
+                feats_long = features_part[mask_long]
+                feats_short = features_part[mask_short]
+                
+                state_long = np.concatenate([data_part, feats_long])
+                state_short = np.concatenate([data_part, feats_short])
+            else:
+                # Fallback: Just cut to 10
+                state_long = np.concatenate([data_part, features_part[:10]])
+                state_short = np.concatenate([data_part, features_part[:10]])
 
-        # 4. Стандартная логика выбора действия ансамблем
+        # Convert to tensor
+        with torch.no_grad():
+            t_long = torch.from_numpy(state_long).float().unsqueeze(0).to(self.agent_long.device)
+            t_short = torch.from_numpy(state_short).float().unsqueeze(0).to(self.agent_short.device)
+            
+            q_long = self.agent_long.policy_net(t_long).squeeze(0)
+            q_short = self.agent_short.policy_net(t_short).squeeze(0)
+
+        # Ensemble Logic
+        # Conf = Prob(Open) - 0.33
         conf_long = (torch.softmax(q_long, dim=0)[1] - 0.33).clamp(min=0)
         conf_short = (torch.softmax(q_short, dim=0)[1] - 0.33).clamp(min=0)
-        action = 0
-        if conf_long > self.threshold and conf_long > conf_short:
-            action = 1
-        elif conf_short > self.threshold and conf_short > conf_long:
-            action = 2
         
-        # Логика закрытия позиции
-        if position > 0: # Если в длинной позиции
-            if q_long[2] > q_long[0]: # Если Q(CLOSE) > Q(HOLD) для Long-агента
-                action = 3
-        elif position < 0: # Если в короткой позиции
-            if q_short[2] > q_short[0]: # Если Q(CLOSE) > Q(HOLD) для Short-агента
-                action = 3
+        action = 0 # HOLD
+        
+        # Entry Logic
+        if position == 0:
+            if conf_long > self.threshold and conf_long > conf_short:
+                action = 1 # OPEN LONG
+            elif conf_short > self.threshold and conf_short > conf_long:
+                action = 2 # OPEN SHORT
+        
+        # Exit Logic
+        elif position > 0: # Long Open
+            # Check Long Agent Close signal (Index 2)
+            if q_long[2] > q_long[0]: # Close > Hold
+                action = 3 # CLOSE
+        elif position < 0: # Short Open
+            # Check Short Agent Close signal (Index 2)
+            if q_short[2] > q_short[0]: # Close > Hold
+                action = 3 # CLOSE
                 
         if self.verbose and action != 0:
-            print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
-            
+             print(f"Action: {action}, Conf L: {conf_long:.4f}, Conf S: {conf_short:.4f}")
+
         return action
 
 class PerformanceConfig:
@@ -462,20 +491,14 @@ def run_validation():
         )
 
     if args.ensemble:
-        logger.info("🎭 Initializing Ensemble Agent...")
-        
-        def load_specialist(path, name):
-            logger.info(f"  Loading {name} specialist from {path}...")
-            agent = create_agent(action_dim=3) # SPECIALIST has 3 actions
-            agent.load_model(path)
-            agent.policy_net.eval()
-            return agent
-
-        long_agent = load_specialist(args.long_model, "LONG")
-        short_agent = load_specialist(args.short_model, "SHORT")
-        
-        agent = EnsembleAgent(long_agent, short_agent, threshold=threshold_val, verbose=args.ensemble_verbose)
-        logger.info("✅ Ensemble Agent ready.")
+        agent = EnsembleAgent(
+            long_agent_path=args.long_model, 
+            short_agent_path=args.short_model, 
+            device=device,
+            agent_creator=create_agent,
+            threshold=threshold_val, 
+            verbose=args.ensemble_verbose
+        )
         
     else:
         # Single Agent Init
@@ -500,7 +523,7 @@ def run_validation():
 
     logger.info("🚀 Starting Backtest Validation...")
     
-    all_trades_info = []
+    all_trades = []
     total_bars_processed = 0
     start_time = time.time()
     
@@ -509,96 +532,85 @@ def run_validation():
     pbar = tqdm(range(len(sequences)), desc="Simulating")
     
     for i in pbar:
-        obs, _ = env.reset(options={"forced_index": i})
-        # HOTFIX: Initialize total_commission for ensemble backtesting
-        if not hasattr(env, 'total_commission'):
-            env.total_commission = 0.0
-        done = False
-        
+        # --- Ticker and Datetime Setup ---
         signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
+        try:
+            key_parts = keys[i].split('_')
+            ticker_name = key_parts[0]
+            if len(key_parts) > 1:
+                start_dt_str = key_parts[1]
+                signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+        except (IndexError, AttributeError, ValueError):
+            pass
+
+        # --- Environment Reset for New Episode ---
+        obs, _ = env.reset(options={"forced_index": i})
         
-        if keys and i < len(keys):
-            try:
-                key_parts = keys[i].split('_')
-                ticker_name = key_parts[0]
-                if len(key_parts) > 1:
-                    start_dt_str = key_parts[1]
-                    signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
-            except (IndexError, AttributeError, ValueError) as e:
-                pass # logger.warning(f"Could not parse ticker/date: {e}")
-
+        if not hasattr(env, 'total_commission'):
+            env.total_commission = 0.0
+            
+        done = False
+        
+        # --- Simulation Loop for One Episode ---
         while not done:
-            if args.ensemble:
-                action = agent.select_action(obs, training=False, position=env.position)
-            else:
-                action = agent.select_action(obs, training=False)
-
-            # --- DEBUG PATCH ---
-            # Проверяем цену перед сделкой
-            real_price = float('nan')
-            try:
-                # Получаем цену через приватный метод (если доступен) или эмулируем
-                # Предполагаем, что 3-й канал (индекс 3) это Close
-                ticker_stats = env.stats.get(ticker_name)
-                if ticker_stats:
-                    raw_close = env.data[env.current_step, 3]
-                    # Денормализация вручную для проверки
-                    mean = ticker_stats['mean'][3]
-                    std = ticker_stats['std'][3]
-                    real_price = raw_close * std + mean
-                    # print(f"DEBUG: Step {env.current_step}, Ticker: {ticker_name}, Z-Price: {raw_close:.4f}, Real Price: {real_price:.4f}")
-            except Exception:
-                pass
-
-            # Выполняем шаг
+            action = agent.select_action(obs, training=False, position=env.position)
+            
             next_obs, reward, terminated, truncated, info = env.backtest_step(
                 action=action,
                 signal_dt=signal_dt,
                 ticker=ticker_name
             )
             
-            # Если действие было, а сделки нет
-            if action in [1, 2] and not info.get('trade_executed', False):
-                 # Проверяем позицию
-                 if env.position == 0:
-                     print(f"⚠️ Action {action} IGNORED! Ticker: {ticker_name}, Info: {info}, Price: {real_price:.4f}")
-            # -------------------
-            
-            if info.get('trade_closed', False):
-                all_trades_info.append(info)
+            # --- Metrics Collection on Trade Close ---
+            if info.get('position_closed'):
+                pnl = info["trade_realized_pnl"]
+                comm = info.get("trade_commission", 0.0)
+                net_pnl = pnl - comm
                 
-            done = terminated or truncated
+                trade_data = {
+                    "symbol": ticker_name,
+                    "direction": info.get("direction", "UNKNOWN"),
+                    "pnl": pnl,
+                    "net_pnl": net_pnl,
+                    "commission": comm,
+                    "bars": info.get("holding_duration_bars", 0),
+                    "tsl_triggered": info.get('tsl_triggered', False) # Добавим TSL
+                }
+                all_trades.append(trade_data)
+                
             obs = next_obs
+            done = terminated or truncated
             total_bars_processed += 1
-            
+        
+        # --- Progress Bar Update ---
         pbar.set_postfix({
-            "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}",
-            "Trds": len(all_trades_info)
+            "PnL": f"{sum(t.get('net_pnl', 0.0) for t in all_trades):,.0f}",
+            "Trds": len(all_trades)
         })
 
     logging.getLogger().setLevel(logging.INFO)
 
     # --- Metrics Calculation ---
     total_duration = time.time() - start_time
-    total_trades = len(all_trades_info)
-    win_count = sum(1 for t in all_trades_info if t.get('trade_realized_pnl', 0.0) > 0)
+    total_trades = len(all_trades)
+    win_count = sum(1 for t in all_trades if t.get('net_pnl', 0.0) > 0)
     loss_count = total_trades - win_count
     wr_ratio = win_count / max(1, total_trades)
     
-    gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
-    net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
-    total_commission = sum(t.get('trade_commission', 0.0) for t in all_trades_info)
+    gross_pnl = sum(t.get('pnl', 0.0) for t in all_trades)
+    net_pnl = sum(t.get('net_pnl', 0.0) for t in all_trades)
+    total_commission = sum(t.get('commission', 0.0) for t in all_trades)
     avg_pnl_per_trade = net_pnl / max(1, total_trades)
     
-    trade_pnls = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+    trade_pnls = [t.get('net_pnl', 0.0) for t in all_trades]
     best_trade = max(trade_pnls) if trade_pnls else 0.0
     worst_trade = min(trade_pnls) if trade_pnls else 0.0
     
-    long_trades = sum(1 for t in all_trades_info if t.get('direction') == 'LONG')
-    short_trades = sum(1 for t in all_trades_info if t.get('direction') == 'SHORT')
+    long_trades = sum(1 for t in all_trades if t.get('direction') == 'LONG')
+    short_trades = sum(1 for t in all_trades if t.get('direction') == 'SHORT')
     
-    holding_times = [t.get('holding_duration_bars', 0) for t in all_trades_info]
+    holding_times = [t.get('bars', 0) for t in all_trades]
     avg_holding_time = np.mean(holding_times) if holding_times else 0.0
     max_holding_time = max(holding_times) if holding_times else 0.0
     min_holding_time = min(holding_times) if holding_times else 0.0
@@ -635,7 +647,7 @@ def run_validation():
     else:
         sharpe, sortino = 0.0, 0.0
         
-    tsl_hits = sum(1 for t in all_trades_info if t.get('tsl_triggered', False))
+    tsl_hits = sum(1 for t in all_trades if t.get('tsl_triggered', False))
 
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
