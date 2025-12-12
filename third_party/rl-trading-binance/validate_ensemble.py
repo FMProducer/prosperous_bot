@@ -533,12 +533,37 @@ def run_validation():
                 action = agent.select_action(obs, training=False, position=env.position)
             else:
                 action = agent.select_action(obs, training=False)
-            
+
+            # --- DEBUG PATCH ---
+            # Проверяем цену перед сделкой
+            real_price = float('nan')
+            try:
+                # Получаем цену через приватный метод (если доступен) или эмулируем
+                # Предполагаем, что 3-й канал (индекс 3) это Close
+                ticker_stats = env.stats.get(ticker_name)
+                if ticker_stats:
+                    raw_close = env.data[env.current_step, 3]
+                    # Денормализация вручную для проверки
+                    mean = ticker_stats['mean'][3]
+                    std = ticker_stats['std'][3]
+                    real_price = raw_close * std + mean
+                    # print(f"DEBUG: Step {env.current_step}, Ticker: {ticker_name}, Z-Price: {raw_close:.4f}, Real Price: {real_price:.4f}")
+            except Exception:
+                pass
+
+            # Выполняем шаг
             next_obs, reward, terminated, truncated, info = env.backtest_step(
                 action=action,
                 signal_dt=signal_dt,
                 ticker=ticker_name
             )
+            
+            # Если действие было, а сделки нет
+            if action in [1, 2] and not info.get('trade_executed', False):
+                 # Проверяем позицию
+                 if env.position == 0:
+                     print(f"⚠️ Action {action} IGNORED! Ticker: {ticker_name}, Info: {info}, Price: {real_price:.4f}")
+            # -------------------
             
             if info.get('trade_closed', False):
                 all_trades_info.append(info)
