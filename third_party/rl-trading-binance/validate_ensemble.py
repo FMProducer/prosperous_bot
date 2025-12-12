@@ -558,7 +558,12 @@ def run_validation():
     if args.ensemble:
         logging.getLogger().setLevel(logging.ERROR)
         
-        # ========== LONG SPECIALIST SIMULATION ==========
+        all_trades = []
+        long_trades_list = []
+        short_trades_list = []
+        total_bars_processed = 0
+        
+        # ========== LONG SPECIALIST ==========
         logger.info("📊 Simulating LONG specialist...")
         pbar_long = tqdm(range(len(env_long.sequences)), desc="LONG Specialist", position=0)
         
@@ -604,13 +609,15 @@ def run_validation():
                         'tsl_triggered': info_l.get('tsl_triggered', False)
                     }
                     all_trades.append(trade_data)
+                    long_trades_list.append(trade_data)
             
             pbar_long.set_postfix({
-                "PnL": f"{sum(t['net_pnl'] for t in all_trades):,.0f}",
-                "Trades": len(all_trades)
+                "PnL": f"{sum(t['net_pnl'] for t in long_trades_list):,.0f}",
+                "Trades": len(long_trades_list)
             })
         
         pbar_long.close()
+        long_pnl = sum(t['net_pnl'] for t in long_trades_list)
         
         # ========== SHORT SPECIALIST SIMULATION ==========
         logger.info("📊 Simulating SHORT specialist...")
@@ -658,14 +665,24 @@ def run_validation():
                         'tsl_triggered': info_s.get('tsl_triggered', False)
                     }
                     all_trades.append(trade_data)
+                    short_trades_list.append(trade_data)
             
             pbar_short.set_postfix({
-                "PnL": f"{sum(t['net_pnl'] for t in all_trades):,.0f}",
-                "Trades": len(all_trades)
+                "PnL": f"{sum(t['net_pnl'] for t in short_trades_list):,.0f}",
+                "Trades": len(short_trades_list)
             })
         
         pbar_short.close()
+        short_pnl = sum(t['net_pnl'] for t in short_trades_list)
+        
         logging.getLogger().setLevel(logging.INFO)
+        
+        logger.info("=" * 44)
+        logger.info(f"📊 SPECIALIST BREAKDOWN:")
+        logger.info(f"  LONG:  {len(long_trades_list)} trades → {long_pnl:+,.2f} USDT")
+        logger.info(f"  SHORT: {len(short_trades_list)} trades → {short_pnl:+,.2f} USDT")
+        logger.info(f"  TOTAL: {len(all_trades)} trades → {long_pnl + short_pnl:+,.2f} USDT")
+        logger.info("=" * 44)
     
     else:
         # --- Single Agent Mode Simulation ---
