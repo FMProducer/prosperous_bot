@@ -127,22 +127,27 @@ class EnsembleAgent:
 
     def get_short_vote(self, state):
         if not self.enable_short: return 0
-        
+
         state_mapped = self._prepare_state(state, "SHORT")
+
         with torch.no_grad():
             t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_short.device)
             q_values = self.agent_short.policy_net(t_state).squeeze(0)
-            
-        # Logic: 0=Hold, 2=Open (Short). We IGNORE Close (Index 2).
+
+        # Logic for 3-action specialist: 0=Hold, 1=Buy, 2=Sell(Short)
+
         if self.use_confidence:
             probs = torch.softmax(q_values, dim=0)
-            conf_open = (probs[1] - 0.33).item()
-            if conf_open > self.threshold and q_values[1] > q_values[0]:
+            conf_open = (probs[2] - 0.33).item()
+
+            if conf_open > self.threshold and q_values[2] > q_values[0]:
                 return 2
+
         else:
             # Simple Voting: Open > Hold
-            if q_values[1] > q_values[0]:
+            if q_values[2] > q_values[0]:
                 return 2
+
         return 0
 
 class PerformanceConfig:
@@ -386,10 +391,16 @@ def run_validation():
     # --- Get Ensemble Params ---
     ensemble_cfg = getattr(user_cfg_module, 'ensemble', None)
     threshold_val = 0.02 # Default
+    disable_cross_close = False # Default
     if args.threshold is not None:
         threshold_val = args.threshold
     elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'):
         threshold_val = ensemble_cfg.threshold
+        
+    if ensemble_cfg and hasattr(ensemble_cfg, 'disable_cross_close'):
+        disable_cross_close = ensemble_cfg.disable_cross_close
+        if disable_cross_close:
+            logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
 
     # --- Env Params ---
     # Retrieve base parameters from config sections
@@ -401,6 +412,7 @@ def run_validation():
     if num_channels > 5:
         default_datachannels += [f"feat_{i}" for i in range(5, num_channels)]
 
+    env_num_actions = market_cfg.get("num_actions", 3)
     env_params = {
         "sequences": sequences,
         "stats": all_stats,
@@ -431,9 +443,10 @@ def run_validation():
         "backtest_mode": True,
 
         # --- Standard Params ---
-        "num_actions": 4, # Increase to support Action 3 (Close) 
+        # Must match training action space (alpha_seed_404_v11.py sets 3 actions).
+        "num_actions": env_num_actions,
         "allowed_directions": market_cfg.get("allowed_directions", ['LONG', 'SHORT']),
-        "filter_direction": market_cfg.get("filter_direction", None),
+        "filter_direction": None, # CRITICAL: Do not filter here for ensemble
         "transaction_fee": market_cfg.get("transaction_fee", 0.0004),
         "slippage": market_cfg.get("slippage", 0.0002),
         "position_fraction": market_cfg.get("position_fraction", 0.1)
@@ -444,13 +457,24 @@ def run_validation():
 
     if args.ensemble:
         # Create separate envs for LONG and SHORT
+        # IMPORTANT: Do not use filter_direction. Use allowed_directions to constrain agent.
+        # This ensures that the number of sequences remains the same for both environments,
+        # preventing the IndexError when using forced_index.
+        
         env_params_long = env_params.copy()
-        env_params_long["num_actions"] = 4
+        env_params_long["allowed_directions"] = ['LONG']
+        env_params_long["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
         env_long = TradingEnvironment(**env_params_long)
         
         env_params_short = env_params.copy()
-        env_params_short["num_actions"] = 4
+        env_params_short["allowed_directions"] = ['SHORT']
+        env_params_short["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
         env_short = TradingEnvironment(**env_params_short)
+        
+        # Add an assertion to catch data mismatch early
+        assert len(env_long.sequences) == len(env_short.sequences), \
+            f"Sequence count mismatch: LONG ({len(env_long.sequences)}) vs SHORT ({len(env_short.sequences)})"
+            
         logger.info("  -> LONG and SHORT environments created for ensemble.")
     else:
         # Single agent mode
@@ -560,6 +584,11 @@ def run_validation():
             pass
 
         if args.ensemble:
+            # Add a safeguard for index bounds.
+            if i >= len(env_long.sequences) or i >= len(env_short.sequences):
+                logger.warning(f"Skipping episode index {i} as it is out of bounds for an environment.")
+                continue
+
             # --- Ensemble Mode Simulation ---
             obs_l, _ = env_long.reset(options={"forced_index": i})
             obs_s, _ = env_short.reset(options={"forced_index": i})
@@ -578,21 +607,22 @@ def run_validation():
                 # 2. CONFLICT RESOLUTION & CROSS-CLOSING
                 final_act_l = vote_l
                 final_act_s = vote_s
-                
-                # Conflict: Both want to enter -> FLAT ALL (Uncertainty)
-                if vote_l == 1 and vote_s == 2:
-                    final_act_l = 3 if env_long.position > 0 else 0
-                    final_act_s = 3 if env_short.position < 0 else 0
-                
-                # Cross-Close: Long Entry -> Close Short
-                elif vote_l == 1:
-                    if env_short.position < 0:
-                        final_act_s = 3 # Force Close Short
-                        
-                # Cross-Close: Short Entry -> Close Long
-                elif vote_s == 2:
-                    if env_long.position > 0:
-                        final_act_l = 3 # Force Close Long
+
+                if not disable_cross_close:
+                    # Conflict: Both want to enter -> FLAT ALL (Uncertainty)
+                    if vote_l == 1 and vote_s == 2:
+                        final_act_l = 3 if env_long.position > 0 else 0
+                        final_act_s = 3 if env_short.position < 0 else 0
+                    
+                    # Cross-Close: Long Entry -> Close Short
+                    elif vote_l == 1:
+                        if env_short.position < 0:
+                            final_act_s = 3 # Force Close Short
+                            
+                    # Cross-Close: Short Entry -> Close Long
+                    elif vote_s == 2:
+                        if env_long.position > 0:
+                            final_act_l = 3 # Force Close Long
                 
                 # 3. EXECUTION
                 # -- Long Env --
@@ -606,8 +636,10 @@ def run_validation():
                     if info_l.get('position_closed'):
                         t_data = info_l.copy()
                         t_data['symbol'] = f"{ticker_name}_L"
-                        t_data['pnl'] = t_data['trade_realized_pnl']
-                        t_data['net_pnl'] = t_data['pnl'] - t_data.get('trade_commission', 0)
+                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
+                        t_data['commission'] = t_data.get('trade_commission', 0)
+                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
+                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
                         
                 # -- Short Env --
@@ -621,8 +653,10 @@ def run_validation():
                     if info_s.get('position_closed'):
                         t_data = info_s.copy()
                         t_data['symbol'] = f"{ticker_name}_S"
-                        t_data['pnl'] = t_data['trade_realized_pnl']
-                        t_data['net_pnl'] = t_data['pnl'] - t_data.get('trade_commission', 0)
+                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
+                        t_data['commission'] = t_data.get('trade_commission', 0)
+                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
+                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
 
                 total_bars_processed += 1

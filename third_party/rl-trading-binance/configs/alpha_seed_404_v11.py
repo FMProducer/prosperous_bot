@@ -301,15 +301,20 @@ cfg.detector.cooldown_minutes = 60
 class EnsembleConfig:
     pass
 cfg.ensemble = EnsembleConfig()
-# cfg.ensemble.mode = "tier1_agreement" # Режим работы (на будущее)
-cfg.ensemble.threshold = 0.006 # Q-Value difference threshold (Confidence)
-cfg.ensemble.agreement_threshold = 0.0 # Если понадобится второй порог
-cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 # --- ENSEMBLE MODEL ---
 # Используйте для запуска validate_ensemble.py
 cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
 cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
 cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
-enable_long = True
-enable_short = True
-use_confidence = False  # False = простое голосование (Argmax), True = порог уверенности Q
+
+# --- Ensemble Behavior ---
+cfg.ensemble.enable_long = True
+cfg.ensemble.enable_short = True
+cfg.ensemble.use_confidence = False  # False = простое голосование (Argmax), True = порог уверенности Q
+cfg.ensemble.threshold = 0.006 # Q-Value difference threshold (Confidence)
+cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
+
+# --- НОВЫЙ ПАРАМЕТР ---
+# Если True, отключает логику, при которой открытие позиции одним агентом
+# принудительно закрывает позицию другого. Сделки закрываются только по окончании сессии.
+cfg.ensemble.disable_cross_close = True
