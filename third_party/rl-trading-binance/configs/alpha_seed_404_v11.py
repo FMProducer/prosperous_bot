@@ -310,3 +310,6 @@ cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
 cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
 cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
+enable_long = True
+enable_short = True
+use_confidence = False  # False = простое голосование (Argmax), True = порог уверенности Q
