@@ -56,17 +56,15 @@ cfg.market.allow_opposite_trades = False # Запрещаем закрытие �
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
     cfg.market.allowed_directions = ['LONG']
-    # Опционально: Фильтровать данные только для Long (если нужно)
-    # cfg.market.filter_direction = 'LONG' 
+    cfg.market.filter_direction = 'LONG'  # ✅ ДОБАВИТЬ
     
 elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
-    # Опционально: Фильтровать данные только для Short (чтобы учиться на падениях)
-    # cfg.market.filter_direction = 'SHORT'
+    cfg.market.filter_direction = 'SHORT'  # ✅ ДОБАВИТЬ
     
-else: # UNIVERSAL
+else:  # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
-    cfg.market.filter_direction = None # Все данные
+    cfg.market.filter_direction = None
 
 # num_actions остается 3, чтобы сохранить совместимость весов модели!
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
@@ -313,13 +311,3 @@ cfg.ensemble.enable_short = True
 cfg.ensemble.use_confidence = False  # False = простое голосование (Argmax), True = порог уверенности Q
 cfg.ensemble.threshold = 0.006 # Q-Value difference threshold (Confidence)
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
-
-# --- НОВЫЙ ПАРАМЕТР ---
-# Если True, отключает логику, при которой открытие позиции одним агентом
-# принудительно закрывает позицию другого. Сделки закрываются только по окончании сессии.
-cfg.ensemble.disable_cross_close = False
-
-# --- Cooldown для предотвращения "дребезга" ---
-# Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
-# после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 60

@@ -391,22 +391,10 @@ def run_validation():
     # --- Get Ensemble Params ---
     ensemble_cfg = getattr(user_cfg_module, 'ensemble', None)
     threshold_val = 0.02 # Default
-    disable_cross_close = False # Default
-    conflict_cooldown_bars = 0 # Default
     if args.threshold is not None:
         threshold_val = args.threshold
     elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'):
         threshold_val = ensemble_cfg.threshold
-        
-    if ensemble_cfg and hasattr(ensemble_cfg, 'disable_cross_close'):
-        disable_cross_close = ensemble_cfg.disable_cross_close
-        if disable_cross_close:
-            logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
-
-    if ensemble_cfg and hasattr(ensemble_cfg, 'conflict_cooldown_bars'):
-        conflict_cooldown_bars = ensemble_cfg.conflict_cooldown_bars
-        if conflict_cooldown_bars > 0:
-            logger.info(f"ℹ️ Conflict cooldown is ENABLED: {conflict_cooldown_bars} bars.")
 
     # --- Env Params ---
     # Retrieve base parameters from config sections
@@ -462,26 +450,22 @@ def run_validation():
     logger.info("🌍 Initializing TradingEnvironment(s)...")
 
     if args.ensemble:
-        # Create separate envs for LONG and SHORT
-        # IMPORTANT: Do not use filter_direction. Use allowed_directions to constrain agent.
-        # This ensures that the number of sequences remains the same for both environments,
-        # preventing the IndexError when using forced_index.
-        
+        # КРИТИЧНО: Используем filter_direction для разделения последовательностей
         env_params_long = env_params.copy()
         env_params_long["allowed_directions"] = ['LONG']
-        env_params_long["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
+        env_params_long["filter_direction"] = 'LONG'  # ✅ ДОБАВИТЬ
+        env_params_long["num_actions"] = 3  # ✅ Специалисты имеют 3 действия
         env_long = TradingEnvironment(**env_params_long)
         
         env_params_short = env_params.copy()
         env_params_short["allowed_directions"] = ['SHORT']
-        env_params_short["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
+        env_params_short["filter_direction"] = 'SHORT'  # ✅ ДОБАВИТЬ
+        env_params_short["num_actions"] = 3  # ✅ Специалисты имеют 3 действия
         env_short = TradingEnvironment(**env_params_short)
         
-        # Add an assertion to catch data mismatch early
-        assert len(env_long.sequences) == len(env_short.sequences), \
-            f"Sequence count mismatch: LONG ({len(env_long.sequences)}) vs SHORT ({len(env_short.sequences)})"
-            
-        logger.info("  -> LONG and SHORT environments created for ensemble.")
+        # После фильтрации количество будет разным
+        logger.info(f"→ LONG env: {len(env_long.sequences)} episodes")
+        logger.info(f"→ SHORT env: {len(env_short.sequences)} episodes")
     else:
         # Single agent mode
         env = TradingEnvironment(**env_params)
@@ -567,141 +551,139 @@ def run_validation():
         print("✅ Model loaded successfully")
 
     logger.info("🚀 Starting Backtest Validation...")
-    
     all_trades = []
     total_bars_processed = 0
     start_time = time.time()
-    
-    logging.getLogger().setLevel(logging.ERROR)
-    
-    pbar = tqdm(range(len(sequences)), desc="Simulating")
-    
-    for i in pbar:
-        # --- Ticker and Datetime Setup ---
-        signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
-        ticker_name = "UNKNOWN"
-        try:
-            key_parts = keys[i].split('_')
-            ticker_name = key_parts[0]
-            if len(key_parts) > 1:
-                start_dt_str = key_parts[1]
-                signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
-        except (IndexError, AttributeError, ValueError):
-            pass
 
-        if args.ensemble:
-            # Add a safeguard for index bounds.
-            if i >= len(env_long.sequences) or i >= len(env_short.sequences):
-                logger.warning(f"Skipping episode index {i} as it is out of bounds for an environment.")
-                continue
-
-            # --- Ensemble Mode Simulation ---
-            obs_l, info_l = env_long.reset(options={"forced_index": i})
-            obs_s, info_s = env_short.reset(options={"forced_index": i})
-            done_l, done_s = False, False
-            cooldown_until_step = 0
-
-            while not (done_l and done_s):
-                current_step = env_long.step_idx  # Or env_short, they are in sync
-
-                # --- Cooldown Logic ---
-                if current_step < cooldown_until_step:
-                    print(f"[{ticker_name}] Step {current_step}: Cooldown active until step {cooldown_until_step}. Forcing HOLD.")
-                    vote_l, vote_s = 0, 0
-                else:
-                    # 1. GET VOTES (0, 1, or 2) - No Close actions
-                    vote_l = 0
-                    if not done_l:
-                        vote_l = agent.get_long_vote(obs_l)
-                    
-                    vote_s = 0
-                    if not done_s:
-                        vote_s = agent.get_short_vote(obs_s)
-                    
-                # 2. CONFLICT RESOLUTION & CROSS-CLOSING
-                final_act_l = vote_l
-                final_act_s = vote_s
-
-                if not disable_cross_close:
-                    long_wants_open = (vote_l == 1)
-                    short_wants_open = (vote_s == 2)
-
-                    long_is_active = (env_long.position > 0)
-                    short_is_active = (env_short.position < 0)
-
-                    # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
-                    if long_wants_open and short_wants_open:
-                        if long_is_active:
-                            # Long активен, закрываем его и даем Short открыть позицию.
-                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Long and opening Short.")
-                            final_act_l = 3
-                            final_act_s = 2 # Разрешаем Short открыть
-                        elif short_is_active:
-                            # Short активен, закрываем его и даем Long открыть позицию.
-                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Short and opening Long.")
-                            final_act_s = 3
-                            final_act_l = 1 # Разрешаем Long открыть
-                        else:
-                            # Никто не активен. Ничего не делаем.
-                            print(f"[{ticker_name}] Event: Conflict vote. No active positions. Holding.")
-                            final_act_l = 0
-                            final_act_s = 0
-                        
-                        # Cooldown применяется в любом случае конфликта.
-                        cooldown_until_step = current_step + conflict_cooldown_bars
-
-                    # Сценарий 2: Нет прямого конфликта, проверяем перекрестное закрытие
-                    else:
-                        # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
-                        if long_wants_open and short_is_active:
-                            print(f"[{ticker_name}] Event: Long vote closes existing Short position.")
-                            final_act_s = 3   # Принудительно закрыть Short
-                            final_act_l = 0   # Long-агент должен ждать, его сигнал был использован для закрытия Short
-
-                        # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
-                        elif short_wants_open and long_is_active:
-                            print(f"[{ticker_name}] Event: Short vote closes existing Long position.")
-                            final_act_l = 3   # Принудительно закрыть Long
-                            final_act_s = 0   # Short-агент должен ждать, его сигнал был использован для закрытия Long
+    if args.ensemble:
+        logging.getLogger().setLevel(logging.ERROR)
+        
+        # ========== LONG SPECIALIST SIMULATION ==========
+        logger.info("📊 Simulating LONG specialist...")
+        pbar_long = tqdm(range(len(env_long.sequences)), desc="LONG Specialist", position=0)
+        
+        for i in pbar_long:
+            # Метаданные из отфильтрованного окружения
+            signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+            ticker_name = "UNKNOWN"
+            
+            if i < len(env_long.keys):
+                try:
+                    key_parts = env_long.keys[i].split('_')
+                    ticker_name = key_parts[0]
+                    if len(key_parts) > 1:
+                        signal_dt = datetime.datetime.fromisoformat(key_parts[1].replace("Z", "+00:00"))
+                except (IndexError, AttributeError, ValueError):
+                    pass
+            
+            obs_l, _ = env_long.reset(options={"forced_index": i})
+            done_l = False
+            
+            while not done_l:
+                # Получаем голос от LONG агента
+                vote_l = agent.get_long_vote(obs_l)
                 
-                # 3. EXECUTION
-                # -- Long Env --
-                if not done_l:
-                    next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
-                        action=final_act_l, signal_dt=signal_dt, ticker=ticker_name
-                    )
-                    obs_l = next_obs_l
-                    done_l = term_l or trunc_l
-                    
-                    if info_l.get('position_closed'):
-                        t_data = info_l.copy()
-                        t_data['symbol'] = f"{ticker_name}_L"
-                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
-                        t_data['commission'] = t_data.get('trade_commission', 0)
-                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
-                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
-                        all_trades.append(t_data)
-                        
-                # -- Short Env --
-                if not done_s:
-                    next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
-                        action=final_act_s, signal_dt=signal_dt, ticker=ticker_name
-                    )
-                    obs_s = next_obs_s
-                    done_s = term_s or trunc_s
-                    
-                    if info_s.get('position_closed'):
-                        t_data = info_s.copy()
-                        t_data['symbol'] = f"{ticker_name}_S"
-                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
-                        t_data['commission'] = t_data.get('trade_commission', 0)
-                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
-                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
-                        all_trades.append(t_data)
-
+                next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
+                    action=vote_l,
+                    signal_dt=signal_dt,
+                    ticker=ticker_name
+                )
+                
+                obs_l = next_obs_l
+                done_l = term_l or trunc_l
                 total_bars_processed += 1
-        else:
-            # --- Single Agent Mode Simulation ---
+                
+                if info_l.get('position_closed'):
+                    trade_data = {
+                        'symbol': f"{ticker_name}_L",
+                        'direction': 'LONG',
+                        'pnl': info_l.get('trade_realized_pnl', 0),
+                        'commission': info_l.get('trade_commission', 0),
+                        'net_pnl': info_l.get('trade_realized_pnl', 0) - info_l.get('trade_commission', 0),
+                        'bars': info_l.get('holding_duration_bars', 0),
+                        'tsl_triggered': info_l.get('tsl_triggered', False)
+                    }
+                    all_trades.append(trade_data)
+            
+            pbar_long.set_postfix({
+                "PnL": f"{sum(t['net_pnl'] for t in all_trades):,.0f}",
+                "Trades": len(all_trades)
+            })
+        
+        pbar_long.close()
+        
+        # ========== SHORT SPECIALIST SIMULATION ==========
+        logger.info("📊 Simulating SHORT specialist...")
+        pbar_short = tqdm(range(len(env_short.sequences)), desc="SHORT Specialist", position=0)
+        
+        for i in pbar_short:
+            # Метаданные из отфильтрованного окружения
+            signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+            ticker_name = "UNKNOWN"
+            
+            if i < len(env_short.keys):
+                try:
+                    key_parts = env_short.keys[i].split('_')
+                    ticker_name = key_parts[0]
+                    if len(key_parts) > 1:
+                        signal_dt = datetime.datetime.fromisoformat(key_parts[1].replace("Z", "+00:00"))
+                except (IndexError, AttributeError, ValueError):
+                    pass
+            
+            obs_s, _ = env_short.reset(options={"forced_index": i})
+            done_s = False
+            
+            while not done_s:
+                # Получаем голос от SHORT агента
+                vote_s = agent.get_short_vote(obs_s)
+                
+                next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
+                    action=vote_s,
+                    signal_dt=signal_dt,
+                    ticker=ticker_name
+                )
+                
+                obs_s = next_obs_s
+                done_s = term_s or trunc_s
+                total_bars_processed += 1
+                
+                if info_s.get('position_closed'):
+                    trade_data = {
+                        'symbol': f"{ticker_name}_S",
+                        'direction': 'SHORT',
+                        'pnl': info_s.get('trade_realized_pnl', 0),
+                        'commission': info_s.get('trade_commission', 0),
+                        'net_pnl': info_s.get('trade_realized_pnl', 0) - info_s.get('trade_commission', 0),
+                        'bars': info_s.get('holding_duration_bars', 0),
+                        'tsl_triggered': info_s.get('tsl_triggered', False)
+                    }
+                    all_trades.append(trade_data)
+            
+            pbar_short.set_postfix({
+                "PnL": f"{sum(t['net_pnl'] for t in all_trades):,.0f}",
+                "Trades": len(all_trades)
+            })
+        
+        pbar_short.close()
+        logging.getLogger().setLevel(logging.INFO)
+    
+    else:
+        # --- Single Agent Mode Simulation ---
+        logging.getLogger().setLevel(logging.ERROR)
+        pbar = tqdm(range(len(sequences)), desc="Simulating")
+        for i in pbar:
+            # --- Ticker and Datetime Setup ---
+            signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+            ticker_name = "UNKNOWN"
+            try:
+                key_parts = keys[i].split('_')
+                ticker_name = key_parts[0]
+                if len(key_parts) > 1:
+                    start_dt_str = key_parts[1]
+                    signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+            except (IndexError, AttributeError, ValueError):
+                pass
+                
             obs, _ = env.reset(options={"forced_index": i})
             done = False
             
@@ -734,12 +716,12 @@ def run_validation():
                 done = terminated or truncated
                 total_bars_processed += 1
 
-        
-        # --- Progress Bar Update ---
-        pbar.set_postfix({
-            "PnL": f"{sum(t.get('net_pnl', 0.0) for t in all_trades):,.0f}",
-            "Trds": len(all_trades)
-        })
+            
+            # --- Progress Bar Update ---
+            pbar.set_postfix({
+                "PnL": f"{sum(t.get('net_pnl', 0.0) for t in all_trades):,.0f}",
+                "Trds": len(all_trades)
+            })
 
     logging.getLogger().setLevel(logging.INFO)
 
