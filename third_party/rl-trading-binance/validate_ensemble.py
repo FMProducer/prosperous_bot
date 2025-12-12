@@ -392,6 +392,7 @@ def run_validation():
     ensemble_cfg = getattr(user_cfg_module, 'ensemble', None)
     threshold_val = 0.02 # Default
     disable_cross_close = False # Default
+    conflict_cooldown_bars = 0 # Default
     if args.threshold is not None:
         threshold_val = args.threshold
     elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'):
@@ -401,6 +402,11 @@ def run_validation():
         disable_cross_close = ensemble_cfg.disable_cross_close
         if disable_cross_close:
             logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
+
+    if ensemble_cfg and hasattr(ensemble_cfg, 'conflict_cooldown_bars'):
+        conflict_cooldown_bars = ensemble_cfg.conflict_cooldown_bars
+        if conflict_cooldown_bars > 0:
+            logger.info(f"ℹ️ Conflict cooldown is ENABLED: {conflict_cooldown_bars} bars.")
 
     # --- Env Params ---
     # Retrieve base parameters from config sections
@@ -590,39 +596,60 @@ def run_validation():
                 continue
 
             # --- Ensemble Mode Simulation ---
-            obs_l, _ = env_long.reset(options={"forced_index": i})
-            obs_s, _ = env_short.reset(options={"forced_index": i})
+            obs_l, info_l = env_long.reset(options={"forced_index": i})
+            obs_s, info_s = env_short.reset(options={"forced_index": i})
             done_l, done_s = False, False
+            cooldown_until_step = 0
 
             while not (done_l and done_s):
-                # 1. GET VOTES (0, 1, or 2) - No Close actions
-                vote_l = 0
-                if not done_l:
-                    vote_l = agent.get_long_vote(obs_l)
-                
-                vote_s = 0
-                if not done_s:
-                    vote_s = agent.get_short_vote(obs_s)
+                current_step = env_long.step_idx  # Or env_short, they are in sync
+
+                # --- Cooldown Logic ---
+                if current_step < cooldown_until_step:
+                    print(f"[{ticker_name}] Step {current_step}: Cooldown active until step {cooldown_until_step}. Forcing HOLD.")
+                    vote_l, vote_s = 0, 0
+                else:
+                    # 1. GET VOTES (0, 1, or 2) - No Close actions
+                    vote_l = 0
+                    if not done_l:
+                        vote_l = agent.get_long_vote(obs_l)
+                    
+                    vote_s = 0
+                    if not done_s:
+                        vote_s = agent.get_short_vote(obs_s)
                     
                 # 2. CONFLICT RESOLUTION & CROSS-CLOSING
                 final_act_l = vote_l
                 final_act_s = vote_s
 
                 if not disable_cross_close:
-                    # Conflict: Both want to enter -> FLAT ALL (Uncertainty)
-                    if vote_l == 1 and vote_s == 2:
-                        final_act_l = 3 if env_long.position > 0 else 0
-                        final_act_s = 3 if env_short.position < 0 else 0
-                    
-                    # Cross-Close: Long Entry -> Close Short
-                    elif vote_l == 1:
-                        if env_short.position < 0:
-                            final_act_s = 3 # Force Close Short
-                            
-                    # Cross-Close: Short Entry -> Close Long
-                    elif vote_s == 2:
-                        if env_long.position > 0:
-                            final_act_l = 3 # Force Close Long
+                    long_wants_open = (vote_l == 1)
+                    short_wants_open = (vote_s == 2)
+
+                    long_is_active = (env_long.position > 0)
+                    short_is_active = (env_short.position < 0)
+
+                    # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
+                    if long_wants_open and short_wants_open:
+                        # Если кто-то уже в сделке, закрываем его. Новым сделкам хода нет.
+                        final_act_l = 3 if long_is_active else 0
+                        final_act_s = 3 if short_is_active else 0
+                        if long_is_active or short_is_active:
+                            print(f"[{ticker_name}] Event: Conflict vote (L=1, S=2). Forcing close on existing positions.")
+                            cooldown_until_step = current_step + conflict_cooldown_bars
+                    # Сценарий 2: Нет прямого конфликта, рассматриваем перекрестное закрытие
+                    else:
+                        # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
+                        if long_wants_open and short_is_active:
+                            print(f"[{ticker_name}] Event: Long vote closes existing Short position.")
+                            final_act_s = 3 # Принудительно закрыть Short
+                            cooldown_until_step = current_step + conflict_cooldown_bars
+
+                        # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
+                        if short_wants_open and long_is_active:
+                            print(f"[{ticker_name}] Event: Short vote closes existing Long position.")
+                            final_act_l = 3 # Принудительно закрыть Long
+                            cooldown_until_step = current_step + conflict_cooldown_bars
                 
                 # 3. EXECUTION
                 # -- Long Env --
