@@ -445,12 +445,10 @@ def run_validation():
     if args.ensemble:
         # Create separate envs for LONG and SHORT
         env_params_long = env_params.copy()
-        env_params_long["filter_direction"] = 'LONG'
         env_params_long["num_actions"] = 4
         env_long = TradingEnvironment(**env_params_long)
         
         env_params_short = env_params.copy()
-        env_params_short["filter_direction"] = 'SHORT'
         env_params_short["num_actions"] = 4
         env_short = TradingEnvironment(**env_params_short)
         logger.info("  -> LONG and SHORT environments created for ensemble.")
