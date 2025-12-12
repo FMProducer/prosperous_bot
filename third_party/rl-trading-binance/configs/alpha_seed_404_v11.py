@@ -202,7 +202,7 @@ cfg.market.fast_exit_threshold = 40  # 20 * 2
 cfg.market.premature_exit_threshold = 8
 
 # Backtest/Paper Trader
-cfg.backtest_mode = False
+cfg.backtest_mode = True
 cfg.backtest.max_parallel_sessions = 4
 cfg.backtest.position_fraction = 0.10
 cfg.backtest.order_size_usdt = 0.0
