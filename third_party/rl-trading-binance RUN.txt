@@ -13,7 +13,10 @@ python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\paper_trader_q.py
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
-*cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
+
+cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
+python validate_ensemble_prod.py --ensemble configs/alpha_seed_404_v12.py
+
 *python train.py configs/alpha.py
 python train.py 
 python train.py train_best.py

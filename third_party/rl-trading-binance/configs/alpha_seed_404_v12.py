@@ -310,8 +310,9 @@ cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True
 cfg.ensemble.enable_short = True
-cfg.ensemble.use_confidence = False  # False = простое голосование (Argmax), True = порог уверенности Q
-cfg.ensemble.threshold = 0.006 # Q-Value difference threshold (Confidence)
+cfg.ensemble.use_confidence = True  # False = простое голосование (Argmax), True = порог уверенности Q
+cfg.ensemble.long_threshold = 0.0  # Порог уверенности для LONG
+cfg.ensemble.short_threshold = 0.004 # Порог уверенности для SHORT
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 
 # --- НОВЫЙ ПАРАМЕТР ---
