@@ -324,4 +324,4 @@ cfg.ensemble.disable_cross_close = True
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 100000
+cfg.ensemble.conflict_cooldown_bars = 0
