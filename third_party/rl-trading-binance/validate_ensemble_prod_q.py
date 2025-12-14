@@ -60,8 +60,7 @@ class EnsembleAgent:
         logger.info("✅ Ensemble Agent ready.")
 
     def _load_agent(self, path, name):
-        # Helper to load agent. Assumes D3QN_PER_Agent class structure.
-        agent = self.agent_creator(action_dim=3) # Specialists have 3 actions
+        agent = self.agent_creator(action_dim=3) 
         agent.load_model(path)
         agent.policy_net.eval()
         return agent
@@ -74,81 +73,55 @@ class EnsembleAgent:
         NUM_CHANNELS_DATA = 10
         DATA_SIZE = NUM_CHANNELS_DATA * SEQ_LEN
         
-        # Default to returning original state if no feature engineering is needed
         state_prepared = state.copy()
         
-        # This logic is specific to when the environment state has extra features
-        # that need to be masked for the specialist agents.
         if state.ndim == 1 and state.shape[0] > DATA_SIZE:
             data_part = state[:DATA_SIZE]
             features_part = state[DATA_SIZE:]
             
-            # Env Features (12): [Pos, Entry, PnL, R_Inv] (4) + [H, L, S, C] * 2 steps (8)
-            # Long Agent wants: [Base] + [H, L, C] (Skips S) -> Total 10 features
-            # Short Agent wants: [Base] + [H, S, C] (Skips L) -> Total 10 features
-            
             if len(features_part) >= 12:
                 if direction == "LONG":
-                     # Mask to keep: 0-3 (base), 4,5,7 (step1), 8,9,11 (step2)
                      mask = [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
                      feats_prepared = features_part[mask]
                 elif direction == "SHORT":
-                     # Mask to keep: 0-3 (base), 4,6,7 (step1), 8,10,11 (step2)
                      mask = [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
                      feats_prepared = features_part[mask]
                 else:
-                     # Fallback for safety, though should not be hit
                      feats_prepared = features_part[:10]
-                
                 state_prepared = np.concatenate([data_part, feats_prepared])
             else:
-                # Fallback if feature part is smaller than expected
                 state_prepared = np.concatenate([data_part, features_part[:10]])
                 
         return state_prepared
 
     def get_long_vote(self, state):
-        """Получить намерение (БЕЗ порога) и уверенность LONG агента."""
         if not self.enable_long:
             return False, 0.0
-            
         state_mapped = self._prepare_state(state, "LONG")
         with torch.no_grad():
             t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_long.device)
             q_values = self.agent_long.policy_net(t_state).squeeze(0)
-            
-            # Намерение: хочет ли агент открыть (БЕЗ проверки порога)
             wants_to_open = (q_values[1] > q_values[0]).item()
-            
-            # Уверенность для порога
             if self.use_confidence:
                 probs = torch.softmax(q_values, dim=0)
                 confidence = (probs[1] - 0.33).item()
             else:
-                confidence = 1.0 # Без порога - максимальная уверенность
-                
+                confidence = 1.0 
             return wants_to_open, confidence
 
     def get_short_vote(self, state):
-        """Получить намерение (БЕЗ порога) и уверенность SHORT агента."""
         if not self.enable_short:
             return False, 0.0
-            
         state_mapped = self._prepare_state(state, "SHORT")
         with torch.no_grad():
             t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_short.device)
             q_values = self.agent_short.policy_net(t_state).squeeze(0)
-            
-            # Намерение: хочет ли агент открыть (БЕЗ проверки порога)
             wants_to_open = (q_values[2] > q_values[0]).item()
-            
-            # Уверенность для порога
             if self.use_confidence:
                 probs = torch.softmax(q_values, dim=0)
                 confidence = (probs[2] - 0.33).item()
             else:
-                confidence = 1.0 # Без порога - максимальная уверенность
-                
+                confidence = 1.0 
             return wants_to_open, confidence
 
 class PerformanceConfig:
@@ -158,51 +131,35 @@ class PerformanceConfig:
         self.compile_mode = False
         self.compile_dynamic = False
 
-def create_validation_episodes(
-    val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404
-):
-    if not val_sequences:
-        return [], []
-
+def create_validation_episodes(val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404):
+    if not val_sequences: return [], []
     episodes_by_symbol = defaultdict(list)
     for i, key in enumerate(val_keys):
         symbol = key.split('_')[0]
         episodes_by_symbol[symbol].append(i)
-
     selected_indices = []
     for symbol, indices in episodes_by_symbol.items():
         n_samples = min(len(indices), max_episodes_per_symbol)
         random.seed(seed)
         selected_indices.extend(random.sample(indices, n_samples))
-
     if len(selected_indices) > num_episodes:
         random.seed(seed)
         final_indices = random.sample(selected_indices, num_episodes)
     else:
         final_indices = selected_indices
-        
     random.seed(seed)
     random.shuffle(final_indices)
-
     final_sequences = [val_sequences[i] for i in final_indices]
     final_keys = [val_keys[i] for i in final_indices]
-    
     final_symbols = {val_keys[i].split('_')[0] for i in final_indices}
     logging.info(f"Stratified sampling complete. Sampled episodes: {len(final_sequences)}, Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
-    
     return final_sequences, final_keys
 
 def load_config_from_path(config_path):
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found at {config_path}")
-    
-    # Читаем файл как текст и исполняем его в изолированном контексте
-    # Это позволяет получить доступ ко всем переменным, включая cfg, даже при сложных импортах
     config_module = types.ModuleType("user_config_module")
-    
-    # Подготовим глобальные переменные для исполнения
     config_globals = config_module.__dict__
-    
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             code = f.read()
@@ -210,44 +167,35 @@ def load_config_from_path(config_path):
     except Exception as e:
         logger.error(f"Failed to execute config file: {e}")
         raise e
-        
     return config_module
 
 def find_model_checkpoint(model_path_arg, cfg=None):
     if model_path_arg and os.path.exists(model_path_arg):
         logger.info(f"ℹ️ Using model path from command line: {model_path_arg}")
         return model_path_arg
-    
-    # FIX: Check if cfg is the module or the cfg object itself
     true_cfg = cfg
-    if hasattr(cfg, 'cfg'): # If we passed the module, get the object
+    if hasattr(cfg, 'cfg'): 
         true_cfg = cfg.cfg
-        
     if true_cfg and hasattr(true_cfg, 'paths') and hasattr(true_cfg.paths, 'model_path') and os.path.exists(true_cfg.paths.model_path):
         logger.info(f"ℹ️ Using model path from config: {true_cfg.paths.model_path}")
         return true_cfg.paths.model_path
-        
     model_dir_from_cfg = "."
     if true_cfg and hasattr(true_cfg, 'paths') and true_cfg.paths.model_path:
         model_dir_from_cfg = os.path.dirname(true_cfg.paths.model_path)
-        
     search_path = os.path.join(model_dir_from_cfg, "best.pth")
     if os.path.exists(search_path):
         return search_path
-        
     files = glob.glob(os.path.join(model_dir_from_cfg, "**", "best.pth"), recursive=True)
     if files:
         latest_file = max(files, key=os.path.getmtime)
         logger.info(f"ℹ️ Found latest model checkpoint: {latest_file}")
         return latest_file
-        
     return None
 
 def load_true_config(model_path):
     if model_path is None: return None
     model_dir = os.path.dirname(model_path)
     config_path = os.path.join(model_dir, "config_train.json")
-    
     if os.path.exists(config_path):
         logger.info(f"ℹ️ Loading ground truth config from: {config_path}")
         with open(config_path, 'r') as f:
@@ -261,92 +209,59 @@ def load_and_normalize_data(npz_path, norm_stats_path, paper_symbols_cfg):
         raise FileNotFoundError(f"Data file not found: {npz_path}")
     if not os.path.exists(norm_stats_path):
         raise FileNotFoundError(f"Normalization stats file not found: {norm_stats_path}")
-        
     with open(norm_stats_path, 'r') as f:
         all_stats = json.load(f)
-        
     allowed_assets = paper_symbols_cfg
-    if allowed_assets == "ALL":
-        allowed_assets = None
-        
+    if allowed_assets == "ALL": allowed_assets = None
     d = np.load(npz_path, allow_pickle=True)
     data_keys = [k for k in d.files if not k.startswith('_')]
-    
     sequences = []
     valid_keys = []
-    
     logger.info(f"Applying pre-computed normalization for symbols: {allowed_assets or 'ALL'}")
-    
     for key in tqdm(data_keys, desc="Applying normalization"):
         try:
             asset_name = key.split('_')[0]
-        except IndexError:
-            continue
-            
-        if allowed_assets and asset_name not in allowed_assets:
-            continue
-            
+        except IndexError: continue
+        if allowed_assets and asset_name not in allowed_assets: continue
         asset_specific_stats = all_stats.get(asset_name)
-        if asset_specific_stats is None:
-            continue
-            
+        if asset_specific_stats is None: continue
         means = np.array(asset_specific_stats['mean'])
         stds = np.array(asset_specific_stats['std'])
-        
         seq = d[key].astype(np.float32)
-        if seq.shape[1] != len(means):
-            continue
-            
+        if seq.shape[1] != len(means): continue
         seq = (seq - means) / (stds + 1e-8)
         sequences.append(seq)
         valid_keys.append(key)
-        
     d.close()
-    
-    if not sequences:
-        raise ValueError("No validation sequences were loaded. Check data path and symbol configuration.")
-        
+    if not sequences: raise ValueError("No validation sequences were loaded.")
     logger.info(f"Prepared {len(sequences)} validation sequences.")
     return sequences, all_stats, valid_keys
 
 def run_validation():
     parser = argparse.ArgumentParser(description="Validate/test RL agent")
-    parser.add_argument("config", type=str, help="Path to config file (e.g. configs/alpha_seed_404_v11.py)")
-    parser.add_argument("--model", type=str, help="Path to model checkpoint (for single agent)")
+    parser.add_argument("config", type=str, help="Path to config file")
+    parser.add_argument("--model", type=str, help="Path to model checkpoint")
     parser.add_argument("--mode", type=str, choices=['val', 'test'], default='val', help="Validation or test mode")
-    
-    # Ensemble mode arguments
-    parser.add_argument("--ensemble", action='store_true', help="Use ensemble of LONG and SHORT specialists")
+    parser.add_argument("--ensemble", action='store_true', help="Use ensemble")
     parser.add_argument("--long_model", type=str, help="Path to LONG specialist checkpoint")
     parser.add_argument("--short_model", type=str, help="Path to SHORT specialist checkpoint")
-    parser.add_argument("--long-threshold", type=float, default=None, help="Ensemble confidence threshold for LONG model (overrides config)")
-    parser.add_argument("--short-threshold", type=float, default=None, help="Ensemble confidence threshold for SHORT model (overrides config)")
-    parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values during ensemble inference")
+    parser.add_argument("--long-threshold", type=float, default=None, help="Ensemble confidence threshold for LONG")
+    parser.add_argument("--short-threshold", type=float, default=None, help="Ensemble confidence threshold for SHORT")
+    parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values")
     
     args = parser.parse_args()
     
-    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА !!!")
-    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА !!!")
+    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА (Счетчики выходов) !!!")
+    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА (Счетчики выходов) !!!")
 
-    # --- Load User Config (for paths) ---
     user_cfg_module = load_config_from_path(args.config)
-    
-    # [FIX] Get the cfg object from the module
     user_cfg_obj = getattr(user_cfg_module, 'cfg', None)
-    if user_cfg_obj is None:
-        logger.error("❌ 'cfg' object not found in user config module!")
+    if user_cfg_obj is None: logger.error("❌ 'cfg' object not found in user config module!")
 
-    # Auto-fill arguments from config if not provided
     if args.ensemble:
         ensemble_cfg_obj = None
-        
-        # Попытка 1: Ищем ВНУТРИ объекта cfg (Правильный метод)
-        if user_cfg_obj is not None:
-            ensemble_cfg_obj = getattr(user_cfg_obj, 'ensemble', None)
-
-        # Попытка 2: Ищем в глобальных переменных (как раньше, fallback)
-        if ensemble_cfg_obj is None:
-            ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
+        if user_cfg_obj is not None: ensemble_cfg_obj = getattr(user_cfg_obj, 'ensemble', None)
+        if ensemble_cfg_obj is None: ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
             
         if ensemble_cfg_obj:
             logger.info("ℹ️ Found ensemble config.")
@@ -357,23 +272,15 @@ def run_validation():
         else:
             logger.warning("⚠️ Ensemble config object not found in user config.")
 
-    # Validate arguments
     if args.ensemble:
         if not args.long_model or not args.short_model:
-            parser.error("--ensemble requires --long_model and --short_model (via CLI or config). Check if 'cfg.ensemble' is set in config.")
-        if args.model:
-            print("⚠️ Warning: --model ignored in ensemble mode")
+            parser.error("--ensemble requires --long_model and --short_model")
+        if args.model: print("⚠️ Warning: --model ignored in ensemble mode")
     elif not args.model and not args.ensemble:
-        # In single-agent mode, we can try to find the model automatically
-        # [FIX] user_cfg_module.paths -> user_cfg_obj.paths
         if user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'model_path'):
             args.model = user_cfg_obj.paths.model_path
-        
-        # Determine the primary model path for loading configs etc.
     
-    # In ensemble mode, we can use the long model as the reference.
     primary_model_path_arg = args.long_model if args.ensemble else args.model
-    # Pass user_cfg_obj instead of user_cfg_module if possible, or handle inside find_model_checkpoint
     model_path = find_model_checkpoint(primary_model_path_arg, user_cfg_module)
     
     if not args.ensemble and not model_path:
@@ -382,39 +289,29 @@ def run_validation():
 
     train_cfg_dict = load_true_config(model_path or args.long_model)
     if not train_cfg_dict:
-        print("❌ Could not load the ground truth config_train.json from the model's directory.")
+        print("❌ Could not load the ground truth config_train.json.")
         return
 
-    # --- CRITICAL: Use the ground truth config for all parameters ---
     cfg = train_cfg_dict
-    
-    # ... после загрузки cfg ...
-    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # For ensemble, norm_stats could be different. Assume they are the same and load from long_model path or config
-    
-    # Снова ищем конфиг ансамбля для путей (с учетом фикса выше)
     ensemble_cfg_obj = None
     if user_cfg_obj: ensemble_cfg_obj = getattr(user_cfg_obj, 'ensemble', None)
     if ensemble_cfg_obj is None: ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
 
     if ensemble_cfg_obj and hasattr(ensemble_cfg_obj, 'norm_stats_path') and os.path.exists(ensemble_cfg_obj.norm_stats_path):
         norm_stats_path = ensemble_cfg_obj.norm_stats_path
-    # [FIX] user_cfg_module.paths -> user_cfg_obj.paths
     elif user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'norm_stats_path') and os.path.exists(user_cfg_obj.paths.norm_stats_path):
         norm_stats_path = user_cfg_obj.paths.norm_stats_path
     else:
         norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
 
-    # [FIX] user_cfg_module.paths -> user_cfg_obj.paths
     if user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'val_data_path'):
         val_data_path = user_cfg_obj.paths.val_data_path
     else:
         val_data_path = cfg.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
 
-    if not os.path.isabs(val_data_path):
-        val_data_path = os.path.join(script_dir, val_data_path)
+    if not os.path.isabs(val_data_path): val_data_path = os.path.join(script_dir, val_data_path)
 
     logger.info(f"ℹ️ Using Validation Data: {val_data_path}")
     logger.info(f"ℹ️ Using Normalization Stats: {norm_stats_path}")
@@ -423,41 +320,28 @@ def run_validation():
     sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
     
     trainlog_cfg = cfg.get("trainlog", {})
-    
     sequences, keys = create_validation_episodes(
-        val_sequences=sequences,
-        val_keys=keys,
-        num_episodes=trainlog_cfg.get("num_val_ep", 750), # Use num_val_ep from the training config
+        val_sequences=sequences, val_keys=keys,
+        num_episodes=trainlog_cfg.get("num_val_ep", 750),
         seed=cfg.get("random_seed", 404)
     )
 
-    # === [FIX] INITIALIZE CONFIG SECTIONS BEFORE USE ===
     seq_cfg = cfg.get("seq", {})
     data_cfg = cfg.get("data", {})
     market_cfg = cfg.get("market", {})
-    # ===================================================
-
-    # ============================================================================
-    # 🛠️ ROBUST OVERRIDE: Force TSL settings from user config (EXEC VERSION)
-    # ============================================================================
-    if 'backtest' not in cfg:
-        cfg['backtest'] = {}
+    
+    if 'backtest' not in cfg: cfg['backtest'] = {}
 
     if user_cfg_obj is not None:
         logger.info(f"📂 Reading user config from {args.config} (Exec method)...")
-        
         try:
-            # Читаем через getattr, так как это скорее всего объект (CN)
             u_backtest = getattr(user_cfg_obj, 'backtest', None)
-            
-            # Если backtest это dict (fallback), то используем get
             if isinstance(u_backtest, dict):
                 ovr_risk = u_backtest.get('use_risk_management')
                 ovr_tsl = u_backtest.get('trailing_stop')
                 ovr_tsl_min = u_backtest.get('trailing_stop_min')
                 ovr_fee = u_backtest.get('fee_buffer_mult')
                 ovr_hyst = u_backtest.get('delta_p_hysteresis')
-            # Если это объект (обычный случай для yacs)
             elif u_backtest is not None:
                 ovr_risk = getattr(u_backtest, 'use_risk_management', None)
                 ovr_tsl = getattr(u_backtest, 'trailing_stop', None)
@@ -468,36 +352,27 @@ def run_validation():
                 ovr_risk, ovr_tsl = None, None
                 logger.warning("⚠️ 'backtest' not found in user_cfg object")
 
-            # Применяем
             if ovr_risk is not None:
                 cfg['backtest']['use_risk_management'] = bool(ovr_risk)
                 logger.info(f"✅ OVERRIDE: use_risk_management = {bool(ovr_risk)}")
-            
             if ovr_tsl is not None:
                 cfg['backtest']['trailing_stop'] = float(ovr_tsl)
                 logger.info(f"✅ OVERRIDE: trailing_stop = {float(ovr_tsl)}")
-            else:
-                logger.warning("⚠️ trailing_stop not found in user config backtest section")
-                
             if ovr_tsl_min is not None: cfg['backtest']['trailing_stop_min'] = float(ovr_tsl_min)
             if ovr_fee is not None: cfg['backtest']['fee_buffer_mult'] = float(ovr_fee)
             if ovr_hyst is not None: cfg['backtest']['delta_p_hysteresis'] = float(ovr_hyst)
-
         except Exception as e:
             logger.error(f"❌ Error extracting config: {e}")
     else:
-        logger.error("❌ Could not find 'cfg' variable in the config file! Make sure 'from config import cfg' is present.")
-    # ============================================================================
+        logger.error("❌ Could not find 'cfg' variable in the config file!")
 
     backtest_cfg = cfg.get("backtest", {})
-    
     use_risk_mgmt = backtest_cfg.get("use_risk_management", False)
     tsl_stop = backtest_cfg.get("trailing_stop", 0.018)
     tsl_min = backtest_cfg.get("trailing_stop_min", 0.005)
     fee_buf_mult = backtest_cfg.get("fee_buffer_mult", 2.5)
     delta_hyst = backtest_cfg.get("delta_p_hysteresis", 0.0015)
     
-    # ✅ ДИАГНОСТИКА
     logger.warning("=" * 80)
     logger.warning(f"🎯 FINAL TSL PARAMS TO BE USED:")
     logger.warning(f"   use_risk_mgmt = {use_risk_mgmt}")
@@ -515,128 +390,84 @@ def run_validation():
     per_cfg = cfg.get("per", {})
     eps_cfg = cfg.get("eps", {})
     
-    # --- Get Ensemble Params ---
-    # Уже получили ensemble_cfg_obj выше
     ensemble_cfg = ensemble_cfg_obj
     
-    # Logic to determine long threshold
-    long_threshold_val = 0.02 # Default
-    if args.long_threshold is not None:
-        long_threshold_val = args.long_threshold
-    elif ensemble_cfg and hasattr(ensemble_cfg, 'long_threshold'):
-        long_threshold_val = ensemble_cfg.long_threshold
-    elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'): # Fallback for backward compatibility
-        long_threshold_val = ensemble_cfg.threshold
+    long_threshold_val = 0.02
+    if args.long_threshold is not None: long_threshold_val = args.long_threshold
+    elif ensemble_cfg and hasattr(ensemble_cfg, 'long_threshold'): long_threshold_val = ensemble_cfg.long_threshold
+    elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'): long_threshold_val = ensemble_cfg.threshold
         
-    # Logic to determine short threshold
-    short_threshold_val = 0.02 # Default
-    if args.short_threshold is not None:
-        short_threshold_val = args.short_threshold
-    elif ensemble_cfg and hasattr(ensemble_cfg, 'short_threshold'):
-        short_threshold_val = ensemble_cfg.short_threshold
-    elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'): # Fallback for backward compatibility
-        short_threshold_val = ensemble_cfg.threshold
+    short_threshold_val = 0.02
+    if args.short_threshold is not None: short_threshold_val = args.short_threshold
+    elif ensemble_cfg and hasattr(ensemble_cfg, 'short_threshold'): short_threshold_val = ensemble_cfg.short_threshold
+    elif ensemble_cfg and hasattr(ensemble_cfg, 'threshold'): short_threshold_val = ensemble_cfg.threshold
 
-    disable_cross_close = False # Default
-    conflict_cooldown_bars = 0 # Default
-    
+    disable_cross_close = False
+    conflict_cooldown_bars = 0
     if ensemble_cfg and hasattr(ensemble_cfg, 'disable_cross_close'):
         disable_cross_close = ensemble_cfg.disable_cross_close
-        if disable_cross_close:
-            logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
-            
+        if disable_cross_close: logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
     if ensemble_cfg and hasattr(ensemble_cfg, 'conflict_cooldown_bars'):
         conflict_cooldown_bars = ensemble_cfg.conflict_cooldown_bars
-        if conflict_cooldown_bars > 0:
-            logger.info(f"ℹ️ Conflict cooldown is ENABLED: {conflict_cooldown_bars} bars.")
+        if conflict_cooldown_bars > 0: logger.info(f"ℹ️ Conflict cooldown is ENABLED: {conflict_cooldown_bars} bars.")
     
-    # --- Env Params ---
-    # Retrieve base parameters from config sections
     num_channels = cfg.get("num_channels", 10)
-    
-    # FIX: Generate list of channel names required by TradingEnvironment
-    # It needs to find "close" in this list.
     default_datachannels = ['open', 'high', 'low', 'close', 'volume']
-    if num_channels > 5:
-        default_datachannels += [f"feat_{i}" for i in range(5, num_channels)]
+    if num_channels > 5: default_datachannels += [f"feat_{i}" for i in range(5, num_channels)]
 
     env_num_actions = market_cfg.get("num_actions", 3)
 
     env_params = {
-        "sequences": sequences,
-        "stats": all_stats,
-        "keys": keys,
-        "render_mode": None,
-        # --- Missing Required Arguments for TradingEnvironment ---
+        "sequences": sequences, "stats": all_stats, "keys": keys, "render_mode": None,
         "full_seq_len": seq_cfg.get("full_seq_len", 150),
         "num_features": num_channels,
         "flat_state_size": 0,
         "initial_balance": market_cfg.get("initial_balance", 10000.0),
         "pre_signal_len": seq_cfg.get("pre_signal_len", 90),
-        # FIX: datachannels must be a LIST of strings, containing "close"
         "datachannels": data_cfg.get("datachannels", default_datachannels),
         "agent_session_len": seq_cfg.get("agent_session_len", 60),
         "agent_history_len": seq_cfg.get("agent_history_len", 90),
         "input_history_len": seq_cfg.get("input_history_len", 90),
-        
-        # Channel definitions (Indices)
         "pricechannels": [0, 1, 2, 3],
         "volumechannels": [4],
         "otherchannels": list(range(5, num_channels)),
-        
         "action_history_len": seq_cfg.get("action_history_len", 2),
         "inaction_penalty_ratio": market_cfg.get("inaction_penalty_ratio", 0.0),
         "backtest_mode": True,
-        
-        # --- Standard Params ---
-        # Must match training action space (alpha_seed_404_v11.py sets 3 actions).
         "num_actions": env_num_actions,
         "allowed_directions": market_cfg.get("allowed_directions", ['LONG', 'SHORT']),
-        "filter_direction": None, # CRITICAL: Do not filter here for ensemble
+        "filter_direction": None,
         "transaction_fee": market_cfg.get("transaction_fee", 0.0004),
         "slippage": market_cfg.get("slippage", 0.0002),
         "position_fraction": market_cfg.get("position_fraction", 0.1),
-        "use_risk_management": use_risk_mgmt # ✅ ДОБАВЛЕНО
+        "use_risk_management": use_risk_mgmt
     }
     
-    print(f"DEBUG: env_params['use_risk_management'] перед созданием Env: {env_params.get('use_risk_management')}")
-
     env_long, env_short, env = None, None, None
     logger.info("🌍 Initializing TradingEnvironment(s)...")
 
     if args.ensemble:
-        # Create separate envs for LONG and SHORT
-        # IMPORTANT: Do not use filter_direction. Use allowed_directions to constrain agent.
-        # This ensures that the number of sequences remains the same for both environments,
-        # preventing the IndexError when using forced_index.
-        
         env_params_long = env_params.copy()
         env_params_long["allowed_directions"] = ['LONG']
-        env_params_long["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
+        env_params_long["num_actions"] = 4 
         env_long = TradingEnvironment(**env_params_long)
         
         env_params_short = env_params.copy()
         env_params_short["allowed_directions"] = ['SHORT']
-        env_params_short["num_actions"] = 4 # 4 actions needed for cross-closing logic (action 3)
+        env_params_short["num_actions"] = 4 
         env_short = TradingEnvironment(**env_params_short)
         
-        # Add an assertion to catch data mismatch early
-        assert len(env_long.sequences) == len(env_short.sequences), \
-            f"Sequence count mismatch: LONG ({len(env_long.sequences)}) vs SHORT ({len(env_short.sequences)})"
-            
+        assert len(env_long.sequences) == len(env_short.sequences), "Sequence count mismatch"
         logger.info(" -> LONG and SHORT environments created for ensemble.")
     else:
-        # Single agent mode
         env = TradingEnvironment(**env_params)
-        logger.info(" -> Single environment created for single agent mode.")
+        logger.info(" -> Single environment created.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"💻 Using device: {device}")
 
-    # --- Helper to create/load agent ---
     def create_agent(action_dim, additional_feats_override=None):
         true_add_feats = additional_feats_override or model_cfg.get("additional_feats", 12)
-        
         return D3QNPERAgent(
             state_shape=seq_cfg.get("state_shape", (10, 90, 1)),
             action_dim=action_dim,
@@ -647,15 +478,13 @@ def run_validation():
             dense_val=model_cfg.get("dense_val"),
             dense_adv=model_cfg.get("dense_adv"),
             additional_feats=true_add_feats,
-            # dropout_p=model_cfg.get("dropout_p", 0.0), # Removed as requested by error
             device=device,
             gamma=rl_cfg.get("gamma", 0.99),
             learning_rate=rl_cfg.get("lr", 1e-4),
             batch_size=rl_cfg.get("batch_size", 32),
-            buffer_size=100, # Small buffer for val
+            buffer_size=100,
             perf_cfg=PerformanceConfig(),
-            # --- Missing Args from Error Message ---
-            dropout_model=model_cfg.get("dropout_p", 0.0), # Maybe called dropout_model?
+            dropout_model=model_cfg.get("dropout_p", 0.0),
             target_update_freq=rl_cfg.get("target_update_freq", 1000),
             train_start=rl_cfg.get("train_start", 1000),
             per_alpha=per_cfg.get("alpha", 0.6),
@@ -664,14 +493,13 @@ def run_validation():
             eps_start=eps_cfg.get("eps_start", 1.0),
             eps_end=eps_cfg.get("eps_end", 0.01),
             eps_frames=eps_cfg.get("eps_frames", 10000),
-            epsilon=eps_cfg.get("eps_start", 1.0), # Initial epsilon
+            epsilon=eps_cfg.get("eps_start", 1.0),
             max_gradient_norm=rl_cfg.get("max_gradient_norm", 1.0)
         )
 
     agent = None
     if args.ensemble:
-        ensemble_cfg = ensemble_cfg_obj # Уже загружен
-        
+        ensemble_cfg = ensemble_cfg_obj
         use_conf = getattr(ensemble_cfg, 'use_confidence', False) if ensemble_cfg else False
         enable_long = getattr(ensemble_cfg, 'enable_long', True) if ensemble_cfg else True
         enable_short = getattr(ensemble_cfg, 'enable_short', True) if ensemble_cfg else True
@@ -689,21 +517,12 @@ def run_validation():
             verbose=args.ensemble_verbose
         )
     else:
-        # Single Agent Init
         print(f"\n📦 Loading single agent model from: {model_path}")
-        
-        def get_specialist_action_dim(model_path):
-            # Hack/Heuristic to determine action dim if not in config
-            # But usually 3
-            return 3
-            
-        num_actions_env = 3 # Default for single
-        if "SHORT_ONLY" in model_path or "LONG_ONLY" in model_path:
-            num_actions_env = 3
-            
+        def get_specialist_action_dim(model_path): return 3
+        num_actions_env = 3
+        if "SHORT_ONLY" in model_path or "LONG_ONLY" in model_path: num_actions_env = 3
         action_history_len = seq_cfg.get("action_history_len", 2)
         true_additional_feats = 4 + (num_actions_env * action_history_len)
-        
         agent = create_agent(action_dim=num_actions_env, additional_feats_override=true_additional_feats)
         agent.load_model(model_path, strict=True)
         agent.policy_net.eval()
@@ -715,12 +534,9 @@ def run_validation():
     total_bars_processed = 0
     start_time = time.time()
     
-    # logging.getLogger().setLevel(logging.ERROR) # ЗАКОММЕНТИРОВАНО для детального логгирования
-    
     pbar = tqdm(range(len(sequences)), desc="Simulating")
     
     for i in pbar:
-        # --- Ticker and Datetime Setup ---
         signal_dt = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
         try:
@@ -733,140 +549,69 @@ def run_validation():
             pass
 
         if args.ensemble:
-            # Add a safeguard for index bounds.
-            if i >= len(env_long.sequences) or i >= len(env_short.sequences):
-                logger.warning(f"Skipping episode index {i} as it is out of bounds for an environment.")
-                continue
+            if i >= len(env_long.sequences) or i >= len(env_short.sequences): continue
 
-            # --- Ensemble Mode Simulation ---
             obs_l, info_l = env_long.reset(options={"forced_index": i})
             obs_s, info_s = env_short.reset(options={"forced_index": i})
             
             done_l, done_s = False, False
             cooldown_until_step = 0
-            
-            # Safety counter to prevent infinite hangs
             loop_safety_counter = 0
-            MAX_LOOP_STEPS = 500 # A bit more than typical 60-150 session len
+            MAX_LOOP_STEPS = 500
 
             while not (done_l and done_s):
                 loop_safety_counter += 1
-                if loop_safety_counter > MAX_LOOP_STEPS:
-                    logger.error(f"🚨 INFINITE LOOP DETECTED at Index {i} Ticker {ticker_name}. L_Done:{done_l} S_Done:{done_s}. Force break.")
-                    break
+                if loop_safety_counter > MAX_LOOP_STEPS: break
 
-                # 1. Determine current logical step (sync or async fallback)
-                if not done_l:
-                    current_step = env_long.step_idx
-                elif not done_s:
-                    current_step = env_short.step_idx
-                else:
-                    break
+                if not done_l: current_step = env_long.step_idx
+                elif not done_s: current_step = env_short.step_idx
+                else: break
                 
-                # 2. Cooldown Logic
                 if current_step < cooldown_until_step:
-                    final_act_l = 0
-                    final_act_s = 0
+                    final_act_l, final_act_s = 0, 0
                 else:
-                    # ... (Get Intentions)
                     long_wants_open, long_conf = False, 0.0
                     short_wants_open, short_conf = False, 0.0
                     
-                    if not done_l:
-                        long_wants_open, long_conf = agent.get_long_vote(obs_l)
-                    if not done_s:
-                        short_wants_open, short_conf = agent.get_short_vote(obs_s)
+                    if not done_l: long_wants_open, long_conf = agent.get_long_vote(obs_l)
+                    if not done_s: short_wants_open, short_conf = agent.get_short_vote(obs_s)
                         
                     long_is_active = (env_long.position > 0)
                     short_is_active = (env_short.position < 0)
                     
-                    final_act_l = 0
-                    final_act_s = 0
+                    final_act_l, final_act_s = 0, 0
                     
                     if not disable_cross_close:
-                        # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
                         if long_wants_open and short_wants_open:
                             if long_is_active:
-                                # Long активен, закрываем его и даем Short открыть позицию.
-                                print(f"[{ticker_name}] Event: Conflict vote. Closing active Long and opening Short.")
-                                final_act_l = 3
-                                final_act_s = 2
+                                final_act_l = 3; final_act_s = 2
                                 cooldown_until_step = current_step + conflict_cooldown_bars
                             elif short_is_active:
-                                # Short активен, закрываем его и даем Long открыть позицию.
-                                print(f"[{ticker_name}] Event: Conflict vote. Closing active Short and opening Long.")
-                                final_act_s = 3
-                                final_act_l = 1
+                                final_act_s = 3; final_act_l = 1
                                 cooldown_until_step = current_step + conflict_cooldown_bars
                             else:
-                                # Никто не активен → применяем пороги для обоих
-                                print(f"[{ticker_name}] Event: Conflict vote. No active positions. Applying thresholds.")
-                                # LONG порог
-                                if long_conf > agent.long_threshold:
-                                    final_act_l = 1
-                                else:
-                                    final_act_l = 0
-                                # SHORT порог
-                                if short_conf > agent.short_threshold:
-                                    final_act_s = 2
-                                else:
-                                    final_act_s = 0
+                                final_act_l = 1 if long_conf > agent.long_threshold else 0
+                                final_act_s = 2 if short_conf > agent.short_threshold else 0
                                 cooldown_until_step = current_step + conflict_cooldown_bars
-                                
-                        # Сценарий 2: Перекрестное закрытие (ИГНОРИРУЕТ пороги!)
                         elif long_wants_open and short_is_active:
-                            # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
-                            print(f"[{ticker_name}] Event: Long vote closes existing Short position.")
-                            final_act_s = 3 # Принудительно закрыть Short
-                            final_act_l = 0 # Long-агент должен ждать
-                            
+                            final_act_s = 3; final_act_l = 0
                         elif short_wants_open and long_is_active:
-                            # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
-                            print(f"[{ticker_name}] Event: Short vote closes existing Long position.")
-                            final_act_l = 3 # Принудительно закрыть Long
-                            final_act_s = 0 # Short-агент должен ждать
-                            
-                        # Сценарий 3: Нет конфликта, нет перекрестного закрытия → применяем пороги
+                            final_act_l = 3; final_act_s = 0
                         else:
-                            # LONG: проверяем намерение и порог
-                            if long_wants_open:
-                                if long_conf > agent.long_threshold:
-                                    final_act_l = 1
-                                else:
-                                    final_act_l = 0 # Не прошел порог
-                            else:
-                                final_act_l = 0
-                                
-                            # SHORT: проверяем намерение и порог
-                            if short_wants_open:
-                                if short_conf > agent.short_threshold:
-                                    final_act_s = 2
-                                else:
-                                    final_act_s = 0 # Не прошел порог
-                            else:
-                                final_act_s = 0
+                            if long_wants_open: final_act_l = 1 if long_conf > agent.long_threshold else 0
+                            if short_wants_open: final_act_s = 2 if short_conf > agent.short_threshold else 0
                     else:
-                        # Disable Cross Close
-                        if long_wants_open:
-                            final_act_l = 1 if long_conf > agent.long_threshold else 0
-                        if short_wants_open:
-                            final_act_s = 2 if short_conf > agent.short_threshold else 0
+                        if long_wants_open: final_act_l = 1 if long_conf > agent.long_threshold else 0
+                        if short_wants_open: final_act_s = 2 if short_conf > agent.short_threshold else 0
 
-                # 3. Step Environments
-                # -- Long Env --
                 if not done_l:
                     next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
-                        action=final_act_l,
-                        signal_dt=signal_dt,
-                        ticker=ticker_name,
-                        trailing_stop=tsl_stop,
-                        trailing_stop_min=tsl_min,
-                        fee_buffer_mult=fee_buf_mult,
-                        delta_p_hysteresis=delta_hyst
+                        action=final_act_l, signal_dt=signal_dt, ticker=ticker_name,
+                        trailing_stop=tsl_stop, trailing_stop_min=tsl_min,
+                        fee_buffer_mult=fee_buf_mult, delta_p_hysteresis=delta_hyst
                     )
                     obs_l = next_obs_l
                     done_l = term_l or trunc_l
-                    
                     if info_l.get('position_closed'):
                         t_data = info_l.copy()
                         t_data['symbol'] = f"{ticker_name}_L"
@@ -875,26 +620,18 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
-                        
-                    # TSL Cooldown Fix
                     if info_l.get('tsl_triggered', False):
                          c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
                          cooldown_until_step = max(cooldown_until_step, current_step + c_val)
 
-                # -- Short Env --
                 if not done_s:
                     next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
-                        action=final_act_s,
-                        signal_dt=signal_dt,
-                        ticker=ticker_name,
-                        trailing_stop=tsl_stop,
-                        trailing_stop_min=tsl_min,
-                        fee_buffer_mult=fee_buf_mult,
-                        delta_p_hysteresis=delta_hyst
+                        action=final_act_s, signal_dt=signal_dt, ticker=ticker_name,
+                        trailing_stop=tsl_stop, trailing_stop_min=tsl_min,
+                        fee_buffer_mult=fee_buf_mult, delta_p_hysteresis=delta_hyst
                     )
                     obs_s = next_obs_s
                     done_s = term_s or trunc_s
-                    
                     if info_s.get('position_closed'):
                         t_data = info_s.copy()
                         t_data['symbol'] = f"{ticker_name}_S"
@@ -903,27 +640,19 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
-                        
-                    # TSL Cooldown Fix
                     if info_s.get('tsl_triggered', False):
                          c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
                          cooldown_until_step = max(cooldown_until_step, current_step + c_val)
-
             total_bars_processed += 1
             
         else:
-            # --- Single Agent Mode Simulation ---
             obs, _ = env.reset(options={"forced_index": i})
             done = False
-            
             while not done:
                 action = agent.select_action(obs, training=False)
                 next_obs, reward, terminated, truncated, info = env.backtest_step(
-                    action=action, 
-                    signal_dt=signal_dt, 
-                    ticker=ticker_name
+                    action=action, signal_dt=signal_dt, ticker=ticker_name
                 )
-                
                 if info.get('position_closed'):
                     pnl = info["trade_realized_pnl"]
                     comm = info.get("trade_commission", 0.0)
@@ -931,19 +660,15 @@ def run_validation():
                     trade_data = {
                         "symbol": ticker_name,
                         "direction": info.get("direction", "UNKNOWN"),
-                        "pnl": pnl,
-                        "net_pnl": net_pnl,
-                        "commission": comm,
+                        "pnl": pnl, "net_pnl": net_pnl, "commission": comm,
                         "bars": info.get("holding_duration_bars", 0),
                         "tsl_triggered": info.get('tsl_triggered', False)
                     }
                     all_trades.append(trade_data)
-                
                 obs = next_obs
                 done = terminated or truncated
                 total_bars_processed += 1
 
-        # --- Progress Bar Update ---
         pbar.set_postfix({
             "PnL": f"{sum(t.get('net_pnl', 0.0) for t in all_trades):,.0f}",
             "Trds": len(all_trades)
@@ -951,7 +676,6 @@ def run_validation():
     
     logging.getLogger().setLevel(logging.INFO)
     
-    # --- Metrics Calculation ---
     total_duration = time.time() - start_time
     total_trades = len(all_trades)
     win_count = sum(1 for t in all_trades if t.get('net_pnl', 0.0) > 0)
@@ -991,7 +715,6 @@ def run_validation():
     win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size != 0 else float('inf')
     
     expectancy = (wr_ratio * avg_win_size) + ((1 - wr_ratio) * avg_loss_size)
-    
     profit_factor = sum(pos_pnls) / max(1e-9, abs(sum(neg_pnls)))
     
     equity_curve = np.cumsum([initial_balance] + trade_pnls)
@@ -1009,7 +732,25 @@ def run_validation():
     else:
         sharpe, sortino = 0.0, 0.0
         
-    tsl_hits = sum(1 for t in all_trades if t.get('tsl_triggered', False))
+    # --- Advanced Exit Stats ---
+    tsl_win = 0
+    tsl_loss = 0
+    time_win = 0
+    time_loss = 0
+    
+    for t in all_trades:
+        is_win = t.get('net_pnl', 0.0) > 0
+        triggered_tsl = t.get('tsl_triggered', False)
+        
+        if triggered_tsl:
+            if is_win: tsl_win += 1
+            else: tsl_loss += 1
+        else:
+            if is_win: time_win += 1
+            else: time_loss += 1
+            
+    tsl_total = tsl_win + tsl_loss
+    time_total = time_win + time_loss
 
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
@@ -1028,7 +769,14 @@ def run_validation():
     print(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
     print(f"Commission: {(total_commission / max(1e-9, abs(gross_pnl)))*100:.1f}% of gross | Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
     print(f"Expectancy/Trade: {expectancy:.2f} USDT")
-    print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
+    
+    print("-" * 44)
+    print("🛑 Exit Analysis:")
+    print(f"  TSL (Take Profit/Trail): {tsl_win} ({tsl_win/max(1, total_trades):.1%}) - \"TSL\"")
+    print(f"  TSL SL (Stop Loss):      {tsl_loss} ({tsl_loss/max(1, total_trades):.1%}) - \"TSL SL\"")
+    print(f"  Time Win (Timeout):      {time_win} ({time_win/max(1, total_trades):.1%}) - \"Time\" (Profit)")
+    print(f"  Time Loss (Timeout):     {time_loss} ({time_loss/max(1, total_trades):.1%}) - \"Time SL\" (Loss)")
+    print(f"  Total TSL Hits: {tsl_total}")
     print("="*44)
 
 if __name__ == "__main__":
