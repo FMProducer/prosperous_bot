@@ -788,16 +788,31 @@ def run_validation():
             obs_s, info_s = env_short.reset(options={"forced_index": i})
             done_l, done_s = False, False
             cooldown_until_step = 0
+            
+            # Safety counter to prevent infinite hangs
+            loop_safety_counter = 0
+            MAX_LOOP_STEPS = 500 # A bit more than typical 60-150 session len
 
             while not (done_l and done_s):
-                current_step = env_long.step_idx  # Or env_short, they are in sync
+                loop_safety_counter += 1
+                if loop_safety_counter > MAX_LOOP_STEPS:
+                    logger.error(f"🚨 INFINITE LOOP DETECTED at Index {i} Ticker {ticker_name}. L_Done:{done_l} S_Done:{done_s}. Force break.")
+                    break
 
-                # --- Cooldown Logic ---
-                if current_step < cooldown_until_step:
-                    # print(f"[{ticker_name}] Step {current_step}: Cooldown active until step {cooldown_until_step}. Forcing HOLD.")
-                    vote_l, vote_s = 0, 0
+                # 1. Determine current logical step (sync or async fallback)
+                if not done_l:
+                    current_step = env_long.step_idx
+                elif not done_s:
+                    current_step = env_short.step_idx
                 else:
-                    # 1. GET INTENTIONS AND CONFIDENCES (БЕЗ ПОРОГОВ!)
+                    break
+
+                # 2. Cooldown Logic
+                if current_step < cooldown_until_step:
+                    final_act_l = 0
+                    final_act_s = 0
+                else:
+                    # ... (Get Intentions)
                     long_wants_open, long_conf = False, 0.0
                     short_wants_open, short_conf = False, 0.0
 
@@ -806,11 +821,9 @@ def run_validation():
                     if not done_s:
                         short_wants_open, short_conf = agent.get_short_vote(obs_s)
 
-                    # 2. CHECK CURRENT POSITIONS
                     long_is_active = (env_long.position > 0)
                     short_is_active = (env_short.position < 0)
 
-                    # 3. CONFLICT RESOLUTION & CROSS-CLOSING (использует СЫРЫЕ намерения БЕЗ порога)
                     final_act_l = 0
                     final_act_s = 0
 
@@ -877,15 +890,13 @@ def run_validation():
                             else:
                                 final_act_s = 0
                     else:
-                        # Cross-closing отключен → применяем пороги напрямую
+                        # Disable Cross Close
                         if long_wants_open:
-                            if long_conf > agent.long_threshold:
-                                final_act_l = 1
+                            final_act_l = 1 if long_conf > agent.long_threshold else 0
                         if short_wants_open:
-                            if short_conf > agent.short_threshold:
-                                final_act_s = 2
+                            final_act_s = 2 if short_conf > agent.short_threshold else 0
 
-                # 3. EXECUTION
+                # 3. Step Environments
                 # -- Long Env --
                 if not done_l:
                     next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
@@ -908,7 +919,12 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
-                        
+
+                    # TSL Cooldown Fix
+                    if info_l.get('tsl_triggered', False):
+                         c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
+                         cooldown_until_step = max(cooldown_until_step, current_step + c_val)
+
                 # -- Short Env --
                 if not done_s:
                     next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
@@ -931,6 +947,11 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
+
+                    # TSL Cooldown Fix
+                    if info_s.get('tsl_triggered', False):
+                         c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
+                         cooldown_until_step = max(cooldown_until_step, current_step + c_val)
 
                 total_bars_processed += 1
         else:
