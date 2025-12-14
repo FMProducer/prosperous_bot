@@ -38,6 +38,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Добавьте эту функцию в начало файла или перед run_validation
+def get_cfg_attr(obj, attr_chain, default=None):
+    """
+    Универсальное чтение вложенных параметров из объектов или словарей.
+    attr_chain: строка вида 'backtest.use_risk_management'
+    """
+    attributes = attr_chain.split('.')
+    current = obj
+    for attr in attributes:
+        if current is None:
+            return default
+        # Попытка 1: Как словарь
+        if isinstance(current, dict):
+            current = current.get(attr)
+        # Попытка 2: Как объект (атрибут)
+        elif hasattr(current, attr):
+            current = getattr(current, attr)
+        else:
+            return default
+    return current
+
 class EnsembleAgent:
     def __init__(self, long_agent_path, short_agent_path, device, agent_creator, use_confidence=False, long_threshold=0.01, short_threshold=0.01, enable_long=True, enable_short=True, verbose=False):
         self.device = device
@@ -303,6 +324,26 @@ def load_and_normalize_data(npz_path, norm_stats_path, paper_symbols_cfg):
     logger.info(f"Prepared {len(sequences)} validation sequences.")
     return sequences, all_stats, valid_keys
 
+def get_cfg_attr(obj, attr_chain, default=None):
+    """
+    Универсальное чтение вложенных параметров из объектов или словарей.
+    attr_chain: строка вида 'backtest.use_risk_management'
+    """
+    attributes = attr_chain.split('.')
+    current = obj
+    for attr in attributes:
+        if current is None:
+            return default
+        # Попытка 1: Как словарь
+        if isinstance(current, dict):
+            current = current.get(attr)
+        # Попытка 2: Как объект (атрибут)
+        elif hasattr(current, attr):
+            current = getattr(current, attr)
+        else:
+            return default
+    return current
+
 def run_validation():
     parser = argparse.ArgumentParser(description="Validate/test RL agent")
     parser.add_argument("config", type=str, help="Path to config file (e.g. configs/alpha_seed_404_v11.py)")
@@ -318,6 +359,8 @@ def run_validation():
     parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values during ensemble inference")
     
     args = parser.parse_args()
+    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА !!!")
+    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА !!!")
     
     # --- Load User Config (for paths) ---
     user_cfg_module = load_config_from_path(args.config)
@@ -359,6 +402,97 @@ def run_validation():
 
     # --- CRITICAL: Use the ground truth config for all parameters ---
     cfg = train_cfg_dict
+
+    # ... после загрузки cfg ...
+    if 'backtest' not in cfg:
+        cfg['backtest'] = {}
+    cfg['backtest']['use_risk_management'] = True  # ЖЕСТКИЙ ХАК
+    cfg['backtest']['trailing_stop'] = 0.018       # ЖЕСТКИЙ ХАК
+    logger.info("🔥 HARDCODED OVERRIDE APPLIED FOR DEBUGGING: TSL Enabled, Stop at 0.018")
+
+    # ============================================================================
+    # 🛠️ ROBUST OVERRIDE: Force TSL settings from user config
+    # ============================================================================
+    if hasattr(user_cfg_module, 'cfg'):
+        print(f"DEBUG: Found 'cfg' in user_cfg_module") # ОТЛАДКА
+        user_cfg = user_cfg_module.cfg
+        
+        # Прямая попытка чтения (без get_cfg_attr для теста)
+        try:
+            # Пытаемся прочитать как атрибуты (yacs/easydict style)
+            direct_risk = user_cfg.backtest.use_risk_management
+            print(f"DEBUG: Direct read user_cfg.backtest.use_risk_management = {direct_risk}")
+        except Exception as e:
+            print(f"DEBUG: Direct read failed: {e}")
+            # Пытаемся прочитать как словарь
+            try:
+                 direct_risk = user_cfg['backtest']['use_risk_management']
+                 print(f"DEBUG: Dict read user_cfg['backtest']['use_risk_management'] = {direct_risk}")
+            except Exception as e2:
+                 print(f"DEBUG: Dict read failed: {e2}")
+
+        # Используем get_cfg_attr и смотрим результат
+        usr_risk = get_cfg_attr(user_cfg, 'backtest.use_risk_management')
+        print(f"DEBUG: get_cfg_attr returned: {usr_risk}")
+        
+        # ... остальной код ...
+        
+        if usr_risk is not None:
+             cfg['backtest']['use_risk_management'] = usr_risk
+             logger.info(f"🔄 FORCE OVERRIDE: use_risk_management = {usr_risk}")
+        else:
+             logger.warning("⚠️ usr_risk is None, override skipped!")
+
+        # Читаем остальные параметры
+        usr_tsl = get_cfg_attr(user_cfg, 'backtest.trailing_stop')
+        usr_tsl_min = get_cfg_attr(user_cfg, 'backtest.trailing_stop_min')
+        usr_fee_buf = get_cfg_attr(user_cfg, 'backtest.fee_buffer_mult')
+        usr_hyst = get_cfg_attr(user_cfg, 'backtest.delta_p_hysteresis')
+
+        # Создаем секцию, если нет
+        if 'backtest' not in cfg: 
+            cfg['backtest'] = {}
+
+        # Принудительно перезаписываем, если значение найдено в user config
+        if usr_risk is not None:
+            cfg['backtest']['use_risk_management'] = usr_risk
+            logger.info(f"🔄 FORCE OVERRIDE: use_risk_management = {usr_risk}")
+        else:
+            logger.warning("⚠️ usr_risk is None, override skipped!")
+        
+        if usr_tsl is not None:
+            cfg['backtest']['trailing_stop'] = usr_tsl
+            logger.info(f"🔄 FORCE OVERRIDE: trailing_stop = {usr_tsl}")
+
+        if usr_tsl_min is not None:
+            cfg['backtest']['trailing_stop_min'] = usr_tsl_min
+        
+        if usr_fee_buf is not None:
+            cfg['backtest']['fee_buffer_mult'] = usr_fee_buf
+            
+        if usr_hyst is not None:
+            cfg['backtest']['delta_p_hysteresis'] = usr_hyst
+
+    # ============================================================================
+    # ДИАГНОСТИКА: Проверяем что параметры записались
+    # ============================================================================
+    logger.info("=" * 80)
+    logger.info("🔍 TSL CONFIGURATION DIAGNOSTIC")
+    logger.info("=" * 80)
+    logger.info(f"cfg type: {type(cfg)}")
+    logger.info(f"'backtest' in cfg: {'backtest' in cfg}")
+    if 'backtest' in cfg:
+        logger.info(f"cfg['backtest'] type: {type(cfg['backtest'])}")
+        logger.info(f"cfg['backtest'] keys: {list(cfg['backtest'].keys())}")
+        logger.info(f"  use_risk_management: {cfg['backtest'].get('use_risk_management', 'NOT FOUND')}")
+        logger.info(f"  trailing_stop: {cfg['backtest'].get('trailing_stop', 'NOT FOUND')}")
+        logger.info(f"  trailing_stop_min: {cfg['backtest'].get('trailing_stop_min', 'NOT FOUND')}")
+        logger.info(f"  fee_buffer_mult: {cfg['backtest'].get('fee_buffer_mult', 'NOT FOUND')}")
+        logger.info(f"  delta_p_hysteresis: {cfg['backtest'].get('delta_p_hysteresis', 'NOT FOUND')}")
+    else:
+        logger.error("❌ 'backtest' key NOT FOUND in cfg!")
+    logger.info("=" * 80)
+    # ============================================================================
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
@@ -397,7 +531,29 @@ def run_validation():
     seq_cfg = cfg.get("seq", {})
     data_cfg = cfg.get("data", {})
     market_cfg = cfg.get("market", {})
+    
     backtest_cfg = cfg.get("backtest", {})
+    use_risk_mgmt = backtest_cfg.get("use_risk_management", False)
+    tsl_stop = backtest_cfg.get("trailing_stop", 0.018)
+    tsl_min = backtest_cfg.get("trailing_stop_min", 0.005)
+    fee_buf_mult = backtest_cfg.get("fee_buffer_mult", 2.5)
+    delta_hyst = backtest_cfg.get("delta_p_hysteresis", 0.0015)
+
+    # ✅ ДИАГНОСТИКА
+    logger.warning("=" * 80)
+    logger.warning(f"🎯 FINAL TSL PARAMS AFTER READING:")
+    logger.warning(f"  use_risk_mgmt = {use_risk_mgmt} (type: {type(use_risk_mgmt)})")
+    logger.warning(f"  tsl_stop = {tsl_stop}")
+    logger.warning(f"  tsl_min = {tsl_min}")
+    logger.warning(f"  fee_buf_mult = {fee_buf_mult}")
+    logger.warning(f"  delta_hyst = {delta_hyst}")
+    logger.warning("=" * 80)
+
+    logger.info(f"🛡️ Risk Management: {use_risk_mgmt}")
+    if use_risk_mgmt:
+        logger.info(f"   TSL: {tsl_stop*100:.2f}% -> {tsl_min*100:.2f}%")
+        logger.info(f"   Fee Buffer: {fee_buf_mult}x, Delta Hysteresis: {delta_hyst*100:.3f}%")
+    
     model_cfg = cfg.get("model", {})
     rl_cfg = cfg.get("rl", {})
     per_cfg = cfg.get("per", {})
@@ -482,11 +638,12 @@ def run_validation():
         "num_actions": env_num_actions,
         "allowed_directions": market_cfg.get("allowed_directions", ['LONG', 'SHORT']),
         "filter_direction": None, # CRITICAL: Do not filter here for ensemble
-        "transaction_fee": market_cfg.get("transaction_fee", 0.0004),
-        "slippage": market_cfg.get("slippage", 0.0002),
-        "position_fraction": market_cfg.get("position_fraction", 0.1)
-    }
-
+            "transaction_fee": market_cfg.get("transaction_fee", 0.0004),
+            "slippage": market_cfg.get("slippage", 0.0002),
+            "position_fraction": market_cfg.get("position_fraction", 0.1),
+            "use_risk_management": use_risk_mgmt  # ✅ ДОБАВИТЬ!
+        }
+    print(f"DEBUG: env_params['use_risk_management'] перед созданием Env: {env_params.get('use_risk_management')}")
     env_long, env_short, env = None, None, None
     logger.info("🌍 Initializing TradingEnvironment(s)...")
 
@@ -602,7 +759,8 @@ def run_validation():
     total_bars_processed = 0
     start_time = time.time()
     
-    logging.getLogger().setLevel(logging.ERROR)
+    # logging.getLogger().setLevel(logging.ERROR) # ЗАКОММЕНТИРОВАНО для детального логгирования
+    
     
     pbar = tqdm(range(len(sequences)), desc="Simulating")
     
@@ -731,7 +889,13 @@ def run_validation():
                 # -- Long Env --
                 if not done_l:
                     next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
-                        action=final_act_l, signal_dt=signal_dt, ticker=ticker_name
+                        action=final_act_l,
+                        signal_dt=signal_dt,
+                        ticker=ticker_name,
+                        trailing_stop=tsl_stop,
+                        trailing_stop_min=tsl_min,
+                        fee_buffer_mult=fee_buf_mult,
+                        delta_p_hysteresis=delta_hyst
                     )
                     obs_l = next_obs_l
                     done_l = term_l or trunc_l
@@ -748,7 +912,13 @@ def run_validation():
                 # -- Short Env --
                 if not done_s:
                     next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
-                        action=final_act_s, signal_dt=signal_dt, ticker=ticker_name
+                        action=final_act_s,
+                        signal_dt=signal_dt,
+                        ticker=ticker_name,
+                        trailing_stop=tsl_stop,
+                        trailing_stop_min=tsl_min,
+                        fee_buffer_mult=fee_buf_mult,
+                        delta_p_hysteresis=delta_hyst
                     )
                     obs_s = next_obs_s
                     done_s = term_s or trunc_s

@@ -808,6 +808,7 @@ class TradingEnvironment(gym.Env):
         fee_buffer_mult: float = None,
         delta_p_hysteresis: float = None,
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
         self.last_step = self.step_idx == self.agent_session_len - 1
@@ -819,74 +820,115 @@ class TradingEnvironment(gym.Env):
 
         exec_delay = getattr(self, "exec_delay_bars", 0)
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
-        
+
         # --- Denormalization Setup ---
         asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
         close_mean = asset_stats['mean'][self.close_idx]
         close_std = asset_stats['std'][self.close_idx]
-        real_price = norm_price * close_std + close_mean
+        real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
 
         position_closed = False
         pnl_change = 0.0
         trade_pnl = None
         exit_reason = ""
-
-        # --- CRITICAL FIX: Balance check BEFORE position opening ---
-        MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
+        
+        # --- Strict Balance Check ---
+        MIN_SAFE_FRACTION = 1.2
         if action in [1, 2] and self.position == 0:
             if self.balance <= self.bankruptcy_threshold * MIN_SAFE_FRACTION:
-                logging.debug(
-                    f"[Backtest] Balance {self.balance:.2f} too close to "
-                    f"bankruptcy {self.bankruptcy_threshold:.2f}. Forcing HOLD."
-                )
-                action = 0  # Force HOLD
+                 action = 0 # Force HOLD
 
-        # --- Risk Management (uses normalized prices) ---
+        # --- Risk Management (CORRECTED: Uses REAL PRICE) ---
         if self.use_risk_management and self.position != 0:
             d0 = trailing_stop
             d_min = trailing_stop_min
             fee = self.transaction_fee
             fee_buf = fee * (fee_buffer_mult or 2.0)
+            
+            # Работаем только с REAL PRICE для TSL
             tsl_price = self.tsl_price
+            
+            # Инициализация tsl_price, если None (например, после загрузки состояния)
+            if tsl_price is None:
+                 # Для безопасности ставим очень далекий стоп при старте,
+                 # он сразу же подтянется на следующей строке
+                 tsl_price = -999999.0 if self.position == 1 else 999999.0
 
-            if self.position == 1:  # LONG
-                self.trailing_max_price = max(getattr(self, "trailing_max_price", norm_price), norm_price)
+            if self.position == 1: # LONG
+                # 1. Обновляем локальный максимум цены (Highest High)
+                # Используем real_price!
+                current_max = getattr(self, "trailing_max_price", real_price)
+                if current_max is None: current_max = real_price # Защита
+                self.trailing_max_price = max(current_max, real_price)
+                
+                # 2. Базовый уровень TSL (расстояние d0 от макс. цены)
                 base_tsl = self.trailing_max_price * (1 - d0)
-                tsl_price = max(base_tsl, tsl_price) if tsl_price is not None else base_tsl
-
+                
+                # 3. Подтягиваем TSL (он не может идти вниз)
+                tsl_price = max(tsl_price, base_tsl)
+                
+                # 4. Умное сужение (Smart tightening)
                 if d_min is not None:
-                    p = max(0.0, self.trailing_max_price / self.entry_price - 1.0)
+                    # Прибыль в процентах
+                    p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
+                    
+                    # Гистерезис обновления
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
-                        if p <= fee_buf: d_eff = d0
-                        else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        
+                        if p <= fee_buf: 
+                            d_eff = d0
+                        else: 
+                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                            
                         advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
-                trailing_trigger = norm_price <= tsl_price
-            else:  # SHORT
-                self.trailing_min_price = min(getattr(self, "trailing_min_price", norm_price), norm_price)
+                
+                self.tsl_price = tsl_price
+                trailing_trigger = real_price <= tsl_price # Сравниваем REAL с REAL
+
+                # DIAGNOSTIC
+                # if self.step_idx % 10 == 0:
+                #    logger.info(f"[TSL-L] Step={self.step_idx}, Price={real_price:.2f}, TSL={tsl_price:.2f}, Trigger={trailing_trigger}")
+
+            else: # SHORT
+                # 1. Обновляем локальный минимум цены (Lowest Low)
+                current_min = getattr(self, "trailing_min_price", real_price)
+                if current_min is None: current_min = real_price
+                self.trailing_min_price = min(current_min, real_price)
+                
+                # 2. Базовый уровень TSL
                 base_tsl = self.trailing_min_price * (1 + d0)
-                tsl_price = min(base_tsl, tsl_price) if tsl_price is not None else base_tsl
+                
+                # 3. Подтягиваем TSL (он не может идти вверх)
+                tsl_price = min(tsl_price, base_tsl)
 
                 if d_min is not None:
-                    p = max(0.0, 1.0 - self.trailing_min_price / self.entry_price)
+                    p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
+                    
                     if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
                         if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
-                        if p <= fee_buf: d_eff = d0
-                        else: d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        
+                        if p <= fee_buf:
+                            d_eff = d0
+                        else:
+                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
+                        
                         advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
-                        tsl_price = min(tsl_price, advanced_tsl_price) if tsl_price is not None else advanced_tsl_price
-                trailing_trigger = norm_price >= tsl_price
+                        tsl_price = min(tsl_price, advanced_tsl_price)
 
-            self.tsl_price = tsl_price
-            sl_trigger = False
-            tp_trigger = False
+                self.tsl_price = tsl_price
+                trailing_trigger = real_price >= tsl_price
 
+            # --- Trigger Logic ---
             if trailing_trigger or self.last_step:
-                action = 3
-                if trailing_trigger: exit_reason = "TSL"
-                elif self.last_step: exit_reason = "FORCED"
+                action = 3 # CLOSE
+                if trailing_trigger:
+                    exit_reason = "TSL"
+                    # logger.info(f"🎯 TSL TRIGGERED! Pos={self.position}, Price={real_price:.4f}, TSL={tsl_price:.4f}")
+                elif self.last_step:
+                    exit_reason = "FORCED"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
 
@@ -920,7 +962,7 @@ class TradingEnvironment(gym.Env):
             self.direction = "LONG"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_max_price = norm_exec_price
+                self.trailing_max_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
@@ -949,7 +991,7 @@ class TradingEnvironment(gym.Env):
             self.direction = "SHORT"
             self.trade_dt = current_dt
             if self.use_risk_management:
-                self.trailing_min_price = norm_exec_price
+                self.trailing_min_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа

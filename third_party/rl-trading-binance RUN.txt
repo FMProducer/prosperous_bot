@@ -15,7 +15,8 @@ C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
-python validate_ensemble_prod.py --ensemble configs/alpha_seed_404_v12.py
+python validate_ensemble.py --ensemble configs/alpha_seed_404_v11.py
+python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v12.py
 
 *python train.py configs/alpha.py
 python train.py 

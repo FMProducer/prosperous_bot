@@ -212,7 +212,7 @@ cfg.backtest.short_action_threshold = -0.015  # Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = False # Отключаем, если TSL не используется в обучении
+cfg.backtest.use_risk_management = True # Отключаем, если TSL не используется в обучении
 cfg.backtest.trailing_stop = 0.018
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
@@ -318,7 +318,7 @@ cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 # --- НОВЫЙ ПАРАМЕТР ---
 # Если True, отключает логику, при которой открытие позиции одним агентом
 # принудительно закрывает позицию другого. Сделки закрываются только по окончании сессии.
-cfg.ensemble.disable_cross_close = False
+cfg.ensemble.disable_cross_close = True
 
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
