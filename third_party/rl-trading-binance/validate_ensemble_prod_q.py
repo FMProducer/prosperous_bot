@@ -116,53 +116,57 @@ class EnsembleAgent:
         return state_prepared
 
     def get_long_vote(self, state):
-        if not self.enable_long: return 0
-        
+        """Получить намерение (БЕЗ порога) и уверенность LONG агента."""
+        if not self.enable_long:
+            return False, 0.0
+
         state_mapped = self._prepare_state(state, "LONG")
         with torch.no_grad():
             t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_long.device)
             q_values = self.agent_long.policy_net(t_state).squeeze(0)
-            
-        # Logic: 0=Hold, 1=Open. We IGNORE Close (Index 2).
+
+        # Намерение: хочет ли агент открыть (БЕЗ проверки порога)
+        wants_to_open = (q_values[1] > q_values[0]).item()
+
+        # Уверенность для порога
         if self.use_confidence:
             probs = torch.softmax(q_values, dim=0)
-            conf_open = (probs[1] - 0.33).item()
-            if conf_open > self.long_threshold and q_values[1] > q_values[0]:
-                return 1
+            confidence = (probs[1] - 0.33).item()
         else:
-            # Simple Voting: Open > Hold
-            if q_values[1] > q_values[0]:
-                return 1
-        return 0
+            confidence = 1.0  # Без порога - максимальная уверенность
+
+        return wants_to_open, confidence
+
 
     def get_short_vote(self, state):
-        if not self.enable_short: return 0
+        """Получить намерение (БЕЗ порога) и уверенность SHORT агента."""
+        if not self.enable_short:
+            return False, 0.0
 
         state_mapped = self._prepare_state(state, "SHORT")
-
         with torch.no_grad():
             t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_short.device)
             q_values = self.agent_short.policy_net(t_state).squeeze(0)
 
-        # Logic for 3-action specialist: 0=Hold, 1=Buy, 2=Sell(Short)
+        # Намерение: хочет ли агент открыть (БЕЗ проверки порога)
+        wants_to_open = (q_values[2] > q_values[0]).item()
 
+        # Уверенность для порога
         if self.use_confidence:
             probs = torch.softmax(q_values, dim=0)
-            conf_open = (probs[2] - 0.33).item()
-
-            if conf_open > self.short_threshold and q_values[2] > q_values[0]:
-                return 2
-
+            confidence = (probs[2] - 0.33).item()
         else:
-            # Simple Voting: Open > Hold
-            if q_values[2] > q_values[0]:
-                return 2
+            confidence = 1.0  # Без порога - максимальная уверенность
 
-        return 0
+        return wants_to_open, confidence
+
 
 class PerformanceConfig:
     def __init__(self):
-        self.use_amp = True; self.amp_dtype = "float16"; self.compile_mode = False; self.compile_dynamic = False
+        self.use_amp = True
+        self.amp_dtype = "float16"
+        self.compile_mode = False
+        self.compile_dynamic = False
 
 def create_validation_episodes(
     val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404
@@ -635,61 +639,94 @@ def run_validation():
                     # print(f"[{ticker_name}] Step {current_step}: Cooldown active until step {cooldown_until_step}. Forcing HOLD.")
                     vote_l, vote_s = 0, 0
                 else:
-                    # 1. GET VOTES (0, 1, or 2) - No Close actions
-                    vote_l = 0
+                    # 1. GET INTENTIONS AND CONFIDENCES (БЕЗ ПОРОГОВ!)
+                    long_wants_open, long_conf = False, 0.0
+                    short_wants_open, short_conf = False, 0.0
+
                     if not done_l:
-                        vote_l = agent.get_long_vote(obs_l)
-                    
-                    vote_s = 0
+                        long_wants_open, long_conf = agent.get_long_vote(obs_l)
                     if not done_s:
-                        vote_s = agent.get_short_vote(obs_s)
-                    
-                # 2. CONFLICT RESOLUTION & CROSS-CLOSING
-                final_act_l = vote_l
-                final_act_s = vote_s
+                        short_wants_open, short_conf = agent.get_short_vote(obs_s)
 
-                if not disable_cross_close:
-                    long_wants_open = (vote_l == 1)
-                    short_wants_open = (vote_s == 2)
-
+                    # 2. CHECK CURRENT POSITIONS
                     long_is_active = (env_long.position > 0)
                     short_is_active = (env_short.position < 0)
 
-                    # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
-                    if long_wants_open and short_wants_open:
-                        if long_is_active:
-                            # Long активен, закрываем его и даем Short открыть позицию.
-                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Long and opening Short.")
-                            final_act_l = 3
-                            final_act_s = 2 # Разрешаем Short открыть
-                        elif short_is_active:
-                            # Short активен, закрываем его и даем Long открыть позицию.
-                            print(f"[{ticker_name}] Event: Conflict vote. Closing active Short and opening Long.")
-                            final_act_s = 3
-                            final_act_l = 1 # Разрешаем Long открыть
-                        else:
-                            # Никто не активен. Ничего не делаем.
-                            print(f"[{ticker_name}] Event: Conflict vote. No active positions. Holding.")
-                            final_act_l = 0
-                            final_act_s = 0
-                        
-                        # Cooldown применяется в любом случае конфликта.
-                        cooldown_until_step = current_step + conflict_cooldown_bars
+                    # 3. CONFLICT RESOLUTION & CROSS-CLOSING (использует СЫРЫЕ намерения БЕЗ порога)
+                    final_act_l = 0
+                    final_act_s = 0
 
-                    # Сценарий 2: Нет прямого конфликта, проверяем перекрестное закрытие
-                    else:
-                        # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
-                        if long_wants_open and short_is_active:
+                    if not disable_cross_close:
+                        # Сценарий 1: Прямой конфликт (оба хотят войти одновременно)
+                        if long_wants_open and short_wants_open:
+                            if long_is_active:
+                                # Long активен, закрываем его и даем Short открыть позицию.
+                                print(f"[{ticker_name}] Event: Conflict vote. Closing active Long and opening Short.")
+                                final_act_l = 3
+                                final_act_s = 2
+                                cooldown_until_step = current_step + conflict_cooldown_bars
+                            elif short_is_active:
+                                # Short активен, закрываем его и даем Long открыть позицию.
+                                print(f"[{ticker_name}] Event: Conflict vote. Closing active Short and opening Long.")
+                                final_act_s = 3
+                                final_act_l = 1
+                                cooldown_until_step = current_step + conflict_cooldown_bars
+                            else:
+                                # Никто не активен → применяем пороги для обоих
+                                print(f"[{ticker_name}] Event: Conflict vote. No active positions. Applying thresholds.")
+                                # LONG порог
+                                if long_conf > agent.long_threshold:
+                                    final_act_l = 1
+                                else:
+                                    final_act_l = 0
+                                # SHORT порог
+                                if short_conf > agent.short_threshold:
+                                    final_act_s = 2
+                                else:
+                                    final_act_s = 0
+                                cooldown_until_step = current_step + conflict_cooldown_bars
+
+                        # Сценарий 2: Перекрестное закрытие (ИГНОРИРУЕТ пороги!)
+                        elif long_wants_open and short_is_active:
+                            # Если Long хочет войти И Short УЖЕ в сделке -> закрываем Short
                             print(f"[{ticker_name}] Event: Long vote closes existing Short position.")
-                            final_act_s = 3   # Принудительно закрыть Short
-                            final_act_l = 0   # Long-агент должен ждать, его сигнал был использован для закрытия Short
+                            final_act_s = 3  # Принудительно закрыть Short
+                            final_act_l = 0  # Long-агент должен ждать
 
-                        # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
                         elif short_wants_open and long_is_active:
+                            # Если Short хочет войти И Long УЖЕ в сделке -> закрываем Long
                             print(f"[{ticker_name}] Event: Short vote closes existing Long position.")
-                            final_act_l = 3   # Принудительно закрыть Long
-                            final_act_s = 0   # Short-агент должен ждать, его сигнал был использован для закрытия Long
-                
+                            final_act_l = 3  # Принудительно закрыть Long
+                            final_act_s = 0  # Short-агент должен ждать
+
+                        # Сценарий 3: Нет конфликта, нет перекрестного закрытия → применяем пороги
+                        else:
+                            # LONG: проверяем намерение и порог
+                            if long_wants_open:
+                                if long_conf > agent.long_threshold:
+                                    final_act_l = 1
+                                else:
+                                    final_act_l = 0  # Не прошел порог
+                            else:
+                                final_act_l = 0
+
+                            # SHORT: проверяем намерение и порог
+                            if short_wants_open:
+                                if short_conf > agent.short_threshold:
+                                    final_act_s = 2
+                                else:
+                                    final_act_s = 0  # Не прошел порог
+                            else:
+                                final_act_s = 0
+                    else:
+                        # Cross-closing отключен → применяем пороги напрямую
+                        if long_wants_open:
+                            if long_conf > agent.long_threshold:
+                                final_act_l = 1
+                        if short_wants_open:
+                            if short_conf > agent.short_threshold:
+                                final_act_s = 2
+
                 # 3. EXECUTION
                 # -- Long Env --
                 if not done_l:
