@@ -133,26 +133,41 @@ class PerformanceConfig:
 
 def create_validation_episodes(val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404):
     if not val_sequences: return [], []
+    
+    # Group indices by symbol
     episodes_by_symbol = defaultdict(list)
     for i, key in enumerate(val_keys):
         symbol = key.split('_')[0]
         episodes_by_symbol[symbol].append(i)
+
     selected_indices = []
+    
+    # 1. Select episodes respecting the per-symbol limit
     for symbol, indices in episodes_by_symbol.items():
+        # If max_episodes_per_symbol is huge (e.g. 5000), this effectively takes ALL episodes for the symbol
         n_samples = min(len(indices), max_episodes_per_symbol)
+        
+        # We want deterministic sampling if possible, or random if downsampling
         random.seed(seed)
         selected_indices.extend(random.sample(indices, n_samples))
+
+    # 2. Select final list respecting the total global limit
     if len(selected_indices) > num_episodes:
         random.seed(seed)
         final_indices = random.sample(selected_indices, num_episodes)
     else:
         final_indices = selected_indices
+        
     random.seed(seed)
     random.shuffle(final_indices)
+    
     final_sequences = [val_sequences[i] for i in final_indices]
     final_keys = [val_keys[i] for i in final_indices]
     final_symbols = {val_keys[i].split('_')[0] for i in final_indices}
+    
     logging.info(f"Stratified sampling complete. Sampled episodes: {len(final_sequences)}, Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
+    logger.info(f"Limits used: Total Ep={num_episodes}, Max/Sym={max_episodes_per_symbol}")
+    
     return final_sequences, final_keys
 
 def load_config_from_path(config_path):
@@ -251,8 +266,8 @@ def run_validation():
     
     args = parser.parse_args()
     
-    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: ИСПРАВЛЕНА ЛОГИКА МЕТРИК !!!")
-    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: ИСПРАВЛЕНА ЛОГИКА МЕТРИК !!!")
+    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: FULL COVERAGE VERSION (FIXED CFG) !!!")
+    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: FULL COVERAGE VERSION (FIXED CFG) !!!")
 
     user_cfg_module = load_config_from_path(args.config)
     user_cfg_obj = getattr(user_cfg_module, 'cfg', None)
@@ -320,9 +335,32 @@ def run_validation():
     sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
     
     trainlog_cfg = cfg.get("trainlog", {})
+    
+    # === UPDATED SAMPLING LOGIC (FIXED) ===
+    # 1. Try to get total episodes from cfg
+    total_val_ep = trainlog_cfg.get("num_val_ep", 750) # Default from train config
+    
+    user_trainlog_cfg = getattr(user_cfg_obj, 'trainlog', None)
+    if user_trainlog_cfg and hasattr(user_trainlog_cfg, 'num_val_ep'):
+        total_val_ep = user_trainlog_cfg.num_val_ep
+        logger.info(f"✅ OVERRIDE: num_val_ep = {total_val_ep} from user config")
+    else:
+        logger.info(f"ℹ️ Using num_val_ep = {total_val_ep} from training config")
+
+    # 2. Try to get max_episodes_per_symbol from GLOBAL scope of user_cfg_module
+    #    because it is not part of the Pydantic model "cfg"
+    per_sym_ep = 5000 # Default fallback
+    if hasattr(user_cfg_module, 'max_episodes_per_symbol'):
+        per_sym_ep = getattr(user_cfg_module, 'max_episodes_per_symbol')
+        logger.info(f"✅ Found global 'max_episodes_per_symbol' = {per_sym_ep}")
+    else:
+        logger.info(f"ℹ️ 'max_episodes_per_symbol' not found in config, using default: {per_sym_ep}")
+
+    
     sequences, keys = create_validation_episodes(
         val_sequences=sequences, val_keys=keys,
-        num_episodes=trainlog_cfg.get("num_val_ep", 750),
+        num_episodes=total_val_ep,
+        max_episodes_per_symbol=per_sym_ep,
         seed=cfg.get("random_seed", 404)
     )
 

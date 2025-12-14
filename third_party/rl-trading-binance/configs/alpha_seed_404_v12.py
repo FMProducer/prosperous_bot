@@ -30,7 +30,7 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или proxy
+cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
@@ -97,7 +97,8 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 750      # Val episodes (20% train)
+cfg.trainlog.num_val_ep = 10000  # Увеличили лимит эпизодов
+max_episodes_per_symbol = 1000
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -212,7 +213,7 @@ cfg.backtest.short_action_threshold = -0.015  # Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = True # Отключаем, если TSL не используется в обучении
+cfg.backtest.use_risk_management = False # Отключаем, если TSL не используется в обучении
 cfg.backtest.trailing_stop = 0.04
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
@@ -311,8 +312,8 @@ cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading
 cfg.ensemble.enable_long = True
 cfg.ensemble.enable_short = True
 cfg.ensemble.use_confidence = True  # False = простое голосование (Argmax), True = порог уверенности Q
-cfg.ensemble.long_threshold = 0.00365  # Порог уверенности для LONG
-cfg.ensemble.short_threshold = 0.00365 # Порог уверенности для SHORT
+cfg.ensemble.long_threshold = 0.00365  # Порог уверенности для LONG 0.00365
+cfg.ensemble.short_threshold = 0.00365 # Порог уверенности для SHORT 0.00365
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
 
 # --- НОВЫЙ ПАРАМЕТР ---
@@ -323,4 +324,4 @@ cfg.ensemble.disable_cross_close = True
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 60
+cfg.ensemble.conflict_cooldown_bars = 100000
