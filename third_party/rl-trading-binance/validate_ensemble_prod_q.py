@@ -251,8 +251,8 @@ def run_validation():
     
     args = parser.parse_args()
     
-    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА (Счетчики выходов) !!!")
-    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: НОВАЯ ВЕРСИЯ СКРИПТА (Счетчики выходов) !!!")
+    print("!!! Я ТОЧНО ЗАПУСТИЛСЯ: ИСПРАВЛЕНА ЛОГИКА МЕТРИК !!!")
+    logger.error("!!! Я ТОЧНО ЗАПУСТИЛСЯ: ИСПРАВЛЕНА ЛОГИКА МЕТРИК !!!")
 
     user_cfg_module = load_config_from_path(args.config)
     user_cfg_obj = getattr(user_cfg_module, 'cfg', None)
@@ -547,7 +547,8 @@ def run_validation():
                 signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
         except (IndexError, AttributeError, ValueError):
             pass
-
+        
+        episode_bars = 0
         if args.ensemble:
             if i >= len(env_long.sequences) or i >= len(env_short.sequences): continue
 
@@ -566,6 +567,9 @@ def run_validation():
                 if not done_l: current_step = env_long.step_idx
                 elif not done_s: current_step = env_short.step_idx
                 else: break
+                
+                # Update episode bars count
+                episode_bars = max(episode_bars, current_step)
                 
                 if current_step < cooldown_until_step:
                     final_act_l, final_act_s = 0, 0
@@ -643,16 +647,20 @@ def run_validation():
                     if info_s.get('tsl_triggered', False):
                          c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
                          cooldown_until_step = max(cooldown_until_step, current_step + c_val)
-            total_bars_processed += 1
+            
+            # --- FIX: Accumulate actual bars processed ---
+            total_bars_processed += episode_bars
             
         else:
             obs, _ = env.reset(options={"forced_index": i})
             done = False
+            episode_bars = 0
             while not done:
                 action = agent.select_action(obs, training=False)
                 next_obs, reward, terminated, truncated, info = env.backtest_step(
                     action=action, signal_dt=signal_dt, ticker=ticker_name
                 )
+                episode_bars += 1
                 if info.get('position_closed'):
                     pnl = info["trade_realized_pnl"]
                     comm = info.get("trade_commission", 0.0)
@@ -667,7 +675,9 @@ def run_validation():
                     all_trades.append(trade_data)
                 obs = next_obs
                 done = terminated or truncated
-                total_bars_processed += 1
+            
+            # --- FIX: Accumulate actual bars processed ---
+            total_bars_processed += episode_bars
 
         pbar.set_postfix({
             "PnL": f"{sum(t.get('net_pnl', 0.0) for t in all_trades):,.0f}",
@@ -700,6 +710,7 @@ def run_validation():
     max_holding_time = max(holding_times) if holding_times else 0.0
     min_holding_time = min(holding_times) if holding_times else 0.0
     
+    # --- FIX: Correct trading days calculation ---
     bars_per_day = 1440
     trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
     pnl_per_day = net_pnl / max(1, trading_time_days)
@@ -763,7 +774,7 @@ def run_validation():
         
     print(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
     print(f"Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
-    print(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}")
+    print(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe (Per Trade): {sharpe:.3f} | Sortino (Per Trade): {sortino:.3f}")
     print(f"Avg Hold: {avg_holding_time:.2f} bars | Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars")
     print(f"Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | Trading Days: {trading_time_days:.1f}")
     print(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
