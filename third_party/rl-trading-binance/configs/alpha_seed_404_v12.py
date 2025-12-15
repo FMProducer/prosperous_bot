@@ -30,7 +30,7 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.val_data_path = "data/train_data_fair_8m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
@@ -97,7 +97,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 10000  # Увеличили лимит эпизодов
+cfg.trainlog.num_val_ep = 100000  # Увеличили лимит эпизодов
 max_episodes_per_symbol = 1000
 
 # При 4 env один эпизод даёт ~4× больше шагов.
@@ -324,4 +324,4 @@ cfg.ensemble.disable_cross_close = True
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 0
+cfg.ensemble.conflict_cooldown_bars = 525600
