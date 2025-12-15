@@ -271,26 +271,30 @@ def run_validation():
 
     user_cfg_module = load_config_from_path(args.config)
     user_cfg_obj = getattr(user_cfg_module, 'cfg', None)
-    if user_cfg_obj is None: logger.error("❌ 'cfg' object not found in user config module!")
-
+    if user_cfg_obj is None: 
+        logger.error("❌ 'cfg' object not found in user config module!")
+    
+    # --- FIX: Securely extract ensemble config from the user's Python file FIRST ---
+    ensemble_settings = None
     if args.ensemble:
-        ensemble_cfg_obj = None
-        if user_cfg_obj is not None: ensemble_cfg_obj = getattr(user_cfg_obj, 'ensemble', None)
-        if ensemble_cfg_obj is None: ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
-            
-        if ensemble_cfg_obj:
-            logger.info("ℹ️ Found ensemble config.")
-            if not args.long_model and hasattr(ensemble_cfg_obj, 'long_model_path'):
-                args.long_model = ensemble_cfg_obj.long_model_path
-            if not args.short_model and hasattr(ensemble_cfg_obj, 'short_model_path'):
-                args.short_model = ensemble_cfg_obj.short_model_path
+        if user_cfg_obj and hasattr(user_cfg_obj, 'ensemble'):
+            ensemble_settings = getattr(user_cfg_obj, 'ensemble')
+            logger.info("✅ Successfully loaded ENSEMBLE settings from Python config.")
         else:
-            logger.warning("⚠️ Ensemble config object not found in user config.")
+            logger.warning("⚠️ Could not find 'ensemble' configuration block in the provided Python config file.")
+
+        # Pre-fill model paths from the securely loaded ensemble config if they exist
+        if ensemble_settings:
+            if not args.long_model and hasattr(ensemble_settings, 'long_model_path'):
+                args.long_model = ensemble_settings.long_model_path
+            if not args.short_model and hasattr(ensemble_settings, 'short_model_path'):
+                args.short_model = ensemble_settings.short_model_path
 
     if args.ensemble:
         if not args.long_model or not args.short_model:
-            parser.error("--ensemble requires --long_model and --short_model")
-        if args.model: print("⚠️ Warning: --model ignored in ensemble mode")
+            parser.error("--ensemble requires --long_model and --short_model paths, either via arguments or in the config file.")
+        if args.model: 
+            print("⚠️ Warning: --model ignored in ensemble mode")
     elif not args.model and not args.ensemble:
         if user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'model_path'):
             args.model = user_cfg_obj.paths.model_path
@@ -307,12 +311,13 @@ def run_validation():
         print("❌ Could not load the ground truth config_train.json.")
         return
 
+    # This is where the original cfg object is overwritten.
+    # Our ensemble_settings are now safe.
     cfg = train_cfg_dict
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    ensemble_cfg_obj = None
-    if user_cfg_obj: ensemble_cfg_obj = getattr(user_cfg_obj, 'ensemble', None)
-    if ensemble_cfg_obj is None: ensemble_cfg_obj = getattr(user_cfg_module, 'ensemble', None)
+    # Use the securely loaded ensemble settings
+    ensemble_cfg_obj = ensemble_settings
 
     if ensemble_cfg_obj and hasattr(ensemble_cfg_obj, 'norm_stats_path') and os.path.exists(ensemble_cfg_obj.norm_stats_path):
         norm_stats_path = ensemble_cfg_obj.norm_stats_path
@@ -625,16 +630,24 @@ def run_validation():
                     
                     if not disable_cross_close:
                         if long_wants_open and short_wants_open:
+                            cooldown_triggered = False
                             if long_is_active:
                                 final_act_l = 3; final_act_s = 2
                                 cooldown_until_step = current_step + conflict_cooldown_bars
+                                cooldown_triggered = True
                             elif short_is_active:
                                 final_act_s = 3; final_act_l = 1
                                 cooldown_until_step = current_step + conflict_cooldown_bars
+                                cooldown_triggered = True
                             else:
                                 final_act_l = 1 if long_conf > agent.long_threshold else 0
                                 final_act_s = 2 if short_conf > agent.short_threshold else 0
                                 cooldown_until_step = current_step + conflict_cooldown_bars
+                                cooldown_triggered = True
+                            
+                            if cooldown_triggered and conflict_cooldown_bars > 0:
+                                logger.info(f"👉 Cooldown activated for {conflict_cooldown_bars} bars due to signal conflict on '{ticker_name}'.")
+
                         elif long_wants_open and short_is_active:
                             final_act_s = 3; final_act_l = 0
                         elif short_wants_open and long_is_active:
@@ -662,9 +675,6 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
-                    if info_l.get('tsl_triggered', False):
-                         c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
-                         cooldown_until_step = max(cooldown_until_step, current_step + c_val)
 
                 if not done_s:
                     next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
@@ -682,9 +692,6 @@ def run_validation():
                         t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
                         t_data['bars'] = t_data.get('holding_duration_bars', 0)
                         all_trades.append(t_data)
-                    if info_s.get('tsl_triggered', False):
-                         c_val = conflict_cooldown_bars if conflict_cooldown_bars > 0 else 30
-                         cooldown_until_step = max(cooldown_until_step, current_step + c_val)
             
             # --- FIX: Accumulate actual bars processed ---
             total_bars_processed += episode_bars
