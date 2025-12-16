@@ -25,4 +25,5 @@ python-binance
 
 # Database
 SQLAlchemy
-psycopg2-binarypydantic
+psycopg2-binary
+pydantic
