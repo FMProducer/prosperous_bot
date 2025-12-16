@@ -130,6 +130,11 @@ class MarketConfig(BaseModel):
     position_fraction: float = 1.0  # Доля баланса для входа в позицию
     transaction_fee: float = 0.0004
     slippage: float = 0.0002
+
+    # LIQUIDITY FILTER FIELDS
+    min_daily_volume: int = 0          # 0 = disabled
+    vol_filter_window: int = 90        # Window size for median filter
+    vol_min_rel: float = 0.2           # Relative threshold (0.2 = 20% of median)
     
     # Добавляем новые поля для управления режимами агента
     allowed_directions: list[str] = ["LONG", "SHORT"]
