@@ -88,7 +88,8 @@ cfg.per.per_beta_frames = 400000
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 400000
+# DEBUG: Slower decay for more exploration
+cfg.eps.eps_decay_frames = 800000
 
 # Env/Vectorized
 cfg.vec.num_envs = 8             # параллельные среды
@@ -100,10 +101,9 @@ cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 cfg.trainlog.num_val_ep = 100000  # Увеличили лимит эпизодов
 max_episodes_per_symbol = 1000
 
-# При 4 env один эпизод даёт ~4× больше шагов.
-# Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
-cfg.trainlog.total_timesteps = 300000  # Бюджет шагов , норма 600000
+# DEBUG: Short run for analysis
+cfg.trainlog.episodes = 500
+cfg.trainlog.total_timesteps = 50_000
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
 cfg.trainlog.val_freq = 62              # норма 125
@@ -161,15 +161,16 @@ cfg.market.bankruptcy_slippage_penalty = 0.05
 # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_threshold = -0.20
 cfg.market.max_drawdown_penalty_type = "proportional"
-cfg.market.max_drawdown_penalty = 1.0
+# DEBUG: exploration-friendly penalties
+cfg.market.max_drawdown_penalty = 0.5
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.08  # Меньше для длинных позиций
+cfg.market.continuous_pain_penalty_ratio = 0.02  # Меньше для длинных позиций
 # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 0.01
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
-cfg.market.holding_penalty_multiplier = 0.15  # Меньше штраф
+cfg.market.holding_penalty_multiplier = 0.05  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.greed_penalty_multiplier = 0.08  # Меньше штраф
 
@@ -329,9 +330,11 @@ cfg.ensemble.conflict_cooldown_bars = 1440
 # --- LIQUIDITY FILTER CONFIGURATION (NEW) ---
 # 1. Глобальный whitelist (Off-line)
 # Минимальный среднесуточный оборот (USDT) за весь период обучения
-cfg.market.min_daily_volume = 5_000_000  
+# DEBUG: Lower ADV threshold to allow more assets
+cfg.market.min_daily_volume = 1_000_000
 # 2. Локальный фильтр баров (On-line)
 # Окно скользящей медианы (согласовано с history_len=90)
-cfg.market.vol_filter_window = 90       
+cfg.market.vol_filter_window = 90
 # Порог относительного объема (если vol < 0.2 * median -> skip)
-cfg.market.vol_filter_min_rel = 0.2
+# DEBUG: Lower relative volume threshold
+cfg.market.vol_filter_min_rel = 0.05
