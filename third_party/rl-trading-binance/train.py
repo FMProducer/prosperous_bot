@@ -382,6 +382,12 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                 episode_infos.append(infos[i])
                 ep_reward_per_episode.append(ep_reward[i])
                 wr = infos[i].get("episode_win_rate", None)
+                closed = infos[i].get("episode_closed_trades", 0)
+                open_attempts = infos[i].get("episode_open_attempts", 0)
+                logging.info(
+                    f"[EP-SUMMARY] env={i} closed_trades={closed} "
+                    f"open_attempts={open_attempts} win_rate={wr if wr is not None else 'N/A'}"
+                )
                 if wr is not None:
                     # считаем завершённый эпизод для этого env
                     pbars[i].total += 1
@@ -1240,6 +1246,7 @@ def main(cfg: MasterConfig = None):
         # NEW CODE: Pass liquidity filter params to environment
         "vol_filter_window": getattr(cfg.market, "vol_filter_window", 90),
         "vol_filter_min_rel": getattr(cfg.market, "vol_filter_min_rel", 0.2),
+        "disable_liquidity_filter": getattr(cfg.market, "disable_liquidity_filter", False),
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)

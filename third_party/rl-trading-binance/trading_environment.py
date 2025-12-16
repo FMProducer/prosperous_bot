@@ -88,6 +88,7 @@ class TradingEnvironment(gym.Env):
         # On-line liquidity filter
         vol_filter_window: int = 90,
         vol_min_rel: float = 0.2,
+        disable_liquidity_filter: bool = False,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -191,6 +192,7 @@ class TradingEnvironment(gym.Env):
         # NEW CODE: On-line liquidity filter settings
         self.vol_filter_window = vol_filter_window
         self.vol_min_rel = vol_min_rel
+        self.disable_liquidity_filter = disable_liquidity_filter
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -259,6 +261,8 @@ class TradingEnvironment(gym.Env):
         self._position_entry_step = None
         self._max_unrealized_pnl = 0.0
         self._min_unrealized_pnl = 0.0
+        # Debug counters
+        self.debug_open_attempts: int = 0
         
         if self.backtest_mode:
             self.total_commission: float = 0.0
@@ -312,6 +316,7 @@ class TradingEnvironment(gym.Env):
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before step()"
         prev_position = self.position
+        raw_action = int(action)  # RAW action from agent
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
         close_action = self.close_action
@@ -345,29 +350,29 @@ class TradingEnvironment(gym.Env):
         is_liquid = True
         low_liquidity_flag = False
         if self.position == 0 and action in {1, 2}:  # Check only when opening a position
-            start_idx = max(0, price_idx - self.vol_filter_window)
-            volume_window = self.current_seq[start_idx:price_idx, 5]
-
-            if volume_window.size > 0:
-                median_volume = np.median(volume_window)
-                current_volume = self.current_seq[price_idx, 5]
-                is_liquid = current_volume >= median_volume * self.vol_min_rel
-
-                logging.debug(
-                    f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
-                    f"cur_vol={current_volume:.4f} med_vol={median_volume:.4f} "
-                    f"rel={current_volume / (median_volume + 1e-9):.3f} "
-                    f"threshold={self.vol_min_rel:.3f} -> is_liquid={is_liquid}"
-                )
-
-                if not is_liquid:
-                    action = 0
-                    low_liquidity_flag = True
-            else:
-                logging.debug(
-                    f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
-                    f"no volume history (window_size={self.vol_filter_window})"
-                )
+            self.debug_open_attempts += 1
+            if not self.disable_liquidity_filter:
+                # Get the history of quote volumes (channel 5)
+                start_idx = max(0, price_idx - self.vol_filter_window)
+                volume_window = self.current_seq[start_idx:price_idx, 5]
+                if volume_window.size > 0:
+                    median_volume = np.median(volume_window)
+                    current_volume = self.current_seq[price_idx, 5]
+                    is_liquid = current_volume >= median_volume * self.vol_min_rel
+                    logging.debug(
+                        f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
+                        f"cur_vol={current_volume:.4f} med_vol={median_volume:.4f} "
+                        f"rel={current_volume / (median_volume + 1e-9):.3f} "
+                        f"threshold={self.vol_min_rel:.3f} -> is_liquid={is_liquid}"
+                    )
+                    if not is_liquid:
+                        action = 0  # Force HOLD if liquidity is too low
+                        low_liquidity_flag = True
+                else:
+                    logging.debug(
+                        f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
+                        f"no volume history (window={self.vol_filter_window})"
+                    )
 
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
@@ -397,6 +402,11 @@ class TradingEnvironment(gym.Env):
                 action = 0  # Force HOLD
                 reward -= self.low_balance_penalty # Penalize attempt
 
+        logging.debug(
+            f"[STEP-ACTION] asset={self.current_asset_name} step={self.step_idx} "
+            f"raw_action={raw_action} final_action={action} "
+            f"position={self.position} last_step={self.last_step}"
+        )
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
             if not self.allowed_directions or 'LONG' in self.allowed_directions:
@@ -570,6 +580,7 @@ class TradingEnvironment(gym.Env):
                 "episode_realized_pnl": self.realized_pnl,
                 "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
                 "episode_closed_trades": self.closed_trades,
+                "episode_open_attempts": self.debug_open_attempts,
                 "episode_max_drawdown": self.current_max_drawdown,
             })
         else:
