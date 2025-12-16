@@ -247,6 +247,8 @@ def apply_normalization(
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
     cfg_path = Path(path)
     spec = importlib.util.spec_from_file_location("experiment_cfg", path)
+    if spec is None:
+        raise FileNotFoundError(f"Config file not found or invalid path: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
