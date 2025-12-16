@@ -97,6 +97,7 @@ class ExchangeAPI:
         fut = gate_api.FuturesOrder(
             contract    = contract,
             size        = size,
+            price       = "0",
             reduce_only = reduce_only,
         )
         return await self._safe_call(self.futures_api.create_futures_order, "usdt", fut)

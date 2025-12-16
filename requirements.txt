@@ -20,4 +20,8 @@ pytest-cov
 pytest-mock
 asyncpg>=0.29.0
 PyYAML>=6.0
-websocket-clientpsycopg2-binary
+websocket-client
+psycopg2-binary
+torch
+gymnasium
+seaborn

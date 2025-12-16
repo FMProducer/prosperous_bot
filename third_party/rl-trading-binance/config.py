@@ -296,6 +296,7 @@ class BacktestConfig(BaseModel):
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
     exec_delay_bars: int = 1
+    mask_close_action: bool = False
 
 
 class PaperTraderConfig(BaseModel):
