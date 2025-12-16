@@ -1239,7 +1239,7 @@ def main(cfg: MasterConfig = None):
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),  # <--- ДОБАВИТЬ ЭТО
         # NEW CODE: Pass liquidity filter params to environment
         "vol_filter_window": getattr(cfg.market, "vol_filter_window", 90),
-        "vol_min_rel": getattr(cfg.market, "vol_min_rel", 0.2),
+        "vol_filter_min_rel": getattr(cfg.market, "vol_filter_min_rel", 0.2),
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)
