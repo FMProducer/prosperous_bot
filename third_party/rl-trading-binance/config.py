@@ -135,6 +135,7 @@ class MarketConfig(BaseModel):
     min_daily_volume: int = 0          # 0 = disabled
     vol_filter_window: int = 90        # Window size for median filter
     vol_filter_min_rel: float = 0.2    # Relative threshold (0.2 = 20% of median)
+    disable_liquidity_filter: bool = False # Optional: completely disable the filter for debugging
     
     # Добавляем новые поля для управления режимами агента
     allowed_directions: list[str] = ["LONG", "SHORT"]
