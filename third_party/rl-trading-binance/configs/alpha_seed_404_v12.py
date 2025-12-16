@@ -45,7 +45,7 @@ cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_his
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
-cfg.market.num_actions = 3  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
+cfg.market.num_actions = 4  # Discrete: 0=hold, 1=buy, 2=sell, 3=close
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку
