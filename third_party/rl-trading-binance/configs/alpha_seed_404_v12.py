@@ -324,4 +324,14 @@ cfg.ensemble.disable_cross_close = True
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 525600
+cfg.ensemble.conflict_cooldown_bars = 1440
+
+# --- LIQUIDITY FILTER CONFIGURATION (NEW) ---
+# 1. Глобальный whitelist (Off-line)
+# Минимальный среднесуточный оборот (USDT) за весь период обучения
+cfg.market.min_daily_volume = 5_000_000  
+# 2. Локальный фильтр баров (On-line)
+# Окно скользящей медианы (согласовано с history_len=90)
+cfg.market.vol_filter_window = 90       
+# Порог относительного объема (если vol < 0.2 * median -> skip)
+cfg.market.vol_filter_min_rel = 0.2
