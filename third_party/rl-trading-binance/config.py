@@ -131,11 +131,18 @@ class MarketConfig(BaseModel):
     transaction_fee: float = 0.0004
     slippage: float = 0.0002
 
-    # LIQUIDITY FILTER FIELDS
-    min_daily_volume: int = 0          # 0 = disabled
-    vol_filter_window: int = 90        # Window size for median filter
-    vol_filter_min_rel: float = 0.2    # Relative threshold (0.2 = 20% of median)
-    disable_liquidity_filter: bool = False # Optional: completely disable the filter for debugging
+    # --- LIQUIDITY FILTER CONFIGURATION ---
+    # Минимальный среднесуточный объём в USDT для включения тикера (0 = фильтр отключён)
+    min_daily_volume: int = 0
+
+    # Окно скользящей медианы объёма (в барах, минутные свечи)
+    vol_filter_window: int = 90
+
+    # Минимальный относительный объём: если current_vol < median * vol_min_rel, бар считается неликвидным
+    vol_filter_min_rel: float = 0.2
+
+    # Флаг для полного отключения on-line фильтра ликвидности (для отладки/абляции)
+    disable_liquidity_filter: bool = False
     
     # Добавляем новые поля для управления режимами агента
     allowed_directions: list[str] = ["LONG", "SHORT"]
