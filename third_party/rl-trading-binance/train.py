@@ -1687,7 +1687,17 @@ def main(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    cfg = None
-    if len(sys.argv) > 1:
-        cfg, _ = load_config(sys.argv[1], return_module=True)
-    main(cfg=cfg)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_pos", nargs="?", help="Path to config (positional)")
+    parser.add_argument("--config", help="Path to config (flag)")
+    args = parser.parse_args()
+
+    config_path = args.config or args.config_pos
+    if not config_path:
+        # Fallback to default if needed or raise error
+        print("Usage: python train.py <config_path> OR python train.py --config <config_path>")
+        sys.exit(1)
+
+    cfg, cfg_mod = load_config(config_path, return_module=True)
+    main(cfg)
