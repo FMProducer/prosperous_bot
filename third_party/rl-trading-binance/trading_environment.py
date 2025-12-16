@@ -334,25 +334,40 @@ class TradingEnvironment(gym.Env):
         close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
+        # Before block NEW CODE: Bar Liquidity Filter
+        if self.position == 0 and action in {1, 2}:
+            logging.debug(
+                f"[STEP-OPEN-ATTEMPT] idx={self.step_idx} action={action} "
+                f"asset={self.current_asset_name} price_idx={price_idx}"
+            )
+
         # --- NEW CODE: Bar Liquidity Filter (On-line) ---
         is_liquid = True
         low_liquidity_flag = False
-        if self.position == 0 and action in {1, 2}: # Check only when opening a position
-            # Get the history of quote volumes (channel 5)
+        if self.position == 0 and action in {1, 2}:  # Check only when opening a position
             start_idx = max(0, price_idx - self.vol_filter_window)
-            # We need the RAW (but still normalized) volume data from the sequence
             volume_window = self.current_seq[start_idx:price_idx, 5]
 
             if volume_window.size > 0:
                 median_volume = np.median(volume_window)
                 current_volume = self.current_seq[price_idx, 5]
-
-                # Check if current volume is sufficient
                 is_liquid = current_volume >= median_volume * self.vol_min_rel
 
+                logging.debug(
+                    f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
+                    f"cur_vol={current_volume:.4f} med_vol={median_volume:.4f} "
+                    f"rel={current_volume / (median_volume + 1e-9):.3f} "
+                    f"threshold={self.vol_min_rel:.3f} -> is_liquid={is_liquid}"
+                )
+
                 if not is_liquid:
-                    action = 0  # Force HOLD if liquidity is too low
-                    low_liquidity_flag = True # Set flag for info dict
+                    action = 0
+                    low_liquidity_flag = True
+            else:
+                logging.debug(
+                    f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
+                    f"no volume history (window_size={self.vol_filter_window})"
+                )
 
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
