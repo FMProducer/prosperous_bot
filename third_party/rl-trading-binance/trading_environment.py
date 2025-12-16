@@ -85,6 +85,9 @@ class TradingEnvironment(gym.Env):
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
         allowed_directions: Optional[List[str]] = None,
+        # On-line liquidity filter
+        vol_filter_window: int = 90,
+        vol_min_rel: float = 0.2,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -184,6 +187,10 @@ class TradingEnvironment(gym.Env):
         self.loss_exit_threshold = loss_exit_threshold
         self.allow_opposite_trades = allow_opposite_trades
         self.allowed_directions = allowed_directions
+
+        # NEW CODE: On-line liquidity filter settings
+        self.vol_filter_window = vol_filter_window
+        self.vol_min_rel = vol_min_rel
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -327,6 +334,26 @@ class TradingEnvironment(gym.Env):
         close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
+        # --- NEW CODE: Bar Liquidity Filter (On-line) ---
+        is_liquid = True
+        low_liquidity_flag = False
+        if self.position == 0 and action in {1, 2}: # Check only when opening a position
+            # Get the history of quote volumes (channel 5)
+            start_idx = max(0, price_idx - self.vol_filter_window)
+            # We need the RAW (but still normalized) volume data from the sequence
+            volume_window = self.current_seq[start_idx:price_idx, 5]
+
+            if volume_window.size > 0:
+                median_volume = np.median(volume_window)
+                current_volume = self.current_seq[price_idx, 5]
+
+                # Check if current volume is sufficient
+                is_liquid = current_volume >= median_volume * self.vol_min_rel
+
+                if not is_liquid:
+                    action = 0  # Force HOLD if liquidity is too low
+                    low_liquidity_flag = True # Set flag for info dict
+
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
             is_long = self.position > 0
@@ -545,6 +572,8 @@ class TradingEnvironment(gym.Env):
      
         if self.render_mode == "human":
             self._render_human(info, action, reward)
+
+        info['low_liquidity'] = low_liquidity_flag
      
         return obs, reward, terminated, False, info
 
