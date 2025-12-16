@@ -1063,35 +1063,33 @@ def main(cfg: MasterConfig = None):
         logging.info("%s normstats: compute_norm_stats", cfg.paths.train_data_path)
         norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
 
-    # --- ADV Symbol Filtering ---
-    adv_whitelist = filter_symbols_by_adv(
-        data_path=cfg.paths.train_data_path,
-        min_daily_volume=5_000_000  # This can be moved to config
-    )
-    if not adv_whitelist:
-        logging.warning("Whitelist from ADV filter is empty. Check data or threshold. Training will proceed based on config symbols.")
+    # Получаем список разрешенных активов из конфига
+    allowed_assets = getattr(cfg.paper, "symbols", None)
+    if allowed_assets == "ALL":
+        allowed_assets = None  # Используем все активы
 
-    # Get allowed assets from config
-    config_assets = getattr(cfg.paper, "symbols", None)
-    if config_assets == "ALL":
-        config_assets = None  # None means all assets from the dataset
+    # --- Условная фильтрация символов по ADV ---
+    min_vol = getattr(cfg.market, "min_daily_volume", 0)
+    if min_vol > 0:
+        logging.info(f"Включен ADV-фильтр с min_daily_volume > {min_vol:,}")
+        adv_whitelist = filter_symbols_by_adv(
+            data_path=cfg.paths.train_data_path,
+            min_daily_volume=min_vol
+        )
+        if not adv_whitelist:
+            logging.warning("Whitelist после ADV-фильтра пуст. Проверьте данные или порог.")
 
-    # Combine ADV filter with config filter
-    allowed_assets = None
-    if adv_whitelist:
-        if config_assets:
-            # Intersection of config list and ADV whitelist
-            allowed_assets = list(set(config_assets) & set(adv_whitelist))
-            logging.info(f"Combined config symbols and ADV whitelist: {len(allowed_assets)} symbols allowed.")
-        else:
-            # Use only the ADV whitelist
+        if allowed_assets and adv_whitelist:
+            # Пересечение списка из конфига и whitelist'а от ADV
+            original_count = len(allowed_assets)
+            allowed_assets = list(set(allowed_assets) & set(adv_whitelist))
+            logging.info(f"Объединены разрешенные ({original_count}) и ADV ({len(adv_whitelist)}) списки: {len(allowed_assets)} символов разрешено.")
+        elif adv_whitelist:
+            # Используем только ADV whitelist
             allowed_assets = adv_whitelist
-            logging.info(f"Using ADV whitelist: {len(allowed_assets)} symbols allowed.")
-    elif config_assets:
-        # ADV filter is empty or failed, use config list
-        allowed_assets = config_assets
-        logging.info(f"ADV filter was empty, using symbols from config: {len(allowed_assets)} symbols.")
-    # If both are None/empty, allowed_assets remains None, and all symbols will be loaded.
+            logging.info(f"Используется ADV whitelist: {len(allowed_assets)} символов разрешено.")
+    else:
+        logging.info("ADV-фильтр отключен (min_daily_volume не задан или равен 0).")
 
 
     train_seqs, train_keys = load_and_prep_data(
