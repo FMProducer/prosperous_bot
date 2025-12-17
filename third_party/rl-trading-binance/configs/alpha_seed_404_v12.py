@@ -46,7 +46,7 @@ cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
 cfg.market.num_actions = 3  # 0=HOLD, 1=OPEN_LONG, 2=OPEN_SHORT
-cfg.market.close_action_index = None  # Закрытие не предусмотрено
+cfg.market.close_action_index = None  # Закрытие не предусмотрено, будет принудительным
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку

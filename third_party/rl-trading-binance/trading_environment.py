@@ -395,6 +395,30 @@ class TradingEnvironment(gym.Env):
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
 
+        # --- Forced position closing at the end of the session ---
+        if self.last_step and self.position != 0 and not self.backtest_mode:
+            # This logic must run BEFORE action processing to ensure closure happens
+            # regardless of the agent's intended action.
+            volume = self.position_volume
+
+            if self.position == 1: # CLOSE LONG
+                real_exec_price = real_price * (1 - self.slippage)
+                trade_pnl = (real_exec_price - self.real_entry_price) * volume
+            else: # CLOSE SHORT
+                real_exec_price = real_price * (1 + self.slippage)
+                trade_pnl = (self.real_entry_price - real_exec_price) * volume
+
+            fee = real_exec_price * volume * self.transaction_fee
+            pnl_change += trade_pnl - fee
+
+            self.closed_trades += 1
+            if trade_pnl > 0:
+                self.profitable_trades += 1
+
+            # Reset position state. The rest of the step will see the position as closed.
+            self.position = 0
+            self.position_volume = 0.0
+
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
         if action in [1, 2] and self.position == 0:
@@ -484,28 +508,6 @@ class TradingEnvironment(gym.Env):
                     self.profitable_trades += 1
                 self.position = 0
                 self.position_volume = 0.0
-
-        # --- NEW: Forced position closing at the end of the session ---
-        if self.last_step and self.position != 0 and not self.backtest_mode:
-            volume = self.position_volume
-            
-            if self.position == 1: # CLOSE LONG
-                real_exec_price = real_price * (1 - self.slippage)
-                trade_pnl = (real_exec_price - self.real_entry_price) * volume
-            else: # CLOSE SHORT
-                real_exec_price = real_price * (1 + self.slippage)
-                trade_pnl = (self.real_entry_price - real_exec_price) * volume
-            
-            fee = real_exec_price * volume * self.transaction_fee
-            final_pnl_change = trade_pnl - fee
-            pnl_change += final_pnl_change
-            
-            self.closed_trades += 1
-            if trade_pnl > 0:
-                self.profitable_trades += 1
-
-            self.position = 0
-            self.position_volume = 0.0
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
