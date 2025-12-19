@@ -1,0 +1,17 @@
+{
+  "continue.workspacePaths": ["C:/Python/Prosperous_Bot"],
+  "continue.enableConsole": true,
+  "continue.telemetryEnabled": false,
+  "continue.allowTerminalCommands": true,
+  "continue.tools": ["file_search", "grep", "edit", "terminal", "diff"],
+  "continue.rlTradingAgent": {
+    "repoBranch": "prosperous_bot",
+    "configPath": "third_party/rl-trading-binance/configs/",
+    "outputDir": "third_party/rl-trading-binance/output/"
+  },
+  "continue.serverUrl": "https://continue-server.example.com",  // если используете свой сервер
+  "continue.debugMode": false,
+  "search.exclude": {
+    "**/third_party/rl-trading-binance/output/": true
+  }
+}
