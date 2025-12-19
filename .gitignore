@@ -106,3 +106,4 @@ output/alpha/logs/backtest_session.log
 output/alpha/paper_trader/paper_equity.csv
 output/alpha/logs/paper_trader_session.log
 output/alpha/paper_trader/paper_trades.csv
+.vscode/settings.json
