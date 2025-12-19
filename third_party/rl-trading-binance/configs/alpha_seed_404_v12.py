@@ -340,3 +340,4 @@ cfg.market.vol_filter_window = 90
 # DEBUG: Lower relative volume threshold
 cfg.market.vol_filter_min_rel = 0.05
 cfg.market.disable_liquidity_filter = True  # DEBUG: временно отключаем фильтр ликвидности для проверки сделок
+ 
