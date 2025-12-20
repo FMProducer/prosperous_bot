@@ -292,8 +292,9 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-# cfg.paths.model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\best.pth"
-# cfg.paths.norm_stats_path = r"C:\Python\Prosper_Bot\third_party\rl-trading-binance\output\alpha_seed_404\saved_models\rl_binance_futures_trading_date_20251120_time_015257\norm_stats.json"
+# Example relative path (adjust as needed):
+# cfg.paths.model_path = "output/alpha_seed_404/saved_models/rl_binance_futures_trading_date_20251120_time_015257/best.pth"
+# cfg.paths.norm_stats_path = "output/alpha_seed_404/saved_models/rl_binance_futures_trading_date_20251120_time_015257/norm_stats.json"
 
 # Workflow notes (run from root):
 # python train.py --config alpha.py --total_timesteps 10000  # Test
@@ -305,9 +306,10 @@ class EnsembleConfig:
 cfg.ensemble = EnsembleConfig()
 # --- ENSEMBLE MODEL ---
 # Используйте для запуска validate_ensemble.py
-# cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
-# cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
-# cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
+# Example relative paths (adjust as needed):
+# cfg.ensemble.long_model_path = "output/alpha_seed_404_v11_LONG/saved_models/rl_binance_futures_trading_date_20251210_time_222425/best.pth"
+# cfg.ensemble.short_model_path = "output/alpha_seed_404_v11_SHORT/saved_models/rl_binance_futures_trading_date_20251210_time_200357/best.pth"
+# cfg.ensemble.norm_stats_path = "output/alpha_seed_404_v11_LONG/saved_models/rl_binance_futures_trading_date_20251210_time_222425/norm_stats.json"
 
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True
