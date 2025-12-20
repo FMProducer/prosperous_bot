@@ -82,17 +82,15 @@ class DuelingQNetwork(nn.Module):
         adv_layers.append(nn.Linear(prev, action_dim))
         self.advantage_stream = nn.Sequential(*adv_layers)
 
-        logger.info(f"Initialized DuelingQNetwork (Conv1d): input=(C:{channels}, L:{history_len}), actions={action_dim}")
+        # Добавляем модули для квантования
+        self.quant = torch.ao.quantization.QuantStub()
+        self.dequant = torch.ao.quantization.DeQuantStub()
+        logger.info(f"Initialized DuelingQNetwork with QAT support...")
 
     def forward(self, state: Tensor, return_components: bool = False) -> Union[Tensor, Tuple[Tensor, Tensor, Tensor]]:
-        """
-        Args:
-            state: input state tensor
-            return_components: if True, returns (Q, V, A) instead of just Q
+        # Оборачиваем вычисления для QAT
+        state = self.quant(state)
         
-        Returns:
-            Q-values tensor, or (Q, V, A) tuple if return_components=True
-        """
         batch = state.size(0)
 
         # The input state is flat, need to separate history and extra features
@@ -113,6 +111,7 @@ class DuelingQNetwork(nn.Module):
 
         q_value = value + (advantage - advantage.mean(dim=1, keepdim=True))
         
+        q_value = self.dequant(q_value)
         if return_components:
             return q_value, value, advantage
         

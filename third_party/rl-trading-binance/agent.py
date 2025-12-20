@@ -508,6 +508,13 @@ class D3QN_PER_Agent:
     def increment_step(self) -> None:
         self.total_steps += 1
 
+    def prepare_for_qat(self):
+        """Подготовка модели к квантованию (вызывать перед переобучением)"""
+        self.policy_net.train()
+        self.policy_net.qconfig = torch.ao.quantization.get_default_qat_qconfig('fbgemm')
+        torch.ao.quantization.prepare_qat(self.policy_net, inplace=True)
+        logger.info("Model prepared for Quantization-Aware Training (QAT)")
+
     def save_model(self, path: str) -> None:
         """
         Сохраняет ПОЛНЫЙ чекпоинт для безопасного возобновления обучения:
@@ -541,7 +548,15 @@ class D3QN_PER_Agent:
         Загружает либо новый чекпоинт (см. save_model), либо старый .pth с единственным state_dict.
         Аргумент strict пробрасывается в load_state_dict для гибкости при мелких несовпадениях ключей.
         """
-        obj = torch.load(path, map_location=self.device)
+        # Исправляем загрузку для CPU-only машин
+        device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device
+        obj = torch.load(path, map_location=device_to_load)
+
+        # Если модель была обучена с QAT, конвертируем её в инт8 после загрузки
+        if hasattr(self.policy_net, 'quant'):
+            self.policy_net.eval()
+            torch.ao.quantization.convert(self.policy_net, inplace=True)
+            logger.info("Model converted to INT8 for extreme CPU speed")
 
         def _try_load_weights(sd, tag: str):
             sd = _unwrap_sd(sd)

@@ -9,6 +9,10 @@ import datetime
 import sys
 import importlib.util
 import torch
+# Оптимизация для Ryzen: 1 поток на модель в ансамбле 
+# предотвращает борьбу за L3 кэш
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 from tqdm import tqdm
 import numpy as np
 import pandas as pd

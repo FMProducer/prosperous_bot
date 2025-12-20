@@ -8,9 +8,11 @@ import json  # Для fallback norm_stats если нужно
 # UNIVERSAL:  Trade both directions (Default)
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
-AGENT_MODE = "UNIVERSAL" 
+# AGENT_MODE = "UNIVERSAL" 
 # AGENT_MODE = "LONG_ONLY"
-# AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "SHORT_ONLY"
+
+cfg.paths.config_name = "alpha_seed_404_v11_SHORT"
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
@@ -30,7 +32,7 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/train_data_fair_8m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
@@ -253,7 +255,6 @@ cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_seed_404_v11_LONG"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
@@ -304,9 +305,9 @@ class EnsembleConfig:
 cfg.ensemble = EnsembleConfig()
 # --- ENSEMBLE MODEL ---
 # Используйте для запуска validate_ensemble.py
-cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
-cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
-cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
+# cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
+# cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
+# cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
 
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True
