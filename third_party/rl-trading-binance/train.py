@@ -134,75 +134,6 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-
-def filter_symbols_by_adv(data_path: str, min_daily_volume: int = 5_000_000) -> list[str]:
-    """
-    Загружает NPZ, рассчитывает Average Daily Volume (ADV) для каждого тикера
-    и возвращает whitelist тикеров, у которых ADV выше порога.
-
-    Args:
-        data_path (str): Путь к .npz файлу с данными.
-        min_daily_volume (int): Минимальный среднесуточный объем в USDT.
-
-    Returns:
-        list[str]: Список тикеров (whitelist), прошедших фильтрацию.
-    """
-    logging.info(f"Запуск фильтрации символов по ADV > {min_daily_volume:,} USDT...")
-    try:
-        d = np.load(data_path, allow_pickle=True)
-    except FileNotFoundError:
-        logging.error(f"Файл данных для фильтрации ADV не найден: {data_path}")
-        return []
-
-    data_keys = [k for k in d.files if not k.startswith('_')]
-
-    # Группировка ключей по тикерам
-    asset_keys = defaultdict(list)
-    for key in data_keys:
-        try:
-            asset_name = key.split('_')[0]
-            asset_keys[asset_name].append(key)
-        except IndexError:
-            logging.warning(f"Не удалось извлечь имя актива из ключа: {key}")
-            continue
-
-    whitelist = []
-
-    # Используем tqdm для отслеживания прогресса
-    for asset, keys in tqdm(asset_keys.items(), desc="Filtering symbols by ADV"):
-        # Индекс 5 соответствует 'quote_volume'
-        # Берем среднее значение по всем барам всех эпизодов для данного тикера
-        try:
-            # Загружаем данные только для выбранных ключей этого ассета
-            # axis=0 - по эпизодам, axis=1 - по временным шагам
-            # shape of each episode is (L, C)
-            all_episodes_for_asset = [d[key] for key in keys]
-
-            # Собираем все значения quote_volume в один массив
-            # Индекс канала 5 для quote_volume
-            quote_volumes = np.concatenate([episode[:, 5] for episode in all_episodes_for_asset])
-
-            if quote_volumes.size > 0:
-                mean_quote_volume = np.mean(quote_volumes)
-                # ADV = средний объем за минуту * количество минут в сутках
-                adv = mean_quote_volume * 1440
-
-                if adv >= min_daily_volume:
-                    whitelist.append(asset)
-            else:
-                logging.warning(f"Для тикера {asset} нет данных по объему.")
-
-        except Exception as e:
-            logging.error(f"Ошибка при обработке тикера {asset} для ADV-фильтра: {e}")
-
-    d.close()
-
-    logging.info(f"Фильтр ADV пройден. {len(whitelist)}/{len(asset_keys)} тикеров в whitelist.")
-    logging.debug(f"Whitelist: {whitelist}")
-
-    return whitelist
-
-
 def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -> dict:
     """
     Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
@@ -382,12 +313,6 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                 episode_infos.append(infos[i])
                 ep_reward_per_episode.append(ep_reward[i])
                 wr = infos[i].get("episode_win_rate", None)
-                closed = infos[i].get("episode_closed_trades", 0)
-                open_attempts = infos[i].get("episode_open_attempts", 0)
-                logging.info(
-                    f"[EP-SUMMARY] env={i} closed_trades={closed} "
-                    f"open_attempts={open_attempts} win_rate={wr if wr is not None else 'N/A'}"
-                )
                 if wr is not None:
                     # считаем завершённый эпизод для этого env
                     pbars[i].total += 1
@@ -1074,30 +999,6 @@ def main(cfg: MasterConfig = None):
     if allowed_assets == "ALL":
         allowed_assets = None  # Используем все активы
 
-    # --- Условная фильтрация символов по ADV ---
-    min_vol = getattr(cfg.market, "min_daily_volume", 0)
-    if min_vol > 0:
-        logging.info(f"Включен ADV-фильтр с min_daily_volume > {min_vol:,}")
-        adv_whitelist = filter_symbols_by_adv(
-            data_path=cfg.paths.train_data_path,
-            min_daily_volume=min_vol
-        )
-        if not adv_whitelist:
-            logging.warning("Whitelist после ADV-фильтра пуст. Проверьте данные или порог.")
-
-        if allowed_assets and adv_whitelist:
-            # Пересечение списка из конфига и whitelist'а от ADV
-            original_count = len(allowed_assets)
-            allowed_assets = list(set(allowed_assets) & set(adv_whitelist))
-            logging.info(f"Объединены разрешенные ({original_count}) и ADV ({len(adv_whitelist)}) списки: {len(allowed_assets)} символов разрешено.")
-        elif adv_whitelist:
-            # Используем только ADV whitelist
-            allowed_assets = adv_whitelist
-            logging.info(f"Используется ADV whitelist: {len(allowed_assets)} символов разрешено.")
-    else:
-        logging.info("ADV-фильтр отключен (min_daily_volume не задан или равен 0).")
-
-
     train_seqs, train_keys = load_and_prep_data(
         cfg.paths.train_data_path, "Train", norm_stats=norm_stats, allowed_assets=allowed_assets
     )
@@ -1243,10 +1144,6 @@ def main(cfg: MasterConfig = None):
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),  # <--- ДОБАВИТЬ ЭТО
-        # NEW CODE: Pass liquidity filter params to environment
-        "vol_filter_window": getattr(cfg.market, "vol_filter_window", 90),
-        "vol_filter_min_rel": getattr(cfg.market, "vol_filter_min_rel", 0.2),
-        "disable_liquidity_filter": getattr(cfg.market, "disable_liquidity_filter", False),
     }
     # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)
@@ -1694,17 +1591,7 @@ def main(cfg: MasterConfig = None):
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_pos", nargs="?", help="Path to config (positional)")
-    parser.add_argument("--config", help="Path to config (flag)")
-    args = parser.parse_args()
-
-    config_path = args.config or args.config_pos
-    if not config_path:
-        # Fallback to default if needed or raise error
-        print("Usage: python train.py <config_path> OR python train.py --config <config_path>")
-        sys.exit(1)
-
-    cfg, cfg_mod = load_config(config_path, return_module=True)
-    main(cfg)
+    cfg = None
+    if len(sys.argv) > 1:
+        cfg, _ = load_config(sys.argv[1], return_module=True)
+    main(cfg=cfg)

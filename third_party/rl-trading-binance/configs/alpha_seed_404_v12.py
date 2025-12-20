@@ -8,8 +8,8 @@ import json  # Для fallback norm_stats если нужно
 # UNIVERSAL:  Trade both directions (Default)
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
-# AGENT_MODE = "UNIVERSAL" 
-AGENT_MODE = "LONG_ONLY"
+AGENT_MODE = "UNIVERSAL" 
+# AGENT_MODE = "LONG_ONLY"
 # AGENT_MODE = "SHORT_ONLY"
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
@@ -30,7 +30,7 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.val_data_path = "data/train_data_fair_8m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"
 cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
 
@@ -45,8 +45,7 @@ cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_his
 cfg.model.dropout_p = 0.20
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
-cfg.market.num_actions = 3  # 0=HOLD, 1=OPEN_LONG, 2=OPEN_SHORT
-cfg.market.close_action_index = None  # Закрытие не предусмотрено, будет принудительным
+cfg.market.num_actions = 3  # Discrete: 0=hold, 1=buy, 2=sell. Close отключен.
 
 # Market/Position Sizing (для обучения, НЕ только backtest!)
 cfg.market.position_fraction = 0.10  # 10% баланса на сделку
@@ -89,8 +88,7 @@ cfg.per.per_beta_frames = 400000
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-# DEBUG: Slower decay for more exploration
-cfg.eps.eps_decay_frames = 800000
+cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
 cfg.vec.num_envs = 8             # параллельные среды
@@ -102,9 +100,10 @@ cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 cfg.trainlog.num_val_ep = 100000  # Увеличили лимит эпизодов
 max_episodes_per_symbol = 1000
 
-# DEBUG: Short run for analysis
-cfg.trainlog.episodes = 500
-cfg.trainlog.total_timesteps = 50_000
+# При 4 env один эпизод даёт ~4× больше шагов.
+# Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
+cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
+cfg.trainlog.total_timesteps = 300000  # Бюджет шагов , норма 600000
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
 cfg.trainlog.val_freq = 62              # норма 125
@@ -162,16 +161,15 @@ cfg.market.bankruptcy_slippage_penalty = 0.05
 # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_threshold = -0.20
 cfg.market.max_drawdown_penalty_type = "proportional"
-# DEBUG: exploration-friendly penalties
-cfg.market.max_drawdown_penalty = 0.5
+cfg.market.max_drawdown_penalty = 1.0
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.02  # Меньше для длинных позиций
+cfg.market.continuous_pain_penalty_ratio = 0.08  # Меньше для длинных позиций
 # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 0.01
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
-cfg.market.holding_penalty_multiplier = 0.05  # Меньше штраф
+cfg.market.holding_penalty_multiplier = 0.15  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.greed_penalty_multiplier = 0.08  # Меньше штраф
 
@@ -255,7 +253,7 @@ cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
-cfg.paths.config_name = "alpha_seed_404_v12_LONG"
+cfg.paths.config_name = "alpha_seed_404_v11_LONG"
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
@@ -306,9 +304,9 @@ class EnsembleConfig:
 cfg.ensemble = EnsembleConfig()
 # --- ENSEMBLE MODEL ---
 # Используйте для запуска validate_ensemble.py
-# cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
-# cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
-# cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
+cfg.ensemble.long_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth"
+cfg.ensemble.short_model_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth"
+cfg.ensemble.norm_stats_path = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\norm_stats.json"
 
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True
@@ -326,18 +324,4 @@ cfg.ensemble.disable_cross_close = True
 # --- Cooldown для предотвращения "дребезга" ---
 # Количество баров, в течение которых оба агента будут удерживать позицию (HOLD)
 # после события конфликта или перекрестного закрытия.
-cfg.ensemble.conflict_cooldown_bars = 1440
-
-# --- LIQUIDITY FILTER CONFIGURATION (NEW) ---
-# 1. Глобальный whitelist (Off-line)
-# Минимальный среднесуточный оборот (USDT) за весь период обучения
-# DEBUG: Lower ADV threshold to allow more assets
-cfg.market.min_daily_volume = 1_000_000
-# 2. Локальный фильтр баров (On-line)
-# Окно скользящей медианы (согласовано с history_len=90)
-cfg.market.vol_filter_window = 90
-# Порог относительного объема (если vol < 0.2 * median -> skip)
-# DEBUG: Lower relative volume threshold
-cfg.market.vol_filter_min_rel = 0.05
-cfg.market.disable_liquidity_filter = True  # DEBUG: временно отключаем фильтр ликвидности для проверки сделок
- 
+cfg.ensemble.conflict_cooldown_bars = 525600

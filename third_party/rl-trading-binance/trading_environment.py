@@ -85,10 +85,6 @@ class TradingEnvironment(gym.Env):
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
         allowed_directions: Optional[List[str]] = None,
-        # On-line liquidity filter
-        vol_filter_window: int = 90,
-        vol_min_rel: float = 0.2,
-        disable_liquidity_filter: bool = False,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -189,19 +185,10 @@ class TradingEnvironment(gym.Env):
         self.allow_opposite_trades = allow_opposite_trades
         self.allowed_directions = allowed_directions
 
-        # NEW CODE: On-line liquidity filter settings
-        self.vol_filter_window = vol_filter_window
-        self.vol_min_rel = vol_min_rel
-        self.disable_liquidity_filter = disable_liquidity_filter
-
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
         if self.close_action is None:
             self.close_action = self.num_actions - 1 if self.num_actions > 3 else -1 # -1 если close отключен
-
-        if not self.backtest_mode:
-            # В режиме обучения действие "закрыть" всегда отключено
-            self.close_action = -1
 
 
         self.seed_value = seed
@@ -265,8 +252,6 @@ class TradingEnvironment(gym.Env):
         self._position_entry_step = None
         self._max_unrealized_pnl = 0.0
         self._min_unrealized_pnl = 0.0
-        # Debug counters
-        self.debug_open_attempts: int = 0
         
         if self.backtest_mode:
             self.total_commission: float = 0.0
@@ -320,7 +305,6 @@ class TradingEnvironment(gym.Env):
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         assert self.current_seq is not None, "reset() must be called before step()"
         prev_position = self.position
-        raw_action = int(action)  # RAW action from agent
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
         close_action = self.close_action
@@ -343,41 +327,6 @@ class TradingEnvironment(gym.Env):
         close_std = asset_stats['std'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
-        # Before block NEW CODE: Bar Liquidity Filter
-        if self.position == 0 and action in {1, 2}:
-            logging.debug(
-                f"[STEP-OPEN-ATTEMPT] idx={self.step_idx} action={action} "
-                f"asset={self.current_asset_name} price_idx={price_idx}"
-            )
-
-        # --- NEW CODE: Bar Liquidity Filter (On-line) ---
-        is_liquid = True
-        low_liquidity_flag = False
-        if self.position == 0 and action in {1, 2}:  # Check only when opening a position
-            self.debug_open_attempts += 1
-            if not self.disable_liquidity_filter:
-                # Get the history of quote volumes (channel 5)
-                start_idx = max(0, price_idx - self.vol_filter_window)
-                volume_window = self.current_seq[start_idx:price_idx, 5]
-                if volume_window.size > 0:
-                    median_volume = np.median(volume_window)
-                    current_volume = self.current_seq[price_idx, 5]
-                    is_liquid = current_volume >= median_volume * self.vol_min_rel
-                    logging.debug(
-                        f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
-                        f"cur_vol={current_volume:.4f} med_vol={median_volume:.4f} "
-                        f"rel={current_volume / (median_volume + 1e-9):.3f} "
-                        f"threshold={self.vol_min_rel:.3f} -> is_liquid={is_liquid}"
-                    )
-                    if not is_liquid:
-                        action = 0  # Force HOLD if liquidity is too low
-                        low_liquidity_flag = True
-                else:
-                    logging.debug(
-                        f"[LIQ-FILTER] asset={self.current_asset_name} step={self.step_idx} "
-                        f"no volume history (window={self.vol_filter_window})"
-                    )
-
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
             is_long = self.position > 0
@@ -406,11 +355,6 @@ class TradingEnvironment(gym.Env):
                 action = 0  # Force HOLD
                 reward -= self.low_balance_penalty # Penalize attempt
 
-        logging.debug(
-            f"[STEP-ACTION] asset={self.current_asset_name} step={self.step_idx} "
-            f"raw_action={raw_action} final_action={action} "
-            f"position={self.position} last_step={self.last_step}"
-        )
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
             if not self.allowed_directions or 'LONG' in self.allowed_directions:
@@ -466,24 +410,23 @@ class TradingEnvironment(gym.Env):
 
         # --- Position Closing ---
         elif action == close_action and self.position != 0 and close_action != -1:
-            if self.backtest_mode:
-                volume = self.position_volume
-
-                if self.position == 1: # CLOSE LONG
-                    real_exec_price = real_price * (1 - self.slippage)
-                    trade_pnl = (real_exec_price - self.real_entry_price) * volume
-                else: # CLOSE SHORT
-                    real_exec_price = real_price * (1 + self.slippage)
-                    trade_pnl = (self.real_entry_price - real_exec_price) * volume
-
-                fee = real_exec_price * volume * self.transaction_fee
-                pnl_change += trade_pnl - fee
-
-                self.closed_trades += 1
-                if trade_pnl > 0:
-                    self.profitable_trades += 1
-                self.position = 0
-                self.position_volume = 0.0
+            volume = self.position_volume
+            
+            if self.position == 1: # CLOSE LONG
+                real_exec_price = real_price * (1 - self.slippage)
+                trade_pnl = (real_exec_price - self.real_entry_price) * volume
+            else: # CLOSE SHORT
+                real_exec_price = real_price * (1 + self.slippage)
+                trade_pnl = (self.real_entry_price - real_exec_price) * volume
+            
+            fee = real_exec_price * volume * self.transaction_fee
+            pnl_change += trade_pnl - fee
+            
+            self.closed_trades += 1
+            if trade_pnl > 0:
+                self.profitable_trades += 1
+            self.position = 0
+            self.position_volume = 0.0
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
@@ -520,39 +463,6 @@ class TradingEnvironment(gym.Env):
 
         self.step_idx += 1
         
-        # --- FORCE CLOSE ON LAST STEP ---
-        if self.step_idx >= self.agent_session_len and self.position != 0:
-            # Re-calculate current price for closing
-            price_idx = min(len(self.current_seq) - 1, self.pre_signal_len + self.step_idx - 1)
-            norm_price = self.current_seq[price_idx, self.close_idx]
-
-            asset_stats = self._get_asset_stats() # Helper function to get stats
-            close_mean = asset_stats['mean'][self.close_idx]
-            close_std = asset_stats['std'][self.close_idx]
-            real_price = norm_price * close_std + close_mean
-
-            volume = self.position_volume
-            if self.position == 1:  # CLOSE LONG
-                real_exec_price = real_price * (1 - self.slippage)
-                trade_pnl = (real_exec_price - self.real_entry_price) * volume
-            else:  # CLOSE SHORT
-                real_exec_price = real_price * (1 + self.slippage)
-                trade_pnl = (self.real_entry_price - real_exec_price) * volume
-
-            fee = real_exec_price * volume * self.transaction_fee
-            net_pnl = trade_pnl - fee
-
-            self.position = 0
-            self.position_volume = 0.0
-            self.balance += net_pnl
-            self.realized_pnl += net_pnl
-            self.closed_trades += 1
-            if trade_pnl > 0:
-                self.profitable_trades += 1
-
-            # Add to pnl_change so shaped reward sees it
-            pnl_change += net_pnl
-
         terminated = self.step_idx >= self.agent_session_len
         
         # Track position metrics for shaped reward
@@ -618,7 +528,6 @@ class TradingEnvironment(gym.Env):
                 "episode_realized_pnl": self.realized_pnl,
                 "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
                 "episode_closed_trades": self.closed_trades,
-                "episode_open_attempts": self.debug_open_attempts,
                 "episode_max_drawdown": self.current_max_drawdown,
             })
         else:
@@ -636,8 +545,6 @@ class TradingEnvironment(gym.Env):
      
         if self.render_mode == "human":
             self._render_human(info, action, reward)
-
-        info['low_liquidity'] = low_liquidity_flag
      
         return obs, reward, terminated, False, info
 

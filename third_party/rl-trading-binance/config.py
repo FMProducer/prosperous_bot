@@ -130,19 +130,6 @@ class MarketConfig(BaseModel):
     position_fraction: float = 1.0  # Доля баланса для входа в позицию
     transaction_fee: float = 0.0004
     slippage: float = 0.0002
-
-    # --- LIQUIDITY FILTER CONFIGURATION ---
-    # Минимальный среднесуточный объём в USDT для включения тикера (0 = фильтр отключён)
-    min_daily_volume: int = 0
-
-    # Окно скользящей медианы объёма (в барах, минутные свечи)
-    vol_filter_window: int = 90
-
-    # Минимальный относительный объём: если current_vol < median * vol_min_rel, бар считается неликвидным
-    vol_filter_min_rel: float = 0.2
-
-    # Флаг для полного отключения on-line фильтра ликвидности (для отладки/абляции)
-    disable_liquidity_filter: bool = False
     
     # Добавляем новые поля для управления режимами агента
     allowed_directions: list[str] = ["LONG", "SHORT"]
@@ -309,7 +296,6 @@ class BacktestConfig(BaseModel):
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
     exec_delay_bars: int = 1
-    mask_close_action: bool = False
 
 
 class PaperTraderConfig(BaseModel):

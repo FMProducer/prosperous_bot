@@ -252,24 +252,6 @@ def load_and_normalize_data(npz_path, norm_stats_path, paper_symbols_cfg):
     logger.info(f"Prepared {len(sequences)} validation sequences.")
     return sequences, all_stats, valid_keys
 
-def record_trade(trade_info, ticker, all_trades_list, direction_suffix=None):
-    """Helper to process and record a single trade."""
-    t_data = trade_info.copy()
-
-    direction = t_data.get('direction', 'UNKNOWN')
-    if direction_suffix:
-        t_data['symbol'] = f"{ticker}{direction_suffix}"
-    else:
-        # For single agent, construct suffix from direction
-        t_data['symbol'] = f"{ticker}_{direction[0] if direction != 'UNKNOWN' else 'U'}"
-
-    t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
-    t_data['commission'] = t_data.get('trade_commission', 0)
-    t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
-    t_data['bars'] = t_data.get('holding_duration_bars', 0)
-    all_trades_list.append(t_data)
-
-
 def run_validation():
     parser = argparse.ArgumentParser(description="Validate/test RL agent")
     parser.add_argument("config", type=str, help="Path to config file")
@@ -592,7 +574,6 @@ def run_validation():
     logger.info("🚀 Starting Backtest Validation...")
     
     all_trades = []
-    episode_timestamps = []
     total_bars_processed = 0
     start_time = time.time()
     
@@ -609,8 +590,7 @@ def run_validation():
                 signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
         except (IndexError, AttributeError, ValueError):
             pass
-
-        episode_timestamps.append(signal_dt)
+        
         episode_bars = 0
         if args.ensemble:
             if i >= len(env_long.sequences) or i >= len(env_short.sequences): continue
@@ -688,7 +668,13 @@ def run_validation():
                     obs_l = next_obs_l
                     done_l = term_l or trunc_l
                     if info_l.get('position_closed'):
-                        record_trade(info_l, ticker_name, all_trades, direction_suffix="_L")
+                        t_data = info_l.copy()
+                        t_data['symbol'] = f"{ticker_name}_L"
+                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
+                        t_data['commission'] = t_data.get('trade_commission', 0)
+                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
+                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
+                        all_trades.append(t_data)
 
                 if not done_s:
                     next_obs_s, _, term_s, trunc_s, info_s = env_short.backtest_step(
@@ -699,7 +685,13 @@ def run_validation():
                     obs_s = next_obs_s
                     done_s = term_s or trunc_s
                     if info_s.get('position_closed'):
-                        record_trade(info_s, ticker_name, all_trades, direction_suffix="_S")
+                        t_data = info_s.copy()
+                        t_data['symbol'] = f"{ticker_name}_S"
+                        t_data['pnl'] = t_data.get('trade_realized_pnl', 0)
+                        t_data['commission'] = t_data.get('trade_commission', 0)
+                        t_data['net_pnl'] = t_data['pnl'] - t_data['commission']
+                        t_data['bars'] = t_data.get('holding_duration_bars', 0)
+                        all_trades.append(t_data)
             
             # --- FIX: Accumulate actual bars processed ---
             total_bars_processed += episode_bars
@@ -715,7 +707,17 @@ def run_validation():
                 )
                 episode_bars += 1
                 if info.get('position_closed'):
-                    record_trade(info, ticker_name, all_trades)
+                    pnl = info["trade_realized_pnl"]
+                    comm = info.get("trade_commission", 0.0)
+                    net_pnl = pnl - comm
+                    trade_data = {
+                        "symbol": ticker_name,
+                        "direction": info.get("direction", "UNKNOWN"),
+                        "pnl": pnl, "net_pnl": net_pnl, "commission": comm,
+                        "bars": info.get("holding_duration_bars", 0),
+                        "tsl_triggered": info.get('tsl_triggered', False)
+                    }
+                    all_trades.append(trade_data)
                 obs = next_obs
                 done = terminated or truncated
             
@@ -754,12 +756,8 @@ def run_validation():
     min_holding_time = min(holding_times) if holding_times else 0.0
     
     # --- FIX: Correct trading days calculation ---
-    trading_time_days = 0.0
-    if len(episode_timestamps) > 1:
-        time_span = max(episode_timestamps) - min(episode_timestamps)
-        # Add 1 day to account for the fact that the simulation spans the full period
-        trading_time_days = time_span.total_seconds() / (24 * 3600) + 1
-
+    bars_per_day = 1440
+    trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
     pnl_per_day = net_pnl / max(1, trading_time_days)
     
     initial_balance = env.initial_balance if hasattr(env, 'initial_balance') else 10000
