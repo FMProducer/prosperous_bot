@@ -1085,6 +1085,9 @@ def main(cfg: MasterConfig = None):
         # MC-dropout from cfg.mc_dropout (as is)
     )
 
+    # Подготовка модели к квантованию (QAT)
+    agent.prepare_for_qat()
+
     # Calculate flat_state_size
     input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     # After reshape, num_features becomes the number of channels in original data
