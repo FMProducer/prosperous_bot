@@ -8,9 +8,9 @@ import json  # Для fallback norm_stats если нужно
 # UNIVERSAL:  Trade both directions (Default)
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
-# AGENT_MODE = "UNIVERSAL" 
+AGENT_MODE = "UNIVERSAL" 
 # AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 cfg.paths.config_name = "alpha_seed_404_v11_SHORT"
 

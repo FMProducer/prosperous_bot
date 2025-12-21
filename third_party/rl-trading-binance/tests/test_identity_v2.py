@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from pathlib import Path
 import importlib.util
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from trading_environment import TradingEnvironment
 from agent import D3QN_PER_Agent

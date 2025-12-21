@@ -18,13 +18,16 @@ cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python validate_ensemble.py --ensemble configs/alpha_seed_404_v11.py
 python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v12.py
 
+python validate_ensemble_prod_q.py configs/alpha_seed_404_v12.py --ensemble --long_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth" --short_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth" --mode val
 
-python train.py --config configs/alpha_seed_404_v12.py
+python train.py configs/alpha_seed_404_v12.py               этот
+python train.py --config configs/alpha_seed_404_v12.py           
 *python train.py configs/alpha.py
 python train.py 
 python train.py train_best.py
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
+pytest test_identity_v2.py -v
 python test_agent.py
 python test_agent.py run_fmproducer_1.py     *
 *python test_agent.py configs/alpha.py "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha\saved_models\rl_binance_futures_trading_date_20251023_time_180344\best.pth"
