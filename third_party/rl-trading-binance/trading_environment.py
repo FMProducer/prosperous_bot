@@ -293,6 +293,9 @@ class TradingEnvironment(gym.Env):
         # Reset buffer for safety
         self._obs_buffer.fill(0.0)
 
+        # Reset buffer for safety
+        self._obs_buffer.fill(0.0)
+
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
         try:
