@@ -579,6 +579,10 @@ def run_validation():
     
     all_trades = []
     total_bars_processed = 0
+    # FIX: Глобальное хранилище кулдаунов {ticker: banned_until_datetime_timestamp}
+    # Используем timestamp для надежности между эпизодами с разным временем
+    global_ticker_cooldowns = {}
+
     start_time = time.time()
     
     pbar = tqdm(range(len(sequences)), desc="Simulating")
@@ -595,6 +599,12 @@ def run_validation():
         except (IndexError, AttributeError, ValueError):
             pass
         
+        # FIX: Проверка глобального кулдауна перед началом эпизода
+        # Если тикер заблокирован навсегда
+        if ticker_name in global_ticker_cooldowns:
+            if global_ticker_cooldowns[ticker_name] > signal_dt.timestamp():
+                 continue
+
         episode_bars = 0
         if args.ensemble:
             if i >= len(env_long.sequences) or i >= len(env_short.sequences): continue
@@ -621,9 +631,8 @@ def run_validation():
                 # --- УЛУЧШЕННАЯ ЛОГИКА АНСАМБЛЯ ---
                 final_act_l, final_act_s = 0, 0
 
-                if current_step < cooldown_until_step:
-                    # Если кулдаун активен, принудительно удерживаем позицию (HOLD)
-                    pass # Действия уже 0
+                if ticker_name in global_ticker_cooldowns and global_ticker_cooldowns[ticker_name] > (signal_dt.timestamp() + current_step * 60):
+                     pass # Force HOLD
                 else:
                     # 1. Получаем сигналы от специалистов
                     long_wants_open, long_conf = (agent.get_long_vote(obs_l) if not done_l else (False, 0.0))
@@ -640,8 +649,13 @@ def run_validation():
                                    (long_wants_open and short_wants_open))
 
                     if is_conflict and conflict_cooldown_bars > 0:
-                        cooldown_until_step = current_step + conflict_cooldown_bars
+                        # FIX: Блокируем тикер глобально
+                        ban_until = (signal_dt.timestamp() + current_step * 60) + (conflict_cooldown_bars * 60)
+                        global_ticker_cooldowns[ticker_name] = ban_until
                         logger.info(f"👉 Cooldown activated for {conflict_cooldown_bars} bars on '{ticker_name}' due to conflict.")
+                        # FIX: Сразу сбрасываем намерения, чтобы не открыть сделку в этом же тике!
+                        long_wants_open = False
+                        short_wants_open = False
 
                     # 4. Применяем логику в зависимости от флага disable_cross_close
                     if disable_cross_close:
@@ -846,6 +860,12 @@ def run_validation():
     print(f"  Time Loss (Timeout):     {time_loss} ({time_loss/max(1, total_trades):.1%}) - \"Time SL\" (Loss)")
     print(f"  Total TSL Hits: {tsl_total}")
     print("="*44)
+
+    # В конце выводим статистику блокировок
+    blocked_count = len(global_ticker_cooldowns)
+    logger.info(f"🚫 Total blocked tickers due to conflicts: {blocked_count}")
+    if blocked_count > 0:
+        logger.info(f"🚫 Blocked list: {list(global_ticker_cooldowns.keys())}")
 
 if __name__ == "__main__":
     run_validation()
