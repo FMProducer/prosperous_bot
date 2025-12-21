@@ -2,6 +2,7 @@
 import datetime as dt
 import logging
 import os
+import os
 import pickle
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -16,6 +17,12 @@ from replay_buffer import PrioritizedReplayBuffer
 from config import PerformanceConfig
 
 logger = logging.getLogger(__name__)
+
+try:
+    import onnxruntime as ort
+except ImportError:
+    ort = None
+    logger.warning("ONNX Runtime not available. Install with `pip install onnxruntime` for CPU speedup.")
 
 
 class D3QN_PER_Agent:
@@ -56,6 +63,7 @@ class D3QN_PER_Agent:
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
         self.action_dim = action_dim
+        self.ort_session = None  # ONNX Runtime session
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
         model_kwargs = {
@@ -166,6 +174,35 @@ class D3QN_PER_Agent:
 
         logger.info("D3QN_PER_Agent initialized.")
 
+    def export_to_onnx(self, file_path: str, input_shape: Tuple[int, ...]):
+        """Exports the policy network to ONNX format."""
+        self.policy_net.eval()
+        dummy_input = torch.randn(1, *input_shape, device=self.device)
+
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        torch.onnx.export(
+            self.policy_net,
+            dummy_input,
+            file_path,
+            export_params=True,
+            opset_version=12,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+        )
+        logger.info(f"✅ Model exported to ONNX: {file_path}")
+
+    def load_onnx_model(self, file_path: str):
+        """Loads ONNX model for fast CPU inference."""
+        if ort is None:
+            logger.error("Cannot load ONNX model: onnxruntime not installed.")
+            return
+        self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
+        logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
+
     def select_action(
         self,
         state: np.ndarray,
@@ -233,6 +270,15 @@ class D3QN_PER_Agent:
         return torch.cat(q_list, dim=0)  # [n,1,A]
 
     def _select_action_base(self, state, training: bool, return_qvals: bool, use_cache: bool, cache_key: Optional[Tuple[str, dt.datetime]]):
+        # --- ONNX INFERENCE PATH ---
+        if self.ort_session is not None and not training:
+             # Prepare input: add batch dim, ensure float32
+             ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
+             # Run inference
+             qvals = self.ort_session.run(None, ort_inputs)[0][0] # [1, A] -> [A]
+             return qvals if return_qvals else int(np.argmax(qvals))
+        # ---------------------------
+
         eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
         if training and np.random.rand() < eps:
             return np.random.randint(self.action_dim)
