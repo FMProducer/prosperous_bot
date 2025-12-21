@@ -220,16 +220,19 @@ class TradingEnvironment(gym.Env):
             )
         else:
             # For MLP: flat vector
-                    self.observation_space = spaces.Box(
-                        low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
-                    )
-            
-                    # For shaped reward function
-                    self._position_entry_step = None
-                    self._max_unrealized_pnl = 0.0
-                    self._min_unrealized_pnl = 0.0
-            
-                    self._init_episode_vars()
+            self.observation_space = spaces.Box(
+                low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
+            )
+
+        # PERFORMANCE: Pre-allocate reusable observation buffer
+        self._obs_buffer = np.zeros(self.observation_space.shape, dtype=np.float32)
+
+        # For shaped reward function
+        self._position_entry_step = None
+        self._max_unrealized_pnl = 0.0
+        self._min_unrealized_pnl = 0.0
+
+        self._init_episode_vars()
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
         self.current_asset_name: Optional[str] = None
@@ -286,6 +289,9 @@ class TradingEnvironment(gym.Env):
             seed = self.seed_value
         super().reset(seed=seed)
         self._init_episode_vars()
+        
+        # Reset buffer for safety
+        self._obs_buffer.fill(0.0)
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
@@ -704,6 +710,7 @@ class TradingEnvironment(gym.Env):
             dtype=np.float32,
         )
 
+        # LEGACY PATH (CNN)
         if self.cnn_format:
             # For CNNs, we treat extras and history as additional channels
             # Shape (L, C) -> (C, L)
@@ -731,14 +738,24 @@ class TradingEnvironment(gym.Env):
                 obs = np.vstack([obs, history_channel]) # This will fail if history_vector_size > 1
             return obs.astype(np.float32)
 
+        # OPTIMIZED PATH: Avoid malloc for MLP mode by filling pre-allocated buffer
+        # 1. Fill History (Zero-Copy View)
+        hist_len = normalized.size
+        self._obs_buffer[:hist_len] = normalized.ravel()
+
+        # 2. Fill Extra Features
+        # extras = [position, unrealized_pnl, time_elapsed, time_remaining]
+        self._obs_buffer[hist_len:hist_len+4] = extras
+
+        # 3. Fill Action History
         if self.action_history_len > 0:
             hist_onehot = np.zeros(self.history_vector_size, dtype=np.float32)
             for idx, action in enumerate(self.history_actions):
                 if action is not None:
                     hist_onehot[idx * self.num_actions + action] = 1.0
-            return np.concatenate([normalized.flatten(), extras, hist_onehot])
-        
-        return np.concatenate([normalized.flatten(), extras])
+            self._obs_buffer[hist_len+4:] = hist_onehot
+
+        return self._obs_buffer
 
     def _get_info(self) -> Dict[str, Any]:
         info: Dict[str, Any] = {
