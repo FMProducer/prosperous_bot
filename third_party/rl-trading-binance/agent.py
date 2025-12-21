@@ -270,34 +270,33 @@ class D3QN_PER_Agent:
         return torch.cat(q_list, dim=0)  # [n,1,A]
 
     def _select_action_base(self, state, training: bool, return_qvals: bool, use_cache: bool, cache_key: Optional[Tuple[str, dt.datetime]]):
-        # --- ONNX INFERENCE PATH ---
-        if self.ort_session is not None and not training:
-             # Prepare input: add batch dim, ensure float32
-             ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
-             # Run inference
-             qvals = self.ort_session.run(None, ort_inputs)[0][0] # [1, A] -> [A]
-             return qvals if return_qvals else int(np.argmax(qvals))
-        # ---------------------------
-
         eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
+
         if training and np.random.rand() < eps:
             return np.random.randint(self.action_dim)
-        
+
+        # --- ONNX INFERENCE PATH ---
+        if self.ort_session is not None and not training:
+            ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
+            qvals = self.ort_session.run(None, ort_inputs)[0][0] # [1, A] -> [A]
+            return qvals if return_qvals else int(np.argmax(qvals))
+        # ---------------------------
+
         if use_cache and not training and cache_key is not None:
             if cache_key in self.qval_cache:
                 qvals = self.qval_cache[cache_key]
             else:
                 with torch.no_grad():
                     tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-                    qvals = self.policy_net(tensor).cpu().numpy()
-                    self.qval_cache[cache_key] = qvals
+                    qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
+                self.qval_cache[cache_key] = qvals
             qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
-        
+
         with torch.no_grad():
             tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
-        return qvals if return_qvals else int(np.argmax(qvals))
+            return qvals if return_qvals else int(np.argmax(qvals))
 
     def select_action_batch(self, states: np.ndarray, training: bool = True) -> list[int]:
         """
