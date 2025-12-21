@@ -220,9 +220,9 @@ class TradingEnvironment(gym.Env):
             )
         else:
             # For MLP: flat vector
-            self.observation_space = spaces.Box(
-                low=-np.inf, high=np.inf, shape=(flat_state_size + self.history_vector_size,), dtype=np.float32
-            )
+            # FIX: Ensure buffer size matches actual data generation logic
+            real_data_size = (self.num_features * self.agent_history_len) + 4 + self.history_vector_size
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(real_data_size,), dtype=np.float32)
 
         # PERFORMANCE: Pre-allocate reusable observation buffer
         self._obs_buffer = np.zeros(self.observation_space.shape, dtype=np.float32)
