@@ -618,50 +618,58 @@ def run_validation():
                 # Update episode bars count
                 episode_bars = max(episode_bars, current_step)
                 
+                # --- УЛУЧШЕННАЯ ЛОГИКА АНСАМБЛЯ ---
+                final_act_l, final_act_s = 0, 0
+
                 if current_step < cooldown_until_step:
-                    final_act_l, final_act_s = 0, 0
+                    # Если кулдаун активен, принудительно удерживаем позицию (HOLD)
+                    pass # Действия уже 0
                 else:
-                    long_wants_open, long_conf = False, 0.0
-                    short_wants_open, short_conf = False, 0.0
+                    # 1. Получаем сигналы от специалистов
+                    long_wants_open, long_conf = (agent.get_long_vote(obs_l) if not done_l else (False, 0.0))
+                    short_wants_open, short_conf = (agent.get_short_vote(obs_s) if not done_s else (False, 0.0))
                     
-                    if not done_l: long_wants_open, long_conf = agent.get_long_vote(obs_l)
-                    if not done_s: short_wants_open, short_conf = agent.get_short_vote(obs_s)
-                        
+                    # 2. Определяем текущее состояние позиций
                     long_is_active = (env_long.position > 0)
                     short_is_active = (env_short.position < 0)
-                    
-                    final_act_l, final_act_s = 0, 0
-                    
-                    if not disable_cross_close:
-                        if long_wants_open and short_wants_open:
-                            cooldown_triggered = False
-                            if long_is_active:
-                                final_act_l = 3; final_act_s = 2
-                                cooldown_until_step = current_step + conflict_cooldown_bars
-                                cooldown_triggered = True
-                            elif short_is_active:
-                                final_act_s = 3; final_act_l = 1
-                                cooldown_until_step = current_step + conflict_cooldown_bars
-                                cooldown_triggered = True
-                            else:
-                                final_act_l = 1 if long_conf > agent.long_threshold else 0
-                                final_act_s = 2 if short_conf > agent.short_threshold else 0
-                                cooldown_until_step = current_step + conflict_cooldown_bars
-                                cooldown_triggered = True
-                            
-                            if cooldown_triggered and conflict_cooldown_bars > 0:
-                                logger.info(f"👉 Cooldown activated for {conflict_cooldown_bars} bars due to signal conflict on '{ticker_name}'.")
 
-                        elif long_wants_open and short_is_active:
-                            final_act_s = 3; final_act_l = 0
+                    # 3. Обнаруживаем конфликт для активации кулдауна
+                    # Конфликт — это намерение открыть противоположную позицию или одновременный сигнал на вход
+                    is_conflict = ((long_wants_open and short_is_active) or
+                                   (short_wants_open and long_is_active) or
+                                   (long_wants_open and short_wants_open))
+
+                    if is_conflict and conflict_cooldown_bars > 0:
+                        cooldown_until_step = current_step + conflict_cooldown_bars
+                        logger.info(f"👉 Cooldown activated for {conflict_cooldown_bars} bars on '{ticker_name}' due to conflict.")
+
+                    # 4. Применяем логику в зависимости от флага disable_cross_close
+                    if disable_cross_close:
+                        # Запрет перекрестного закрытия: сигнал на открытие игнорируется, если активна противоположная позиция
+                        if long_wants_open and short_is_active:
+                            pass # Игнорируем LONG сигнал
                         elif short_wants_open and long_is_active:
-                            final_act_l = 3; final_act_s = 0
+                            pass # Игнорируем SHORT сигнал
                         else:
-                            if long_wants_open: final_act_l = 1 if long_conf > agent.long_threshold else 0
-                            if short_wants_open: final_act_s = 2 if short_conf > agent.short_threshold else 0
+                            # Разрешаем открытие, только если нет конфликта позиций
+                            if long_wants_open and not long_is_active and long_conf > agent.long_threshold:
+                                final_act_l = 1
+                            if short_wants_open and not short_is_active and short_conf > agent.short_threshold:
+                                final_act_s = 2
                     else:
-                        if long_wants_open: final_act_l = 1 if long_conf > agent.long_threshold else 0
-                        if short_wants_open: final_act_s = 2 if short_conf > agent.short_threshold else 0
+                        # Перекрестное закрытие разрешено: один агент может закрыть позицию другого
+                        if long_wants_open and short_is_active:
+                            final_act_s = 3  # Закрыть SHORT
+                            if long_conf > agent.long_threshold: final_act_l = 1 # Открыть LONG
+                        elif short_wants_open and long_is_active:
+                            final_act_l = 3  # Закрыть LONG
+                            if short_conf > agent.short_threshold: final_act_s = 2 # Открыть SHORT
+                        else:
+                            # Если нет активных позиций, открываемся по сигналу
+                            if long_wants_open and long_conf > agent.long_threshold:
+                                final_act_l = 1
+                            if short_wants_open and short_conf > agent.short_threshold:
+                                final_act_s = 2
 
                 if not done_l:
                     next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(

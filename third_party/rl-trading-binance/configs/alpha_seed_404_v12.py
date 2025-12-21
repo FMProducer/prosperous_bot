@@ -292,24 +292,45 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-# Example relative path (adjust as needed):
-# cfg.paths.model_path = "output/alpha_seed_404/saved_models/rl_binance_futures_trading_date_20251120_time_015257/best.pth"
-# cfg.paths.norm_stats_path = "output/alpha_seed_404/saved_models/rl_binance_futures_trading_date_20251120_time_015257/norm_stats.json"
+# --- DYNAMIC PATHS SETUP ---
+# Определяем базовую директорию проекта относительно этого конфиг-файла
+# Ожидаемая структура: <root>/third_party/rl-trading-binance/configs/
+try:
+    # Path(__file__).parent -> configs
+    # .parent -> rl-trading-binance
+    # .parent -> third_party
+    # .parent -> <root>
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+except NameError:
+    # Fallback для интерактивных сред, где __file__ не определен
+    BASE_DIR = Path.cwd()
+
+# --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
+# Эти пути строятся динамически для обеспечения переносимости.
+# Замените имена папок с временными метками на актуальные.
+long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v11_LONG" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_222425"
+short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v11_SHORT" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_200357"
+single_model_dir = BASE_DIR / "output" / "alpha_seed_404" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
+
+# Для валидации одиночного агента (раскомментируйте, если нужно)
+# cfg.paths.model_path = single_model_dir / "best.pth"
+# cfg.paths.norm_stats_path = single_model_dir / "norm_stats.json"
 
 # Workflow notes (run from root):
 # python train.py --config alpha.py --total_timesteps 10000  # Test
 # python train.py --config alpha.py  # Full
 # python paper_trader_q.py --model rl_model.pth --config alpha.py  # Backtest
+
 # --- ENSEMBLE CONFIGURATION ---
 class EnsembleConfig:
     pass
 cfg.ensemble = EnsembleConfig()
-# --- ENSEMBLE MODEL ---
-# Используйте для запуска validate_ensemble.py
-# Example relative paths (adjust as needed):
-# cfg.ensemble.long_model_path = "output/alpha_seed_404_v11_LONG/saved_models/rl_binance_futures_trading_date_20251210_time_222425/best.pth"
-# cfg.ensemble.short_model_path = "output/alpha_seed_404_v11_SHORT/saved_models/rl_binance_futures_trading_date_20251210_time_200357/best.pth"
-# cfg.ensemble.norm_stats_path = "output/alpha_seed_404_v11_LONG/saved_models/rl_binance_futures_trading_date_20251210_time_222425/norm_stats.json"
+
+# Пути для валидации ансамбля
+cfg.ensemble.long_model_path = long_model_dir / "best.pth"
+cfg.ensemble.short_model_path = short_model_dir / "best.pth"
+# Статистика нормализации обычно одинакова для long/short специалистов
+cfg.ensemble.norm_stats_path = long_model_dir / "norm_stats.json"
 
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True

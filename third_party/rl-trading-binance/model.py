@@ -113,6 +113,6 @@ class DuelingQNetwork(nn.Module):
         
         q_value = self.dequant(q_value)
         if return_components:
-            return q_value, value, advantage
+            return q_value, self.dequant(value), self.dequant(advantage)
         
         return q_value
