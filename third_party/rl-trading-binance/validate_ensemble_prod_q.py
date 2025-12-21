@@ -454,9 +454,11 @@ def run_validation():
     if ensemble_cfg and hasattr(ensemble_cfg, 'disable_cross_close'):
         disable_cross_close = ensemble_cfg.disable_cross_close
         if disable_cross_close: logger.info("ℹ️ Cross-closing logic is DISABLED by config.")
-    if ensemble_cfg and hasattr(ensemble_cfg, 'conflict_cooldown_bars'):
-        conflict_cooldown_bars = ensemble_cfg.conflict_cooldown_bars
-        if conflict_cooldown_bars > 0: logger.info(f"ℹ️ Conflict cooldown is ENABLED: {conflict_cooldown_bars} bars.")
+
+    confidence_ratio = 1.2
+    if ensemble_cfg and hasattr(ensemble_cfg, 'confidence_ratio'):
+        confidence_ratio = ensemble_cfg.confidence_ratio
+        logger.info(f"ℹ️ Soft conflict resolution is ENABLED with confidence ratio: {confidence_ratio}")
     
     num_channels = cfg.get("num_channels", 10)
     default_datachannels = ['open', 'high', 'low', 'close', 'volume']
@@ -579,9 +581,6 @@ def run_validation():
     
     all_trades = []
     total_bars_processed = 0
-    # FIX: Глобальное хранилище кулдаунов {ticker: banned_until_datetime_timestamp}
-    # Используем timestamp для надежности между эпизодами с разным временем
-    global_ticker_cooldowns = {}
 
     start_time = time.time()
     
@@ -598,12 +597,6 @@ def run_validation():
                 signal_dt = datetime.datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
         except (IndexError, AttributeError, ValueError):
             pass
-        
-        # FIX: Проверка глобального кулдауна перед началом эпизода
-        # Если тикер заблокирован навсегда
-        if ticker_name in global_ticker_cooldowns:
-            if global_ticker_cooldowns[ticker_name] > signal_dt.timestamp():
-                 continue
 
         episode_bars = 0
         if args.ensemble:
@@ -613,7 +606,6 @@ def run_validation():
             obs_s, info_s = env_short.reset(options={"forced_index": i})
             
             done_l, done_s = False, False
-            cooldown_until_step = 0
             loop_safety_counter = 0
             MAX_LOOP_STEPS = 500
 
@@ -631,34 +623,34 @@ def run_validation():
                 # --- УЛУЧШЕННАЯ ЛОГИКА АНСАМБЛЯ ---
                 final_act_l, final_act_s = 0, 0
 
-                if ticker_name in global_ticker_cooldowns and global_ticker_cooldowns[ticker_name] > (signal_dt.timestamp() + current_step * 60):
-                     pass # Force HOLD
-                else:
-                    # 1. Получаем сигналы от специалистов
-                    long_wants_open, long_conf = (agent.get_long_vote(obs_l) if not done_l else (False, 0.0))
-                    short_wants_open, short_conf = (agent.get_short_vote(obs_s) if not done_s else (False, 0.0))
-                    
-                    # 2. Определяем текущее состояние позиций
-                    long_is_active = (env_long.position > 0)
-                    short_is_active = (env_short.position < 0)
+                # 1. Получаем сигналы от специалистов
+                long_wants_open, long_conf = (agent.get_long_vote(obs_l) if not done_l else (False, 0.0))
+                short_wants_open, short_conf = (agent.get_short_vote(obs_s) if not done_s else (False, 0.0))
 
-                    # 3. Обнаруживаем конфликт для активации кулдауна
-                    # Конфликт — это намерение открыть противоположную позицию или одновременный сигнал на вход
-                    is_conflict = ((long_wants_open and short_is_active) or
-                                   (short_wants_open and long_is_active) or
-                                   (long_wants_open and short_wants_open))
+                # 2. Определяем текущее состояние позиций
+                long_is_active = (env_long.position > 0)
+                short_is_active = (env_short.position < 0)
 
-                    if is_conflict and conflict_cooldown_bars > 0:
-                        # FIX: Блокируем тикер глобально
-                        ban_until = (signal_dt.timestamp() + current_step * 60) + (conflict_cooldown_bars * 60)
-                        global_ticker_cooldowns[ticker_name] = ban_until
-                        logger.info(f"👉 Cooldown activated for {conflict_cooldown_bars} bars on '{ticker_name}' due to conflict.")
-                        # FIX: Сразу сбрасываем намерения, чтобы не открыть сделку в этом же тике!
+                # 3. Обнаруживаем конфликт для разрешения
+                is_conflict = ((long_wants_open and short_is_active) or
+                               (short_wants_open and long_is_active) or
+                               (long_wants_open and short_wants_open))
+
+                if is_conflict:
+                    # --- SOFT CONFLICT RESOLUTION (No future ban) ---
+                    if long_conf > (short_conf * confidence_ratio):
+                        short_wants_open = False # Long wins, Short is ignored for this tick
+                        logger.info(f"Conflict on {ticker_name}: LONG wins ({long_conf:.4f} vs {short_conf:.4f}). Ignoring SHORT.")
+                    elif short_conf > (long_conf * confidence_ratio):
+                        long_wants_open = False # Short wins, Long is ignored
+                        logger.info(f"Conflict on {ticker_name}: SHORT wins ({short_conf:.4f} vs {long_conf:.4f}). Ignoring LONG.")
+                    else: # Uncertainty is too high, both HOLD
                         long_wants_open = False
                         short_wants_open = False
+                        logger.info(f"Conflict on {ticker_name}: Too close to call ({long_conf:.4f} vs {short_conf:.4f}). Both HOLD.")
 
-                    # 4. Применяем логику в зависимости от флага disable_cross_close
-                    if disable_cross_close:
+                # 4. Применяем логику с УЖЕ разрешенным конфликтом
+                if disable_cross_close:
                         # Запрет перекрестного закрытия: сигнал на открытие игнорируется, если активна противоположная позиция
                         if long_wants_open and short_is_active:
                             pass # Игнорируем LONG сигнал
@@ -670,20 +662,20 @@ def run_validation():
                                 final_act_l = 1
                             if short_wants_open and not short_is_active and short_conf > agent.short_threshold:
                                 final_act_s = 2
+                else:
+                    # Перекрестное закрытие разрешено: один агент может закрыть позицию другого
+                    if long_wants_open and short_is_active:
+                        final_act_s = 3  # Закрыть SHORT
+                        if long_conf > agent.long_threshold: final_act_l = 1 # Открыть LONG
+                    elif short_wants_open and long_is_active:
+                        final_act_l = 3  # Закрыть LONG
+                        if short_conf > agent.short_threshold: final_act_s = 2 # Открыть SHORT
                     else:
-                        # Перекрестное закрытие разрешено: один агент может закрыть позицию другого
-                        if long_wants_open and short_is_active:
-                            final_act_s = 3  # Закрыть SHORT
-                            if long_conf > agent.long_threshold: final_act_l = 1 # Открыть LONG
-                        elif short_wants_open and long_is_active:
-                            final_act_l = 3  # Закрыть LONG
-                            if short_conf > agent.short_threshold: final_act_s = 2 # Открыть SHORT
-                        else:
-                            # Если нет активных позиций, открываемся по сигналу
-                            if long_wants_open and long_conf > agent.long_threshold:
-                                final_act_l = 1
-                            if short_wants_open and short_conf > agent.short_threshold:
-                                final_act_s = 2
+                        # Если нет активных позиций, открываемся по сигналу
+                        if long_wants_open and long_conf > agent.long_threshold:
+                            final_act_l = 1
+                        if short_wants_open and short_conf > agent.short_threshold:
+                            final_act_s = 2
 
                 if not done_l:
                     next_obs_l, _, term_l, trunc_l, info_l = env_long.backtest_step(
@@ -860,12 +852,6 @@ def run_validation():
     print(f"  Time Loss (Timeout):     {time_loss} ({time_loss/max(1, total_trades):.1%}) - \"Time SL\" (Loss)")
     print(f"  Total TSL Hits: {tsl_total}")
     print("="*44)
-
-    # В конце выводим статистику блокировок
-    blocked_count = len(global_ticker_cooldowns)
-    logger.info(f"🚫 Total blocked tickers due to conflicts: {blocked_count}")
-    if blocked_count > 0:
-        logger.info(f"🚫 Blocked list: {list(global_ticker_cooldowns.keys())}")
 
 if __name__ == "__main__":
     run_validation()
