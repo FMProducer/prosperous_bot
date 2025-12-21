@@ -97,6 +97,8 @@ class TradingEnvironment(gym.Env):
         self.sequences = sequences
         self.stats = stats
         self.keys = keys
+        # FIX: Save num_features immediately
+        self.num_features = num_features
         self.datachannels = datachannels
 
         if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
@@ -221,11 +223,16 @@ class TradingEnvironment(gym.Env):
         else:
             # For MLP: flat vector
             # FIX: Ensure buffer size matches actual data generation logic
-            real_data_size = (self.num_features * self.agent_history_len) + 4 + self.history_vector_size
+            # Calculate expected size based on what _get_obs actually produces
+            # Use local argument or self.num_features (now saved)
+            real_data_size = (num_features * agent_history_len) + 4 + (num_actions * action_history_len)
             self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(real_data_size,), dtype=np.float32)
 
         # PERFORMANCE: Pre-allocate reusable observation buffer
-        self._obs_buffer = np.zeros(self.observation_space.shape, dtype=np.float32)
+        # FIX: Ensure buffer size matches actual data generation logic
+        # Re-allocate with correct size if mismatch
+        self._obs_buffer = np.zeros((real_data_size,), dtype=np.float32)
+        # Update space to match reality
 
         # For shaped reward function
         self._position_entry_step = None
