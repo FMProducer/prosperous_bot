@@ -267,6 +267,8 @@ def run_validation():
     parser.add_argument("--long-threshold", type=float, default=None, help="Ensemble confidence threshold for LONG")
     parser.add_argument("--short-threshold", type=float, default=None, help="Ensemble confidence threshold for SHORT")
     parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values")
+    # NEW: Flag to enable/disable ONNX (ON by default)
+    parser.add_argument('--no-onnx', dest='use_onnx', action='store_false', help="Disable ONNX Runtime for inference speedup")
     
     args = parser.parse_args()
     
@@ -575,8 +577,26 @@ def run_validation():
         agent = create_agent(action_dim=num_actions_env, additional_feats_override=true_additional_feats)
         agent.load_model(model_path, strict=True)
         agent.policy_net.eval()
-        print("✅ Model loaded successfully")
 
+
+    # --- ONNX ACCELERATION SETUP ---
+    if args.use_onnx and agent and args.ensemble:
+        logger.info("⚡ Enabling ONNX Runtime acceleration...")
+        # Define ONNX paths (same dir as .pth, but .onnx)
+        long_onnx = args.long_model.replace(".pth", ".onnx")
+        short_onnx = args.short_model.replace(".pth", ".onnx")
+
+        # Export if needed and load
+        if not os.path.exists(long_onnx):
+            agent.agent_long.export_to_onnx(long_onnx, env_long.observation_space.shape)
+        agent.agent_long.load_onnx_model(long_onnx)
+
+        if not os.path.exists(short_onnx):
+            agent.agent_short.export_to_onnx(short_onnx, env_short.observation_space.shape)
+        agent.agent_short.load_onnx_model(short_onnx)
+    # -------------------------------
+
+    print("✅ Model loaded successfully")
     logger.info("🚀 Starting Backtest Validation...")
     
     all_trades = []
