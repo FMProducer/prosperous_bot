@@ -102,31 +102,34 @@ class EnsembleAgent:
         if not self.enable_long:
             return False, 0.0
         state_mapped = self._prepare_state(state, "LONG")
-        with torch.no_grad():
-            t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_long.device)
-            q_values = self.agent_long.policy_net(t_state).squeeze(0)
-            wants_to_open = (q_values[1] > q_values[0]).item()
-            if self.use_confidence:
-                probs = torch.softmax(q_values, dim=0)
-                confidence = (probs[1] - 0.33).item()
-            else:
-                confidence = 1.0 
-            return wants_to_open, confidence
+        q_values = self.agent_long.select_action(
+            state_mapped, training=False, return_qvals=True, use_cache=False, cache_key=None
+        )
+        wants_to_open = (q_values[1] > q_values[0])
+
+        # For confidence, we still need probabilities, so we'll use softmax on the q_values
+        # It's important to convert numpy array to tensor for softmax
+        q_tensor = torch.from_numpy(q_values)
+        probs = torch.softmax(q_tensor, dim=0)
+        confidence = (probs[1] - 0.33).item() if self.use_confidence else 1.0
+
+        return wants_to_open, confidence
 
     def get_short_vote(self, state):
         if not self.enable_short:
             return False, 0.0
         state_mapped = self._prepare_state(state, "SHORT")
-        with torch.no_grad():
-            t_state = torch.from_numpy(state_mapped).float().unsqueeze(0).to(self.agent_short.device)
-            q_values = self.agent_short.policy_net(t_state).squeeze(0)
-            wants_to_open = (q_values[2] > q_values[0]).item()
-            if self.use_confidence:
-                probs = torch.softmax(q_values, dim=0)
-                confidence = (probs[2] - 0.33).item()
-            else:
-                confidence = 1.0 
-            return wants_to_open, confidence
+        q_values = self.agent_short.select_action(
+            state_mapped, training=False, return_qvals=True, use_cache=False, cache_key=None
+        )
+        wants_to_open = (q_values[2] > q_values[0])
+
+        # For confidence, we still need probabilities, so we'll use softmax on the q_values
+        q_tensor = torch.from_numpy(q_values)
+        probs = torch.softmax(q_tensor, dim=0)
+        confidence = (probs[2] - 0.33).item() if self.use_confidence else 1.0
+
+        return wants_to_open, confidence
 
 class PerformanceConfig:
     def __init__(self):
@@ -267,7 +270,6 @@ def run_validation():
     parser.add_argument("--long-threshold", type=float, default=None, help="Ensemble confidence threshold for LONG")
     parser.add_argument("--short-threshold", type=float, default=None, help="Ensemble confidence threshold for SHORT")
     parser.add_argument("--ensemble_verbose", action='store_true', help="Print Q-values")
-    # NEW: Flag to enable/disable ONNX (ON by default)
     parser.add_argument('--no-onnx', dest='use_onnx', action='store_false', help="Disable ONNX Runtime for inference speedup")
     
     args = parser.parse_args()
@@ -597,6 +599,23 @@ def run_validation():
     # -------------------------------
 
     print("✅ Model loaded successfully")
+    # --- ONNX ACCELERATION SETUP ---
+    if args.use_onnx:
+        logger.info("⚡ Enabling ONNX Runtime acceleration for ensemble agents...")
+        # Входной размер берем из observation_space
+        input_shape = env_long.observation_space.shape
+
+        long_onnx = args.long_model.replace(".pth", ".onnx")
+        short_onnx = args.short_model.replace(".pth", ".onnx")
+
+        if not os.path.exists(long_onnx):
+            agent.agent_long.export_to_onnx(long_onnx, input_shape)
+        agent.agent_long.load_onnx_model(long_onnx)
+
+        if not os.path.exists(short_onnx):
+            agent.agent_short.export_to_onnx(short_onnx, input_shape)
+        agent.agent_short.load_onnx_model(short_onnx)
+    # -------------------------------
     logger.info("🚀 Starting Backtest Validation...")
     
     all_trades = []
