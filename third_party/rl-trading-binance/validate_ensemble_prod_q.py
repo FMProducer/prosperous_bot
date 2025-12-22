@@ -45,7 +45,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class EnsembleAgent:
-    def __init__(self, long_agent_path, short_agent_path, device, agent_creator, use_confidence=False, long_threshold=0.01, short_threshold=0.01, enable_long=True, enable_short=True, verbose=False):
+    def __init__(self, long_agent_path, short_agent_path, device, agent_creator,
+                 use_confidence=False, long_threshold=0.01, short_threshold=0.01,
+                 enable_long=True, enable_short=True, verbose=False,
+                 long_mask=None, short_mask=None):
         self.device = device
         self.use_confidence = use_confidence
         self.long_threshold = long_threshold
@@ -54,8 +57,15 @@ class EnsembleAgent:
         self.enable_short = enable_short
         self.verbose = verbose
         self.agent_creator = agent_creator
+
+        # Устанавливаем маски, используя дефолтные значения, если они не предоставлены
+        self.long_mask = long_mask if long_mask is not None else [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
+        self.short_mask = short_mask if short_mask is not None else [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
         
         logger.info(f"🎭 Initializing Ensemble Agent...")
+        logger.info(f"   - Long mask: {self.long_mask}")
+        logger.info(f"   - Short mask: {self.short_mask}")
+
         logger.info(f"   Loading LONG specialist from {long_agent_path}...")
         self.agent_long = self._load_agent(long_agent_path, "LONG")
         
@@ -64,7 +74,9 @@ class EnsembleAgent:
         logger.info("✅ Ensemble Agent ready.")
 
     def _load_agent(self, path, name):
-        agent = self.agent_creator(action_dim=3) 
+        # При создании агента-специалиста, мы должны указать, что он будет использовать
+        # 10 дополнительных признаков, так как маски отбирают именно это количество.
+        agent = self.agent_creator(action_dim=3, additional_feats_override=10)
         agent.load_model(path)
         agent.policy_net.eval()
         return agent
@@ -73,27 +85,33 @@ class EnsembleAgent:
         if not isinstance(state, np.ndarray):
             state = np.array(state)
             
-        SEQ_LEN = 90
-        NUM_CHANNELS_DATA = 10
+        # Эти параметры должны соответствовать конфигурации модели
+        SEQ_LEN = self.agent_long.policy_net.input_shape[1] # 90
+        NUM_CHANNELS_DATA = self.agent_long.policy_net.input_shape[0] # 10
         DATA_SIZE = NUM_CHANNELS_DATA * SEQ_LEN
         
         state_prepared = state.copy()
         
+        # Разделяем состояние на историю и дополнительные признаки
         if state.ndim == 1 and state.shape[0] > DATA_SIZE:
             data_part = state[:DATA_SIZE]
             features_part = state[DATA_SIZE:]
             
-            if len(features_part) >= 12:
-                if direction == "LONG":
-                     mask = [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
-                     feats_prepared = features_part[mask]
-                elif direction == "SHORT":
-                     mask = [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
-                     feats_prepared = features_part[mask]
-                else:
-                     feats_prepared = features_part[:10]
+            # Применяем соответствующую маску
+            if direction == "LONG":
+                mask = self.long_mask
+            elif direction == "SHORT":
+                mask = self.short_mask
+            else:
+                # Фоллбэк: если направление не определено, просто берем первые 10 признаков
+                mask = list(range(10))
+
+            # Проверяем, достаточно ли признаков для применения маски
+            if len(features_part) >= max(mask) + 1:
+                feats_prepared = features_part[mask]
                 state_prepared = np.concatenate([data_part, feats_prepared])
             else:
+                # Если признаков не хватает, используем то, что есть (до 10)
                 state_prepared = np.concatenate([data_part, features_part[:10]])
                 
         return state_prepared
@@ -557,6 +575,10 @@ def run_validation():
         enable_long = getattr(ensemble_cfg, 'enable_long', True) if ensemble_cfg else True
         enable_short = getattr(ensemble_cfg, 'enable_short', True) if ensemble_cfg else True
         
+        # --- ИЗВЛЕКАЕМ МАСКИ ИЗ КОНФИГА ---
+        long_mask = getattr(ensemble_cfg, 'long_features_mask', None)
+        short_mask = getattr(ensemble_cfg, 'short_features_mask', None)
+
         agent = EnsembleAgent(
             long_agent_path=args.long_model,
             short_agent_path=args.short_model,
@@ -567,7 +589,9 @@ def run_validation():
             short_threshold=short_threshold_val,
             enable_long=enable_long,
             enable_short=enable_short,
-            verbose=args.ensemble_verbose
+            verbose=args.ensemble_verbose,
+            long_mask=long_mask,
+            short_mask=short_mask
         )
     else:
         print(f"\n📦 Loading single agent model from: {model_path}")
@@ -591,19 +615,22 @@ def run_validation():
 
             if not os.path.exists(long_onnx_path):
                 logger.info(f"Exporting LONG model to {long_onnx_path}...")
-                agent.agent_long.export_to_onnx(long_onnx_path, env_long.observation_space.shape)
+                # Вызываем export_to_onnx без неверного input_shape
+                agent.agent_long.export_to_onnx(long_onnx_path)
             agent.agent_long.load_onnx_model(long_onnx_path)
 
             if not os.path.exists(short_onnx_path):
                 logger.info(f"Exporting SHORT model to {short_onnx_path}...")
-                agent.agent_short.export_to_onnx(short_onnx_path, env_short.observation_space.shape)
+                # Вызываем export_to_onnx без неверного input_shape
+                agent.agent_short.export_to_onnx(short_onnx_path)
             agent.agent_short.load_onnx_model(short_onnx_path)
         else:
             # SINGLE AGENT MODE
             onnx_path = model_path.replace(".pth", ".onnx")
             if not os.path.exists(onnx_path):
                 logger.info(f"Exporting single agent model to {onnx_path}...")
-                agent.export_to_onnx(onnx_path, env.observation_space.shape)
+                # Вызываем export_to_onnx без неверного input_shape
+                agent.export_to_onnx(onnx_path)
             agent.load_onnx_model(onnx_path)
     # -------------------------------
     logger.info("🚀 Starting Backtest Validation...")
