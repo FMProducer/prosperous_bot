@@ -177,6 +177,7 @@ class D3QN_PER_Agent:
     def export_to_onnx(self, file_path: str, input_shape: Tuple[int, ...]):
         """Exports the policy network to ONNX format."""
         self.policy_net.eval()
+        # input_shape здесь — это плоский вектор, как в observation_space.shape
         dummy_input = torch.randn(1, *input_shape, device=self.device)
 
         # Ensure directory exists

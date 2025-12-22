@@ -582,39 +582,29 @@ def run_validation():
 
 
     # --- ONNX ACCELERATION SETUP ---
-    if args.use_onnx and agent and args.ensemble:
+    if args.use_onnx and agent:
         logger.info("⚡ Enabling ONNX Runtime acceleration...")
-        # Define ONNX paths (same dir as .pth, but .onnx)
-        long_onnx = args.long_model.replace(".pth", ".onnx")
-        short_onnx = args.short_model.replace(".pth", ".onnx")
+        if args.ensemble:
+            # ENSEMBLE MODE
+            long_onnx_path = args.long_model.replace(".pth", ".onnx")
+            short_onnx_path = args.short_model.replace(".pth", ".onnx")
 
-        # Export if needed and load
-        if not os.path.exists(long_onnx):
-            agent.agent_long.export_to_onnx(long_onnx, env_long.observation_space.shape)
-        agent.agent_long.load_onnx_model(long_onnx)
+            if not os.path.exists(long_onnx_path):
+                logger.info(f"Exporting LONG model to {long_onnx_path}...")
+                agent.agent_long.export_to_onnx(long_onnx_path, env_long.observation_space.shape)
+            agent.agent_long.load_onnx_model(long_onnx_path)
 
-        if not os.path.exists(short_onnx):
-            agent.agent_short.export_to_onnx(short_onnx, env_short.observation_space.shape)
-        agent.agent_short.load_onnx_model(short_onnx)
-    # -------------------------------
-
-    print("✅ Model loaded successfully")
-    # --- ONNX ACCELERATION SETUP ---
-    if args.use_onnx:
-        logger.info("⚡ Enabling ONNX Runtime acceleration for ensemble agents...")
-        # Входной размер берем из observation_space
-        input_shape = env_long.observation_space.shape
-
-        long_onnx = args.long_model.replace(".pth", ".onnx")
-        short_onnx = args.short_model.replace(".pth", ".onnx")
-
-        if not os.path.exists(long_onnx):
-            agent.agent_long.export_to_onnx(long_onnx, input_shape)
-        agent.agent_long.load_onnx_model(long_onnx)
-
-        if not os.path.exists(short_onnx):
-            agent.agent_short.export_to_onnx(short_onnx, input_shape)
-        agent.agent_short.load_onnx_model(short_onnx)
+            if not os.path.exists(short_onnx_path):
+                logger.info(f"Exporting SHORT model to {short_onnx_path}...")
+                agent.agent_short.export_to_onnx(short_onnx_path, env_short.observation_space.shape)
+            agent.agent_short.load_onnx_model(short_onnx_path)
+        else:
+            # SINGLE AGENT MODE
+            onnx_path = model_path.replace(".pth", ".onnx")
+            if not os.path.exists(onnx_path):
+                logger.info(f"Exporting single agent model to {onnx_path}...")
+                agent.export_to_onnx(onnx_path, env.observation_space.shape)
+            agent.load_onnx_model(onnx_path)
     # -------------------------------
     logger.info("🚀 Starting Backtest Validation...")
     
