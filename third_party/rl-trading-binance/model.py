@@ -30,6 +30,7 @@ class DuelingQNetwork(nn.Module):
         super().__init__()
         self.input_shape = input_shape
         self.action_dim = action_dim
+        self.additional_feats = additional_feats
 
         channels, history_len, _ = input_shape # width is ignored for Conv1d
 

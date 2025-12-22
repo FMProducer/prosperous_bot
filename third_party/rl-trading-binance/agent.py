@@ -2,7 +2,6 @@
 import datetime as dt
 import logging
 import os
-import os
 import pickle
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -181,6 +180,13 @@ class D3QN_PER_Agent:
         Входной тензор создается на основе внутренних параметров модели,
         а не observation_space среды.
         """
+        try:
+            import onnx  # type: ignore
+        except ImportError:
+            logger.error("Невозможно экспортировать в ONNX: пакет 'onnx' не установлен.")
+            logger.error("Пожалуйста, установите его командой: pip install onnx")
+            return
+
         if ort is None:
             logger.error("Невозможно экспортировать в ONNX: onnxruntime не установлен.")
             logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
@@ -192,7 +198,7 @@ class D3QN_PER_Agent:
         # self.policy_net.input_shape это (каналы, длина_истории, 1)
         model_input_shape = self.policy_net.input_shape
         # self.policy_net.additional_feats это количество доп. признаков
-        additional_feats = self.policy_net.additional_feats
+        additional_feats = getattr(self.policy_net, "additional_feats", 0)
         # Размер плоского вектора истории = Каналы * Длина
         history_flat_size = model_input_shape[0] * model_input_shape[1]
         total_input_size = history_flat_size + additional_feats
@@ -229,8 +235,16 @@ class D3QN_PER_Agent:
             logger.error("Невозможно загрузить ONNX модель: onnxruntime не установлен.")
             logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
             return
-        self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
-        logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
+
+        if not os.path.exists(file_path):
+            logger.error(f"ONNX файл не найден: {file_path}. Пропуск загрузки ONNX (будет использоваться PyTorch).")
+            return
+
+        try:
+            self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
+            logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке ONNX модели: {e}")
 
     def select_action(
         self,
