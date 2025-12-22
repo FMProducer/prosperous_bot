@@ -354,6 +354,42 @@ def create_signal_groups(npz_dataset: List[Tuple[Tuple[str, dt.datetime], np.nda
 
     return dict(sorted(grouped.items()))
 
+def create_walk_forward_folds(
+    merged_sequences: List[Tuple[Any, np.ndarray]],
+    train_months: int,
+    test_months: int,
+    step_months: int
+) -> List[Tuple[List[Any], List[Any]]]:
+    # Sort by datetime (assuming key is (ticker, dt))
+    # Filter out items that don't match the expected key format
+    valid_seqs = [s for s in merged_sequences if isinstance(s[0], tuple) and len(s[0]) == 2]
+    sorted_seqs = sorted(valid_seqs, key=lambda x: x[0][1])
+
+    if not sorted_seqs:
+        return []
+
+    start_date = sorted_seqs[0][0][1]
+    end_date = sorted_seqs[-1][0][1]
+
+    folds = []
+    current_start = start_date
+
+    while True:
+        train_end = current_start + pd.DateOffset(months=train_months)
+        test_end = train_end + pd.DateOffset(months=test_months)
+
+        if test_end > end_date:
+            break
+
+        train_fold = [s for s in sorted_seqs if current_start <= s[0][1] < train_end]
+        test_fold = [s for s in sorted_seqs if train_end <= s[0][1] < test_end]
+
+        if train_fold and test_fold:
+            folds.append((train_fold, test_fold))
+
+        current_start += pd.DateOffset(months=step_months)
+
+    return folds
 
 def softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
     x_max = np.max(x, axis=axis, keepdims=True)
@@ -527,3 +563,33 @@ def create_validation_episodes(
                  f"Symbol coverage: {len(final_symbols)}/{len(episodes_by_symbol)}")
 
     return final_sequences, final_keys
+
+def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
+    # This is a helper to adapt the existing load_and_prep_data logic for in-memory data
+    prepped_sequences = []
+    valid_keys = []
+    for i, seq in enumerate(sequences):
+        key = keys[i]
+        try:
+            asset_name = key[0] if isinstance(key, tuple) else key.split('_')[0]
+        except IndexError:
+            continue
+
+        asset_stats = norm_stats.get(asset_name)
+        if not asset_stats:
+            continue
+
+        means = np.array(asset_stats['mean'])
+        stds = np.array(asset_stats['std'])
+
+        seq_float = seq.astype(np.float32)
+        if seq_float.shape[1] != len(means):
+            continue
+
+        seq_norm = (seq_float - means) / stds
+        seq_norm = seq_norm.T
+        seq_norm = np.expand_dims(seq_norm, -1)
+        prepped_sequences.append(seq_norm)
+        valid_keys.append(key)
+
+    return prepped_sequences, valid_keys

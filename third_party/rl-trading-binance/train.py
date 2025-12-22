@@ -34,6 +34,10 @@ from utils import (
     set_random_seed,
     create_validation_episodes,
     load_config,
+    load_npz_dataset,
+    create_walk_forward_folds,
+    load_and_prep_data_from_source,
+    calculate_normalization_stats,
 ) # noqa: F401
 
 class TopKCheckpointManager:
@@ -921,128 +925,24 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
     return seqs
 
 
-def main(cfg: MasterConfig = None):
-    # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
-    from config import cfg as loaded_cfg  # Fallback if no arg
-    if cfg is None:
-        cfg = loaded_cfg
-    cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
+def run_training_session(
+    train_sequences: List[np.ndarray],
+    train_keys: List[Any],
+    val_sequences: List[np.ndarray],
+    val_keys: List[Any],
+    cfg: MasterConfig,
+    norm_stats: Dict[str, Any],
+    models_dir: str,
+    plots_dir: str,
+    session_name: str,
+    cfg_mod: Optional[Any] = None
+) -> Dict[str, Any]:
+    """
+    Runs a complete training and validation session for a given dataset.
+    """
     
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
-
-    timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
-    session_name = f"{cfg.project_name}_{timestamp}"
-    setup_logging(session_name, cfg)
-    # Детерминизм по умолчанию ВКЛЮЧЕН; отключить: RL_DETERMINISTIC=0
-    det = True
-    env_flag = os.environ.get("RL_DETERMINISTIC")
-    if env_flag is not None:
-        det = env_flag not in ("0", "false", "False", "no", "No")
-    # Разрешаем переопределение из конфига, если поле существует (обратная совместимость)
-    det = bool(getattr(cfg, "deterministic", det)) if hasattr(cfg, "deterministic") else det
-    det = bool(getattr(getattr(cfg, "perf", object()), "deterministic", det))
-    set_random_seed(cfg.random_seed, det)
-    # Получаем bundle_cfg из модуля или из cfg для обратной совместимости
-    bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
-
-    # Fallback: если model_dir/plot_dir не определены, строим их из base_output_dir
-    base_out = getattr(cfg.paths, "base_output_dir", None)
-    if not hasattr(cfg.paths, "model_dir") or cfg.paths.model_dir in (None, ""):
-        cfg.paths.model_dir = os.path.join(base_out or "output", cfg.paths.config_name, "saved_models")
-    if not hasattr(cfg.paths, "plot_dir") or cfg.paths.plot_dir in (None, ""):
-        cfg.paths.plot_dir = os.path.join(base_out or "output", cfg.paths.config_name, "plots")
-    models_dir = os.path.join(cfg.paths.model_dir, session_name)
-    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
-    os.makedirs(models_dir, exist_ok=True)
-    os.makedirs(plots_dir, exist_ok=True)
-
-    # --- Save the full training configuration (immutable copy) ---
-    config_save_path = os.path.join(models_dir, "config_train.json")
-    with open(config_save_path, "w") as f:
-        # Use model_dump and default=str to handle non-serializable types like torch.device
-        json.dump(cfg.model_dump(), f, indent=2, default=str)
-    logging.info(f"Full training configuration saved to: {config_save_path}")
-
-    # --- Data Loading and Preprocessing ---
-    logging.info("Загрузка и предобработка данных из NPZ файлов...")
-    
-    norm_stats_path = getattr(cfg.paths, "normstatspath", "norm_stats.json")
-    norm_stats = None
-    force_recompute = False
-
-    if os.path.exists(norm_stats_path):
-        logging.info(f"Загрузка существующих статистик из {norm_stats_path}")
-        try:
-            with open(norm_stats_path, 'r') as f:
-                norm_stats = json.load(f)
-            
-            # Проверка структуры файла: он должен быть словарем, и значения должны быть словарями с 'mean' и 'std'
-            if not isinstance(norm_stats, dict) or not norm_stats:
-                logging.warning("Файл norm_stats.json пуст или имеет неверный формат. Будет произведен перерасчет.")
-                force_recompute = True
-            else:
-                first_val = next(iter(norm_stats.values()))
-                if not (isinstance(first_val, dict) and 'mean' in first_val and 'std' in first_val):
-                    logging.warning("Обнаружена устаревшая структура в norm_stats.json. Будет произведен перерасчет.")
-                    force_recompute = True
-        except (json.JSONDecodeError, StopIteration):
-            logging.warning("Ошибка чтения или пустой файл norm_stats.json. Будет произведен перерасчет.")
-            force_recompute = True
-    
-    if force_recompute or norm_stats is None:
-        logging.info("%s normstats: compute_norm_stats", cfg.paths.train_data_path)
-        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
-
-    # Получаем список разрешенных активов из конфига
-    allowed_assets = getattr(cfg.paper, "symbols", None)
-    if allowed_assets == "ALL":
-        allowed_assets = None  # Используем все активы
-
-    train_seqs, train_keys = load_and_prep_data(
-        cfg.paths.train_data_path, "Train", norm_stats=norm_stats, allowed_assets=allowed_assets
-    )
-
-    episodes_per_epoch = getattr(cfg.trainlog, "episodesperepoch", None)
-    if episodes_per_epoch is not None and len(train_seqs) > episodes_per_epoch:
-        rng = np.random.default_rng(cfg.random_seed)
-        indices = rng.choice(len(train_seqs), episodes_per_epoch, replace=False)
-        indices = sorted(indices.tolist())
-        train_seqs = [train_seqs[i] for i in indices]
-        train_keys = [train_keys[i] for i in indices]
-        logging.info(
-            "Sampled train set down to %d episodes from %d",
-            episodes_per_epoch,
-            len(indices),
-        )
-
-    if not train_seqs:
-        logging.error("Не удалось загрузить обучающие данные. Проверьте путь к данным и настройку 'cfg.paper.symbols'. Выход.")
-        sys.exit(1)
-
-    # Копируем norm_stats.json в папку с моделью для воспроизводимости
-    if norm_stats:
-        norm_stats_save_path = os.path.join(models_dir, "norm_stats.json")
-        with open(norm_stats_save_path, "w", encoding="utf-8") as f:
-            json.dump(norm_stats, f, indent=2)
-        logging.info(f"Скопирован norm_stats.json в: {norm_stats_save_path}")
-
-    # Для валидации используем те же статистики, что были рассчитаны на обучении
-    val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats=norm_stats, allowed_assets=allowed_assets)
-
-    # Stratified sampling for validation set
-    if val_seqs:
-        # Apply stratified sampling to ensure symbol diversity
-        val_seqs, val_keys = create_validation_episodes(
-            val_sequences=val_seqs,
-            val_keys=val_keys,
-            num_episodes=cfg.trainlog.num_val_ep,
-            num_symbols=256,
-            min_episodes_per_symbol=1,
-            max_episodes_per_symbol=10,
-            seed=cfg.random_seed
-        )
-        logging.info(f"Validation set sampled: {len(val_seqs)} episodes")
 
     # Set episodes from total_timesteps if not set
     if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
@@ -1085,16 +985,13 @@ def main(cfg: MasterConfig = None):
         # MC-dropout from cfg.mc_dropout (as is)
     )
 
-    # Подготовка модели к квантованию (QAT)
-    agent.prepare_for_qat()
-
     # Calculate flat_state_size
     input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     # After reshape, num_features becomes the number of channels in original data
-    if len(train_seqs[0].shape) == 3:
-        num_features = train_seqs[0].shape[0]  # C from (C, L, 1)
+    if len(train_sequences[0].shape) == 3:
+        num_features = train_sequences[0].shape[0]  # C from (C, L, 1)
     else:
-        num_features = train_seqs[0].shape[1]  # C from (L, C)
+        num_features = train_sequences[0].shape[1]  # C from (L, C)
     num_actions = cfg.market.num_actions
     action_history_len = cfg.seq.action_history_len
 
@@ -1104,7 +1001,7 @@ def main(cfg: MasterConfig = None):
     flat_state_size = flat_features + extras + history_vector_size
     
     env_kwargs = {
-        "sequences": train_seqs,
+        "sequences": train_sequences,
         "keys": train_keys,
         "stats": norm_stats,
         "render_mode": cfg.render_mode,
@@ -1146,76 +1043,41 @@ def main(cfg: MasterConfig = None):
         "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
-        "allowed_directions": getattr(cfg.market, "allowed_directions", None),  # <--- ДОБАВИТЬ ЭТО
+        "allowed_directions": getattr(cfg.market, "allowed_directions", None),
     }
-    # FIX: Используем `num_envs` вместо устаревшего `vec_envs` для совместимости с конфигами.
     num_envs = getattr(cfg.vec, "num_envs", 1)
-    # --- TRAIN ENV: single vs vectorized ---
     if num_envs > 1:
         base_seed = cfg.global_env_seed
         env_fns = [partial(make_env, env_kwargs={**env_kwargs, "seed": base_seed + i}) for i in range(num_envs)]
-        if cfg.vec.backend == "subproc":
-            train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
-            logging.info(f"Vectorized train env: SubprocVecEnv x{num_envs} (start_method='{cfg.vec.start_method}')")
-        elif cfg.vec.backend == "dummy":
-            train_env = DummyVecEnv(env_fns)
-            logging.info(f"Vectorized train env: DummyVecEnv x{num_envs}")
-        else:
-            raise ValueError(f"Unknown vec.backend: '{cfg.vec.backend}'")
+        train_env = DummyVecEnv(env_fns) if cfg.vec.backend == "dummy" else SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
     else:
         train_env = TradingEnvironment(**env_kwargs)
-    # Валидация: backtest-режим + TSL/exec-delay
+
     val_env = None
-    if val_seqs:
+    if val_sequences:
         val_kwargs = dict(env_kwargs)
-        val_kwargs["sequences"] = val_seqs
-        val_kwargs["keys"] = val_keys
-        val_kwargs["stats"] = norm_stats
-        val_kwargs["backtest_mode"] = True
-        val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
+        val_kwargs.update({
+            "sequences": val_sequences,
+            "keys": val_keys,
+            "backtest_mode": True,
+            "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
+        })
         val_env = TradingEnvironment(**val_kwargs)
         if hasattr(cfg.backtest, "exec_delay_bars"):
             setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
 
+    history = defaultdict(list)
     episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
     episode_losses_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
     episode_win_rate_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
 
-    history = {
-        "episodes": [],
-        "rewards": [],
-        "mean_rewards_N": [],
-        "losses": [],
-        "mean_losses_N": [],
-        "epsilons": [],
-        "win_rates": [],
-        "mean_win_rates_N": [],
-    }
-
-    # Selection settings (backward-compatible defaults)
-    val_direction = str(getattr(getattr(cfg, "trainlog", object()), "val_selection_direction", "max")).lower()
-    val_min_delta = float(getattr(getattr(cfg, "trainlog", object()), "val_min_delta", 0.0))
-    if val_direction not in ("max", "min"):
-        logging.warning("Unsupported val_selection_direction=%r -> fallback to 'max'", val_direction)
-        val_direction = "max"
-
-    # Поддержим мульти-объективный режим: значение лучшей метрики храним как None|float|tuple
-    best_val_metric = None
-    last_val_metrics: Dict[str, Any] = {}
-    best_validation: Dict[str, Any] = {}
-    # --- Early Stopping ---
-    # Ищем в конфиге, если нет — используем разумные значения по умолчанию
-    early_stopping_patience = int(getattr(getattr(cfg, "trainlog", object()), "early_stopping_patience", 20))
-    # Счётчик валидаций без улучшения
+    best_val_metric, last_val_metrics, best_validation = None, {}, {}
     no_improvement_count = 0
-
-    best_episode: int | None = None
-
+    best_episode = None
     train_steps = 0
     
-    # --- Top-K Checkpoint Manager ---
     checkpoint_manager = None
-    if getattr(getattr(cfg, "trainlog", object()), "save_top_k", 0) > 0:
+    if getattr(cfg.trainlog, "save_top_k", 0) > 0:
         checkpoint_manager = TopKCheckpointManager(
             save_dir=os.path.join(models_dir, "checkpoints"),
             top_k=cfg.trainlog.save_top_k,
@@ -1223,43 +1085,27 @@ def main(cfg: MasterConfig = None):
             mode=cfg.trainlog.save_mode
         )
 
-    # Инициализация окружения:
-    # для VecEnv API как в smoke_test_4_env (reset() без seed/options),
-    # для одиночного env сохраняем фиксированный seed.
     if num_envs > 1:
         train_env.reset()
     else:
         train_env.reset(seed=cfg.global_env_seed)
 
-    gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
-    if gate is None:
-        gate = getattr(cfg, "validation_gate", None)
-    if gate:
-        logging.info(f"Validation gate: {gate}")
-
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
-        if num_envs > 1:  # VecEnv
-            ep_reward, ep_win_rate, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+        if num_envs > 1:
+            ep_reward, _, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
             ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
-        else:  # Single env
+        else:
             obs, _ = train_env.reset(seed=None, options=None)
-            ep_reward = 0.0
-            ep_losses = []
-            done = False
+            ep_reward, ep_losses, done = 0.0, [], False
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
-                # Корректный next_state при done: брать финальное наблюдение из info
-                if done and isinstance(info, dict):
-                    next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs))
-                else:
-                    next_state_to_store = next_obs
+                next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs)) if done else next_obs
                 agent.store_experience(obs, action, reward, next_state_to_store, done)
                 loss = agent.learn()
-                if loss is not None:
-                    ep_losses.append(loss)
+                if loss: ep_losses.append(loss)
                 obs = next_obs
                 agent.increment_step()
                 train_steps += 1
@@ -1267,17 +1113,13 @@ def main(cfg: MasterConfig = None):
 
         history["episodes"].append(ep)
         history["rewards"].append(ep_reward)
-
         avg_loss = np.mean(ep_losses) if ep_losses else 0.0
         history["losses"].append(avg_loss)
 
         episode_rewards_deque.append(ep_reward)
-        mean_reward_N = float(np.mean(episode_rewards_deque))
-        history["mean_rewards_N"].append(mean_reward_N)
-
+        history["mean_rewards_N"].append(np.mean(episode_rewards_deque))
         episode_losses_deque.append(avg_loss)
-        mean_loss_N = float(np.mean(episode_losses_deque)) if episode_losses_deque else 0.0
-        history["mean_losses_N"].append(mean_loss_N)
+        history["mean_losses_N"].append(np.mean(episode_losses_deque))
 
         eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
@@ -1285,38 +1127,13 @@ def main(cfg: MasterConfig = None):
         current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
         episode_win_rate_deque.append(current_win_rate)
         history["win_rates"].append(current_win_rate)
-        mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
-        history["mean_win_rates_N"].append(mean_win_rate_N)
+        history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
 
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
-            # Use validation_warmup_steps to delay validation until the model is stable
-            validation_warmup_steps = int(getattr(getattr(cfg, "trainlog", object()), "validation_warmup_steps", 0))
-            validation_start_step = cfg.rl.train_start + validation_warmup_steps
+            metrics = evaluate_agent(val_env, agent, len(val_sequences), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
 
-            if train_steps < validation_start_step:
-                logging.info(
-                    f"[Validation] Skipped at episode {ep}: "
-                    f"train_steps ({train_steps}) < validation_start_step ({validation_start_step})"
-                )
-                continue
-
-            metrics = evaluate_agent(
-                val_env,
-                agent,
-                min(len(val_seqs), cfg.trainlog.num_val_ep),
-                "Validation",
-                ep,
-                cfg.global_env_seed,
-                cfg,
-                keys=val_keys,
-            )
-            # Поддержка single- и multi-objective отбора лучшей модели.
-            # Пример: cfg.trainlog.val_selection_metrics = [
-            #   "Validation_sharpe", "Validation_sortino",
-            #   "Validation_profit_factor", "Validation_win_rate"
-            # ]
             sel_keys = cfg.trainlog.val_selection_metrics
 
             def _fetch_metric(name: str, lower_is_better: bool) -> float:
@@ -1330,31 +1147,28 @@ def main(cfg: MasterConfig = None):
                     logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
                     return float("-inf")
                 return -v if lower_is_better else v
+
             last_val_metrics = metrics
 
-            # ── ВАЛИДАЦИОННЫЙ ГЕЙТ: пороги берём ТОЛЬКО из конфигурации
+            gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
+            if gate is None:
+                gate = getattr(cfg, "validation_gate", None)
+
             def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
                 if not g:
-                    return True  # гейт выключен, если не задан в конфиге
+                    return True
                 def _f(name: str, default: float | None = None) -> float:
                     v = m.get(name, default)
-                    try:
-                        return float(v)
-                    except Exception:
-                        return float("-inf")
+                    try: return float(v)
+                    except Exception: return float("-inf")
                 cur_sharpe  = _f("Validation_sharpe")
                 cur_sortino = _f("Validation_sortino")
                 cur_pf_raw  = m.get("Validation_profit_factor", None)
-                # PF может быть float("inf")
-                try:
-                    cur_pf = float(cur_pf_raw)
-                except Exception:
-                    cur_pf = float("-inf")
-                cur_dd      = _f("Validation_max_drawdown")  # уже отрицательный (−DD)
-                cur_wr      = _f("Validation_win_rate")      # 0..1
+                try: cur_pf = float(cur_pf_raw)
+                except Exception: cur_pf = float("-inf")
+                cur_dd      = _f("Validation_max_drawdown")
+                cur_wr      = _f("Validation_win_rate")
                 cur_trades  = int(m.get("Validation_trades", 0) or 0)
-
-                # Параметры из конфига
                 min_sharpe     = g.get("min_sharpe", None)
                 min_sortino    = g.get("min_sortino", None)
                 min_pf         = g.get("min_profit_factor", None)
@@ -1363,235 +1177,224 @@ def main(cfg: MasterConfig = None):
                 min_trades     = g.get("min_trades", None)
                 deny_zero_dd   = bool(g.get("deny_zero_drawdown", False))
                 deny_inf_pf    = bool(g.get("deny_inf_pf", False))
-
-                # Проверки
                 ok = True
                 if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
                 if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
                 if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
-                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False # noqa: E272
-                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False # noqa: E272
-                # ИСПРАВЛЕНО: `cur_dd` должен быть БОЛЬШЕ или РАВЕН порогу (т.к. -0.01 > -0.05).
-                if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False # noqa: E272
-                # НОВОЕ: Запрещаем модели с нулевой просадкой, если флаг установлен.
+                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
+                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
+                if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False
                 if deny_zero_dd and cur_dd == 0.0:                                                ok = False
                 if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
                 if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
-                if not ok:
-                    try:
-                        logging.info(
-                            "[Validation] Gate FAILED: "
-                            "Sharpe=%.3f(>=%s), Sortino=%.3f(>=%s), PF=%s(>=%s, deny_inf=%s), "
-                            "MaxDD=%.4f(>=%s, deny_0=%s), WR=%.3f(>=%s), Trades=%d(>=%s)",
-                            cur_sharpe,  min_sharpe,
-                            cur_sortino, min_sortino, # noqa: E272
-                            ("inf" if np.isinf(cur_pf) else f"{cur_pf:.4f}"), min_pf, str(deny_inf_pf),
-                            cur_dd, max_dd_at_most, str(deny_zero_dd),
-                            cur_wr, min_wr,
-                            cur_trades, str(min_trades),
-                        )
-                    except Exception:
-                        logging.info("[Validation] Gate FAILED (see metrics.json for details)")
                 return ok
 
-            # Gate проверка (ваш строгий gate)
             if _passes_gate(metrics, gate):
-                logging.info("[Validation] Metrics passed the validation gate.")
-
-                # FIX from DIFF3.md: Restore multi-objective selection
-                sel_keys = cfg.trainlog.val_selection_metrics
                 if isinstance(sel_keys, (list, tuple)):
-                    val_metric = tuple(_fetch_metric(k, lower_is_better=(val_direction == "min")) for k in sel_keys)
+                    val_metric = tuple(_fetch_metric(k, lower_is_better=(cfg.trainlog.val_selection_direction == "min")) for k in sel_keys)
                 else:
-                    val_metric = _fetch_metric(str(sel_keys), lower_is_better=(val_direction == "min"))
-                
-                # УПРОЩЕНО: Сохранение только по _is_better, без дополнительной проверки PF/Sortino
+                    val_metric = _fetch_metric(str(sel_keys), lower_is_better=(cfg.trainlog.val_selection_direction == "min"))
+
                 def _is_better(current, best):
-                    if best is None:
-                        return True
+                    if best is None: return True
                     return current > best
 
                 if _is_better(val_metric, best_val_metric):
                     best_val_metric = val_metric
                     best_validation = dict(metrics)
-                    best_episode = int(ep)
-                    
-                    # Сохранение в top-K менеджер (если включен)
+                    best_episode = ep
                     if checkpoint_manager:
                         checkpoint_manager.save_checkpoint(agent, ep, metrics)
                     else:
-                        # Fallback: старая логика с одним best.pth
-                        best_path = os.path.join(models_dir, "best.pth")
-                        agent.save_model(best_path)
-                        logging.info(
-                            f"[Validation] New best model saved at episode {ep} "
-                            f"(Sortino={val_metric:.4f}, PF={metrics['Validation_profit_factor']:.4f}, MaxDD={metrics['Validation_max_drawdown']:.4f})"
-                        )
-                        
-                        # Сохранение best_model_info.json
-                        best_model_info = {
-                            "episode": best_episode,
-                            "primary_metric": "Validation_sortino",
-                            "primary_metric_value": float(best_val_metric),
-                            "validation_metrics": best_validation,
-                        }
-                        best_info_path = os.path.join(models_dir, "best_model_info.json")
-                        with open(best_info_path, "w") as f:
-                            json.dump(best_model_info, f, indent=2)
-
-                    no_improvement_count = 0  # Сброс счётчика
+                        agent.save_model(os.path.join(models_dir, "best.pth"))
+                    no_improvement_count = 0
                 else:
                     no_improvement_count += 1
             else:
-                # Gate провален
                 no_improvement_count += 1
-                continue  # Пропускаем сохранение
 
-        # --- Проверка условия досрочной остановки ---
-        if val_env and ep % cfg.trainlog.val_freq == 0 and best_episode is not None:
-            if no_improvement_count >= early_stopping_patience:
-                logging.info(
-                    f"[Early Stopping] No improvement for {no_improvement_count} validation checks "
-                    f"(patience={early_stopping_patience}). Stopping training at episode {ep}."
-                )
-                break # Выход из основного цикла обучения
-
-    # После завершения обучения: копировать лучший топ-K чекпоинт в best.pth
-    if checkpoint_manager:
-        best_ckpt = checkpoint_manager.get_best_checkpoint()
-        if best_ckpt:
-            import shutil
-            best_path = os.path.join(models_dir, "best.pth")
-            shutil.copy2(best_ckpt, best_path)
-            logging.info(f"[TopK] Copied best checkpoint to: {best_path}")
+            if no_improvement_count >= cfg.trainlog.early_stopping_patience:
+                logging.info(f"Early stopping at episode {ep}.")
+                break
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
-    logging.info(f"Final model saved: {final_path}")
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
     train_env.close()
-
     if val_env:
         val_env.close()
 
-    # --- Aggregate and persist must-have bundle artifacts in models_dir ---
-    bundle_enabled = getattr(bundle_cfg, "enable", True)
-    if bundle_enabled:
-        # 1) metrics.json
-        # NEW: Get human-readable values for the best metric tuple. 
-        # This ensures that the final summary log and metrics.json contain the correct, non-inverted values.
-        sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
-        best_val_metric_human = tuple(best_validation.get(k, None) for k in sel_keys) if best_validation else None
+    return best_validation, history
 
-        bundle_metrics = {
-            "val_selection_metric": cfg.trainlog.val_selection_metrics,
-            "val_selection_direction": val_direction,
-            "val_min_delta": val_min_delta,
-            # FIX: Store human-readable values, not the internal inverted ones.
-            "best_val_metric": best_val_metric_human,
-            "best_episode": best_episode,
-            "best_validation": best_validation,
-            "last_validation": last_val_metrics,
-            "history": {
-                "episodes": history.get("episodes", []),
-                "mean_rewards_N": history.get("mean_rewards_N", []),
-                "mean_losses_N": history.get("mean_losses_N", []),
-                "mean_win_rates_N": history.get("mean_win_rates_N", []),
-            },
-        }
-        with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
-            json.dump(bundle_metrics, f, indent=2, default=_numpy_json_default)
-        # 2) requirements-lock.txt
-        _dump_requirements_lock(os.path.join(models_dir, "requirements-lock.txt"))
-        # 3) torch_env.txt
-        _dump_torch_env(os.path.join(models_dir, "torch_env.txt"))
-        # 4) env_flags.json
-        _dump_env_flags(cfg, os.path.join(models_dir, "env_flags.json"))
-        # 5) data_manifest.json
-        data_manifest = _build_data_manifest(cfg)
-        with open(os.path.join(models_dir, "data_manifest.json"), "w", encoding="utf-8") as f:
-            json.dump(data_manifest, f, indent=2)
 
-        # 6) optional: snapshot кода
-        if getattr(bundle_cfg, "include_code_snapshot", False):
-            snapshot_paths = getattr(bundle_cfg, "code_snapshot_paths", [])
-            snap_path = os.path.join(models_dir, "code_snapshot.tar.gz")
-            try:
-                with tarfile.open(snap_path, "w:gzip") as tar:
-                    for p in snapshot_paths:
-                        if os.path.exists(p):
-                            tar.add(p, arcname=os.path.basename(p))
-                logging.info(f"Code snapshot saved: {snap_path}")
-            except Exception as e:
-                logging.warning(f"Code snapshot failed: {e}")
+def main(cfg: MasterConfig = None):
+    from config import cfg as loaded_cfg
+    if cfg is None:
+        cfg = loaded_cfg
+    cfg_mod = None
 
-        # 7) MANIFEST.json (file list + sha256)
-        file_entries = []
-        for fn in sorted(os.listdir(models_dir)):
-            fp = os.path.join(models_dir, fn)
-            if os.path.isfile(fp):
-                try:
-                    file_entries.append({"path": fn, "sha256": _sha256(fp), "bytes": os.path.getsize(fp)})
-                except Exception as e:
-                    logging.warning(f"MANIFEST: failed to hash {fn}: {e}")
-        manifest = {
-            "schema": "MODEL_BUNDLE_V1",
-            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "code_commit": _git_head_sha(),
-            "files": file_entries,
-            "links": {
-                "dataset_sha256": [x["sha256"] for x in data_manifest.get("datasets", [])],
-                "norm_stats": "norm_stats.json",
-                "config_train": "config_train.json",
-            },
-        }
-        with open(os.path.join(models_dir, "MANIFEST.json"), "w", encoding="utf-8") as f:
-            json.dump(manifest, f, indent=2)
-        logging.info(f"Bundle manifest written: {os.path.join(models_dir, 'MANIFEST.json')}")
+    timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
+    session_name = f"{cfg.project_name}_{timestamp}"
+    setup_logging(session_name, cfg)
+    set_random_seed(cfg.random_seed, True)
 
-        # 8) Вшиваем META в best.pth / final.pth
-        def _attach_meta_to_checkpoint(path: str, meta: dict):
-            try:
-                ckpt = torch.load(path, map_location="cpu")
-                if isinstance(ckpt, dict) and "state_dict" in ckpt:
-                    ckpt["meta"] = meta
-                else:
-                    ckpt = {"state_dict": ckpt, "meta": meta}
-                torch.save(ckpt, path)
-                logging.info(f"Attached meta to: {path}")
-            except Exception as e:
-                logging.warning(f"Failed to attach meta to {path}: {e}")
+    models_dir = os.path.join(cfg.paths.model_dir, session_name)
+    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
 
-        norm_sha = _sha256(os.path.join(models_dir, "norm_stats.json")),
-        cfg_sha  = _sha256(os.path.join(models_dir, "config_train.json")),
-        ds_list  = [x["sha256"] for x in data_manifest.get("datasets", [])]
-        meta = {
-            "dataset_sha256_list": ds_list,
-            "norm_stats_sha256": norm_sha,
-            "config_train_sha256": cfg_sha,
-            "code_commit": _git_head_sha(),
-            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        best_path  = os.path.join(models_dir, "best.pth")
-        final_path = os.path.join(models_dir, "final.pth")
-        if os.path.exists(best_path):
-            _attach_meta_to_checkpoint(best_path, meta)
-        if os.path.exists(final_path):
-            _attach_meta_to_checkpoint(final_path, meta)
+    with open(os.path.join(models_dir, "config_train.json"), "w") as f:
+        json.dump(cfg.model_dump(), f, indent=2, default=str)
 
-        # ── Краткое резюме метрик в лог (для аудита без открытия файлов) — только валидация
-        try:
-            _metrics_path = os.path.join(models_dir, "metrics.json")
-            with open(_metrics_path, "r", encoding="utf-8") as _mf:
-                _m = json.load(_mf)
-            _best = _m.get("best_val_metric")
-            _sel  = _m.get("val_selection_metric")
-            _best_tuple = tuple(_best) if isinstance(_best, list) else (_best,)
-            logging.info("[SUMMARY] best_val_metric=%s  val_selection_metric=%s", _best_tuple, _sel)
-        except Exception as e:
-            logging.warning(f"[SUMMARY] Failed to log metrics summary: {e}")
+    norm_stats_path = getattr(cfg.paths, "norm_stats_path", "norm_stats.json")
+    if os.path.exists(norm_stats_path):
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
+    else:
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
 
+    if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
+        logging.info("Walk-Forward Validation ENABLED.")
+        all_sequences = []
+        for src in cfg.walk_forward.data_sources:
+            if os.path.exists(src):
+                seqs = load_npz_dataset(src, "merged_wfv", plots_dir)
+                all_sequences.extend(seqs)
+            else:
+                logging.warning(f"WFV source not found: {src}")
+
+        folds = create_walk_forward_folds(
+            all_sequences,
+            cfg.walk_forward.train_months,
+            cfg.walk_forward.test_months,
+            cfg.walk_forward.step_months
+        )
+        if not folds:
+            logging.error("No WFV folds created. Check data dates.")
+            return
+
+        wfv_results = []
+        for i, (train_s, test_s) in enumerate(folds):
+            logging.info(f"=== Starting WFV Fold {i+1}/{len(folds)} ===")
+
+            fold_train_keys = [k for k, _ in train_s]
+            fold_train_data = [d for _, d in train_s]
+            fold_test_keys = [k for k, _ in test_s]
+            fold_test_data = [d for _, d in test_s]
+
+            fold_models_dir = os.path.join(models_dir, f"fold_{i+1}")
+            fold_plots_dir = os.path.join(plots_dir, f"fold_{i+1}")
+            os.makedirs(fold_models_dir, exist_ok=True)
+            os.makedirs(fold_plots_dir, exist_ok=True)
+
+            # --- Per-Fold Normalization ---
+            logging.info(f"Calculating normalization stats for Fold {i+1}...")
+            fold_norm_stats = calculate_normalization_stats(
+                [d for _, d in train_s],  # Raw data from the current fold
+                cfg.data.datachannels,
+                cfg.data.pricechannels,
+                cfg.data.volumechannels,
+                cfg.data.otherchannels
+            )
+
+            # Pre-process data for the current fold
+            train_seqs, train_keys_prep = load_and_prep_data_from_source(fold_train_data, fold_train_keys, "Train", fold_norm_stats)
+            val_seqs, val_keys_prep = load_and_prep_data_from_source(fold_test_data, fold_test_keys, "Validation", fold_norm_stats)
+
+            best_metrics, _ = run_training_session(
+                train_sequences=train_seqs,
+                train_keys=train_keys_prep,
+                val_sequences=val_seqs,
+                val_keys=val_keys_prep,
+                cfg=cfg,
+                norm_stats=fold_norm_stats,
+                models_dir=fold_models_dir,
+                plots_dir=fold_plots_dir,
+                session_name=f"{session_name}_fold_{i+1}",
+                cfg_mod=cfg_mod
+            )
+            wfv_results.append(best_metrics)
+
+        # Aggregate and log WFV results
+        if wfv_results:
+            df_results = pd.DataFrame(wfv_results)
+            logging.info("\n" + "="*50 + "\nWalk-Forward Validation Summary\n" + "="*50)
+            logging.info(f"Total Folds: {len(df_results)}")
+            logging.info("\n" + df_results.mean().to_string())
+            df_results.to_csv(os.path.join(models_dir, "wfv_results.csv"))
+
+    else:
+        # Standard training run
+        allowed_assets = getattr(cfg.paper, "symbols", None)
+        if allowed_assets == "ALL": allowed_assets = None
+
+        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats, allowed_assets)
+        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats, allowed_assets)
+
+        if not train_seqs:
+            logging.error("Training data not loaded. Exiting.")
+            sys.exit(1)
+
+        episodes_per_epoch = getattr(cfg.trainlog, "episodesperepoch", None)
+        if episodes_per_epoch is not None and len(train_seqs) > episodes_per_epoch:
+            rng = np.random.default_rng(cfg.random_seed)
+            indices = rng.choice(len(train_seqs), episodes_per_epoch, replace=False)
+            indices = sorted(indices.tolist())
+            train_seqs = [train_seqs[i] for i in indices]
+            train_keys = [train_keys[i] for i in indices]
+            logging.info("Sampled train set down to %d episodes", len(train_seqs))
+
+        if val_seqs:
+            val_seqs, val_keys = create_validation_episodes(
+                val_sequences=val_seqs,
+                val_keys=val_keys,
+                num_episodes=cfg.trainlog.num_val_ep,
+                seed=cfg.random_seed
+            )
+            logging.info(f"Validation set sampled: {len(val_seqs)} episodes")
+
+        best_validation, history = run_training_session(
+            train_sequences=train_seqs,
+            train_keys=train_keys,
+            val_sequences=val_seqs,
+            val_keys=val_keys,
+            cfg=cfg,
+            norm_stats=norm_stats,
+            models_dir=models_dir,
+            plots_dir=plots_dir,
+            session_name=session_name,
+            cfg_mod=cfg_mod
+        )
+
+        bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
+        bundle_enabled = getattr(bundle_cfg, "enable", True)
+        if bundle_enabled:
+            sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
+            best_val_metric_human = tuple(best_validation.get(k, None) for k in sel_keys) if best_validation else None
+
+            bundle_metrics = {
+                "val_selection_metric": cfg.trainlog.val_selection_metrics,
+                "val_selection_direction": cfg.trainlog.val_selection_direction,
+                "val_min_delta": cfg.trainlog.val_min_delta,
+                "best_val_metric": best_val_metric_human,
+                "best_episode": best_validation.get("episode"),
+                "best_validation": best_validation,
+                "history": {
+                    "episodes": history.get("episodes", []),
+                    "mean_rewards_N": history.get("mean_rewards_N", []),
+                    "mean_losses_N": history.get("mean_losses_N", []),
+                    "mean_win_rates_N": history.get("mean_win_rates_N", []),
+                },
+            }
+            with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
+                json.dump(bundle_metrics, f, indent=2, default=_numpy_json_default)
+            _dump_requirements_lock(os.path.join(models_dir, "requirements-lock.txt"))
+            _dump_torch_env(os.path.join(models_dir, "torch_env.txt"))
+            _dump_env_flags(cfg, os.path.join(models_dir, "env_flags.json"))
+            data_manifest = _build_data_manifest(cfg)
+            with open(os.path.join(models_dir, "data_manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(data_manifest, f, indent=2)
 
 if __name__ == "__main__":
     cfg = None
