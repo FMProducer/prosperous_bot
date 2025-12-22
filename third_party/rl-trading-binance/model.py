@@ -94,8 +94,16 @@ class DuelingQNetwork(nn.Module):
         
         batch = state.size(0)
 
+        history_flat_size = self.input_shape[0] * self.input_shape[1]
+        expected_size = history_flat_size + self.additional_feats
+
+        assert state.size(1) == expected_size, (
+            f"Input state size mismatch. Expected {expected_size} "
+            f"(history: {history_flat_size}, additional: {self.additional_feats}), "
+            f"but got {state.size(1)}."
+        )
+
         # The input state is flat, need to separate history and extra features
-        history_flat_size = self.input_shape[0] * self.input_shape[1] # C * L
         history_part = state[:, :history_flat_size]
         extra_part = state[:, history_flat_size:]
 

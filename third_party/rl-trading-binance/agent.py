@@ -26,6 +26,21 @@ except ImportError:
 
 
 class D3QN_PER_Agent:
+    """A Dueling Double Deep Q-Network (D3QN) agent with Prioritized Experience Replay (PER).
+
+    This agent learns a policy to select actions in a trading environment.
+    The state is represented by a combination of historical market data and
+    additional features. The reward is typically related to the change in
+
+    portfolio value.
+
+    Attributes:
+        policy_net (DuelingQNetwork): The primary network for action selection.
+        target_net (DuelingQNetwork): A lagging copy of the policy network for stable Q-value estimation.
+        replay_buffer (PrioritizedReplayBuffer): Stores and samples experiences based on their TD-error.
+        gamma (float): The discount factor for future rewards.
+        total_steps (int): The total number of steps taken in the environment.
+    """
     def __init__(
         self,
         state_shape: Tuple[int, ...],
@@ -175,10 +190,15 @@ class D3QN_PER_Agent:
         logger.info("D3QN_PER_Agent initialized.")
 
     def export_to_onnx(self, file_path: str):
-        """
-        Экспортирует policy network в формат ONNX.
-        Входной тензор создается на основе внутренних параметров модели,
-        а не observation_space среды.
+        """Exports the policy network to the ONNX format.
+
+        This method creates a deployable representation of the agent's policy network,
+        which can be used for high-performance inference. The input tensor shape is
+        derived from the model's internal configuration, not from the environment's
+        observation space.
+
+        Args:
+            file_path (str): The path to save the ONNX file.
         """
         try:
             import onnx  # type: ignore
@@ -230,7 +250,15 @@ class D3QN_PER_Agent:
             raise
 
     def load_onnx_model(self, file_path: str):
-        """Loads ONNX model for fast CPU inference."""
+        """Loads an ONNX model for accelerated CPU inference.
+
+        If the ONNX Runtime is available, this method loads the specified model
+        and prepares it for inference. This can significantly speed up action
+        selection in non-training scenarios.
+
+        Args:
+            file_path (str): The path to the ONNX model file.
+        """
         if ort is None:
             logger.error("Невозможно загрузить ONNX модель: onnxruntime не установлен.")
             logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
@@ -254,6 +282,23 @@ class D3QN_PER_Agent:
         use_cache: bool = False,
         cache_key: Optional[Tuple[str, dt.datetime]] = None,
     ) -> Union[int, np.ndarray]:
+        """Selects an action based on the current state using an epsilon-greedy policy.
+
+        In training mode, the agent explores with a probability of epsilon, which
+        decays over time. In evaluation mode, it selects the action with the highest
+        estimated Q-value. The state `s_t` is a snapshot of the environment at
+        time `t`, and the chosen action `a_t` leads to a new state `s_{t+1}`.
+
+        Args:
+            state (np.ndarray): The current state of the environment.
+            training (bool): Whether the agent is in training mode.
+            return_qvals (bool): If True, returns the Q-values for all actions.
+            use_cache (bool): If True, uses a cache for Q-value lookups.
+            cache_key (Optional[Tuple[str, dt.datetime]]): The key for the Q-value cache.
+
+        Returns:
+            Union[int, np.ndarray]: The selected action or an array of Q-values.
+        """
         # Базовая ε-жадная логика (epsilon берется из self.eps_* расписания внутри агента)
         # Если mc_enable=False или training=False — используем обычный путь как прежде.
         if not (training and self.mc_enable and self.mc_n_action_samples > 1):
@@ -342,12 +387,20 @@ class D3QN_PER_Agent:
             return qvals if return_qvals else int(np.argmax(qvals))
 
     def select_action_batch(self, states: np.ndarray, training: bool = True) -> list[int]:
-        """
-        Векторизованный epsilon-greedy для батча состояний (N,H,W,C/…):
-        - один forward сети на весь батч (torch.no_grad, AMP при включённом autocast)
-        - argmax по действиям для каждой строки
-        - случайные действия под epsilon по тем же индексам
-        Возвращает список длины N.
+        """Selects actions for a batch of states using a vectorized epsilon-greedy policy.
+
+        This method performs a single forward pass on the policy network for the entire
+        batch of states, making it more efficient than calling `select_action` in a loop.
+        Epsilon-greedy exploration is applied to the batch, with random actions
+        selected for a subset of the states.
+
+        Args:
+            states (np.ndarray): A batch of states with shape (N, ...), where N is the
+                batch size.
+            training (bool): Whether the agent is in training mode.
+
+        Returns:
+            list[int]: A list of selected actions for each state in the batch.
         """
         self.policy_net.eval()  # детерминированный инференс вне MC-дропаут
         n = int(states.shape[0])
@@ -378,8 +431,23 @@ class D3QN_PER_Agent:
         cache_key: Optional[Tuple[str, dt.datetime]] = None,
         n_samples: int = 10,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        MC-Dropout (Monte Carlo Dropout)
+        """Performs Monte Carlo Dropout to estimate Q-value uncertainty.
+
+        This method runs multiple forward passes with dropout enabled to obtain a
+        distribution of Q-values. The mean and standard deviation of this
+        distribution can be used to gauge the model's confidence in its
+        predictions.
+
+        Args:
+            state (np.ndarray): The current state of the environment.
+            training (bool): Must be False, as this is an inference-only method.
+            use_cache (bool): If True, uses a cache for Q-value lookups.
+            cache_key (Optional[Tuple[str, dt.datetime]]): The key for the Q-value cache.
+            n_samples (int): The number of forward passes to perform.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: A tuple containing the mean and
+                standard deviation of the Q-values.
         """
         if training:
             raise IndexError("Predict Ensemble use for inference mode only!")
@@ -399,6 +467,19 @@ class D3QN_PER_Agent:
     def get_mean_std_q(
         self, state: np.ndarray, n_samples: int = 5
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """Calculates the mean and standard deviation of Q-values using MC Dropout.
+
+        This is a helper method for `predict_ensemble`. It performs `n_samples`
+        forward passes through the policy network with dropout enabled and
+        computes the mean and standard deviation of the resulting Q-values.
+
+        Args:
+            state (np.ndarray): The current state of the environment.
+            n_samples (int): The number of forward passes to perform.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: The mean and standard deviation of the Q-values.
+        """
         # Включаем стохастику (dropout), но сохраняем и восстанавливаем исходный режим
         prev_training = self.policy_net.training
         self.policy_net.train()
@@ -427,9 +508,39 @@ class D3QN_PER_Agent:
         next_state: np.ndarray,
         done: bool,
     ) -> None:
+        """Stores a transition in the replay buffer.
+
+        A transition consists of the current state, the action taken, the resulting
+        reward, the next state, and a done flag indicating if the episode has
+        terminated. This experience is stored for later use in the learning process.
+
+        The transition is represented as `(s_t, a_t, r_t, s_{t+1})`.
+
+        Args:
+            state (np.ndarray): The state at time `t`.
+            action (int): The action taken at time `t`.
+            reward (float): The reward received at time `t`.
+            next_state (np.ndarray): The state at time `t+1`.
+            done (bool): Whether the episode terminated at time `t+1`.
+        """
         self.replay_buffer.add(state, action, reward, next_state, done)
 
     def learn(self) -> Optional[float]:
+        """Performs a single learning step.
+
+        This method samples a batch of experiences from the replay buffer and uses
+        it to update the policy network. The target Q-values are calculated using
+        the target network, and the loss is computed as the difference between the
+        predicted and target Q-values. The loss is then backpropagated to update
+        the policy network's weights.
+
+        The target Q-value is calculated as:
+        `Q_target(s_t, a_t) = r_t + gamma * Q_target(s_{t+1}, argmax_a Q_policy(s_{t+1}, a))`
+
+        Returns:
+            Optional[float]: The loss value for the current learning step, or None if
+                learning has not yet started.
+        """
         # Do not start learning until the buffer has enough transitions.
         # We take the max of train_start and batch_size to ensure the sample is valid.
         if len(self.replay_buffer) < max(self.train_start, self.batch_size):
@@ -594,23 +705,34 @@ class D3QN_PER_Agent:
         return float(weighted_loss.item())
 
     def increment_step(self) -> None:
+        """Increments the total step counter.
+
+        This method should be called after each step in the environment to keep
+        track of the agent's total experience.
+        """
         self.total_steps += 1
 
     def prepare_for_qat(self):
-        """Подготовка модели к квантованию (вызывать перед переобучением)"""
+        """Prepares the model for Quantization-Aware Training (QAT).
+
+        This method sets the model's qconfig and prepares it for QAT. This
+        should be called before fine-tuning a model with quantization-aware
+        training.
+        """
         self.policy_net.train()
         self.policy_net.qconfig = torch.ao.quantization.get_default_qat_qconfig('fbgemm')
         torch.ao.quantization.prepare_qat(self.policy_net, inplace=True)
         logger.info("Model prepared for Quantization-Aware Training (QAT)")
 
     def save_model(self, path: str) -> None:
-        """
-        Сохраняет ПОЛНЫЙ чекпоинт для безопасного возобновления обучения:
-        - policy/target state_dict
-        - optimizer state_dict
-        - GradScaler (если AMP включён)
-        - meta (счётчики шагов/eps-параметры и UTC-время)
-        Обратная совместимость: загрузка старых .pth с одним state_dict поддерживается в load_model().
+        """Saves a complete checkpoint of the agent's state.
+
+        This method saves all the necessary components to resume training, including
+        the policy and target network weights, the optimizer state, and other
+        metadata such as the total number of steps.
+
+        Args:
+            path (str): The path to save the checkpoint file.
         """
         os.makedirs(os.path.dirname(path), exist_ok=True)
         checkpoint = {
@@ -632,9 +754,18 @@ class D3QN_PER_Agent:
         logger.info(f"Checkpoint saved to {path} (policy+target+optimizer+scaler+meta).")
 
     def load_model(self, path: str, strict: bool = True) -> None:
-        """
-        Загружает либо новый чекпоинт (см. save_model), либо старый .pth с единственным state_dict.
-        Аргумент strict пробрасывается в load_state_dict для гибкости при мелких несовпадениях ключей.
+        """Loads a checkpoint of the agent's state.
+
+        This method loads a saved checkpoint, which can be either a full checkpoint
+        (including optimizer state) or a file containing only the model weights.
+        This allows for both resuming training and loading pre-trained models for
+        inference.
+
+        Args:
+            path (str): The path to the checkpoint file.
+            strict (bool): Whether to strictly enforce that the keys in the
+                checkpoint match the keys returned by this module's
+                `state_dict()` function.
         """
         # Исправляем загрузку для CPU-only машин
         device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device

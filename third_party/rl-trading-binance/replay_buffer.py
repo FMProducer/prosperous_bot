@@ -40,17 +40,6 @@ class PrioritizedReplayBuffer:
         beta = min(1.0, self.beta_start + self.frame_idx * (1.0 - self.beta_start) / self.beta_frames)
         return beta
 
-    def _propagate(self, tree_idx: int, change: float) -> None:
-        parent = (tree_idx - 1) // 2
-        self.tree[parent] += change
-        if parent != 0:
-            self._propagate(parent, change)
-
-    def _update_tree(self, tree_idx: int, priority: float) -> None:
-        change = priority - self.tree[tree_idx]
-        self.tree[tree_idx] = priority
-        self._propagate(tree_idx, change)
-
     def add(
         self,
         state: np.ndarray,
@@ -62,8 +51,12 @@ class PrioritizedReplayBuffer:
         data_idx = self.idx
         self.data[data_idx] = (state, action, reward, next_state, done)
 
-        tree_idx = data_idx + self.tree_capacity - 1
-        self._update_tree(tree_idx, self.max_priority**self.alpha)
+        tree_idx = np.array([data_idx + self.tree_capacity - 1])
+        priority = np.array([self.max_priority**self.alpha])
+
+        change = priority - self.tree[tree_idx]
+        self.tree[tree_idx] = priority
+        self._propagate_vectorized(tree_idx, change)
 
         self.idx = (self.idx + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
@@ -140,23 +133,55 @@ class PrioritizedReplayBuffer:
             np.array(weights, dtype=np.float32),
         )
 
+    def _propagate_vectorized(self, indices: np.ndarray, changes: np.ndarray) -> None:
+        """Propagates changes up the tree in a vectorized, iterative manner."""
+        if len(indices) == 0:
+            return
+
+        current_indices = indices
+        current_changes = changes
+
+        while np.any(current_indices > 0):
+            parents = (current_indices - 1) // 2
+
+            unique_parents, inverse_indices = np.unique(parents, return_inverse=True)
+            aggregated_changes = np.bincount(inverse_indices, weights=current_changes)
+
+            np.add.at(self.tree, unique_parents, aggregated_changes)
+
+            current_indices = unique_parents
+            current_changes = aggregated_changes
+
+            mask = current_indices > 0
+            current_indices = current_indices[mask]
+            current_changes = current_changes[mask]
+
     def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray) -> None:
         """
-        Обновляет приоритеты для выбранных узлов дерева.
-        Если td_error нечисловой (NaN/inf), такой опыт пропускается,
-        чтобы не «заразить» пер-дерево NaN-ами.
+        Vectorized update of priorities for selected tree nodes.
+        Non-finite td_errors (NaN/inf) are skipped to prevent corrupting the tree.
         """
-        for idx, error in zip(indices, td_errors):
-            err = float(error)
-            if not np.isfinite(err):
-                # Оставляем только debug-лог, чтобы не заспамить WARNING при редких NaN
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("Skipping non-finite td_error in PER update: %r", err)
-                continue
+        indices = indices.astype(np.int64)
 
-            new_p = (abs(err) + self.epsilon) ** self.alpha
-            self._update_tree(int(idx), new_p)
-            self.max_priority = max(self.max_priority, new_p)
+        finite_mask = np.isfinite(td_errors)
+        if not np.all(finite_mask):
+            if logger.isEnabledFor(logging.DEBUG):
+                non_finite_count = np.sum(~finite_mask)
+                logger.debug(f"Skipping {non_finite_count} non-finite td_error(s) in PER update.")
+            indices = indices[finite_mask]
+            td_errors = td_errors[finite_mask]
+
+        if len(indices) == 0:
+            return
+
+        new_priorities = (np.abs(td_errors) + self.epsilon) ** self.alpha
+        changes = new_priorities - self.tree[indices]
+        self.tree[indices] = new_priorities
+
+        self._propagate_vectorized(indices, changes)
+
+        if new_priorities.size > 0:
+            self.max_priority = max(self.max_priority, np.max(new_priorities))
 
     def __len__(self) -> int:
         return self.size
