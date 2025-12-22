@@ -21,8 +21,6 @@ import os
 import glob
 import random
 from collections import defaultdict
-from importlib.machinery import SourceFileLoader
-import types
 
 # Assuming these are the correct paths from the project structure
 from trading_environment import TradingEnvironment
@@ -198,16 +196,18 @@ def create_validation_episodes(val_sequences, val_keys, num_episodes=750, max_ep
 def load_config_from_path(config_path):
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found at {config_path}")
-    config_module = types.ModuleType("user_config_module")
-    config_globals = config_module.__dict__
+
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            code = f.read()
-            exec(code, config_globals)
+        spec = importlib.util.spec_from_file_location("user_config_module", config_path)
+        if spec is None:
+            raise ImportError(f"Could not load spec from {config_path}")
+
+        config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_module)
+        return config_module
     except Exception as e:
-        logger.error(f"Failed to execute config file: {e}")
+        logger.error(f"Failed to import config file as a module: {e}")
         raise e
-    return config_module
 
 def find_model_checkpoint(model_path_arg, cfg=None):
     if model_path_arg and os.path.exists(model_path_arg):

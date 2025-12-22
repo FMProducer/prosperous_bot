@@ -13,6 +13,20 @@ logger = logging.getLogger(__name__)
 
 
 class TradingEnvironment(gym.Env):
+    """A custom trading environment that simulates the process of trading in a financial market.
+
+    This environment conforms to the Gymnasium API and is designed for training
+    reinforcement learning agents. It supports various features such as shaped
+    rewards, risk management, and different observation formats.
+
+    The state `s_t` is a composite of historical market data (e.g., OHLCV),
+    the agent's current position, unrealized profit/loss, and the time
+    remaining in the episode.
+
+    The reward `r_t` is primarily based on the change in portfolio value (PnL)
+    but can be augmented with shaped rewards to encourage desirable behaviors
+    such as holding profitable positions and penalizing inaction.
+    """
     metadata = {"render_modes": ["human", "ansi"], "render_fps": 1}
     exit_options = np.array(["FORCED", "SL", "TP", "TSL"])
 
@@ -292,6 +306,21 @@ class TradingEnvironment(gym.Env):
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Resets the environment to the beginning of a new episode.
+
+        This method selects a new trading sequence, resets the portfolio
+        balance, and returns the initial observation. The state `s_0` represents
+        the starting point of a new trading session.
+
+        Args:
+            seed (Optional[int]): The seed for the random number generator.
+            options (Optional[dict]): Additional options for resetting the
+                environment.
+
+        Returns:
+            Tuple[np.ndarray, Dict[str, Any]]: A tuple containing the initial
+                observation and an info dictionary.
+        """
         if seed is None:
             seed = self.seed_value
         super().reset(seed=seed)
@@ -319,6 +348,23 @@ class TradingEnvironment(gym.Env):
         return obs, info
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """Executes a single time step in the environment.
+
+        This method processes the agent's action, updates the environment's
+        state, and calculates the reward. The state transition from `s_t` to
+        `s_{t+1}` is determined by the market data and the agent's action `a_t`.
+        The reward `r_t` is calculated based on the resulting change in
+        portfolio value and any applicable shaped rewards or penalties.
+
+        Args:
+            action (int): The action selected by the agent.
+
+        Returns:
+            Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]: A tuple
+                containing the next observation, the reward, a flag indicating
+                if the episode has terminated, a flag indicating if the episode
+                has been truncated, and an info dictionary.
+        """
         assert self.current_seq is not None, "reset() must be called before step()"
         prev_position = self.position
 
@@ -835,7 +881,30 @@ class TradingEnvironment(gym.Env):
         fee_buffer_mult: float = None,
         delta_p_hysteresis: float = None,
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        
+        """Executes a single time step in backtesting mode.
+
+        This method is similar to `step` but is designed for backtesting. It
+        includes more detailed trade execution logic, such as trailing stops
+        and fee calculations. The reward is typically not used in backtesting,
+        as performance is evaluated based on the final portfolio value.
+
+        Args:
+            action (int): The action selected by the agent.
+            signal_dt (dt.datetime): The timestamp of the signal.
+            ticker (str): The ticker symbol of the asset being traded.
+            stop_loss (float): The stop loss percentage.
+            take_profit (float): The take profit percentage.
+            trailing_stop (float): The trailing stop percentage.
+            trailing_stop_min (float): The minimum trailing stop percentage.
+            fee_buffer_mult (float): A multiplier for the fee buffer.
+            delta_p_hysteresis (float): The hysteresis for the delta price.
+
+        Returns:
+            Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]: A tuple
+                containing the next observation, the reward (always 0 in
+                backtest mode), a termination flag, a truncation flag, and an
+                info dictionary with detailed trade information.
+        """
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
         self.last_step = self.step_idx == self.agent_session_len - 1
@@ -1168,4 +1237,9 @@ class TradingEnvironment(gym.Env):
             )
 
     def close(self) -> None:
+        """Closes the environment and cleans up any resources.
+
+        This method is called when the environment is no longer needed. It can be
+        used to close any open files or network connections.
+        """
         logger.info("TradingEnvironment closed.")

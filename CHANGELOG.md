@@ -1,18 +1,13 @@
-# ChangeLog
+# Changelog
 
-## v12-RC1 (Release Candidate)
+## [YYYY-MM-DD] - Refactor and Enhance RL Trading System
 
-### Added
-- **Quantization-Aware Training (QAT):** Внедрена поддержка QAT в `model.py` для повышения производительности инференса на CPU.
-- **Ensemble Agent Logic:** Добавлена новая логика для ансамбля, включая параметры `conflict_cooldown_bars` и `disable_cross_close` для более гибкого управления моделями.
-- **New Verification Tests:** Добавлен `test_identity_v2.py` для проверки ключевых аспектов новой архитектуры, включая QAT и API агента.
+### Architectural Changes
 
-### Changed
-- **Cross-Platform Paths:** Абсолютные пути в файлах конфигурации заменены на динамические с использованием `pathlib`, что улучшило кросс-платформенность.
-- **CPU Inference Optimization:** Оптимизировано использование потоков CPU для ускорения процесса инференса.
-- **Dequantization Fix:** В `model.py` исправлена ошибка, при которой компоненты `value` и `advantage` не проходили деквантование.
+- **Vectorized Replay Buffer**: Refactored `replay_buffer.py` to use NumPy vectorized operations for priority updates. This eliminates Python loops, improving performance and ensuring the atomicity of tree updates, which is critical for the stability of the Prioritized Experience Replay algorithm.
 
-### Removed
-- **Legacy Tests:** Удален устаревший тест `test_train.py`, несовместимый с новой архитектурой.
+- **Robust Model Input**: Enhanced `model.py` by adding defensive assertions in the `forward()` method to validate input tensor shapes. This provides a more robust way to handle dynamic input shapes and prevents potential runtime errors due to mismatched tensor dimensions.
 
-## [Unreleased]
+- **Secure Configuration Loading**: Fixed `validate_ensemble_prod_q.py` by replacing the insecure `SourceFileLoader` with a proper configuration injection pattern using `importlib.util`. This is a safer and more standard approach for loading Python-based configuration files, reducing the risk of arbitrary code execution.
+
+- **Standardized Documentation**: Added Google-style docstrings to all public methods in `agent.py` and `trading_environment.py`. The docstrings focus on the mathematical meaning of 'reward' and 'state' transitions, improving code clarity and maintainability for future development.
