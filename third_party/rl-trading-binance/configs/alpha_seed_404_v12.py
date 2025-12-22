@@ -12,7 +12,11 @@ AGENT_MODE = "UNIVERSAL"
 # AGENT_MODE = "LONG_ONLY"
 # AGENT_MODE = "SHORT_ONLY"
 
-cfg.paths.config_name = "alpha_seed_404_v11_SHORT"
+if AGENT_MODE == "UNIVERSAL":
+    cfg.paths.config_name = "alpha_seed_404_v12"
+else:
+    cfg.paths.config_name = f"alpha_seed_404_v12_{AGENT_MODE}"
+
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
