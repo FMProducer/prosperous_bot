@@ -22,7 +22,8 @@ try:
     import onnxruntime as ort
 except ImportError:
     ort = None
-    logger.warning("ONNX Runtime not available. Install with `pip install onnxruntime` for CPU speedup.")
+    # Сообщение будет выведено только при попытке использовать ONNX функции.
+    # logger.warning("ONNX Runtime не найден. Для ускорения CPU-инференса, установите его: pip install onnxruntime")
 
 
 class D3QN_PER_Agent:
@@ -174,32 +175,59 @@ class D3QN_PER_Agent:
 
         logger.info("D3QN_PER_Agent initialized.")
 
-    def export_to_onnx(self, file_path: str, input_shape: Tuple[int, ...]):
-        """Exports the policy network to ONNX format."""
-        self.policy_net.eval()
-        # input_shape здесь — это плоский вектор, как в observation_space.shape
-        dummy_input = torch.randn(1, *input_shape, device=self.device)
+    def export_to_onnx(self, file_path: str):
+        """
+        Экспортирует policy network в формат ONNX.
+        Входной тензор создается на основе внутренних параметров модели,
+        а не observation_space среды.
+        """
+        if ort is None:
+            logger.error("Невозможно экспортировать в ONNX: onnxruntime не установлен.")
+            logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
+            return
 
-        # Ensure directory exists
+        self.policy_net.eval()
+
+        # Корректное определение размера входного вектора для модели
+        # self.policy_net.input_shape это (каналы, длина_истории, 1)
+        model_input_shape = self.policy_net.input_shape
+        # self.policy_net.additional_feats это количество доп. признаков
+        additional_feats = self.policy_net.additional_feats
+        # Размер плоского вектора истории = Каналы * Длина
+        history_flat_size = model_input_shape[0] * model_input_shape[1]
+        total_input_size = history_flat_size + additional_feats
+
+        # Создаем dummy_input правильной формы [batch_size, total_input_size]
+        dummy_input = torch.randn(1, total_input_size, device=self.device)
+        logger.info(f"Подготовка к экспорту в ONNX. Размер dummy_input: {dummy_input.shape}")
+
+        # Убедимся, что директория существует
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-        torch.onnx.export(
-            self.policy_net,
-            dummy_input,
-            file_path,
-            export_params=True,
-            opset_version=12,
-            do_constant_folding=True,
-            input_names=['input'],
-            output_names=['output'],
-            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
-        )
-        logger.info(f"✅ Model exported to ONNX: {file_path}")
+        try:
+            torch.onnx.export(
+                self.policy_net,
+                dummy_input,
+                file_path,
+                export_params=True,
+                opset_version=12,
+                do_constant_folding=True,
+                input_names=['input'],
+                output_names=['output'],
+                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+            )
+            logger.info(f"✅ Модель успешно экспортирована в ONNX: {file_path}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при экспорте в ONNX: {e}")
+            logger.error(f"  - Размер dummy_input: {dummy_input.shape}")
+            logger.error(f"  - Расчетный размер: {total_input_size} (История: {history_flat_size}, Доп: {additional_feats})")
+            raise
 
     def load_onnx_model(self, file_path: str):
         """Loads ONNX model for fast CPU inference."""
         if ort is None:
-            logger.error("Cannot load ONNX model: onnxruntime not installed.")
+            logger.error("Невозможно загрузить ONNX модель: onnxruntime не установлен.")
+            logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
             return
         self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
         logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
