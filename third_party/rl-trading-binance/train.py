@@ -1237,7 +1237,8 @@ def main(cfg: MasterConfig = None):
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
-    set_random_seed(cfg.random_seed, True)
+    # ИСПРАВЛЕНО: детерминизм должен управляться из конфига, а не быть захардкоженным
+    set_random_seed(cfg.random_seed, getattr(cfg, "deterministic", False))
 
     models_dir = os.path.join(cfg.paths.model_dir, session_name)
     plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
