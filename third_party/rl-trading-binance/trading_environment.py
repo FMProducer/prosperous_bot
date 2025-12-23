@@ -115,20 +115,19 @@ class TradingEnvironment(gym.Env):
         self.num_features = num_features
         self.datachannels = datachannels
 
+        # --- Filtering Logic ---
         if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
             filter_direction = kwargs['filter_direction']
             logging.info(f"Filtering sequences for direction: {filter_direction}")
-            
             original_count = len(self.sequences)
             filtered_sequences = []
             filtered_keys = []
-            
             close_idx = self.datachannels.index("close")
 
             for seq, key in zip(self.sequences, self.keys):
                 start_price = seq[0, close_idx]
                 end_price = seq[-1, close_idx]
-                
+
                 if filter_direction == 'LONG' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
@@ -334,11 +333,12 @@ class TradingEnvironment(gym.Env):
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
-        try:
-            self.current_asset_name = self.keys[idx].split('_')[0]
-        except IndexError:
-            logging.error(f"Could not parse asset name from key: {self.keys[idx]}")
-            self.current_asset_name = "UNKNOWN"
+        # Extract asset name for logging/debugging
+        key = self.keys[idx]
+        if isinstance(key, tuple):
+            self.current_asset_name = key[0]  # (ticker, dt)
+        else:
+            self.current_asset_name = str(key).split('_')[0]
 
         obs = self._get_observation()
         info = self._get_info()
