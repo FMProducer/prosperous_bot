@@ -22,24 +22,6 @@ import seaborn as sns
 import torch
 from tqdm import tqdm, trange
 
-def _numpy_json_default(obj):
-    """
-    Custom JSON serializer for numpy types.
-    """
-    if isinstance(obj, (np.integer, np.intc, np.intp, np.int8,
-                        np.int16, np.int32, np.int64, np.uint8,
-                        np.uint16, np.uint32, np.uint64)):
-        return int(obj)
-    elif isinstance(obj, (np.floating, float)):
-        if np.isinf(obj):
-            return "inf" if obj > 0 else "-inf"
-        if np.isnan(obj):
-            return "nan"
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
-
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from config import cfg as default_cfg
@@ -54,8 +36,8 @@ from utils import (
     load_config,
     load_npz_dataset,
     create_walk_forward_folds,
+    load_and_prep_data_from_source,
     calculate_normalization_stats,
-    apply_normalization_to_sequence,
 ) # noqa: F401
 
 class TopKCheckpointManager:
@@ -213,6 +195,64 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -
     Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
     logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
     return all_stats
+
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
+    """
+    Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
+    Требует предоставления `norm_stats` с данными для каждого актива.
+    Фильтрует активы по списку `allowed_assets`, если он предоставлен.
+    Returns: list of np.arrays (samples), list of keys.
+    """
+    if not npz_path or not os.path.exists(npz_path):
+        logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
+        return [], []
+
+    if not norm_stats:
+        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
+
+    d = np.load(npz_path, allow_pickle=True)
+    data_keys = [k for k in d.files if not k.startswith('_')]
+    sequences = []
+    valid_keys = []
+    logging.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
+    
+    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
+        try:
+            asset_name = key.split('_')[0]
+        except IndexError:
+            logging.warning(f"Пропуск ключа с некорректным форматом: {key}")
+            continue
+        
+        # Фильтрация по списку разрешенных активов
+        if allowed_assets and asset_name not in allowed_assets:
+            continue
+
+        asset_specific_stats = norm_stats.get(asset_name)
+        if asset_specific_stats is None:
+            if not allowed_assets or asset_name in allowed_assets:
+                 logging.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
+            continue
+
+        means = np.array(asset_specific_stats['mean'])
+        stds = np.array(asset_specific_stats['std'])
+        
+        seq = d[key].astype(np.float32)
+        if seq.shape[1] != len(means):
+            logging.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
+            continue
+            
+        # Z-norm по каждому каналу
+        seq = (seq - means) / stds
+        # Reshape для CNN: (L, C) -> (C, L, 1)
+        seq = seq.T
+        seq = np.expand_dims(seq, -1)
+        sequences.append(seq)
+        valid_keys.append(key)
+    
+    d.close()
+    if sequences:
+        logging.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
+    return sequences, valid_keys
 
 
 def make_env(env_kwargs: dict):
@@ -886,120 +926,101 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
 
 
 def run_training_session(
+    train_sequences: List[np.ndarray],
+    train_keys: List[Any],
+    val_sequences: List[np.ndarray],
+    val_keys: List[Any],
     cfg: MasterConfig,
-    train_sequences: list[np.ndarray],
-    train_keys: list,
-    val_sequences: list[np.ndarray] | None = None,
-    val_keys: list | None = None,
-    fold_id: int | None = None,
-    cfg_mod: Optional[Any] = None,
+    norm_stats: Dict[str, Any],
+    models_dir: str,
+    plots_dir: str,
+    session_name: str,
+    cfg_mod: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
-    Инкапсулированная сессия обучения для одного фолда (или полного цикла).
+    Runs a complete training and validation session for a given dataset.
     """
-    fold_suffix = f"_fold{fold_id}" if fold_id is not None else ""
-    base_session_name = getattr(cfg.paths, "config_name", "train_session")
-    session_name = f"{base_session_name}{fold_suffix}"
+    
+    # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
+    mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
 
-    models_dir = os.path.join(cfg.paths.model_dir, session_name)
-    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
-    os.makedirs(models_dir, exist_ok=True)
-    os.makedirs(plots_dir, exist_ok=True)
+    # Set episodes from total_timesteps if not set
+    if not hasattr(cfg.trainlog, 'episodes') or cfg.trainlog.episodes is None:
+        cfg.trainlog.episodes = cfg.rl.total_timesteps // cfg.rl.n_steps
 
-    setup_logging(session_name, cfg)
-    logging.info(f"=== Starting Training Session: {session_name} ===")
-    if fold_id is not None:
-        val_len = len(val_sequences) if val_sequences else 0
-        logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
-
-    logging.info("Calculating normalization stats for this fold...")
-    norm_stats = calculate_normalization_stats(
-        train_sequences,
-        cfg.data.datachannels,
-        cfg.data.pricechannels,
-        cfg.data.volumechannels,
-        cfg.data.otherchannels,
-    )
-
-    if not train_sequences:
-        logging.error("Cannot start training session with no training data.")
-        return {}
-
-    # --- NORMALIZE DATA ---
-    logging.info("Applying normalization to train sequences...")
-    train_seqs_normalized = [
-        apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(train_sequences, desc="Normalizing Train")
-    ]
-
-    logging.info("Applying normalization to validation sequences...")
-    val_seqs_normalized = []
-    if val_sequences:
-        val_seqs_normalized = [
-            apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(val_sequences, desc="Normalizing Val")
-        ]
-
-    # Reshape
-    train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
-    val_seqs_reshaped = [np.expand_dims(s.T, -1) for s in val_seqs_normalized]
-
-    # Prepare RAW sequences for PnL calculation
-    train_raw_reshaped = [np.expand_dims(s.T, -1) for s in train_sequences]
-    val_raw_reshaped = [np.expand_dims(s.T, -1) for s in val_sequences] if val_sequences else []
-
-    # --- ENVIRONMENT SETUP ---
-    if not train_seqs_reshaped:
-        logging.error("Training sequences are empty after normalization. Cannot proceed.")
-        return {}
-
-    if len(train_seqs_reshaped[0].shape) == 3:
-        num_features = train_seqs_reshaped[0].shape[0]  # C from (C, L, 1)
-    else:
-        num_features = train_seqs_reshaped[0].shape[1]  # C from (L, C)
-
-
+    # Масштабируем скорость затухания эпсилон, если включена опция и есть несколько сред
     eps_decay_frames = cfg.eps.eps_decay_frames
     if cfg.vec.num_envs > 1 and cfg.vec.scale_epsilon_by_envs:
+        # Эта логика имеет смысл в основном для `subproc` бэкенда
         eps_decay_frames *= cfg.vec.num_envs
-        logging.info(f"Epsilon decay frames scaled: {eps_decay_frames}")
+        logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
     agent = D3QN_PER_Agent(
-        state_shape=cfg.state_shape,
-        action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
-        cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
-        dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
-        dropout_model=cfg.model.dropout_p, device=cfg.device.device,
-        learning_rate=cfg.rl.lr, gamma=cfg.rl.gamma, batch_size=cfg.rl.batch_size,
-        buffer_size=cfg.per.buffer_size, target_update_freq=cfg.rl.target_update_freq,
-        train_start=cfg.rl.train_start, per_alpha=cfg.per.per_alpha,
-        per_beta_start=cfg.per.per_beta_start, per_beta_frames=cfg.per.per_beta_frames,
-        eps_start=cfg.eps.eps_start, eps_end=cfg.eps.eps_end,
-        eps_frames=eps_decay_frames, epsilon=cfg.per.per_eps,
-        max_gradient_norm=cfg.rl.max_gradient_norm, perf_cfg=cfg.perf
+        state_shape=cfg.state_shape,  # (10,150,1)
+        action_dim=cfg.market.num_actions,
+        cnn_maps=cfg.model.cnn_maps,
+        cnn_kernels=cfg.model.cnn_kernels,
+        cnn_strides=cfg.model.cnn_strides,
+        cnn_dilations=cfg.model.cnn_dilations,
+        dense_val=cfg.model.dense_val,
+        dense_adv=cfg.model.dense_adv,
+        additional_feats=cfg.model.additional_feats,
+        dropout_model=cfg.model.dropout_p,
+        device=cfg.device.device,
+        learning_rate=cfg.rl.lr,
+        gamma=cfg.rl.gamma,
+        batch_size=cfg.rl.batch_size,
+        buffer_size=cfg.per.buffer_size,
+        target_update_freq=cfg.rl.target_update_freq,
+        train_start=cfg.rl.train_start,
+        per_alpha=cfg.per.per_alpha,
+        per_beta_start=cfg.per.per_beta_start,
+        per_beta_frames=cfg.per.per_beta_frames,
+        eps_start=cfg.eps.eps_start,
+        eps_end=cfg.eps.eps_end,
+        eps_frames=eps_decay_frames,
+        epsilon=cfg.per.per_eps,  # PER eps
+        max_gradient_norm=cfg.rl.max_gradient_norm,
+        perf_cfg=cfg.perf,
+        # MC-dropout from cfg.mc_dropout (as is)
     )
 
-    if len(train_seqs_reshaped[0].shape) == 3:
-        num_features = train_seqs_reshaped[0].shape[0]
-    else:
-        num_features = train_seqs_reshaped[0].shape[1]
+    # Calculate flat_state_size
     input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
+    # After reshape, num_features becomes the number of channels in original data
+    if len(train_sequences[0].shape) == 3:
+        num_features = train_sequences[0].shape[0]  # C from (C, L, 1)
+    else:
+        num_features = train_sequences[0].shape[1]  # C from (L, C)
     num_actions = cfg.market.num_actions
     action_history_len = cfg.seq.action_history_len
-    flat_state_size = input_history_len * num_features + 4 + (num_actions * action_history_len)
 
+    flat_features = input_history_len * num_features
+    extras = 4  # position, unrealized, time_elapsed, time_remaining
+    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
+    flat_state_size = flat_features + extras + history_vector_size
+    
     env_kwargs = {
-        "sequences": train_seqs_reshaped, "raw_sequences": train_raw_reshaped, "keys": train_keys,
-        "stats": norm_stats, "render_mode": cfg.render_mode,
-        "full_seq_len": cfg.seq.full_seq_len, "num_features": num_features,
-        "num_actions": num_actions, "flat_state_size": flat_state_size,
+        "sequences": train_sequences,
+        "keys": train_keys,
+        "stats": norm_stats,
+        "render_mode": cfg.render_mode,
+        "full_seq_len": cfg.seq.full_seq_len,
+        "num_features": num_features,
+        "num_actions": num_actions,
+        "flat_state_size": flat_state_size,
         "initial_balance": cfg.market.initial_balance,
-        "pre_signal_len": cfg.seq.pre_signal_len, "datachannels": cfg.data.datachannels,
-        "position_fraction": cfg.market.position_fraction, "slippage": cfg.market.slippage,
+        "pre_signal_len": cfg.seq.pre_signal_len,
+        "datachannels": cfg.data.datachannels,
+        "position_fraction": cfg.market.position_fraction,
+        "slippage": cfg.market.slippage,
         "transaction_fee": cfg.market.transaction_fee,
         "agent_session_len": cfg.seq.agent_session_len,
         "agent_history_len": cfg.seq.agent_history_len,
-        "input_history_len": input_history_len, "pricechannels": cfg.data.pricechannels,
-        "volumechannels": cfg.data.volumechannels, "otherchannels": cfg.data.otherchannels,
+        "input_history_len": input_history_len,
+        "pricechannels": cfg.data.pricechannels,
+        "volumechannels": cfg.data.volumechannels,
+        "otherchannels": cfg.data.otherchannels,
         "action_history_len": action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
         "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
@@ -1012,7 +1033,8 @@ def run_training_session(
         "risk_reward_ratio_threshold": cfg.market.risk_reward_ratio_threshold,
         "risk_reward_ratio_reward": cfg.market.risk_reward_ratio_reward,
         "continuous_pain_penalty_ratio": cfg.market.continuous_pain_penalty_ratio,
-        "good_exit_bonus": cfg.market.good_exit_bonus, "fast_exit_bonus": cfg.market.fast_exit_bonus,
+        "good_exit_bonus": cfg.market.good_exit_bonus,
+        "fast_exit_bonus": cfg.market.fast_exit_bonus,
         "low_balance_penalty": cfg.market.low_balance_penalty,
         "bankruptcy_slippage_penalty": cfg.market.bankruptcy_slippage_penalty,
         "holding_penalty_multiplier": cfg.market.holding_penalty_multiplier,
@@ -1023,158 +1045,225 @@ def run_training_session(
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
     }
-
     num_envs = getattr(cfg.vec, "num_envs", 1)
-    # FORCE DummyVecEnv for stability with in-memory data
-    backend = "dummy" if fold_id is not None else cfg.vec.backend
-
     if num_envs > 1:
         base_seed = cfg.global_env_seed
         env_fns = [partial(make_env, env_kwargs={**env_kwargs, "seed": base_seed + i}) for i in range(num_envs)]
-        if backend == "subproc":
-            train_env = SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
-        else: # dummy
-            train_env = DummyVecEnv(env_fns)
+        train_env = DummyVecEnv(env_fns) if cfg.vec.backend == "dummy" else SubprocVecEnv(env_fns, start_method=cfg.vec.start_method)
     else:
         train_env = TradingEnvironment(**env_kwargs)
 
     val_env = None
-    if val_seqs_reshaped:
+    if val_sequences:
         val_kwargs = dict(env_kwargs)
         val_kwargs.update({
-            "sequences": val_seqs_reshaped, "raw_sequences": val_raw_reshaped, "keys": val_keys,
+            "sequences": val_sequences,
+            "keys": val_keys,
             "backtest_mode": True,
             "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         })
         val_env = TradingEnvironment(**val_kwargs)
+        if hasattr(cfg.backtest, "exec_delay_bars"):
+            setattr(val_env, "exec_delay_bars", int(cfg.backtest.exec_delay_bars))
 
     history = defaultdict(list)
-    deques = {
-        "rewards": deque(maxlen=cfg.trainlog.plot_moving_avg_window),
-        "losses": deque(maxlen=cfg.trainlog.plot_moving_avg_window),
-        "win_rates": deque(maxlen=cfg.trainlog.plot_moving_avg_window)
-    }
+    episode_rewards_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
+    episode_losses_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
+    episode_win_rate_deque = deque(maxlen=cfg.trainlog.plot_moving_avg_window)
 
-    best_val_metric, best_validation, no_improvement_count = None, {}, 0
+    best_val_metric, last_val_metrics, best_validation = None, {}, {}
+    no_improvement_count = 0
+    best_episode = None
     train_steps = 0
     
-    checkpoint_manager = TopKCheckpointManager(
-        save_dir=os.path.join(models_dir, "checkpoints"),
-        top_k=cfg.trainlog.save_top_k, metric_key=cfg.trainlog.checkpoint_metric,
-        mode=cfg.trainlog.save_mode
-    ) if getattr(cfg.trainlog, "save_top_k", 0) > 0 else None
+    checkpoint_manager = None
+    if getattr(cfg.trainlog, "save_top_k", 0) > 0:
+        checkpoint_manager = TopKCheckpointManager(
+            save_dir=os.path.join(models_dir, "checkpoints"),
+            top_k=cfg.trainlog.save_top_k,
+            metric_key=cfg.trainlog.checkpoint_metric,
+            mode=cfg.trainlog.save_mode
+        )
 
-    train_env.reset(seed=cfg.global_env_seed)
+    if num_envs > 1:
+        train_env.reset()
+    else:
+        train_env.reset(seed=cfg.global_env_seed)
 
-    num_episodes = cfg.trainlog.episodes or (cfg.rl.total_timesteps // cfg.seq.agent_session_len)
-
-    counter = trange(1, num_episodes + 1, desc="Training", leave=True)
+    counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if num_envs > 1:
-            ep_reward, ep_win_rate, transitions, avg_loss, info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+            ep_reward, _, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+            ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
         else:
-            obs, _ = train_env.reset()
+            obs, _ = train_env.reset(seed=None, options=None)
             ep_reward, ep_losses, done = 0.0, [], False
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
-                next_state_to_store = info.get("terminal_observation", next_obs) if done else next_obs
+                next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs)) if done else next_obs
                 agent.store_experience(obs, action, reward, next_state_to_store, done)
                 loss = agent.learn()
                 if loss: ep_losses.append(loss)
-                obs = next_obs; agent.increment_step(); train_steps += 1; ep_reward += reward
-            avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-            ep_win_rate = info.get("episode_win_rate", 0.0)
+                obs = next_obs
+                agent.increment_step()
+                train_steps += 1
+                ep_reward += reward
 
         history["episodes"].append(ep)
         history["rewards"].append(ep_reward)
+        avg_loss = np.mean(ep_losses) if ep_losses else 0.0
         history["losses"].append(avg_loss)
-        history["win_rates"].append(ep_win_rate)
-        deques["rewards"].append(ep_reward)
-        deques["losses"].append(avg_loss)
-        deques["win_rates"].append(ep_win_rate)
-        history["mean_rewards_N"].append(np.mean(deques["rewards"]))
-        history["mean_losses_N"].append(np.mean(deques["losses"]))
-        history["mean_win_rates_N"].append(np.mean(deques["win_rates"]))
+
+        episode_rewards_deque.append(ep_reward)
+        history["mean_rewards_N"].append(np.mean(episode_rewards_deque))
+        episode_losses_deque.append(avg_loss)
+        history["mean_losses_N"].append(np.mean(episode_losses_deque))
 
         eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
         history["epsilons"].append(eps_current)
 
-        counter.set_description(f"Loss={avg_loss:.5f}, Reward={ep_reward:.3f}")
+        current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
+        episode_win_rate_deque.append(current_win_rate)
+        history["win_rates"].append(current_win_rate)
+        history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
+
+        counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
-            metrics = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
+            metrics = evaluate_agent(val_env, agent, len(val_sequences), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
 
-            current_metric_val = metrics.get(cfg.trainlog.checkpoint_metric)
-            if current_metric_val is None: continue
+            sel_keys = cfg.trainlog.val_selection_metrics
 
-            is_better = (best_val_metric is None or
-                         (cfg.trainlog.save_mode == "max" and current_metric_val > best_val_metric) or
-                         (cfg.trainlog.save_mode == "min" and current_metric_val < best_val_metric))
+            def _fetch_metric(name: str, lower_is_better: bool) -> float:
+                v = metrics.get(name, None)
+                if v is None:
+                    logging.warning(f"[Validation] metric '{name}' is missing in metrics dict — using fallback -inf")
+                    return float("-inf")
+                try:
+                    v = float(v)
+                except Exception:
+                    logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
+                    return float("-inf")
+                return -v if lower_is_better else v
 
-            if is_better:
-                best_val_metric = current_metric_val
-                best_validation = metrics
-                no_improvement_count = 0
-                if checkpoint_manager:
-                    checkpoint_manager.save_checkpoint(agent, ep, metrics)
+            last_val_metrics = metrics
+
+            gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
+            if gate is None:
+                gate = getattr(cfg, "validation_gate", None)
+
+            def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
+                if not g:
+                    return True
+                def _f(name: str, default: float | None = None) -> float:
+                    v = m.get(name, default)
+                    try: return float(v)
+                    except Exception: return float("-inf")
+                cur_sharpe  = _f("Validation_sharpe")
+                cur_sortino = _f("Validation_sortino")
+                cur_pf_raw  = m.get("Validation_profit_factor", None)
+                try: cur_pf = float(cur_pf_raw)
+                except Exception: cur_pf = float("-inf")
+                cur_dd      = _f("Validation_max_drawdown")
+                cur_wr      = _f("Validation_win_rate")
+                cur_trades  = int(m.get("Validation_trades", 0) or 0)
+                min_sharpe     = g.get("min_sharpe", None)
+                min_sortino    = g.get("min_sortino", None)
+                min_pf         = g.get("min_profit_factor", None)
+                max_dd_at_most = g.get("max_drawdown_at_most", None)
+                min_wr         = g.get("min_win_rate", None)
+                min_trades     = g.get("min_trades", None)
+                deny_zero_dd   = bool(g.get("deny_zero_drawdown", False))
+                deny_inf_pf    = bool(g.get("deny_inf_pf", False))
+                ok = True
+                if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
+                if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
+                if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
+                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
+                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
+                if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False
+                if deny_zero_dd and cur_dd == 0.0:                                                ok = False
+                if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
+                if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
+                return ok
+
+            if _passes_gate(metrics, gate):
+                if isinstance(sel_keys, (list, tuple)):
+                    val_metric = tuple(_fetch_metric(k, lower_is_better=(cfg.trainlog.val_selection_direction == "min")) for k in sel_keys)
                 else:
-                    agent.save_model(os.path.join(models_dir, "best.pth"))
+                    val_metric = _fetch_metric(str(sel_keys), lower_is_better=(cfg.trainlog.val_selection_direction == "min"))
+
+                def _is_better(current, best):
+                    if best is None: return True
+                    return current > best
+
+                if _is_better(val_metric, best_val_metric):
+                    best_val_metric = val_metric
+                    best_validation = dict(metrics)
+                    best_episode = ep
+                    if checkpoint_manager:
+                        checkpoint_manager.save_checkpoint(agent, ep, metrics)
+                    else:
+                        agent.save_model(os.path.join(models_dir, "best.pth"))
+                    no_improvement_count = 0
+                else:
+                    no_improvement_count += 1
             else:
                 no_improvement_count += 1
 
-            if cfg.trainlog.early_stopping_patience and no_improvement_count >= cfg.trainlog.early_stopping_patience:
+            if no_improvement_count >= cfg.trainlog.early_stopping_patience:
                 logging.info(f"Early stopping at episode {ep}.")
                 break
 
-    agent.save_model(os.path.join(models_dir, "final.pth"))
+    final_path = os.path.join(models_dir, "final.pth")
+    agent.save_model(final_path)
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
     train_env.close()
-    if val_env: val_env.close()
+    if val_env:
+        val_env.close()
 
-    # For WFV, we return the best metrics found. For single run, we might bundle more.
-    if not best_validation and val_env: # If no validation ever passed
-        best_validation = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", num_episodes, cfg.global_env_seed, cfg, keys=val_keys)
-
-    # Attach history for single runs
-    if fold_id is None:
-        best_validation['history'] = history
-
-    return best_validation
+    return best_validation, history
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
-        config_path = sys.argv[1]
-    elif '--config' in sys.argv:
-        try:
-            config_path = sys.argv[sys.argv.index('--config') + 1]
-        except IndexError:
-            logging.error("No path specified after --config")
-            sys.exit(1)
+def main(cfg: MasterConfig = None):
+    from config import cfg as loaded_cfg
+    if cfg is None:
+        cfg = loaded_cfg
+    cfg_mod = None
+
+    timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
+    session_name = f"{cfg.project_name}_{timestamp}"
+    setup_logging(session_name, cfg)
+    # ИСПРАВЛЕНО: детерминизм должен управляться из конфига, а не быть захардкоженным
+    set_random_seed(cfg.random_seed, getattr(cfg, "deterministic", False))
+
+    models_dir = os.path.join(cfg.paths.model_dir, session_name)
+    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
+
+    with open(os.path.join(models_dir, "config_train.json"), "w") as f:
+        json.dump(cfg.model_dump(), f, indent=2, default=str)
+
+    norm_stats_path = getattr(cfg.paths, "norm_stats_path", "norm_stats.json")
+    if os.path.exists(norm_stats_path):
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
     else:
-        logging.error("Please provide a config file path, e.g., python train.py configs/my_config.py")
-        sys.exit(1)
-
-    try:
-        cfg, cfg_mod = load_config(config_path, return_module=True)
-    except FileNotFoundError:
-        logging.error(f"Config file not found at: {config_path}")
-        sys.exit(1)
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
 
     if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
-        logging.info("🚀 STARTING WALK-FORWARD VALIDATION")
-
+        logging.info("Walk-Forward Validation ENABLED.")
         all_sequences = []
         for src in cfg.walk_forward.data_sources:
-            seqs = load_npz_dataset(src, "wfv_part", cfg.paths.plot_dir)
-            all_sequences.extend(seqs)
-
-        if not all_sequences:
-            logging.error("WFV failed: No data loaded from sources. Exiting.")
-            sys.exit(1)
+            if os.path.exists(src):
+                seqs = load_npz_dataset(src, "merged_wfv", plots_dir)
+                all_sequences.extend(seqs)
+            else:
+                logging.warning(f"WFV source not found: {src}")
 
         folds = create_walk_forward_folds(
             all_sequences,
@@ -1182,66 +1271,134 @@ if __name__ == "__main__":
             cfg.walk_forward.test_months,
             cfg.walk_forward.step_months
         )
-        logging.info(f"Created {len(folds)} WFV folds.")
+        if not folds:
+            logging.error("No WFV folds created. Check data dates.")
+            return
 
-        wfv_metrics = []
-        for i, (train_data, test_data) in enumerate(folds):
-            train_keys, train_seqs = zip(*train_data)
-            test_keys, test_seqs = zip(*test_data)
+        wfv_results = []
+        for i, (train_s, test_s) in enumerate(folds):
+            logging.info(f"=== Starting WFV Fold {i+1}/{len(folds)} ===")
 
-            result = run_training_session(
-                cfg=cfg,
-                train_sequences=list(train_seqs), train_keys=list(train_keys),
-                val_sequences=list(test_seqs), val_keys=list(test_keys),
-                fold_id=i, cfg_mod=cfg_mod
+            fold_train_keys = [k for k, _ in train_s]
+            fold_train_data = [d for _, d in train_s]
+            fold_test_keys = [k for k, _ in test_s]
+            fold_test_data = [d for _, d in test_s]
+
+            fold_models_dir = os.path.join(models_dir, f"fold_{i+1}")
+            fold_plots_dir = os.path.join(plots_dir, f"fold_{i+1}")
+            os.makedirs(fold_models_dir, exist_ok=True)
+            os.makedirs(fold_plots_dir, exist_ok=True)
+
+            # --- Per-Fold Normalization ---
+            logging.info(f"Calculating normalization stats for Fold {i+1}...")
+            fold_norm_stats = calculate_normalization_stats(
+                [d for _, d in train_s],  # Raw data from the current fold
+                cfg.data.datachannels,
+                cfg.data.pricechannels,
+                cfg.data.volumechannels,
+                cfg.data.otherchannels
             )
-            wfv_metrics.append(result)
-            sharpe = result.get('Validation_sharpe', 0)
-            dd = result.get('Validation_max_drawdown', 0)
-            logging.info(f"Fold {i+1} Result: Sharpe={sharpe:.4f}, DD={dd:.4f}")
 
-        if wfv_metrics:
-            df_results = pd.DataFrame([m for m in wfv_metrics if m])
-            summary_path = os.path.join(cfg.paths.model_dir, f"{cfg.paths.config_name}_wfv_summary.csv")
-            df_results.to_csv(summary_path, index=False)
-            logging.info("\n" + "="*50 + "\nWFV Summary\n" + "="*50)
-            logging.info(f"\n{df_results.mean().to_string()}")
-            logging.info(f"Saved WFV summary to {summary_path}")
+            # Pre-process data for the current fold
+            train_seqs, train_keys_prep = load_and_prep_data_from_source(fold_train_data, fold_train_keys, "Train", fold_norm_stats)
+            val_seqs, val_keys_prep = load_and_prep_data_from_source(fold_test_data, fold_test_keys, "Validation", fold_norm_stats)
+
+            best_metrics, _ = run_training_session(
+                train_sequences=train_seqs,
+                train_keys=train_keys_prep,
+                val_sequences=val_seqs,
+                val_keys=val_keys_prep,
+                cfg=cfg,
+                norm_stats=fold_norm_stats,
+                models_dir=fold_models_dir,
+                plots_dir=fold_plots_dir,
+                session_name=f"{session_name}_fold_{i+1}",
+                cfg_mod=cfg_mod
+            )
+            wfv_results.append(best_metrics)
+
+        # Aggregate and log WFV results
+        if wfv_results:
+            df_results = pd.DataFrame(wfv_results)
+            logging.info("\n" + "="*50 + "\nWalk-Forward Validation Summary\n" + "="*50)
+            logging.info(f"Total Folds: {len(df_results)}")
+            logging.info("\n" + df_results.mean().to_string())
+            df_results.to_csv(os.path.join(models_dir, "wfv_results.csv"))
 
     else:
-        logging.info("🚀 STARTING SINGLE TRAINING RUN")
-        set_random_seed(cfg.random_seed, getattr(cfg, "deterministic", False))
+        # Standard training run
+        allowed_assets = getattr(cfg.paper, "symbols", None)
+        if allowed_assets == "ALL": allowed_assets = None
 
-        train_raw = load_npz_dataset(cfg.paths.train_data_path, "Train", cfg.paths.plot_dir)
-        val_raw = load_npz_dataset(cfg.paths.val_data_path, "Validation", cfg.paths.plot_dir)
+        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats, allowed_assets)
+        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats, allowed_assets)
 
-        if not train_raw:
+        if not train_seqs:
             logging.error("Training data not loaded. Exiting.")
             sys.exit(1)
 
-        train_keys, train_seqs = zip(*train_raw)
-        val_keys, val_seqs = (zip(*val_raw) if val_raw else ([], []))
+        episodes_per_epoch = getattr(cfg.trainlog, "episodesperepoch", None)
+        if episodes_per_epoch is not None and len(train_seqs) > episodes_per_epoch:
+            rng = np.random.default_rng(cfg.random_seed)
+            indices = rng.choice(len(train_seqs), episodes_per_epoch, replace=False)
+            indices = sorted(indices.tolist())
+            train_seqs = [train_seqs[i] for i in indices]
+            train_keys = [train_keys[i] for i in indices]
+            logging.info("Sampled train set down to %d episodes", len(train_seqs))
 
-        final_metrics = run_training_session(
+        if val_seqs:
+            val_seqs, val_keys = create_validation_episodes(
+                val_sequences=val_seqs,
+                val_keys=val_keys,
+                num_episodes=cfg.trainlog.num_val_ep,
+                seed=cfg.random_seed
+            )
+            logging.info(f"Validation set sampled: {len(val_seqs)} episodes")
+
+        best_validation, history = run_training_session(
+            train_sequences=train_seqs,
+            train_keys=train_keys,
+            val_sequences=val_seqs,
+            val_keys=val_keys,
             cfg=cfg,
-            train_sequences=list(train_seqs), train_keys=list(train_keys),
-            val_sequences=list(val_seqs), val_keys=list(val_keys),
-            fold_id=None, cfg_mod=cfg_mod
+            norm_stats=norm_stats,
+            models_dir=models_dir,
+            plots_dir=plots_dir,
+            session_name=session_name,
+            cfg_mod=cfg_mod
         )
 
-        logging.info(f"🏁 SINGLE RUN COMPLETE. Best Validation Metrics:")
-        logging.info(json.dumps({k: v for k,v in final_metrics.items() if k != 'history'}, indent=2, default=_numpy_json_default))
+        bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
+        bundle_enabled = getattr(bundle_cfg, "enable", True)
+        if bundle_enabled:
+            sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
+            best_val_metric_human = tuple(best_validation.get(k, None) for k in sel_keys) if best_validation else None
 
-        # Bundle artifacts for single run
-        session_name = f"{cfg.paths.config_name or 'main'}_{time.strftime('%Y%m%d_%H%M%S')}"
-        models_dir = os.path.join(cfg.paths.model_dir, session_name)
-        os.makedirs(models_dir, exist_ok=True) # Ensure dir exists for saving artifacts
+            bundle_metrics = {
+                "val_selection_metric": cfg.trainlog.val_selection_metrics,
+                "val_selection_direction": cfg.trainlog.val_selection_direction,
+                "val_min_delta": cfg.trainlog.val_min_delta,
+                "best_val_metric": best_val_metric_human,
+                "best_episode": best_validation.get("episode"),
+                "best_validation": best_validation,
+                "history": {
+                    "episodes": history.get("episodes", []),
+                    "mean_rewards_N": history.get("mean_rewards_N", []),
+                    "mean_losses_N": history.get("mean_losses_N", []),
+                    "mean_win_rates_N": history.get("mean_win_rates_N", []),
+                },
+            }
+            with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
+                json.dump(bundle_metrics, f, indent=2, default=_numpy_json_default)
+            _dump_requirements_lock(os.path.join(models_dir, "requirements-lock.txt"))
+            _dump_torch_env(os.path.join(models_dir, "torch_env.txt"))
+            _dump_env_flags(cfg, os.path.join(models_dir, "env_flags.json"))
+            data_manifest = _build_data_manifest(cfg)
+            with open(os.path.join(models_dir, "data_manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(data_manifest, f, indent=2)
 
-        with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
-            json.dump(final_metrics, f, indent=2, default=_numpy_json_default)
-        _dump_requirements_lock(os.path.join(models_dir, "requirements-lock.txt"))
-        _dump_torch_env(os.path.join(models_dir, "torch_env.txt"))
-        _dump_env_flags(cfg, os.path.join(models_dir, "env_flags.json"))
-        data_manifest = _build_data_manifest(cfg)
-        with open(os.path.join(models_dir, "data_manifest.json"), "w", encoding="utf-8") as f:
-            json.dump(data_manifest, f, indent=2)
+if __name__ == "__main__":
+    cfg = None
+    if len(sys.argv) > 1:
+        cfg, _ = load_config(sys.argv[1], return_module=True)
+    main(cfg=cfg)
