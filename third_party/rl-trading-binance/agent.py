@@ -124,12 +124,17 @@ class D3QN_PER_Agent:
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
+        # Вычисляем размер плоского state'а, который будет храниться в буфере
+        history_flat_size = state_shape[0] * state_shape[1]
+        buffer_state_shape = (history_flat_size + additional_feats,)
+
         self.replay_buffer = PrioritizedReplayBuffer(
             capacity=buffer_size,
             alpha=per_alpha,
             beta_start=per_beta_start,
             beta_frames=per_beta_frames,
             epsilon=epsilon,
+            state_shape=buffer_state_shape,
         )
 
         self.gamma = gamma

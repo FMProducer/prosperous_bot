@@ -1138,9 +1138,10 @@ def run_training_session(
     if not best_validation and val_env: # If no validation ever passed
         best_validation = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", num_episodes, cfg.global_env_seed, cfg, keys=val_keys)
 
-    # Attach history for single runs
+    # Attach history and norm_stats for single runs
     if fold_id is None:
         best_validation['history'] = history
+        best_validation['norm_stats'] = norm_stats
 
     return best_validation
 
@@ -1236,6 +1237,12 @@ if __name__ == "__main__":
         session_name = f"{cfg.paths.config_name or 'main'}_{time.strftime('%Y%m%d_%H%M%S')}"
         models_dir = os.path.join(cfg.paths.model_dir, session_name)
         os.makedirs(models_dir, exist_ok=True) # Ensure dir exists for saving artifacts
+
+        # Принудительное сохранение статов в папку модели
+        norm_stats = final_metrics.get('norm_stats', {})
+        if norm_stats:
+            with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:
+                json.dump(norm_stats, f, indent=2)
 
         with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(final_metrics, f, indent=2, default=_numpy_json_default)
