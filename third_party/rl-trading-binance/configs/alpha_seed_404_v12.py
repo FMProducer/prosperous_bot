@@ -20,6 +20,8 @@ else:
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
+cfg.paths.model_dir = f"output/{cfg.paths.config_name}/saved_models"
+cfg.paths.plot_dir = f"output/{cfg.paths.config_name}/plots"
 
 # Core Data Params (10 channels: OHLCV + vol/taker_buy/trades)
 cfg.num_channels = 10
