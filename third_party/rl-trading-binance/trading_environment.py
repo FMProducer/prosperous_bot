@@ -337,7 +337,18 @@ class TradingEnvironment(gym.Env):
         self.current_seq = self.sequences[idx]
         # Универсальный извлекатель тикера
         key = self.keys[idx]
-        self.current_asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
+        # FIX: Handle tuple, list, or string keys robustly to extract asset name.
+        if isinstance(key, (tuple, list)) and len(key) > 0:
+            asset_name = key[0]
+        else:
+            # Fallback for string-based keys like 'ASSET_DATE'
+            asset_name = str(key).split('_')[0]
+
+        # Ensure asset name is a string, not bytes
+        if isinstance(asset_name, bytes):
+            asset_name = asset_name.decode('utf-8')
+
+        self.current_asset_name = asset_name
 
         obs = self._get_observation()
         info = self._get_info()
