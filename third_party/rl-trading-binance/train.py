@@ -315,7 +315,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         if br > 0:
             logging.warning(f"⚠️ {fold_prefix}Bankruptcy Rate: {br:.2%}")
         else:
-            logging.debug(f"{fold_prefix}Bankruptcy Rate: {br:.2%}")
+            logging.info(f"✅ {fold_prefix}Bankruptcy Rate: 0.00%")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -916,15 +916,32 @@ def run_training_session(
         val_len = len(val_sequences) if val_sequences else 0
         logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
 
-    logging.info("Calculating normalization stats for this fold...")
-    norm_stats = calculate_normalization_stats(
-        train_sequences,
-        cfg.data.datachannels,
-        cfg.data.pricechannels,
-        cfg.data.volumechannels,
-        cfg.data.otherchannels,
-    )
-    logging.info("Normalization statistics computed")
+    logging.info("Calculating normalization stats per-asset for this fold...")
+    # Group sequences by asset to calculate per-asset normalization stats
+    asset_sequences = defaultdict(list)
+    for key, seq in zip(train_keys, train_sequences):
+        # FIX: Robustly extract asset name from tuple or string keys.
+        if isinstance(key, (tuple, list)) and len(key) > 0:
+            asset_name = key[0]
+        else:
+            asset_name = str(key).split('_')[0]
+        if isinstance(asset_name, bytes):
+            asset_name = asset_name.decode('utf-8')
+        asset_sequences[asset_name].append(seq)
+
+    # Calculate stats for each asset
+    norm_stats = {}
+    for asset_name, sequences in tqdm(asset_sequences.items(), desc="Computing asset stats"):
+        stats = calculate_normalization_stats(
+            sequences,
+            cfg.data.datachannels,
+            cfg.data.pricechannels,
+            cfg.data.volumechannels,
+            cfg.data.otherchannels,
+        )
+        norm_stats[asset_name] = stats
+    logging.info(f"Normalization statistics computed for {len(norm_stats)} assets.")
+
 
     # FIX: Сохраняем артефакты ДО начала обучения
     stats_path = Path(models_dir) / "norm_stats.json"
@@ -937,17 +954,44 @@ def run_training_session(
         return {}
 
     # --- NORMALIZE DATA ---
-    logging.info("Applying normalization to train sequences...")
-    train_seqs_normalized = [
-        apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(train_sequences, desc="Normalizing Train")
-    ]
+    logging.info("Applying per-asset normalization to train sequences...")
+    train_seqs_normalized = []
+    for key, seq in tqdm(zip(train_keys, train_sequences), total=len(train_keys), desc="Normalizing Train"):
+        if isinstance(key, (tuple, list)) and len(key) > 0:
+            asset_name = key[0]
+        else:
+            asset_name = str(key).split('_')[0]
+        if isinstance(asset_name, bytes):
+            asset_name = asset_name.decode('utf-8')
 
-    logging.info("Applying normalization to validation sequences...")
+        asset_stats = norm_stats.get(asset_name)
+        if asset_stats:
+            normalized_seq = apply_normalization_to_sequence(seq, asset_stats, cfg)
+            train_seqs_normalized.append(normalized_seq)
+        else:
+            logging.warning(f"Using raw sequence for asset '{asset_name}' due to missing stats.")
+            train_seqs_normalized.append(seq)
+
+
+    logging.info("Applying per-asset normalization to validation sequences...")
     val_seqs_normalized = []
     if val_sequences:
-        val_seqs_normalized = [
-            apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(val_sequences, desc="Normalizing Val")
-        ]
+        for key, seq in tqdm(zip(val_keys, val_sequences), total=len(val_keys), desc="Normalizing Val"):
+            if isinstance(key, (tuple, list)) and len(key) > 0:
+                asset_name = key[0]
+            else:
+                asset_name = str(key).split('_')[0]
+            if isinstance(asset_name, bytes):
+                asset_name = asset_name.decode('utf-8')
+
+            # Use training stats for validation data
+            asset_stats = norm_stats.get(asset_name)
+            if asset_stats:
+                normalized_seq = apply_normalization_to_sequence(seq, asset_stats, cfg)
+                val_seqs_normalized.append(normalized_seq)
+            else:
+                logging.warning(f"Using raw sequence for validation asset '{asset_name}' due to missing stats.")
+                val_seqs_normalized.append(seq)
 
     # Reshape
     train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
