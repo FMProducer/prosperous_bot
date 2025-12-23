@@ -493,24 +493,33 @@ class TradingEnvironment(gym.Env):
         self.realized_pnl += pnl_change
         self.balance += pnl_change
 
-        # BANKRUPTCY CHECK: Strict balance validation
-        if self.balance <= self.bankruptcy_threshold:
-            logging.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
-            
-            # Force-close any open positions with slippage penalty
-            if self.position != 0:
-                slippage_penalty = self.bankruptcy_slippage_penalty
-                liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
-                liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
-                                   if self.position == 1 
-                                   else (self.real_entry_price - liquidation_price) * self.position_volume)
-                self.balance += liquidation_pnl
-            
-            self.balance = max(0.0, self.balance)  # Cannot go negative
-            reward = -self.bankruptcy_penalty
+        # LIQUIDATION / BANKRUPTCY CHECK
+        terminated = False
+        info = self._get_info()
+
+        unrealized_pnl = self._calculate_unrealized_pnl()
+        equity = self.balance + unrealized_pnl
+
+        if self.position != 0:
+            position_value = self.real_entry_price * self.position_volume
+            maintenance_margin = position_value * 0.05
+            if equity < maintenance_margin:
+                terminated = True
+                reward -= 10.0  # Жесткий штраф за ликвидацию
+                info["liquidation"] = True
+
+        if not terminated and self.balance <= self.bankruptcy_threshold:
             terminated = True
-            info = self._get_info()
-            info['bankruptcy'] = True
+            reward = -self.bankruptcy_penalty
+
+        if terminated:
+            if self.position != 0:
+                self.balance += unrealized_pnl # Realize the loss
+                self.position = 0
+                self.position_volume = 0.0
+            
+            self.balance = max(0.0, self.balance)
+            info['bankruptcy'] = True # for metrics
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             return obs, reward, terminated, False, info
 
