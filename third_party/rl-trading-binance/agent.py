@@ -150,7 +150,7 @@ class D3QN_PER_Agent:
         self.learn_steps = 0
         self.max_gradient_norm = max_gradient_norm
 
-        self.qval_cache: OrderedDict = OrderedDict()
+        self.qval_cache: OrderedDict[Tuple[str, dt.datetime], np.ndarray] = OrderedDict()
         self.max_cache_size = 10000
 
         if backtest_cache_path is not None:
@@ -386,9 +386,10 @@ class D3QN_PER_Agent:
                 with torch.no_grad():
                     tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
                     qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
-                if len(self.qval_cache) >= self.max_cache_size:
-                    self.qval_cache.popitem(last=False)
+
                 self.qval_cache[cache_key] = qvals
+                if len(self.qval_cache) > self.max_cache_size:
+                    self.qval_cache.popitem(last=False)
             qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
@@ -742,6 +743,16 @@ class D3QN_PER_Agent:
             self.policy_net, {torch.nn.Linear}, dtype=torch.qint8
         )
         logger.info("Policy network optimized for CPU inference with dynamic quantization.")
+
+    def convert_to_cpu_optimized(self):
+        """Оптимизация модели для экстремальной скорости на Ryzen (CPU)."""
+        self.policy_net.eval()
+        self.policy_net = torch.quantization.quantize_dynamic(
+            self.policy_net,
+            {torch.nn.Linear, torch.nn.Conv1d},
+            dtype=torch.qint8
+        )
+        logger.info("🚀 Model quantized for CPU inference (INT8).")
 
     def save_model(self, path: str) -> None:
         """Saves a complete checkpoint of the agent's state.

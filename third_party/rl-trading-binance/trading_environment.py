@@ -296,13 +296,14 @@ class TradingEnvironment(gym.Env):
             raise ValueError("Normalization stats are not provided to the environment.")
         
         asset_stats = self.stats.get(self.current_asset_name)
-        if asset_stats is None:
-            fallback_asset = next(iter(self.stats))
+        if asset_stats is None or 'mean' not in asset_stats:
             logging.warning(
-                f"Stats for asset '{self.current_asset_name}' not found. "
-                f"Falling back to stats of '{fallback_asset}'."
+                f"Stats for asset '{self.current_asset_name}' not found or incomplete. "
+                f"Falling back to neutral stats (mean=0, std=1)."
             )
-            asset_stats = self.stats[fallback_asset]
+            # Fallback to neutral values to prevent KeyError
+            num_features = self.num_features
+            asset_stats = {'mean': [0.0] * num_features, 'std': [1.0] * num_features}
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:

@@ -310,11 +310,11 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     bankruptcy_count = sum(1 for info in episode_infos if info.get('bankruptcy', False))
     total_episodes = len(episode_infos)
     if total_episodes > 0:
-        bankruptcy_rate = bankruptcy_count / total_episodes
-        if bankruptcy_rate > 0:
-            logging.warning(f"⚠️ Bankruptcy Rate: {bankruptcy_rate:.2%}")
+        br = bankruptcy_count / total_episodes
+        if br > 0:
+            logging.warning(f"⚠️ Bankruptcy Rate: {br:.2%}")
         else:
-            logging.debug(f"Bankruptcy Rate: {bankruptcy_rate:.2%}")
+            logging.debug(f"Bankruptcy Rate: {br:.2%}")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -923,6 +923,13 @@ def run_training_session(
         cfg.data.volumechannels,
         cfg.data.otherchannels,
     )
+    logging.info("Normalization statistics computed")
+
+    # FIX: Сохраняем артефакты ДО начала обучения
+    stats_path = Path(models_dir) / "norm_stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(norm_stats, f, indent=2, default=_numpy_json_default)
+    logging.info(f"📂 Saved norm_stats to {stats_path}")
 
     if not train_sequences:
         logging.error("Cannot start training session with no training data.")
