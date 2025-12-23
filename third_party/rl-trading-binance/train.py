@@ -311,7 +311,10 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     total_episodes = len(episode_infos)
     if total_episodes > 0:
         bankruptcy_rate = bankruptcy_count / total_episodes
-        logging.info(f"Bankruptcy Rate: {bankruptcy_rate:.2%}")
+        if bankruptcy_rate > 0:
+            logging.warning(f"⚠️ Bankruptcy Rate: {bankruptcy_rate:.2%}")
+        else:
+            logging.debug(f"Bankruptcy Rate: {bankruptcy_rate:.2%}")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -1238,11 +1241,12 @@ if __name__ == "__main__":
         models_dir = os.path.join(cfg.paths.model_dir, session_name)
         os.makedirs(models_dir, exist_ok=True) # Ensure dir exists for saving artifacts
 
-        # Принудительное сохранение статов в папку модели
-        norm_stats = final_metrics.get('norm_stats', {})
-        if norm_stats:
-            with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:
-                json.dump(norm_stats, f, indent=2)
+        # FIX: Сохраняем статы сразу из конфига/препроцессора, а не из метрик
+        if hasattr(cfg.data, 'norm_stats') and cfg.data.norm_stats:
+            stats_path = os.path.join(models_dir, "norm_stats.json")
+            with open(stats_path, "w") as f:
+                json.dump(cfg.data.norm_stats, f, indent=2)
+            logging.info(f"✅ Norm stats saved to {stats_path}")
 
         with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(final_metrics, f, indent=2, default=_numpy_json_default)

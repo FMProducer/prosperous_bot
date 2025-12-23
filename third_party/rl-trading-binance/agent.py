@@ -3,6 +3,7 @@ import datetime as dt
 import logging
 import os
 import pickle
+from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -149,8 +150,10 @@ class D3QN_PER_Agent:
         self.learn_steps = 0
         self.max_gradient_norm = max_gradient_norm
 
+        self.qval_cache: OrderedDict = OrderedDict()
+        self.max_cache_size = 10000
+
         if backtest_cache_path is not None:
-            self.qval_cache: Dict[Tuple[str, dt.datetime], Union[int, np.ndarray]] = {}
             self.cache_path = os.path.join(backtest_cache_path, "qval_cache.pkl")
             self._load_disk_cache()
 
@@ -377,11 +380,14 @@ class D3QN_PER_Agent:
 
         if use_cache and not training and cache_key is not None:
             if cache_key in self.qval_cache:
+                self.qval_cache.move_to_end(cache_key)
                 qvals = self.qval_cache[cache_key]
             else:
                 with torch.no_grad():
                     tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
                     qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
+                if len(self.qval_cache) >= self.max_cache_size:
+                    self.qval_cache.popitem(last=False)
                 self.qval_cache[cache_key] = qvals
             qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
@@ -728,6 +734,14 @@ class D3QN_PER_Agent:
         self.policy_net.qconfig = torch.ao.quantization.get_default_qat_qconfig('fbgemm')
         torch.ao.quantization.prepare_qat(self.policy_net, inplace=True)
         logger.info("Model prepared for Quantization-Aware Training (QAT)")
+
+    def optimize_for_cpu(self):
+        """Applies dynamic quantization to the policy network for INT8 inference."""
+        self.policy_net.eval()
+        self.policy_net = torch.quantization.quantize_dynamic(
+            self.policy_net, {torch.nn.Linear}, dtype=torch.qint8
+        )
+        logger.info("Policy network optimized for CPU inference with dynamic quantization.")
 
     def save_model(self, path: str) -> None:
         """Saves a complete checkpoint of the agent's state.
