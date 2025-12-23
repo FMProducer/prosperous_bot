@@ -124,6 +124,16 @@ class SequenceConfig(BaseModel):
             assert v == values["pre_signal_len"] + values["post_signal_len"], "FULL_SEQ_LEN mismatch"
         return v
 
+class WalkForwardConfig(BaseModel):
+    enabled: bool = False
+    train_months: int = 8
+    test_months: int = 2
+    step_months: int = 2
+    data_sources: List[str] = [
+        "data/train_data_fair_8m.npz",
+        "data/val_data_fair_2m.npz",
+        "data/backtest_data_fair_2m.npz"
+    ]
 
 class MarketConfig(BaseModel):
     initial_balance: float = 10_000.0
@@ -363,6 +373,7 @@ class MasterConfig(BaseModel):
     trainlog: TrainLogConfig = TrainLogConfig()
     debug: DebugConfig = DebugConfig()
     smart: SmartExplorationConfig = SmartExplorationConfig()
+    walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
     backtest: BacktestConfig = BacktestConfig()
     paper: PaperTraderConfig = PaperTraderConfig()
     logging: LoggingConfig = LoggingConfig()
