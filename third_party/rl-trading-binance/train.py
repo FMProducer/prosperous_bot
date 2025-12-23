@@ -54,8 +54,8 @@ from utils import (
     load_config,
     load_npz_dataset,
     create_walk_forward_folds,
-    load_and_prep_data_from_source,
     calculate_normalization_stats,
+    apply_normalization_to_sequence,
 ) # noqa: F401
 
 class TopKCheckpointManager:
@@ -213,64 +213,6 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -
     Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
     logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
     return all_stats
-
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
-    """
-    Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
-    Требует предоставления `norm_stats` с данными для каждого актива.
-    Фильтрует активы по списку `allowed_assets`, если он предоставлен.
-    Returns: list of np.arrays (samples), list of keys.
-    """
-    if not npz_path or not os.path.exists(npz_path):
-        logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
-        return [], []
-
-    if not norm_stats:
-        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
-
-    d = np.load(npz_path, allow_pickle=True)
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    sequences = []
-    valid_keys = []
-    logging.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
-    
-    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
-        try:
-            asset_name = key.split('_')[0]
-        except IndexError:
-            logging.warning(f"Пропуск ключа с некорректным форматом: {key}")
-            continue
-        
-        # Фильтрация по списку разрешенных активов
-        if allowed_assets and asset_name not in allowed_assets:
-            continue
-
-        asset_specific_stats = norm_stats.get(asset_name)
-        if asset_specific_stats is None:
-            if not allowed_assets or asset_name in allowed_assets:
-                 logging.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
-            continue
-
-        means = np.array(asset_specific_stats['mean'])
-        stds = np.array(asset_specific_stats['std'])
-        
-        seq = d[key].astype(np.float32)
-        if seq.shape[1] != len(means):
-            logging.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
-            continue
-            
-        # Z-norm по каждому каналу
-        seq = (seq - means) / stds
-        # Reshape для CNN: (L, C) -> (C, L, 1)
-        seq = seq.T
-        seq = np.expand_dims(seq, -1)
-        sequences.append(seq)
-        valid_keys.append(key)
-    
-    d.close()
-    if sequences:
-        logging.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
-    return sequences, valid_keys
 
 
 def make_env(env_kwargs: dict):
@@ -983,10 +925,33 @@ def run_training_session(
         logging.error("Cannot start training session with no training data.")
         return {}
 
-    train_seqs_normalized, train_keys_normalized = load_and_prep_data_from_source(train_sequences, train_keys, "Train", norm_stats)
-    val_seqs_normalized, val_keys_normalized = [], []
-    if val_sequences and val_keys:
-        val_seqs_normalized, val_keys_normalized = load_and_prep_data_from_source(val_sequences, val_keys, "Validation", norm_stats)
+    # --- NORMALIZE DATA ---
+    logging.info("Applying normalization to train sequences...")
+    train_seqs_normalized = [
+        apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(train_sequences, desc="Normalizing Train")
+    ]
+
+    logging.info("Applying normalization to validation sequences...")
+    val_seqs_normalized = []
+    if val_sequences:
+        val_seqs_normalized = [
+            apply_normalization_to_sequence(seq, norm_stats, cfg) for seq in tqdm(val_sequences, desc="Normalizing Val")
+        ]
+
+    # Reshape
+    train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
+    val_seqs_reshaped = [np.expand_dims(s.T, -1) for s in val_seqs_normalized]
+
+    # --- ENVIRONMENT SETUP ---
+    if not train_seqs_reshaped:
+        logging.error("Training sequences are empty after normalization. Cannot proceed.")
+        return {}
+
+    if len(train_seqs_reshaped[0].shape) == 3:
+        num_features = train_seqs_reshaped[0].shape[0]  # C from (C, L, 1)
+    else:
+        num_features = train_seqs_reshaped[0].shape[1]  # C from (L, C)
+
 
     eps_decay_frames = cfg.eps.eps_decay_frames
     if cfg.vec.num_envs > 1 and cfg.vec.scale_epsilon_by_envs:
@@ -1009,17 +974,17 @@ def run_training_session(
         max_gradient_norm=cfg.rl.max_gradient_norm, perf_cfg=cfg.perf
     )
 
-    if len(train_seqs_normalized[0].shape) == 3:
-        num_features = train_seqs_normalized[0].shape[0]
+    if len(train_seqs_reshaped[0].shape) == 3:
+        num_features = train_seqs_reshaped[0].shape[0]
     else:
-        num_features = train_seqs_normalized[0].shape[1]
+        num_features = train_seqs_reshaped[0].shape[1]
     input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     num_actions = cfg.market.num_actions
     action_history_len = cfg.seq.action_history_len
     flat_state_size = input_history_len * num_features + 4 + (num_actions * action_history_len)
 
     env_kwargs = {
-        "sequences": train_seqs_normalized, "keys": train_keys_normalized,
+        "sequences": train_seqs_reshaped, "keys": train_keys,
         "stats": norm_stats, "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len, "num_features": num_features,
         "num_actions": num_actions, "flat_state_size": flat_state_size,
@@ -1070,10 +1035,10 @@ def run_training_session(
         train_env = TradingEnvironment(**env_kwargs)
 
     val_env = None
-    if val_seqs_normalized:
+    if val_seqs_reshaped:
         val_kwargs = dict(env_kwargs)
         val_kwargs.update({
-            "sequences": val_seqs_normalized, "keys": val_keys_normalized,
+            "sequences": val_seqs_reshaped, "keys": val_keys,
             "backtest_mode": True,
             "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         })
@@ -1135,7 +1100,7 @@ def run_training_session(
         counter.set_description(f"Loss={avg_loss:.5f}, Reward={ep_reward:.3f}")
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
-            metrics = evaluate_agent(val_env, agent, len(val_seqs_normalized), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys_normalized)
+            metrics = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
 
             current_metric_val = metrics.get(cfg.trainlog.checkpoint_metric)
             if current_metric_val is None: continue
@@ -1167,7 +1132,7 @@ def run_training_session(
 
     # For WFV, we return the best metrics found. For single run, we might bundle more.
     if not best_validation and val_env: # If no validation ever passed
-        best_validation = evaluate_agent(val_env, agent, len(val_seqs_normalized), "Validation", num_episodes, cfg.global_env_seed, cfg, keys=val_keys_normalized)
+        best_validation = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", num_episodes, cfg.global_env_seed, cfg, keys=val_keys)
 
     # Attach history for single runs
     if fold_id is None:

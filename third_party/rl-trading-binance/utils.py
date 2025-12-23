@@ -557,3 +557,34 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         valid_keys.append(key)
 
     return prepped_sequences, valid_keys
+
+def apply_normalization_to_sequence(
+    sequence: np.ndarray,
+    stats: Dict[str, Dict[str, float]],
+    cfg: MasterConfig
+) -> np.ndarray:
+    """
+    Применяет Z-нормализацию к одной последовательности (L, C).
+    """
+    norm_seq = np.zeros_like(sequence, dtype=np.float32)
+
+    for i, ch in enumerate(cfg.data.datachannels):
+        arr = sequence[:, i].astype(np.float64)
+        mean = stats["means"].get(ch, 0.0)
+        std = stats["stds"].get(ch, 1.0)
+
+        if ch in cfg.data.pricechannels:
+            rel = arr[1:] / (arr[:-1] + 1e-9)
+            logs = np.log(np.maximum(rel, 1e-9))
+            normed_logs = (logs - mean) / std
+            padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
+            norm_seq[:, i] = padded_normed
+        elif ch in cfg.data.volumechannels:
+            logv = np.log(arr + 1.0)
+            norm_seq[:, i] = (logv - mean) / std
+        elif ch in cfg.data.otherchannels:
+            norm_seq[:, i] = (arr - mean) / std
+        else:
+            norm_seq[:, i] = arr # Оставляем как есть, если канал не нормализуется
+
+    return np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
