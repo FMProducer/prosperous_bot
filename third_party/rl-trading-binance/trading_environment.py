@@ -290,19 +290,8 @@ class TradingEnvironment(gym.Env):
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
 
     def _get_asset_stats(self) -> Dict[str, float]:
-        """Helper to get stats for the current asset, with a fallback."""
-        if not self.stats:
-            raise ValueError("Normalization stats are not provided to the environment.")
-        
-        asset_stats = self.stats.get(self.current_asset_name)
-        if asset_stats is None:
-            fallback_asset = next(iter(self.stats))
-            logging.warning(
-                f"Stats for asset '{self.current_asset_name}' not found. "
-                f"Falling back to stats of '{fallback_asset}'."
-            )
-            asset_stats = self.stats[fallback_asset]
-        return asset_stats
+        """DEPRECATED: Helper to get stats for the current asset. Now returns empty dict."""
+        return {}
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Resets the environment to the beginning of a new episode.
@@ -383,10 +372,9 @@ class TradingEnvironment(gym.Env):
             price_idx = len(self.current_seq) - 1
         
         # --- Denormalization Setup ---
-        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = self.stats["means"].get("close", 0.0)
+        close_std = self.stats["stds"].get("close", 1.0)
         real_price = norm_price * close_std + close_mean
         
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
@@ -626,9 +614,8 @@ class TradingEnvironment(gym.Env):
             current_price = self.current_seq[price_idx, self.close_idx]
             
             # Denormalize for real PnL calculation
-            asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['mean'][self.close_idx]
-            close_std = asset_stats['std'][self.close_idx]
+            close_mean = self.stats["means"].get("close", 0.0)
+            close_std = self.stats["stds"].get("close", 1.0)
             
             real_current_price = current_price * close_std + close_mean
             
@@ -653,9 +640,8 @@ class TradingEnvironment(gym.Env):
                 recent_prices = self.current_seq[start_idx:end_idx, self.close_idx]
                 
                 # Денормализовать для корректного расчёта
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
+                close_mean = self.stats["means"].get("close", 0.0)
+                close_std = self.stats["stds"].get("close", 1.0)
                 real_prices = recent_prices * close_std + close_mean
                 
                 # Вычислить процентное изменение
@@ -843,9 +829,8 @@ class TradingEnvironment(gym.Env):
         norm_current_price = self.current_seq[price_idx, self.close_idx]
         
         # Denormalize the price to get the real price
-        asset_stats = self._get_asset_stats()
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = self.stats["means"].get("close", 0.0)
+        close_std = self.stats["stds"].get("close", 1.0)
         real_current_price = norm_current_price * close_std + close_mean
         
         # Calculate PnL based on position direction
@@ -918,10 +903,9 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
 
         # --- Denormalization Setup ---
-        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = self.stats["means"].get("close", 0.0)
+        close_std = self.stats["stds"].get("close", 1.0)
         real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
 
         position_closed = False
@@ -1156,9 +1140,8 @@ class TradingEnvironment(gym.Env):
             if self.position != 0:
                 m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
                 norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
+                close_mean = self.stats["means"].get("close", 0.0)
+                close_std = self.stats["stds"].get("close", 1.0)
                 real_m2m_price = norm_m2m_price * close_std + close_mean
                 if self.position == 1: # LONG
                     mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
