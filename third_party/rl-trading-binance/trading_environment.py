@@ -335,11 +335,9 @@ class TradingEnvironment(gym.Env):
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
         self.current_seq = self.sequences[idx]
-        try:
-            self.current_asset_name = self.keys[idx].split('_')[0]
-        except IndexError:
-            logging.error(f"Could not parse asset name from key: {self.keys[idx]}")
-            self.current_asset_name = "UNKNOWN"
+        # Универсальный извлекатель тикера
+        key = self.keys[idx]
+        self.current_asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
 
         obs = self._get_observation()
         info = self._get_info()

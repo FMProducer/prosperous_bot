@@ -219,7 +219,7 @@ def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
     return TradingEnvironment(**env_kwargs)
 
-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int):
+def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int, fold_id: Optional[int] = None):
     """
     Один "батч-эпизод" на N средах:
     - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
@@ -311,10 +311,11 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     total_episodes = len(episode_infos)
     if total_episodes > 0:
         br = bankruptcy_count / total_episodes
+        fold_prefix = f"Fold {fold_id} | " if fold_id is not None else ""
         if br > 0:
-            logging.warning(f"⚠️ Bankruptcy Rate: {br:.2%}")
+            logging.warning(f"⚠️ {fold_prefix}Bankruptcy Rate: {br:.2%}")
         else:
-            logging.debug(f"Bankruptcy Rate: {br:.2%}")
+            logging.debug(f"{fold_prefix}Bankruptcy Rate: {br:.2%}")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -1081,7 +1082,7 @@ def run_training_session(
     counter = trange(1, num_episodes + 1, desc="Training", leave=True)
     for ep in counter:
         if num_envs > 1:
-            ep_reward, ep_win_rate, transitions, avg_loss, info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+            ep_reward, ep_win_rate, transitions, avg_loss, info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len, fold_id=fold_id)
             train_steps += transitions
         else:
             obs, _ = train_env.reset()
@@ -1248,12 +1249,6 @@ if __name__ == "__main__":
         models_dir = os.path.join(cfg.paths.model_dir, session_name)
         os.makedirs(models_dir, exist_ok=True) # Ensure dir exists for saving artifacts
 
-        # FIX: Сохраняем статы сразу из конфига/препроцессора, а не из метрик
-        if hasattr(cfg.data, 'norm_stats') and cfg.data.norm_stats:
-            stats_path = os.path.join(models_dir, "norm_stats.json")
-            with open(stats_path, "w") as f:
-                json.dump(cfg.data.norm_stats, f, indent=2)
-            logging.info(f"✅ Norm stats saved to {stats_path}")
 
         with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(final_metrics, f, indent=2, default=_numpy_json_default)
