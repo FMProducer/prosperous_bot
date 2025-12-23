@@ -244,6 +244,73 @@ def apply_normalization(
     return out
 
 
+def apply_normalization_to_sequence(
+    seq: np.ndarray,
+    stats: Dict[str, Dict[str, float]],
+    cfg: MasterConfig,
+) -> Optional[np.ndarray]:
+    """
+    Нормализует *всю* последовательность (L, C) в соответствии со статистиками,
+    рассчитанными `calculate_normalization_stats`.
+
+    Для price-каналов применяется log-return между соседними точками (длина L-1),
+    затем z-score; первый элемент заполняется 0.0, чтобы сохранить длину L.
+    Для volume-каналов применяется log(x + 1), затем z-score.
+    Для other-каналов применяется z-score к исходным значениям.
+    """
+    if seq is None:
+        return None
+    if not isinstance(seq, np.ndarray):
+        seq = np.asarray(seq)
+    if seq.ndim != 2:
+        logger.error(f"apply_normalization_to_sequence ожидает 2D массив (L, C), получено: {seq.shape}")
+        return None
+
+    if not isinstance(stats, dict) or "means" not in stats or "stds" not in stats:
+        logger.error("Некорректная структура stats: ожидается {'means': {...}, 'stds': {...}}")
+        return None
+
+    use_channels = cfg.data.datachannels
+    pricechannels = cfg.data.pricechannels
+    volumechannels = cfg.data.volumechannels
+    otherchannels = cfg.data.otherchannels
+
+    L, C = seq.shape
+    if C != len(use_channels):
+        logger.error(
+            f"apply_normalization_to_sequence: mismatch каналов: seq.shape[1]={C}, "
+            f"len(cfg.data.datachannels)={len(use_channels)}"
+        )
+        return None
+
+    out = np.zeros_like(seq, dtype=np.float32)
+    eps = 1e-9
+
+    for i, ch in enumerate(use_channels):
+        arr = seq[:, i].astype(np.float64)
+        mean = float(stats["means"].get(ch, 0.0))
+        std = float(stats["stds"].get(ch, 1.0))
+        if not math.isfinite(std) or std < 1e-7:
+            std = 1.0
+
+        if ch in pricechannels:
+            rel = arr[1:] / (arr[:-1] + eps)
+            logs = np.log(np.maximum(rel, eps))
+            norm = (logs - mean) / std
+            out[0, i] = 0.0
+            out[1:, i] = norm.astype(np.float32, copy=False)
+        elif ch in volumechannels:
+            vals = np.log(arr + 1.0)
+            out[:, i] = ((vals - mean) / std).astype(np.float32, copy=False)
+        elif ch in otherchannels:
+            out[:, i] = ((arr - mean) / std).astype(np.float32, copy=False)
+        else:
+            out[:, i] = arr.astype(np.float32, copy=False)
+
+    out = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+    return out
+
+
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
     cfg_path = Path(path)
     spec = importlib.util.spec_from_file_location("experiment_cfg", path)
