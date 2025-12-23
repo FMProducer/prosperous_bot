@@ -44,81 +44,45 @@ def set_random_seed(seed: int, deterministic: bool = False) -> None:
     logger.info(f"Random seed set to {seed}, deterministic: {deterministic}")
 
 
-def load_npz_dataset(
-    file_path: str,
-    name_dataset: str,
-    plot_dir: str,
-    debug_max_size: Optional[int] = None,
-    plot_examples: int = 0,
-    plot_channel_idx: int = 4,
-    pre_signal_len: int = 90,
-) -> List[Tuple[Any, np.ndarray]]:
-    logger.info(f"Loading dataset '{name_dataset}' from {file_path}")
-    if debug_max_size:
-        logger.debug(f"DEBUG mode: limit dataset size to {debug_max_size}")
+def load_npz_dataset(path: str, name: str, plot_dir: Optional[str] = None) -> List[Tuple[Any, np.ndarray]]:
+    """
+    Загружает dataset из .npz файла.
+    Возвращает список кортежей ((ticker, dt), data_array).
+    """
+    if not os.path.exists(path):
+        logging.warning(f"File not found: {path}")
+        return []
 
-    experiences: List[Tuple[Any, np.ndarray]] = []
-    try:
-        with np.load(file_path, allow_pickle=True) as data:
-            if "_keys_map_" in data:
-                keys_map = data["_keys_map_"].item()
-                for idx, (str_key, orig_key) in enumerate(
-                    tqdm(keys_map.items(), desc=f"Loading {name_dataset}", leave=False)
-                ):
-                    if str_key in data:
-                        experiences.append((orig_key, data[str_key]))
-                    else:
-                        logger.warning(f"Missing array for key {str_key}")
-                    if debug_max_size and idx + 1 >= debug_max_size:
-                        break
-            else:
-                for key in (k for k in data.files if not k.startswith("_")):
-                    experiences.append((key, data[key]))
-        count = len(experiences)
-        logger.info(f"Loaded {count} sequences from {file_path}")
+    logging.info(f"Loading {name} from {path}...")
+    data = np.load(path, allow_pickle=True)
 
-        dates = []
-        for orig_key, _ in experiences:
-            if isinstance(orig_key, tuple) and len(orig_key) == 2:
-                _, dt = orig_key
-                dates.append(dt)
-        if dates:
-            dates_sorted = sorted(dates)
-            logger.info(f"Dataset '{name_dataset}' period: from {dates_sorted[0].date()} to {dates_sorted[-1].date()}")
+    # Предполагаем структуру: 'sequences' и 'keys' (или '_keys_map_')
+    if 'sequences' in data and ('_keys_map_' in data or 'keys' in data):
+        seqs = data['sequences']
+        keys_data = data['_keys_map_'] if '_keys_map_' in data else data['keys']
 
-        if plot_examples and experiences:
-            sns.set_style("whitegrid")
-            os.makedirs(plot_dir, exist_ok=True)
-            import random
+        # Handle the case where keys might be an array-like object from np.load
+        keys = keys_data.item() if hasattr(keys_data, 'item') else keys_data
 
-            sampled = random.sample(experiences, min(plot_examples, count))
-            for i, (orig_key, seq) in enumerate(sampled, 1):
-                ticker = orig_key[0] if isinstance(orig_key, tuple) else str(orig_key)
-                dt = orig_key[1] if isinstance(orig_key, tuple) else None
-                prices = seq[:, plot_channel_idx]
+        # Объединяем в список кортежей
+        result = list(zip(keys, seqs))
+        logging.info(f"Loaded {len(result)} sequences from {name}")
+    else:
+        # Fallback for simple key-value structure
+        logging.info("Using fallback key-value loading method.")
+        result = []
+        keys_map = data.get("_keys_map_", None)
+        if keys_map is not None:
+            keys_map = keys_map.item()
+            for str_key, orig_key in tqdm(keys_map.items(), desc=f"Loading {name}"):
+                if str_key in data:
+                    result.append((orig_key, data[str_key]))
+        else:
+            for key in (k for k in data.files if not k.startswith("_")):
+                result.append((key, data[key]))
+        logging.info(f"Loaded {len(result)} sequences using fallback.")
 
-                plt.figure(figsize=(10, 5))
-                plt.plot(prices, color="green", linewidth=2, label="Price")
-
-                plt.axvline(x=pre_signal_len - 1, color="magenta", linestyle="--", lw=1.5, label="Session Start")
-                title_dt = dt.strftime("%Y-%m-%d %H:%M") if dt is not None else ""
-                plt.title(f"{ticker} {title_dt}  {name_dataset}", fontsize=14)
-                plt.xlabel("Time (minutes)")
-                plt.ylabel("Price")
-                plt.legend()
-                plt.tight_layout()
-                fname = f"{name_dataset}_example_{i}_{ticker}_{title_dt}.png"
-                out = os.path.join(plot_dir, fname)
-                plt.savefig(out, dpi=300)
-                plt.close()
-                logger.info(f"Saved example plot: {fname}")
-
-    except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
-    except Exception as e:
-        logger.error(f"Error loading {file_path}: {e}", exc_info=True)
-
-    return experiences
+    return result
 
 
 def load_npz_dataset_keys(file_path: str) -> List[Tuple[str, dt.datetime]]:
