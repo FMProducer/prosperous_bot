@@ -929,9 +929,10 @@ def run_training_session(
 
     # 2. Определение индексов каналов для 10-канального набора (Binance)
     # OHLC = [0,1,2,3], Volume/Taker = [4,5,7,8], Trades/Other = [6,9]
-    price_idx = [0, 1, 2, 3]
-    vol_idx = [4, 5, 7, 8]
-    other_idx = [6, 9]
+    price_idx = list(range(0, 4))
+    vol_idx = [4]
+    # Динамический срез до конца доступных каналов
+    other_idx = list(range(5, len(cfg.data.datachannels)))
 
     # Senior-level Check: Assert для избежания ошибок индексации
     if train_sequences:
@@ -941,7 +942,7 @@ def run_training_session(
             f"Index {max(all_indices)} exceeds available channels ({num_actual_channels})"
 
     norm_stats = calculate_normalization_stats(
-        train_sequences, clean_keys, price_idx, vol_idx, other_idx
+        train_sequences, price_idx, vol_idx, other_idx, cfg.data.datachannels
     )
     logging.info("Normalization statistics computed")
 
