@@ -315,7 +315,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         if br > 0:
             logging.warning(f"⚠️ {fold_prefix}Bankruptcy Rate: {br:.2%}")
         else:
-            logging.info(f"✅ {fold_prefix}Bankruptcy Rate: 0.00%")
+            logging.info(f"✅ {fold_prefix}Bankruptcy Rate: 0%")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -921,10 +921,7 @@ def run_training_session(
     asset_sequences = defaultdict(list)
     for key, seq in zip(train_keys, train_sequences):
         # FIX: Robustly extract asset name from tuple or string keys.
-        if isinstance(key, (tuple, list)) and len(key) > 0:
-            asset_name = key[0]
-        else:
-            asset_name = str(key).split('_')[0]
+        asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
         if isinstance(asset_name, bytes):
             asset_name = asset_name.decode('utf-8')
         asset_sequences[asset_name].append(seq)
@@ -957,10 +954,7 @@ def run_training_session(
     logging.info("Applying per-asset normalization to train sequences...")
     train_seqs_normalized = []
     for key, seq in tqdm(zip(train_keys, train_sequences), total=len(train_keys), desc="Normalizing Train"):
-        if isinstance(key, (tuple, list)) and len(key) > 0:
-            asset_name = key[0]
-        else:
-            asset_name = str(key).split('_')[0]
+        asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
         if isinstance(asset_name, bytes):
             asset_name = asset_name.decode('utf-8')
 
@@ -977,10 +971,7 @@ def run_training_session(
     val_seqs_normalized = []
     if val_sequences:
         for key, seq in tqdm(zip(val_keys, val_sequences), total=len(val_keys), desc="Normalizing Val"):
-            if isinstance(key, (tuple, list)) and len(key) > 0:
-                asset_name = key[0]
-            else:
-                asset_name = str(key).split('_')[0]
+            asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
             if isinstance(asset_name, bytes):
                 asset_name = asset_name.decode('utf-8')
 
