@@ -311,9 +311,9 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     total_episodes = len(episode_infos)
     if total_episodes > 0:
         br = bankruptcy_count / total_episodes
-        fold_prefix = f"Fold {fold_id} | " if fold_id is not None else ""
-        if br > 0:
-            logging.warning(f"⚠️ {fold_prefix}Bankruptcy Rate: {br:.2%}")
+        if br > 0.001:  # Только значимый уровень банкротств
+            fold_prefix = f"Fold {fold_id} | " if fold_id is not None else ""
+            logging.warning(f"🚨 ALERT: {fold_prefix}Bankruptcy Rate is {br:.2%}")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -923,32 +923,10 @@ def run_training_session(
         logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
 
     logging.info("Calculating normalization stats per-asset for this fold...")
-
-    # Шаг 1: Преобразуем ключи (кортежи или строки) в чистые строковые тикеры.
-    clean_asset_keys = []
-    for k in train_keys:
-        asset_name = k[0] if isinstance(k, (tuple, list)) else str(k).split('_')[0]
-        if isinstance(asset_name, bytes):
-            asset_name = asset_name.decode('utf-8')
-        clean_asset_keys.append(asset_name)
-
-    # Шаг 2: Группируем последовательности по тикерам для расчета статистики по каждому активу.
-    asset_sequences = defaultdict(list)
-    for asset_name, seq in zip(clean_asset_keys, train_sequences):
-        asset_sequences[asset_name].append(seq)
-
-    # Шаг 3: Рассчитываем статистики для каждого актива.
-    norm_stats = {}
-    for asset_name, sequences in tqdm(asset_sequences.items(), desc="Computing asset stats"):
-        stats = calculate_normalization_stats(
-            sequences,
-            cfg.data.datachannels,
-            cfg.data.pricechannels,
-            cfg.data.volumechannels,
-            cfg.data.otherchannels,
-        )
-        norm_stats[asset_name] = stats
-    logging.info(f"Normalization statistics computed for {len(norm_stats)} assets.")
+    # Очищаем ключи до тикеров (строк), чтобы Environment мог их найти
+    clean_keys = [k[0] if isinstance(k, (tuple, list)) else k.split('_')[0] for k in train_keys]
+    norm_stats = calculate_normalization_stats(train_sequences, clean_keys)
+    logging.info("Normalization statistics computed")
 
 
     # FIX: Сохраняем артефакты ДО начала обучения
@@ -1290,11 +1268,17 @@ if __name__ == "__main__":
         logging.info(f"🏁 SINGLE RUN COMPLETE. Best Validation Metrics:")
         logging.info(json.dumps({k: v for k,v in final_metrics.items() if k != 'history'}, indent=2, default=_numpy_json_default))
 
-        # Bundle artifacts for single run
-        session_name = f"{cfg.paths.config_name or 'main'}_{time.strftime('%Y%m%d_%H%M%S')}"
-        models_dir = os.path.join(cfg.paths.model_dir, session_name)
-        os.makedirs(models_dir, exist_ok=True) # Ensure dir exists for saving artifacts
+        # Используем путь напрямую из конфига, добавляя таймстамп к базовой папке
+        base_model_path = Path(cfg.paths.model_dir).parent
+        models_dir = base_model_path / f"{cfg.paths.config_name}_{time.strftime('%Y%m%d_%H%M%S')}"
+        models_dir.mkdir(parents=True, exist_ok=True)
 
+        # FIX: Сохраняем статы сразу из конфига/препроцессора, а не из метрик
+        if norm_stats:
+            stats_path = os.path.join(models_dir, "norm_stats.json")
+            with open(stats_path, "w") as f:
+                json.dump(norm_stats, f, indent=2, default=_numpy_json_default)
+            logging.info(f"📂 Saved norm_stats to {stats_path}")
 
         with open(os.path.join(models_dir, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(final_metrics, f, indent=2, default=_numpy_json_default)

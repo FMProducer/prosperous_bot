@@ -299,10 +299,9 @@ class TradingEnvironment(gym.Env):
         
         asset_stats = self.stats.get(self.current_asset_name)
         if asset_stats is None or 'mean' not in asset_stats:
-            logging.warning(
-                f"Stats for asset '{self.current_asset_name}' not found or incomplete. "
-                f"Falling back to neutral stats (mean=0, std=1)."
-            )
+            # Ограничиваем лог, чтобы не спамить при инициализации векторов
+            if self.step_idx <= 1:
+                logger.error(f"❌ CRITICAL: No stats for {self.current_asset_name}. Check key mapping in train.py!")
             # Fallback to neutral values to prevent KeyError
             num_features = self.num_features
             asset_stats = {'mean': [0.0] * num_features, 'std': [1.0] * num_features}
