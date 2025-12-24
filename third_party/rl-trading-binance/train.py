@@ -923,9 +923,19 @@ def run_training_session(
         logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
 
     logging.info("Calculating normalization stats per-asset for this fold...")
-    # Очищаем ключи до тикеров (строк), чтобы Environment мог их найти
+
+    # 1. Очистка ключей для маппинга в Env
     clean_keys = [k[0] if isinstance(k, (tuple, list)) else k.split('_')[0] for k in train_keys]
-    norm_stats = calculate_normalization_stats(train_sequences, clean_keys)
+
+    # 2. Определение индексов каналов для 10-канального набора (Binance)
+    # OHLC = [0,1,2,3], Volume/Taker = [4,5,7,8], Trades/Other = [6,9]
+    price_idx = [0, 1, 2, 3]
+    vol_idx = [4, 5, 7, 8]
+    other_idx = [6, 9]
+
+    norm_stats = calculate_normalization_stats(
+        train_sequences, clean_keys, price_idx, vol_idx, other_idx
+    )
     logging.info("Normalization statistics computed")
 
 
