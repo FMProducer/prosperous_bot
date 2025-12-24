@@ -933,6 +933,13 @@ def run_training_session(
     vol_idx = [4, 5, 7, 8]
     other_idx = [6, 9]
 
+    # Senior-level Check: Assert для избежания ошибок индексации
+    if train_sequences:
+        num_actual_channels = train_sequences[0].shape[1]
+        all_indices = price_idx + vol_idx + other_idx
+        assert max(all_indices) < num_actual_channels, \
+            f"Index {max(all_indices)} exceeds available channels ({num_actual_channels})"
+
     norm_stats = calculate_normalization_stats(
         train_sequences, clean_keys, price_idx, vol_idx, other_idx
     )
