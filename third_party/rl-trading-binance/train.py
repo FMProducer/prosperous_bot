@@ -314,8 +314,6 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         fold_prefix = f"Fold {fold_id} | " if fold_id is not None else ""
         if br > 0:
             logging.warning(f"⚠️ {fold_prefix}Bankruptcy Rate: {br:.2%}")
-        else:
-            logging.info(f"✅ {fold_prefix}Bankruptcy Rate: 0%")
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
@@ -901,12 +899,20 @@ def run_training_session(
     """
     Инкапсулированная сессия обучения для одного фолда (или полного цикла).
     """
-    fold_suffix = f"_fold{fold_id}" if fold_id is not None else ""
     base_session_name = getattr(cfg.paths, "config_name", "train_session")
-    session_name = f"{base_session_name}{fold_suffix}"
 
-    models_dir = os.path.join(cfg.paths.model_dir, session_name)
-    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
+    # Исправлена логика путей для устранения вложенности
+    if fold_id is not None:
+        # Для WFV создаем подпапки в директории эксперимента (напр., .../alpha/fold_0)
+        session_name = f"{base_session_name}_fold{fold_id}"
+        models_dir = os.path.join(cfg.paths.model_dir, f"fold_{fold_id}")
+        plots_dir = os.path.join(cfg.paths.plot_dir, f"fold_{fold_id}")
+    else:
+        # Для одиночного запуска используем путь напрямую, как указано в config.py
+        session_name = base_session_name
+        models_dir = cfg.paths.model_dir
+        plots_dir = cfg.paths.plot_dir
+
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
@@ -917,16 +923,21 @@ def run_training_session(
         logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
 
     logging.info("Calculating normalization stats per-asset for this fold...")
-    # Group sequences by asset to calculate per-asset normalization stats
-    asset_sequences = defaultdict(list)
-    for key, seq in zip(train_keys, train_sequences):
-        # FIX: Robustly extract asset name from tuple or string keys.
-        asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
+
+    # Шаг 1: Преобразуем ключи (кортежи или строки) в чистые строковые тикеры.
+    clean_asset_keys = []
+    for k in train_keys:
+        asset_name = k[0] if isinstance(k, (tuple, list)) else str(k).split('_')[0]
         if isinstance(asset_name, bytes):
             asset_name = asset_name.decode('utf-8')
+        clean_asset_keys.append(asset_name)
+
+    # Шаг 2: Группируем последовательности по тикерам для расчета статистики по каждому активу.
+    asset_sequences = defaultdict(list)
+    for asset_name, seq in zip(clean_asset_keys, train_sequences):
         asset_sequences[asset_name].append(seq)
 
-    # Calculate stats for each asset
+    # Шаг 3: Рассчитываем статистики для каждого актива.
     norm_stats = {}
     for asset_name, sequences in tqdm(asset_sequences.items(), desc="Computing asset stats"):
         stats = calculate_normalization_stats(
