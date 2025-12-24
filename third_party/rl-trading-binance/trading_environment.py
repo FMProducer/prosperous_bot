@@ -105,6 +105,8 @@ class TradingEnvironment(gym.Env):
             raise ValueError("`sequences` must be a non-empty list of arrays")
         if not keys:
             raise ValueError("`keys` must be a non-empty list of strings")
+        if not stats:
+            raise ValueError("`stats` dictionary cannot be empty. Normalization is required for training.")
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
