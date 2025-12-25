@@ -195,7 +195,13 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -
         
         try:
             # Загружаем данные только для выбранных ключей этого ассета
-            asset_data = np.stack([d[key].astype(np.float32) for key in sample_keys], axis=0)
+            arrays = []
+            for key in sample_keys:
+                if key in d:
+                    arrays.append(d[key].astype(np.float32))
+            if not arrays:
+                    continue
+            asset_data = np.stack(arrays, axis=0)
             
             if asset_data.ndim == 3 and asset_data.shape[0] > 0: # (N, L, C)
                 means = np.mean(asset_data, axis=(0, 1))
