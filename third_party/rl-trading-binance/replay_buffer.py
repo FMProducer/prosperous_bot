@@ -71,22 +71,6 @@ class PrioritizedReplayBuffer:
         self.size = min(self.size + 1, self.capacity)
         self.frame_idx += 1
 
-    def _retrieve(self, idx: int, s: float) -> int:
-        """Find sample index in tree with cumulative priority s."""
-        left = 2 * idx + 1
-        right = left + 1
-
-        if left >= len(self.tree):
-            return idx
-
-        # If we are in a parent node, check if the cumulative priority s falls
-        # within the range of the left child.
-        if s <= self.tree[left]:
-            return self._retrieve(left, s)
-        else:
-            # Otherwise, it's in the right child's range.
-            return self._retrieve(right, s - self.tree[left])
-
     def sample(self, batch_size: int) -> Tuple[np.ndarray, ...]:
         assert self.size >= batch_size, "Not enough samples in buffer"
 
@@ -103,16 +87,30 @@ class PrioritizedReplayBuffer:
         min_prob = np.min(self.tree[self.tree_capacity - 1 : self.tree_capacity - 1 + self.size]) / total_p
         max_weight = (min_prob * self.size) ** (-beta)
 
-        for i in range(batch_size):
-            s = random.uniform(segment * i, segment * (i + 1))
-            node_idx = self._retrieve(0, s)
-            data_idx = node_idx - (self.tree_capacity - 1)
-            if data_idx >= self.size:
-                data_idx = self.size - 1
-                node_idx = data_idx + (self.tree_capacity - 1)
+        # Vectorized sampling
+        s = np.random.uniform(segment * np.arange(batch_size), segment * (np.arange(batch_size) + 1))
 
-            indices[i] = node_idx
-            data_indices[i] = data_idx
+        # Vectorized tree search
+        current_tree_indices = np.zeros(batch_size, dtype=np.int64)
+
+        for _ in range(int(np.log2(self.tree_capacity))):
+            left_child = 2 * current_tree_indices + 1
+            right_child = left_child + 1
+
+            # Ensure we don't go out of bounds (though typically handled by tree structure)
+            left_vals = self.tree[left_child]
+
+            mask = s <= left_vals
+            current_tree_indices[mask] = left_child[mask]
+            current_tree_indices[~mask] = right_child[~mask]
+            s[~mask] -= left_vals[~mask]
+
+        indices = current_tree_indices
+        data_indices = indices - (self.tree_capacity - 1)
+
+        # Clip indices just in case of float precision errors
+        data_indices = np.clip(data_indices, 0, self.size - 1)
+        indices = data_indices + (self.tree_capacity - 1)
 
         p_samples = self.tree[indices] / total_p
         weights = (p_samples * self.size) ** (-beta)
