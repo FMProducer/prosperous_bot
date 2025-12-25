@@ -156,68 +156,58 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -> dict:
+def compute_norm_stats(data_sources: List[tuple], cfg: MasterConfig) -> dict:
     """
-    Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
+    Вычисляет mean/std для каждого актива (тикера) из предоставленных данных.
     Берет случайную выборку `num_samples_per_asset` для каждого тикера для ускорения.
-    Сохраняет результат в `norm_stats.json`.
-    Returns: {'TICKER1': {'mean': [], 'std': []}, 'TICKER2': ...}
+    Эта реализация оптимизирована по памяти: она сначала собирает индексы,
+    сэмплирует их, и только потом извлекает данные.
     """
     num_samples_per_asset = cfg.data.norm_num_samples_per_asset
     seed = cfg.data.norm_seed
     np.random.seed(seed)
-    try:
-        d = np.load(npz_path, allow_pickle=True)
-    except FileNotFoundError:
-        logging.error(f"Файл данных не найден: {npz_path}")
-        return {}
 
-    data_keys = [k for k in d.files if not k.startswith('_')]
-    
-    # Группировка ключей по тикерам
-    asset_keys = defaultdict(list)
-    for key in data_keys:
-        try:
-            asset_name = key.split('_')[0]
-            asset_keys[asset_name].append(key)
-        except IndexError:
-            logging.warning(f"Не удалось извлечь имя актива из ключа: {key}")
-            continue
-            
     all_stats = {}
-    logging.info(f"Найдено {len(asset_keys)} активов. Расчет статистик...")
+    combined_indices = defaultdict(list)
 
-    for asset, keys in tqdm(asset_keys.items(), desc="Computing stats per asset"):
-        if len(keys) > num_samples_per_asset:
-            sample_keys = np.random.choice(keys, num_samples_per_asset, replace=False)
-        else:
-            sample_keys = keys
-        
+    # Шаг 1: Сбор индексов (source_idx, seq_idx) вместо полных данных
+    for source_idx, (keys, seqs) in enumerate(data_sources):
+        for seq_idx, k in enumerate(keys):
+            asset_name = k[0] if isinstance(k, (tuple, list)) else k.split('_')[0]
+            if isinstance(asset_name, bytes):
+                asset_name = asset_name.decode('utf-8')
+            combined_indices[asset_name].append((source_idx, seq_idx))
+
+    logging.info(f"Computing stats for {len(combined_indices)} assets...")
+
+    # Шаг 2: Сэмплирование индексов и расчет статистик
+    for asset, indices_list in tqdm(combined_indices.items(), desc="Computing stats"):
         try:
-            # Загружаем данные только для выбранных ключей этого ассета
-            arrays = []
-            for key in sample_keys:
-                if key in d:
-                    arrays.append(d[key].astype(np.float32))
-            if not arrays:
-                    continue
-            asset_data = np.stack(arrays, axis=0)
-            
-            if asset_data.ndim == 3 and asset_data.shape[0] > 0: # (N, L, C)
+            if len(indices_list) > num_samples_per_asset:
+                sample_indices_locs = np.random.choice(len(indices_list), num_samples_per_asset, replace=False)
+                actual_indices = [indices_list[i] for i in sample_indices_locs]
+            else:
+                actual_indices = indices_list
+
+            # Шаг 3: Извлечение данных по сэмплированным индексам
+            sample_arrays = []
+            for source_idx, seq_idx in actual_indices:
+                # data_sources[source_idx] -> (keys, seqs)
+                # data_sources[source_idx][1] -> seqs
+                # data_sources[source_idx][1][seq_idx] -> a single sequence array
+                sample_arrays.append(data_sources[source_idx][1][seq_idx])
+
+            if not sample_arrays:
+                continue
+
+            asset_data = np.stack(sample_arrays, axis=0)
+            if asset_data.ndim == 3 and asset_data.shape[0] > 0:  # (N, L, C)
                 means = np.mean(asset_data, axis=(0, 1))
                 stds = np.std(asset_data, axis=(0, 1)) + 1e-8
                 all_stats[asset] = {'mean': means.tolist(), 'std': stds.tolist()}
-            else:
-                logging.warning(f"Неверная форма или пустые данные для ассета {asset}: {asset_data.shape}")
         except Exception as e:
-            logging.error(f"Ошибка при обработке ассета {asset}: {e}")
+            logging.warning(f"Failed to compute stats for {asset}: {e}")
 
-
-    d.close()
-    
-    # Сохраняем в файл
-    Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
-    logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
     return all_stats
 
 
@@ -940,17 +930,13 @@ def run_training_session(
     # Динамический срез до конца доступных каналов
     other_idx = list(range(5, len(cfg.data.datachannels)))
 
-    # Senior-level Check: Assert для избежания ошибок индексации
-    if train_sequences:
-        num_actual_channels = train_sequences[0].shape[1]
-        all_indices = price_idx + vol_idx + other_idx
-        assert max(all_indices) < num_actual_channels, \
-            f"Index {max(all_indices)} exceeds available channels ({num_actual_channels})"
+    # Pass loaded sequences to the new stats function
+    all_data_for_stats = [(train_keys, train_sequences)]
+    if val_sequences:
+        all_data_for_stats.append((val_keys, val_sequences))
 
-    norm_stats = calculate_normalization_stats(
-        train_sequences, price_idx, vol_idx, other_idx, cfg.data.datachannels
-    )
-    logging.info("Normalization statistics computed")
+    norm_stats = compute_norm_stats(all_data_for_stats, cfg)
+    logging.info("Normalization statistics computed for all assets.")
 
 
     # FIX: Сохраняем артефакты ДО начала обучения
