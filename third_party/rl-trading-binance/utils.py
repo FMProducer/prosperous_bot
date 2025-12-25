@@ -162,26 +162,37 @@ def select_and_arrange_channels(
 
 def calculate_normalization_stats(
     sequences: List[np.ndarray],
-    use_channels: List[str],
-    pricechannels: List[str],
-    volumechannels: List[str],
-    otherchannels: List[str],
+    price_idx: List[int],
+    vol_idx: List[int],
+    other_idx: List[int],
+    datachannels: List[str],
 ) -> Dict[str, Dict[str, float]]:
-    stats: Dict[str, Dict[str, float]] = {"means": {}, "stds": {}}
+    all_idx = price_idx + vol_idx + other_idx
     if not sequences:
         logger.warning("Empty training set for normalization stats")
-        return stats
+        return {}
 
-    data_accum: Dict[str, List[float]] = {ch: [] for ch in use_channels}
+    # Защитный ассерт: Senior-подход к отладке продакшн-кода
+    sample_seq = sequences[0]
+    max_requested_idx = max(all_idx)
+    if max_requested_idx >= sample_seq.shape[1]:
+        raise IndexError(
+            f"Config/Index mismatch: Requested index {max_requested_idx} "
+            f"but data has only {sample_seq.shape[1]} channels."
+        )
+
+    stats: Dict[str, Dict[str, float]] = {"means": {}, "stds": {}}
+    data_accum: Dict[str, List[float]] = {ch: [] for ch in datachannels}
+
     for seq in tqdm(sequences, desc="Calculating normalization stats ...", leave=False):
-        for idx, ch in enumerate(use_channels):
+        for idx, ch in enumerate(datachannels):
             arr = seq[:, idx].astype(np.float64)
-            if ch in pricechannels:
+            if idx in price_idx:
                 changes = arr[1:] / (arr[:-1] + 1e-9)
                 vals = np.log(np.maximum(changes, 1e-9))
-            elif ch in volumechannels:
+            elif idx in vol_idx:
                 vals = np.log(arr + 1.0)
-            elif ch in otherchannels:
+            elif idx in other_idx:
                 vals = arr
             else:
                 continue
@@ -199,6 +210,7 @@ def calculate_normalization_stats(
                 logger.debug(f"Std too small for {ch}, setting to 1.0")
                 s = 1.0
             stats["means"][ch], stats["stds"][ch] = m, s
+
     logger.info("Normalization statistics computed")
     return stats
 
