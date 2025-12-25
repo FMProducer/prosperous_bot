@@ -112,9 +112,12 @@ class D3QN_PER_Agent:
         self.use_amp = perf_cfg.use_amp and self.device.type == 'cuda'
         if self.use_amp:
             amp_dtype_str = perf_cfg.amp_dtype
-            self.amp_dtype = torch.float16 if amp_dtype_str == "float16" else torch.bfloat16
+            if amp_dtype_str == "float16":
+                self.amp_dtype = torch.float16
+            else:
+                self.amp_dtype = torch.bfloat16 # Default to bfloat16 for stability
             self.scaler = torch.amp.GradScaler("cuda")
-            logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={amp_dtype_str}.")
+            logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={self.amp_dtype}.")
 
         num_params = sum(p.numel() for p in self.policy_net.parameters())
         logger.info(f"Policy Net with {millify(num_params, precision=1)} parameters created in Agent")
@@ -197,6 +200,22 @@ class D3QN_PER_Agent:
 
         logger.info("D3QN_PER_Agent initialized.")
 
+    def load_onnx_session(self, onnx_path: str):
+        """Loads ONNX runtime session for inference."""
+        if ort is None:
+            logger.error("onnxruntime not installed.")
+            return
+        try:
+            # General CPU optimizations for ONNX Runtime
+            sess_options = ort.SessionOptions()
+            sess_options.intra_op_num_threads = 1 # Avoid contention
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+            self.ort_session = ort.InferenceSession(onnx_path, sess_options, providers=['CPUExecutionProvider'])
+            logger.info(f"ONNX session loaded from {onnx_path}")
+        except Exception as e:
+            logger.error(f"Failed to load ONNX session: {e}")
+
     def export_to_onnx(self, file_path: str):
         """Exports the policy network to the ONNX format.
 
@@ -267,20 +286,7 @@ class D3QN_PER_Agent:
         Args:
             file_path (str): The path to the ONNX model file.
         """
-        if ort is None:
-            logger.error("Невозможно загрузить ONNX модель: onnxruntime не установлен.")
-            logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
-            return
-
-        if not os.path.exists(file_path):
-            logger.error(f"ONNX файл не найден: {file_path}. Пропуск загрузки ONNX (будет использоваться PyTorch).")
-            return
-
-        try:
-            self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
-            logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
-        except Exception as e:
-            logger.error(f"Ошибка при загрузке ONNX модели: {e}")
+        self.load_onnx_session(file_path)
 
     def select_action(
         self,
