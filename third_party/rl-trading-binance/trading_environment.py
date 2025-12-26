@@ -107,6 +107,16 @@ class TradingEnvironment(gym.Env):
             raise ValueError("`keys` must be a non-empty list of strings")
         if not stats:
             raise ValueError("`stats` dictionary cannot be empty. Normalization is required for training.")
+
+        # Defensive check for stats structure
+        if isinstance(stats, dict):
+            for asset, asset_stats in stats.items():
+                if not isinstance(asset_stats, dict) or "means" not in asset_stats or "stds" not in asset_stats:
+                    raise ValueError(
+                        f"Invalid stats structure for asset '{asset}'. "
+                        f"Expected a dictionary with 'means' and 'stds' keys, but got: {asset_stats}"
+                    )
+
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
@@ -298,13 +308,13 @@ class TradingEnvironment(gym.Env):
             raise ValueError("Normalization stats are not provided to the environment.")
         
         asset_stats = self.stats.get(self.current_asset_name)
-        if asset_stats is None or 'mean' not in asset_stats:
+        if asset_stats is None or 'means' not in asset_stats:
             # Ограничиваем лог, чтобы не спамить при инициализации векторов
             if self.step_idx <= 1:
                 logger.error(f"❌ CRITICAL: No stats for {self.current_asset_name}. Check key mapping in train.py!")
             # Fallback to neutral values to prevent KeyError
             num_features = self.num_features
-            asset_stats = {'mean': [0.0] * num_features, 'std': [1.0] * num_features}
+            asset_stats = {'means': [0.0] * num_features, 'stds': [1.0] * num_features}
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -396,8 +406,8 @@ class TradingEnvironment(gym.Env):
         # --- Denormalization Setup ---
         asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = asset_stats['means'][self.close_idx]
+        close_std = asset_stats['stds'][self.close_idx]
         real_price = norm_price * close_std + close_mean
         
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
@@ -647,8 +657,8 @@ class TradingEnvironment(gym.Env):
             
             # Denormalize for real PnL calculation
             asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['mean'][self.close_idx]
-            close_std = asset_stats['std'][self.close_idx]
+            close_mean = asset_stats['means'][self.close_idx]
+            close_std = asset_stats['stds'][self.close_idx]
             
             real_current_price = current_price * close_std + close_mean
             
@@ -674,8 +684,8 @@ class TradingEnvironment(gym.Env):
                 
                 # Денормализовать для корректного расчёта
                 asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
+                close_mean = asset_stats['means'][self.close_idx]
+                close_std = asset_stats['stds'][self.close_idx]
                 real_prices = recent_prices * close_std + close_mean
                 
                 # Вычислить процентное изменение

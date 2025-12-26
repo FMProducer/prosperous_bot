@@ -96,6 +96,10 @@ class D3QN_PER_Agent:
         }
 
         self.policy_net = DuelingQNetwork(**model_kwargs).to(self.device)
+        # Оптимизация для Ryzen: ограничение потоков на инференс одной модели
+        if self.device.type == 'cpu':
+            torch.set_num_threads(1)
+            torch.set_num_interop_threads(1)
         self.target_net = DuelingQNetwork(**model_kwargs).to(self.device)
         
         if perf_cfg.compile_mode:
@@ -274,6 +278,54 @@ class D3QN_PER_Agent:
             logger.error(f"❌ Ошибка при экспорте в ONNX: {e}")
             logger.error(f"  - Размер dummy_input: {dummy_input.shape}")
             logger.error(f"  - Расчетный размер: {total_input_size} (История: {history_flat_size}, Доп: {additional_feats})")
+            raise
+
+    def export_onnx(self, file_path: str):
+        """Exports the policy network to the ONNX format using JIT tracing.
+
+        This method creates a deployable representation of the agent's policy network,
+        which can be used for high-performance inference. The input tensor shape is
+        derived from the model's internal configuration.
+
+        Args:
+            file_path (str): The path to save the ONNX file.
+        """
+        if ort is None:
+            logger.error("Cannot export to ONNX: onnxruntime is not installed. Please run: pip install onnxruntime")
+            return
+
+        self.policy_net.eval()
+
+        # Correctly determine the input vector size for the model
+        model_input_shape = self.policy_net.input_shape
+        additional_feats = getattr(self.policy_net, "additional_feats", 0)
+        history_flat_size = model_input_shape[0] * model_input_shape[1]
+        total_input_size = history_flat_size + additional_feats
+
+        # Create a dummy input with the correct shape [batch_size, total_input_size]
+        dummy_input = torch.randn(1, total_input_size, device=self.device)
+        logger.info(f"Preparing to export to ONNX. Dummy input shape: {dummy_input.shape}")
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        try:
+            torch.onnx.export(
+                self.policy_net,
+                dummy_input,
+                file_path,
+                export_params=True,
+                opset_version=12,
+                do_constant_folding=True,
+                input_names=['input'],
+                output_names=['output'],
+                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+            )
+            logger.info(f"✅ Model successfully exported to ONNX: {file_path}")
+        except Exception as e:
+            logger.error(f"❌ Error during ONNX export: {e}")
+            logger.error(f"  - Dummy input shape: {dummy_input.shape}")
+            logger.error(f"  - Calculated size: {total_input_size} (History: {history_flat_size}, Additional: {additional_feats})")
             raise
 
     def load_onnx_model(self, file_path: str):

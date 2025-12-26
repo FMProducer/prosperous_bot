@@ -658,8 +658,8 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         if not asset_stats:
             continue
 
-        means = np.array(asset_stats['mean'])
-        stds = np.array(asset_stats['std'])
+        means = np.array(asset_stats['means'])
+        stds = np.array(asset_stats['stds'])
 
         seq_float = seq.astype(np.float32)
         if seq_float.shape[1] != len(means):

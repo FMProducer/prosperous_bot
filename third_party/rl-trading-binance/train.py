@@ -204,7 +204,7 @@ def compute_norm_stats(data_sources: List[tuple], cfg: MasterConfig) -> dict:
             if asset_data.ndim == 3 and asset_data.shape[0] > 0:  # (N, L, C)
                 means = np.mean(asset_data, axis=(0, 1))
                 stds = np.std(asset_data, axis=(0, 1)) + 1e-8
-                all_stats[asset] = {'mean': means.tolist(), 'std': stds.tolist()}
+                all_stats[asset] = {'means': means.tolist(), 'stds': stds.tolist()}
         except Exception as e:
             logging.warning(f"Failed to compute stats for {asset}: {e}")
 
@@ -928,7 +928,7 @@ def run_training_session(
     price_idx = list(range(0, 4))
     vol_idx = [4]
     # Динамический срез до конца доступных каналов
-    other_idx = list(range(5, len(cfg.data.datachannels)))
+    other_idx = list(range(5, cfg.num_channels))
 
     # Pass loaded sequences to the new stats function
     all_data_for_stats = [(train_keys, train_sequences)]
