@@ -204,7 +204,15 @@ def compute_norm_stats(data_sources: List[tuple], cfg: MasterConfig) -> dict:
             if asset_data.ndim == 3 and asset_data.shape[0] > 0:  # (N, L, C)
                 means = np.mean(asset_data, axis=(0, 1))
                 stds = np.std(asset_data, axis=(0, 1)) + 1e-8
-                all_stats[asset] = {'means': means.tolist(), 'stds': stds.tolist()}
+                # Предполагаем, что порядок каналов в asset_data соответствует cfg.data.use_channels
+                # или полному списку каналов.
+                # Если вы подаете на вход уже отфильтрованные данные:
+                channel_names = cfg.data.use_channels
+
+                all_stats[asset] = {
+                    'means': {ch: float(m) for ch, m in zip(channel_names, means)},
+                    'stds': {ch: float(s) for ch, s in zip(channel_names, stds)}
+                }
         except Exception as e:
             logging.warning(f"Failed to compute stats for {asset}: {e}")
 
