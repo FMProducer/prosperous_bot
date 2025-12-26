@@ -230,25 +230,38 @@ def calculate_normalization_stats(
 
 def apply_normalization_to_sequence(
     seq: npt.NDArray[np.float32],
-    stats: Dict[str, np.ndarray],
+    stats: Dict[str, Dict[str, float]],
+    use_channels: List[str]
 ) -> npt.NDArray[np.float32]:
     """
     Применяет z-score нормализацию к УЖЕ ПРЕОБРАЗОВАННОЙ последовательности.
-    Использует векторизацию NumPy для максимальной производительности.
+    Работает со статистиками в формате словаря каналов.
     Args:
         seq (npt.NDArray[np.float32]): Преобразованная последовательность, форма (L, C).
-        stats (Dict[str, np.ndarray]): Словарь со статистиками 'means' и 'stds'.
+        stats (Dict[str, Dict[str, float]]): Словарь статистик актива, e.g., {'means': {'open': v1}, 'stds': ...}.
+        use_channels (List[str]): Список каналов в том порядке, в котором они идут в `seq`.
     Returns:
         npt.NDArray[np.float32]: Нормализованная последовательность, форма (L, C).
     """
     if not isinstance(seq, np.ndarray) or seq.ndim != 2:
         raise ValueError(f"Ожидается 2D массив (L, C), получено: {seq.shape}")
 
-    means = stats["means"]
-    stds = stats["stds"]
+    if seq.shape[1] != len(use_channels):
+        raise ValueError(f"Несоответствие количества каналов: seq.shape[1]={seq.shape[1]}, len(use_channels)={len(use_channels)}")
+
+    # Преобразуем словарь статистик в NumPy-массивы, обеспечивая правильный порядок каналов
+    means_map = stats.get("means", {})
+    stds_map = stats.get("stds", {})
+
+    # Создаем массивы, используя значения из карты или 0.0/1.0 по умолчанию
+    means_vec = np.array([means_map.get(ch, 0.0) for ch in use_channels], dtype=np.float32)
+    stds_vec = np.array([stds_map.get(ch, 1.0) for ch in use_channels], dtype=np.float32)
+
+    # Защита от деления на ноль
+    stds_vec[stds_vec < 1e-8] = 1.0
 
     # Используем broadcasting NumPy: (L, C) - (C,) / (C,)
-    return ((seq - means) / (stds + 1e-8)).astype(np.float32)
+    return ((seq - means_vec) / stds_vec).astype(np.float32)
 
 
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
