@@ -512,6 +512,49 @@ def find_spike_windows(
             t += pd.Timedelta(minutes=1)
     return out
 
+def apply_normalization(
+    seq: np.ndarray,
+    stats: Dict[str, np.ndarray],
+    datachannels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str],
+    agent_history_len: int,
+    input_history_len: int,
+) -> np.ndarray:
+    """
+    Applies log transforms and z-score normalization.
+    This is a reconstructed legacy function based on its usage in other files
+    to resolve an UndefinedVariable error. The modern approach is to use
+    `transform_sequence` followed by `apply_normalization_to_sequence`.
+    """
+    out = seq.copy()
+    eps = 1e-9
+
+    price_indices = [datachannels.index(ch) for ch in pricechannels if ch in datachannels]
+    volume_indices = [datachannels.index(ch) for ch in volumechannels if ch in datachannels]
+
+    # Log transforms (logic from `transform_sequence`)
+    if price_indices:
+        prices = out[:, price_indices]
+        # This handles potential division by zero or log(0)
+        log_returns = np.log(np.maximum(prices[1:] / (prices[:-1] + eps), eps))
+        out[0, price_indices] = 0.0
+        out[1:, price_indices] = log_returns
+
+    if volume_indices:
+        volumes = out[:, volume_indices]
+        out[:, volume_indices] = np.log(volumes + 1.0)
+
+    transformed_seq = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+    # Z-score normalization (logic from `apply_normalization_to_sequence`)
+    means = stats["means"]
+    stds = stats["stds"]
+    normalized_seq = (transformed_seq - means) / (stds + 1e-8)
+
+    return normalized_seq.astype(np.float32)
+
 def preprocess_sequences(
     sequences: List[np.ndarray],
     stats: Dict[str, Dict[str, float]],

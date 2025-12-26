@@ -872,8 +872,8 @@ class TradingEnvironment(gym.Env):
         
         # Denormalize the price to get the real price
         asset_stats = self._get_asset_stats()
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = asset_stats['means'][self.close_idx]
+        close_std = asset_stats['stds'][self.close_idx]
         real_current_price = norm_current_price * close_std + close_mean
         
         # Calculate PnL based on position direction
@@ -948,8 +948,8 @@ class TradingEnvironment(gym.Env):
         # --- Denormalization Setup ---
         asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['mean'][self.close_idx]
-        close_std = asset_stats['std'][self.close_idx]
+        close_mean = asset_stats['means'][self.close_idx]
+        close_std = asset_stats['stds'][self.close_idx]
         real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
 
         position_closed = False
@@ -1185,8 +1185,8 @@ class TradingEnvironment(gym.Env):
                 m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
                 norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
                 asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['mean'][self.close_idx]
-                close_std = asset_stats['std'][self.close_idx]
+                close_mean = asset_stats['means'][self.close_idx]
+                close_std = asset_stats['stds'][self.close_idx]
                 real_m2m_price = norm_m2m_price * close_std + close_mean
                 if self.position == 1: # LONG
                     mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
