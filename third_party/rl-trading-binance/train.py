@@ -54,7 +54,6 @@ from utils import (
     load_config,
     load_npz_dataset,
     create_walk_forward_folds,
-    calculate_normalization_stats,
     apply_normalization_to_sequence,
     transform_sequence,
 ) # noqa: F401
@@ -933,39 +932,19 @@ def run_training_session(
 
     logging.info("Calculating normalization stats per-asset for this fold...")
 
-    # 1. Очистка ключей для маппинга в Env
-    clean_keys = [k[0] if isinstance(k, (tuple, list)) else k.split('_')[0] for k in train_keys]
-
     # Объединяем все данные для расчета общих статистик
-    all_sequences_for_stats = train_sequences + (val_sequences if val_sequences else [])
+    train_raw = list(zip(train_keys, train_sequences))
+    val_raw = list(zip(val_keys, val_sequences)) if val_sequences else []
 
-    # 1. Расчет статистик
-    norm_stats = calculate_normalization_stats(all_sequences_for_stats, cfg)
-    logging.info("Глобальные статистики нормализации рассчитаны.")
-
-    # Prepare stats for Environment (handle global vs per-asset)
-    env_stats = norm_stats
-    if "means" in norm_stats and isinstance(norm_stats["means"], (np.ndarray, list)):
-        # Global stats detected. Broadcast to all assets.
-        unique_assets = set()
-        all_keys_for_stats = train_keys + (val_keys if val_keys else [])
-        for k in all_keys_for_stats:
-            if isinstance(k, (tuple, list)):
-                asset = k[0]
-            elif isinstance(k, str):
-                asset = k.split('_')[0]
-            else:
-                asset = str(k)
-            unique_assets.add(asset)
-        env_stats = {asset: norm_stats for asset in unique_assets}
-        logging.info(f"Broadcasting global stats to {len(env_stats)} assets for Environment.")
+    # 1. Расчет статистик по каждому активу
+    # ВАЖНО: Статистики считаются ТОЛЬКО на тренировочных данных фолда.
+    norm_stats = compute_norm_stats([train_raw], cfg)
+    logging.info("Статистики нормализации по каждому активу рассчитаны (только на train-данных).")
 
     # 2. Сохранение статистик
     stats_path = Path(models_dir) / "norm_stats.json"
     with open(stats_path, "w") as f:
-        # Конвертируем numpy в списки для JSON-сериализации
-        json_stats = {k: v.tolist() for k, v in norm_stats.items()}
-        json.dump(json_stats, f, indent=2)
+        json.dump(norm_stats, f, indent=2, default=_numpy_json_default)
     logging.info(f"📂 Статистики сохранены в {stats_path}")
 
     # 3. Трансформация и Нормализация данных
@@ -973,17 +952,31 @@ def run_training_session(
         logging.error("Нет данных для обучения.")
         return {}
 
-    train_seqs_normalized = [
-        apply_normalization_to_sequence(transform_sequence(seq, cfg), norm_stats)
-        for seq in tqdm(train_sequences, desc="Нормализация (Train)")
-    ]
+    # Функция-помощник для нормализации
+    def normalize_set(keys, sequences, desc):
+        normalized_seqs = []
+        for key, seq in tqdm(zip(keys, sequences), desc=desc, total=len(keys)):
+            # Определяем имя актива из ключа
+            asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
+            if isinstance(asset_name, bytes):
+                asset_name = asset_name.decode('utf-8')
 
-    val_seqs_normalized = []
-    if val_sequences:
-        val_seqs_normalized = [
-            apply_normalization_to_sequence(transform_sequence(seq, cfg), norm_stats)
-            for seq in tqdm(val_sequences, desc="Нормализация (Val)")
-        ]
+            # Получаем статистику для этого актива
+            asset_stats = norm_stats.get(asset_name)
+
+            if asset_stats:
+                # Трансформируем и нормализуем
+                transformed_seq = transform_sequence(seq, cfg)
+                normalized_seq = apply_normalization_to_sequence(transformed_seq, asset_stats, cfg.data.use_channels)
+                normalized_seqs.append(normalized_seq)
+            else:
+                logging.warning(f"Статистики для {asset_name} не найдены, последовательность пропущена.")
+                # Можно добавить запасной вариант, например, использовать глобальные средние или просто нули
+                # пока что пропускаем
+        return normalized_seqs
+
+    train_seqs_normalized = normalize_set(train_keys, train_sequences, "Нормализация (Train)")
+    val_seqs_normalized = normalize_set(val_keys, val_sequences, "Нормализация (Val)") if val_sequences else []
 
     # Reshape
     train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
@@ -1037,7 +1030,6 @@ def run_training_session(
     env_kwargs = {
         "sequences": train_seqs_reshaped, "raw_sequences": train_raw_reshaped, "keys": train_keys,
         "stats": norm_stats, "render_mode": cfg.render_mode,
-        "stats": env_stats, "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len, "num_features": num_features,
         "num_actions": num_actions, "flat_state_size": flat_state_size,
         "initial_balance": cfg.market.initial_balance,
