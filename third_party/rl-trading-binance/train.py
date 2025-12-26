@@ -213,6 +213,10 @@ def compute_norm_stats(data_sources: List[tuple], cfg: MasterConfig) -> dict:
 
 def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
+    # Senior architectural change: CPU affinity for Zen kernels
+    if platform.processor() == 'AMD64' or 'Ryzen' in platform.processor():
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
     return TradingEnvironment(**env_kwargs)
 
 def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int, fold_id: Optional[int] = None):
@@ -923,65 +927,39 @@ def run_training_session(
     # 1. Очистка ключей для маппинга в Env
     clean_keys = [k[0] if isinstance(k, (tuple, list)) else k.split('_')[0] for k in train_keys]
 
-    # 2. Определение индексов каналов для 10-канального набора (Binance)
-    # OHLC = [0,1,2,3], Volume/Taker = [4,5,7,8], Trades/Other = [6,9]
-    price_idx = list(range(0, 4))
-    vol_idx = [4]
-    # Динамический срез до конца доступных каналов
-    other_idx = list(range(5, cfg.num_channels))
-
-    # Pass loaded sequences to the new stats function
-    all_data_for_stats = [(train_keys, train_sequences)]
+    # Объединяем все данные для расчета общих статистик
+    all_sequences_for_stats = train_sequences
     if val_sequences:
-        all_data_for_stats.append((val_keys, val_sequences))
+        all_sequences_for_stats.extend(val_sequences)
 
-    norm_stats = compute_norm_stats(all_data_for_stats, cfg)
-    logging.info("Normalization statistics computed for all assets.")
+    # 1. Расчет статистик
+    norm_stats = calculate_normalization_stats(all_sequences_for_stats, cfg)
+    logging.info("Глобальные статистики нормализации рассчитаны.")
 
-
-    # FIX: Сохраняем артефакты ДО начала обучения
+    # 2. Сохранение статистик
     stats_path = Path(models_dir) / "norm_stats.json"
     with open(stats_path, "w") as f:
-        json.dump(norm_stats, f, indent=2, default=_numpy_json_default)
-    logging.info(f"📂 Saved norm_stats to {stats_path}")
+        # Конвертируем numpy в списки для JSON-сериализации
+        json_stats = {k: v.tolist() for k, v in norm_stats.items()}
+        json.dump(json_stats, f, indent=2)
+    logging.info(f"📂 Статистики сохранены в {stats_path}")
 
+    # 3. Трансформация и Нормализация данных
     if not train_sequences:
-        logging.error("Cannot start training session with no training data.")
+        logging.error("Нет данных для обучения.")
         return {}
 
-    # --- NORMALIZE DATA ---
-    logging.info("Applying per-asset normalization to train sequences...")
-    train_seqs_normalized = []
-    for key, seq in tqdm(zip(train_keys, train_sequences), total=len(train_keys), desc="Normalizing Train"):
-        asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
-        if isinstance(asset_name, bytes):
-            asset_name = asset_name.decode('utf-8')
+    train_seqs_normalized = [
+        apply_normalization_to_sequence(transform_sequence(seq, cfg), norm_stats)
+        for seq in tqdm(train_sequences, desc="Нормализация (Train)")
+    ]
 
-        asset_stats = norm_stats.get(asset_name)
-        if asset_stats:
-            normalized_seq = apply_normalization_to_sequence(seq, asset_stats, cfg)
-            train_seqs_normalized.append(normalized_seq)
-        else:
-            logging.warning(f"Using raw sequence for asset '{asset_name}' due to missing stats.")
-            train_seqs_normalized.append(seq)
-
-
-    logging.info("Applying per-asset normalization to validation sequences...")
     val_seqs_normalized = []
     if val_sequences:
-        for key, seq in tqdm(zip(val_keys, val_sequences), total=len(val_keys), desc="Normalizing Val"):
-            asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
-            if isinstance(asset_name, bytes):
-                asset_name = asset_name.decode('utf-8')
-
-            # Use training stats for validation data
-            asset_stats = norm_stats.get(asset_name)
-            if asset_stats:
-                normalized_seq = apply_normalization_to_sequence(seq, asset_stats, cfg)
-                val_seqs_normalized.append(normalized_seq)
-            else:
-                logging.warning(f"Using raw sequence for validation asset '{asset_name}' due to missing stats.")
-                val_seqs_normalized.append(seq)
+        val_seqs_normalized = [
+            apply_normalization_to_sequence(transform_sequence(seq, cfg), norm_stats)
+            for seq in tqdm(val_sequences, desc="Нормализация (Val)")
+        ]
 
     # Reshape
     train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
@@ -1226,7 +1204,8 @@ if __name__ == "__main__":
             all_sequences,
             cfg.walk_forward.train_months,
             cfg.walk_forward.test_months,
-            cfg.walk_forward.step_months
+            cfg.walk_forward.step_months,
+            purge_size_bars=cfg.seq.full_seq_len
         )
         logging.info(f"Created {len(folds)} WFV folds.")
 

@@ -328,8 +328,26 @@ class LoggingConfig(BaseModel):
     per_trial_logs: bool = False
 
 
-class DbConfig(BaseModel):
-    dsn: str = "postgresql://postgres:9691@localhost:5432/marketdata?sslmode=disable"
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class BinanceConfig(BaseSettings):
+    """
+    Хранит секретные ключи Binance API.
+    Загружает переменные из .env файла (например, BINANCE_API_KEY=...).
+    """
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+
+    api_key: Optional[str] = Field(None, env="BINANCE_API_KEY")
+    api_secret: Optional[str] = Field(None, env="BINANCE_API_SECRET")
+
+class DbConfig(BaseSettings):
+    """
+    Конфигурация подключения к базе данных.
+    Загружает DSN из переменной окружения DB_DSN.
+    """
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+
+    dsn: str = Field("postgresql://postgres:9691@localhost:5432/marketdata?sslmode=disable", env="DB_DSN")
 
 
 class PerformanceConfig(BaseModel):
@@ -380,6 +398,7 @@ class MasterConfig(BaseModel):
     detector: DetectorConfig = DetectorConfig()
     perf: PerformanceConfig = PerformanceConfig()
     db: DbConfig = DbConfig()
+    binance: BinanceConfig = BinanceConfig()
 
     class Config:
         extra = "allow"

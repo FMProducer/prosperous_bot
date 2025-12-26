@@ -7,8 +7,6 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from utils import apply_normalization
-
 logger = logging.getLogger(__name__)
 
 
