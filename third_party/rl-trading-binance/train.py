@@ -606,15 +606,21 @@ def evaluate_agent(
         signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
         ticker_name = "UNKNOWN"
         if keys and i < len(keys):
-            try:
-                key_parts = keys[i].split('_')
-                ticker_name = key_parts[0]
-                # Ожидаемый формат ключа: TICKER_STARTISO_ENDISO
-                if len(key_parts) > 1:
-                    start_dt_str = key_parts[1]
-                    signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
-            except (IndexError, AttributeError, ValueError):
-                logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
+            key = keys[i]
+            if isinstance(key, (tuple, list)) and len(key) == 2:
+                ticker_name, signal_dt_for_step = key
+            elif isinstance(key, str):
+                # Оставляем старую логику как fallback для других форматов
+                try:
+                    key_parts = key.split('_')
+                    ticker_name = key_parts[0]
+                    if len(key_parts) > 1:
+                        start_dt_str = key_parts[1]
+                        signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
+                except (IndexError, AttributeError, ValueError):
+                    logging.warning(f"Could not parse string-based key: {key}")
+            else:
+                logging.warning(f"Could not parse unrecognized key format: {key}")
         
         while not done:
             action = agent.select_action(obs, training=False)
