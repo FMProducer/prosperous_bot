@@ -709,8 +709,10 @@ class TradingEnvironment(gym.Env):
                     real_prices = recent_prices * close_std + close_mean
                 
                 # Вычислить процентное изменение
-                price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
-                
+                price_change_pct = 0.0
+                if real_prices[0] > 1e-9: # Защита от деления на ноль
+                    price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
+
                 # Если изменение < 0.5% за 5 минут → флэт
                 if price_change_pct < 0.005:  # < 0.5%
                     shaped_reward += 0.002  # Бонус за HOLD
