@@ -156,67 +156,42 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(data_sources: List[tuple], cfg: MasterConfig) -> dict:
-    """
-    Вычисляет mean/std для каждого актива (тикера) из предоставленных данных.
-    Берет случайную выборку `num_samples_per_asset` для каждого тикера для ускорения.
-    Эта реализация оптимизирована по памяти: она сначала собирает индексы,
-    сэмплирует их, и только потом извлекает данные.
-    """
-    num_samples_per_asset = cfg.data.norm_num_samples_per_asset
-    seed = cfg.data.norm_seed
-    np.random.seed(seed)
+def compute_norm_stats(data_sources, cfg):
+    all_assets_stats = {}
+    channel_names = cfg.data.use_channels
 
-    all_stats = {}
-    combined_indices = defaultdict(list)
+    # Собираем данные для вычисления глобальных статов (если нужно)
+    all_data_list = []
+    for keys, seqs in data_sources:
+        for s in seqs:
+            all_data_list.append(s)
 
-    # Шаг 1: Сбор индексов (source_idx, seq_idx) вместо полных данных
-    for source_idx, (keys, seqs) in enumerate(data_sources):
-        for seq_idx, k in enumerate(keys):
-            asset_name = k[0] if isinstance(k, (tuple, list)) else k.split('_')[0]
-            if isinstance(asset_name, bytes):
-                asset_name = asset_name.decode('utf-8')
-            combined_indices[asset_name].append((source_idx, seq_idx))
+    combined_data = np.concatenate(all_data_list, axis=0) # [Total_Steps, Channels]
+    means = np.mean(combined_data, axis=0)
+    stds = np.std(combined_data, axis=0) + 1e-8
 
-    logging.info(f"Computing stats for {len(combined_indices)} assets...")
+    # Формируем структуру: { "BTCUSDT": { "means": {...}, "stds": {...} }, ... }
+    # Это то, что ожидает ваш utils.apply_normalization_to_sequence
+    global_dict = {
+        "means": {ch: float(m) for ch, m in zip(channel_names, means)},
+        "stds": {ch: float(s) for ch, s in zip(channel_names, stds)}
+    }
 
-    # Шаг 2: Сэмплирование индексов и расчет статистик
-    for asset, indices_list in tqdm(combined_indices.items(), desc="Computing stats"):
-        try:
-            if len(indices_list) > num_samples_per_asset:
-                sample_indices_locs = np.random.choice(len(indices_list), num_samples_per_asset, replace=False)
-                actual_indices = [indices_list[i] for i in sample_indices_locs]
-            else:
-                actual_indices = indices_list
+    # Получаем список всех уникальных тикеров из ключей
+    all_keys = []
+    for keys, _ in data_sources:
+        all_keys.extend(keys)
 
-            # Шаг 3: Извлечение данных по сэмплированным индексам
-            sample_arrays = []
-            for source_idx, seq_idx in actual_indices:
-                # data_sources[source_idx] -> (keys, seqs)
-                # data_sources[source_idx][1] -> seqs
-                # data_sources[source_idx][1][seq_idx] -> a single sequence array
-                sample_arrays.append(data_sources[source_idx][1][seq_idx])
+    unique_tickers = set()
+    for k in all_keys:
+        ticker = k[0] if isinstance(k, (list, tuple)) else str(k).split('_')[0]
+        unique_tickers.add(ticker)
 
-            if not sample_arrays:
-                continue
+    # Мапим глобальные статы на каждый тикер (Broadcasting)
+    for ticker in unique_tickers:
+        all_assets_stats[ticker] = global_dict
 
-            asset_data = np.stack(sample_arrays, axis=0)
-            if asset_data.ndim == 3 and asset_data.shape[0] > 0:  # (N, L, C)
-                means = np.mean(asset_data, axis=(0, 1))
-                stds = np.std(asset_data, axis=(0, 1)) + 1e-8
-                # Предполагаем, что порядок каналов в asset_data соответствует cfg.data.use_channels
-                # или полному списку каналов.
-                # Если вы подаете на вход уже отфильтрованные данные:
-                channel_names = cfg.data.use_channels
-
-                all_stats[asset] = {
-                    'means': {ch: float(m) for ch, m in zip(channel_names, means)},
-                    'stds': {ch: float(s) for ch, s in zip(channel_names, stds)}
-                }
-        except Exception as e:
-            logging.warning(f"Failed to compute stats for {asset}: {e}")
-
-    return all_stats
+    return all_assets_stats
 
 
 def make_env(env_kwargs: dict):
@@ -932,13 +907,9 @@ def run_training_session(
 
     logging.info("Calculating normalization stats per-asset for this fold...")
 
-    # Объединяем все данные для расчета общих статистик
-    train_raw = list(zip(train_keys, train_sequences))
-    val_raw = list(zip(val_keys, val_sequences)) if val_sequences else []
-
     # 1. Расчет статистик по каждому активу
     # ВАЖНО: Статистики считаются ТОЛЬКО на тренировочных данных фолда.
-    norm_stats = compute_norm_stats([train_raw], cfg)
+    norm_stats = compute_norm_stats([(train_keys, train_sequences)], cfg)
     logging.info("Статистики нормализации по каждому активу рассчитаны (только на train-данных).")
 
     # 2. Сохранение статистик
