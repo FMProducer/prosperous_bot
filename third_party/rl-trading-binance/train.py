@@ -156,7 +156,7 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(data_sources: List[Tuple[List, List]], cfg: MasterConfig) -> Dict[str, Dict[str, List[float]]]:
+def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig) -> Dict[str, Dict[str, List[float]]]:
     """
     Вычисляет среднее и стд. отклонение для каждого канала на основе всех переданных последовательностей.
     Результат возвращается в виде словаря, где ключи — тикеры, а значения — списки стат. параметров.
