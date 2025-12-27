@@ -156,40 +156,39 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(data_sources, cfg):
+def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig) -> Dict:
     all_assets_stats = {}
-    channel_names = cfg.data.use_channels
+    channel_names = cfg.data.datachannels  # Исправленный атрибут
 
-    # Собираем данные для вычисления глобальных статов (если нужно)
-    all_data_list = []
+    # 1. Собираем все последовательности для расчета глобальных/средних статов
+    all_sequences = []
+    unique_tickers = set()
+
     for keys, seqs in data_sources:
-        for s in seqs:
-            all_data_list.append(s)
+        all_sequences.extend(seqs)
+        for k in keys:
+            # Извлекаем имя тикера из ключа (например, ('BTCUSDT', timestamp))
+            ticker = k[0] if isinstance(k, (list, tuple)) else str(k).split('_')[0]
+            unique_tickers.add(ticker)
 
-    combined_data = np.concatenate(all_data_list, axis=0) # [Total_Steps, Channels]
+    if not all_sequences:
+        logging.warning("No sequences found for normalization stats!")
+        return {}
+
+    # 2. Векторизованный расчет (математическая корректность)
+    combined_data = np.concatenate(all_sequences, axis=0) # [Total_Steps, Channels]
     means = np.mean(combined_data, axis=0)
     stds = np.std(combined_data, axis=0) + 1e-8
 
-    # Формируем структуру: { "BTCUSDT": { "means": {...}, "stds": {...} }, ... }
-    # Это то, что ожидает ваш utils.apply_normalization_to_sequence
-    global_dict = {
+    # 3. Формируем структуру словаря каналов
+    stats_payload = {
         "means": {ch: float(m) for ch, m in zip(channel_names, means)},
         "stds": {ch: float(s) for ch, s in zip(channel_names, stds)}
     }
 
-    # Получаем список всех уникальных тикеров из ключей
-    all_keys = []
-    for keys, _ in data_sources:
-        all_keys.extend(keys)
-
-    unique_tickers = set()
-    for k in all_keys:
-        ticker = k[0] if isinstance(k, (list, tuple)) else str(k).split('_')[0]
-        unique_tickers.add(ticker)
-
-    # Мапим глобальные статы на каждый тикер (Broadcasting)
+    # 4. Broadcasting на все тикеры (чтобы utils.py нашел их по ключу)
     for ticker in unique_tickers:
-        all_assets_stats[ticker] = global_dict
+        all_assets_stats[ticker] = stats_payload
 
     return all_assets_stats
 
@@ -938,7 +937,7 @@ def run_training_session(
             if asset_stats:
                 # Трансформируем и нормализуем
                 transformed_seq = transform_sequence(seq, cfg)
-                normalized_seq = apply_normalization_to_sequence(transformed_seq, asset_stats, cfg.data.use_channels)
+                normalized_seq = apply_normalization_to_sequence(transformed_seq, asset_stats, cfg.data.datachannels)
                 normalized_seqs.append(normalized_seq)
             else:
                 logging.warning(f"Статистики для {asset_name} не найдены, последовательность пропущена.")
