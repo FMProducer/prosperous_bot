@@ -249,13 +249,19 @@ def apply_normalization_to_sequence(
     if seq.shape[1] != len(use_channels):
         raise ValueError(f"Несоответствие количества каналов: seq.shape[1]={seq.shape[1]}, len(use_channels)={len(use_channels)}")
 
-    # Преобразуем словарь статистик в NumPy-массивы, обеспечивая правильный порядок каналов
-    means_map = stats.get("means", {})
-    stds_map = stats.get("stds", {})
+    # Извлекаем данные (теперь это списки, а не словари)
+    means = stats.get('means', [])
+    stds = stats.get('stds', [])
 
-    # Создаем массивы, используя значения из карты или 0.0/1.0 по умолчанию
-    means_vec = np.array([means_map.get(ch, 0.0) for ch in use_channels], dtype=np.float32)
-    stds_vec = np.array([stds_map.get(ch, 1.0) for ch in use_channels], dtype=np.float32)
+    if len(means) != len(use_channels) or len(stds) != len(use_channels):
+        raise ValueError(
+            f"Normalization stats mismatch! "
+            f"Means length: {len(means)}, Stds length: {len(stds)}, "
+            f"Expected channels: {len(use_channels)}."
+        )
+
+    means_vec = np.array(means, dtype=np.float32)
+    stds_vec = np.array(stds, dtype=np.float32)
 
     # Защита от деления на ноль
     stds_vec[stds_vec < 1e-8] = 1.0
