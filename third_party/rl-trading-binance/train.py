@@ -161,37 +161,40 @@ def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig)
     Вычисляет среднее и стд. отклонение для каждого канала на основе всех переданных последовательностей.
     Результат возвращается в виде словаря, где ключи — тикеры, а значения — списки стат. параметров.
     """
-    all_assets_stats = {}
-    channel_names = cfg.data.datachannels
-
-    all_sequences = []
-    unique_tickers = set()
-
+    sequences_by_asset = defaultdict(list)
     for keys, seqs in data_sources:
-        all_sequences.extend(seqs)
-        for k in keys:
-            ticker = k[0] if isinstance(k, (list, tuple)) else str(k).split('_')[0]
-            unique_tickers.add(ticker)
+        for key, seq in zip(keys, seqs):
+            asset_name = key[0] if isinstance(key, (tuple, list)) else key.split('_')[0]
+            if isinstance(asset_name, bytes):
+                asset_name = asset_name.decode('utf-8')
+            sequences_by_asset[asset_name].append(seq)
 
-    if not all_sequences:
-        logging.warning("No sequences found for normalization stats!")
-        return {}
+    norm_stats = {}
+    for asset, seqs in sequences_by_asset.items():
+        if not seqs:
+            continue
 
-    # Векторизованный расчет (L, C)
-    combined_data = np.concatenate(all_sequences, axis=0)
-    means = np.mean(combined_data, axis=0).astype(float).tolist()
-    stds = (np.std(combined_data, axis=0) + 1e-8).astype(float).tolist()
+        # Считаем только для этого актива
+        try:
+            arr = np.concatenate(seqs, axis=0)
+            if arr.size == 0:
+                logging.warning(f"Skipping asset {asset} due to empty concatenated array.")
+                continue
 
-    # Формируем структуру, совместимую с доступом по индексу в Env
-    stats_payload = {
-        "means": means,
-        "stds": stds
-    }
+            # Важно! axis=0, так как форма эпизодов (L, C)
+            means = arr.mean(axis=0).tolist()
+            stds = (arr.std(axis=0) + 1e-8).tolist() # Добавляем эпсилон для стабильности
 
-    for ticker in unique_tickers:
-        all_assets_stats[ticker] = stats_payload
+            norm_stats[asset] = {
+                "means": means,
+                "stds": stds
+            }
+        except ValueError as e:
+            logging.error(f"Error processing asset {asset}: {e}. Skipping.")
+            # Это может произойти, если формы массивов не совпадают
+            continue
 
-    return all_assets_stats
+    return norm_stats
 
 
 def make_env(env_kwargs: dict):
@@ -948,6 +951,12 @@ def run_training_session(
 
     train_seqs_normalized = normalize_set(train_keys, train_sequences, "Нормализация (Train)")
     val_seqs_normalized = normalize_set(val_keys, val_sequences, "Нормализация (Val)") if val_sequences else []
+
+    # Sanity Check: проверяем среднее и стандартное отклонение после нормализации на одном примере
+    if train_seqs_normalized:
+        sample_mean = np.mean(train_seqs_normalized[0])
+        sample_std = np.std(train_seqs_normalized[0])
+        logging.info(f"Sanity Check - Mean: {sample_mean:.4f}, Std: {sample_std:.4f}")
 
     # Reshape
     train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
