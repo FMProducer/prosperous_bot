@@ -156,18 +156,20 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig) -> Dict:
+def compute_norm_stats(data_sources: List[Tuple[List, List]], cfg: MasterConfig) -> Dict[str, Dict[str, List[float]]]:
+    """
+    Вычисляет среднее и стд. отклонение для каждого канала на основе всех переданных последовательностей.
+    Результат возвращается в виде словаря, где ключи — тикеры, а значения — списки стат. параметров.
+    """
     all_assets_stats = {}
-    channel_names = cfg.data.datachannels  # Исправленный атрибут
+    channel_names = cfg.data.datachannels
 
-    # 1. Собираем все последовательности для расчета глобальных/средних статов
     all_sequences = []
     unique_tickers = set()
 
     for keys, seqs in data_sources:
         all_sequences.extend(seqs)
         for k in keys:
-            # Извлекаем имя тикера из ключа (например, ('BTCUSDT', timestamp))
             ticker = k[0] if isinstance(k, (list, tuple)) else str(k).split('_')[0]
             unique_tickers.add(ticker)
 
@@ -175,18 +177,17 @@ def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig)
         logging.warning("No sequences found for normalization stats!")
         return {}
 
-    # 2. Векторизованный расчет (математическая корректность)
-    combined_data = np.concatenate(all_sequences, axis=0) # [Total_Steps, Channels]
-    means = np.mean(combined_data, axis=0)
-    stds = np.std(combined_data, axis=0) + 1e-8
+    # Векторизованный расчет (L, C)
+    combined_data = np.concatenate(all_sequences, axis=0)
+    means = np.mean(combined_data, axis=0).astype(float).tolist()
+    stds = (np.std(combined_data, axis=0) + 1e-8).astype(float).tolist()
 
-    # 3. Формируем структуру словаря каналов
+    # Формируем структуру, совместимую с доступом по индексу в Env
     stats_payload = {
-        "means": {ch: float(m) for ch, m in zip(channel_names, means)},
-        "stds": {ch: float(s) for ch, s in zip(channel_names, stds)}
+        "means": means,
+        "stds": stds
     }
 
-    # 4. Broadcasting на все тикеры (чтобы utils.py нашел их по ключу)
     for ticker in unique_tickers:
         all_assets_stats[ticker] = stats_payload
 
