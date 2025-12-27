@@ -962,10 +962,6 @@ def run_training_session(
     train_seqs_reshaped = [np.expand_dims(s.T, -1) for s in train_seqs_normalized]
     val_seqs_reshaped = [np.expand_dims(s.T, -1) for s in val_seqs_normalized]
 
-    # Prepare RAW sequences for PnL calculation
-    train_raw_reshaped = [np.expand_dims(s.T, -1) for s in train_sequences]
-    val_raw_reshaped = [np.expand_dims(s.T, -1) for s in val_sequences] if val_sequences else []
-
     # --- ENVIRONMENT SETUP ---
     if not train_seqs_reshaped:
         logging.error("Training sequences are empty after normalization. Cannot proceed.")
@@ -1008,7 +1004,7 @@ def run_training_session(
     flat_state_size = input_history_len * num_features + 4 + (num_actions * action_history_len)
 
     env_kwargs = {
-        "sequences": train_seqs_reshaped, "raw_sequences": train_raw_reshaped, "keys": train_keys,
+        "sequences": train_seqs_reshaped, "raw_sequences": train_sequences, "keys": train_keys,
         "stats": norm_stats, "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len, "num_features": num_features,
         "num_actions": num_actions, "flat_state_size": flat_state_size,
@@ -1062,7 +1058,7 @@ def run_training_session(
     if val_seqs_reshaped:
         val_kwargs = dict(env_kwargs)
         val_kwargs.update({
-            "sequences": val_seqs_reshaped, "raw_sequences": val_raw_reshaped, "keys": val_keys,
+            "sequences": val_seqs_reshaped, "raw_sequences": val_sequences, "keys": val_keys,
             "backtest_mode": True,
             "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         })

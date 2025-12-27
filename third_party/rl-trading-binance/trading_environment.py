@@ -31,6 +31,7 @@ class TradingEnvironment(gym.Env):
     def __init__(
         self,
         sequences: List[np.ndarray],
+        raw_sequences: Optional[List[np.ndarray]],
         stats: Dict[str, Dict[str, float]],
         keys: List[str],
         render_mode: Optional[str],
@@ -118,7 +119,11 @@ class TradingEnvironment(gym.Env):
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
+        if raw_sequences and len(raw_sequences) != len(sequences):
+            raise ValueError("Length of `raw_sequences` and `sequences` must be the same")
+
         self.sequences = sequences
+        self.raw_sequences = raw_sequences
         self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
@@ -266,6 +271,7 @@ class TradingEnvironment(gym.Env):
         self._init_episode_vars()
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
+        self.current_seq_idx: int = -1
         self.current_asset_name: Optional[str] = None
         self.step_idx: int = 0
         self.balance: float = self.initial_balance
@@ -343,6 +349,7 @@ class TradingEnvironment(gym.Env):
         self._obs_buffer.fill(0.0)
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
+        self.current_seq_idx = idx
         self.current_seq = self.sequences[idx]
         # Универсальный извлекатель тикера
         key = self.keys[idx]
@@ -402,11 +409,15 @@ class TradingEnvironment(gym.Env):
             price_idx = len(self.current_seq) - 1
         
         # --- Denormalization Setup ---
-        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['means'][self.close_idx]
-        close_std = asset_stats['stds'][self.close_idx]
-        real_price = norm_price * close_std + close_mean
+        if self.raw_sequences:
+            real_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
+        else:
+            # Fallback to denormalization if raw_sequences are not provided
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['means'][self.close_idx]
+            close_std = asset_stats['stds'][self.close_idx]
+            real_price = norm_price * close_std + close_mean
         
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
@@ -572,7 +583,13 @@ class TradingEnvironment(gym.Env):
         if self.position != 0:
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
             norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
-            real_m2m_price = norm_m2m_price * close_std + close_mean
+            if self.raw_sequences:
+                real_m2m_price = self.raw_sequences[self.current_seq_idx][m2m_price_idx, self.close_idx]
+            else:
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['means'][self.close_idx]
+                close_std = asset_stats['stds'][self.close_idx]
+                real_m2m_price = norm_m2m_price * close_std + close_mean
             if self.position == 1: # LONG
                 mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
             elif self.position == -1: # SHORT
@@ -654,11 +671,13 @@ class TradingEnvironment(gym.Env):
             current_price = self.current_seq[price_idx, self.close_idx]
             
             # Denormalize for real PnL calculation
-            asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['means'][self.close_idx]
-            close_std = asset_stats['stds'][self.close_idx]
-            
-            real_current_price = current_price * close_std + close_mean
+            if self.raw_sequences:
+                real_current_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
+            else:
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['means'][self.close_idx]
+                close_std = asset_stats['stds'][self.close_idx]
+                real_current_price = current_price * close_std + close_mean
             
             if self.position == 1: # LONG
                 unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
@@ -681,10 +700,13 @@ class TradingEnvironment(gym.Env):
                 recent_prices = self.current_seq[start_idx:end_idx, self.close_idx]
                 
                 # Денормализовать для корректного расчёта
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['means'][self.close_idx]
-                close_std = asset_stats['stds'][self.close_idx]
-                real_prices = recent_prices * close_std + close_mean
+                if self.raw_sequences:
+                    real_prices = self.raw_sequences[self.current_seq_idx][start_idx:end_idx, self.close_idx]
+                else:
+                    asset_stats = self._get_asset_stats()
+                    close_mean = asset_stats['means'][self.close_idx]
+                    close_std = asset_stats['stds'][self.close_idx]
+                    real_prices = recent_prices * close_std + close_mean
                 
                 # Вычислить процентное изменение
                 price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
@@ -871,10 +893,13 @@ class TradingEnvironment(gym.Env):
         norm_current_price = self.current_seq[price_idx, self.close_idx]
         
         # Denormalize the price to get the real price
-        asset_stats = self._get_asset_stats()
-        close_mean = asset_stats['means'][self.close_idx]
-        close_std = asset_stats['stds'][self.close_idx]
-        real_current_price = norm_current_price * close_std + close_mean
+        if self.raw_sequences:
+            real_current_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
+        else:
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['means'][self.close_idx]
+            close_std = asset_stats['stds'][self.close_idx]
+            real_current_price = norm_current_price * close_std + close_mean
         
         # Calculate PnL based on position direction
         if self.position == 1:  # LONG
@@ -946,11 +971,14 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
 
         # --- Denormalization Setup ---
-        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        close_mean = asset_stats['means'][self.close_idx]
-        close_std = asset_stats['stds'][self.close_idx]
-        real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
+        if self.raw_sequences:
+            real_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
+        else:
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['means'][self.close_idx]
+            close_std = asset_stats['stds'][self.close_idx]
+            real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
 
         position_closed = False
         pnl_change = 0.0
@@ -1184,10 +1212,13 @@ class TradingEnvironment(gym.Env):
             if self.position != 0:
                 m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
                 norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['means'][self.close_idx]
-                close_std = asset_stats['stds'][self.close_idx]
-                real_m2m_price = norm_m2m_price * close_std + close_mean
+                if self.raw_sequences:
+                    real_m2m_price = self.raw_sequences[self.current_seq_idx][m2m_price_idx, self.close_idx]
+                else:
+                    asset_stats = self._get_asset_stats()
+                    close_mean = asset_stats['means'][self.close_idx]
+                    close_std = asset_stats['stds'][self.close_idx]
+                    real_m2m_price = norm_m2m_price * close_std + close_mean
                 if self.position == 1: # LONG
                     mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
                 elif self.position == -1: # SHORT
