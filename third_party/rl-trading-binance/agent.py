@@ -40,13 +40,18 @@ except ImportError:
     # Сообщение будет выведено только при попытке использовать ONNX функции.
     # logger.warning("ONNX Runtime не найден. Для ускорения CPU-инференса, установите его: pip install onnxruntime")
 
-def get_ort_session(model_path: str):
-    """Оптимизация под Ryzen 9 5900HX (12 cores)"""
+def get_ort_session(model_path: str, intra_threads: int = 1):
+    """Оптимизированная сессия с динамическим количеством потоков."""
+    if not os.path.exists(model_path):
+        return None
+
     sess_options = ort.SessionOptions()
-    # Ограничиваем потоки для стабильного инференса на CPU
-    sess_options.intra_op_num_threads = 12
-    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    # Для обучения в SubprocVecEnv ставим 1, для инференса в проде - 6 или 8
+    sess_options.intra_op_num_threads = intra_threads
+    sess_options.inter_op_num_threads = 1
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+
     return ort.InferenceSession(model_path, sess_options, providers=['CPUExecutionProvider'])
 
 class D3QN_PER_Agent:
@@ -69,6 +74,7 @@ class D3QN_PER_Agent:
         self,
         state_shape: Tuple[int, ...],
         action_dim: int,
+        config: any,
         cnn_maps: List[int],
         cnn_kernels: List[int],
         cnn_strides: List[int],
@@ -102,8 +108,18 @@ class D3QN_PER_Agent:
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
         self.action_dim = action_dim
-        self.epsilon = 1.0  # Initialize for logging and external updates
-        self.ort_session = None  # ONNX Runtime session
+        self.epsilon = 1.0 # Фикс для AttributeError
+
+        # Определяем количество потоков: 1 если мы в векторизованной среде обучения
+        # Иначе берем из конфига или ставим 6 (для твоего CPU)
+        num_envs = getattr(config.vec, 'num_envs', 1)
+        onnx_threads = 1 if num_envs > 1 else 6
+
+        self.ort_session = None
+        model_path_onnx = getattr(config.paths, 'model_path_onnx', None)
+        if model_path_onnx and os.path.exists(model_path_onnx):
+            self.ort_session = get_ort_session(model_path_onnx, intra_threads=onnx_threads)
+
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
         model_kwargs = {
@@ -443,7 +459,11 @@ class D3QN_PER_Agent:
 
         # ONNX is the highest priority for inference
         if self.ort_session is not None and not training:
-            ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
+            state_input = state.astype(np.float32)
+            if state_input.ndim == 3:
+                state_input = state_input[np.newaxis, ...]
+
+            ort_inputs = {self.ort_session.get_inputs()[0].name: state_input}
             qvals = self.ort_session.run(None, ort_inputs)[0][0]
             return qvals if return_qvals else int(np.argmax(qvals))
 

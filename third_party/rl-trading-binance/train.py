@@ -1180,7 +1180,7 @@ if __name__ == "__main__":
             # WFV Integrity: Create a fresh, untrained agent for each fold
             agent = D3QN_PER_Agent(
                 state_shape=cfg.state_shape,
-                action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
+                action_dim=cfg.market.num_actions, config=cfg, cnn_maps=cfg.model.cnn_maps,
                 cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
                 cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
                 dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
@@ -1231,7 +1231,7 @@ if __name__ == "__main__":
         # Create the agent for the single run
         agent = D3QN_PER_Agent(
             state_shape=cfg.state_shape,
-            action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
+            action_dim=cfg.market.num_actions, config=cfg, cnn_maps=cfg.model.cnn_maps,
             cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
             cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
             dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
