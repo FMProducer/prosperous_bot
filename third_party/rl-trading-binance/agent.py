@@ -16,6 +16,10 @@ except ImportError:
 import numpy as np
 import torch
 
+# For reproducibility and performance, limit torch threads
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 try:
     from safetensors import safe_open  # type: ignore
     from safetensors.torch import save_file  # type: ignore
@@ -485,28 +489,19 @@ class D3QN_PER_Agent:
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
-    def select_action_batch(self, states: np.ndarray, training: bool = True, epsilon: Optional[float] = None) -> np.ndarray:
-        """Selects actions for a batch of states using a vectorized epsilon-greedy policy."""
-        if epsilon is not None:
-            self.epsilon = epsilon
-
+    def select_action_batch(self, states: np.ndarray) -> np.ndarray:
+        """
+        Selects greedy actions for a batch of states.
+        This is a pure-torch, no-grad method for performance.
+        """
         self.policy_net.eval()
-        n = int(states.shape[0])
         with torch.no_grad(), torch.autocast(
             device_type=("cuda" if self.device.type == "cuda" else "cpu"),
             enabled=getattr(self, "use_amp", False)
         ):
-            x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
-            q = self.policy_net(x)
-            greedy = q.argmax(dim=1).detach().to("cpu").numpy()
-
-        if training and self.epsilon > 0.0:
-            rnd = np.random.rand(n) < self.epsilon
-            if np.any(rnd):
-                rand_actions = np.random.randint(0, self.action_dim, size=int(rnd.sum()))
-                greedy = greedy.copy()
-                greedy[rnd] = rand_actions
-        return greedy.tolist()
+            states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
+            q_values = self.policy_net(states_t)
+            return q_values.argmax(dim=1).cpu().numpy()
 
     def predict_ensemble(
         self,

@@ -23,6 +23,10 @@ import seaborn as sns
 import torch
 from tqdm import tqdm, trange
 
+# For reproducibility and performance, limit torch threads
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 def _numpy_json_default(obj):
     """
     Custom JSON serializer for numpy types.
@@ -1028,6 +1032,9 @@ def run_training_session(
         # Но здесь, внутри цикла по эпизодам, мы используем одного и того же агента.
         # Создание нового агента вынесено на уровень управления WFV.
 
+        # Performance: Disable ONNX for the training loop, it's for inference only
+        agent.use_onnx = False
+
         # --- Новый цикл обучения, основанный на шагах ---
         obs, _ = train_env.reset(seed=cfg.global_env_seed + ep) # Новый seed для каждого эпизода
 
@@ -1042,7 +1049,16 @@ def run_training_session(
         for step in range(total_steps_in_episode):
             # 1. Выбор действий (векторизованно)
             current_eps = epsilon_scheduler.get_epsilon(agent.total_steps)
-            actions = agent.select_action_batch(obs, training=True, epsilon=current_eps)
+
+            # Get greedy actions from the model
+            actions = agent.select_action_batch(obs)
+
+            # Vectorized epsilon-greedy exploration
+            if current_eps > 0:
+                explore_mask = np.random.rand(num_envs) < current_eps
+                if np.any(explore_mask):
+                    random_actions = np.random.randint(0, agent.action_dim, size=np.sum(explore_mask))
+                    actions[explore_mask] = random_actions
 
             # 2. Шаг в среде
             next_obs, rewards, terminations, truncations, infos = train_env.step(actions)
@@ -1052,8 +1068,14 @@ def run_training_session(
             stats_collector.update(infos)
 
             # 4. Сохранение в буфер (векторизованно)
-            # ПРЕДПОЛАГАЕТСЯ, что в ReplayBuffer есть метод push_batch
-            agent.replay_buffer.push_batch(obs, actions, rewards, next_obs, terminations)
+            # Explicit type casting for performance and correctness
+            agent.replay_buffer.push_batch(
+                obs.astype(np.float32),
+                actions.astype(np.uint8),
+                rewards.astype(np.float32),
+                next_obs.astype(np.float32),
+                terminations.astype(np.uint8)
+            )
 
             obs = next_obs
 
