@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import hashlib, tarfile
 import datetime as dt
 from functools import partial
-from pathlib import Path
+from pathlib import Path, PurePath
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -541,6 +541,10 @@ def _numpy_json_default(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, (Path, PurePath)):
+        return str(obj)
+    elif isinstance(obj, (dt.date, dt.datetime)):
+        return obj.isoformat()
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 def evaluate_agent(
@@ -910,6 +914,25 @@ def run_training_session(
 
     setup_logging(session_name, cfg)
     logging.info(f"=== Starting Training Session: {session_name} ===")
+    
+    # --- Save config_train.json for validation scripts ---
+    try:
+        config_save_path = os.path.join(models_dir, "config_train.json")
+        # Attempt to convert Pydantic model to dict
+        if hasattr(cfg, "model_dump"): # Pydantic v2
+            cfg_dict = cfg.model_dump(mode='json')
+        elif hasattr(cfg, "dict"): # Pydantic v1
+            cfg_dict = cfg.dict()
+        else:
+            cfg_dict = vars(cfg)
+        
+        with open(config_save_path, "w", encoding="utf-8") as f:
+            json.dump(cfg_dict, f, indent=2, default=_numpy_json_default)
+        logging.info(f"📂 Saved config_train.json to {config_save_path}")
+    except Exception as e:
+        logging.warning(f"⚠️ Failed to save config_train.json: {e}")
+    # -----------------------------------------------------
+
     if fold_id is not None:
         val_len = len(val_sequences) if val_sequences else 0
         logging.info(f"Fold ID: {fold_id}, Train samples: {len(train_sequences)}, Val samples: {val_len}")
