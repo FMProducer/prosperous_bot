@@ -244,6 +244,7 @@ def plot_training_progress(history: dict, save_dir: str, window_size: int) -> No
 
     episodes = history.get("episodes", [])
     rewards = history.get("rewards", [])
+    mean_rewards = history.get("mean_rewards_N", [])
     mean_pnl = history.get("mean_pnl_N", [])
     losses = history.get("losses", [])
     mean_losses = history.get("mean_losses_N", [])

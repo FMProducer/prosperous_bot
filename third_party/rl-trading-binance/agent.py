@@ -6,12 +6,23 @@ import ast
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple, Union
 
-import msgpack
-import msgpack_numpy as m
+try:
+    import msgpack  # type: ignore
+    import msgpack_numpy as m  # type: ignore
+except ImportError:
+    msgpack = None
+    m = None
+
 import numpy as np
 import torch
-from safetensors import safe_open
-from safetensors.torch import load_file, save_file
+
+try:
+    from safetensors import safe_open  # type: ignore
+    from safetensors.torch import save_file  # type: ignore
+except ImportError:
+    safe_open = None
+    save_file = None
+
 import torch.nn.functional as F
 import torch.optim as optim
 from utils import millify
@@ -796,6 +807,28 @@ class D3QN_PER_Agent:
         """Saves a complete checkpoint of the agent's state using safetensors."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
+        if save_file is None:
+            logger.warning("`safetensors` library not found. Saving model using legacy `torch.save`. "
+                           "It is recommended to install safetensors for safer model serialization: `pip install safetensors`")
+            if not path.endswith(".pth"):
+                path = os.path.splitext(path)[0] + ".pth"
+            
+            checkpoint = {
+                "policy_net": self.policy_net.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "meta": {
+                    "format": "d3qn_per_agent_v3_legacy",
+                    "total_steps": str(self.total_steps),
+                    "learn_steps": str(self.learn_steps),
+                }
+            }
+            if hasattr(self, "scaler"):
+                checkpoint["scaler"] = self.scaler.state_dict()
+            
+            torch.save(checkpoint, path)
+            logger.info(f"Legacy checkpoint saved to: {path}")
+            return
+
         # Ensure the path ends with .safetensors
         if not path.endswith(".safetensors"):
             path = os.path.splitext(path)[0] + ".safetensors"
@@ -822,6 +855,10 @@ class D3QN_PER_Agent:
 
         # Try loading new .safetensors format first
         if path.endswith(".safetensors") and os.path.exists(path):
+            if safe_open is None:
+                logger.error(f"Cannot load .safetensors file '{path}' because `safetensors` is not installed. Please run `pip install safetensors`.")
+                return
+
             try:
                 with safe_open(path, framework="pt", device=str(self.device)) as f:
                     # Load metadata
@@ -878,6 +915,10 @@ class D3QN_PER_Agent:
         self.target_net.eval()
 
     def _load_disk_cache(self) -> None:
+        if msgpack is None:
+            logger.debug("msgpack not installed, disk cache is disabled.")
+            return
+
         if os.path.exists(self.cache_path):
             try:
                 with open(self.cache_path, "rb") as f:
@@ -891,6 +932,9 @@ class D3QN_PER_Agent:
                 self.qval_cache = OrderedDict()
 
     def save_disk_cache(self) -> None:
+        if msgpack is None:
+            return
+
         if not self.qval_cache:
             return
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
