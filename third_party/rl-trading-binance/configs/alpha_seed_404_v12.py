@@ -156,9 +156,9 @@ cfg.market.risk_reward_ratio_threshold = 3.0
 # Награда за сделку с высоким соотношением риск/прибыль
 cfg.market.risk_reward_ratio_reward = 0.075
 # Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
-cfg.market.good_exit_bonus = 0.30
+cfg.market.good_exit_bonus = 0.0
 # Дополнительный бонус за быстрый выход (< 20 шагов)
-cfg.market.fast_exit_bonus = 0.10
+cfg.market.fast_exit_bonus = 0.0
 
 # --- Penalties ---
 # Штраф за банкротство
@@ -177,9 +177,9 @@ cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 0.01
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
-cfg.market.holding_penalty_multiplier = 0.15  # Меньше штраф
+cfg.market.holding_penalty_multiplier = 0.0  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
-cfg.market.greed_penalty_multiplier = 0.08  # Меньше штраф
+cfg.market.greed_penalty_multiplier = 0.0  # Отключено, т.к. агент не может закрыть сделку
 
 # --- НОВАЯ АСИММЕТРИЧНАЯ ЛОГИКА ---
 # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
