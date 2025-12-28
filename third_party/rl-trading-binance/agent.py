@@ -102,6 +102,7 @@ class D3QN_PER_Agent:
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
         self.action_dim = action_dim
+        self.epsilon = 1.0  # Initialize for logging and external updates
         self.ort_session = None  # ONNX Runtime session
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
@@ -464,8 +465,11 @@ class D3QN_PER_Agent:
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
-    def select_action_batch(self, states: np.ndarray, training: bool = True) -> np.ndarray:
+    def select_action_batch(self, states: np.ndarray, training: bool = True, epsilon: Optional[float] = None) -> np.ndarray:
         """Selects actions for a batch of states using a vectorized epsilon-greedy policy."""
+        if epsilon is not None:
+            self.epsilon = epsilon
+
         self.policy_net.eval()
         n = int(states.shape[0])
         with torch.no_grad(), torch.autocast(
@@ -476,11 +480,8 @@ class D3QN_PER_Agent:
             q = self.policy_net(x)
             greedy = q.argmax(dim=1).detach().to("cpu").numpy()
 
-        eps = float(self.epsilon if hasattr(self, "epsilon") else
-                    (self.eps_end + (self.eps_start - self.eps_end)
-                     * np.exp(-self.total_steps / max(1, self.eps_frames))))
-        if training and eps > 0.0:
-            rnd = np.random.rand(n) < eps
+        if training and self.epsilon > 0.0:
+            rnd = np.random.rand(n) < self.epsilon
             if np.any(rnd):
                 rand_actions = np.random.randint(0, self.action_dim, size=int(rnd.sum()))
                 greedy = greedy.copy()
