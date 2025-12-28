@@ -7,6 +7,7 @@ from collections import deque, defaultdict
 from typing import Any, Dict, List, Optional
 import hashlib, tarfile
 import datetime as dt
+from collections import deque
 from functools import partial
 from pathlib import Path, PurePath
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
@@ -66,6 +67,28 @@ from utils import (
     apply_normalization_to_sequence,
     transform_sequence,
 ) # noqa: F401
+
+class TrainingStats:
+    def __init__(self, window=100):
+        self.win_rates = deque(maxlen=window)
+        self.pnl_history = deque(maxlen=window)
+        self.bankruptcy_history = deque(maxlen=window)
+
+    def update(self, infos: List[Dict]):
+        for info in infos:
+            if "episode" in info or "position_closed" in info:
+                if "win_rate" in info:
+                    self.win_rates.append(info["win_rate"])
+                if "net_pnl" in info:
+                    self.pnl_history.append(info["net_pnl"])
+                if "bankruptcy" in info:
+                    self.bankruptcy_history.append(info["bankruptcy"])
+
+    def get_avg_wr(self):
+        return np.mean(self.win_rates) if self.win_rates else 0.0
+
+    def get_avg_br(self):
+        return np.mean(self.bankruptcy_history) if self.bankruptcy_history else 0.0
 
 class TopKCheckpointManager:
     """
@@ -214,109 +237,6 @@ def make_env(env_kwargs: dict):
         torch.set_num_interop_threads(1)
     return TradingEnvironment(**env_kwargs)
 
-def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, agent_session_len: int, fold_id: Optional[int] = None):
-    """
-    Один "батч-эпизод" на N средах:
-    - параллельно идём до завершения каждой под-среды (autoreset внутри VecEnv),
-    - накапливаем опыт и возвращаем средний суммарный reward за эпизоды.
-    """
-    reset_out = train_env.reset()
-    if isinstance(reset_out, tuple) and len(reset_out) == 2:
-        obs_batch, _ = reset_out   # (obs, infos)
-    else:
-        obs_batch = reset_out      # на случай старого API
-    done_mask = np.zeros(train_env.num_envs, dtype=bool)
-    ep_reward = np.zeros(train_env.num_envs, dtype=float)
-    ep_reward_per_episode = []
-    win_rates = []
-    ep_losses = []
-    last_info = {}
-    transitions_count = 0
-    episode_infos = []
-
-    # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
-    pbars = [
-        tqdm(
-            total=0,            # будем увеличивать total динамически
-            desc=f"Env {i}",
-            position=i + 1,     # строки под основным training-bar
-            unit="ep",
-            leave=False,
-        )
-        for i in range(train_env.num_envs)
-    ]
-
-    while not done_mask.all():
-        actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
-        next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
-
-        transitions_count += train_env.num_envs  # один переход на каждую среду
-
-        for i in range(train_env.num_envs):
-            # Корректный next_state при done: брать финальное наблюдение из info
-            # В векторизованном режиме всегда используем batched next_obs_b[i]
-            # чтобы гарантировать одинаковую форму состояний в буфере.
-            next_state = next_obs_b[i]
-            if dones[i] and isinstance(infos[i], dict):
-                next_state = infos[i].get("terminal_observation", infos[i].get("final_observation", next_state))
-
-            # Накапливаем награды для каждого env отдельно
-            ep_reward[i] += float(rewards[i])
-
-            # Жёстко приводим и state, и next_state к плоскому float32-вектору.
-            state_vec = np.asarray(obs_batch[i], dtype=np.float32).reshape(-1)
-            next_state_vec = np.asarray(next_state, dtype=np.float32).reshape(-1)
-
-            agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
-            if bool(dones[i]) and isinstance(infos[i], dict):
-                episode_infos.append(infos[i])
-                ep_reward_per_episode.append(ep_reward[i])
-                wr = infos[i].get("episode_win_rate", None)
-                if wr is not None:
-                    # считаем завершённый эпизод для этого env
-                    pbars[i].total += 1
-                    pbars[i].update(1)
-                    pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
-                    win_rates.append(float(wr))
-                
-                ep_reward[i] = 0.0
-
-        last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
-        # Шаги больше не рисуем: бары будут обновляться только при завершении эпизода.
-        prev_done = done_mask.copy()
-
-        # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
-        obs_batch = next_obs_b # noqa: F841
-        done_mask |= dones  # эпизод для каждой под-среды
-        # В каждом "батч-шаге" получаем по одному переходу на среду
-        for _ in range(train_env.num_envs):
-            agent.increment_step()
-
-        # Один вызов обучения на batched шаг.
-        loss = agent.learn()
-        if loss is not None:
-            ep_losses.append(loss)
-
-    # Убедимся, что все прогресс-бары закрыты в конце
-    for pbar in pbars:
-        pbar.close()
-
-    # --- Bankruptcy Rate Metric ---
-    bankruptcy_count = sum(1 for info in episode_infos if info.get('bankruptcy', False))
-    total_episodes = len(episode_infos)
-    if total_episodes > 0:
-        br = bankruptcy_count / total_episodes
-        if br > 0.001:  # Только значимый уровень банкротств
-            fold_prefix = f"Fold {fold_id} | " if fold_id is not None else ""
-            logging.warning(f"🚨 ALERT: {fold_prefix}Bankruptcy Rate is {br:.2%}")
-
-    avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
-    avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
-    avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-    # Aggregate infos from all sub-environments. A simple approach is to merge them,
-    # or return the info from the first completed environment. Here we just return the last one.
-    return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info
-
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
     os.makedirs(save_dir, exist_ok=True)
@@ -324,7 +244,7 @@ def plot_training_progress(history: dict, save_dir: str, window_size: int) -> No
 
     episodes = history.get("episodes", [])
     rewards = history.get("rewards", [])
-    mean_rewards = history.get("mean_rewards_N", [])
+    mean_pnl = history.get("mean_pnl_N", [])
     losses = history.get("losses", [])
     mean_losses = history.get("mean_losses_N", [])
     epsilons = history.get("epsilons", [])
@@ -871,6 +791,7 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
 
 
 def run_training_session(
+    agent: D3QN_PER_Agent,
     cfg: MasterConfig,
     train_sequences: list[np.ndarray],
     train_keys: list,
@@ -989,26 +910,6 @@ def run_training_session(
         num_features = train_seqs_reshaped[0].shape[1]  # C from (L, C)
 
 
-    eps_decay_frames = cfg.eps.eps_decay_frames
-    if cfg.vec.num_envs > 1 and cfg.vec.scale_epsilon_by_envs:
-        eps_decay_frames *= cfg.vec.num_envs
-        logging.info(f"Epsilon decay frames scaled: {eps_decay_frames}")
-
-    agent = D3QN_PER_Agent(
-        state_shape=cfg.state_shape,
-        action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
-        cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
-        cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
-        dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
-        dropout_model=cfg.model.dropout_p, device=cfg.device.device,
-        learning_rate=cfg.rl.lr, gamma=cfg.rl.gamma, batch_size=cfg.rl.batch_size,
-        buffer_size=cfg.per.buffer_size, target_update_freq=cfg.rl.target_update_freq,
-        train_start=cfg.rl.train_start, per_alpha=cfg.per.per_alpha,
-        per_beta_start=cfg.per.per_beta_start, per_beta_frames=cfg.per.per_beta_frames,
-        eps_start=cfg.eps.eps_start, eps_end=cfg.eps.eps_end,
-        eps_frames=eps_decay_frames, epsilon=cfg.per.per_eps,
-        max_gradient_norm=cfg.rl.max_gradient_norm, perf_cfg=cfg.perf
-    )
 
     if len(train_seqs_reshaped[0].shape) == 3:
         num_features = train_seqs_reshaped[0].shape[0]
@@ -1097,49 +998,79 @@ def run_training_session(
     ) if getattr(cfg.trainlog, "save_top_k", 0) > 0 else None
 
     train_env.reset(seed=cfg.global_env_seed)
+    num_episodes = cfg.trainlog.episodes
 
-    num_episodes = cfg.trainlog.episodes or (cfg.rl.total_timesteps // cfg.seq.agent_session_len)
+    pbar = trange(num_episodes)
+    for ep in pbar:
+        # ВАЖНО: для WFV нужно создавать нового, нетренированного агента на каждом фолде
+        # Но здесь, внутри цикла по эпизодам, мы используем одного и того же агента.
+        # Создание нового агента вынесено на уровень управления WFV.
 
-    counter = trange(1, num_episodes + 1, desc="Training", leave=True)
-    for ep in counter:
-        if num_envs > 1:
-            ep_reward, ep_win_rate, transitions, avg_loss, info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len, fold_id=fold_id)
-            train_steps += transitions
-        else:
-            obs, _ = train_env.reset()
-            ep_reward, ep_losses, done = 0.0, [], False
-            while not done:
-                action = agent.select_action(obs, training=True)
-                next_obs, reward, done, _, info = train_env.step(action)
-                next_state_to_store = info.get("terminal_observation", next_obs) if done else next_obs
-                agent.store_experience(obs, action, reward, next_state_to_store, done)
-                loss = agent.learn()
-                if loss: ep_losses.append(loss)
-                obs = next_obs; agent.increment_step(); train_steps += 1; ep_reward += reward
-            avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-            ep_win_rate = info.get("episode_win_rate", 0.0)
+        # --- Новый цикл обучения, основанный на шагах ---
+        obs, _ = train_env.reset(seed=cfg.global_env_seed + ep) # Новый seed для каждого эпизода
+
+        # Определяем общее количество шагов для этого "эпизода" (прогона)
+        # Это может быть фиксированное число или до завершения всех сред
+        total_steps_in_episode = cfg.seq.agent_session_len * num_envs # Примерная оценка
+
+        episode_rewards = []
+        episode_losses = []
+        stats_collector = TrainingStats(window=500) # Сбрасываем статистику для каждого "эпизода"
+
+        for step in range(total_steps_in_episode):
+            # 1. Выбор действий (векторизованно)
+            actions = agent.select_action_batch(obs, training=True)
+
+            # 2. Шаг в среде
+            next_obs, rewards, terminations, truncations, infos = train_env.step(actions)
+
+            # 3. Сбор статистики (КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ)
+            stats_collector.update(infos)
+
+            # 4. Сохранение в буфер (векторизованно)
+            # ПРЕДПОЛАГАЕТСЯ, что в ReplayBuffer есть метод push_batch
+            agent.replay_buffer.push_batch(obs, actions, rewards, next_obs, terminations)
+
+            obs = next_obs
+
+            # 5. Обучение
+            loss = agent.learn()
+            if loss is not None:
+                episode_losses.append(loss)
+
+            episode_rewards.extend(rewards)
+
+        # --- Логирование в конце "эпизода" ---
+        avg_reward = np.mean(episode_rewards) if episode_rewards else 0.0
+        avg_loss = np.mean(episode_losses) if episode_losses else 0.0
+        avg_wr = stats_collector.get_avg_wr()
+
+        deques["rewards"].append(avg_reward)
+        deques["losses"].append(avg_loss)
+        deques["win_rates"].append(avg_wr)
 
         history["episodes"].append(ep)
-        history["rewards"].append(ep_reward)
+        history["rewards"].append(avg_reward)
         history["losses"].append(avg_loss)
-        history["win_rates"].append(ep_win_rate)
-        deques["rewards"].append(ep_reward)
-        deques["losses"].append(avg_loss)
-        deques["win_rates"].append(ep_win_rate)
+        history["win_rates"].append(avg_wr)
         history["mean_rewards_N"].append(np.mean(deques["rewards"]))
         history["mean_losses_N"].append(np.mean(deques["losses"]))
         history["mean_win_rates_N"].append(np.mean(deques["win_rates"]))
+        history["epsilons"].append(agent.epsilon)
 
-        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
-        history["epsilons"].append(eps_current)
+        pbar.set_description(
+            f"Ep: {ep} | Avg WR: {np.mean(deques['win_rates']):.2%} | "
+            f"Avg PnL: {np.mean(deques['rewards']):.4f} | "
+            f"Avg Loss: {np.mean(deques['losses']):.5f} | Epsilon: {agent.epsilon:.4f}"
+        )
 
-        counter.set_description(f"Loss={avg_loss:.5f}, Reward={ep_reward:.3f}")
-
-        if val_env and ep % cfg.trainlog.val_freq == 0:
+        # --- Валидация и сохранение ---
+        if val_env and ep % cfg.trainlog.val_freq == 0 and ep > 0:
             metrics = evaluate_agent(val_env, agent, len(val_seqs_reshaped), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
 
             current_metric_val = metrics.get(cfg.trainlog.checkpoint_metric)
-            if current_metric_val is None: continue
+            if current_metric_val is None:
+                continue
 
             is_better = (best_val_metric is None or
                          (cfg.trainlog.save_mode == "max" and current_metric_val > best_val_metric) or
@@ -1149,15 +1080,14 @@ def run_training_session(
                 best_val_metric = current_metric_val
                 best_validation = metrics
                 no_improvement_count = 0
-                if checkpoint_manager:
-                    checkpoint_manager.save_checkpoint(agent, ep, metrics)
-                else:
-                    agent.save_model(os.path.join(models_dir, "best.pth"))
+                save_path = os.path.join(models_dir, "best_model.safetensors")
+                agent.save_model(save_path)
+                logging.info(f"🚀 New best model saved to {save_path} with metric: {current_metric_val:.4f}")
             else:
                 no_improvement_count += 1
 
             if cfg.trainlog.early_stopping_patience and no_improvement_count >= cfg.trainlog.early_stopping_patience:
-                logging.info(f"Early stopping at episode {ep}.")
+                logging.info(f"🚷 Early stopping triggered at episode {ep} after {no_improvement_count} episodes with no improvement.")
                 break
 
     agent.save_model(os.path.join(models_dir, "final.pth"))
@@ -1223,7 +1153,25 @@ if __name__ == "__main__":
             train_keys, train_seqs = zip(*train_data)
             test_keys, test_seqs = zip(*test_data)
 
+            # WFV Integrity: Create a fresh, untrained agent for each fold
+            agent = D3QN_PER_Agent(
+                state_shape=cfg.state_shape,
+                action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
+                cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
+                cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
+                dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
+                dropout_model=cfg.model.dropout_p, device=cfg.device.device,
+                learning_rate=cfg.rl.lr, gamma=cfg.rl.gamma, batch_size=cfg.rl.batch_size,
+                buffer_size=cfg.per.buffer_size, target_update_freq=cfg.rl.target_update_freq,
+                train_start=cfg.rl.train_start, per_alpha=cfg.per.per_alpha,
+                per_beta_start=cfg.per.per_beta_start, per_beta_frames=cfg.per.per_beta_frames,
+                eps_start=cfg.eps.eps_start, eps_end=cfg.eps.eps_end,
+                eps_frames=cfg.eps.eps_decay_frames, epsilon=cfg.per.per_eps,
+                max_gradient_norm=cfg.rl.max_gradient_norm, perf_cfg=cfg.perf
+            )
+
             result = run_training_session(
+                agent=agent,
                 cfg=cfg,
                 train_sequences=list(train_seqs), train_keys=list(train_keys),
                 val_sequences=list(test_seqs), val_keys=list(test_keys),
@@ -1256,7 +1204,25 @@ if __name__ == "__main__":
         train_keys, train_seqs = zip(*train_raw)
         val_keys, val_seqs = (zip(*val_raw) if val_raw else ([], []))
 
+        # Create the agent for the single run
+        agent = D3QN_PER_Agent(
+            state_shape=cfg.state_shape,
+            action_dim=cfg.market.num_actions, cnn_maps=cfg.model.cnn_maps,
+            cnn_kernels=cfg.model.cnn_kernels, cnn_strides=cfg.model.cnn_strides,
+            cnn_dilations=cfg.model.cnn_dilations, dense_val=cfg.model.dense_val,
+            dense_adv=cfg.model.dense_adv, additional_feats=cfg.model.additional_feats,
+            dropout_model=cfg.model.dropout_p, device=cfg.device.device,
+            learning_rate=cfg.rl.lr, gamma=cfg.rl.gamma, batch_size=cfg.rl.batch_size,
+            buffer_size=cfg.per.buffer_size, target_update_freq=cfg.rl.target_update_freq,
+            train_start=cfg.rl.train_start, per_alpha=cfg.per.per_alpha,
+            per_beta_start=cfg.per.per_beta_start, per_beta_frames=cfg.per.per_beta_frames,
+            eps_start=cfg.eps.eps_start, eps_end=cfg.eps.eps_end,
+            eps_frames=cfg.eps.eps_decay_frames, epsilon=cfg.per.per_eps,
+            max_gradient_norm=cfg.rl.max_gradient_norm, perf_cfg=cfg.perf
+        )
+
         final_metrics = run_training_session(
+            agent=agent,
             cfg=cfg,
             train_sequences=list(train_seqs), train_keys=list(train_keys),
             val_sequences=list(val_seqs), val_keys=list(val_keys),

@@ -435,6 +435,7 @@ class TradingEnvironment(gym.Env):
         pnl_change = 0.0
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
+        closed_trade_gross_pnl = None
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
@@ -511,6 +512,7 @@ class TradingEnvironment(gym.Env):
                 real_exec_price = real_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
             
+            closed_trade_gross_pnl = trade_pnl # Capture gross PnL for win rate
             fee = real_exec_price * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
             
@@ -628,17 +630,39 @@ class TradingEnvironment(gym.Env):
                 self._render_human(info, action, reward)
             return obs, reward, terminated, False, info
             
+        info = self._get_info()
+        position_closed = prev_position != 0 and self.position == 0
+
         if terminated:
+            # --- Forced Closure at Episode End ---
+            if self.position != 0:
+                pnl_change = self._calculate_unrealized_pnl()
+                self.balance += pnl_change
+                self.closed_trades += 1
+                if pnl_change > 0:
+                    self.profitable_trades += 1
+                self.position = 0
+                position_closed = True
+
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
                 "episode_realized_pnl": self.realized_pnl,
                 "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
                 "episode_closed_trades": self.closed_trades,
-                "episode_max_drawdown": self.current_max_drawdown,
             })
         else:
             obs = self._get_observation()
+
+        if position_closed:
+            # Determine win_rate based on gross PnL, report net PnL after costs.
+            # This is the key fix: win_rate must be based on the trade's raw outcome.
+            win_rate = 1.0 if (closed_trade_gross_pnl is not None and closed_trade_gross_pnl > 0) else 0.0
+            info.update({
+                "position_closed": True,
+                "win_rate": win_rate,
+                "net_pnl": pnl_change,
+            })
      
         reward -= drawdown_penalty
 

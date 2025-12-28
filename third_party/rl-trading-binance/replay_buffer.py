@@ -31,10 +31,10 @@ class PrioritizedReplayBuffer:
         self.tree = np.zeros(2 * self.tree_capacity - 1, dtype=np.float64)
 
         self.states = np.empty((capacity, *state_shape), dtype=np.float32)
-        self.actions = np.empty(capacity, dtype=np.int64)
+        self.actions = np.empty(capacity, dtype=np.uint8)  # Optimized: uint8 is sufficient
         self.rewards = np.empty(capacity, dtype=np.float32)
         self.next_states = np.empty((capacity, *state_shape), dtype=np.float32)
-        self.dones = np.empty(capacity, dtype=np.bool_)
+        self.dones = np.empty(capacity, dtype=np.uint8)      # Optimized: uint8 is sufficient
         self.idx = 0
         self.size = 0
         self.max_priority = 1.0
@@ -70,6 +70,39 @@ class PrioritizedReplayBuffer:
         self.idx = (self.idx + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
         self.frame_idx += 1
+
+    def push_batch(
+        self,
+        states: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        next_states: np.ndarray,
+        dones: np.ndarray,
+    ) -> None:
+        batch_size = states.shape[0]
+
+        # Generate indices for the batch
+        indices = np.arange(self.idx, self.idx + batch_size) % self.capacity
+
+        # Store data
+        self.states[indices] = states
+        self.actions[indices] = actions
+        self.rewards[indices] = rewards
+        self.next_states[indices] = next_states
+        self.dones[indices] = dones
+
+        # Update priorities in the tree
+        tree_indices = indices + self.tree_capacity - 1
+        priorities = np.full(batch_size, self.max_priority ** self.alpha)
+
+        changes = priorities - self.tree[tree_indices]
+        self.tree[tree_indices] = priorities
+        self._propagate_vectorized(tree_indices, changes)
+
+        # Update buffer pointers
+        self.idx = (self.idx + batch_size) % self.capacity
+        self.size = min(self.size + batch_size, self.capacity)
+        self.frame_idx += batch_size
 
     def sample(self, batch_size: int) -> Tuple[np.ndarray, ...]:
         assert self.size >= batch_size, "Not enough samples in buffer"
