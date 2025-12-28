@@ -38,7 +38,16 @@ def _numpy_json_default(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
-    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+    elif isinstance(obj, (Path, PurePath)):
+        return str(obj)
+    elif isinstance(obj, (dt.date, dt.datetime)):
+        return obj.isoformat()
+    elif isinstance(obj, (torch.device, torch.dtype)):
+        return str(obj)
+    elif isinstance(obj, set):
+        return list(obj)
+    # Fallback: convert any other unknown type to string to ensure saving succeeds
+    return str(obj)
 
 from agent import D3QN_PER_Agent
 from config import MasterConfig
@@ -525,28 +534,6 @@ def _git_head_sha() -> str:
     except Exception:
         return ""
 
-def _numpy_json_default(obj):
-    """
-    Custom JSON serializer for numpy types.
-    """
-    if isinstance(obj, (np.integer, np.intc, np.intp, np.int8,
-                        np.int16, np.int32, np.int64, np.uint8,
-                        np.uint16, np.uint32, np.uint64)):
-        return int(obj)
-    elif isinstance(obj, (np.floating, float)):
-        if np.isinf(obj):
-            return "inf" if obj > 0 else "-inf"
-        if np.isnan(obj):
-            return "nan"
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, (Path, PurePath)):
-        return str(obj)
-    elif isinstance(obj, (dt.date, dt.datetime)):
-        return obj.isoformat()
-    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
-
 def evaluate_agent(
     env: TradingEnvironment,
     agent: D3QN_PER_Agent,
@@ -920,7 +907,7 @@ def run_training_session(
         config_save_path = os.path.join(models_dir, "config_train.json")
         # Attempt to convert Pydantic model to dict
         if hasattr(cfg, "model_dump"): # Pydantic v2
-            cfg_dict = cfg.model_dump(mode='json')
+            cfg_dict = cfg.model_dump()
         elif hasattr(cfg, "dict"): # Pydantic v1
             cfg_dict = cfg.dict()
         else:
