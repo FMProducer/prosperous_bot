@@ -90,6 +90,21 @@ class TrainingStats:
     def get_avg_br(self):
         return np.mean(self.bankruptcy_history) if self.bankruptcy_history else 0.0
 
+class EpsilonScheduler:
+    """Calculates the exploration rate (epsilon) for a given step."""
+    def __init__(self, eps_start: float, eps_end: float, eps_decay_frames: int):
+        self.eps_start = eps_start
+        self.eps_end = eps_end
+        self.eps_decay_frames = eps_decay_frames
+
+    def get_epsilon(self, step: int) -> float:
+        """Calculates epsilon value based on exponential decay."""
+        if self.eps_decay_frames <= 0:
+            return self.eps_end
+        return self.eps_end + (self.eps_start - self.eps_end) * np.exp(
+            -1.0 * step / self.eps_decay_frames
+        )
+
 class TopKCheckpointManager:
     """
     Менеджер для сохранения топ-K лучших чекпоинтов с метаданными. 
@@ -992,6 +1007,12 @@ def run_training_session(
     best_val_metric, best_validation, no_improvement_count = None, {}, 0
     train_steps = 0
     
+    epsilon_scheduler = EpsilonScheduler(
+        eps_start=cfg.eps.eps_start,
+        eps_end=cfg.eps.eps_end,
+        eps_decay_frames=cfg.eps.eps_decay_frames
+    )
+
     checkpoint_manager = TopKCheckpointManager(
         save_dir=os.path.join(models_dir, "checkpoints"),
         top_k=cfg.trainlog.save_top_k, metric_key=cfg.trainlog.checkpoint_metric,
@@ -1020,10 +1041,12 @@ def run_training_session(
 
         for step in range(total_steps_in_episode):
             # 1. Выбор действий (векторизованно)
-            actions = agent.select_action_batch(obs, training=True)
+            current_eps = epsilon_scheduler.get_epsilon(agent.total_steps)
+            actions = agent.select_action_batch(obs, training=True, epsilon=current_eps)
 
             # 2. Шаг в среде
             next_obs, rewards, terminations, truncations, infos = train_env.step(actions)
+            agent.total_steps += num_envs # Increment total steps
 
             # 3. Сбор статистики (КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ)
             stats_collector.update(infos)

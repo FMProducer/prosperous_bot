@@ -546,10 +546,18 @@ class TradingEnvironment(gym.Env):
 
         if terminated:
             if self.position != 0:
+                # This is a forced close due to liquidation/bankruptcy
+                closed_trade_gross_pnl = unrealized_pnl
+                win_rate = 1.0 if closed_trade_gross_pnl > 0 else 0.0
+                info.update({
+                    "position_closed": True,
+                    "win_rate": win_rate,
+                    "net_pnl": closed_trade_gross_pnl, # Report gross PnL here
+                })
                 self.balance += unrealized_pnl # Realize the loss
                 self.position = 0
                 self.position_volume = 0.0
-            
+
             self.balance = max(0.0, self.balance)
             info['bankruptcy'] = True # for metrics
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
@@ -637,6 +645,7 @@ class TradingEnvironment(gym.Env):
             # --- Forced Closure at Episode End ---
             if self.position != 0:
                 pnl_change = self._calculate_unrealized_pnl()
+                closed_trade_gross_pnl = pnl_change # Capture gross PnL for win_rate reporting
                 self.balance += pnl_change
                 self.closed_trades += 1
                 if pnl_change > 0:
