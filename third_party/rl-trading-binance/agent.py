@@ -16,9 +16,6 @@ except ImportError:
 import numpy as np
 import torch
 
-# For reproducibility and performance, limit torch threads
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
 
 try:
     from safetensors import safe_open  # type: ignore

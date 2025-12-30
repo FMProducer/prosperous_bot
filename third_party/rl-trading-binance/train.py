@@ -23,9 +23,18 @@ import seaborn as sns
 import torch
 from tqdm import tqdm, trange
 
-# For reproducibility and performance, limit torch threads
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
+
+def configure_threads():
+    try:
+        if not torch.jit.is_scripting():  # Проверка, чтобы не мешать JIT
+            torch.set_num_threads(1)
+            torch.set_num_interop_threads(1)
+    except RuntimeError:
+        # Если потоки уже инициализированы, просто игнорируем
+        pass
+
+configure_threads()
+
 
 def _numpy_json_default(obj):
     """
@@ -250,10 +259,10 @@ def compute_norm_stats(data_sources: List[tuple[List, List]], cfg: MasterConfig)
 
 def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
-    # Senior architectural change: CPU affinity for Zen kernels
-    if platform.processor() == 'AMD64' or 'Ryzen' in platform.processor():
-        torch.set_num_threads(1)
-        torch.set_num_interop_threads(1)
+    # This function runs in a separate process, so we need to configure
+    # torch threads here as well.
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
     return TradingEnvironment(**env_kwargs)
 
 
