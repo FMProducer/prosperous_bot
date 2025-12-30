@@ -261,8 +261,8 @@ def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
     # This function runs in a separate process, so we need to configure
     # torch threads here as well.
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
+    # torch.set_num_threads(1)
+    # torch.set_num_interop_threads(1)
     return TradingEnvironment(**env_kwargs)
 
 
