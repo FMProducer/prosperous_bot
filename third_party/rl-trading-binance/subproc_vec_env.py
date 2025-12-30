@@ -10,9 +10,14 @@ _CMD_CLOSE = "close"
 import torch
 
 def _worker(remote, env_fn):
-    # Configure torch threads for this worker process
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
+    # Безопасная настройка потоков для Windows/Spawn
+    try:
+        # Устанавливаем лимиты потоков ПЕРЕД любыми операциями torch
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        # Если бэкенд уже инициализирован при импорте, просто идем дальше
+        pass
 
     env = env_fn()
     try:
