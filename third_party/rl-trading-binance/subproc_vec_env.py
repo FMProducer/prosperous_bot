@@ -7,7 +7,13 @@ _CMD_RESET = "reset"
 _CMD_STEP = "step"
 _CMD_CLOSE = "close"
 
+import torch
+
 def _worker(remote, env_fn):
+    # Configure torch threads for this worker process
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+
     env = env_fn()
     try:
         while True:
