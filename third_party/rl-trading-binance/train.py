@@ -1,27 +1,10 @@
 # train.py 201125
-import logging
 import os
 import sys
-import time
-from collections import deque, defaultdict
-from typing import Any, Dict, List, Optional
-import hashlib, tarfile
-import datetime as dt
-from collections import deque
-from functools import partial
-from pathlib import Path, PurePath
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-import platform
-import json
-import subprocess
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
 import torch
-from tqdm import tqdm, trange
 
 
 def configure_threads():
@@ -34,6 +17,24 @@ def configure_threads():
         pass
 
 configure_threads()
+
+import logging
+import time
+from collections import deque, defaultdict
+from typing import Any, Dict, List, Optional
+import hashlib, tarfile
+import datetime as dt
+from collections import deque
+from functools import partial
+from pathlib import Path, PurePath
+import platform
+import json
+import subprocess
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from tqdm import tqdm, trange
 
 
 def _numpy_json_default(obj):
