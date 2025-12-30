@@ -137,10 +137,6 @@ class D3QN_PER_Agent:
         }
 
         self.policy_net = DuelingQNetwork(**model_kwargs).to(self.device)
-        # Оптимизация для Ryzen: ограничение потоков на инференс одной модели
-        if self.device.type == 'cpu':
-            torch.set_num_threads(1)
-            torch.set_num_interop_threads(1)
         self.target_net = DuelingQNetwork(**model_kwargs).to(self.device)
         
         if perf_cfg.compile_mode:
