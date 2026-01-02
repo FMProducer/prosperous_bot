@@ -81,14 +81,16 @@ EXPECTED_CHANNELS = [
 ]
 
 class DataConfig(BaseModel):
-    numchannels: int = 10
-    expectedchannels: List[str] = EXPECTED_CHANNELS
-    datachannels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
-    pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
-    volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
-    otherchannels: List[str] = ['num_trades']
+    num_channels: int = 10
+    expected_channels: List[str] = EXPECTED_CHANNELS
+    data_channels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
+    price_channels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
+    volume_channels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
+    other_channels: List[str] = ['num_trades']
     norm_num_samples_per_asset: int = 1000
     norm_seed: int = 25
+    plot_examples: bool = False
+    plot_channel_idx: int = 3
 
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
@@ -104,15 +106,9 @@ class SequenceConfig(BaseModel):
 
     @property
     def num_features(self) -> int:
-        return len(DataConfig().datachannels)
+        return len(DataConfig().data_channels)
 
-    @property
-    def input_history_len(self) -> int:
-        return self.agent_history_len - 1
-
-    @input_history_len.setter
-    def input_history_len(self, value: int):
-        self.agent_history_len = value
+    input_history_len: int = 29
 
     @property
     def flat_state_size(self) -> int:
@@ -190,6 +186,7 @@ class RLConfig(BaseModel):
     max_gradient_norm: float = 1.0
     n_step: int = 5
     gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
+    train_freq: int = 4
 
 
 class PERConfig(BaseModel):

@@ -814,50 +814,32 @@ class D3QN_PER_Agent:
 
     def save_model(self, path: str) -> None:
         """Saves a complete checkpoint of the agent's state using safetensors."""
+        # FIX: The safetensors library is designed for saving tensors, but a full training
+        # checkpoint includes optimizer state, which contains non-tensor data (e.g., hyperparameters).
+        # Directly saving `optimizer.state_dict()` with safetensors is not supported and causes errors.
+        # To ensure full checkpoints (including optimizer state for resuming training) are saved
+        # correctly, we will consistently use `torch.save()`, which can handle arbitrary Python objects.
+        # The safetensors logic is removed from this function to prevent crashes.
+
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        if save_file is None:
-            logger.warning("`safetensors` library not found. Saving model using legacy `torch.save`. "
-                           "It is recommended to install safetensors for safer model serialization: `pip install safetensors`")
-            if not path.endswith(".pth"):
-                path = os.path.splitext(path)[0] + ".pth"
-            
-            checkpoint = {
-                "policy_net": self.policy_net.state_dict(),
-                "optimizer": self.optimizer.state_dict(),
-                "meta": {
-                    "format": "d3qn_per_agent_v3_legacy",
-                    "total_steps": str(self.total_steps),
-                    "learn_steps": str(self.learn_steps),
-                }
-            }
-            if hasattr(self, "scaler"):
-                checkpoint["scaler"] = self.scaler.state_dict()
-            
-            torch.save(checkpoint, path)
-            logger.info(f"Legacy checkpoint saved to: {path}")
-            return
-
-        # Ensure the path ends with .safetensors
-        if not path.endswith(".safetensors"):
+        if not path.endswith(".pth"):
             path = os.path.splitext(path)[0] + ".safetensors"
 
-        tensors_to_save = {
+        checkpoint = {
             "policy_net": self.policy_net.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "meta": {
+                "format": "d3qn_per_agent_v3_legacy",
+                "total_steps": str(self.total_steps),
+                "learn_steps": str(self.learn_steps),
+            }
         }
         if hasattr(self, "scaler"):
-            tensors_to_save["scaler"] = self.scaler.state_dict()
+            checkpoint["scaler"] = self.scaler.state_dict()
 
-        # Metadata is saved inside the safetensors file
-        metadata = {
-            "format": "d3qn_per_agent_v4",
-            "total_steps": str(self.total_steps),
-            "learn_steps": str(self.learn_steps),
-        }
-
-        save_file(tensors_to_save, path, metadata=metadata)
-        logger.info(f"Checkpoint saved securely to: {path}")
+        torch.save(checkpoint, path)
+        logger.info(f"Full checkpoint saved to: {path}")
 
     def load_model(self, path: str, strict: bool = True) -> None:
         """Loads a checkpoint, supporting both new .safetensors and legacy .pth formats."""
@@ -893,7 +875,7 @@ class D3QN_PER_Agent:
 
         # Fallback for legacy .pth (pickle) files
         elif os.path.exists(path):
-            logging.warning(f"DEPRECATION: Loading legacy '.pth' (pickle) checkpoint from {path}. Please re-save to '.safetensors' format for security.")
+            logging.info(f"Loading '.pth' (pickle) checkpoint from {path}.")
             device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device
             obj = torch.load(path, map_location=device_to_load)
 
@@ -915,7 +897,7 @@ class D3QN_PER_Agent:
             self.total_steps = int(meta.get("total_steps", self.total_steps))
             self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
 
-            logger.info(f"Legacy checkpoint successfully loaded from {path}")
+            logger.info(f"Checkpoint successfully loaded from {path}")
 
         else:
             logger.error(f"Checkpoint file not found at path: {path}")

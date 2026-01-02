@@ -86,6 +86,7 @@ cfg.rl.n_step = 60   # Совпадает с agent_session_len
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 8000  # Больше warmup
 cfg.rl.target_update_freq = 1500   # Чаще для длинных эпизодов
+cfg.rl.train_freq = 4  # Обучение каждые 4 шага (стандарт для DQN)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 
 # DQN-specific (PER/epsilon)
@@ -99,7 +100,7 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 400000
 
 # Env/Vectorized
-cfg.vec.num_envs = 8             # параллельные среды
+cfg.vec.num_envs = 4             # Уменьшено для снижения overhead на Windows
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
@@ -231,7 +232,7 @@ cfg.backtest.delta_p_hysteresis = 0.0015
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
-cfg.perf.use_amp = True  # Mixed precision
+cfg.perf.use_amp = False  # Mixed precision
 cfg.perf.amp_dtype = "float16"
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None  # None - no torch.compile

@@ -180,14 +180,22 @@ def transform_sequence(
     out = seq.copy()
     eps = 1e-9
 
-    price_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.pricechannels if ch in cfg.data.datachannels]
-    volume_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.volumechannels if ch in cfg.data.datachannels]
+    price_indices = [cfg.data.data_channels.index(ch) for ch in cfg.data.price_channels if ch in cfg.data.data_channels]
+    volume_indices = [cfg.data.data_channels.index(ch) for ch in cfg.data.volume_channels if ch in cfg.data.data_channels]
 
     # Векторизованные операции для price channels
     if price_indices:
         prices = out[:, price_indices]
         # Рассчитываем log returns
-        log_returns = np.log(np.maximum(prices[1:] / (prices[:-1] + eps), eps))
+        # Защита от деления на ноль: если предыдущая цена ~0, считаем доходность нулевой
+        prev_prices = prices[:-1]
+        curr_prices = prices[1:]
+        
+        ratios = np.ones_like(curr_prices)
+        valid_mask = prev_prices > eps
+        ratios[valid_mask] = curr_prices[valid_mask] / prev_prices[valid_mask]
+        
+        log_returns = np.log(np.maximum(ratios, eps))
         # Первый шаг равен 0.0, так как для него нет предыдущего значения
         out[0, price_indices] = 0.0
         out[1:, price_indices] = log_returns
@@ -334,7 +342,7 @@ def compute_metrics(sequences: List[np.ndarray], predictions: np.ndarray, cfg: M
     """
     total_pnls = []
     wins = 0
-    close_idx = cfg.data.datachannels.index("close")
+    close_idx = cfg.data.data_channels.index("close")
 
     for session, direction in zip(sequences, predictions):
         if session.shape[0] <= cfg.seq.pre_signal_len + cfg.seq.agent_session_len:
