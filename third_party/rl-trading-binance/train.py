@@ -10,7 +10,7 @@ if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import time
 from collections import deque, defaultdict
-from typing import Any, Dict
+from typing import Any, Dict, List
 import platform
 import json
 import subprocess
@@ -29,6 +29,7 @@ from trading_environment import TradingEnvironment
 from utils import (
     calculate_normalization_stats,
     load_config,
+    select_and_arrange_channels,
     load_npz_dataset,
     preprocess_sequences,
     create_walk_forward_folds,
@@ -841,7 +842,7 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
         val_kwargs["sequences"] = final_norm_val_seqs
         val_kwargs["raw_sequences"] = final_raw_val_seqs
         val_kwargs["keys"] = final_val_keys
-        val_kwargs["stats"] = val_stats_with_fallback
+        val_kwargs["stats"] = train_norm_stats
         val_kwargs["backtest_mode"] = True
         val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
         val_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
