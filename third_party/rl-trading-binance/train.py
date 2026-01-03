@@ -753,43 +753,60 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
     logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
 
     # --- Calculate and save normalization stats ---
-    # In WFV mode, this is calculated *per fold* using only the fold's training data.
-    # In a normal run, it's calculated for the entire training dataset.
-    logging.info("Calculating normalization stats per ticker...")
-    ticker_seqs = defaultdict(list)
-    for seq, key in zip(train_seqs, train_keys):
-        tk = key[0] if isinstance(key, tuple) else str(key).split('_')[0]
-        ticker_seqs[tk].append(seq)
+    logging.info("Calculating per-ticker normalization stats from training data...")
+    train_seqs_dict = dict(zip(train_keys, train_seqs))
+    norm_stats = calculate_normalization_stats(train_seqs_dict, cfg)
 
-    env_stats = {}
-    # Calculate global fallback just in case
-    global_stats = calculate_normalization_stats(sequences=train_seqs, cfg=cfg)
-
-    for tk, seqs in tqdm(ticker_seqs.items(), desc="Norm stats per ticker"):
-        env_stats[tk] = calculate_normalization_stats(sequences=seqs, cfg=cfg)
-
-    # Ensure all tickers in val/test have stats (fallback to global if missing in train)
-    all_tickers = set()
-    for k in train_keys + val_keys + test_keys:
-        tk = k[0] if isinstance(k, tuple) else str(k).split('_')[0]
-        all_tickers.add(tk)
-
-    for tk in all_tickers:
-        if tk not in env_stats:
-            logging.warning(f"Ticker {tk} missing in train data. Using global stats.")
-            env_stats[tk] = global_stats
+    # Create a global fallback for assets not seen during training
+    logging.info("Calculating global fallback normalization stats...")
+    all_transformed_seqs = [transform_sequence(seq, cfg) for seq in train_seqs]
+    full_dataset = np.concatenate(all_transformed_seqs, axis=0)
+    fallback_means = np.mean(full_dataset, axis=0, dtype=np.float32)
+    fallback_stds = np.std(full_dataset, axis=0, dtype=np.float32)
+    fallback_stds[fallback_stds < 1e-7] = 1.0
+    norm_stats["_fallback_"] = {"means": fallback_means.tolist(), "stds": fallback_stds.tolist()}
 
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
-        json.dump(env_stats, f, indent=4, default=_numpy_json_default)
-    logging.info(f"Normalization stats for this run saved to: {stats_save_path}")
+        json.dump(norm_stats, f, indent=4, default=_numpy_json_default)
+    logging.info(f"Per-ticker normalization stats saved to: {stats_save_path}")
 
+    # --- Preprocess (normalize) sequences using the calculated stats ---
+    logging.info("Applying normalization to datasets...")
+
+    # Helper to get asset from key
+    def get_asset(key):
+        asset = key[0] if isinstance(key, (tuple, list)) else str(key).split('_')[0]
+        return asset.decode('utf-8') if isinstance(asset, bytes) else asset
+
+    # For validation, use fallback stats if a ticker is not in the training stats
+    val_seqs_dict = dict(zip(val_keys, val_seqs))
+    val_stats_with_fallback = norm_stats.copy()
+    for key in val_keys:
+        asset = get_asset(key)
+        if asset not in val_stats_with_fallback:
+            val_stats_with_fallback[asset] = norm_stats["_fallback_"]
+
+    norm_train_seqs_dict = preprocess_sequences(train_seqs_dict, norm_stats, cfg)
+    norm_val_seqs_dict = preprocess_sequences(val_seqs_dict, val_stats_with_fallback, cfg)
+
+    # The preprocess function now returns a dict. We need to convert it back to lists
+    # while maintaining the original order.
+    final_norm_train_seqs = [norm_train_seqs_dict[k] for k in train_keys if k in norm_train_seqs_dict]
+    final_train_keys = [k for k in train_keys if k in norm_train_seqs_dict]
+    final_raw_train_seqs = [s for k, s in zip(train_keys, train_seqs) if k in norm_train_seqs_dict]
+
+    final_norm_val_seqs = [norm_val_seqs_dict[k] for k in val_keys if k in norm_val_seqs_dict]
+    final_val_keys = [k for k in val_keys if k in norm_val_seqs_dict]
+    final_raw_val_seqs = [s for k, s in zip(val_keys, val_seqs) if k in norm_val_seqs_dict]
+
+    logging.info(f"Data sizes after normalization: train={len(final_norm_train_seqs)}, val={len(final_norm_val_seqs)}")
 
     env_kwargs = {
-        "sequences": train_seqs,
-        "raw_sequences": train_seqs,
-        "keys": train_keys,
-        "stats": env_stats,
+        "sequences": final_norm_train_seqs,
+        "raw_sequences": final_raw_train_seqs,
+        "keys": final_train_keys,
+        "stats": val_stats_with_fallback, # Pass stats with fallback to env
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": cfg.seq.num_features,
@@ -827,11 +844,12 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
         train_env = TradingEnvironment(**env_kwargs)
     # Валидация: backtest-режим + TSL/exec-delay
     val_env = None
-    if val_seqs:
-        val_kwargs = dict(env_kwargs)
-        val_kwargs["sequences"] = val_seqs
-        val_kwargs["raw_sequences"] = val_seqs
-        val_kwargs["keys"] = val_keys
+    if final_norm_val_seqs:
+        val_kwargs = env_kwargs.copy()  # Start with a copy of train env's kwargs
+        val_kwargs["sequences"] = final_norm_val_seqs
+        val_kwargs["raw_sequences"] = final_raw_val_seqs
+        val_kwargs["keys"] = final_val_keys
+        val_kwargs["stats"] = val_stats_with_fallback
         val_kwargs["backtest_mode"] = True
         val_kwargs["use_risk_management"] = getattr(cfg.backtest, "use_risk_management", True)
         val_kwargs["transaction_fee"] = getattr(cfg.market, "transaction_fee", 0.0)
@@ -1003,7 +1021,7 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
             metrics = evaluate_agent(
                 val_env,
                 agent,
-                min(len(val_seqs), cfg.trainlog.num_val_ep),
+                min(len(final_norm_val_seqs), cfg.trainlog.num_val_ep),
                 "Validation",
                 ep,
                 cfg.global_env_seed,
