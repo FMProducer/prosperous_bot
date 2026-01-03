@@ -104,7 +104,8 @@ class D3QN_PER_Agent:
         # ── НОВОЕ: MC-dropout в обучении
         mc_enable=False, mc_n_action_samples=1, mc_action_agg="mean", mc_lcb_k=0.5,
         mc_use_for_target=False, mc_n_target_samples=1, mc_target_agg="mean_max",
-        mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0
+        mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0,
+        td_clip_value: Optional[float] = None,
     ) -> None:
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
@@ -193,6 +194,7 @@ class D3QN_PER_Agent:
         self.total_steps = 0
         self.learn_steps = 0
         self.max_gradient_norm = max_gradient_norm
+        self.td_clip_value = td_clip_value
 
         self.qval_cache: OrderedDict[Tuple[str, dt.datetime], np.ndarray] = OrderedDict()
         self.max_cache_size = 10000
@@ -205,7 +207,7 @@ class D3QN_PER_Agent:
             torch.set_flush_denormal(True)
 
         # Auxiliary Value Loss parameters
-        self.use_auxiliary_value_loss = True  # Can be made a config parameter
+        self.use_auxiliary_value_loss = False  # Can be made a config parameter
         self.aux_value_loss_weight = 0.5  # Weight for auxiliary loss
 
         # ── MC-dropout настройки
@@ -698,8 +700,13 @@ class D3QN_PER_Agent:
                     return None
 
                 # Main TD loss
-                td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-                weighted_td_loss = (weights_t * td_loss).mean()
+                td_error = target_q_values - current_q_values
+                if self.td_clip_value is not None:
+                    td_error = td_error.clamp(-self.td_clip_value, self.td_clip_value)
+                
+                # Use MSE on (potentially clamped) error. 0.5 factor to match standard definitions if needed, 
+                # but pure MSE is fine as learning rate scales it.
+                weighted_td_loss = (weights_t * 0.5 * td_error.pow(2)).mean()
                 
                 # Auxiliary Value Loss: V(s) should be close to mean Q(s,a)
                 if self.use_auxiliary_value_loss:
@@ -750,8 +757,10 @@ class D3QN_PER_Agent:
                 return None
 
             # Main TD loss
-            td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
-            weighted_td_loss = (weights_t * td_loss).mean()
+            td_error = target_q_values - current_q_values
+            if self.td_clip_value is not None:
+                td_error = td_error.clamp(-self.td_clip_value, self.td_clip_value)
+            weighted_td_loss = (weights_t * 0.5 * td_error.pow(2)).mean()
             
             if self.use_auxiliary_value_loss:
                 with torch.no_grad():

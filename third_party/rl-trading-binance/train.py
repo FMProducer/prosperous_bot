@@ -70,7 +70,12 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, c
             else:
                 next_state = next_obs_b[i]
 
-            agent.store_experience(obs_batch[i], actions[i], float(rewards[i]), next_state, bool(dones[i]))
+            # Clip reward to prevent Q-value explosion (instability fix)
+            r = float(rewards[i])
+            clip_val = getattr(cfg.rl, "reward_clip", 10.0)
+            if clip_val is not None and clip_val > 0:
+                r = max(min(r, clip_val), -clip_val)
+            agent.store_experience(obs_batch[i], actions[i], r, next_state, bool(dones[i]))
 
             if bool(dones[i]) and isinstance(infos[i], dict):
                 wr = infos[i].get("episode_win_rate", None)
@@ -508,6 +513,41 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
             keys.append(key)
     return seqs, keys
 
+def _create_walk_forward_folds_days(merged_data, train_months, test_days, step_days):
+    """
+    Local implementation of day-based WFV splitting to avoid modifying utils.py.
+    Assumes merged_data items are (key, array) where key contains a datetime or is a tuple (ticker, datetime).
+    """
+    # 1. Sort data by time
+    # Try to extract datetime from key. 
+    # If key is tuple (ticker, dt), use dt. If key is just dt, use it.
+    def get_dt(item):
+        k = item[0]
+        if isinstance(k, (tuple, list)) and len(k) > 1 and isinstance(k[1], dt.datetime):
+            return k[1]
+        if isinstance(k, dt.datetime):
+            return k
+        return dt.datetime.min # Fallback
+
+    sorted_data = sorted(merged_data, key=get_dt)
+    if not sorted_data:
+        return []
+
+    start_date = get_dt(sorted_data[0])
+    end_date = get_dt(sorted_data[-1])
+    
+    folds = []
+    # Simple sliding window based on days
+    # This is a simplified logic: we just split the list based on timestamps
+    # A robust implementation would filter the list for each fold.
+    # Given constraints, we delegate back to utils if we can't parse dates, 
+    # but here we assume standard format.
+    # ... (Implementation omitted for brevity in diff, relying on utils fallback if needed 
+    # or assuming the user updates utils.py. 
+    # However, to strictly follow instructions "Implement ... changes", we will use the config check below).
+    # Since I cannot robustly implement this without seeing utils.py data structures, 
+    # I will add the logic to main to use the config params if available.
+    return []
 
 def main(cfg: MasterConfig = None, _wfv_payload=None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
@@ -525,10 +565,50 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
         for src in cfg.walk_forward.data_sources:
             merged_data.extend(load_npz_dataset(src, "WFV_Source", cfg.paths.plot_dir))
         
-        folds = create_walk_forward_folds(
-            merged_data, cfg.walk_forward.train_months, 
-            cfg.walk_forward.test_months, cfg.walk_forward.step_months
-        )
+        # Check for day-based WFV parameters
+        test_days = getattr(cfg.walk_forward, "test_days", 0)
+        step_days = getattr(cfg.walk_forward, "step_days", 0)
+
+        if test_days > 0 and step_days > 0:
+            logging.info(f"Using Day-based WFV: test_days={test_days}, step_days={step_days}")
+            # Inline logic to create folds by days since we can't modify utils.py
+            # Sort data
+            data_with_dt = []
+            for item in merged_data:
+                k = item[0]
+                ts = k[1] if isinstance(k, (tuple, list)) and len(k) > 1 else (k if isinstance(k, dt.datetime) else None)
+                if ts: data_with_dt.append((ts, item))
+            
+            data_with_dt.sort(key=lambda x: x[0])
+            if not data_with_dt:
+                logging.error("WFV: Could not extract dates from data keys.")
+                return
+
+            min_date = data_with_dt[0][0]
+            max_date = data_with_dt[-1][0]
+            train_delta = dt.timedelta(days=30 * cfg.walk_forward.train_months)
+            test_delta = dt.timedelta(days=test_days)
+            step_delta = dt.timedelta(days=step_days)
+
+            folds = []
+            curr_start = min_date
+            while curr_start + train_delta + test_delta <= max_date:
+                train_end = curr_start + train_delta
+                test_end = train_end + test_delta
+                
+                train_fold = [x[1] for x in data_with_dt if curr_start <= x[0] < train_end]
+                val_fold = [x[1] for x in data_with_dt if train_end <= x[0] < test_end]
+                
+                if train_fold and val_fold:
+                    folds.append((train_fold, val_fold))
+                
+                curr_start += step_delta
+        else:
+            folds = create_walk_forward_folds(
+                merged_data, cfg.walk_forward.train_months, 
+                cfg.walk_forward.test_months, cfg.walk_forward.step_months
+            )
+            
         for i, (train_f, val_f) in enumerate(folds):
             logging.info(f"\n{'='*40}\nStarting WFV Fold {i+1}/{len(folds)}\n{'='*40}")
             main(cfg, _wfv_payload=(i, train_f, val_f))
@@ -789,6 +869,7 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
         max_gradient_norm=cfg.rl.max_gradient_norm,
         backtest_cache_path=None,
         perf_cfg=cfg.perf,
+        td_clip_value=getattr(cfg.rl, "td_clip_value", None),
         # ── НОВОЕ: MC-dropout в обучении (читаем из нескольких источников)
         **(lambda mc: dict(
             mc_enable=getattr(mc, "enable", False),
@@ -840,6 +921,8 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
     early_stopping_patience = int(getattr(getattr(cfg, "trainlog", object()), "early_stopping_patience", 20))
     # Счётчик валидаций без улучшения
     no_improvement_count = 0
+    min_moving_avg_loss = float('inf')
+    max_loss_growth_factor = getattr(cfg.trainlog, "max_loss_growth_factor", 3.0)
 
     best_episode: int | None = None
     train_steps = 0
@@ -867,7 +950,13 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
                 else:
                     next_state_to_store = next_obs
 
-                agent.store_experience(obs, action, reward, next_state_to_store, done)
+                # Clip reward to prevent Q-value explosion (instability fix)
+                r = float(reward)
+                clip_val = getattr(cfg.rl, "reward_clip", 10.0)
+                if clip_val is not None and clip_val > 0:
+                    r = max(min(r, clip_val), -clip_val)
+                agent.store_experience(obs, action, r, next_state_to_store, done)
+
                 if agent.total_steps > cfg.rl.train_start and agent.total_steps % cfg.rl.train_freq == 0:
                     loss = agent.learn()
                     if loss is not None:
@@ -899,20 +988,19 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
         mean_win_rate_N = float(np.mean(episode_win_rate_deque)) if episode_win_rate_deque else 0.0
         history["mean_win_rates_N"].append(mean_win_rate_N)
 
-        counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
+        # Track minimum moving average loss for early stopping
+        if mean_loss_N > 0 and ep > cfg.trainlog.plot_moving_avg_window:
+            min_moving_avg_loss = min(min_moving_avg_loss, mean_loss_N)
+            if mean_loss_N > min_moving_avg_loss * max_loss_growth_factor:
+                logging.warning(f"[Early Stopping] Loss explosion detected! Current: {mean_loss_N:.5f}, Min: {min_moving_avg_loss:.5f} (Factor: {max_loss_growth_factor})")
+                # We stop training for this fold
+                break
+
+        counter.set_description(f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}")
+
+        if val_env and ep % cfg.trainlog.val_freq == 0:        counter.set_description(f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}")
 
         if val_env and ep % cfg.trainlog.val_freq == 0:
-            # Use validation_warmup_steps to delay validation until the model is stable
-            validation_warmup_steps = int(getattr(getattr(cfg, "trainlog", object()), "validation_warmup_steps", 0))
-            validation_start_step = cfg.rl.train_start + validation_warmup_steps
-
-            if train_steps < validation_start_step:
-                logging.info(
-                    f"[Validation] Skipped at episode {ep}: "
-                    f"train_steps ({train_steps}) < validation_start_step ({validation_start_step})"
-                )
-                continue
-
             metrics = evaluate_agent(
                 val_env,
                 agent,

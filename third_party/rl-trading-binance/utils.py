@@ -664,7 +664,7 @@ def create_validation_episodes(
 
     return final_sequences, final_keys
 
-def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
+def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats, cfg: MasterConfig):
     # This is a helper to adapt the existing load_and_prep_data logic for in-memory data
     prepped_sequences = []
     valid_keys = []
@@ -683,10 +683,17 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         stds = np.array(asset_stats['stds'])
 
         seq_float = seq.astype(np.float32)
-        if seq_float.shape[1] != len(means):
+
+        # Apply the same transform_sequence as used for calculating stats
+        seq_transformed = transform_sequence(seq_float, cfg)
+
+        if seq_transformed.shape[1] != len(means):
             continue
 
-        seq_norm = (seq_float - means) / stds
+        # Add protection against zero std
+        eps = 1e-6
+        stds_safe = np.where(stds < eps, 1.0, stds)
+        seq_norm = (seq_transformed - means) / stds_safe
         seq_norm = seq_norm.T
         seq_norm = np.expand_dims(seq_norm, -1)
         prepped_sequences.append(seq_norm)
@@ -715,6 +722,16 @@ def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str = "Vali
     wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
     losses = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) <= 0)
 
+    return {
+        f"{prefix}_net_pnl": net_pnl,
+        f"{prefix}_gross_pnl": gross_pnl,
+        f"{prefix}_total_commission": comm,
+        f"{prefix}_avg_holding_time": avg_duration,
+        f"{prefix}_long_trades": longs,
+        f"{prefix}_short_trades": shorts,
+        f"{prefix}_win_trades": wins,
+        f"{prefix}_loss_trades": losses,
+    }
     return {
         f"{prefix}_net_pnl": net_pnl,
         f"{prefix}_gross_pnl": gross_pnl,

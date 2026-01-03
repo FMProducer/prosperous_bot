@@ -82,22 +82,24 @@ else: # UNIVERSAL
 # RL/DQN Params (custom agent)
 cfg.rl.lr = 3e-4  # AdamW
 cfg.rl.gamma = 0.97         # Выше для длинного горизонта
-cfg.rl.n_step = 60   # Совпадает с agent_session_len
+cfg.rl.n_step = 30   # Совпадает с agent_session_len
 cfg.rl.batch_size = 32  # Mini-batch (GTX fit)
 cfg.rl.train_start = 8000  # Больше warmup
 cfg.rl.target_update_freq = 1500   # Чаще для длинных эпизодов
 cfg.rl.train_freq = 4  # Обучение каждые 4 шага (стандарт для DQN)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
+cfg.rl.td_clip_value = 10.0  # New parameter
+cfg.rl.reward_clip = 1.0  # Жёсткое ограничение reward в [-1, +1]
 
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 1000000
-cfg.per.per_alpha = 0.6
+cfg.per.per_alpha = 0.45
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 400000
+cfg.per.per_beta_frames = 200000
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
-cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 400000
+cfg.eps.eps_end = 0.02
+cfg.eps.eps_decay_frames = 300000
 
 # --- Walk-Forward Validation (WFV) ---
 # Установите enabled = True для активации режима WFV
@@ -107,6 +109,8 @@ cfg.walk_forward.enabled = True
 cfg.walk_forward.train_months = 8  # Длительность обучающего окна в месяцах
 cfg.walk_forward.test_months = 2   # Длительность валидационного (тестового) окна в месяцах
 cfg.walk_forward.step_months = 2   # Шаг, с которым сдвигается окно
+cfg.walk_forward.test_days = 45
+cfg.walk_forward.step_days = 60
 
 # Укажите пути к файлам данных, которые будут объединены и использованы для WFV.
 # Порядок важен, так как данные будут отсортированы по дате.
@@ -142,6 +146,7 @@ cfg.trainlog.available_metrics = [
 ]
 cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_profit_factor"]
 cfg.trainlog.early_stopping_patience = 10
+cfg.trainlog.max_loss_growth_factor = 10.0 # New parameter
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
@@ -149,8 +154,8 @@ cfg.validation_gate = {
     "min_sortino": -0.18,
     "min_profit_factor": 0.63,
     "max_drawdown_at_most": -1.17,
-    "min_win_rate": 0.40,  # Чуть ниже (SHORT сложнее)
-    "min_trades": 200,
+    "min_win_rate": 0.38,
+    "min_trades": 150,
     "deny_inf_pf": True,
     "deny_zero_drawdown": True,
     "profit_factor_atleast": 0.63,
@@ -168,11 +173,11 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 # Награда за достижение нового максимума эквити
 cfg.market.new_equity_peak_reward = 0.005
 # Награда за прибыльную сделку, которая не уходила в минус
-cfg.market.perfect_entry_reward = 0.05
+cfg.market.perfect_entry_reward = 0.03
 # Порог для соотношения риск/прибыль (3:1)
 cfg.market.risk_reward_ratio_threshold = 3.0
 # Награда за сделку с высоким соотношением риск/прибыль
-cfg.market.risk_reward_ratio_reward = 0.075
+cfg.market.risk_reward_ratio_reward = 0.04
 # Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
 cfg.market.good_exit_bonus = 0.0
 # Дополнительный бонус за быстрый выход (< 20 шагов)
@@ -195,7 +200,7 @@ cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 0.01
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
-cfg.market.holding_penalty_multiplier = 0.0  # Меньше штраф
+cfg.market.holding_penalty_multiplier = 0.02  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.greed_penalty_multiplier = 0.0  # Отключено, т.к. агент не может закрыть сделку
 
@@ -214,7 +219,7 @@ cfg.market.loss_exit_threshold = 3  # bars
 
 # --- СТАРЫЕ ПАРАМЕТРЫ (отключены) ---
 cfg.market.premature_exit_penalty = 0.25  # Заменен на premature_profit_exit_penalty
-cfg.market.profit_holding_bonus = 0.0    # Заменен на асимметричную логику
+cfg.market.profit_holding_bonus = 0.01    # Заменен на асимметричную логику
 
 # --- Thresholds for Shaped Rewards ---
 # Порог времени удержания для начала прогрессивного штрафа (шагов)

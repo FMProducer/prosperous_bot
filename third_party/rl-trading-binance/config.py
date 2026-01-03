@@ -125,6 +125,8 @@ class WalkForwardConfig(BaseModel):
     train_months: int = 8
     test_months: int = 2
     step_months: int = 2
+    test_days: int = 0
+    step_days: int = 0
     data_sources: List[str] = [
         "data/train_data_fair_8m.npz",
         "data/val_data_fair_2m.npz",
@@ -187,6 +189,8 @@ class RLConfig(BaseModel):
     n_step: int = 5
     gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
     train_freq: int = 4
+    td_clip_value: Optional[float] = None
+    reward_clip: float = 10.0
 
 
 class PERConfig(BaseModel):
@@ -243,6 +247,7 @@ class TrainLogConfig(BaseModel):
     plot_metric: str = "pnl"
     iterations: int = 10_000
     early_stopping_patience: int = 20
+    max_loss_growth_factor: float = 3.0
     save_top_k: int = 10  # Сохранять топ-10 моделей
     checkpoint_metric: str = "Validation_mean_pnl"  # Основная метрика для ранжирования
     save_mode: Literal["max", "min"] = "max"  # Максимизировать или минимизировать метрику
