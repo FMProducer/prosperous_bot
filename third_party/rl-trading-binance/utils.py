@@ -209,33 +209,51 @@ def transform_sequence(
 
 
 def calculate_normalization_stats(
-    sequences_dict: Dict[str, np.ndarray]
-) -> Dict[str, Dict[str, List[float]]]: # REVERTED TO TRAIN_PREV LOGIC
+    sequences_dict: Dict[Any, np.ndarray],
+    *,
+    add_fallback: bool = True
+) -> Dict[str, Dict[str, List[float]]]:
+    """
+    Считает потикерные статы.
+    ВАЖНО: Для соответствия 1_norm_stats.json должна вызываться на RAW данных.
+    """
     assets_data = defaultdict(list)
 
     for key, seq in sequences_dict.items():
-        # Strict extraction from train_prev.py
+        # Универсальное извлечение тикера
         if isinstance(key, (tuple, list)):
             asset = key[0]
         else:
             asset = str(key).split('_')[0]
-        
         if isinstance(asset, bytes):
             asset = asset.decode('utf-8')
             
         assets_data[asset].append(seq)
 
     norm_stats = {}
+    all_seqs_list = []
+
     for asset, seqs in assets_data.items():
         if not seqs: continue
+        if add_fallback:
+            all_seqs_list.extend(seqs)
         try:
             concatenated = np.concatenate(seqs, axis=0)
+            # Keys match 1_norm_stats.json ("mean", "std")
             means = concatenated.mean(axis=0).tolist()
-            # Strict epsilon placement from train_prev.py
             stds = (concatenated.std(axis=0) + 1e-8).tolist()
             norm_stats[asset] = {"means": means, "stds": stds}
         except ValueError:
             continue
+            
+    if add_fallback and all_seqs_list:
+        try:
+            concatenated = np.concatenate(all_seqs_list, axis=0)
+            means = concatenated.mean(axis=0).tolist()
+            stds = (concatenated.std(axis=0) + 1e-8).tolist()
+            norm_stats["_fallback_"] = {"means": means, "stds": stds}
+        except ValueError:
+            pass
 
     return norm_stats
 
@@ -566,7 +584,9 @@ def apply_normalization(
     sequences_dict: Dict[str, np.ndarray], 
     norm_stats: Dict[str, Any]
 ) -> Dict[str, np.ndarray]:
+    
     preprocessed_dict = {}
+
     for key, seq in sequences_dict.items():
         # Strict extraction match
         if isinstance(key, (tuple, list)):
@@ -575,20 +595,32 @@ def apply_normalization(
             asset = str(key).split('_')[0]
             
         asset_stats = norm_stats.get(asset)
+        
         if not asset_stats:
             asset_stats = norm_stats.get("_fallback_")
+            
+        if not asset_stats: continue
+            
+        # [FIX] Support both 'mean' (legacy/raw) and 'means' (new) keys
+        means_val = asset_stats.get("mean") if "mean" in asset_stats else asset_stats.get("means")
+        stds_val = asset_stats.get("std") if "std" in asset_stats else asset_stats.get("stds")
         
         if not asset_stats: continue
+        if means_val is None or stds_val is None:
+            # Fallback if keys are completely missing/wrong
+            continue
 
-        means = np.array(asset_stats["means"], dtype=np.float32)
-        stds = np.array(asset_stats["stds"], dtype=np.float32)
-
+        means = np.array(means_val, dtype=np.float32)
+        stds = np.array(stds_val, dtype=np.float32)
+        
         # Strict math REVERT from utils_prev.py snippet
         # (seq - means) / (stds + 1e-8) -- double epsilon safety
         norm_seq = (seq - means) / (stds + 1e-8)
 
+        
         norm_seq = np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
         preprocessed_dict[key] = norm_seq.astype(np.float32)
+        
     return preprocessed_dict
 
 def create_validation_episodes(
@@ -689,6 +721,72 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats, cfg:
         valid_keys.append(key)
 
     return prepped_sequences, valid_keys
+
+def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
+    """
+    Calculates detailed metrics from a list of trade info dictionaries.
+    """
+    if not trades:
+        return {}
+
+    trade_pnls = [float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades]
+    net_pnl = sum(trade_pnls)
+    commissions = [float(t.get("trade_commission", 0.0) or 0.0) for t in trades]
+    total_commission = sum(commissions)
+    gross_pnl = net_pnl + total_commission
+    
+    durations = [int(t.get("holding_duration_bars", 0) or 0) for t in trades]
+    avg_duration = float(np.mean(durations)) if durations else 0.0
+    
+    longs = sum(1 for t in trades if str(t.get("direction", "")).upper() == "LONG")
+    shorts = sum(1 for t in trades if str(t.get("direction", "")).upper() == "SHORT")
+    
+    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
+    losses = len(trades) - wins
+
+    return {
+        f"{prefix}_net_pnl": net_pnl,
+        f"{prefix}_gross_pnl": gross_pnl,
+        f"{prefix}_total_commission": total_commission,
+        f"{prefix}_avg_holding_time": avg_duration,
+        f"{prefix}_long_trades": longs,
+        f"{prefix}_short_trades": shorts,
+        f"{prefix}_win_trades": wins,
+        f"{prefix}_loss_trades": losses,
+    }
+
+def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
+    """
+    Calculates detailed metrics from a list of trade info dictionaries.
+    """
+    if not trades:
+        return {}
+
+    trade_pnls = [float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades]
+    net_pnl = sum(trade_pnls)
+    commissions = [float(t.get("trade_commission", 0.0) or 0.0) for t in trades]
+    total_commission = sum(commissions)
+    gross_pnl = net_pnl + total_commission
+    
+    durations = [int(t.get("holding_duration_bars", 0) or 0) for t in trades]
+    avg_duration = float(np.mean(durations)) if durations else 0.0
+    
+    longs = sum(1 for t in trades if str(t.get("direction", "")).upper() == "LONG")
+    shorts = sum(1 for t in trades if str(t.get("direction", "")).upper() == "SHORT")
+    
+    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
+    losses = len(trades) - wins
+
+    return {
+        f"{prefix}_net_pnl": net_pnl,
+        f"{prefix}_gross_pnl": gross_pnl,
+        f"{prefix}_total_commission": total_commission,
+        f"{prefix}_avg_holding_time": avg_duration,
+        f"{prefix}_long_trades": longs,
+        f"{prefix}_short_trades": shorts,
+        f"{prefix}_win_trades": wins,
+        f"{prefix}_loss_trades": losses,
+    }
 
 def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str = "Validation") -> Dict[str, Any]:
     """

@@ -759,24 +759,34 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
     val_seqs_transformed = [transform_sequence(seq, cfg) for seq in val_seqs_raw]
 
     # --- Calculate and save normalization stats ---
-    logging.info("Calculating per-ticker normalization stats from training data...")
-    train_sequences_transformed_dict = dict(zip(train_keys, train_seqs_transformed))
-    train_norm_stats = calculate_normalization_stats(train_sequences_transformed_dict)
+    logging.info("Calculating per-ticker normalization stats from RAW data (Old School)...")
+    
+    # [FIX] Считаем статы на RAW данных (train_seqs_raw), чтобы получить Positive Prices в norm_stats
+    # Создаем временный словарь raw-последовательностей для функции
+    raw_train_dict = dict(zip(train_keys, train_seqs_raw))
+    
+    # Теперь norm_stats будет содержать Raw Price Mean/Std (как в 1_norm_stats.json)
+    train_norm_stats = calculate_normalization_stats(raw_train_dict) 
 
-    # Create a global fallback for assets not seen during training
-    logging.info("Calculating global fallback normalization stats...")
-    full_dataset = np.concatenate(train_seqs_transformed, axis=0)
-    fallback_means = np.mean(full_dataset, axis=0, dtype=np.float32)
-    fallback_stds = np.std(full_dataset, axis=0, dtype=np.float32)
-    train_norm_stats["_fallback_"] = {"means": fallback_means.tolist(), "stds": fallback_stds.tolist()}
+    # Fallback (optional)
+    if train_seqs_raw:
+        full_raw = np.concatenate(train_seqs_raw, axis=0)
+        train_norm_stats["_fallback_"] = {
+            "means": full_raw.mean(axis=0).tolist(),
+            "stds": (full_raw.std(axis=0) + 1e-8).tolist()
+        }
 
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
         json.dump(train_norm_stats, f, indent=4, default=_numpy_json_default)
-    logging.info(f"Per-ticker normalization stats saved to: {stats_save_path}")
+    logging.info(f"Per-ticker RAW normalization stats saved to {stats_save_path}")
 
-    # --- Preprocess (normalize) sequences using the calculated stats ---
     logging.info("Applying normalization to datasets...")
+    # Применяем RAW статы к TRANSFORMED данным (как было в train_prev.py)
+    # Это математически странно ((LogRet - PriceMean)/PriceStd), но именно так работал "старый" код
+    # и именно это дает "Positive" norm_stats.json.
+    
+    train_sequences_transformed_dict = dict(zip(train_keys, train_seqs_transformed))
     val_sequences_transformed_dict = dict(zip(val_keys, val_seqs_transformed))
     train_sequences = apply_normalization(train_sequences_transformed_dict, train_norm_stats)
     val_sequences = apply_normalization(val_sequences_transformed_dict, train_norm_stats)
