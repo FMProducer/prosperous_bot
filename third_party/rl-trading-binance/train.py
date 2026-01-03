@@ -31,12 +31,12 @@ from utils import (
     load_config,
     load_npz_dataset,
     preprocess_sequences,
-    select_and_arrange_channels,
     create_walk_forward_folds,
     calculate_extended_metrics,
     set_random_seed,
     setup_logging,
-) # noqa: F401
+    apply_normalization,
+)
 
 def make_env(env_kwargs: dict):
     """Helper function to create a TradingEnvironment, designed to be picklable."""
@@ -753,9 +753,9 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
     logging.info(f"Data sizes: train={len(train_seqs_raw)}, val={len(val_seqs_raw)}, test={len(test_seqs)}")
 
     # --- Transform sequences ---
-    logging.info("Transforming sequences...")
-    train_seqs_transformed = [transform_sequence(seq, cfg) for seq in train_seqs_raw]
-    val_seqs_transformed = [transform_sequence(seq, cfg) for seq in val_seqs_raw]
+    logging.info("Transforming sequences using vectorized preprocess_sequences...")
+    train_seqs_transformed: List[np.ndarray] = preprocess_sequences(train_seqs_raw, cfg)
+    val_seqs_transformed: List[np.ndarray] = preprocess_sequences(val_seqs_raw, cfg)
 
     # --- Calculate and save normalization stats ---
     logging.info("Calculating per-ticker normalization stats from training data...")
@@ -777,8 +777,8 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
     # --- Preprocess (normalize) sequences using the calculated stats ---
     logging.info("Applying normalization to datasets...")
     val_sequences_transformed_dict = dict(zip(val_keys, val_seqs_transformed))
-    train_sequences = preprocess_sequences(train_sequences_transformed_dict, train_norm_stats)
-    val_sequences = preprocess_sequences(val_sequences_transformed_dict, train_norm_stats)
+    train_sequences = apply_normalization(train_sequences_transformed_dict, train_norm_stats)
+    val_sequences = apply_normalization(val_sequences_transformed_dict, train_norm_stats)
 
 
     # The preprocess function now returns a dict. We need to convert it back to lists
