@@ -89,7 +89,7 @@ cfg.rl.target_update_freq = 1500   # Чаще для длинных эпизод
 cfg.rl.train_freq = 4  # Обучение каждые 4 шага (стандарт для DQN)
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 cfg.rl.td_clip_value = 10.0  # New parameter
-cfg.rl.reward_clip = 1.0  # Жёсткое ограничение reward в [-1, +1]
+cfg.rl.reward_clip = 1.0  # Жёсткое ограничение reward в [-1, +1] 
 
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 1000000
