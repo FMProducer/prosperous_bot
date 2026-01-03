@@ -550,6 +550,9 @@ def _create_walk_forward_folds_days(merged_data, train_months, test_days, step_d
     return []
 
 def main(cfg: MasterConfig = None, _wfv_payload=None):
+    # Set thread count for CPU performance
+    torch.set_num_threads(1)
+
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
     if cfg is not None:
         cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую

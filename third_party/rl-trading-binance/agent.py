@@ -41,19 +41,23 @@ except ImportError:
     # Сообщение будет выведено только при попытке использовать ONNX функции.
     # logger.warning("ONNX Runtime не найден. Для ускорения CPU-инференса, установите его: pip install onnxruntime")
 
-def get_ort_session(model_path: str, intra_threads: int = 1):
-    """Оптимизированная сессия с динамическим количеством потоков."""
+def get_onnx_inference_session(model_path: str, intra_threads: int = 12):
+    """Creates an ONNX runtime session optimized for 12-core CPU inference."""
     if not os.path.exists(model_path):
+        logger.warning(f"ONNX model path does not exist: {model_path}")
         return None
 
-    sess_options = ort.SessionOptions()
-    # Для обучения в SubprocVecEnv ставим 1, для инференса в проде - 6 или 8
-    sess_options.intra_op_num_threads = intra_threads
-    sess_options.inter_op_num_threads = 1
-    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = intra_threads
+    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-    return ort.InferenceSession(model_path, sess_options, providers=['CPUExecutionProvider'])
+    # Set environment variable for OpenMP if not set
+    if "OMP_NUM_THREADS" not in os.environ:
+        os.environ["OMP_NUM_THREADS"] = str(intra_threads)
+
+    logger.info(f"Creating ONNX session with intra_op_num_threads={intra_threads}")
+    return ort.InferenceSession(model_path, options, providers=['CPUExecutionProvider'])
 
 class D3QN_PER_Agent:
     """A Dueling Double Deep Q-Network (D3QN) agent with Prioritized Experience Replay (PER).
@@ -112,15 +116,15 @@ class D3QN_PER_Agent:
         self.action_dim = action_dim
         self.epsilon = 1.0 # Фикс для AttributeError
 
-        # Определяем количество потоков: 1 если мы в векторизованной среде обучения
-        # Иначе берем из конфига или ставим 6 (для твоего CPU)
+        # For vectorized environments, use 1 thread per worker to avoid contention.
+        # For single-threaded inference, use the optimized session.
         num_envs = getattr(config.vec, 'num_envs', 1)
-        onnx_threads = 1 if num_envs > 1 else 6
+        onnx_threads = 1 if num_envs > 1 else 12
 
         self.ort_session = None
         model_path_onnx = getattr(config.paths, 'model_path_onnx', None)
         if model_path_onnx and os.path.exists(model_path_onnx):
-            self.ort_session = get_ort_session(model_path_onnx, intra_threads=onnx_threads)
+            self.ort_session = get_onnx_inference_session(model_path_onnx, intra_threads=onnx_threads)
 
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
@@ -923,9 +927,8 @@ class D3QN_PER_Agent:
             try:
                 with open(self.cache_path, "rb") as f:
                     packed_data = f.read()
-                    data = msgpack.unpackb(packed_data, object_hook=m.decode)
-                    # Keys are stored as strings, convert them back to tuples
-                    self.qval_cache = OrderedDict({ast.literal_eval(k): v for k, v in data.items()})
+                    # Use binary keys directly from msgpack
+                    self.qval_cache = OrderedDict(msgpack.unpackb(packed_data, use_list=False, object_hook=m.decode))
                 logger.info(f"Loaded MessagePack Q-value cache from {self.cache_path} ({len(self.qval_cache)} entries).")
             except Exception as e:
                 logger.error(f"Failed to load MessagePack cache: {e}. Starting with an empty cache.")
@@ -940,10 +943,9 @@ class D3QN_PER_Agent:
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
         tmp_path = self.cache_path + ".tmp"
         try:
-            # Convert tuple keys to strings for serialization
-            data_to_pack = {str(k): v for k, v in self.qval_cache.items()}
             with open(tmp_path, "wb") as f:
-                packed_data = msgpack.packb(data_to_pack, default=m.encode)
+                # Use binary keys directly from msgpack
+                packed_data = msgpack.packb(list(self.qval_cache.items()), default=m.encode)
                 f.write(packed_data)
             os.replace(tmp_path, self.cache_path)
             logger.info(f"Q-value cache saved to {self.cache_path} using MessagePack.")
