@@ -549,7 +549,7 @@ def _create_walk_forward_folds_days(merged_data, train_months, test_days, step_d
     # I will add the logic to main to use the config params if available.
     return []
 
-def main(cfg: MasterConfig = None, _wfv_payload=None):
+def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | None = None):
     # Set thread count for CPU performance
     torch.set_num_threads(1)
 
@@ -564,6 +564,9 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
     # --- Walk-Forward Validation Logic ---
     if cfg.walk_forward.enabled and _wfv_payload is None:
         logging.info("Starting Walk-Forward Validation (WFV) mode...")
+        # Create a single session name for the entire WFV run
+        wfv_session_name = f"{cfg.project_name}_wfv_{time.strftime('%Y%m%d_%H%M%S')}"
+
         merged_data = []
         for src in cfg.walk_forward.data_sources:
             merged_data.extend(load_npz_dataset(src, "WFV_Source", cfg.paths.plot_dir))
@@ -614,7 +617,7 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
             
         for i, (train_f, val_f) in enumerate(folds):
             logging.info(f"\n{'='*40}\nStarting WFV Fold {i+1}/{len(folds)}\n{'='*40}")
-            main(cfg, _wfv_payload=(i, train_f, val_f))
+            main(cfg, _wfv_payload=(i, train_f, val_f), wfv_session_name=wfv_session_name)
         return
 
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
@@ -663,8 +666,16 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
         cfg.paths.model_dir = os.path.join(base_out or "output", cfg.paths.config_name, "saved_models")
     if not hasattr(cfg.paths, "plot_dir") or cfg.paths.plot_dir in (None, ""):
         cfg.paths.plot_dir = os.path.join(base_out or "output", cfg.paths.config_name, "plots")
-    models_dir = os.path.join(cfg.paths.model_dir, session_name)
-    plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
+
+    if wfv_session_name:
+        # For WFV, create a subdirectory for the fold within the main WFV session directory
+        fold_idx = _wfv_payload[0] if _wfv_payload else "unknown_fold"
+        models_dir = os.path.join(cfg.paths.model_dir, wfv_session_name, f"fold_{fold_idx}")
+        plots_dir = os.path.join(cfg.paths.plot_dir, wfv_session_name, f"fold_{fold_idx}")
+    else:
+        models_dir = os.path.join(cfg.paths.model_dir, session_name)
+        plots_dir = os.path.join(cfg.paths.plot_dir, session_name)
+
     os.makedirs(models_dir, exist_ok=True)
     candidates_dir = os.path.join(models_dir, "candidates")
     os.makedirs(candidates_dir, exist_ok=True)
@@ -741,7 +752,9 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
 
     logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
 
-    # --- Calculate normalization stats per ticker ---
+    # --- Calculate and save normalization stats ---
+    # In WFV mode, this is calculated *per fold* using only the fold's training data.
+    # In a normal run, it's calculated for the entire training dataset.
     logging.info("Calculating normalization stats per ticker...")
     ticker_seqs = defaultdict(list)
     for seq, key in zip(train_seqs, train_keys):
@@ -766,27 +779,10 @@ def main(cfg: MasterConfig = None, _wfv_payload=None):
             logging.warning(f"Ticker {tk} missing in train data. Using global stats.")
             env_stats[tk] = global_stats
 
-    # # PRE-NORMALIZE
-    # train_seqs = preprocess_sequences(
-    #     train_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
-    # val_seqs = preprocess_sequences(
-    #     val_seqs, train_stats,
-    #     cfg.data.data_channels,
-    #     cfg.data.price_channels,
-    #     cfg.data.volume_channels,
-    #     cfg.data.other_channels
-    # )
-
-    # --- Save normalization stats for this training run ---
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
         json.dump(env_stats, f, indent=4, default=_numpy_json_default)
-    logging.info(f"Normalization stats saved to: {stats_save_path}")
+    logging.info(f"Normalization stats for this run saved to: {stats_save_path}")
 
 
     env_kwargs = {
