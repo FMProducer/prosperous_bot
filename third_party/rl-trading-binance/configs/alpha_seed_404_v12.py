@@ -121,7 +121,7 @@ cfg.walk_forward.data_sources = [
 ]
 
 # Env/Vectorized
-cfg.vec.num_envs = 4             # Уменьшено для снижения overhead на Windows
+cfg.vec.num_envs = 8             # Уменьшено для снижения overhead на Windows
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
