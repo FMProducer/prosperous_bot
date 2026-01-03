@@ -209,73 +209,27 @@ def transform_sequence(
 
 
 def calculate_normalization_stats(
-    sequences_dict: Dict[str, np.ndarray], cfg: MasterConfig
+    sequences_dict: Dict[str, np.ndarray]
 ) -> Dict[str, Dict[str, List[float]]]:
     """
-    Считает потикерные статы (Per-Asset Normalization) ПОСЛЕ трансформации признаков.
+    Считает потикерные статы (Per-Asset Normalization) на УЖЕ трансформированных признаках.
     """
-    ticker_stats = {}
     assets_data = defaultdict(list)
 
-    # Сначала трансформируем все последовательности
-    transformed_sequences = {key: transform_sequence(seq, cfg) for key, seq in sequences_dict.items()}
-
-    # Затем группируем их по тикерам
-    for key, transformed_seq in transformed_sequences.items():
+    # Группируем их по тикерам
+    for key, seq in sequences_dict.items():
         asset = key.split("_")[0] if isinstance(key, str) else key[0]
-        assets_data[asset].append(transformed_seq)
+        assets_data[asset].append(seq)
 
+    norm_stats = {}
     for asset, seqs in assets_data.items():
         concatenated = np.concatenate(seqs, axis=0)
+        # Считаем по оси 0, оставляя размерность каналов
         means = np.mean(concatenated, axis=0, dtype=np.float32)
         stds = np.std(concatenated, axis=0, dtype=np.float32)
-        stds[stds < 1e-7] = 1.0  # Защита от деления на ноль
-        ticker_stats[asset] = {"means": means.tolist(), "stds": stds.tolist()}
-    logger.info("Статистики нормализации по тикерам успешно рассчитаны.")
-    return ticker_stats
+        norm_stats[asset] = {"means": means.tolist(), "stds": (stds + 1e-8).tolist()}
 
-
-def apply_normalization_to_sequence(
-    seq: npt.NDArray[np.float32],
-    stats: Dict[str, Dict[str, float]],
-    use_channels: List[str]
-) -> npt.NDArray[np.float32]:
-    """
-    Применяет z-score нормализацию к УЖЕ ПРЕОБРАЗОВАННОЙ последовательности.
-    Работает со статистиками в формате словаря каналов.
-    Args:
-        seq (npt.NDArray[np.float32]): Преобразованная последовательность, форма (L, C).
-        stats (Dict[str, Dict[str, float]]): Словарь статистик актива, e.g., {'means': {'open': v1}, 'stds': ...}.
-        use_channels (List[str]): Список каналов в том порядке, в котором они идут в `seq`.
-    Returns:
-        npt.NDArray[np.float32]: Нормализованная последовательность, форма (L, C).
-    """
-    if not isinstance(seq, np.ndarray) or seq.ndim != 2:
-        raise ValueError(f"Ожидается 2D массив (L, C), получено: {seq.shape}")
-
-    if seq.shape[1] != len(use_channels):
-        raise ValueError(f"Несоответствие количества каналов: seq.shape[1]={seq.shape[1]}, len(use_channels)={len(use_channels)}")
-
-    # Извлекаем данные (теперь это списки, а не словари)
-    means = stats.get('means', [])
-    stds = stats.get('stds', [])
-
-    if len(means) != len(use_channels) or len(stds) != len(use_channels):
-        raise ValueError(
-            f"Normalization stats mismatch! "
-            f"Means length: {len(means)}, Stds length: {len(stds)}, "
-            f"Expected channels: {len(use_channels)}."
-        )
-
-    means_vec = np.array(means, dtype=np.float32)
-    stds_vec = np.array(stds, dtype=np.float32)
-
-    # Защита от деления на ноль
-    stds_vec[stds_vec < 1e-8] = 1.0
-
-    # Используем broadcasting NumPy: (L, C) - (C,) / (C,)
-    return ((seq - means_vec) / stds_vec).astype(np.float32)
-
+    return norm_stats
 
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
     cfg_path = Path(path)
@@ -582,10 +536,10 @@ def apply_normalization(
     return normalized_seq.astype(np.float32)
 
 def preprocess_sequences(
-    sequences_dict: Dict[str, np.ndarray], norm_stats: Dict[str, Any], cfg: MasterConfig
+    sequences_dict: Dict[str, np.ndarray], norm_stats: Dict[str, Any]
 ) -> Dict[str, np.ndarray]:
     """
-    Применяет трансформацию и потикерную нормализацию к каждой последовательности.
+    Применяет потикерную нормализацию к каждой УЖЕ трансформированной последовательности.
     Возвращает словарь нормализованных последовательностей.
     """
     preprocessed_dict = {}
@@ -594,18 +548,23 @@ def preprocess_sequences(
         asset_stats = norm_stats.get(asset)
 
         if not asset_stats:
-            logger.warning(f"No stats found for asset {asset}, skipping sequence {key}.")
-            continue
+            logger.warning(f"No stats found for asset {asset}, using fallback stats for sequence {key}.")
+            asset_stats = norm_stats.get("_fallback_")
+            if not asset_stats:
+                logger.error("Fallback stats not found, skipping sequence {key}.")
+                continue
 
-        # 1. Трансформация признаков
-        transformed_seq = transform_sequence(seq, cfg)
-
-        # 2. Нормализация
+        # Нормализация
         means = np.array(asset_stats["means"], dtype=np.float32)
         stds = np.array(asset_stats["stds"], dtype=np.float32)
 
         # Безопасное деление
-        norm_seq = (transformed_seq - means) / (stds + 1e-8)
+        norm_seq = (seq - means) / (stds + 1e-8)
+
+        if not np.isfinite(norm_seq).all():
+            logger.warning(f"NaN or inf found in normalized sequence for key {key}. Replacing with zeros.")
+            norm_seq = np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
+
         preprocessed_dict[key] = norm_seq
     return preprocessed_dict
 
