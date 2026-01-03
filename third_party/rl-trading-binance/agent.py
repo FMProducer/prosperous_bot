@@ -49,6 +49,7 @@ def get_onnx_inference_session(model_path: str, intra_threads: int = 12):
 
     options = ort.SessionOptions()
     options.intra_op_num_threads = intra_threads
+    # Оптимизация для Ryzen: отключаем лишние переключения контекста
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
