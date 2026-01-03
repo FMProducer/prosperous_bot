@@ -126,6 +126,14 @@ class DuelingQNetwork(nn.Module):
         
         return q_value
 
+    def prepare_for_cpu_inference(self):
+        """Applies dynamic quantization for CPU acceleration."""
+        self.eval()
+        quantized_model = torch.quantization.quantize_dynamic(
+            self, {nn.Linear, nn.Conv1d}, dtype=torch.qint8
+        )
+        return quantized_model
+
     def export_for_inference(self) -> torch.jit.ScriptModule:
         """
         Возвращает TorchScript-версию модели для инференса.
