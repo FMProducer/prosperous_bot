@@ -535,7 +535,26 @@ def apply_normalization(
 
     return normalized_seq.astype(np.float32)
 
-def preprocess_sequences(
+def preprocess_sequences(sequences: List[np.ndarray], cfg: MasterConfig) -> List[np.ndarray]:
+    """
+    Vectorized preprocessing of sequences.
+    Why: Minimizes Python overhead by batching operations.
+    """
+    if not sequences:
+        return []
+
+    # Stack into (N, Channels, Length)
+    batch = np.stack(sequences)
+
+    # 1. Select channels (vectorized)
+    # Assuming select_and_arrange_channels can handle 3D or is called once
+    batch = batch[:, :cfg.data.num_channels, :]
+
+    # 2. Reshape to state_shape (N, C, L, 1) -> return list for Env
+    processed = [np.expand_dims(s, axis=-1) for s in batch]
+    return processed
+
+def apply_normalization(
     sequences_dict: Dict[str, np.ndarray], norm_stats: Dict[str, Any]
 ) -> Dict[str, np.ndarray]:
     """
