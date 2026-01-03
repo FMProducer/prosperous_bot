@@ -210,24 +210,32 @@ def transform_sequence(
 
 def calculate_normalization_stats(
     sequences_dict: Dict[str, np.ndarray]
-) -> Dict[str, Dict[str, List[float]]]:
-    """
-    Считает потикерные статы (Per-Asset Normalization) на УЖЕ трансформированных признаках.
-    """
+) -> Dict[str, Dict[str, List[float]]]: # REVERTED TO TRAIN_PREV LOGIC
     assets_data = defaultdict(list)
 
-    # Группируем их по тикерам
     for key, seq in sequences_dict.items():
-        asset = key.split("_")[0] if isinstance(key, str) else key[0]
+        # Strict extraction from train_prev.py
+        if isinstance(key, (tuple, list)):
+            asset = key[0]
+        else:
+            asset = str(key).split('_')[0]
+        
+        if isinstance(asset, bytes):
+            asset = asset.decode('utf-8')
+            
         assets_data[asset].append(seq)
 
     norm_stats = {}
     for asset, seqs in assets_data.items():
-        concatenated = np.concatenate(seqs, axis=0)
-        # Считаем по оси 0, оставляя размерность каналов
-        means = np.mean(concatenated, axis=0, dtype=np.float32)
-        stds = np.std(concatenated, axis=0, dtype=np.float32)
-        norm_stats[asset] = {"means": means.tolist(), "stds": (stds + 1e-8).tolist()}
+        if not seqs: continue
+        try:
+            concatenated = np.concatenate(seqs, axis=0)
+            means = concatenated.mean(axis=0).tolist()
+            # Strict epsilon placement from train_prev.py
+            stds = (concatenated.std(axis=0) + 1e-8).tolist()
+            norm_stats[asset] = {"means": means, "stds": stds}
+        except ValueError:
+            continue
 
     return norm_stats
 
@@ -555,36 +563,32 @@ def preprocess_sequences(sequences: List[np.ndarray], cfg: MasterConfig) -> List
     return processed
 
 def apply_normalization(
-    sequences_dict: Dict[str, np.ndarray], norm_stats: Dict[str, Any]
+    sequences_dict: Dict[str, np.ndarray], 
+    norm_stats: Dict[str, Any]
 ) -> Dict[str, np.ndarray]:
-    """
-    Применяет потикерную нормализацию к каждой УЖЕ трансформированной последовательности.
-    Возвращает словарь нормализованных последовательностей.
-    """
     preprocessed_dict = {}
     for key, seq in sequences_dict.items():
-        asset = key.split("_")[0] if isinstance(key, str) else key[0]
+        # Strict extraction match
+        if isinstance(key, (tuple, list)):
+            asset = key[0]
+        else:
+            asset = str(key).split('_')[0]
+            
         asset_stats = norm_stats.get(asset)
-
         if not asset_stats:
-            logger.warning(f"No stats found for asset {asset}, using fallback stats for sequence {key}.")
             asset_stats = norm_stats.get("_fallback_")
-            if not asset_stats:
-                logger.error("Fallback stats not found, skipping sequence {key}.")
-                continue
+        
+        if not asset_stats: continue
 
-        # Нормализация
         means = np.array(asset_stats["means"], dtype=np.float32)
         stds = np.array(asset_stats["stds"], dtype=np.float32)
 
-        # Безопасное деление
+        # Strict math REVERT from utils_prev.py snippet
+        # (seq - means) / (stds + 1e-8) -- double epsilon safety
         norm_seq = (seq - means) / (stds + 1e-8)
 
-        if not np.isfinite(norm_seq).all():
-            logger.warning(f"NaN or inf found in normalized sequence for key {key}. Replacing with zeros.")
-            norm_seq = np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
-
-        preprocessed_dict[key] = norm_seq
+        norm_seq = np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
+        preprocessed_dict[key] = norm_seq.astype(np.float32)
     return preprocessed_dict
 
 def create_validation_episodes(
@@ -707,16 +711,6 @@ def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str = "Vali
     wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
     losses = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) <= 0)
 
-    return {
-        f"{prefix}_net_pnl": net_pnl,
-        f"{prefix}_gross_pnl": gross_pnl,
-        f"{prefix}_total_commission": comm,
-        f"{prefix}_avg_holding_time": avg_duration,
-        f"{prefix}_long_trades": longs,
-        f"{prefix}_short_trades": shorts,
-        f"{prefix}_win_trades": wins,
-        f"{prefix}_loss_trades": losses,
-    }
     return {
         f"{prefix}_net_pnl": net_pnl,
         f"{prefix}_gross_pnl": gross_pnl,

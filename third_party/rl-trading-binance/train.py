@@ -31,7 +31,7 @@ from utils import (
     load_config,
     select_and_arrange_channels,
     load_npz_dataset,
-    preprocess_sequences,
+    transform_sequence,
     create_walk_forward_folds,
     calculate_extended_metrics,
     set_random_seed,
@@ -754,9 +754,9 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
     logging.info(f"Data sizes: train={len(train_seqs_raw)}, val={len(val_seqs_raw)}, test={len(test_seqs)}")
 
     # --- Transform sequences ---
-    logging.info("Transforming sequences using vectorized preprocess_sequences...")
-    train_seqs_transformed: List[np.ndarray] = preprocess_sequences(train_seqs_raw, cfg)
-    val_seqs_transformed: List[np.ndarray] = preprocess_sequences(val_seqs_raw, cfg)
+    logging.info("Transforming sequences (log-returns)...")
+    train_seqs_transformed = [transform_sequence(seq, cfg) for seq in train_seqs_raw]
+    val_seqs_transformed = [transform_sequence(seq, cfg) for seq in val_seqs_raw]
 
     # --- Calculate and save normalization stats ---
     logging.info("Calculating per-ticker normalization stats from training data...")
