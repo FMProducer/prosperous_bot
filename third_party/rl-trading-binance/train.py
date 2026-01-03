@@ -32,6 +32,8 @@ from utils import (
     load_npz_dataset,
     preprocess_sequences,
     select_and_arrange_channels,
+    create_walk_forward_folds,
+    calculate_extended_metrics,
     set_random_seed,
     setup_logging,
 ) # noqa: F401
@@ -365,6 +367,7 @@ def evaluate_agent(
     ep_rews:   list[float] = []
     ep_wrs:    list[float] = []
     exit_counts: Dict[str,int] = {}
+    trade_infos: list[dict] = []
     tsl_hits = 0
 
     stub_dt = dt.datetime(2000, 1, 1, 0, 0)
@@ -396,6 +399,7 @@ def evaluate_agent(
                 ep_trades += 1
                 trade_pnls.append(pnl)
                 ep_trade_pnls.append(pnl)
+                trade_infos.append(info)
                 if info.get("correct_prediction", False):
                     ep_wins += 1
                 reason = (info.get("exit_reason") or "")
@@ -483,6 +487,8 @@ def evaluate_agent(
         f"{L}_sharpe":  float(np.clip(sharpe,   -10.0, 10.0)),
         f"{L}_sortino": float(np.clip(sortino,  -10.0, 10.0)),
     }
+    # Add extended metrics (net_pnl, commission, duration, etc.)
+    out.update(calculate_extended_metrics(trade_infos, prefix=L))
     if L == "Test":
         out.update({
             "Test_all_pnls": ep_pnls,
@@ -503,7 +509,7 @@ def process_data(raw_list, name_dataset, cfg: MasterConfig):
     return seqs, keys
 
 
-def main(cfg: MasterConfig = None):
+def main(cfg: MasterConfig = None, _wfv_payload=None):
     # Загружаем конфиг и модуль, чтобы иметь доступ ко всем переменным, включая bundle_cfg
     if cfg is not None:
         cfg_mod = None # Модуль конфига недоступен, если cfg передан напрямую
@@ -512,12 +518,32 @@ def main(cfg: MasterConfig = None):
     else:
         cfg, cfg_mod = default_cfg, None
 
+    # --- Walk-Forward Validation Logic ---
+    if cfg.walk_forward.enabled and _wfv_payload is None:
+        logging.info("Starting Walk-Forward Validation (WFV) mode...")
+        merged_data = []
+        for src in cfg.walk_forward.data_sources:
+            merged_data.extend(load_npz_dataset(src, "WFV_Source", cfg.paths.plot_dir))
+        
+        folds = create_walk_forward_folds(
+            merged_data, cfg.walk_forward.train_months, 
+            cfg.walk_forward.test_months, cfg.walk_forward.step_months
+        )
+        for i, (train_f, val_f) in enumerate(folds):
+            logging.info(f"\n{'='*40}\nStarting WFV Fold {i+1}/{len(folds)}\n{'='*40}")
+            main(cfg, _wfv_payload=(i, train_f, val_f))
+        return
+
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
 
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
     setup_logging(session_name, cfg)
+    
+    if _wfv_payload is not None:
+        session_name = f"{session_name}_fold_{_wfv_payload[0]}"
+        setup_logging(session_name, cfg) # Re-setup logging for fold
     set_random_seed(cfg.random_seed)
     # Получаем bundle_cfg из модуля или из cfg для обратной совместимости
     bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
@@ -574,40 +600,45 @@ def main(cfg: MasterConfig = None):
     except ImportError:
         logging.info("Safetensors is not installed.")
 
-    raw_train = load_npz_dataset(
-        file_path=cfg.paths.train_data_path,
-        name_dataset="Train",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
-
-    raw_val = (
-        load_npz_dataset(
-            file_path=cfg.paths.val_data_path,
-            name_dataset="Val",
+    if _wfv_payload is not None:
+        _, raw_train, raw_val = _wfv_payload
+        raw_test = []
+        logging.info(f"WFV Fold Data: Train={len(raw_train)}, Val={len(raw_val)}")
+    else:
+        raw_train = load_npz_dataset(
+            file_path=cfg.paths.train_data_path,
+            name_dataset="Train",
             plot_dir=cfg.paths.plot_dir,
             debug_max_size=cfg.debug.debug_max_size_data,
             plot_examples=cfg.data.plot_examples,
             plot_channel_idx=cfg.data.plot_channel_idx,
             pre_signal_len=cfg.seq.pre_signal_len,
         )
-        if cfg.trainlog.validate_model
-        else []
-    )
 
-    raw_test = load_npz_dataset(
-        file_path=cfg.paths.test_data_path,
-        name_dataset="Test",
-        plot_dir=cfg.paths.plot_dir,
-        debug_max_size=cfg.debug.debug_max_size_data,
-        plot_examples=cfg.data.plot_examples,
-        plot_channel_idx=cfg.data.plot_channel_idx,
-        pre_signal_len=cfg.seq.pre_signal_len,
-    )
-    raw_test = []
+        raw_val = (
+            load_npz_dataset(
+                file_path=cfg.paths.val_data_path,
+                name_dataset="Val",
+                plot_dir=cfg.paths.plot_dir,
+                debug_max_size=cfg.debug.debug_max_size_data,
+                plot_examples=cfg.data.plot_examples,
+                plot_channel_idx=cfg.data.plot_channel_idx,
+                pre_signal_len=cfg.seq.pre_signal_len,
+            )
+            if cfg.trainlog.validate_model
+            else []
+        )
+
+        raw_test = load_npz_dataset(
+            file_path=cfg.paths.test_data_path,
+            name_dataset="Test",
+            plot_dir=cfg.paths.plot_dir,
+            debug_max_size=cfg.debug.debug_max_size_data,
+            plot_examples=cfg.data.plot_examples,
+            plot_channel_idx=cfg.data.plot_channel_idx,
+            pre_signal_len=cfg.seq.pre_signal_len,
+        )
+        raw_test = []
 
     train_seqs, train_keys = process_data(raw_train, "Train", cfg)
     val_seqs, val_keys = process_data(raw_val, "Val", cfg)
@@ -700,6 +731,7 @@ def main(cfg: MasterConfig = None):
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
         "position_fraction": cfg.backtest.position_fraction,
         "order_size_usdt": cfg.backtest.order_size_usdt,
+        "allowed_directions": cfg.market.allowed_directions,
     }
     # --- TRAIN ENV: single vs vectorized ---
     if cfg.vec.num_envs > 1:
@@ -1007,6 +1039,16 @@ def main(cfg: MasterConfig = None):
             with open(cand_metrics_path, "w", encoding="utf-8") as f:
                 json.dump(metrics, f, indent=2, default=_numpy_json_default)
             logging.info(f"Saved candidate metrics: {cand_metrics_path}")
+
+            # Save full checkpoint metrics (legacy format support)
+            ckpt_path = os.path.join(candidates_dir, f"checkpoint_ep{ep:05d}.json")
+            ckpt_data = {
+                "episode": int(ep),
+                "metrics": metrics,
+                "timestamp": dt.datetime.utcnow().isoformat() + "Z"
+            }
+            with open(ckpt_path, "w", encoding="utf-8") as f:
+                json.dump(ckpt_data, f, indent=2, default=_numpy_json_default)
 
             # Корректное сравнение tuple/float/None
             def _is_better(current, best):

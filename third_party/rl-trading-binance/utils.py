@@ -693,3 +693,35 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         valid_keys.append(key)
 
     return prepped_sequences, valid_keys
+
+def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str = "Validation") -> Dict[str, Any]:
+    """
+    Calculates detailed metrics from a list of trade info dictionaries.
+    """
+    if not trades:
+        return {}
+
+    net_pnl = sum(float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades)
+    comm = sum(float(t.get("trade_commission", 0.0) or 0.0) for t in trades)
+    gross_pnl = net_pnl + comm
+    
+    durations = [int(t.get("trade_duration", 0) or 0) for t in trades]
+    avg_duration = float(np.mean(durations)) if durations else 0.0
+    
+    # Direction: assume 1=LONG, 2=SHORT or strings
+    longs = sum(1 for t in trades if str(t.get("trade_direction", "")).upper() in ("1", "LONG"))
+    shorts = sum(1 for t in trades if str(t.get("trade_direction", "")).upper() in ("2", "SHORT"))
+    
+    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
+    losses = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) <= 0)
+
+    return {
+        f"{prefix}_net_pnl": net_pnl,
+        f"{prefix}_gross_pnl": gross_pnl,
+        f"{prefix}_total_commission": comm,
+        f"{prefix}_avg_holding_time": avg_duration,
+        f"{prefix}_long_trades": longs,
+        f"{prefix}_short_trades": shorts,
+        f"{prefix}_win_trades": wins,
+        f"{prefix}_loss_trades": losses,
+    }

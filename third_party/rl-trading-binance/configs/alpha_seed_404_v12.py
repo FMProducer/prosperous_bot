@@ -99,6 +99,23 @@ cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 400000
 
+# --- Walk-Forward Validation (WFV) ---
+# Установите enabled = True для активации режима WFV
+cfg.walk_forward.enabled = True 
+
+# Параметры для нарезки данных на фолды
+cfg.walk_forward.train_months = 8  # Длительность обучающего окна в месяцах
+cfg.walk_forward.test_months = 2   # Длительность валидационного (тестового) окна в месяцах
+cfg.walk_forward.step_months = 2   # Шаг, с которым сдвигается окно
+
+# Укажите пути к файлам данных, которые будут объединены и использованы для WFV.
+# Порядок важен, так как данные будут отсортированы по дате.
+cfg.walk_forward.data_sources = [
+    "data/train_data_fair_8m.npz",
+    "data/val_data_fair_2m.npz",
+    "data/backtest_data_fair_2m.npz"
+]
+
 # Env/Vectorized
 cfg.vec.num_envs = 4             # Уменьшено для снижения overhead на Windows
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
