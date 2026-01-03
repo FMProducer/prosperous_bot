@@ -734,71 +734,63 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
         )
         raw_test = []
 
-    train_seqs, train_keys = process_data(raw_train, "Train", cfg)
-    val_seqs, val_keys = process_data(raw_val, "Val", cfg)
+    train_seqs_raw, train_keys = process_data(raw_train, "Train", cfg)
+    val_seqs_raw, val_keys = process_data(raw_val, "Val", cfg)
     test_seqs, test_keys = process_data(raw_test, "Test", cfg)
 
     # --- ИСПРАВЛЕНИЕ: Предобработка формы данных один раз ---
     # Это предотвращает дорогостоящую операцию reshape в каждом воркере SubprocVecEnv
-    if train_seqs and len(train_seqs[0].shape) == 3 and train_seqs[0].shape[2] == 1:
+    if train_seqs_raw and len(train_seqs_raw[0].shape) == 3 and train_seqs_raw[0].shape[2] == 1:
         logging.info("Reshaping sequences from (C, L, 1) to (L, C) in the main process...")
-        train_seqs = [seq.squeeze(-1).T for seq in train_seqs]
-        val_seqs = [seq.squeeze(-1).T for seq in val_seqs]
+        train_seqs_raw = [seq.squeeze(-1).T for seq in train_seqs_raw]
+        val_seqs_raw = [seq.squeeze(-1).T for seq in val_seqs_raw]
         test_seqs = [seq.squeeze(-1).T for seq in test_seqs]
 
-    if not train_seqs:
+    if not train_seqs_raw:
         logging.error("No training data – aborting.")
         return
 
-    logging.info(f"Data sizes: train={len(train_seqs)}, val={len(val_seqs)}, test={len(test_seqs)}")
+    logging.info(f"Data sizes: train={len(train_seqs_raw)}, val={len(val_seqs_raw)}, test={len(test_seqs)}")
+
+    # --- Transform sequences ---
+    logging.info("Transforming sequences...")
+    train_seqs_transformed = [transform_sequence(seq, cfg) for seq in train_seqs_raw]
+    val_seqs_transformed = [transform_sequence(seq, cfg) for seq in val_seqs_raw]
 
     # --- Calculate and save normalization stats ---
     logging.info("Calculating per-ticker normalization stats from training data...")
-    train_seqs_dict = dict(zip(train_keys, train_seqs))
-    norm_stats = calculate_normalization_stats(train_seqs_dict, cfg)
+    train_sequences_transformed_dict = dict(zip(train_keys, train_seqs_transformed))
+    train_norm_stats = calculate_normalization_stats(train_sequences_transformed_dict)
 
     # Create a global fallback for assets not seen during training
     logging.info("Calculating global fallback normalization stats...")
-    all_transformed_seqs = [transform_sequence(seq, cfg) for seq in train_seqs]
-    full_dataset = np.concatenate(all_transformed_seqs, axis=0)
+    full_dataset = np.concatenate(train_seqs_transformed, axis=0)
     fallback_means = np.mean(full_dataset, axis=0, dtype=np.float32)
     fallback_stds = np.std(full_dataset, axis=0, dtype=np.float32)
-    fallback_stds[fallback_stds < 1e-7] = 1.0
-    norm_stats["_fallback_"] = {"means": fallback_means.tolist(), "stds": fallback_stds.tolist()}
+    train_norm_stats["_fallback_"] = {"means": fallback_means.tolist(), "stds": fallback_stds.tolist()}
 
     stats_save_path = os.path.join(models_dir, "norm_stats.json")
     with open(stats_save_path, "w") as f:
-        json.dump(norm_stats, f, indent=4, default=_numpy_json_default)
+        json.dump(train_norm_stats, f, indent=4, default=_numpy_json_default)
     logging.info(f"Per-ticker normalization stats saved to: {stats_save_path}")
 
     # --- Preprocess (normalize) sequences using the calculated stats ---
     logging.info("Applying normalization to datasets...")
+    val_sequences_transformed_dict = dict(zip(val_keys, val_seqs_transformed))
+    train_sequences = preprocess_sequences(train_sequences_transformed_dict, train_norm_stats)
+    val_sequences = preprocess_sequences(val_sequences_transformed_dict, train_norm_stats)
 
-    # Helper to get asset from key
-    def get_asset(key):
-        asset = key[0] if isinstance(key, (tuple, list)) else str(key).split('_')[0]
-        return asset.decode('utf-8') if isinstance(asset, bytes) else asset
-
-    # For validation, use fallback stats if a ticker is not in the training stats
-    val_seqs_dict = dict(zip(val_keys, val_seqs))
-    val_stats_with_fallback = norm_stats.copy()
-    for key in val_keys:
-        asset = get_asset(key)
-        if asset not in val_stats_with_fallback:
-            val_stats_with_fallback[asset] = norm_stats["_fallback_"]
-
-    norm_train_seqs_dict = preprocess_sequences(train_seqs_dict, norm_stats, cfg)
-    norm_val_seqs_dict = preprocess_sequences(val_seqs_dict, val_stats_with_fallback, cfg)
 
     # The preprocess function now returns a dict. We need to convert it back to lists
     # while maintaining the original order.
-    final_norm_train_seqs = [norm_train_seqs_dict[k] for k in train_keys if k in norm_train_seqs_dict]
-    final_train_keys = [k for k in train_keys if k in norm_train_seqs_dict]
-    final_raw_train_seqs = [s for k, s in zip(train_keys, train_seqs) if k in norm_train_seqs_dict]
+    final_norm_train_seqs = [train_sequences[k] for k in train_keys if k in train_sequences]
+    final_train_keys = [k for k in train_keys if k in train_sequences]
+    final_raw_train_seqs = [s for k, s in zip(train_keys, train_seqs_raw) if k in train_sequences]
 
-    final_norm_val_seqs = [norm_val_seqs_dict[k] for k in val_keys if k in norm_val_seqs_dict]
-    final_val_keys = [k for k in val_keys if k in norm_val_seqs_dict]
-    final_raw_val_seqs = [s for k, s in zip(val_keys, val_seqs) if k in norm_val_seqs_dict]
+    final_norm_val_seqs = [val_sequences[k] for k in val_keys if k in val_sequences]
+    final_val_keys = [k for k in val_keys if k in val_sequences]
+    final_raw_val_seqs = [s for k, s in zip(val_keys, val_seqs_raw) if k in val_sequences]
+
 
     logging.info(f"Data sizes after normalization: train={len(final_norm_train_seqs)}, val={len(final_norm_val_seqs)}")
 
@@ -806,7 +798,7 @@ def main(cfg: MasterConfig = None, _wfv_payload=None, wfv_session_name: str | No
         "sequences": final_norm_train_seqs,
         "raw_sequences": final_raw_train_seqs,
         "keys": final_train_keys,
-        "stats": val_stats_with_fallback, # Pass stats with fallback to env
+        "stats": train_norm_stats, # Теперь это Dict тикеров
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": cfg.seq.num_features,
