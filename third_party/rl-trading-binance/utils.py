@@ -209,31 +209,30 @@ def transform_sequence(
 
 
 def calculate_normalization_stats(
-    sequences: List[npt.NDArray[np.float32]],
-    cfg: MasterConfig,
-) -> Dict[str, np.ndarray]:
+    sequences_dict: Dict[str, np.ndarray], cfg: MasterConfig
+) -> Dict[str, Dict[str, List[float]]]:
     """
-    Вычисляет статистики (mean, std) для нормализации по всему датасету.
-    Сначала применяет нелинейные трансформации, затем считает статистики.
+    Считает потикерные статы (Per-Asset Normalization) ПОСЛЕ трансформации признаков.
     """
-    if not sequences:
-        logger.warning("Пустой набор данных для расчета статистик нормализации.")
-        return {}
+    ticker_stats = {}
+    assets_data = defaultdict(list)
 
-    transformed_sequences = [
-        transform_sequence(seq, cfg)
-        for seq in tqdm(sequences, desc="Предварительная обработка для статистик", leave=False)
-    ]
+    # Сначала трансформируем все последовательности
+    transformed_sequences = {key: transform_sequence(seq, cfg) for key, seq in sequences_dict.items()}
 
-    # Объединяем все последовательности в один большой массив (N*L, C)
-    full_dataset = np.concatenate(transformed_sequences, axis=0)
+    # Затем группируем их по тикерам
+    for key, transformed_seq in transformed_sequences.items():
+        asset = key.split("_")[0] if isinstance(key, str) else key[0]
+        assets_data[asset].append(transformed_seq)
 
-    means = np.mean(full_dataset, axis=0, dtype=np.float32)
-    stds = np.std(full_dataset, axis=0, dtype=np.float32)
-    stds[stds < 1e-7] = 1.0  # Защита от деления на ноль
-
-    logger.info("Статистики нормализации успешно рассчитаны.")
-    return {"means": means, "stds": stds}
+    for asset, seqs in assets_data.items():
+        concatenated = np.concatenate(seqs, axis=0)
+        means = np.mean(concatenated, axis=0, dtype=np.float32)
+        stds = np.std(concatenated, axis=0, dtype=np.float32)
+        stds[stds < 1e-7] = 1.0  # Защита от деления на ноль
+        ticker_stats[asset] = {"means": means.tolist(), "stds": stds.tolist()}
+    logger.info("Статистики нормализации по тикерам успешно рассчитаны.")
+    return ticker_stats
 
 
 def apply_normalization_to_sequence(
@@ -583,24 +582,32 @@ def apply_normalization(
     return normalized_seq.astype(np.float32)
 
 def preprocess_sequences(
-    sequences: List[np.ndarray],
-    stats: Dict[str, Dict[str, float]],
-    datachannels: List[str],
-    pricechannels: List[str],
-    volumechannels: List[str],
-    otherchannels: List[str]
-) -> List[np.ndarray]:
-    """Pre-normalize all sequences to avoid runtime overhead."""
-    normalized = []
-    for seq in tqdm(sequences, desc="Normalizing sequences"):
-        norm_seq = apply_normalization(
-            seq, stats, datachannels,
-            pricechannels, volumechannels, otherchannels,
-            agent_history_len=seq.shape[0],
-            input_history_len=seq.shape[0]
-        )
-        normalized.append(norm_seq)
-    return normalized
+    sequences_dict: Dict[str, np.ndarray], norm_stats: Dict[str, Any], cfg: MasterConfig
+) -> Dict[str, np.ndarray]:
+    """
+    Применяет трансформацию и потикерную нормализацию к каждой последовательности.
+    Возвращает словарь нормализованных последовательностей.
+    """
+    preprocessed_dict = {}
+    for key, seq in sequences_dict.items():
+        asset = key.split("_")[0] if isinstance(key, str) else key[0]
+        asset_stats = norm_stats.get(asset)
+
+        if not asset_stats:
+            logger.warning(f"No stats found for asset {asset}, skipping sequence {key}.")
+            continue
+
+        # 1. Трансформация признаков
+        transformed_seq = transform_sequence(seq, cfg)
+
+        # 2. Нормализация
+        means = np.array(asset_stats["means"], dtype=np.float32)
+        stds = np.array(asset_stats["stds"], dtype=np.float32)
+
+        # Безопасное деление
+        norm_seq = (transformed_seq - means) / (stds + 1e-8)
+        preprocessed_dict[key] = norm_seq
+    return preprocessed_dict
 
 def create_validation_episodes(
     val_sequences: List[np.ndarray],
