@@ -227,6 +227,15 @@ class D3QN_PER_Agent:
 
         logger.info("D3QN_PER_Agent initialized.")
 
+    @property
+    def epsilon(self) -> float:
+        """Calculates the current exploration rate (epsilon) based on the decay schedule."""
+        if self.eps_frames <= 0:
+            return self.eps_end
+        return self.eps_end + (self.eps_start - self.eps_end) * np.exp(
+            -1.0 * self.total_steps / self.eps_frames
+        )
+
     def load_onnx_session(self, onnx_path: str):
         """Loads ONNX runtime session for inference."""
         if ort is None:
