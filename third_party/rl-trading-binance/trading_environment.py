@@ -7,6 +7,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from utils import apply_normalization
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,6 @@ class TradingEnvironment(gym.Env):
     def __init__(
         self,
         sequences: List[np.ndarray],
-        raw_sequences: Optional[List[np.ndarray]],
         stats: Dict[str, Dict[str, float]],
         keys: List[str],
         render_mode: Optional[str],
@@ -104,26 +105,10 @@ class TradingEnvironment(gym.Env):
             raise ValueError("`sequences` must be a non-empty list of arrays")
         if not keys:
             raise ValueError("`keys` must be a non-empty list of strings")
-        if not stats:
-            raise ValueError("`stats` dictionary cannot be empty. Normalization is required for training.")
-
-        # Defensive check for stats structure
-        if isinstance(stats, dict):
-            for asset, asset_stats in stats.items():
-                if not isinstance(asset_stats, dict) or "means" not in asset_stats or "stds" not in asset_stats:
-                    raise ValueError(
-                        f"Invalid stats structure for asset '{asset}'. "
-                        f"Expected a dictionary with 'means' and 'stds' keys, but got: {asset_stats}"
-                    )
-
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
-        if raw_sequences and len(raw_sequences) != len(sequences):
-            raise ValueError("Length of `raw_sequences` and `sequences` must be the same")
-
         self.sequences = sequences
-        self.raw_sequences = raw_sequences
         self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
@@ -271,7 +256,6 @@ class TradingEnvironment(gym.Env):
         self._init_episode_vars()
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
-        self.current_seq_idx: int = -1
         self.current_asset_name: Optional[str] = None
         self.step_idx: int = 0
         self.balance: float = self.initial_balance
@@ -312,13 +296,13 @@ class TradingEnvironment(gym.Env):
             raise ValueError("Normalization stats are not provided to the environment.")
         
         asset_stats = self.stats.get(self.current_asset_name)
-        if asset_stats is None or 'means' not in asset_stats:
-            # Ограничиваем лог, чтобы не спамить при инициализации векторов
-            if self.step_idx <= 1:
-                logger.error(f"❌ CRITICAL: No stats for {self.current_asset_name}. Check key mapping in train.py!")
-            # Fallback to neutral values to prevent KeyError
-            num_features = self.num_features
-            asset_stats = {'means': [0.0] * num_features, 'stds': [1.0] * num_features}
+        if asset_stats is None:
+            fallback_asset = next(iter(self.stats))
+            logging.warning(
+                f"Stats for asset '{self.current_asset_name}' not found. "
+                f"Falling back to stats of '{fallback_asset}'."
+            )
+            asset_stats = self.stats[fallback_asset]
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -349,22 +333,12 @@ class TradingEnvironment(gym.Env):
         self._obs_buffer.fill(0.0)
 
         idx = self.np_random.integers(0, len(self.sequences)) if options is None else options["forced_index"]
-        self.current_seq_idx = idx
         self.current_seq = self.sequences[idx]
-        # Универсальный извлекатель тикера
-        key = self.keys[idx]
-        # FIX: Handle tuple, list, or string keys robustly to extract asset name.
-        if isinstance(key, (tuple, list)) and len(key) > 0:
-            asset_name = key[0]
-        else:
-            # Fallback for string-based keys like 'ASSET_DATE'
-            asset_name = str(key).split('_')[0]
-
-        # Ensure asset name is a string, not bytes
-        if isinstance(asset_name, bytes):
-            asset_name = asset_name.decode('utf-8')
-
-        self.current_asset_name = asset_name
+        try:
+            self.current_asset_name = self.keys[idx].split('_')[0]
+        except IndexError:
+            logging.error(f"Could not parse asset name from key: {self.keys[idx]}")
+            self.current_asset_name = "UNKNOWN"
 
         obs = self._get_observation()
         info = self._get_info()
@@ -409,15 +383,11 @@ class TradingEnvironment(gym.Env):
             price_idx = len(self.current_seq) - 1
         
         # --- Denormalization Setup ---
+        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        if self.raw_sequences:
-            real_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
-        else:
-            # Fallback to denormalization if raw_sequences are not provided
-            asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['means'][self.close_idx]
-            close_std = asset_stats['stds'][self.close_idx]
-            real_price = norm_price * close_std + close_mean
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
+        real_price = norm_price * close_std + close_mean
         
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Принудительный запрет противоположных сделок ---
         if not self.allow_opposite_trades:
@@ -435,7 +405,6 @@ class TradingEnvironment(gym.Env):
         pnl_change = 0.0
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
-        closed_trade_gross_pnl = None
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
@@ -512,7 +481,6 @@ class TradingEnvironment(gym.Env):
                 real_exec_price = real_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
             
-            closed_trade_gross_pnl = trade_pnl # Capture gross PnL for win rate
             fee = real_exec_price * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
             
@@ -525,33 +493,24 @@ class TradingEnvironment(gym.Env):
         self.realized_pnl += pnl_change
         self.balance += pnl_change
 
-        # LIQUIDATION / BANKRUPTCY CHECK
-        terminated = False
-        info = self._get_info()
-
-        unrealized_pnl = self._calculate_unrealized_pnl()
-        equity = self.balance + unrealized_pnl
-
-        if self.position != 0:
-            position_value = self.real_entry_price * self.position_volume
-            maintenance_margin = position_value * 0.05
-            if equity < maintenance_margin:
-                terminated = True
-                reward -= 10.0  # Жесткий штраф за ликвидацию
-                info["liquidation"] = True
-
-        if not terminated and self.balance <= self.bankruptcy_threshold:
-            terminated = True
-            reward = -self.bankruptcy_penalty
-
-        if terminated:
-            if self.position != 0:
-                self.balance += unrealized_pnl # Realize the loss
-                self.position = 0
-                self.position_volume = 0.0
+        # BANKRUPTCY CHECK: Strict balance validation
+        if self.balance <= self.bankruptcy_threshold:
+            logging.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
             
-            self.balance = max(0.0, self.balance)
-            info['bankruptcy'] = True # for metrics
+            # Force-close any open positions with slippage penalty
+            if self.position != 0:
+                slippage_penalty = self.bankruptcy_slippage_penalty
+                liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
+                liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
+                                   if self.position == 1 
+                                   else (self.real_entry_price - liquidation_price) * self.position_volume)
+                self.balance += liquidation_pnl
+            
+            self.balance = max(0.0, self.balance)  # Cannot go negative
+            reward = -self.bankruptcy_penalty
+            terminated = True
+            info = self._get_info()
+            info['bankruptcy'] = True
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             return obs, reward, terminated, False, info
 
@@ -585,13 +544,7 @@ class TradingEnvironment(gym.Env):
         if self.position != 0:
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
             norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
-            if self.raw_sequences:
-                real_m2m_price = self.raw_sequences[self.current_seq_idx][m2m_price_idx, self.close_idx]
-            else:
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['means'][self.close_idx]
-                close_std = asset_stats['stds'][self.close_idx]
-                real_m2m_price = norm_m2m_price * close_std + close_mean
+            real_m2m_price = norm_m2m_price * close_std + close_mean
             if self.position == 1: # LONG
                 mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
             elif self.position == -1: # SHORT
@@ -630,39 +583,17 @@ class TradingEnvironment(gym.Env):
                 self._render_human(info, action, reward)
             return obs, reward, terminated, False, info
             
-        info = self._get_info()
-        position_closed = prev_position != 0 and self.position == 0
-
         if terminated:
-            # --- Forced Closure at Episode End ---
-            if self.position != 0:
-                pnl_change = self._calculate_unrealized_pnl()
-                self.balance += pnl_change
-                self.closed_trades += 1
-                if pnl_change > 0:
-                    self.profitable_trades += 1
-                self.position = 0
-                position_closed = True
-
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
                 "episode_realized_pnl": self.realized_pnl,
                 "episode_win_rate": self.profitable_trades / max(1, self.closed_trades),
                 "episode_closed_trades": self.closed_trades,
+                "episode_max_drawdown": self.current_max_drawdown,
             })
         else:
             obs = self._get_observation()
-
-        if position_closed:
-            # Determine win_rate based on gross PnL, report net PnL after costs.
-            # This is the key fix: win_rate must be based on the trade's raw outcome.
-            win_rate = 1.0 if (closed_trade_gross_pnl is not None and closed_trade_gross_pnl > 0) else 0.0
-            info.update({
-                "position_closed": True,
-                "win_rate": win_rate,
-                "net_pnl": pnl_change,
-            })
      
         reward -= drawdown_penalty
 
@@ -695,13 +626,11 @@ class TradingEnvironment(gym.Env):
             current_price = self.current_seq[price_idx, self.close_idx]
             
             # Denormalize for real PnL calculation
-            if self.raw_sequences:
-                real_current_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
-            else:
-                asset_stats = self._get_asset_stats()
-                close_mean = asset_stats['means'][self.close_idx]
-                close_std = asset_stats['stds'][self.close_idx]
-                real_current_price = current_price * close_std + close_mean
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['mean'][self.close_idx]
+            close_std = asset_stats['std'][self.close_idx]
+            
+            real_current_price = current_price * close_std + close_mean
             
             if self.position == 1: # LONG
                 unrealized_pnl = (real_current_price - self.real_entry_price) * self.position_volume
@@ -724,19 +653,14 @@ class TradingEnvironment(gym.Env):
                 recent_prices = self.current_seq[start_idx:end_idx, self.close_idx]
                 
                 # Денормализовать для корректного расчёта
-                if self.raw_sequences:
-                    real_prices = self.raw_sequences[self.current_seq_idx][start_idx:end_idx, self.close_idx]
-                else:
-                    asset_stats = self._get_asset_stats()
-                    close_mean = asset_stats['means'][self.close_idx]
-                    close_std = asset_stats['stds'][self.close_idx]
-                    real_prices = recent_prices * close_std + close_mean
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                real_prices = recent_prices * close_std + close_mean
                 
                 # Вычислить процентное изменение
-                price_change_pct = 0.0
-                if real_prices[0] > 1e-9: # Защита от деления на ноль
-                    price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
-
+                price_change_pct = abs((real_prices[-1] - real_prices[0]) / real_prices[0])
+                
                 # Если изменение < 0.5% за 5 минут → флэт
                 if price_change_pct < 0.005:  # < 0.5%
                     shaped_reward += 0.002  # Бонус за HOLD
@@ -919,13 +843,10 @@ class TradingEnvironment(gym.Env):
         norm_current_price = self.current_seq[price_idx, self.close_idx]
         
         # Denormalize the price to get the real price
-        if self.raw_sequences:
-            real_current_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
-        else:
-            asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['means'][self.close_idx]
-            close_std = asset_stats['stds'][self.close_idx]
-            real_current_price = norm_current_price * close_std + close_mean
+        asset_stats = self._get_asset_stats()
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
+        real_current_price = norm_current_price * close_std + close_mean
         
         # Calculate PnL based on position direction
         if self.position == 1:  # LONG
@@ -997,14 +918,11 @@ class TradingEnvironment(gym.Env):
         price_idx = min(self.pre_signal_len - 1 + self.step_idx + exec_delay, len(self.current_seq) - 1)
 
         # --- Denormalization Setup ---
+        asset_stats = self._get_asset_stats()
         norm_price = self.current_seq[price_idx, self.close_idx]
-        if self.raw_sequences:
-            real_price = self.raw_sequences[self.current_seq_idx][price_idx, self.close_idx]
-        else:
-            asset_stats = self._get_asset_stats()
-            close_mean = asset_stats['means'][self.close_idx]
-            close_std = asset_stats['stds'][self.close_idx]
-            real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
+        close_mean = asset_stats['mean'][self.close_idx]
+        close_std = asset_stats['std'][self.close_idx]
+        real_price = norm_price * close_std + close_mean  # <--- ВАЖНО: Мы используем это!
 
         position_closed = False
         pnl_change = 0.0
@@ -1238,13 +1156,10 @@ class TradingEnvironment(gym.Env):
             if self.position != 0:
                 m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
                 norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
-                if self.raw_sequences:
-                    real_m2m_price = self.raw_sequences[self.current_seq_idx][m2m_price_idx, self.close_idx]
-                else:
-                    asset_stats = self._get_asset_stats()
-                    close_mean = asset_stats['means'][self.close_idx]
-                    close_std = asset_stats['stds'][self.close_idx]
-                    real_m2m_price = norm_m2m_price * close_std + close_mean
+                asset_stats = self._get_asset_stats()
+                close_mean = asset_stats['mean'][self.close_idx]
+                close_std = asset_stats['std'][self.close_idx]
+                real_m2m_price = norm_m2m_price * close_std + close_mean
                 if self.position == 1: # LONG
                     mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
                 elif self.position == -1: # SHORT

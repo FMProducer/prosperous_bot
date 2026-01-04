@@ -125,25 +125,3 @@ class DuelingQNetwork(nn.Module):
             return q_value, self.dequant(value), self.dequant(advantage)
         
         return q_value
-
-    def prepare_for_cpu_inference(self):
-        """Applies dynamic quantization for CPU acceleration."""
-        self.eval()
-        quantized_model = torch.quantization.quantize_dynamic(
-            self, {nn.Linear, nn.Conv1d}, dtype=torch.qint8
-        )
-        return quantized_model
-
-    def export_for_inference(self) -> torch.jit.ScriptModule:
-        """
-        Возвращает TorchScript-версию модели для инференса.
-        """
-        self.eval()  # Переводим модель в режим инференса
-        # Создаем фиктивный входной тензор с правильной формой
-        history_flat_size = self.input_shape[0] * self.input_shape[1]
-        expected_size = history_flat_size + self.additional_feats
-        dummy_input = torch.randn(1, expected_size)
-
-        # Трассируем модель
-        scripted_model = torch.jit.trace(self, dummy_input)
-        return scripted_model

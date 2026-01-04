@@ -2,27 +2,11 @@
 import datetime as dt
 import logging
 import os
-import ast
-from collections import OrderedDict
+import pickle
 from typing import Dict, List, Optional, Tuple, Union
-
-try:
-    import msgpack  # type: ignore
-    import msgpack_numpy as m  # type: ignore
-except ImportError:
-    msgpack = None
-    m = None
 
 import numpy as np
 import torch
-
-try:
-    from safetensors import safe_open  # type: ignore
-    from safetensors.torch import save_file  # type: ignore
-except ImportError:
-    safe_open = None
-    save_file = None
-
 import torch.nn.functional as F
 import torch.optim as optim
 from utils import millify
@@ -40,14 +24,6 @@ except ImportError:
     # Сообщение будет выведено только при попытке использовать ONNX функции.
     # logger.warning("ONNX Runtime не найден. Для ускорения CPU-инференса, установите его: pip install onnxruntime")
 
-def get_ort_session(model_path: str):
-    """Оптимизация под Ryzen 9 5900HX (12 cores)"""
-    sess_options = ort.SessionOptions()
-    # Ограничиваем потоки для стабильного инференса на CPU
-    sess_options.intra_op_num_threads = 12
-    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    return ort.InferenceSession(model_path, sess_options, providers=['CPUExecutionProvider'])
 
 class D3QN_PER_Agent:
     """A Dueling Double Deep Q-Network (D3QN) agent with Prioritized Experience Replay (PER).
@@ -119,10 +95,6 @@ class D3QN_PER_Agent:
         }
 
         self.policy_net = DuelingQNetwork(**model_kwargs).to(self.device)
-        # Оптимизация для Ryzen: ограничение потоков на инференс одной модели
-        if self.device.type == 'cpu':
-            torch.set_num_threads(1)
-            torch.set_num_interop_threads(1)
         self.target_net = DuelingQNetwork(**model_kwargs).to(self.device)
         
         if perf_cfg.compile_mode:
@@ -139,12 +111,9 @@ class D3QN_PER_Agent:
         self.use_amp = perf_cfg.use_amp and self.device.type == 'cuda'
         if self.use_amp:
             amp_dtype_str = perf_cfg.amp_dtype
-            if amp_dtype_str == "float16":
-                self.amp_dtype = torch.float16
-            else:
-                self.amp_dtype = torch.bfloat16 # Default to bfloat16 for stability
+            self.amp_dtype = torch.float16 if amp_dtype_str == "float16" else torch.bfloat16
             self.scaler = torch.amp.GradScaler("cuda")
-            logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={self.amp_dtype}.")
+            logger.info(f"Automatic Mixed Precision (AMP) enabled with dtype={amp_dtype_str}.")
 
         num_params = sum(p.numel() for p in self.policy_net.parameters())
         logger.info(f"Policy Net with {millify(num_params, precision=1)} parameters created in Agent")
@@ -155,17 +124,12 @@ class D3QN_PER_Agent:
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
-        # Вычисляем размер плоского state'а, который будет храниться в буфере
-        history_flat_size = state_shape[0] * state_shape[1]
-        buffer_state_shape = (history_flat_size + additional_feats,)
-
         self.replay_buffer = PrioritizedReplayBuffer(
             capacity=buffer_size,
             alpha=per_alpha,
             beta_start=per_beta_start,
             beta_frames=per_beta_frames,
             epsilon=epsilon,
-            state_shape=buffer_state_shape,
         )
 
         self.gamma = gamma
@@ -180,11 +144,9 @@ class D3QN_PER_Agent:
         self.learn_steps = 0
         self.max_gradient_norm = max_gradient_norm
 
-        self.qval_cache: OrderedDict[Tuple[str, dt.datetime], np.ndarray] = OrderedDict()
-        self.max_cache_size = 10000
-
         if backtest_cache_path is not None:
-            self.cache_path = os.path.join(backtest_cache_path, "qval_cache.json")
+            self.qval_cache: Dict[Tuple[str, dt.datetime], Union[int, np.ndarray]] = {}
+            self.cache_path = os.path.join(backtest_cache_path, "qval_cache.pkl")
             self._load_disk_cache()
 
         if self.device.type == "cpu":
@@ -226,31 +188,6 @@ class D3QN_PER_Agent:
 
 
         logger.info("D3QN_PER_Agent initialized.")
-
-    @property
-    def epsilon(self) -> float:
-        """Calculates the current exploration rate (epsilon) based on the decay schedule."""
-        if self.eps_frames <= 0:
-            return self.eps_end
-        return self.eps_end + (self.eps_start - self.eps_end) * np.exp(
-            -1.0 * self.total_steps / self.eps_frames
-        )
-
-    def load_onnx_session(self, onnx_path: str):
-        """Loads ONNX runtime session for inference."""
-        if ort is None:
-            logger.error("onnxruntime not installed.")
-            return
-        try:
-            # General CPU optimizations for ONNX Runtime
-            sess_options = ort.SessionOptions()
-            sess_options.intra_op_num_threads = 1 # Avoid contention
-            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-            self.ort_session = ort.InferenceSession(onnx_path, sess_options, providers=['CPUExecutionProvider'])
-            logger.info(f"ONNX session loaded from {onnx_path}")
-        except Exception as e:
-            logger.error(f"Failed to load ONNX session: {e}")
 
     def export_to_onnx(self, file_path: str):
         """Exports the policy network to the ONNX format.
@@ -312,54 +249,6 @@ class D3QN_PER_Agent:
             logger.error(f"  - Расчетный размер: {total_input_size} (История: {history_flat_size}, Доп: {additional_feats})")
             raise
 
-    def export_onnx(self, file_path: str):
-        """Exports the policy network to the ONNX format using JIT tracing.
-
-        This method creates a deployable representation of the agent's policy network,
-        which can be used for high-performance inference. The input tensor shape is
-        derived from the model's internal configuration.
-
-        Args:
-            file_path (str): The path to save the ONNX file.
-        """
-        if ort is None:
-            logger.error("Cannot export to ONNX: onnxruntime is not installed. Please run: pip install onnxruntime")
-            return
-
-        self.policy_net.eval()
-
-        # Correctly determine the input vector size for the model
-        model_input_shape = self.policy_net.input_shape
-        additional_feats = getattr(self.policy_net, "additional_feats", 0)
-        history_flat_size = model_input_shape[0] * model_input_shape[1]
-        total_input_size = history_flat_size + additional_feats
-
-        # Create a dummy input with the correct shape [batch_size, total_input_size]
-        dummy_input = torch.randn(1, total_input_size, device=self.device)
-        logger.info(f"Preparing to export to ONNX. Dummy input shape: {dummy_input.shape}")
-
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        try:
-            torch.onnx.export(
-                self.policy_net,
-                dummy_input,
-                file_path,
-                export_params=True,
-                opset_version=12,
-                do_constant_folding=True,
-                input_names=['input'],
-                output_names=['output'],
-                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
-            )
-            logger.info(f"✅ Model successfully exported to ONNX: {file_path}")
-        except Exception as e:
-            logger.error(f"❌ Error during ONNX export: {e}")
-            logger.error(f"  - Dummy input shape: {dummy_input.shape}")
-            logger.error(f"  - Calculated size: {total_input_size} (History: {history_flat_size}, Additional: {additional_feats})")
-            raise
-
     def load_onnx_model(self, file_path: str):
         """Loads an ONNX model for accelerated CPU inference.
 
@@ -370,7 +259,20 @@ class D3QN_PER_Agent:
         Args:
             file_path (str): The path to the ONNX model file.
         """
-        self.load_onnx_session(file_path)
+        if ort is None:
+            logger.error("Невозможно загрузить ONNX модель: onnxruntime не установлен.")
+            logger.error("Пожалуйста, установите его командой: pip install onnxruntime")
+            return
+
+        if not os.path.exists(file_path):
+            logger.error(f"ONNX файл не найден: {file_path}. Пропуск загрузки ONNX (будет использоваться PyTorch).")
+            return
+
+        try:
+            self.ort_session = ort.InferenceSession(file_path, providers=['CPUExecutionProvider'])
+            logger.info(f"🚀 ONNX Model loaded from {file_path}. Using CPUExecutionProvider.")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке ONNX модели: {e}")
 
     def select_action(
         self,
@@ -397,23 +299,30 @@ class D3QN_PER_Agent:
         Returns:
             Union[int, np.ndarray]: The selected action or an array of Q-values.
         """
+        # Базовая ε-жадная логика (epsilon берется из self.eps_* расписания внутри агента)
+        # Если mc_enable=False или training=False — используем обычный путь как прежде.
         if not (training and self.mc_enable and self.mc_n_action_samples > 1):
             return self._select_action_base(state, training, return_qvals, use_cache, cache_key)
 
+        # MC-dropout: ансамбль из N проходов онлайн-сети.
         state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-        q_samples = self._q_forward_samples(self.policy_net, state_tensor, self.mc_n_action_samples)
-        q_mean = q_samples.mean(dim=0).squeeze(0)
-        q_std = q_samples.std(dim=0, unbiased=False).squeeze(0)
+        q_samples = self._q_forward_samples(self.policy_net, state_tensor, self.mc_n_action_samples)  # [N,1,A]
+        q_mean = q_samples.mean(dim=0).squeeze(0)    # [A]
+        q_std  = q_samples.std(dim=0, unbiased=False).squeeze(0)  # [A]
 
+        # Неопределённостно-направляемая эксплорация (опц.)
         eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
         if self.mc_uncertainty_guided_explore:
+            # увеличим ε пропорционально неопределённости лучшего действия
             best_a = int(torch.argmax(q_mean).item())
             unc = float(q_std[best_a].item())
             eps = min(1.0, max(0.0, eps + self.mc_uncertainty_beta * unc))
 
+        # Выбор по агрегатору
         if self.mc_action_agg == "thompson":
+            # Берём один случайный семпл и argmax в нём — стохастическая политика
             idx = np.random.randint(0, self.mc_n_action_samples)
-            logits = q_samples[idx, 0]
+            logits = q_samples[idx, 0]  # [A]
             action = int(torch.argmax(logits).item())
         elif self.mc_action_agg == "lcb":
             logits = q_mean - self.mc_lcb_k * q_std
@@ -421,6 +330,7 @@ class D3QN_PER_Agent:
         else:  # "mean"
             action = int(torch.argmax(q_mean).item())
 
+        # Применяем ε-жадность поверх выбора (как раньше)
         if training and np.random.rand() < eps:
             action = np.random.randint(0, self.action_dim)
         
@@ -429,43 +339,46 @@ class D3QN_PER_Agent:
         return action
 
     def _q_forward_samples(self, net, state_tensor, n_samples: int):
+        """
+        Выполнить n семплов forward с активным dropout.
+        Возвращает тензор [n, batch(=1), action_dim].
+        """
         q_list = []
         was_training = net.training
         try:
-            net.train(True)
+            net.train(True)  # включаем dropout
             with torch.no_grad():
                 for _ in range(max(1, n_samples)):
-                    q = net(state_tensor)
+                    q = net(state_tensor)  # ожидается [1, action_dim]
                     if q.dim() == 1:
                         q = q.unsqueeze(0)
-                    q_list.append(q.unsqueeze(0))
+                    q_list.append(q.unsqueeze(0))  # [1,1,A]
         finally:
             net.train(was_training)
-        return torch.cat(q_list, dim=0)
+        return torch.cat(q_list, dim=0)  # [n,1,A]
 
-    def _select_action_base(self, state: np.ndarray, training: bool, return_qvals: bool, use_cache: bool, cache_key: Optional[Tuple[str, dt.datetime]]):
+    def _select_action_base(self, state, training: bool, return_qvals: bool, use_cache: bool, cache_key: Optional[Tuple[str, dt.datetime]]):
         eps = self.eps_end + (self.eps_start - self.eps_end) * np.exp(-self.total_steps / self.eps_frames)
 
         if training and np.random.rand() < eps:
             return np.random.randint(self.action_dim)
 
-        # ONNX is the highest priority for inference
+        # --- ONNX INFERENCE PATH ---
         if self.ort_session is not None and not training:
             ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
-            qvals = self.ort_session.run(None, ort_inputs)[0][0]
+            qvals = self.ort_session.run(None, ort_inputs)[0][0] # [1, A] -> [A]
             return qvals if return_qvals else int(np.argmax(qvals))
+        # ---------------------------
 
         if use_cache and not training and cache_key is not None:
             if cache_key in self.qval_cache:
-                self.qval_cache.move_to_end(cache_key)
                 qvals = self.qval_cache[cache_key]
             else:
                 with torch.no_grad():
                     tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
                     qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
                 self.qval_cache[cache_key] = qvals
-                if len(self.qval_cache) > self.max_cache_size:
-                    self.qval_cache.popitem(last=False)
+            qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
         with torch.no_grad():
@@ -473,18 +386,32 @@ class D3QN_PER_Agent:
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
-    def select_action_batch(self, states: np.ndarray, training: bool = True) -> np.ndarray:
-        """Selects actions for a batch of states using a vectorized epsilon-greedy policy."""
-        self.policy_net.eval()
+    def select_action_batch(self, states: np.ndarray, training: bool = True) -> list[int]:
+        """Selects actions for a batch of states using a vectorized epsilon-greedy policy.
+
+        This method performs a single forward pass on the policy network for the entire
+        batch of states, making it more efficient than calling `select_action` in a loop.
+        Epsilon-greedy exploration is applied to the batch, with random actions
+        selected for a subset of the states.
+
+        Args:
+            states (np.ndarray): A batch of states with shape (N, ...), where N is the
+                batch size.
+            training (bool): Whether the agent is in training mode.
+
+        Returns:
+            list[int]: A list of selected actions for each state in the batch.
+        """
+        self.policy_net.eval()  # детерминированный инференс вне MC-дропаут
         n = int(states.shape[0])
         with torch.no_grad(), torch.autocast(
             device_type=("cuda" if self.device.type == "cuda" else "cpu"),
             enabled=getattr(self, "use_amp", False)
         ):
             x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
-            q = self.policy_net(x)
-            greedy = q.argmax(dim=1).detach().to("cpu").numpy()
-
+            q = self.policy_net(x)              # [N, action_dim]
+            greedy = q.argmax(dim=1).detach().to("cpu").numpy()  # [N]
+        # epsilon-greedy по батчу
         eps = float(self.epsilon if hasattr(self, "epsilon") else
                     (self.eps_end + (self.eps_start - self.eps_end)
                      * np.exp(-self.total_steps / max(1, self.eps_frames))))
@@ -531,6 +458,7 @@ class D3QN_PER_Agent:
             else:
                 mean_q, std_q = self.get_mean_std_q(state, n_samples)
                 self.qval_cache[cache_key] = mean_q, std_q
+
             return mean_q, std_q
 
         mean_q, std_q = self.get_mean_std_q(state, n_samples)
@@ -552,6 +480,7 @@ class D3QN_PER_Agent:
         Returns:
             Tuple[np.ndarray, np.ndarray]: The mean and standard deviation of the Q-values.
         """
+        # Включаем стохастику (dropout), но сохраняем и восстанавливаем исходный режим
         prev_training = self.policy_net.training
         self.policy_net.train()
         x = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
@@ -560,6 +489,7 @@ class D3QN_PER_Agent:
             for _ in range(n_samples):
                 q = self.policy_net(x).squeeze(0).detach().cpu().numpy()
                 q_list.append(q)
+        # Восстанавливаем исходный режим (детерминированный инференс вне MC-оценки)
         if not prev_training:
             self.policy_net.eval()
         q_arr = np.stack(q_list, axis=0)
@@ -794,173 +724,161 @@ class D3QN_PER_Agent:
         torch.ao.quantization.prepare_qat(self.policy_net, inplace=True)
         logger.info("Model prepared for Quantization-Aware Training (QAT)")
 
-    def optimize_for_cpu(self):
-        """Applies dynamic quantization to the policy network for INT8 inference."""
-        self.policy_net.eval()
-        self.policy_net = torch.quantization.quantize_dynamic(
-            self.policy_net, {torch.nn.Linear}, dtype=torch.qint8
-        )
-        logger.info("Policy network optimized for CPU inference with dynamic quantization.")
-
-    def convert_to_cpu_optimized(self):
-        """Оптимизация модели для экстремальной скорости на Ryzen (CPU)."""
-        self.policy_net.eval()
-        self.policy_net = torch.quantization.quantize_dynamic(
-            self.policy_net,
-            {torch.nn.Linear, torch.nn.Conv1d},
-            dtype=torch.qint8
-        )
-        logger.info("🚀 Model quantized for CPU inference (INT8).")
-
     def save_model(self, path: str) -> None:
-        """Saves a complete checkpoint of the agent's state using safetensors."""
+        """Saves a complete checkpoint of the agent's state.
+
+        This method saves all the necessary components to resume training, including
+        the policy and target network weights, the optimizer state, and other
+        metadata such as the total number of steps.
+
+        Args:
+            path (str): The path to save the checkpoint file.
+        """
         os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        if save_file is None:
-            logger.warning("`safetensors` library not found. Saving model using legacy `torch.save`. "
-                           "It is recommended to install safetensors for safer model serialization: `pip install safetensors`")
-            if not path.endswith(".pth"):
-                path = os.path.splitext(path)[0] + ".pth"
-            
-            checkpoint = {
-                "policy_net": self.policy_net.state_dict(),
-                "optimizer": self.optimizer.state_dict(),
-                "meta": {
-                    "format": "d3qn_per_agent_v3_legacy",
-                    "total_steps": str(self.total_steps),
-                    "learn_steps": str(self.learn_steps),
-                }
-            }
-            if hasattr(self, "scaler"):
-                checkpoint["scaler"] = self.scaler.state_dict()
-            
-            torch.save(checkpoint, path)
-            logger.info(f"Legacy checkpoint saved to: {path}")
-            return
-
-        # Ensure the path ends with .safetensors
-        if not path.endswith(".safetensors"):
-            path = os.path.splitext(path)[0] + ".safetensors"
-
-        tensors_to_save = {
-            "policy_net": self.policy_net.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
+        checkpoint = {
+            "format": "d3qn_per_agent_v1",
+            "created_utc": dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "policy_state": self.policy_net.state_dict(),
+            "target_state": self.target_net.state_dict(),
+            "optimizer_state": self.optimizer.state_dict(),
+            "scaler_state": (self.scaler.state_dict() if hasattr(self, "scaler") else None),
+            "meta": {
+                "total_steps": int(self.total_steps),
+                "learn_steps": int(self.learn_steps),
+                "eps_start": float(self.eps_start),
+                "eps_end": float(self.eps_end),
+                "eps_frames": int(self.eps_frames),
+            },
         }
-        if hasattr(self, "scaler"):
-            tensors_to_save["scaler"] = self.scaler.state_dict()
-
-        # Metadata is saved inside the safetensors file
-        metadata = {
-            "format": "d3qn_per_agent_v4",
-            "total_steps": str(self.total_steps),
-            "learn_steps": str(self.learn_steps),
-        }
-
-        save_file(tensors_to_save, path, metadata=metadata)
-        logger.info(f"Checkpoint saved securely to: {path}")
+        torch.save(checkpoint, path)
+        logger.info(f"Checkpoint saved to {path} (policy+target+optimizer+scaler+meta).")
 
     def load_model(self, path: str, strict: bool = True) -> None:
-        """Loads a checkpoint, supporting both new .safetensors and legacy .pth formats."""
+        """Loads a checkpoint of the agent's state.
 
-        # Try loading new .safetensors format first
-        if path.endswith(".safetensors") and os.path.exists(path):
-            if safe_open is None:
-                logger.error(f"Cannot load .safetensors file '{path}' because `safetensors` is not installed. Please run `pip install safetensors`.")
-                return
+        This method loads a saved checkpoint, which can be either a full checkpoint
+        (including optimizer state) or a file containing only the model weights.
+        This allows for both resuming training and loading pre-trained models for
+        inference.
 
-            try:
-                with safe_open(path, framework="pt", device=str(self.device)) as f:
-                    # Load metadata
-                    metadata = f.metadata()
-                    if metadata:
-                        self.total_steps = int(metadata.get("total_steps", self.total_steps))
-                        self.learn_steps = int(metadata.get("learn_steps", self.learn_steps))
-                        logger.info(f"Metadata loaded from {path}")
+        Args:
+            path (str): The path to the checkpoint file.
+            strict (bool): Whether to strictly enforce that the keys in the
+                checkpoint match the keys returned by this module's
+                `state_dict()` function.
+        """
+        # Исправляем загрузку для CPU-only машин
+        device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device
+        obj = torch.load(path, map_location=device_to_load)
 
-                    # Load tensors
-                    self.policy_net.load_state_dict(f.get_tensor("policy_net"), strict=strict)
-                    self.target_net.load_state_dict(f.get_tensor("policy_net"), strict=strict)
-                    self.optimizer.load_state_dict(f.get_tensor("optimizer"))
-                    if hasattr(self, "scaler") and "scaler" in f.keys():
-                        self.scaler.load_state_dict(f.get_tensor("scaler"))
+        # Если модель была обучена с QAT, конвертируем её в инт8 после загрузки
+        if hasattr(self.policy_net, 'quant'):
+            self.policy_net.eval()
+            torch.ao.quantization.convert(self.policy_net, inplace=True)
+            logger.info("Model converted to INT8 for extreme CPU speed")
 
-                logger.info(f"Safetensors checkpoint loaded from {path}")
+        def _try_load_weights(sd, tag: str):
+            sd = _unwrap_sd(sd)
+            self.policy_net.load_state_dict(sd, strict=strict)
+            self.target_net.load_state_dict(sd, strict=strict)
+            return tag
 
-            except Exception as e:
-                logger.error(f"Failed to load safetensors checkpoint {path}: {e}")
-                # Fallback to legacy might be risky, but we can try if needed
-                return
+        def _unwrap_sd(sd):
+            """
+            Превращает любые обёртки в «чистый» state_dict слоёв модели.
+            Поддерживает: {'policy_state': ...}, {'model_state': ...}, {'state_dict': ...}, {'weights': ...}.
+            Если внутри снова лежит чекпоинт, развернёт повторно.
+            """
+            if isinstance(sd, dict):
+                # прямой новый чекпоинт
+                if "policy_state" in sd and isinstance(sd["policy_state"], dict):
+                    return sd["policy_state"]
+                # обёртки старых форматов
+                for k in ("model_state", "state_dict", "weights"):
+                    if k in sd and isinstance(sd[k], dict):
+                        inner = sd[k]
+                        # на случай двойной обёртки
+                        if isinstance(inner, dict) and "policy_state" in inner and isinstance(inner["policy_state"], dict):
+                            return inner["policy_state"]
+                        return inner
+            return sd
 
-        # Fallback for legacy .pth (pickle) files
-        elif os.path.exists(path):
-            logging.warning(f"DEPRECATION: Loading legacy '.pth' (pickle) checkpoint from {path}. Please re-save to '.safetensors' format for security.")
-            device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device
-            obj = torch.load(path, map_location=device_to_load)
-
-            # This handles various old checkpoint structures
-            policy_state = obj.get("policy_state", obj.get("policy_net", obj))
-            target_state = obj.get("target_state", policy_state) # Use policy if target is missing
-            optimizer_state = obj.get("optimizer_state")
-            scaler_state = obj.get("scaler_state")
-            meta = obj.get("meta", {})
-
-            self.policy_net.load_state_dict(policy_state, strict=strict)
-            self.target_net.load_state_dict(target_state, strict=strict)
-
-            if optimizer_state:
-                self.optimizer.load_state_dict(optimizer_state)
-            if scaler_state and hasattr(self, "scaler"):
-                self.scaler.load_state_dict(scaler_state)
-
-            self.total_steps = int(meta.get("total_steps", self.total_steps))
-            self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
-
-            logger.info(f"Legacy checkpoint successfully loaded from {path}")
-
+        kind = None
+        if isinstance(obj, dict):
+            # 1) Новый полноформатный чекпоинт
+            if "policy_state" in obj:
+                self.policy_net.load_state_dict(_unwrap_sd(obj["policy_state"]), strict=strict)
+                self.target_net.load_state_dict(_unwrap_sd(obj.get("target_state", obj["policy_state"])), strict=strict)
+                opt_state = obj.get("optimizer_state")
+                if opt_state:
+                    try:
+                        self.optimizer.load_state_dict(opt_state)
+                    except Exception as e:
+                        logger.warning(f"Optimizer state load skipped: {e}")
+                scaler_state = obj.get("scaler_state")
+                if hasattr(self, "scaler") and scaler_state:
+                    try:
+                        self.scaler.load_state_dict(scaler_state)
+                    except Exception as e:
+                        logger.warning(f"GradScaler state load skipped: {e}")
+                meta = obj.get("meta", {}) or {}
+                self.total_steps = int(meta.get("total_steps", self.total_steps))
+                self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
+                kind = "checkpoint"
+            else:
+                # 2) Обёрнутые веса разных старых форматов
+                wrapped_sd = obj.get("model_state", None)
+                if wrapped_sd is None and "state_dict" in obj:
+                    wrapped_sd = obj["state_dict"]
+                if wrapped_sd is None and "weights" in obj:
+                    wrapped_sd = obj["weights"]
+                if wrapped_sd is not None:
+                    # Если присутствует отдельный target_state — загрузим его, иначе дублируем policy
+                    self.policy_net.load_state_dict(_unwrap_sd(wrapped_sd), strict=strict)
+                    self.target_net.load_state_dict(_unwrap_sd(obj.get("target_state", wrapped_sd)), strict=strict)
+                    # Не критично: попробуем подтянуть optimizer/scaler, если есть
+                    opt_state = obj.get("optimizer_state")
+                    if opt_state:
+                        try:
+                            self.optimizer.load_state_dict(opt_state)
+                        except Exception as e:
+                            logger.warning(f"Optimizer state load skipped: {e}")
+                    scaler_state = obj.get("scaler_state")
+                    if hasattr(self, "scaler") and scaler_state:
+                        try:
+                            self.scaler.load_state_dict(scaler_state)
+                        except Exception as e:
+                            logger.warning(f"GradScaler state load skipped: {e}")
+                    kind = "wrapped-weights"
+                else:
+                    # 3) Попытка трактовать obj как «голые» веса (редкий случай dict-весов)
+                    kind = _try_load_weights(obj, "weights-only(dict)")
         else:
-            logger.error(f"Checkpoint file not found at path: {path}")
+            # 4) Старый «голый» state_dict как OrderedDict/Mapping
+            kind = _try_load_weights(obj, "weights-only")
 
         self.policy_net.eval()
         self.target_net.eval()
+        logger.info(f"Model loaded from {path} ({kind}).")
 
-    def _load_disk_cache(self) -> None:
-        if msgpack is None:
-            logger.debug("msgpack not installed, disk cache is disabled.")
-            return
-
+    def _load_disk_cache(self):
         if os.path.exists(self.cache_path):
-            try:
-                with open(self.cache_path, "rb") as f:
-                    packed_data = f.read()
-                    data = msgpack.unpackb(packed_data, object_hook=m.decode)
-                    # Keys are stored as strings, convert them back to tuples
-                    self.qval_cache = OrderedDict({ast.literal_eval(k): v for k, v in data.items()})
-                logger.info(f"Loaded MessagePack Q-value cache from {self.cache_path} ({len(self.qval_cache)} entries).")
-            except Exception as e:
-                logger.error(f"Failed to load MessagePack cache: {e}. Starting with an empty cache.")
-                self.qval_cache = OrderedDict()
+            with open(self.cache_path, "rb") as f:
+                self.qval_cache = pickle.load(f)
+            logger.info(f"\nLoaded Q-value cache from {self.cache_path} ({len(self.qval_cache)} entries).")
 
     def save_disk_cache(self) -> None:
-        if msgpack is None:
-            return
-
-        if not self.qval_cache:
-            return
+        # Атомарная перезапись кэша: временный файл + os.replace
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
         tmp_path = self.cache_path + ".tmp"
-        try:
-            # Convert tuple keys to strings for serialization
-            data_to_pack = {str(k): v for k, v in self.qval_cache.items()}
-            with open(tmp_path, "wb") as f:
-                packed_data = msgpack.packb(data_to_pack, default=m.encode)
-                f.write(packed_data)
-            os.replace(tmp_path, self.cache_path)
-            logger.info(f"Q-value cache saved to {self.cache_path} using MessagePack.")
-        except Exception as e:
-            logger.error(f"Failed to save MessagePack cache: {e}")
+        with open(tmp_path, "wb") as f:
+            pickle.dump(self.qval_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+            f.flush(); os.fsync(f.fileno())
+        os.replace(tmp_path, self.cache_path)
+        logger.info(f"Q-value cache saved at {self.cache_path}")
 
     def clear_disk_cache(self):
         if os.path.exists(self.cache_path):
             os.remove(self.cache_path)
             logger.info(f"\nCleared Q-value cache at {self.cache_path}.")
-        self.qval_cache = OrderedDict()
+        self.qval_cache = {}

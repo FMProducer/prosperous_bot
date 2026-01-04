@@ -16,7 +16,6 @@ class PrioritizedReplayBuffer:
         beta_start: float,
         beta_frames: int,
         epsilon: float,
-        state_shape: Tuple[int, ...],
     ) -> None:
         self.capacity = capacity
         self.alpha = alpha
@@ -30,11 +29,7 @@ class PrioritizedReplayBuffer:
             self.tree_capacity <<= 1
         self.tree = np.zeros(2 * self.tree_capacity - 1, dtype=np.float64)
 
-        self.states = np.empty((capacity, *state_shape), dtype=np.float32)
-        self.actions = np.empty(capacity, dtype=np.uint8)  # Optimized: uint8 is sufficient
-        self.rewards = np.empty(capacity, dtype=np.float32)
-        self.next_states = np.empty((capacity, *state_shape), dtype=np.float32)
-        self.dones = np.empty(capacity, dtype=np.uint8)      # Optimized: uint8 is sufficient
+        self.data: List[Tuple] = [None] * capacity
         self.idx = 0
         self.size = 0
         self.max_priority = 1.0
@@ -54,11 +49,7 @@ class PrioritizedReplayBuffer:
         done: bool,
     ) -> None:
         data_idx = self.idx
-        self.states[data_idx] = state
-        self.actions[data_idx] = action
-        self.rewards[data_idx] = reward
-        self.next_states[data_idx] = next_state
-        self.dones[data_idx] = done
+        self.data[data_idx] = (state, action, reward, next_state, done)
 
         tree_idx = np.array([data_idx + self.tree_capacity - 1])
         priority = np.array([self.max_priority**self.alpha])
@@ -71,38 +62,21 @@ class PrioritizedReplayBuffer:
         self.size = min(self.size + 1, self.capacity)
         self.frame_idx += 1
 
-    def push_batch(
-        self,
-        states: np.ndarray,
-        actions: np.ndarray,
-        rewards: np.ndarray,
-        next_states: np.ndarray,
-        dones: np.ndarray,
-    ) -> None:
-        batch_size = states.shape[0]
+    def _retrieve(self, idx: int, s: float) -> int:
+        """Find sample index in tree with cumulative priority s."""
+        left = 2 * idx + 1
+        right = left + 1
 
-        # Generate indices for the batch
-        indices = np.arange(self.idx, self.idx + batch_size) % self.capacity
+        if left >= len(self.tree):
+            return idx
 
-        # Store data
-        self.states[indices] = states
-        self.actions[indices] = actions
-        self.rewards[indices] = rewards
-        self.next_states[indices] = next_states
-        self.dones[indices] = dones
-
-        # Update priorities in the tree
-        tree_indices = indices + self.tree_capacity - 1
-        priorities = np.full(batch_size, self.max_priority ** self.alpha)
-
-        changes = priorities - self.tree[tree_indices]
-        self.tree[tree_indices] = priorities
-        self._propagate_vectorized(tree_indices, changes)
-
-        # Update buffer pointers
-        self.idx = (self.idx + batch_size) % self.capacity
-        self.size = min(self.size + batch_size, self.capacity)
-        self.frame_idx += batch_size
+        # If we are in a parent node, check if the cumulative priority s falls
+        # within the range of the left child.
+        if s <= self.tree[left]:
+            return self._retrieve(left, s)
+        else:
+            # Otherwise, it's in the right child's range.
+            return self._retrieve(right, s - self.tree[left])
 
     def sample(self, batch_size: int) -> Tuple[np.ndarray, ...]:
         assert self.size >= batch_size, "Not enough samples in buffer"
@@ -112,51 +86,51 @@ class PrioritizedReplayBuffer:
 
         segment = total_p / batch_size
 
-        indices = np.empty(batch_size, dtype=np.int64)
-        data_indices = np.empty(batch_size, dtype=np.int64)
-        weights = np.empty(batch_size, dtype=np.float32)
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+        indices, weights = [], []
 
         beta = self._beta()
         min_prob = np.min(self.tree[self.tree_capacity - 1 : self.tree_capacity - 1 + self.size]) / total_p
         max_weight = (min_prob * self.size) ** (-beta)
 
-        # Vectorized sampling
-        s = np.random.uniform(segment * np.arange(batch_size), segment * (np.arange(batch_size) + 1))
+        for idx_batch in range(batch_size):
+            left_bound_of_segment = segment * idx_batch
+            right_bound_of_segment = segment * (idx_batch + 1)
+            s = random.uniform(left_bound_of_segment, right_bound_of_segment)
 
-        # Vectorized tree search
-        current_tree_indices = np.zeros(batch_size, dtype=np.int64)
+            node_idx = self._retrieve(0, s)
+            data_idx = node_idx - (self.tree_capacity - 1)
 
-        for _ in range(int(np.log2(self.tree_capacity))):
-            left_child = 2 * current_tree_indices + 1
-            right_child = left_child + 1
+            # Теоретически при корректной конфигурации дерева:
+            #   0 <= data_idx < self.size <= self.capacity
+            # но на старте обучения или из-за численных артефактов
+            # можем получить индекс >= size. В этом случае
+            # жёстко прижимаем к последнему валидному элементу
+            # И СИНХРОНИЗИРУЕМ node_idx с этим data_idx.
+            if data_idx >= self.size:
+                data_idx = self.size - 1
+                node_idx = data_idx + (self.tree_capacity - 1)
 
-            # Ensure we don't go out of bounds (though typically handled by tree structure)
-            left_vals = self.tree[left_child]
+            state, action, reward, nxt, done = self.data[data_idx]
+            states.append(state)
+            actions.append(action)
+            rewards.append(reward)
+            next_states.append(nxt)
+            dones.append(done)
 
-            mask = s <= left_vals
-            current_tree_indices[mask] = left_child[mask]
-            current_tree_indices[~mask] = right_child[~mask]
-            s[~mask] -= left_vals[~mask]
-
-        indices = current_tree_indices
-        data_indices = indices - (self.tree_capacity - 1)
-
-        # Clip indices just in case of float precision errors
-        data_indices = np.clip(data_indices, 0, self.size - 1)
-        indices = data_indices + (self.tree_capacity - 1)
-
-        p_samples = self.tree[indices] / total_p
-        weights = (p_samples * self.size) ** (-beta)
-        weights /= max_weight
+            p_sample = self.tree[node_idx] / total_p
+            w = (p_sample * self.size) ** (-beta)
+            weights.append(w / max_weight)
+            indices.append(node_idx)
 
         return (
-            self.states[data_indices],
-            self.actions[data_indices],
-            self.rewards[data_indices],
-            self.next_states[data_indices],
-            self.dones[data_indices],
-            indices,
-            weights,
+            np.array(states, dtype=np.float32),
+            np.array(actions, dtype=np.int64),
+            np.array(rewards, dtype=np.float32),
+            np.array(next_states, dtype=np.float32),
+            np.array(dones, dtype=bool),
+            np.array(indices, dtype=np.int64),
+            np.array(weights, dtype=np.float32),
         )
 
     def _propagate_vectorized(self, indices: np.ndarray, changes: np.ndarray) -> None:

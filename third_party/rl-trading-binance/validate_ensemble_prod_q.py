@@ -216,7 +216,7 @@ def find_model_checkpoint(model_path_arg, cfg=None):
     true_cfg = cfg
     if hasattr(cfg, 'cfg'): 
         true_cfg = cfg.cfg
-    if true_cfg and hasattr(true_cfg, 'paths') and hasattr(true_cfg.paths, 'model_path') and true_cfg.paths.model_path and os.path.exists(true_cfg.paths.model_path):
+    if true_cfg and hasattr(true_cfg, 'paths') and hasattr(true_cfg.paths, 'model_path') and os.path.exists(true_cfg.paths.model_path):
         logger.info(f"ℹ️ Using model path from config: {true_cfg.paths.model_path}")
         return true_cfg.paths.model_path
     model_dir_from_cfg = "."

@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 import torch
@@ -161,113 +160,88 @@ def select_and_arrange_channels(
     return df[use_channels].to_numpy(dtype=np.float32)
 
 
-def transform_sequence(
-    seq: npt.NDArray[np.float32],
-    cfg: "MasterConfig",
-) -> npt.NDArray[np.float32]:
-    """
-    Выполняет специфичные для каналов преобразования данных (log-returns, log(x+1)).
-    Эта функция НЕ нормализует данные (z-score), а только подготавливает их.
-    Args:
-        seq (npt.NDArray[np.float32]): Исходная последовательность, форма (L, C).
-        cfg (MasterConfig): Конфигурация, содержащая списки каналов.
-    Returns:
-        npt.NDArray[np.float32]: Преобразованная последовательность, форма (L, C).
-    """
-    if not isinstance(seq, np.ndarray) or seq.ndim != 2:
-        raise ValueError(f"Ожидается 2D массив (L, C), получено: {seq.shape}")
-
-    out = seq.copy()
-    eps = 1e-9
-
-    price_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.pricechannels if ch in cfg.data.datachannels]
-    volume_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.volumechannels if ch in cfg.data.datachannels]
-
-    # Векторизованные операции для price channels
-    if price_indices:
-        prices = out[:, price_indices]
-        # Рассчитываем log returns
-        log_returns = np.log(np.maximum(prices[1:] / (prices[:-1] + eps), eps))
-        # Первый шаг равен 0.0, так как для него нет предыдущего значения
-        out[0, price_indices] = 0.0
-        out[1:, price_indices] = log_returns
-
-    # Векторизованные операции для volume channels
-    if volume_indices:
-        volumes = out[:, volume_indices]
-        out[:, volume_indices] = np.log(volumes + 1.0)
-
-    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-
 def calculate_normalization_stats(
-    sequences: List[npt.NDArray[np.float32]],
-    cfg: MasterConfig,
-) -> Dict[str, np.ndarray]:
-    """
-    Вычисляет статистики (mean, std) для нормализации по всему датасету.
-    Сначала применяет нелинейные трансформации, затем считает статистики.
-    """
+    sequences: List[np.ndarray],
+    use_channels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str],
+) -> Dict[str, Dict[str, float]]:
+    stats: Dict[str, Dict[str, float]] = {"means": {}, "stds": {}}
     if not sequences:
-        logger.warning("Пустой набор данных для расчета статистик нормализации.")
-        return {}
+        logger.warning("Empty training set for normalization stats")
+        return stats
 
-    transformed_sequences = [
-        transform_sequence(seq, cfg)
-        for seq in tqdm(sequences, desc="Предварительная обработка для статистик", leave=False)
-    ]
+    data_accum: Dict[str, List[float]] = {ch: [] for ch in use_channels}
+    for seq in tqdm(sequences, desc="Calculating normalization stats ...", leave=False):
+        for idx, ch in enumerate(use_channels):
+            arr = seq[:, idx].astype(np.float64)
+            if ch in pricechannels:
+                changes = arr[1:] / (arr[:-1] + 1e-9)
+                vals = np.log(np.maximum(changes, 1e-9))
+            elif ch in volumechannels:
+                vals = np.log(arr + 1.0)
+            elif ch in otherchannels:
+                vals = arr
+            else:
+                continue
+            finite = vals[np.isfinite(vals)]
+            data_accum[ch].extend(finite.tolist())
 
-    # Объединяем все последовательности в один большой массив (N*L, C)
-    full_dataset = np.concatenate(transformed_sequences, axis=0)
+    for ch, values in data_accum.items():
+        if not values:
+            logger.warning(f"No data for stats on channel {ch}, defaulting to mean=0, std=1")
+            stats["means"][ch], stats["stds"][ch] = 0.0, 1.0
+        else:
+            arr = np.array(values, dtype=np.float32)
+            m, s = float(arr.mean()), float(arr.std())
+            if s < 1e-7:
+                logger.debug(f"Std too small for {ch}, setting to 1.0")
+                s = 1.0
+            stats["means"][ch], stats["stds"][ch] = m, s
+    logger.info("Normalization statistics computed")
+    return stats
 
-    means = np.mean(full_dataset, axis=0, dtype=np.float32)
-    stds = np.std(full_dataset, axis=0, dtype=np.float32)
-    stds[stds < 1e-7] = 1.0  # Защита от деления на ноль
 
-    logger.info("Статистики нормализации успешно рассчитаны.")
-    return {"means": means, "stds": stds}
-
-
-def apply_normalization_to_sequence(
-    seq: npt.NDArray[np.float32],
+def apply_normalization(
+    window: np.ndarray,
     stats: Dict[str, Dict[str, float]],
-    use_channels: List[str]
-) -> npt.NDArray[np.float32]:
-    """
-    Применяет z-score нормализацию к УЖЕ ПРЕОБРАЗОВАННОЙ последовательности.
-    Работает со статистиками в формате словаря каналов.
-    Args:
-        seq (npt.NDArray[np.float32]): Преобразованная последовательность, форма (L, C).
-        stats (Dict[str, Dict[str, float]]): Словарь статистик актива, e.g., {'means': {'open': v1}, 'stds': ...}.
-        use_channels (List[str]): Список каналов в том порядке, в котором они идут в `seq`.
-    Returns:
-        npt.NDArray[np.float32]: Нормализованная последовательность, форма (L, C).
-    """
-    if not isinstance(seq, np.ndarray) or seq.ndim != 2:
-        raise ValueError(f"Ожидается 2D массив (L, C), получено: {seq.shape}")
+    use_channels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str],
+    agent_history_len: int,
+    input_history_len: int,
+) -> Optional[np.ndarray]:
+    seq_len, channels = window.shape
+    if seq_len != agent_history_len or channels != len(use_channels):
+        logger.error("Window shape mismatch in apply_normalization")
+        return None
 
-    if seq.shape[1] != len(use_channels):
-        raise ValueError(f"Несоответствие количества каналов: seq.shape[1]={seq.shape[1]}, len(use_channels)={len(use_channels)}")
+    out = np.zeros((input_history_len, channels), dtype=np.float32)
 
-    # Извлекаем данные (теперь это списки, а не словари)
-    means = stats.get('means', [])
-    stds = stats.get('stds', [])
+    for i, ch in enumerate(use_channels):
+        arr = window[:, i].astype(np.float64)
+        mean, std = stats["means"].get(ch, 0.0), stats["stds"].get(ch, 1.0)
+        if ch in pricechannels:
+            rel = arr[1:] / (arr[:-1] + 1e-9)
+            logs = np.log(np.maximum(rel, 1e-9))
+            normed_logs = (logs - mean) / std
+            # Pad with 0.0 for the first undefined value and match length
+            padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
+            normed = padded_normed[-input_history_len:]
+        elif ch in volumechannels:
+            logv = np.log(arr + 1.0)
+            normed = (logv - mean) / std
+            normed = normed[-input_history_len:]
+        elif ch in otherchannels:
+            normed = (arr - mean) / std
+            normed = normed[-input_history_len:]
+        else:
+            normed = arr[-input_history_len:]
+        out[:, i] = np.nan_to_num(normed, nan=0.0, posinf=0.0, neginf=0.0)
 
-    if len(means) != len(use_channels) or len(stds) != len(use_channels):
-        raise ValueError(
-            f"Normalization stats mismatch! "
-            f"Means length: {len(means)}, Stds length: {len(stds)}, "
-            f"Expected channels: {len(use_channels)}."
-        )
-
-    means_vec = np.array(means, dtype=np.float32)
-    stds_vec = np.array(stds, dtype=np.float32)
-
-    # Защита от деления на ноль
-    stds_vec[stds_vec < 1e-8] = 1.0
-
-    # Используем broadcasting NumPy: (L, C) - (C,) / (C,)
-    return ((seq - means_vec) / stds_vec).astype(np.float32)
+    return out
 
 
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
@@ -384,57 +358,34 @@ def create_walk_forward_folds(
     merged_sequences: List[Tuple[Any, np.ndarray]],
     train_months: int,
     test_months: int,
-    step_months: int,
-    purge_size_bars: int = 0
+    step_months: int
 ) -> List[Tuple[List[Any], List[Any]]]:
-    # Сортировка по дате-времени
+    # Sort by datetime (assuming key is (ticker, dt))
+    # Filter out items that don't match the expected key format
     valid_seqs = [s for s in merged_sequences if isinstance(s[0], tuple) and len(s[0]) == 2]
     sorted_seqs = sorted(valid_seqs, key=lambda x: x[0][1])
 
     if not sorted_seqs:
         return []
 
-    # Создаем DataFrame для удобной работы с индексами и датами
-    df = pd.DataFrame({
-        'key': [s[0] for s in sorted_seqs],
-        'data': [s[1] for s in sorted_seqs],
-        'datetime': [s[0][1] for s in sorted_seqs]
-    })
-    df = df.set_index('datetime')
+    start_date = sorted_seqs[0][0][1]
+    end_date = sorted_seqs[-1][0][1]
 
-    start_date = df.index.min()
-    end_date = df.index.max()
     folds = []
     current_start = start_date
 
     while True:
         train_end = current_start + pd.DateOffset(months=train_months)
-        val_start = train_end
-        val_end = val_start + pd.DateOffset(months=test_months)
+        test_end = train_end + pd.DateOffset(months=test_months)
 
-        if val_end > end_date:
+        if test_end > end_date:
             break
 
-        # Выборка данных по датам
-        train_df = df[(df.index >= current_start) & (df.index < train_end)]
-        val_df = df[(df.index >= val_start) & (df.index < val_end)]
+        train_fold = [s for s in sorted_seqs if current_start <= s[0][1] < train_end]
+        test_fold = [s for s in sorted_seqs if train_end <= s[0][1] < test_end]
 
-        # Применяем purging (очистку)
-        if purge_size_bars > 0 and not train_df.empty and not val_df.empty:
-            # Находим индекс последнего элемента в обучающем наборе
-            last_train_idx = df.index.get_loc(train_df.index[-1])
-            # Определяем, сколько элементов нужно пропустить
-            purge_end_idx = last_train_idx + purge_size_bars
-
-            if purge_end_idx < len(df):
-                # Новая дата начала валидации
-                new_val_start_date = df.index[purge_end_idx]
-                val_df = val_df[val_df.index >= new_val_start_date]
-
-        if not train_df.empty and not val_df.empty:
-            train_fold = list(zip(train_df['key'], train_df['data']))
-            val_fold = list(zip(val_df['key'], val_df['data']))
-            folds.append((train_fold, val_fold))
+        if train_fold and test_fold:
+            folds.append((train_fold, test_fold))
 
         current_start += pd.DateOffset(months=step_months)
 
@@ -530,49 +481,6 @@ def find_spike_windows(
         else:
             t += pd.Timedelta(minutes=1)
     return out
-
-def apply_normalization(
-    seq: np.ndarray,
-    stats: Dict[str, np.ndarray],
-    datachannels: List[str],
-    pricechannels: List[str],
-    volumechannels: List[str],
-    otherchannels: List[str],
-    agent_history_len: int,
-    input_history_len: int,
-) -> np.ndarray:
-    """
-    Applies log transforms and z-score normalization.
-    This is a reconstructed legacy function based on its usage in other files
-    to resolve an UndefinedVariable error. The modern approach is to use
-    `transform_sequence` followed by `apply_normalization_to_sequence`.
-    """
-    out = seq.copy()
-    eps = 1e-9
-
-    price_indices = [datachannels.index(ch) for ch in pricechannels if ch in datachannels]
-    volume_indices = [datachannels.index(ch) for ch in volumechannels if ch in datachannels]
-
-    # Log transforms (logic from `transform_sequence`)
-    if price_indices:
-        prices = out[:, price_indices]
-        # This handles potential division by zero or log(0)
-        log_returns = np.log(np.maximum(prices[1:] / (prices[:-1] + eps), eps))
-        out[0, price_indices] = 0.0
-        out[1:, price_indices] = log_returns
-
-    if volume_indices:
-        volumes = out[:, volume_indices]
-        out[:, volume_indices] = np.log(volumes + 1.0)
-
-    transformed_seq = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-    # Z-score normalization (logic from `apply_normalization_to_sequence`)
-    means = stats["means"]
-    stds = stats["stds"]
-    normalized_seq = (transformed_seq - means) / (stds + 1e-8)
-
-    return normalized_seq.astype(np.float32)
 
 def preprocess_sequences(
     sequences: List[np.ndarray],
@@ -671,8 +579,8 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         if not asset_stats:
             continue
 
-        means = np.array(asset_stats['means'])
-        stds = np.array(asset_stats['stds'])
+        means = np.array(asset_stats['mean'])
+        stds = np.array(asset_stats['std'])
 
         seq_float = seq.astype(np.float32)
         if seq_float.shape[1] != len(means):
