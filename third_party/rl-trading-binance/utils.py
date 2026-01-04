@@ -180,22 +180,14 @@ def transform_sequence(
     out = seq.copy()
     eps = 1e-9
 
-    price_indices = [cfg.data.data_channels.index(ch) for ch in cfg.data.price_channels if ch in cfg.data.data_channels]
-    volume_indices = [cfg.data.data_channels.index(ch) for ch in cfg.data.volume_channels if ch in cfg.data.data_channels]
+    price_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.pricechannels if ch in cfg.data.datachannels]
+    volume_indices = [cfg.data.datachannels.index(ch) for ch in cfg.data.volumechannels if ch in cfg.data.datachannels]
 
     # Векторизованные операции для price channels
     if price_indices:
         prices = out[:, price_indices]
         # Рассчитываем log returns
-        # Защита от деления на ноль: если предыдущая цена ~0, считаем доходность нулевой
-        prev_prices = prices[:-1]
-        curr_prices = prices[1:]
-        
-        ratios = np.ones_like(curr_prices)
-        valid_mask = prev_prices > eps
-        ratios[valid_mask] = curr_prices[valid_mask] / prev_prices[valid_mask]
-        
-        log_returns = np.log(np.maximum(ratios, eps))
+        log_returns = np.log(np.maximum(prices[1:] / (prices[:-1] + eps), eps))
         # Первый шаг равен 0.0, так как для него нет предыдущего значения
         out[0, price_indices] = 0.0
         out[1:, price_indices] = log_returns
@@ -209,53 +201,74 @@ def transform_sequence(
 
 
 def calculate_normalization_stats(
-    sequences_dict: Dict[Any, np.ndarray],
-    *,
-    add_fallback: bool = True
-) -> Dict[str, Dict[str, List[float]]]:
+    sequences: List[npt.NDArray[np.float32]],
+    cfg: MasterConfig,
+) -> Dict[str, np.ndarray]:
     """
-    Считает потикерные статы.
-    ВАЖНО: Для соответствия 1_norm_stats.json должна вызываться на RAW данных.
+    Вычисляет статистики (mean, std) для нормализации по всему датасету.
+    Сначала применяет нелинейные трансформации, затем считает статистики.
     """
-    assets_data = defaultdict(list)
+    if not sequences:
+        logger.warning("Пустой набор данных для расчета статистик нормализации.")
+        return {}
 
-    for key, seq in sequences_dict.items():
-        # Универсальное извлечение тикера
-        if isinstance(key, (tuple, list)):
-            asset = key[0]
-        else:
-            asset = str(key).split('_')[0]
-        if isinstance(asset, bytes):
-            asset = asset.decode('utf-8')
-            
-        assets_data[asset].append(seq)
+    transformed_sequences = [
+        transform_sequence(seq, cfg)
+        for seq in tqdm(sequences, desc="Предварительная обработка для статистик", leave=False)
+    ]
 
-    norm_stats = {}
-    all_seqs_list = []
+    # Объединяем все последовательности в один большой массив (N*L, C)
+    full_dataset = np.concatenate(transformed_sequences, axis=0)
 
-    for asset, seqs in assets_data.items():
-        if not seqs: continue
-        if add_fallback:
-            all_seqs_list.extend(seqs)
-        try:
-            concatenated = np.concatenate(seqs, axis=0)
-            # Keys match 1_norm_stats.json ("mean", "std")
-            means = concatenated.mean(axis=0).tolist()
-            stds = (concatenated.std(axis=0) + 1e-8).tolist()
-            norm_stats[asset] = {"means": means, "stds": stds}
-        except ValueError:
-            continue
-            
-    if add_fallback and all_seqs_list:
-        try:
-            concatenated = np.concatenate(all_seqs_list, axis=0)
-            means = concatenated.mean(axis=0).tolist()
-            stds = (concatenated.std(axis=0) + 1e-8).tolist()
-            norm_stats["_fallback_"] = {"means": means, "stds": stds}
-        except ValueError:
-            pass
+    means = np.mean(full_dataset, axis=0, dtype=np.float32)
+    stds = np.std(full_dataset, axis=0, dtype=np.float32)
+    stds[stds < 1e-7] = 1.0  # Защита от деления на ноль
 
-    return norm_stats
+    logger.info("Статистики нормализации успешно рассчитаны.")
+    return {"means": means, "stds": stds}
+
+
+def apply_normalization_to_sequence(
+    seq: npt.NDArray[np.float32],
+    stats: Dict[str, Dict[str, float]],
+    use_channels: List[str]
+) -> npt.NDArray[np.float32]:
+    """
+    Применяет z-score нормализацию к УЖЕ ПРЕОБРАЗОВАННОЙ последовательности.
+    Работает со статистиками в формате словаря каналов.
+    Args:
+        seq (npt.NDArray[np.float32]): Преобразованная последовательность, форма (L, C).
+        stats (Dict[str, Dict[str, float]]): Словарь статистик актива, e.g., {'means': {'open': v1}, 'stds': ...}.
+        use_channels (List[str]): Список каналов в том порядке, в котором они идут в `seq`.
+    Returns:
+        npt.NDArray[np.float32]: Нормализованная последовательность, форма (L, C).
+    """
+    if not isinstance(seq, np.ndarray) or seq.ndim != 2:
+        raise ValueError(f"Ожидается 2D массив (L, C), получено: {seq.shape}")
+
+    if seq.shape[1] != len(use_channels):
+        raise ValueError(f"Несоответствие количества каналов: seq.shape[1]={seq.shape[1]}, len(use_channels)={len(use_channels)}")
+
+    # Извлекаем данные (теперь это списки, а не словари)
+    means = stats.get('means', [])
+    stds = stats.get('stds', [])
+
+    if len(means) != len(use_channels) or len(stds) != len(use_channels):
+        raise ValueError(
+            f"Normalization stats mismatch! "
+            f"Means length: {len(means)}, Stds length: {len(stds)}, "
+            f"Expected channels: {len(use_channels)}."
+        )
+
+    means_vec = np.array(means, dtype=np.float32)
+    stds_vec = np.array(stds, dtype=np.float32)
+
+    # Защита от деления на ноль
+    stds_vec[stds_vec < 1e-8] = 1.0
+
+    # Используем broadcasting NumPy: (L, C) - (C,) / (C,)
+    return ((seq - means_vec) / stds_vec).astype(np.float32)
+
 
 def load_config(path: str, return_module: bool = False) -> MasterConfig | Tuple[MasterConfig, Any]:
     cfg_path = Path(path)
@@ -321,7 +334,7 @@ def compute_metrics(sequences: List[np.ndarray], predictions: np.ndarray, cfg: M
     """
     total_pnls = []
     wins = 0
-    close_idx = cfg.data.data_channels.index("close")
+    close_idx = cfg.data.datachannels.index("close")
 
     for session, direction in zip(sequences, predictions):
         if session.shape[0] <= cfg.seq.pre_signal_len + cfg.seq.agent_session_len:
@@ -561,67 +574,25 @@ def apply_normalization(
 
     return normalized_seq.astype(np.float32)
 
-def preprocess_sequences(sequences: List[np.ndarray], cfg: MasterConfig) -> List[np.ndarray]:
-    """
-    Vectorized preprocessing of sequences.
-    Why: Minimizes Python overhead by batching operations.
-    """
-    if not sequences:
-        return []
-
-    # Stack into (N, Channels, Length)
-    batch = np.stack(sequences)
-
-    # 1. Select channels (vectorized)
-    # Assuming select_and_arrange_channels can handle 3D or is called once
-    batch = batch[:, :cfg.data.num_channels, :]
-
-    # 2. Reshape to state_shape (N, C, L, 1) -> return list for Env
-    processed = [np.expand_dims(s, axis=-1) for s in batch]
-    return processed
-
-def apply_normalization(
-    sequences_dict: Dict[str, np.ndarray], 
-    norm_stats: Dict[str, Any]
-) -> Dict[str, np.ndarray]:
-    
-    preprocessed_dict = {}
-
-    for key, seq in sequences_dict.items():
-        # Strict extraction match
-        if isinstance(key, (tuple, list)):
-            asset = key[0]
-        else:
-            asset = str(key).split('_')[0]
-            
-        asset_stats = norm_stats.get(asset)
-        
-        if not asset_stats:
-            asset_stats = norm_stats.get("_fallback_")
-            
-        if not asset_stats: continue
-            
-        # [FIX] Support both 'mean' (legacy/raw) and 'means' (new) keys
-        means_val = asset_stats.get("mean") if "mean" in asset_stats else asset_stats.get("means")
-        stds_val = asset_stats.get("std") if "std" in asset_stats else asset_stats.get("stds")
-        
-        if not asset_stats: continue
-        if means_val is None or stds_val is None:
-            # Fallback if keys are completely missing/wrong
-            continue
-
-        means = np.array(means_val, dtype=np.float32)
-        stds = np.array(stds_val, dtype=np.float32)
-        
-        # Strict math REVERT from utils_prev.py snippet
-        # (seq - means) / (stds + 1e-8) -- double epsilon safety
-        norm_seq = (seq - means) / (stds + 1e-8)
-
-        
-        norm_seq = np.nan_to_num(norm_seq, nan=0.0, posinf=0.0, neginf=0.0)
-        preprocessed_dict[key] = norm_seq.astype(np.float32)
-        
-    return preprocessed_dict
+def preprocess_sequences(
+    sequences: List[np.ndarray],
+    stats: Dict[str, Dict[str, float]],
+    datachannels: List[str],
+    pricechannels: List[str],
+    volumechannels: List[str],
+    otherchannels: List[str]
+) -> List[np.ndarray]:
+    """Pre-normalize all sequences to avoid runtime overhead."""
+    normalized = []
+    for seq in tqdm(sequences, desc="Normalizing sequences"):
+        norm_seq = apply_normalization(
+            seq, stats, datachannels,
+            pricechannels, volumechannels, otherchannels,
+            agent_history_len=seq.shape[0],
+            input_history_len=seq.shape[0]
+        )
+        normalized.append(norm_seq)
+    return normalized
 
 def create_validation_episodes(
     val_sequences: List[np.ndarray],
@@ -685,7 +656,7 @@ def create_validation_episodes(
 
     return final_sequences, final_keys
 
-def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats, cfg: MasterConfig):
+def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
     # This is a helper to adapt the existing load_and_prep_data logic for in-memory data
     prepped_sequences = []
     valid_keys = []
@@ -704,118 +675,13 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats, cfg:
         stds = np.array(asset_stats['stds'])
 
         seq_float = seq.astype(np.float32)
-
-        # Apply the same transform_sequence as used for calculating stats
-        seq_transformed = transform_sequence(seq_float, cfg)
-
-        if seq_transformed.shape[1] != len(means):
+        if seq_float.shape[1] != len(means):
             continue
 
-        # Add protection against zero std
-        eps = 1e-6
-        stds_safe = np.where(stds < eps, 1.0, stds)
-        seq_norm = (seq_transformed - means) / stds_safe
+        seq_norm = (seq_float - means) / stds
         seq_norm = seq_norm.T
         seq_norm = np.expand_dims(seq_norm, -1)
         prepped_sequences.append(seq_norm)
         valid_keys.append(key)
 
     return prepped_sequences, valid_keys
-
-def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
-    """
-    Calculates detailed metrics from a list of trade info dictionaries.
-    """
-    if not trades:
-        return {}
-
-    trade_pnls = [float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades]
-    net_pnl = sum(trade_pnls)
-    commissions = [float(t.get("trade_commission", 0.0) or 0.0) for t in trades]
-    total_commission = sum(commissions)
-    gross_pnl = net_pnl + total_commission
-    
-    durations = [int(t.get("holding_duration_bars", 0) or 0) for t in trades]
-    avg_duration = float(np.mean(durations)) if durations else 0.0
-    
-    longs = sum(1 for t in trades if str(t.get("direction", "")).upper() == "LONG")
-    shorts = sum(1 for t in trades if str(t.get("direction", "")).upper() == "SHORT")
-    
-    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
-    losses = len(trades) - wins
-
-    return {
-        f"{prefix}_net_pnl": net_pnl,
-        f"{prefix}_gross_pnl": gross_pnl,
-        f"{prefix}_total_commission": total_commission,
-        f"{prefix}_avg_holding_time": avg_duration,
-        f"{prefix}_long_trades": longs,
-        f"{prefix}_short_trades": shorts,
-        f"{prefix}_win_trades": wins,
-        f"{prefix}_loss_trades": losses,
-    }
-
-def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
-    """
-    Calculates detailed metrics from a list of trade info dictionaries.
-    """
-    if not trades:
-        return {}
-
-    trade_pnls = [float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades]
-    net_pnl = sum(trade_pnls)
-    commissions = [float(t.get("trade_commission", 0.0) or 0.0) for t in trades]
-    total_commission = sum(commissions)
-    gross_pnl = net_pnl + total_commission
-    
-    durations = [int(t.get("holding_duration_bars", 0) or 0) for t in trades]
-    avg_duration = float(np.mean(durations)) if durations else 0.0
-    
-    longs = sum(1 for t in trades if str(t.get("direction", "")).upper() == "LONG")
-    shorts = sum(1 for t in trades if str(t.get("direction", "")).upper() == "SHORT")
-    
-    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
-    losses = len(trades) - wins
-
-    return {
-        f"{prefix}_net_pnl": net_pnl,
-        f"{prefix}_gross_pnl": gross_pnl,
-        f"{prefix}_total_commission": total_commission,
-        f"{prefix}_avg_holding_time": avg_duration,
-        f"{prefix}_long_trades": longs,
-        f"{prefix}_short_trades": shorts,
-        f"{prefix}_win_trades": wins,
-        f"{prefix}_loss_trades": losses,
-    }
-
-def calculate_extended_metrics(trades: List[Dict[str, Any]], prefix: str = "Validation") -> Dict[str, Any]:
-    """
-    Calculates detailed metrics from a list of trade info dictionaries.
-    """
-    if not trades:
-        return {}
-
-    net_pnl = sum(float(t.get("trade_realized_pnl", 0.0) or 0.0) for t in trades)
-    comm = sum(float(t.get("trade_commission", 0.0) or 0.0) for t in trades)
-    gross_pnl = net_pnl + comm
-    
-    durations = [int(t.get("trade_duration", 0) or 0) for t in trades]
-    avg_duration = float(np.mean(durations)) if durations else 0.0
-    
-    # Direction: assume 1=LONG, 2=SHORT or strings
-    longs = sum(1 for t in trades if str(t.get("trade_direction", "")).upper() in ("1", "LONG"))
-    shorts = sum(1 for t in trades if str(t.get("trade_direction", "")).upper() in ("2", "SHORT"))
-    
-    wins = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) > 0)
-    losses = sum(1 for t in trades if float(t.get("trade_realized_pnl", 0.0) or 0.0) <= 0)
-
-    return {
-        f"{prefix}_net_pnl": net_pnl,
-        f"{prefix}_gross_pnl": gross_pnl,
-        f"{prefix}_total_commission": comm,
-        f"{prefix}_avg_holding_time": avg_duration,
-        f"{prefix}_long_trades": longs,
-        f"{prefix}_short_trades": shorts,
-        f"{prefix}_win_trades": wins,
-        f"{prefix}_loss_trades": losses,
-    }

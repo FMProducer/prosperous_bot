@@ -81,16 +81,14 @@ EXPECTED_CHANNELS = [
 ]
 
 class DataConfig(BaseModel):
-    num_channels: int = 10
-    expected_channels: List[str] = EXPECTED_CHANNELS
-    data_channels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
-    price_channels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
-    volume_channels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
-    other_channels: List[str] = ['num_trades']
+    numchannels: int = 10
+    expectedchannels: List[str] = EXPECTED_CHANNELS
+    datachannels: List[str] = Field(default_factory=lambda: EXPECTED_CHANNELS.copy())
+    pricechannels: List[str] = ['open', 'high', 'low', 'close', 'vwap']
+    volumechannels: List[str] = ['volume', 'quote_volume', 'taker_base', 'taker_quote']
+    otherchannels: List[str] = ['num_trades']
     norm_num_samples_per_asset: int = 1000
     norm_seed: int = 25
-    plot_examples: bool = False
-    plot_channel_idx: int = 3
 
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
@@ -106,9 +104,15 @@ class SequenceConfig(BaseModel):
 
     @property
     def num_features(self) -> int:
-        return len(DataConfig().data_channels)
+        return len(DataConfig().datachannels)
 
-    input_history_len: int = 29
+    @property
+    def input_history_len(self) -> int:
+        return self.agent_history_len - 1
+
+    @input_history_len.setter
+    def input_history_len(self, value: int):
+        self.agent_history_len = value
 
     @property
     def flat_state_size(self) -> int:
@@ -125,8 +129,6 @@ class WalkForwardConfig(BaseModel):
     train_months: int = 8
     test_months: int = 2
     step_months: int = 2
-    test_days: int = 0
-    step_days: int = 0
     data_sources: List[str] = [
         "data/train_data_fair_8m.npz",
         "data/val_data_fair_2m.npz",
@@ -188,9 +190,6 @@ class RLConfig(BaseModel):
     max_gradient_norm: float = 1.0
     n_step: int = 5
     gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
-    train_freq: int = 4
-    td_clip_value: Optional[float] = None
-    reward_clip: float = 10.0
 
 
 class PERConfig(BaseModel):
@@ -247,7 +246,6 @@ class TrainLogConfig(BaseModel):
     plot_metric: str = "pnl"
     iterations: int = 10_000
     early_stopping_patience: int = 20
-    max_loss_growth_factor: float = 3.0
     save_top_k: int = 10  # Сохранять топ-10 моделей
     checkpoint_metric: str = "Validation_mean_pnl"  # Основная метрика для ранжирования
     save_mode: Literal["max", "min"] = "max"  # Максимизировать или минимизировать метрику

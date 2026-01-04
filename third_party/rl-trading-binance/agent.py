@@ -16,7 +16,6 @@ except ImportError:
 import numpy as np
 import torch
 
-
 try:
     from safetensors import safe_open  # type: ignore
     from safetensors.torch import save_file  # type: ignore
@@ -41,24 +40,14 @@ except ImportError:
     # Сообщение будет выведено только при попытке использовать ONNX функции.
     # logger.warning("ONNX Runtime не найден. Для ускорения CPU-инференса, установите его: pip install onnxruntime")
 
-def get_onnx_inference_session(model_path: str, intra_threads: int = 12):
-    """Creates an ONNX runtime session optimized for 12-core CPU inference."""
-    if not os.path.exists(model_path):
-        logger.warning(f"ONNX model path does not exist: {model_path}")
-        return None
-
-    options = ort.SessionOptions()
-    options.intra_op_num_threads = intra_threads
-    # Оптимизация для Ryzen: отключаем лишние переключения контекста
-    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-    # Set environment variable for OpenMP if not set
-    if "OMP_NUM_THREADS" not in os.environ:
-        os.environ["OMP_NUM_THREADS"] = str(intra_threads)
-
-    logger.info(f"Creating ONNX session with intra_op_num_threads={intra_threads}")
-    return ort.InferenceSession(model_path, options, providers=['CPUExecutionProvider'])
+def get_ort_session(model_path: str):
+    """Оптимизация под Ryzen 9 5900HX (12 cores)"""
+    sess_options = ort.SessionOptions()
+    # Ограничиваем потоки для стабильного инференса на CPU
+    sess_options.intra_op_num_threads = 12
+    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    return ort.InferenceSession(model_path, sess_options, providers=['CPUExecutionProvider'])
 
 class D3QN_PER_Agent:
     """A Dueling Double Deep Q-Network (D3QN) agent with Prioritized Experience Replay (PER).
@@ -80,7 +69,6 @@ class D3QN_PER_Agent:
         self,
         state_shape: Tuple[int, ...],
         action_dim: int,
-        config: any,
         cnn_maps: List[int],
         cnn_kernels: List[int],
         cnn_strides: List[int],
@@ -109,24 +97,12 @@ class D3QN_PER_Agent:
         # ── НОВОЕ: MC-dropout в обучении
         mc_enable=False, mc_n_action_samples=1, mc_action_agg="mean", mc_lcb_k=0.5,
         mc_use_for_target=False, mc_n_target_samples=1, mc_target_agg="mean_max",
-        mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0,
-        td_clip_value: Optional[float] = None,
+        mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0
     ) -> None:
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
         self.action_dim = action_dim
-        self.epsilon = 1.0 # Фикс для AttributeError
-
-        # For vectorized environments, use 1 thread per worker to avoid contention.
-        # For single-threaded inference, use the optimized session.
-        num_envs = getattr(config.vec, 'num_envs', 1)
-        onnx_threads = 1 if num_envs > 1 else 12
-
-        self.ort_session = None
-        model_path_onnx = getattr(config.paths, 'model_path_onnx', None)
-        if model_path_onnx and os.path.exists(model_path_onnx):
-            self.ort_session = get_onnx_inference_session(model_path_onnx, intra_threads=onnx_threads)
-
+        self.ort_session = None  # ONNX Runtime session
         if perf_cfg is None:
             perf_cfg = PerformanceConfig()
         model_kwargs = {
@@ -143,6 +119,10 @@ class D3QN_PER_Agent:
         }
 
         self.policy_net = DuelingQNetwork(**model_kwargs).to(self.device)
+        # Оптимизация для Ryzen: ограничение потоков на инференс одной модели
+        if self.device.type == 'cpu':
+            torch.set_num_threads(1)
+            torch.set_num_interop_threads(1)
         self.target_net = DuelingQNetwork(**model_kwargs).to(self.device)
         
         if perf_cfg.compile_mode:
@@ -199,7 +179,6 @@ class D3QN_PER_Agent:
         self.total_steps = 0
         self.learn_steps = 0
         self.max_gradient_norm = max_gradient_norm
-        self.td_clip_value = td_clip_value
 
         self.qval_cache: OrderedDict[Tuple[str, dt.datetime], np.ndarray] = OrderedDict()
         self.max_cache_size = 10000
@@ -212,7 +191,7 @@ class D3QN_PER_Agent:
             torch.set_flush_denormal(True)
 
         # Auxiliary Value Loss parameters
-        self.use_auxiliary_value_loss = False  # Can be made a config parameter
+        self.use_auxiliary_value_loss = True  # Can be made a config parameter
         self.aux_value_loss_weight = 0.5  # Weight for auxiliary loss
 
         # ── MC-dropout настройки
@@ -463,11 +442,7 @@ class D3QN_PER_Agent:
 
         # ONNX is the highest priority for inference
         if self.ort_session is not None and not training:
-            state_input = state.astype(np.float32)
-            if state_input.ndim == 3:
-                state_input = state_input[np.newaxis, ...]
-
-            ort_inputs = {self.ort_session.get_inputs()[0].name: state_input}
+            ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
             qvals = self.ort_session.run(None, ort_inputs)[0][0]
             return qvals if return_qvals else int(np.argmax(qvals))
 
@@ -489,19 +464,28 @@ class D3QN_PER_Agent:
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
-    def select_action_batch(self, states: np.ndarray) -> np.ndarray:
-        """
-        Selects greedy actions for a batch of states.
-        This is a pure-torch, no-grad method for performance.
-        """
+    def select_action_batch(self, states: np.ndarray, training: bool = True) -> np.ndarray:
+        """Selects actions for a batch of states using a vectorized epsilon-greedy policy."""
         self.policy_net.eval()
+        n = int(states.shape[0])
         with torch.no_grad(), torch.autocast(
             device_type=("cuda" if self.device.type == "cuda" else "cpu"),
             enabled=getattr(self, "use_amp", False)
         ):
-            states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
-            q_values = self.policy_net(states_t)
-            return q_values.argmax(dim=1).cpu().numpy()
+            x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
+            q = self.policy_net(x)
+            greedy = q.argmax(dim=1).detach().to("cpu").numpy()
+
+        eps = float(self.epsilon if hasattr(self, "epsilon") else
+                    (self.eps_end + (self.eps_start - self.eps_end)
+                     * np.exp(-self.total_steps / max(1, self.eps_frames))))
+        if training and eps > 0.0:
+            rnd = np.random.rand(n) < eps
+            if np.any(rnd):
+                rand_actions = np.random.randint(0, self.action_dim, size=int(rnd.sum()))
+                greedy = greedy.copy()
+                greedy[rnd] = rand_actions
+        return greedy.tolist()
 
     def predict_ensemble(
         self,
@@ -705,13 +689,8 @@ class D3QN_PER_Agent:
                     return None
 
                 # Main TD loss
-                td_error = target_q_values - current_q_values
-                if self.td_clip_value is not None:
-                    td_error = td_error.clamp(-self.td_clip_value, self.td_clip_value)
-                
-                # Use MSE on (potentially clamped) error. 0.5 factor to match standard definitions if needed, 
-                # but pure MSE is fine as learning rate scales it.
-                weighted_td_loss = (weights_t * 0.5 * td_error.pow(2)).mean()
+                td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+                weighted_td_loss = (weights_t * td_loss).mean()
                 
                 # Auxiliary Value Loss: V(s) should be close to mean Q(s,a)
                 if self.use_auxiliary_value_loss:
@@ -762,10 +741,8 @@ class D3QN_PER_Agent:
                 return None
 
             # Main TD loss
-            td_error = target_q_values - current_q_values
-            if self.td_clip_value is not None:
-                td_error = td_error.clamp(-self.td_clip_value, self.td_clip_value)
-            weighted_td_loss = (weights_t * 0.5 * td_error.pow(2)).mean()
+            td_loss = F.smooth_l1_loss(current_q_values, target_q_values, reduction="none")
+            weighted_td_loss = (weights_t * td_loss).mean()
             
             if self.use_auxiliary_value_loss:
                 with torch.no_grad():
@@ -828,32 +805,50 @@ class D3QN_PER_Agent:
 
     def save_model(self, path: str) -> None:
         """Saves a complete checkpoint of the agent's state using safetensors."""
-        # FIX: The safetensors library is designed for saving tensors, but a full training
-        # checkpoint includes optimizer state, which contains non-tensor data (e.g., hyperparameters).
-        # Directly saving `optimizer.state_dict()` with safetensors is not supported and causes errors.
-        # To ensure full checkpoints (including optimizer state for resuming training) are saved
-        # correctly, we will consistently use `torch.save()`, which can handle arbitrary Python objects.
-        # The safetensors logic is removed from this function to prevent crashes.
-
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        if not path.endswith(".pth"):
+        if save_file is None:
+            logger.warning("`safetensors` library not found. Saving model using legacy `torch.save`. "
+                           "It is recommended to install safetensors for safer model serialization: `pip install safetensors`")
+            if not path.endswith(".pth"):
+                path = os.path.splitext(path)[0] + ".pth"
+            
+            checkpoint = {
+                "policy_net": self.policy_net.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "meta": {
+                    "format": "d3qn_per_agent_v3_legacy",
+                    "total_steps": str(self.total_steps),
+                    "learn_steps": str(self.learn_steps),
+                }
+            }
+            if hasattr(self, "scaler"):
+                checkpoint["scaler"] = self.scaler.state_dict()
+            
+            torch.save(checkpoint, path)
+            logger.info(f"Legacy checkpoint saved to: {path}")
+            return
+
+        # Ensure the path ends with .safetensors
+        if not path.endswith(".safetensors"):
             path = os.path.splitext(path)[0] + ".safetensors"
 
-        checkpoint = {
+        tensors_to_save = {
             "policy_net": self.policy_net.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "meta": {
-                "format": "d3qn_per_agent_v3_legacy",
-                "total_steps": str(self.total_steps),
-                "learn_steps": str(self.learn_steps),
-            }
         }
         if hasattr(self, "scaler"):
-            checkpoint["scaler"] = self.scaler.state_dict()
+            tensors_to_save["scaler"] = self.scaler.state_dict()
 
-        torch.save(checkpoint, path)
-        logger.info(f"Full checkpoint saved to: {path}")
+        # Metadata is saved inside the safetensors file
+        metadata = {
+            "format": "d3qn_per_agent_v4",
+            "total_steps": str(self.total_steps),
+            "learn_steps": str(self.learn_steps),
+        }
+
+        save_file(tensors_to_save, path, metadata=metadata)
+        logger.info(f"Checkpoint saved securely to: {path}")
 
     def load_model(self, path: str, strict: bool = True) -> None:
         """Loads a checkpoint, supporting both new .safetensors and legacy .pth formats."""
@@ -889,7 +884,7 @@ class D3QN_PER_Agent:
 
         # Fallback for legacy .pth (pickle) files
         elif os.path.exists(path):
-            logging.info(f"Loading '.pth' (pickle) checkpoint from {path}.")
+            logging.warning(f"DEPRECATION: Loading legacy '.pth' (pickle) checkpoint from {path}. Please re-save to '.safetensors' format for security.")
             device_to_load = torch.device('cpu') if not torch.cuda.is_available() else self.device
             obj = torch.load(path, map_location=device_to_load)
 
@@ -911,7 +906,7 @@ class D3QN_PER_Agent:
             self.total_steps = int(meta.get("total_steps", self.total_steps))
             self.learn_steps = int(meta.get("learn_steps", self.learn_steps))
 
-            logger.info(f"Checkpoint successfully loaded from {path}")
+            logger.info(f"Legacy checkpoint successfully loaded from {path}")
 
         else:
             logger.error(f"Checkpoint file not found at path: {path}")
@@ -928,8 +923,9 @@ class D3QN_PER_Agent:
             try:
                 with open(self.cache_path, "rb") as f:
                     packed_data = f.read()
-                    # Use binary keys directly from msgpack
-                    self.qval_cache = OrderedDict(msgpack.unpackb(packed_data, use_list=False, object_hook=m.decode))
+                    data = msgpack.unpackb(packed_data, object_hook=m.decode)
+                    # Keys are stored as strings, convert them back to tuples
+                    self.qval_cache = OrderedDict({ast.literal_eval(k): v for k, v in data.items()})
                 logger.info(f"Loaded MessagePack Q-value cache from {self.cache_path} ({len(self.qval_cache)} entries).")
             except Exception as e:
                 logger.error(f"Failed to load MessagePack cache: {e}. Starting with an empty cache.")
@@ -944,9 +940,10 @@ class D3QN_PER_Agent:
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
         tmp_path = self.cache_path + ".tmp"
         try:
+            # Convert tuple keys to strings for serialization
+            data_to_pack = {str(k): v for k, v in self.qval_cache.items()}
             with open(tmp_path, "wb") as f:
-                # Use binary keys directly from msgpack
-                packed_data = msgpack.packb(list(self.qval_cache.items()), default=m.encode)
+                packed_data = msgpack.packb(data_to_pack, default=m.encode)
                 f.write(packed_data)
             os.replace(tmp_path, self.cache_path)
             logger.info(f"Q-value cache saved to {self.cache_path} using MessagePack.")

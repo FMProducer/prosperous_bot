@@ -31,9 +31,10 @@ class PrioritizedReplayBuffer:
         self.tree = np.zeros(2 * self.tree_capacity - 1, dtype=np.float64)
 
         self.states = np.empty((capacity, *state_shape), dtype=np.float32)
-        self.actions = np.empty(capacity, dtype=np.uint8)
+        self.actions = np.empty(capacity, dtype=np.uint8)  # Optimized: uint8 is sufficient
         self.rewards = np.empty(capacity, dtype=np.float32)
-        self.dones = np.empty(capacity, dtype=np.uint8)
+        self.next_states = np.empty((capacity, *state_shape), dtype=np.float32)
+        self.dones = np.empty(capacity, dtype=np.uint8)      # Optimized: uint8 is sufficient
         self.idx = 0
         self.size = 0
         self.max_priority = 1.0
@@ -56,6 +57,7 @@ class PrioritizedReplayBuffer:
         self.states[data_idx] = state
         self.actions[data_idx] = action
         self.rewards[data_idx] = reward
+        self.next_states[data_idx] = next_state
         self.dones[data_idx] = done
 
         tree_idx = np.array([data_idx + self.tree_capacity - 1])
@@ -86,6 +88,7 @@ class PrioritizedReplayBuffer:
         self.states[indices] = states
         self.actions[indices] = actions
         self.rewards[indices] = rewards
+        self.next_states[indices] = next_states
         self.dones[indices] = dones
 
         # Update priorities in the tree
@@ -146,15 +149,11 @@ class PrioritizedReplayBuffer:
         weights = (p_samples * self.size) ** (-beta)
         weights /= max_weight
 
-        # Reconstruct next_states dynamically
-        next_indices = (data_indices + 1) % self.capacity
-        next_states = self.states[next_indices]
-
         return (
             self.states[data_indices],
             self.actions[data_indices],
             self.rewards[data_indices],
-            next_states,
+            self.next_states[data_indices],
             self.dones[data_indices],
             indices,
             weights,
