@@ -80,10 +80,10 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 3e-4  # AdamW
+cfg.rl.lr = 1e-4  # AdamW
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
 cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
-cfg.rl.batch_size = 96  # Оптимальный размер для GPU, ускоряет сходимость
+cfg.rl.batch_size = 64  # Оптимальный размер для GPU, ускоряет сходимость
 cfg.rl.train_start = 15000  # Увеличиваем warmup (5% от бюджета), 1000 слишком мало для стабильности
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
@@ -91,22 +91,22 @@ cfg.rl.max_gradient_norm = 1.0  # Clip grads
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 1000000
 cfg.per.per_alpha = 0.6
-cfg.per.per_beta_start = 0.4
+cfg.per.per_beta_start = 0.7
 cfg.per.per_beta_frames = 250000  # Синхронизируем с новым total_timesteps
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 180000  # Заканчиваем исследование раньше (под новый бюджет)
+cfg.eps.eps_decay_frames = 250000  # Заканчиваем исследование раньше (под новый бюджет)
 
 # Env/Vectorized
-cfg.vec.num_envs = 12             # параллельные среды
+cfg.vec.num_envs = 6             # параллельные среды
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 512  # Уменьшаем для быстрой валидации, 100 достаточно
-max_episodes_per_symbol = 2
+cfg.trainlog.num_val_ep = 768  # Уменьшаем для быстрой валидации, 100 достаточно
+max_episodes_per_symbol = 3
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
@@ -114,7 +114,7 @@ cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
 cfg.trainlog.total_timesteps = 250000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 200             # Валидируемся чуть реже
+cfg.trainlog.val_freq = 100             # Валидируемся чуть реже
 cfg.trainlog.validation_warmup_steps = 15000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
@@ -127,11 +127,11 @@ cfg.trainlog.early_stopping_patience = 10  # Увеличиваем терпен
 
 # Validation Gate (multi-crit; deny bad models)
 cfg.validation_gate = {
-    "min_sharpe": 0.03,
-    "min_sortino": 0.05,
-    "min_profit_factor": 1.05,      # Чуть выше безубытка
-    "max_drawdown_at_most": -0.30,  # Ограничиваем просадку 30% (было -1.17)
-    "min_win_rate": 0.40,  # Чуть ниже (SHORT сложнее)
+    "min_sharpe": 0.01,
+    "min_sortino": 0.01,
+    "min_profit_factor": 1.01,      # Чуть выше безубытка
+    "max_drawdown_at_most": -0.10,  # Ограничиваем просадку 30% (было -1.17)
+    "min_win_rate": 0.45,  # Чуть ниже (SHORT сложнее)
     "min_trades": 50,      # Снижаем порог сделок для короткой валидации
     "deny_inf_pf": True,
     "deny_zero_drawdown": True
@@ -146,15 +146,15 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # --- Bonuses ---
 # Награда за достижение нового максимума эквити
-cfg.market.new_equity_peak_reward = 5.0
+cfg.market.new_equity_peak_reward = 0.1
 # Награда за прибыльную сделку, которая не уходила в минус
-cfg.market.perfect_entry_reward = 1.5
+cfg.market.perfect_entry_reward = 0.1
 # Порог для соотношения риск/прибыль (3:1)
-cfg.market.risk_reward_ratio_threshold = 0.0
+cfg.market.risk_reward_ratio_threshold = 1.5
 # Награда за сделку с высоким соотношением риск/прибыль
-cfg.market.risk_reward_ratio_reward = 0.0
+cfg.market.risk_reward_ratio_reward = 0.1
 # Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
-cfg.market.good_exit_bonus = 0.5
+cfg.market.good_exit_bonus = 0.1
 # Дополнительный бонус за быстрый выход (< 20 шагов)
 cfg.market.fast_exit_bonus = 0.0
 
@@ -169,7 +169,7 @@ cfg.market.max_drawdown_threshold = -0.10
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.02  # Включаем (2%), чтобы агент избегал входов, уходящих в минус
+cfg.market.continuous_pain_penalty_ratio = 0.002  # Включаем (2%), чтобы агент избегал входов, уходящих в минус
 # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
@@ -177,7 +177,7 @@ cfg.market.low_balance_penalty = 1.0
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
 cfg.market.holding_penalty_multiplier = 0.0  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
-cfg.market.greed_penalty_multiplier = 0.0  # Меньше штраф
+cfg.market.greed_penalty_multiplier = 0.002  # Снижаем штраф, чтобы не выбивало слишком рано
 # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
 cfg.market.premature_profit_exit_penalty = 0.0
 # Штраф за долгое удержание УБЫТОЧНОЙ позиции (> loss_exit_threshold шагов)
@@ -195,7 +195,7 @@ cfg.market.profit_holding_bonus = 0.0    # Заменен на асимметр�
 # Порог времени удержания для начала прогрессивного штрафа (шагов)
 cfg.market.holding_penalty_threshold = 70  # 15 * 3 (пропорционально)
 # Порог отката прибыли для штрафа за жадность (0.50 = 50%)
-cfg.market.greed_penalty_threshold = 1.0  # Больше терпения
+cfg.market.greed_penalty_threshold = 0.4  # Разрешаем откат на 60% (удерживаем 40%), больше терпения
 # Порог качества выхода для бонуса (0.80 = 80% от максимальной прибыли)
 cfg.market.exit_quality_threshold = 0.8
 # Порог для бонуса за быстрый выход (шагов)

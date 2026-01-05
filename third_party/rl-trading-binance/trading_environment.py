@@ -297,12 +297,14 @@ class TradingEnvironment(gym.Env):
         
         asset_stats = self.stats.get(self.current_asset_name)
         if asset_stats is None:
-            fallback_asset = next(iter(self.stats))
-            logging.warning(
-                f"Stats for asset '{self.current_asset_name}' not found. "
-                f"Falling back to stats of '{fallback_asset}'."
+            # OLD DANGEROUS FALLBACK LOGIC HAS BEEN REMOVED.
+            # NEW STRICT BEHAVIOR:
+            raise ValueError(
+                f"CRITICAL ERROR: Normalization stats for asset '{self.current_asset_name}' not found. "
+                "This leads to incorrect reward calculation and model degradation. "
+                "Ensure your norm_stats.json is generated from a dataset containing ALL tickers "
+                "from your train, validation, and test sets."
             )
-            asset_stats = self.stats[fallback_asset]
         return asset_stats
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
