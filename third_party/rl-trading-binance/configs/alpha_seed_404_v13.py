@@ -80,11 +80,11 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 1e-4  # AdamW
+cfg.rl.lr = 5e-5  # Снижаем скорость обучения для большей стабильности
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
 cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
-cfg.rl.batch_size = 64  # Оптимальный размер для GPU, ускоряет сходимость
-cfg.rl.train_start = 15000  # Увеличиваем warmup (5% от бюджета), 1000 слишком мало для стабильности
+cfg.rl.batch_size = 96  # Увеличиваем батч для более стабильного градиента
+cfg.rl.train_start = 50000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 
@@ -99,7 +99,7 @@ cfg.eps.eps_end = 0.05
 cfg.eps.eps_decay_frames = 250000  # Заканчиваем исследование раньше (под новый бюджет)
 
 # Env/Vectorized
-cfg.vec.num_envs = 6             # параллельные среды
+cfg.vec.num_envs = 12             # параллельные среды
 cfg.vec.backend = "subproc"        # сначала DummyVecEnv, потом можно subproc
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
@@ -146,15 +146,15 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # --- Bonuses ---
 # Награда за достижение нового максимума эквити
-cfg.market.new_equity_peak_reward = 0.1
+cfg.market.new_equity_peak_reward = 0.0
 # Награда за прибыльную сделку, которая не уходила в минус
-cfg.market.perfect_entry_reward = 0.1
+cfg.market.perfect_entry_reward = 0.0
 # Порог для соотношения риск/прибыль (3:1)
 cfg.market.risk_reward_ratio_threshold = 1.5
 # Награда за сделку с высоким соотношением риск/прибыль
-cfg.market.risk_reward_ratio_reward = 0.1
+cfg.market.risk_reward_ratio_reward = 0.0
 # Бонус за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
-cfg.market.good_exit_bonus = 0.1
+cfg.market.good_exit_bonus = 0.0
 # Дополнительный бонус за быстрый выход (< 20 шагов)
 cfg.market.fast_exit_bonus = 0.0
 
@@ -169,7 +169,7 @@ cfg.market.max_drawdown_threshold = -0.10
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.002  # Включаем (2%), чтобы агент избегал входов, уходящих в минус
+cfg.market.continuous_pain_penalty_ratio = 0.001  # Оставляем очень маленький штраф за "боль"
 # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.inaction_penalty_ratio = 0.0
 # Штраф за попытку торговли с низким балансом
@@ -177,7 +177,7 @@ cfg.market.low_balance_penalty = 1.0
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
 cfg.market.holding_penalty_multiplier = 0.0  # Меньше штраф
 # "Штраф за жадность" (незафиксированная прибыль)
-cfg.market.greed_penalty_multiplier = 0.002  # Снижаем штраф, чтобы не выбивало слишком рано
+cfg.market.greed_penalty_multiplier = 0.0  # Отключаем, чтобы не провоцировать ранний выход
 # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
 cfg.market.premature_profit_exit_penalty = 0.0
 # Штраф за долгое удержание УБЫТОЧНОЙ позиции (> loss_exit_threshold шагов)
