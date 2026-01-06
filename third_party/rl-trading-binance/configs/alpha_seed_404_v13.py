@@ -118,11 +118,11 @@ cfg.trainlog.val_freq = 100             # Валидируемся чуть ре
 cfg.trainlog.validation_warmup_steps = 15000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
-    "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
-    "Validation_profit_factor", "Validation_max_drawdown", "Validation_all_pnls",
-    "Validation_sharpe", "Validation_sortino"
+    "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate", "Validation_net_pnl",
+    "Validation_profit_factor", "Validation_max_drawdown", "Validation_sharpe", 
+    "Validation_sortino"
 ]
-cfg.trainlog.val_selection_metrics = ["Validation_sortino", "Validation_sharpe", "Validation_profit_factor"]
+cfg.trainlog.val_selection_metrics = ["Validation_net_pnl", "Validation_sortino"]
 cfg.trainlog.early_stopping_patience = 10  # Увеличиваем терпение (10 * 200 = 2000 эпизодов, ~40% обучения)
 
 # Validation Gate (multi-crit; deny bad models)
@@ -139,7 +139,7 @@ cfg.validation_gate = {
 
 # Top-K checkpoint saving
 cfg.trainlog.save_top_k = 10  # Сохранять топ-10 моделей
-cfg.trainlog.checkpoint_metric = "Validation_sortino"  # Основная метрика для ранжирования
+cfg.trainlog.checkpoint_metric = "Validation_net_pnl"  # Основная метрика: суммарная прибыль
 cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 
 # --- Shaped Rewards & Penalties ---
@@ -169,9 +169,9 @@ cfg.market.max_drawdown_threshold = -0.10
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.continuous_pain_penalty_ratio = 0.001  # Оставляем очень маленький штраф за "боль"
+cfg.market.continuous_pain_penalty_ratio = 0.0  # ВЫКЛЮЧАЕМ. Штраф за "боль" токсичен, когда агент не может выйти из сделки.
 # Штраф за бездействие (когда нет открытых позиций)
-cfg.market.inaction_penalty_ratio = 0.0
+cfg.market.inaction_penalty_ratio = 1e-5  # ВКЛЮЧАЕМ. Небольшой штраф за бездействие, чтобы агент не "залипал" в HOLD.
 # Штраф за попытку торговли с низким балансом
 cfg.market.low_balance_penalty = 1.0
 # Множитель для прогрессивного штрафа за удержание убыточной позиции
