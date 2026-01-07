@@ -155,15 +155,8 @@ def load_and_normalize_data(npz_path, norm_stats_path, paper_symbols_cfg):
     
     return sequences, all_stats, valid_keys
 
-def run_validation():
-    cli_config_path = sys.argv[1] if len(sys.argv) > 1 else None
-    if not cli_config_path:
-        print("❌ Please provide the path to a config file.")
-        return
-
-    user_cfg_module = load_config_from_path(cli_config_path)
-    
-    model_path = find_model_checkpoint(user_cfg_module)
+def run_validation_with_config(cfg, action_signals=None, save_signals=False):
+    model_path = find_model_checkpoint(cfg)
     if not model_path:
         print("❌ 'best.pth' model file not found.")
         return
@@ -286,12 +279,15 @@ def run_validation():
     logging.getLogger().setLevel(logging.ERROR)
     pbar = tqdm(range(len(sequences)), desc="Simulating")
     
+    signals_to_save = {}
+
     for i in pbar:
         obs, _ = env.reset(options={"forced_index": i})
         done = False
         
         signal_dt_for_step = datetime.datetime(2000, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
         ticker_name = "UNKNOWN"
+        episode_signals = []
         if keys and i < len(keys):
             try:
                 key_parts = keys[i].split('_')
@@ -303,7 +299,13 @@ def run_validation():
                 logger.warning(f"Could not parse ticker/date from key: {keys[i]} due to {e}")
 
         while not done:
-            action = agent.select_action(obs, training=False)
+            if action_signals:
+                action = action_signals[keys[i]][env.step_idx]
+            else:
+                action = agent.select_action(obs, training=False)
+                if save_signals:
+                    episode_signals.append(action)
+
             next_obs, reward, terminated, truncated, info = env.backtest_step(
                 action=action, 
                 signal_dt=signal_dt_for_step,
@@ -317,6 +319,9 @@ def run_validation():
             if info.get("position_closed", False):
                 all_trades_info.append(info)
         
+        if save_signals:
+            signals_to_save[keys[i]] = episode_signals
+
         pbar.set_postfix({
             "PnL": f"{sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info):,.0f}", 
             "Trds": len(all_trades_info)
@@ -384,6 +389,19 @@ def run_validation():
 
     tsl_hits = sum(1 for t in all_trades_info if t.get('tsl_triggered', False))
 
+    metrics = {
+        "Validation_sharpe": sharpe,
+        "Validation_sortino": sortino,
+        "Validation_profit_factor": profit_factor,
+        "Validation_max_drawdown": max_dd,
+        "Validation_win_rate": wr_ratio,
+        "Validation_net_pnl": net_pnl,
+        "Validation_total_trades": total_trades
+    }
+
+    if save_signals:
+        metrics["signals"] = signals_to_save
+
     # --- Print Results ---
     print("\n" + "="*44)
     print("📊 FINAL VALIDATION RESULTS")
@@ -398,6 +416,18 @@ def run_validation():
     print(f"Expectancy/Trade: {expectancy:.2f} USDT")
     print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
     print("="*44)
+
+    return metrics
+
+
+def run_validation():
+    cli_config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    if not cli_config_path:
+        print("❌ Please provide the path to a config file.")
+        return
+
+    user_cfg = load_config_from_path(cli_config_path)
+    run_validation_with_config(user_cfg)
 
 
 if __name__ == "__main__":
