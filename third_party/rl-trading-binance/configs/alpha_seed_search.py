@@ -107,7 +107,8 @@ cfg.trainlog.val_freq = 10
 cfg.trainlog.validation_warmup_steps = 0 
 
 # Быстрая валидация (меньше эпизодов проверки)
-cfg.trainlog.num_val_ep = 50 
+cfg.trainlog.num_val_ep = 256 
+max_episodes_per_symbol = 1
 
 cfg.trainlog.plot_top_n = 5
 cfg.trainlog.available_metrics = [
