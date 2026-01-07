@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+import numpy as np
 
 import optuna
 import pandas as pd
@@ -117,11 +118,9 @@ def _save_system_info(opt_dir: str, run_stamp: str) -> None:
         json.dump(info, f, ensure_ascii=False, indent=2)
     logging.info("[Optuna] saved system_info.json")
 
-def objective(trial: optuna.Trial):
+def objective(trial: optuna.Trial, base_cfg: MasterConfig, cached_signals: dict = None) -> tuple[float, float, float]:
     # Reconstruct the config object from the JSON stored in user_attrs
-    base_cfg_raw = trial.study.user_attrs["base_cfg"]
-    base_cfg_dict = json.loads(base_cfg_raw) if isinstance(base_cfg_raw, str) else base_cfg_raw
-    cfg = MasterConfig.model_validate(base_cfg_dict)
+    cfg = copy.deepcopy(base_cfg)
     cfg.random_seed = 17 + trial.number
 
     # --- NEW: Create a unique cache directory for each trial to prevent race conditions ---
@@ -133,27 +132,30 @@ def objective(trial: optuna.Trial):
     else:
         trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
+    # --- TSL Search Space ---
+    d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
+    # d0's lower bound is dynamically set by the value of d_min
+    d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
+    delta_p_hyst = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
+
+    # Inject TSL parameters into the config for backtesting
+    cfg.backtest.trailing_stop_min = d_min
+    cfg.backtest.trailing_stop = d0
+    cfg.backtest.delta_p_hysteresis = delta_p_hyst
+
     # --- DYNAMIC SEARCH SPACE FROM CONFIG ---
-    # Пытаемся взять из восстановленного cfg; если отсутствует — из user_attrs.
     search_space = getattr(cfg, "optuna_search_space", None)
     if not search_space:
         raw_ss = trial.study.user_attrs.get("optuna_search_space")
         search_space = json.loads(raw_ss) if isinstance(raw_ss, str) else (raw_ss or {})
     suggested_params = {}
 
-    # Пройдём по параметрам в порядке объявления (dict в Py3.7+ упорядочен)
     for name, params in search_space.items():
-        # Форматы:
-        #  - ("suggest_float", low, high, log, "a.b.c")
-        #  - ("suggest_int", low, high, False, "a.b.c")
-        #  - ("suggest_categorical", ["x","y"], None, False, "a.b.c")
         suggest_type, low, high, log_flag, path = params
 
-        # Зависимости: если low — имя ранее предложенного параметра
         if isinstance(low, str) and low in suggested_params:
             low = suggested_params[low]
 
-        # Валидации диапазонов (после развёртки зависимостей)
         if suggest_type in ("suggest_float", "suggest_int"):
             if low is None or high is None:
                 raise ValueError(f"[Optuna] Param '{name}': low/high must be set for {suggest_type}")
@@ -162,13 +164,10 @@ def objective(trial: optuna.Trial):
             if suggest_type == "suggest_float" and log_flag and float(low) <= 0.0:
                 raise ValueError(f"[Optuna] Param '{name}': log-scale requires low>0 (got {low})")
 
-        # Предложение значения с учётом типа
         if suggest_type == "suggest_float":
-            # NEW: Handle negative log-scale by sampling positive and negating
             if log_flag and (float(low) < 0 or float(high) < 0):
-                # Sample positive magnitude from log scale
                 pos_val = trial.suggest_float(name, abs(float(high)), abs(float(low)), log=True)
-                value = -pos_val # Negate to get the desired range
+                value = -pos_val
             else:
                 value = trial.suggest_float(name, float(low), float(high), log=bool(log_flag))
         elif suggest_type == "suggest_int":
@@ -182,31 +181,19 @@ def objective(trial: optuna.Trial):
 
         suggested_params[name] = value
 
-        # Присвоение в cfg по пути "x.y.z"
         parts = path.split('.')
         obj = cfg
         for part in parts[:-1]:
             obj = getattr(obj, part)
         setattr(obj, parts[-1], value)
 
-    # Лог развёрнутого пространства/значений для аудита
     logging.info(f"[Optuna] trial#{trial.number} params: {json.dumps(suggested_params, ensure_ascii=False)}")
 
-    # risk-management knobs
-    # According to the new logic, risk management (unified TSL) is always active.
     cfg.backtest.use_risk_management = True
-
-    # Explicitly set unused parameters to 0 to avoid any legacy effects.
     cfg.backtest.stop_loss = None
     cfg.backtest.take_profit = None
 
-    # if cfg.backtest.selection_strategy == "ensemble_q_filter":
-    #     cfg.backtest.ensemble_max_sigma = trial.suggest_float("max_sigma", 0.001, 0.015, log=True)
-
-    # --- Установка уникальных путей для испытания ---
-    # Это гарантирует, что каждый trial сохраняет свои артефакты в отдельную папку
     trial_output_dir = os.path.join(trial.study.user_attrs["opt_dir"], f"trial_{trial.number}")
-    # === ДОБАВИТЬ ЭТУ СТРОКУ! ===
     os.makedirs(trial_output_dir, exist_ok=True)
 
     cfg.paths.base_output_dir = trial_output_dir
@@ -214,81 +201,48 @@ def objective(trial: optuna.Trial):
 
     t0 = time.time()
     try:
-        # Создаём override_params из suggested_params
-        override_params = {}
-        for name, params in search_space.items():
-            _, _, _, _, path = params
-            override_params[path] = suggested_params[name]
-        
-        metrics = run_validation_with_config(
-            config_path=trial.study.user_attrs["config_path"],
-            model_path=cfg.paths.model_path,
-            override_params=override_params
-        )
+        if cached_signals:
+            metrics = run_validation_with_config(cfg, action_signals=cached_signals)
+        else:
+            metrics = run_validation_with_config(cfg)
+
     except Exception as e:
         logging.exception(f"[Optuna] trial#{trial.number} validation failed")
-        metrics = {"sharpe": -1.0, "sortino": -1.0, "profitfactor": 0.0}
+        metrics = {"Validation_sharpe": -1.0, "Validation_sortino": -1.0, "Validation_profit_factor": 0.0}
     
-    # === ДОБАВИТЬ ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ===
     logging.info("=" * 80)
     logging.info(f"[Optuna Trial #{trial.number}] VALIDATION RESULTS")
     logging.info("=" * 80)
     
-    # Основные метрики
-    sharpe = metrics.get("sharpe", 0.0)
-    sortino = metrics.get("sortino", 0.0)
-    pf = metrics.get("profitfactor", 0.0)
-    maxdd = metrics.get("maxdrawdown", 0.0)
-    winrate = metrics.get("winrate", 0.0)
-    trades = metrics.get("trades", 0)
-    netpnl = metrics.get("netpnl", 0.0)
+    sharpe = metrics.get("Validation_sharpe", 0.0)
+    sortino = metrics.get("Validation_sortino", 0.0)
+    pf = metrics.get("Validation_profit_factor", 0.0)
+    maxdd = metrics.get("Validation_max_drawdown", 0.0)
+    winrate = metrics.get("Validation_win_rate", 0.0)
+    trades = metrics.get("Validation_total_trades", 0)
+    netpnl = metrics.get("Validation_net_pnl", 0.0)
     
     logging.info(f"[Optuna] Sharpe: {sharpe:.4f} | Sortino: {sortino:.4f} | PF: {pf:.4f}")
     logging.info(f"[Optuna] MaxDD: {abs(maxdd):.2%} | WinRate: {winrate:.2%} | Trades: {trades}")
     logging.info(f"[Optuna] Net PnL: {netpnl:.2f} USDT")
     
-    # Дополнительные метрики если есть
-    if "grosspnl" in metrics:
-        logging.info(f"[Optuna] Gross PnL: {metrics['grosspnl']:.2f} USDT")
-    if "commission" in metrics:
-        logging.info(f"[Optuna] Commission: {metrics['commission']:.2f} USDT")
-    if "avgtrade" in metrics:
-        logging.info(f"[Optuna] Avg/Trade: {metrics['avgtrade']:.2f} USDT")
-    if "besttrade" in metrics:
-        logging.info(f"[Optuna] Best Trade: +{metrics['besttrade']:.2f} | Worst: {metrics.get('worsttrade', 0.0):.2f}")
-    if "avghold" in metrics:
-        logging.info(f"[Optuna] Avg Hold: {metrics['avghold']:.2f} bars (Min: {metrics.get('minhold', 0)}, Max: {metrics.get('maxhold', 0)})")
-    if "roi" in metrics:
-        logging.info(f"[Optuna] ROI: {metrics['roi']:.2%}")
-    if "longtrades" in metrics and "shorttrades" in metrics:
-        logging.info(f"[Optuna] Long: {metrics['longtrades']} | Short: {metrics['shorttrades']} | Win: {metrics.get('wincount', 0)} | Loss: {metrics.get('losscount', 0)}")
-    if "expectancy" in metrics:
-        logging.info(f"[Optuna] Expectancy/Trade: {metrics['expectancy']:.2f} USDT")
-    
     logging.info("=" * 80)
 
     duration_s = time.time() - t0
     
-    # Persist useful attrs for later analysis/audit
     trial.set_user_attr("duration_s", round(duration_s, 3))
     trial.set_user_attr("random_seed", cfg.random_seed)
     trial.set_user_attr("trial_cache_dir", trial_cache_dir)
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
-    # сохраним параметры трейала в папке трейала
+
     try:
         with open(os.path.join(trial_output_dir, "trial_params.json"), "w", encoding="utf-8") as f:
             json.dump(suggested_params, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logging.warning(f"[Optuna] cannot save trial_params.json: {e}")
 
-    # TARGET METRICS
-    sharpe = float(metrics.get("sharpe", -1.0))
-    sortino = float(metrics.get("sortino", -1.0))
-    profit_factor = float(metrics.get("profitfactor", 0.0))
-
-    # Теперь у нас три цели: максимизировать Шарп, Сортино и профит-фактор.
-    return sharpe, sortino, profit_factor
+    return sharpe, sortino, pf
 
 def main():
     parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
@@ -306,11 +260,9 @@ def main():
     opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
     os.makedirs(opt_dir, exist_ok=True)
     
-    # --- Важно: Перенаправляем основной путь вывода в директорию оптимизации ---
     base_cfg.paths.base_output_dir = opt_dir
 
     with open(os.path.join(opt_dir, "orig_master_cfg.json"), "w") as f:
-        # Используем model_dump() для получения словаря и json.dumps с default=str для обработки несериализуемых типов
         f.write(json.dumps(base_cfg.model_dump(), default=str, indent=2))
 
     setup_logging(session_name=session_name, cfg=base_cfg)
@@ -320,7 +272,7 @@ def main():
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
 
     study = optuna.create_study(
-        directions=["maximize", "maximize", "maximize"],  # sharpe ↑, sortino ↑, -max_dd ↑ (т.е. min max_dd)
+        directions=["maximize", "maximize", "maximize"],
         sampler=sampler,
         pruner=pruner,
         study_name=f"papertrade_opt_{run_stamp}",
@@ -336,9 +288,16 @@ def main():
     study.set_user_attr("optuna_search_space", json.dumps(ss, default=str))
     study.set_user_attr("opt_dir", opt_dir)
 
+    logging.info("[Optuna] Pre-calculating model signals (Inference Cache) for validation set...")
+    initial_run = run_validation_with_config(base_cfg, save_signals=True)
+    cached_signals = initial_run.get("signals")
+    if not cached_signals:
+        logging.error("[Optuna] Failed to pre-calculate signals. Aborting optimization.")
+        return
+
     logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
     start_t = time.time()
-    study.optimize(objective, n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
+    study.optimize(lambda t: objective(t, base_cfg, cached_signals=cached_signals), n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
     logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
 
     df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
