@@ -11,11 +11,22 @@ import numpy as np
 import optuna
 import pandas as pd
 import platform
+from typing import Any
 
 from validate_test import run_validation_with_config
 from config import MasterConfig, cfg as default_cfg
 from utils import load_config, setup_logging
 
+
+def _numpy_json_default(obj: Any) -> Any:
+    """System handler for serializing NumPy types to JSON."""
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return str(obj)
 
 
 def _safe_save_df(df: "pd.DataFrame", opt_dir: str) -> None:
@@ -313,7 +324,7 @@ def main():
         best = best_trials[0]
         best_cfg_params = dict(best.params)
         with open(os.path.join(opt_dir, "best_papertrade_cfg.json"), "w") as f:
-            json.dump(best_cfg_params, f, indent=2)
+            json.dump(best_cfg_params, f, indent=2, default=_numpy_json_default)
 
         logging.info(f"[Optuna] best trial #{best.number}: Sharpe={best.values[0]:.2f}, Sortino={best.values[1]:.2f}, ProfitFactor={best.values[2]:.2f}")
         logging.info(f"[Optuna] Best trial params: {best_cfg_params}")
