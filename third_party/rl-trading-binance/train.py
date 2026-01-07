@@ -955,6 +955,12 @@ def run_training_session(
         eps_decay_frames *= cfg.vec.num_envs
         logging.info(f"Epsilon decay frames scaled by num_envs ({cfg.vec.num_envs}): {cfg.eps.eps_decay_frames} -> {eps_decay_frames}")
 
+    # Подготовка настроек MC-Dropout для передачи в конструктор
+    mc_settings = getattr(cfg, "mc_dropout", mc_cfg)
+    def _get_mc_val(obj, key, default):
+        if isinstance(obj, dict): return obj.get(key, default)
+        return getattr(obj, key, default)
+
     agent = D3QN_PER_Agent(
         state_shape=cfg.state_shape,  # (10,150,1)
         action_dim=cfg.market.num_actions,
@@ -982,16 +988,24 @@ def run_training_session(
         epsilon=cfg.per.per_eps,  # PER eps
         max_gradient_norm=cfg.rl.max_gradient_norm,
         perf_cfg=cfg.perf,
-        # MC-dropout from cfg.mc_dropout (as is)
+        # Передаем параметры MC-Dropout явно в конструктор
+        mc_enable=_get_mc_val(mc_settings, "enable", False),
+        mc_n_action_samples=_get_mc_val(mc_settings, "n_action_samples", 1),
+        mc_action_agg=_get_mc_val(mc_settings, "action_agg", "mean"),
+        mc_lcb_k=_get_mc_val(mc_settings, "lcb_k", 0.5),
+        mc_use_for_target=_get_mc_val(mc_settings, "use_for_target", False),
+        mc_n_target_samples=_get_mc_val(mc_settings, "n_target_samples", 1),
+        mc_target_agg=_get_mc_val(mc_settings, "target_agg", "mean_max"),
+        mc_uncertainty_guided_explore=_get_mc_val(mc_settings, "uncertainty_guided", False),
+        mc_uncertainty_beta=_get_mc_val(mc_settings, "uncertainty_beta", 0.0),
     )
 
-    # Calculate flat_state_size
-    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     # After reshape, num_features becomes the number of channels in original data
     if len(train_sequences[0].shape) == 3:
         num_features = train_sequences[0].shape[0]  # C from (C, L, 1)
     else:
         num_features = train_sequences[0].shape[1]  # C from (L, C)
+    input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     num_actions = cfg.market.num_actions
     action_history_len = cfg.seq.action_history_len
 
