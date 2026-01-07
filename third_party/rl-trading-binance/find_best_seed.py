@@ -10,7 +10,6 @@ import random
 
 import pandas as pd
 
-from backtest_engine import run_backtest
 from config import MasterConfig
 from train import main as train_main
 from utils import load_config, setup_logging
@@ -19,7 +18,7 @@ from utils import load_config, setup_logging
 def find_best_seed(base_cfg: MasterConfig, seeds: list[int], output_csv: str):
     """
     Iterates through a list of random seeds, trains a model for each,
-    runs a backtest, and saves the results.
+    collects validation metrics, and saves the results.
 
     Args:
         base_cfg (MasterConfig): The base configuration object.
