@@ -4,6 +4,14 @@ from config import cfg  # noqa: F401
 from pathlib import Path
 import json  # Для fallback norm_stats если нужно
 
+# --- DYNAMIC PATHS SETUP ---
+# Определяем базовую директорию проекта относительно этого конфиг-файла
+try:
+    # Path(__file__).parent -> configs -> .parent -> rl-trading-binance
+    BASE_DIR = Path(__file__).resolve().parent.parent
+except NameError:
+    BASE_DIR = Path.cwd()
+
 # --- AGENT MODE SELECTOR ---
 # UNIVERSAL:  Trade both directions (Default)
 # LONG_ONLY:  Force Long trades only (Train specialist)
@@ -40,7 +48,10 @@ cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # T
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
-cfg.paths.norm_stats_path = "norm_stats.json"  # Auto-generated
+# Важно: Укажите путь к статистике нормализации явно, 
+# так как валидатор берет его из конфига
+cfg.paths.norm_stats_path = str(BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239" / "norm_stats.json")
+cfg.paths.model_path = str(BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239" / "best.pth")
 
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
 cfg.model.cnn_maps = [64, 96, 128, 128, 96, 64]  # +1 layer
@@ -244,18 +255,21 @@ try:
 except ValueError:
     pass  # Fallback in train.py
 
-# Optuna Search Space (for hyperopt if needed; backtest thresholds)
+# Настройка пространства поиска для TSL
 cfg.optuna_search_space = {
-    # Название параметра в Optuna | Тип | Нижняя граница | Верхняя граница | Лог. шкала | Путь в конфиге
-    "long_thr":       ("suggest_float", 0.001,  0.03,   True,  "backtest.long_action_threshold"),
-    "short_thr":      ("suggest_float", -0.03,  -0.001, True,  "backtest.short_action_threshold"),
-    "pos_frac":       ("suggest_float", 0.10,   0.60,   False, "backtest.position_fraction"),
-    "d_min":          ("suggest_float", 0.001,  0.005,  True,  "backtest.trailing_stop_min"),
-    # Для d0 нижняя граница зависит от уже выбранного d_min
-    "d0":             ("suggest_float", "d_min", 0.02,  True,  "backtest.trailing_stop"),
-    "delta_p_hyst":   ("suggest_float", 0.0005, 0.005,  True,  "backtest.delta_p_hysteresis"),
-    # "ensemble_max_sigma": ("suggest_float", 0.001, 0.015, True, "backtest.ensemble_max_sigma"),
+    # 1. Дистанция трейлинга (например, 0.5% - 5.0%)
+    "trailing_stop": ["suggest_float", 0.005, 0.05, False, "backtest.trailing_stop"],
+    
+    # 2. Минимальный профит для активации (например, 0.01% - 0.2%)
+    "trailing_stop_min": ["suggest_float", 0.0001, 0.002, False, "backtest.trailing_stop_min"],
+    
+    # 3. Гистерезис цены (для фильтрации шума)
+    "delta_p_hysteresis": ["suggest_float", 0.0005, 0.003, False, "backtest.delta_p_hysteresis"]
 }
+
+# Optuna settings
+cfg.optuna_trials = 150
+cfg.optuna_study_name = "tsl_fine_tuning_v13"
 
 # Spike Detector (data prep; if regenerating)
 cfg.detector.context_minutes = 40
@@ -265,23 +279,10 @@ cfg.detector.abs_change_pct = 4.0
 cfg.detector.contrast_min = 5.0
 cfg.detector.cooldown_minutes = 60
 
-# --- DYNAMIC PATHS SETUP ---
-# Определяем базовую директорию проекта относительно этого конфиг-файла
-# Ожидаемая структура: <root>/third_party/rl-trading-binance/configs/
-try:
-    # Path(__file__).parent -> configs
-    # .parent -> rl-trading-binance
-    # .parent -> third_party
-    # .parent -> <root>
-    BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-except NameError:
-    # Fallback для интерактивных сред, где __file__ не определен
-    BASE_DIR = Path.cwd()
-
 # --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
 # Эти пути строятся динамически для обеспечения переносимости.
 # Замените имена папок с временными метками на актуальные.
-long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v11_LONG" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_222425"
+long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239"
 short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v11_SHORT" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_200357"
 single_model_dir = BASE_DIR / "output" / "alpha_seed_404" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
 

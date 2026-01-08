@@ -257,17 +257,38 @@ def objective(trial: optuna.Trial, base_cfg: MasterConfig, cached_signals: dict 
 
 def main():
     parser = argparse.ArgumentParser(description="Optimise PaperTrader parameters using historical DB data.")
-    parser.add_argument("cfg_path", type=str, help="Path to experiment *.py config")
-    parser.add_argument("--trials", type=int, default=100, help="Total Optuna trials")
+    parser.add_argument("cfg_path", type=str, nargs='?', help="Path to experiment *.py config")
+    parser.add_argument("--config", type=str, help="Path to experiment *.py config (alternative)")
+    parser.add_argument("--trials", type=int, default=None, help="Total Optuna trials")
     parser.add_argument("--jobs", type=int, default=1, help="Parallel jobs. WARNING: High values can lead to race conditions or high memory usage.")
     parser.add_argument("--topn", type=int, default=20, help="Top-N rows to save in summary tables")
+    parser.add_argument("--model_path", type=str, default=None, help="Path to model checkpoint")
+    parser.add_argument("--study_name", type=str, default=None, help="Optuna study name")
     args = parser.parse_args()
 
-    base_cfg = load_config(args.cfg_path)
+    cfg_path = args.config if args.config else args.cfg_path
+    if not cfg_path:
+        parser.error("Config path must be specified via positional argument or --config")
+
+    base_cfg = load_config(cfg_path)
+    if args.model_path:
+        base_cfg.paths.model_path = args.model_path
     
+    # Resolve trials
+    trials = args.trials
+    if trials is None:
+        trials = getattr(base_cfg, "optuna_trials", 100)
+
     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    session_name = f"optuna_papertrader_{run_stamp}"
+    # Resolve study_name
+    study_name = args.study_name
+    if study_name is None:
+        study_name = getattr(base_cfg, "optuna_study_name", None)
+    if study_name is None:
+        study_name = f"optuna_papertrader_{run_stamp}"
+
+    session_name = study_name
     opt_dir = os.path.join(base_cfg.paths.output_dir, session_name)
     os.makedirs(opt_dir, exist_ok=True)
     
@@ -306,9 +327,9 @@ def main():
         logging.error("[Optuna] Failed to pre-calculate signals. Aborting optimization.")
         return
 
-    logging.info(f"[Optuna] starting optimisation -- trials={args.trials} jobs={args.jobs}")
+    logging.info(f"[Optuna] starting optimisation -- trials={trials} jobs={args.jobs}")
     start_t = time.time()
-    study.optimize(lambda t: objective(t, base_cfg, cached_signals=cached_signals), n_trials=args.trials, n_jobs=args.jobs, show_progress_bar=True)
+    study.optimize(lambda t: objective(t, base_cfg, cached_signals=cached_signals), n_trials=trials, n_jobs=args.jobs, show_progress_bar=True)
     logging.info(f"[Optuna] finished in {(time.time()-start_t)/60:.1f} min")
 
     df = study.trials_dataframe(attrs=("number", "values", "params", "user_attrs", "state"))
