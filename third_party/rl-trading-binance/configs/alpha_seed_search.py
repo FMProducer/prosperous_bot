@@ -73,42 +73,42 @@ cfg.rl.gamma = 0.99
 cfg.rl.n_step = 5
 cfg.rl.batch_size = 64
 # ! ВАЖНО: Начинаем обучение почти сразу (через 1000 шагов), чтобы успеть обновить веса
-cfg.rl.train_start = 1000  
-cfg.rl.target_update_freq = 1000
+cfg.rl.train_start = 15000  # Sync with v13: Полный прогрев буфера
+cfg.rl.target_update_freq = 5000 # Sync with v13: Частота обновления целевой сети
 cfg.rl.max_gradient_norm = 1.0
 
 # 2. PER - Уменьшенный буфер для экономии памяти и скорости
-cfg.per.buffer_size = 100000
+cfg.per.buffer_size = 1000000 # Sync with v13: Полный размер буфера (важно для распределения данных)
 cfg.per.per_alpha = 0.6
 cfg.per.per_beta_start = 0.4
-cfg.per.per_beta_frames = 10000
+cfg.per.per_beta_frames = 250000 # Sync with v13: Скорость изменения beta
 cfg.per.per_eps = 1e-6
 
 # 3. Epsilon - Быстрое затухание (или константа, если decay_frames > total_timesteps)
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 5000
+cfg.eps.eps_decay_frames = 180000 # Sync with v13: Скорость затухания epsilon
 
 # 4. Env - Используем параллелизм
-cfg.vec.num_envs = 8
+cfg.vec.num_envs = 12 # Sync with v13: Кол-во сред
 cfg.vec.backend = "subproc"
 cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True
 
 # 5. Training Loop - КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ
 # Всего 10 эпизодов. При 8 средах это 80 траекторий.
-cfg.trainlog.episodes = 10 
+cfg.trainlog.episodes = 201  # Достаточно для достижения total_timesteps
 # Бюджет шагов подгоняем под кол-во эпизодов (10 * 8 * 60 ~ 4800 шагов)
-cfg.trainlog.total_timesteps = 10000
+cfg.trainlog.total_timesteps = 20000 # 15k warmup + 5k обучения (минимальный прогон)
 
 # Валидация: 1 раз в самом конце (на 10-м эпизоде)
-cfg.trainlog.val_freq = 10 
+cfg.trainlog.val_freq = 200 # ~333 эпизода всего. Валидация сработает 1 раз в конце.
 # Отключаем прогрев, чтобы валидация точно сработала
 cfg.trainlog.validation_warmup_steps = 0 
 
 # Быстрая валидация (меньше эпизодов проверки)
-cfg.trainlog.num_val_ep = 256 
-max_episodes_per_symbol = 1
+cfg.trainlog.num_val_ep = 512 # Sync with v13: Статистическая значимость валидации
+max_episodes_per_symbol = 2
 
 cfg.trainlog.plot_top_n = 5
 cfg.trainlog.available_metrics = [
@@ -117,7 +117,7 @@ cfg.trainlog.available_metrics = [
     "Validation_sharpe", "Validation_sortino"
 ]
 # Сортируем сиды по Sortino
-cfg.trainlog.val_selection_metrics = ["Validation_sortino"]
+cfg.trainlog.val_selection_metrics = ["Validation_net_pnl", "Validation_sortino"]
 cfg.trainlog.early_stopping_patience = 5
 
 # Ослабляем Validation Gate, чтобы скрипт не падал с ошибкой "No best_validation metrics"
@@ -202,6 +202,14 @@ cfg.perf.cudnn_benchmark = True
 mc_dropout_cfg = type("obj", (), {})()
 mc_dropout_cfg.enable = False
 cfg.mc_dropout = mc_dropout_cfg
+
+# MC-Dropout config from v13 (explicitly set defaults)
+mc_dropout_cfg.n_action_samples = 1
+mc_dropout_cfg.action_agg = "mean"
+mc_dropout_cfg.lcb_k = 0.5
+mc_dropout_cfg.use_for_target = False
+mc_dropout_cfg.n_target_samples = 1
+mc_dropout_cfg.target_agg = "mean_max"
 
 # Misc
 cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
