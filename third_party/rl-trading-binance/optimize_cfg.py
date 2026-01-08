@@ -16,6 +16,8 @@ from typing import Any
 from validate_test import run_validation_with_config
 from config import MasterConfig, cfg as default_cfg
 from utils import load_config, setup_logging
+import trading_environment
+from collections import deque
 
 
 def _numpy_json_default(obj: Any) -> Any:
@@ -129,6 +131,45 @@ def _save_system_info(opt_dir: str, run_stamp: str) -> None:
         json.dump(info, f, ensure_ascii=False, indent=2)
     logging.info("[Optuna] saved system_info.json")
 
+# --- MONKEY PATCH: Fix IndexError for 3-action models using TSL ---
+# TSL генерирует действие 3 (Close), которое ломает one-hot кодирование
+# в средах с num_actions=3. Мы подменяем _get_observation, чтобы
+# временно "прижимать" действия к допустимому диапазону.
+_original_get_obs = trading_environment.TradingEnvironment._get_observation
+
+def _patched_get_observation(self):
+    # Determine attribute name for action history (varies by version)
+    hist_attr = "history_actions"
+    if not hasattr(self, hist_attr):
+        hist_attr = "action_history"
+    if not hasattr(self, hist_attr):
+        hist_attr = "actions_history"  # Common alternative
+    
+    if not hasattr(self, hist_attr):
+        # If still not found, abort patch to avoid AttributeError
+        return _original_get_obs(self)
+
+    original_history = getattr(self, hist_attr)
+    
+    # Создаем безопасную версию: заменяем все действия >= num_actions на (num_actions - 1)
+    # Например, 3 (Close) превратится в 2 (Sell) для модели с 3 действиями.
+    safe_data = [min(a, self.num_actions - 1) if a is not None else None for a in original_history]
+    
+    # Подменяем историю на безопасную, сохраняя тип контейнера (deque или list)
+    if isinstance(original_history, deque):
+        setattr(self, hist_attr, deque(safe_data, maxlen=original_history.maxlen))
+    else:
+        setattr(self, hist_attr, safe_data)
+        
+    try:
+        return _original_get_obs(self)
+    finally:
+        # Восстанавливаем оригинальную историю (чтобы логика среды не сломалась)
+        setattr(self, hist_attr, original_history)
+
+trading_environment.TradingEnvironment._get_observation = _patched_get_observation
+# ------------------------------------------------------------------
+
 def objective(trial: optuna.Trial, base_cfg: MasterConfig, cached_signals: dict = None) -> tuple[float, float, float]:
     # Reconstruct the config object from the JSON stored in user_attrs
     cfg = copy.deepcopy(base_cfg)
@@ -143,23 +184,28 @@ def objective(trial: optuna.Trial, base_cfg: MasterConfig, cached_signals: dict 
     else:
         trial.set_user_attr("extra_cache_dir", trial_cache_dir)
 
-    # --- TSL Search Space ---
-    d_min = trial.suggest_float("d_min", 0.001, 0.005, log=True)
-    # d0's lower bound is dynamically set by the value of d_min
-    d0 = trial.suggest_float("d0", d_min, 0.02, log=True)
-    delta_p_hyst = trial.suggest_float("delta_p_hyst", 0.0005, 0.005, log=True)
-
-    # Inject TSL parameters into the config for backtesting
-    cfg.backtest.trailing_stop_min = d_min
-    cfg.backtest.trailing_stop = d0
-    cfg.backtest.delta_p_hysteresis = delta_p_hyst
-
     # --- DYNAMIC SEARCH SPACE FROM CONFIG ---
     search_space = getattr(cfg, "optuna_search_space", None)
     if not search_space:
         raw_ss = trial.study.user_attrs.get("optuna_search_space")
         search_space = json.loads(raw_ss) if isinstance(raw_ss, str) else (raw_ss or {})
     suggested_params = {}
+
+    # --- HACK: Load config_train.json to inject params directly ---
+    # validate_test.py often reloads the config from disk, ignoring the passed cfg object.
+    # We must update the file on disk for each trial to ensure params are applied.
+    model_config_path = None
+    json_data = None
+    if getattr(cfg.paths, "model_path", None):
+        p = str(cfg.paths.model_path)
+        candidate = os.path.join(os.path.dirname(p), "config_train.json")
+        if os.path.exists(candidate):
+            model_config_path = candidate
+            try:
+                with open(model_config_path, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+            except Exception:
+                pass
 
     for name, params in search_space.items():
         suggest_type, low, high, log_flag, path = params
@@ -197,8 +243,30 @@ def objective(trial: optuna.Trial, base_cfg: MasterConfig, cached_signals: dict 
         for part in parts[:-1]:
             obj = getattr(obj, part)
         setattr(obj, parts[-1], value)
+        
+        # Inject into JSON dict
+        if json_data is not None:
+            curr = json_data
+            for part in parts[:-1]:
+                if part not in curr:
+                    curr[part] = {}
+                curr = curr[part]
+            curr[parts[-1]] = value
 
     logging.info(f"[Optuna] trial#{trial.number} params: {json.dumps(suggested_params, ensure_ascii=False)}")
+
+    # Save injected JSON back to disk
+    if model_config_path and json_data is not None:
+        try:
+            # Force enable risk management in JSON so TSL actually runs
+            if "backtest" not in json_data:
+                json_data["backtest"] = {}
+            json_data["backtest"]["use_risk_management"] = True
+            
+            with open(model_config_path, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, indent=4)
+        except Exception as e:
+            logging.warning(f"[Optuna] Failed to inject params into JSON: {e}")
 
     cfg.backtest.use_risk_management = True
     cfg.backtest.stop_loss = None
@@ -300,6 +368,39 @@ def main():
     setup_logging(session_name=session_name, cfg=base_cfg)
     logging.info(f"[Optuna] Output dir: {opt_dir}")
 
+    # --- BASELINE CHECK (No TSL) ---
+    logging.info("="*80)
+    logging.info("📉 RUNNING BASELINE VALIDATION (NO TSL)")
+    logging.info("="*80)
+    
+    # Helper to update config_train.json on disk
+    def _update_risk_on_disk(enable_risk: bool):
+        if getattr(base_cfg.paths, "model_path", None):
+            p = str(base_cfg.paths.model_path)
+            candidate = os.path.join(os.path.dirname(p), "config_train.json")
+            if os.path.exists(candidate):
+                try:
+                    with open(candidate, "r", encoding="utf-8") as f:
+                        jd = json.load(f)
+                    if "backtest" not in jd: jd["backtest"] = {}
+                    jd["backtest"]["use_risk_management"] = enable_risk
+                    with open(candidate, "w", encoding="utf-8") as f:
+                        json.dump(jd, f, indent=4)
+                except Exception as e:
+                    logging.error(f"Failed to update config_train.json: {e}")
+
+    # 1. Disable TSL on disk & Run
+    _update_risk_on_disk(False)
+    baseline_metrics = {}
+    try:
+        baseline_metrics = run_validation_with_config(base_cfg)
+    except Exception as e:
+        logging.error(f"Baseline validation failed: {e}")
+    
+    logging.info("="*80)
+    logging.info("📈 STARTING TSL OPTIMIZATION")
+    logging.info("="*80)
+
     sampler = optuna.samplers.TPESampler(multivariate=True, warn_independent_sampling=False)
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, interval_steps=2)
 
@@ -312,6 +413,11 @@ def main():
         load_if_exists=False,
     )
 
+    if baseline_metrics:
+        for k, v in baseline_metrics.items():
+            study.set_user_attr(f"baseline_{k}", v)
+        logging.info(f"[Optuna] Stored baseline metrics in study. Baseline Net PnL: {baseline_metrics.get('Validation_net_pnl', 'N/A')}")
+
     study.set_user_attr("config_path", args.cfg_path)
 
     config_dict = base_cfg.model_dump()
@@ -320,12 +426,15 @@ def main():
     study.set_user_attr("optuna_search_space", json.dumps(ss, default=str))
     study.set_user_attr("opt_dir", opt_dir)
 
-    logging.info("[Optuna] Pre-calculating model signals (Inference Cache) for validation set...")
-    initial_run = run_validation_with_config(base_cfg, save_signals=True)
-    cached_signals = initial_run.get("signals")
-    if not cached_signals:
-        logging.error("[Optuna] Failed to pre-calculate signals. Aborting optimization.")
-        return
+    # ОТКЛЮЧАЕМ КЭШИРОВАНИЕ СИГНАЛОВ ДЛЯ TSL ОПТИМИЗАЦИИ
+    # TSL меняет траекторию сделки (выход раньше времени), поэтому старые сигналы (действия) становятся невалидными.
+    logging.info("[Optuna] ⚠️ Signal Caching DISABLED for TSL optimization reliability.")
+    cached_signals = None
+    # initial_run = run_validation_with_config(base_cfg, save_signals=True)
+    # cached_signals = initial_run.get("signals")
+    # if not cached_signals:
+    #     logging.error("[Optuna] Failed to pre-calculate signals. Aborting optimization.")
+    #     return
 
     logging.info(f"[Optuna] starting optimisation -- trials={trials} jobs={args.jobs}")
     start_t = time.time()

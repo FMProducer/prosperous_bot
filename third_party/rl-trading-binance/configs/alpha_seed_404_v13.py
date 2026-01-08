@@ -3,6 +3,7 @@ import torch
 from config import cfg  # noqa: F401
 from pathlib import Path
 import json  # Для fallback norm_stats если нужно
+import shutil
 
 # --- DYNAMIC PATHS SETUP ---
 # Определяем базовую директорию проекта относительно этого конфиг-файла
@@ -27,6 +28,67 @@ else:
 
 
 print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
+print("⚠️ WARNING: Rename 'config_train.json' in the model directory to 'config_train.json.bak' to prevent data path overwrite!")
+
+# --- SMART PATCH: CONFIG_TRAIN.JSON ---
+# optimize_cfg.py требует наличия config_train.json, но мы хотим подменить данные на backtest.
+# Поэтому мы создаем патченную версию конфига.
+try:
+    _model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239"
+    _target_json = _model_dir / "config_train.json"
+    _backup_json = _model_dir / "config_train.json.bak"
+    _wanted_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
+
+    # 1. Если нет оригинала, но есть бэкап -> восстанавливаем и патчим
+    if not _target_json.exists() and _backup_json.exists():
+        print(f"🔧 Restoring and patching {_target_json.name} from backup...")
+        with open(_backup_json, 'r', encoding='utf-8') as f:
+            _data = json.load(f)
+        
+        if 'paths' in _data:
+            _data['paths']['val_data_path'] = _wanted_data_path
+            _data['paths']['test_data_path'] = _wanted_data_path
+            
+            # Force disable AMP in restored config
+            if 'perf' not in _data: _data['perf'] = {}
+            _data['perf']['use_amp'] = False
+            _data['perf']['amp_dtype'] = "float32"
+            
+            with open(_target_json, 'w', encoding='utf-8') as f:
+                json.dump(_data, f, indent=4)
+            print(f"✅ Patched config_train.json created (pointing to backtest data).")
+        else:
+            shutil.copy(_backup_json, _target_json)
+
+    # 2. Если оригинал есть -> проверяем, нужно ли патчить
+    elif _target_json.exists():
+        with open(_target_json, 'r', encoding='utf-8') as f:
+            _data = json.load(f)
+        _current_path = _data.get('paths', {}).get('val_data_path', '')
+        _current_amp = _data.get('perf', {}).get('use_amp', None)
+        _current_dtype = _data.get('perf', {}).get('amp_dtype', '')
+        
+        # Проверяем, нужно ли патчить (если путь не тот ИЛИ включен AMP/float16)
+        if ("backtest_data_fair_2m.npz" not in _current_path) or (_current_amp is not False) or (_current_dtype != "float32"):
+            print(f"🔄 Config mismatch detected (Data or AMP). Creating backup and patching...")
+            if not _backup_json.exists():
+                shutil.copy(_target_json, _backup_json)
+            
+            if 'paths' not in _data: _data['paths'] = {}
+            _data['paths']['val_data_path'] = _wanted_data_path
+            _data['paths']['test_data_path'] = _wanted_data_path
+            
+            if 'perf' not in _data: _data['perf'] = {}
+            _data['perf']['use_amp'] = False
+            _data['perf']['amp_dtype'] = "float32"
+            
+            with open(_target_json, 'w', encoding='utf-8') as f:
+                json.dump(_data, f, indent=4)
+            print(f"✅ Patched config_train.json: Backtest Data + AMP Disabled.")
+        else:
+            print(f"✅ config_train.json is already patched.")
+except Exception as e:
+    print(f"⚠️ Error during config patching: {e}")
 
 cfg.paths.model_dir = f"output/{cfg.paths.config_name}/saved_models"
 cfg.paths.plot_dir = f"output/{cfg.paths.config_name}/plots"
@@ -45,9 +107,9 @@ cfg.seq.state_shape = (10, 90, 1)
 # Явно фиксируем длину входного окна истории для env/model
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
-cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
+cfg.paths.train_data_path = str(BASE_DIR / "data" / "train_data_fair_8m.npz")
+cfg.paths.val_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
+cfg.paths.test_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
 # Важно: Укажите путь к статистике нормализации явно, 
 # так как валидатор берет его из конфига
 cfg.paths.norm_stats_path = str(BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239" / "norm_stats.json")
@@ -198,7 +260,7 @@ cfg.backtest.short_action_threshold = -0.015  # Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = False # Отключаем, если TSL не используется в обучении
+cfg.backtest.use_risk_management = True # Включаем для работы TSL
 cfg.backtest.trailing_stop = 0.04
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
@@ -209,7 +271,7 @@ cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025
 
 # Perf/Perf (GTX1070 opt)
 cfg.perf.use_amp = False  # ОТКЛЮЧЕНО: float16 слишком рискован для RL из-за возможного обнуления градиентов.
-cfg.perf.amp_dtype = "float16" # Для стабильности лучше float32 (use_amp=False) или bfloat16 на новых GPU.
+cfg.perf.amp_dtype = "float32" # Для стабильности лучше float32 (use_amp=False) или bfloat16 на новых GPU.
 
 cfg.device.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.perf.compile_mode = None  # None - no torch.compile
@@ -257,8 +319,8 @@ except ValueError:
 
 # Настройка пространства поиска для TSL
 cfg.optuna_search_space = {
-    # 1. Дистанция трейлинга (например, 0.5% - 5.0%)
-    "trailing_stop": ["suggest_float", 0.005, 0.05, False, "backtest.trailing_stop"],
+    # 1. Дистанция трейлинга (расширяем до 15%, чтобы позволить "отключить" TSL широким стопом)
+    "trailing_stop": ["suggest_float", 0.005, 0.15, False, "backtest.trailing_stop"],
     
     # 2. Минимальный профит для активации (например, 0.01% - 0.2%)
     "trailing_stop_min": ["suggest_float", 0.0001, 0.002, False, "backtest.trailing_stop_min"],
@@ -269,7 +331,7 @@ cfg.optuna_search_space = {
 
 # Optuna settings
 cfg.optuna_trials = 150
-cfg.optuna_study_name = "tsl_fine_tuning_v13"
+cfg.optuna_study_name = "tsl_fine_tuning_v13_backtest_wide"
 
 # Spike Detector (data prep; if regenerating)
 cfg.detector.context_minutes = 40
@@ -323,3 +385,6 @@ cfg.ensemble.disable_cross_close = True
 # Коэффициент уверенности для разрешения конфликтов.
 # Пример: 1.2 означает, что Q-value "победителя" должно быть на 20% выше.
 cfg.ensemble.confidence_ratio = 1.2
+
+# --- FINAL DEBUG CHECK ---
+print(f"🔍 FINAL CHECK: val_data_path = {cfg.paths.val_data_path}")

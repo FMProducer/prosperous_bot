@@ -31,7 +31,7 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 
 class PerformanceConfig:
     def __init__(self):
-        self.use_amp = True; self.amp_dtype = "float16"; self.compile_mode = False; self.compile_dynamic = False
+        self.use_amp = False; self.amp_dtype = "float32"; self.compile_mode = False; self.compile_dynamic = False
 
 def create_validation_episodes(
     val_sequences, val_keys, num_episodes=750, max_episodes_per_symbol=10, seed=404
@@ -318,6 +318,7 @@ def run_validation_with_config(cfg, action_signals=None, save_signals=False):
             
             if info.get("position_closed", False):
                 all_trades_info.append(info)
+                done = True  # Stop episode after first trade to prevent re-entry
         
         if save_signals:
             signals_to_save[keys[i]] = episode_signals
@@ -403,19 +404,19 @@ def run_validation_with_config(cfg, action_signals=None, save_signals=False):
         metrics["signals"] = signals_to_save
 
     # --- Print Results ---
-    print("\n" + "="*44)
-    print("📊 FINAL VALIDATION RESULTS")
-    print("="*44)
-    print(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
-    print(f"Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
-    print(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}")
-    print(f"Avg Hold: {avg_holding_time:.2f} bars | Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars")
-    print(f"Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | Trading Days: {trading_time_days:.1f}")
-    print(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
-    print(f"Commission: {(total_commission / max(1e-9, abs(gross_pnl)))*100:.1f}% of gross | Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
-    print(f"Expectancy/Trade: {expectancy:.2f} USDT")
-    print(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
-    print("="*44)
+    logger.info("\n" + "="*44)
+    logger.info("📊 FINAL VALIDATION RESULTS")
+    logger.info("="*44)
+    logger.info(f"Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio:.2%} | PF: {profit_factor:.4f}")
+    logger.info(f"Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}")
+    logger.info(f"Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | MaxDD: {abs(max_dd):.2%} | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}")
+    logger.info(f"Avg Hold: {avg_holding_time:.2f} bars | Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars")
+    logger.info(f"Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | Trading Days: {trading_time_days:.1f}")
+    logger.info(f"PnL/Day: {pnl_per_day:.2f} USDT | ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
+    logger.info(f"Commission: {(total_commission / max(1e-9, abs(gross_pnl)))*100:.1f}% of gross | Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | W/L Ratio: {win_loss_ratio:.2f}")
+    logger.info(f"Expectancy/Trade: {expectancy:.2f} USDT")
+    logger.info(f"TSL hits: {tsl_hits} ({tsl_hits/max(1, total_trades):.2%})")
+    logger.info("="*44)
 
     return metrics
 
