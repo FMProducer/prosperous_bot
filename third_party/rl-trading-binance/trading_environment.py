@@ -100,6 +100,7 @@ class TradingEnvironment(gym.Env):
         profit_exit_threshold: int = 5,
         loss_exit_threshold: int = 3,
         allow_opposite_trades: bool = True, # НОВЫЙ ПАРАМЕТР
+        max_trades_per_episode: int = 100,  # Лимит сделок на эпизод
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
         allowed_directions: Optional[List[str]] = None,
@@ -206,6 +207,7 @@ class TradingEnvironment(gym.Env):
         self.profit_exit_threshold = profit_exit_threshold
         self.loss_exit_threshold = loss_exit_threshold
         self.allow_opposite_trades = allow_opposite_trades
+        self.max_trades_per_episode = max_trades_per_episode
         self.allowed_directions = allowed_directions
 
         # Определяем индекс действия "закрыть"
@@ -279,6 +281,7 @@ class TradingEnvironment(gym.Env):
         self.position_volume: float = 0.0
         self.realized_pnl: float = 0.0
         self.closed_trades: int = 0
+        self.trades_count: int = 0  # Счетчик открытых сделок в текущем эпизоде
         self.profitable_trades: int = 0
         self.last_step: bool = False
         # Отслеживание просадки
@@ -436,6 +439,10 @@ class TradingEnvironment(gym.Env):
                 action = 0  # Заменяем на HOLD
         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
+        # --- MAX TRADES CHECK ---
+        if action in [1, 2] and self.position == 0 and self.trades_count >= self.max_trades_per_episode:
+            action = 0
+
         pnl_change = 0.0
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
@@ -503,6 +510,7 @@ class TradingEnvironment(gym.Env):
                     self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
                     self.real_entry_price = real_exec_price
                     self.position_volume = trade_amount / real_exec_price
+                    self.trades_count += 1
                     pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
                     # Initialize TSL state for new position
                     self.trailing_max_price = real_exec_price
@@ -524,6 +532,7 @@ class TradingEnvironment(gym.Env):
                     self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
                     self.real_entry_price = real_exec_price
                     self.position_volume = trade_amount / real_exec_price
+                    self.trades_count += 1
                     pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
                     # Initialize TSL state for new position
                     self.trailing_min_price = real_exec_price
@@ -1137,6 +1146,10 @@ class TradingEnvironment(gym.Env):
         if action == 2 and self.allowed_directions and 'SHORT' not in self.allowed_directions:
             action = 0  # Force HOLD
 
+        # --- MAX TRADES CHECK ---
+        if action in [1, 2] and self.position == 0 and self.trades_count >= self.max_trades_per_episode:
+            action = 0
+
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
             real_exec_price = real_price * (1 + self.slippage)
@@ -1154,6 +1167,7 @@ class TradingEnvironment(gym.Env):
             
             volume = trade_amount / real_exec_price
             self.position_volume = volume
+            self.trades_count += 1
             
             fee = real_exec_price * volume * self.transaction_fee
             pnl_change -= fee
@@ -1183,6 +1197,7 @@ class TradingEnvironment(gym.Env):
             
             volume = trade_amount / real_exec_price
             self.position_volume = volume
+            self.trades_count += 1
             
             fee = real_exec_price * volume * self.transaction_fee
             pnl_change -= fee

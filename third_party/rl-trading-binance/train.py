@@ -1055,6 +1055,7 @@ def run_training_session(
         "greed_penalty_multiplier": cfg.market.greed_penalty_multiplier,
         "premature_exit_penalty": cfg.market.premature_exit_penalty,
         "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
+        "max_trades_per_episode": getattr(cfg.market, "max_trades_per_episode", 100),
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),

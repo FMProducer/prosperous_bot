@@ -67,6 +67,7 @@ cfg.market.position_fraction = 0.10  # 10% баланса на сделку
 cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
 cfg.market.slippage = 0.0002
 cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
+cfg.market.max_trades_per_episode = 1    # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
 
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
