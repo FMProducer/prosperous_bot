@@ -884,7 +884,12 @@ class TradingEnvironment(gym.Env):
                 hist_onehot = np.zeros(self.history_vector_size, dtype=np.float32)
                 for idx, action in enumerate(self.history_actions):
                     if action is not None:
-                        hist_onehot[idx * self.num_actions + action] = 1.0
+                        # Clip the action index to prevent out-of-bounds access if the action is invalid.
+                        action_idx = int(action)
+                        if action_idx < self.num_actions:
+                            target_idx = idx * self.num_actions + action_idx
+                            if target_idx < len(hist_onehot):
+                                hist_onehot[target_idx] = 1.0
                 # Treat the whole history vector as one channel
                 history_channel = np.repeat(hist_onehot[np.newaxis, :], self.agent_history_len, axis=0).T
                 # This seems complex. A simpler way is to just have one channel for the last action
@@ -912,7 +917,12 @@ class TradingEnvironment(gym.Env):
             hist_onehot = np.zeros(self.history_vector_size, dtype=np.float32)
             for idx, action in enumerate(self.history_actions):
                 if action is not None:
-                    hist_onehot[idx * self.num_actions + action] = 1.0
+                    # Clip the action index to prevent out-of-bounds access if the action is invalid.
+                    action_idx = int(action)
+                    if action_idx < self.num_actions:
+                        target_idx = idx * self.num_actions + action_idx
+                        if target_idx < len(hist_onehot):
+                            hist_onehot[target_idx] = 1.0
             self._obs_buffer[hist_len+4:] = hist_onehot
 
         return self._obs_buffer
