@@ -56,9 +56,9 @@ class TradingEnvironment(gym.Env):
         backtest_mode: bool = False,
         use_risk_management: bool = False,
         # TSL parameters
-        trailing_stop: float = 0.07519,
-        trailing_stop_min: float = 0.00082,
-        delta_p_hysteresis: float = 0.00152,
+        trailing_stop: float = 0.07519862504113693,
+        trailing_stop_min: float = 0.0008225518697224519,
+        delta_p_hysteresis: float = 0.0015218098435784326,
         cnn_format: bool = False,
         position_fraction: float = 1.0,
         order_size_usdt: float = 0.0,
@@ -403,12 +403,14 @@ class TradingEnvironment(gym.Env):
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
         close_action = self.close_action
 
-        self.last_step = self.step_idx == self.agent_session_len - 1
-        if self.last_step:
-            if self.position == 0 and action in {1, 2}:
-                action = 0
-            elif self.position != 0 and action != close_action and close_action != -1:
-                action = close_action
+        # The old `self.last_step` logic is replaced by a check against `terminated` later on.
+        # We prevent opening a new position on the very last step.
+        if self.step_idx >= self.agent_session_len - 1:
+            if self.position == 0 and action in {1, 2}: # If no position, prevent opening
+                 action = 0
+            elif self.position != 0: # If position is open, force close
+                 if self.close_action is not None and action != self.close_action:
+                     action = self.close_action
 
         price_idx = min(self.pre_signal_len - 1 + self.step_idx, len(self.current_seq) - 1)
         if price_idx >= len(self.current_seq):
@@ -463,8 +465,8 @@ class TradingEnvironment(gym.Env):
                     tsl_price = max(tsl_price, advanced_tsl_price)
 
                 self.tsl_price = tsl_price
-                if real_price <= tsl_price:
-                    action = close_action
+                if real_price <= tsl_price and self.close_action is not None:
+                    action = self.close_action
             else:  # SHORT
                 self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
                 base_tsl = self.trailing_min_price * (1 + d0)
@@ -478,8 +480,8 @@ class TradingEnvironment(gym.Env):
                     tsl_price = min(tsl_price, advanced_tsl_price)
 
                 self.tsl_price = tsl_price
-                if real_price >= tsl_price:
-                    action = close_action
+                if real_price >= tsl_price and self.close_action is not None:
+                    action = self.close_action
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2
@@ -599,8 +601,12 @@ class TradingEnvironment(gym.Env):
 
         self.step_idx += 1
         
-        terminated = False
-        truncated = self.step_idx >= self.agent_session_len
+        # Correct Termination Logic:
+        # 'terminated' is True ONLY if the episode ends due to reaching the time limit.
+        # Other terminal conditions (bankruptcy, max drawdown) are handled locally and also set terminated=True.
+        # 'truncated' is kept False as per the user's request to handle deadlocks in SubprocVecEnv.
+        terminated = self.step_idx >= self.agent_session_len
+        truncated = False
 
         # Track position metrics for shaped reward
         self._track_position_metrics(action, prev_position)
@@ -658,9 +664,17 @@ class TradingEnvironment(gym.Env):
             
             if self.render_mode == "human":
                 self._render_human(info, action, reward)
-            return obs, reward, terminated, False, info
+            return obs, reward, terminated, truncated, info
             
         if terminated:
+            # If a position is still open on the last step, provide its final status
+            if self.position != 0 and not position_closed_this_step:
+                final_pnl = self._calculate_unrealized_pnl()
+                info.update({
+                    "position_closed": True, # Mark as closed for metrics
+                    "trade_realized_pnl": final_pnl,
+                    "win_rate": 1.0 if final_pnl > 0 else 0.0,
+                })
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
@@ -814,9 +828,22 @@ class TradingEnvironment(gym.Env):
     def _get_observation(self) -> np.ndarray:
         # The window from current_seq is already pre-normalized.
         # load_and_prep_data has already performed Z-normalization.
-        end = self.pre_signal_len + self.step_idx
+
+        # --- FIX: Prevent out-of-bounds access ---
+        # On the final step, self.step_idx may be equal to self.agent_session_len,
+        # which can cause `end` to exceed the sequence length.
+        max_len = len(self.current_seq)
+        end = min(self.pre_signal_len + self.step_idx, max_len)
         start = end - self.agent_history_len
-        raw_window = self.current_seq[start:end]  # shape: (agent_history_len, num_features)
+        if start < 0: start = 0 # Safeguard for the beginning of an episode
+
+        raw_window = self.current_seq[start:end]
+
+        # If the slice is smaller than expected, pad it from the beginning with zeros.
+        if len(raw_window) < self.agent_history_len:
+            pad_len = self.agent_history_len - len(raw_window)
+            padding = np.zeros((pad_len, self.num_features), dtype=np.float32)
+            raw_window = np.concatenate((padding, raw_window), axis=0)
 
         # For compatibility with the rest of the logic, we assume input_history_len == agent_history_len.
         # No additional normalization is performed here.
