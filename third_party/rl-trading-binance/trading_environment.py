@@ -55,6 +55,10 @@ class TradingEnvironment(gym.Env):
         inaction_penalty_ratio: float,
         backtest_mode: bool = False,
         use_risk_management: bool = False,
+        # TSL parameters
+        trailing_stop: float = 0.07519,
+        trailing_stop_min: float = 0.00082,
+        delta_p_hysteresis: float = 0.00152,
         cnn_format: bool = False,
         position_fraction: float = 1.0,
         order_size_usdt: float = 0.0,
@@ -159,6 +163,9 @@ class TradingEnvironment(gym.Env):
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
+        self.trailing_stop = trailing_stop
+        self.trailing_stop_min = trailing_stop_min
+        self.delta_p_hysteresis = delta_p_hysteresis
         self.cnn_format = cnn_format
         self.position_fraction = position_fraction
         self.order_size_usdt = order_size_usdt
@@ -253,6 +260,12 @@ class TradingEnvironment(gym.Env):
         self._max_unrealized_pnl = 0.0
         self._min_unrealized_pnl = 0.0
 
+        # TSL state variables
+        self.trailing_max_price: Optional[float] = None
+        self.trailing_min_price: Optional[float] = None
+        self.tsl_price: Optional[float] = None
+        self.p_at_last_tsl_update: float = 0.0
+
         self._init_episode_vars()
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
@@ -290,6 +303,12 @@ class TradingEnvironment(gym.Env):
         if self.action_history_len > 0:
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
 
+        # TSL state reset
+        self.trailing_max_price = None
+        self.trailing_min_price = None
+        self.tsl_price = None
+        self.p_at_last_tsl_update = 0.0
+
     def _get_asset_stats(self) -> Dict[str, float]:
         """Helper to get stats for the current asset, with a fallback."""
         if not self.stats:
@@ -306,6 +325,17 @@ class TradingEnvironment(gym.Env):
                 "from your train, validation, and test sets."
             )
         return asset_stats
+
+    def _calculate_effective_trail_distance(
+        self, p: float, d0: float, d_min: float, fee_buf: float
+    ) -> float:
+        """Calculates the effective trailing stop distance based on profit."""
+        # Until fees are covered (p <= fee_buf), use the initial distance d0.
+        if p <= fee_buf:
+            return d0
+        # As profit increases, tighten the trail distance from d0 towards d_min.
+        d_eff = d0 - (p - fee_buf)
+        return max(d_min, d_eff)
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Resets the environment to the beginning of a new episode.
@@ -407,90 +437,132 @@ class TradingEnvironment(gym.Env):
         pnl_change = 0.0
         trade_pnl = 0.0
         reward = 0.0  # Initialize reward
+        position_closed_this_step = False
+        info = {}
+
+        # --- TSL Logic ---
+        if self.use_risk_management and self.position != 0:
+            d0 = self.trailing_stop
+            d_min = self.trailing_stop_min
+            delta_p = self.delta_p_hysteresis
+            tsl_price = self.tsl_price
+
+            if tsl_price is None:
+                tsl_price = -np.inf if self.position == 1 else np.inf
+
+            if self.position == 1:  # LONG
+                self.trailing_max_price = max(self.trailing_max_price or real_price, real_price)
+                base_tsl = self.trailing_max_price * (1 - d0)
+                tsl_price = max(tsl_price, base_tsl)
+
+                p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
+                if p >= self.p_at_last_tsl_update + delta_p:
+                    self.p_at_last_tsl_update = p
+                    d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                    advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
+                    tsl_price = max(tsl_price, advanced_tsl_price)
+
+                self.tsl_price = tsl_price
+                if real_price <= tsl_price:
+                    action = close_action
+            else:  # SHORT
+                self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
+                base_tsl = self.trailing_min_price * (1 + d0)
+                tsl_price = min(tsl_price, base_tsl)
+
+                p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
+                if p >= self.p_at_last_tsl_update + delta_p:
+                    self.p_at_last_tsl_update = p
+                    d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                    advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
+                    tsl_price = min(tsl_price, advanced_tsl_price)
+
+                self.tsl_price = tsl_price
+                if real_price >= tsl_price:
+                    action = close_action
 
         # --- Risk-based Balance Check ---
-        MIN_SAFE_FRACTION = 1.2  # 20% safety buffer above bankruptcy
+        MIN_SAFE_FRACTION = 1.2
         if action in [1, 2] and self.position == 0:
             if self.balance < self.bankruptcy_threshold * MIN_SAFE_FRACTION:
-                logging.debug(
-                    f"Balance {self.balance:.2f} is too close to bankruptcy threshold "
-                    f"({self.bankruptcy_threshold:.2f}). Forcing HOLD."
-                )
-                action = 0  # Force HOLD
-                reward -= self.low_balance_penalty # Penalize attempt
+                action = 0
+                reward -= self.low_balance_penalty
 
         # --- Position Opening ---
-        if action == 1 and self.position == 0: # OPEN LONG
+        if action == 1 and self.position == 0:  # OPEN LONG
             if not self.allowed_directions or 'LONG' in self.allowed_directions:
+                trade_amount = self.balance * self.position_fraction
                 if self.order_size_usdt > 0:
-                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
-                else:
-                    trade_amount = self.balance * self.position_fraction
-                    trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
+                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)
 
                 if trade_amount > 0:
                     real_exec_price = real_price * (1 + self.slippage)
-                    norm_exec_price = norm_price * (1 + self.slippage)
-
                     self.position = 1
-                    self.entry_price = norm_exec_price      # Store NORMALIZED price
-                    self.real_entry_price = real_exec_price # Store REAL price
-                    
-                    volume = trade_amount / real_exec_price
-                    self.position_volume = volume
-                    
-                    fee = real_exec_price * volume * self.transaction_fee
-                    pnl_change -= fee
+                    self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
+                    self.real_entry_price = real_exec_price
+                    self.position_volume = trade_amount / real_exec_price
+                    pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
+                    # Initialize TSL state for new position
+                    self.trailing_max_price = real_exec_price
+                    self.tsl_price = None
+                    self.p_at_last_tsl_update = 0.0
                 else:
-                    # Balance too small for a trade, force HOLD and penalize
                     action = 0
                     reward = -self.low_balance_penalty
 
-        elif action == 2 and self.position == 0: # OPEN SHORT
+        elif action == 2 and self.position == 0:  # OPEN SHORT
             if not self.allowed_directions or 'SHORT' in self.allowed_directions:
+                trade_amount = self.balance * self.position_fraction
                 if self.order_size_usdt > 0:
-                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)  # Cap at 95% of balance
-                else:
-                    trade_amount = self.balance * self.position_fraction
-                    trade_amount = max(0.0, min(trade_amount, self.balance * 0.95)) # Ensure it's within 95% of balance
+                    trade_amount = min(self.order_size_usdt, self.balance * 0.95)
 
                 if trade_amount > 0:
                     real_exec_price = real_price * (1 - self.slippage)
-                    norm_exec_price = norm_price * (1 - self.slippage)
-
                     self.position = -1
-                    self.entry_price = norm_exec_price      # Store NORMALIZED price
-                    self.real_entry_price = real_exec_price # Store REAL price
-
-                    volume = trade_amount / real_exec_price
-                    self.position_volume = volume
-                    
-                    fee = real_exec_price * volume * self.transaction_fee
-                    pnl_change -= fee
+                    self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
+                    self.real_entry_price = real_exec_price
+                    self.position_volume = trade_amount / real_exec_price
+                    pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
+                    # Initialize TSL state for new position
+                    self.trailing_min_price = real_exec_price
+                    self.tsl_price = None
+                    self.p_at_last_tsl_update = 0.0
                 else:
-                    # Balance too small for a trade, force HOLD and penalize
                     action = 0
                     reward = -self.low_balance_penalty
 
         # --- Position Closing ---
         elif action == close_action and self.position != 0 and close_action != -1:
             volume = self.position_volume
-            
-            if self.position == 1: # CLOSE LONG
+            if self.position == 1:  # CLOSE LONG
                 real_exec_price = real_price * (1 - self.slippage)
                 trade_pnl = (real_exec_price - self.real_entry_price) * volume
-            else: # CLOSE SHORT
+            else:  # CLOSE SHORT
                 real_exec_price = real_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
-            
+
             fee = real_exec_price * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
-            
             self.closed_trades += 1
             if trade_pnl > 0:
                 self.profitable_trades += 1
+
+            position_closed_this_step = True
+            info.update({
+                "position_closed": True,
+                "trade_realized_pnl": trade_pnl - fee,
+                "win_rate": 1.0 if trade_pnl > 0 else 0.0,
+            })
+
+            # Reset position state
             self.position = 0
             self.position_volume = 0.0
+            self.entry_price = 0.0
+            self.real_entry_price = 0.0
+            self._position_entry_step = None
+            self.trailing_max_price = None
+            self.trailing_min_price = None
+            self.tsl_price = None
 
         self.realized_pnl += pnl_change
         self.balance += pnl_change
@@ -527,8 +599,9 @@ class TradingEnvironment(gym.Env):
 
         self.step_idx += 1
         
-        terminated = self.step_idx >= self.agent_session_len
-        
+        terminated = False
+        truncated = self.step_idx >= self.agent_session_len
+
         # Track position metrics for shaped reward
         self._track_position_metrics(action, prev_position)
         
@@ -555,7 +628,9 @@ class TradingEnvironment(gym.Env):
                 mark2market = 0.0
             portfolio_value += mark2market
      
-        info = self._get_info()
+        base_info = self._get_info()
+        base_info.update(info)
+        info = base_info
      
         if portfolio_value > self.equity_peak:
             if self.new_equity_peak_reward > 0:
@@ -609,8 +684,8 @@ class TradingEnvironment(gym.Env):
      
         if self.render_mode == "human":
             self._render_human(info, action, reward)
-     
-        return obs, reward, terminated, False, info
+
+        return obs, reward, terminated, truncated, info
 
     def _track_position_metrics(self, action: int, prev_position: int):
         """Tracks metrics related to the current position for shaped rewards."""
@@ -859,17 +934,6 @@ class TradingEnvironment(gym.Env):
             unrealized_pnl = 0.0
             
         return unrealized_pnl
-
-    def _calculate_effective_trail_distance(
-        self, p: float, d0: float, d_min: float, fee_buf: float
-    ) -> float:
-        """Calculates the effective trailing stop distance based on profit."""
-        # Until fees are covered (p <= fee_buf), use the initial distance d0.
-        if p <= fee_buf:
-            return d0
-        # As profit increases, tighten the trail distance from d0 towards d_min.
-        d_eff = d0 - (p - fee_buf)
-        return max(d_min, d_eff)
 
     def backtest_step(
         self,
