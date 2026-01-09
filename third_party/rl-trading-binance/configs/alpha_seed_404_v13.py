@@ -37,7 +37,7 @@ try:
     _model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239"
     _target_json = _model_dir / "config_train.json"
     _backup_json = _model_dir / "config_train.json.bak"
-    _wanted_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
+    _wanted_data_path = str(BASE_DIR / "data" / "val_data_fair_2m.npz")
 
     # 1. Если нет оригинала, но есть бэкап -> восстанавливаем и патчим
     if not _target_json.exists() and _backup_json.exists():
@@ -69,7 +69,7 @@ try:
         _current_dtype = _data.get('perf', {}).get('amp_dtype', '')
         
         # Проверяем, нужно ли патчить (если путь не тот ИЛИ включен AMP/float16)
-        if ("backtest_data_fair_2m.npz" not in _current_path) or (_current_amp is not False) or (_current_dtype != "float32"):
+        if ("val_data_fair_2m.npz" not in _current_path) or (_current_amp is not False) or (_current_dtype != "float32"):
             print(f"🔄 Config mismatch detected (Data or AMP). Creating backup and patching...")
             if not _backup_json.exists():
                 shutil.copy(_target_json, _backup_json)
@@ -99,7 +99,7 @@ cfg.state_shape = (10, 90, 1)   # Input для CNN: (C, L, 1) — окно ис�
 cfg.seq.full_seq_len = 150      # 90 контекст + 60 сессия
 cfg.seq.agent_history_len = 90  # Context window (история)
 cfg.seq.agent_session_len = 60  # Trading session length (60 шагов)
-cfg.seq.action_history_len = 2  # Recent actions feat
+cfg.seq.action_history_len = 0  # Recent actions feat (Disabled to prevent IndexError)
 cfg.seq.pre_signal_len = 90     # Старт эпизода после 90 баров истории
 cfg.seq.post_signal_len = 60
 cfg.seq.state_shape = (10, 90, 1)
@@ -108,12 +108,12 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = str(BASE_DIR / "data" / "train_data_fair_8m.npz")
-cfg.paths.val_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
+cfg.paths.val_data_path = str(BASE_DIR / "data" / "val_data_fair_2m.npz")
 cfg.paths.test_data_path = str(BASE_DIR / "data" / "backtest_data_fair_2m.npz")
 # Важно: Укажите путь к статистике нормализации явно, 
 # так как валидатор берет его из конфига
-cfg.paths.norm_stats_path = str(BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239" / "norm_stats.json")
-cfg.paths.model_path = str(BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260107_time_015239" / "best.pth")
+cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
+cfg.paths.model_path = ""
 
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
 cfg.model.cnn_maps = [64, 96, 128, 128, 96, 64]  # +1 layer
@@ -122,7 +122,7 @@ cfg.model.cnn_dilations = [1, 2, 4, 8, 16, 28]  # RF=87 bars (96.7% coverage)
 cfg.model.cnn_strides = [1, 1, 1, 1, 1, 1]  # +1 layer
 cfg.model.dense_val = [128, 64, 32]  # Value head
 cfg.model.dense_adv = [128, 64, 32]  # Advantage/policy head
-cfg.model.additional_feats = 10  # Pos(1) + unrealized(1) + time(2) + action_history(3*2=6) = 10
+cfg.model.additional_feats = 4  # Pos(1) + unrealized(1) + time(2) + action_history(0) = 4
 cfg.model.dropout_p = 0.10
 
 # Market Config - ДОБАВЬТЕ ЭТУ СТРОКУ
@@ -261,12 +261,12 @@ cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
 cfg.backtest.use_risk_management = True # Включаем для работы TSL
-cfg.backtest.trailing_stop = 0.04
+cfg.backtest.trailing_stop = 0.07519862504113693
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
-cfg.backtest.trailing_stop_min = 0.0005
+cfg.backtest.trailing_stop_min = 0.0008225518697224519
 cfg.backtest.fee_buffer_mult = 2.5
-cfg.backtest.delta_p_hysteresis = 0.0015
+cfg.backtest.delta_p_hysteresis = 0.0015218098435784326
 cfg.backtest.time_range = {"start_utc": "2025-08-01T00:00:00Z", "end_utc": "2025-09-30T23:59:00Z"}
 
 # Perf/Perf (GTX1070 opt)
