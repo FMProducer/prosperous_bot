@@ -1008,6 +1008,11 @@ def run_training_session(
     input_history_len = cfg.seq.input_history_len or cfg.seq.agent_history_len
     num_actions = cfg.market.num_actions
     action_history_len = cfg.seq.action_history_len
+    
+    max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
+    if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
+        max_trades = cfg_mod.MAX_TRADES_PER_EPISODE
+        logging.info(f"Override max_trades_per_episode from config module: {max_trades}")
 
     flat_features = input_history_len * num_features
     extras = 4  # position, unrealized, time_elapsed, time_remaining
@@ -1055,7 +1060,7 @@ def run_training_session(
         "greed_penalty_multiplier": cfg.market.greed_penalty_multiplier,
         "premature_exit_penalty": cfg.market.premature_exit_penalty,
         "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
-        "max_trades_per_episode": getattr(cfg.market, "max_trades_per_episode", 100),
+        "max_trades_per_episode": max_trades,
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
@@ -1243,11 +1248,10 @@ def run_training_session(
     return best_validation, history
 
 
-def main(cfg: MasterConfig = None):
+def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     from config import cfg as loaded_cfg
     if cfg is None:
         cfg = loaded_cfg
-    cfg_mod = None
 
     timestamp = time.strftime("date_%Y%m%d_time_%H%M%S")
     session_name = f"{cfg.project_name}_{timestamp}"
@@ -1414,6 +1418,7 @@ def main(cfg: MasterConfig = None):
 
 if __name__ == "__main__":
     cfg = None
+    mod = None
     if len(sys.argv) > 1:
-        cfg, _ = load_config(sys.argv[1], return_module=True)
-    main(cfg=cfg)
+        cfg, mod = load_config(sys.argv[1], return_module=True)
+    main(cfg=cfg, cfg_mod=mod)

@@ -67,7 +67,8 @@ cfg.market.position_fraction = 0.10  # 10% баланса на сделку
 cfg.market.transaction_fee = 0.0004  # Уже есть ниже, но явно здесь
 cfg.market.slippage = 0.0002
 cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
-cfg.market.max_trades_per_episode = 1    # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
+# cfg.market.max_trades_per_episode = 1    # Caused ValueError in Pydantic
+MAX_TRADES_PER_EPISODE = 1 # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
 
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
@@ -165,8 +166,8 @@ cfg.market.bankruptcy_slippage_penalty = 0.05   # Штрафное проска�
 cfg.market.max_drawdown_threshold = -0.10   # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
-cfg.market.continuous_pain_penalty_ratio = 0.001   # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.inaction_penalty_ratio = 0.0   # Штраф за бездействие (когда нет открытых позиций)
+cfg.market.continuous_pain_penalty_ratio = 0.0   # Штраф за удержание убыточной позиции (каждый шаг)
+cfg.market.inaction_penalty_ratio = 0.001   # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.low_balance_penalty = 1.0   # Штраф за попытку торговли с низким балансом
 cfg.market.holding_penalty_multiplier = 0.0   # Множитель для прогрессивного штрафа за удержание убыточной позиции
 cfg.market.greed_penalty_multiplier = 0.0   # "Штраф за жадность" (незафиксированная прибыль)
