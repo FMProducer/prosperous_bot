@@ -104,6 +104,7 @@ class TradingEnvironment(gym.Env):
         max_trades_per_episode: int = 100,  # Лимит сделок на эпизод
         close_action_index: Optional[int] = None,
         seed: Optional[int] = None,
+        filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
@@ -114,7 +115,13 @@ class TradingEnvironment(gym.Env):
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
-        self.sequences = sequences
+        # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
+        is_short_only = filter_direction == 'SHORT' or (allowed_directions and 'SHORT' in allowed_directions and 'LONG' not in allowed_directions)
+        if is_short_only:
+            logger.info("🔄 MIRROR MODE: Inverting sequences for SHORT agent (Up is Down)")
+            self.sequences = [-1.0 * seq for seq in sequences]
+        else:
+            self.sequences = sequences
         self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
