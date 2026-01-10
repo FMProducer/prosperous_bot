@@ -73,17 +73,17 @@ MAX_TRADES_PER_EPISODE = 1 # 1 сделка на сессию (60 баров). �
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
     cfg.market.allowed_directions = ['LONG']
-    # Опционально: Фильтровать данные только для Long (если нужно)
-    # cfg.market.filter_direction = 'LONG' 
+    # IMPORTANT: Do not filter data for LONG, as the environment does not invert it.
+    cfg.market.filter_direction = None
     
 elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
-    # Опционально: Фильтровать данные только для Short (чтобы учиться на падениях)
-    # cfg.market.filter_direction = 'SHORT'
+    # CRITICAL: Enable filter_direction to trigger "Mirror World" logic in the environment.
+    cfg.market.filter_direction = 'SHORT'
     
 else: # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
-    cfg.market.filter_direction = None # Все данные
+    cfg.market.filter_direction = None # All data is used, no inversion.
 
 # num_actions остается 3, чтобы сохранить совместимость весов модели!
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.

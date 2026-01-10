@@ -116,9 +116,11 @@ class TradingEnvironment(gym.Env):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
         # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
-        is_short_only = filter_direction == 'SHORT' or (allowed_directions and 'SHORT' in allowed_directions and 'LONG' not in allowed_directions)
-        if is_short_only:
-            logger.info("🔄 MIRROR MODE: Inverting sequences for SHORT agent (Up is Down)")
+        # If filter_direction is 'SHORT', the agent is a specialist SHORT-only agent.
+        # We invert the market data (up becomes down) so the agent can learn a LONG-only
+        # policy, which is simpler than learning both directions.
+        if filter_direction == 'SHORT':
+            logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent.")
             self.sequences = [-1.0 * seq for seq in sequences]
         else:
             self.sequences = sequences
