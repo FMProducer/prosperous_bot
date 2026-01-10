@@ -162,6 +162,7 @@ class TradingEnvironment(gym.Env):
         self.action_history_len = action_history_len
         self.num_actions = num_actions
         self.inaction_penalty_ratio = inaction_penalty_ratio
+        self.time_sl_penalty_ratio = getattr(cfg.reward, "time_sl_penalty_ratio", 0.002)
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
         self.trailing_stop = trailing_stop
@@ -676,14 +677,24 @@ class TradingEnvironment(gym.Env):
             return obs, reward, terminated, truncated, info
             
         if terminated:
+            # Check for a "Time SL" exit: episode ends while a position is still open.
+            is_time_sl = self.position != 0 and not position_closed_this_step
+            info["time_sl_penalty_applied"] = is_time_sl
+
             # If a position is still open on the last step, provide its final status
-            if self.position != 0 and not position_closed_this_step:
+            if is_time_sl:
                 final_pnl = self._calculate_unrealized_pnl()
+
+                # Apply a penalty for inefficient entry (Time SL exit)
+                reward -= self.time_sl_penalty_ratio
+                logger.debug(f"Applied Time SL penalty: -{self.time_sl_penalty_ratio:.4f}")
+
                 info.update({
                     "position_closed": True, # Mark as closed for metrics
                     "trade_realized_pnl": final_pnl,
                     "win_rate": 1.0 if final_pnl > 0 else 0.0,
                 })
+
             info["terminal_observation"] = self._get_observation()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
             info.update({
