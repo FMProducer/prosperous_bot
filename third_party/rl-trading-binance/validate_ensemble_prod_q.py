@@ -352,18 +352,18 @@ def run_validation():
     else:
         norm_stats_path = os.path.join(os.path.dirname(model_path or args.long_model), "norm_stats.json")
 
-    if user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'val_data_path'):
-        val_data_path = user_cfg_obj.paths.val_data_path
+    if user_cfg_obj and hasattr(user_cfg_obj, 'paths') and hasattr(user_cfg_obj.paths, 'test_data_path'):
+        test_data_path = user_cfg_obj.paths.test_data_path
     else:
-        val_data_path = cfg.get("paths", {}).get("val_data_path", "data/val_data_fair_2m.npz")
+        test_data_path = cfg.get("paths", {}).get("test_data_path", "data/backtest_data_fair_2m.npz")
 
-    if not os.path.isabs(val_data_path): val_data_path = os.path.join(script_dir, val_data_path)
+    if not os.path.isabs(test_data_path): test_data_path = os.path.join(script_dir, test_data_path)
 
-    logger.info(f"ℹ️ Using Validation Data: {val_data_path}")
+    logger.info(f"ℹ️ Using Validation Data: {test_data_path}")
     logger.info(f"ℹ️ Using Normalization Stats: {norm_stats_path}")
 
     paper_symbols = cfg.get("paper", {}).get("symbols", "ALL")
-    sequences, all_stats, keys = load_and_normalize_data(val_data_path, norm_stats_path, paper_symbols)
+    sequences, all_stats, keys = load_and_normalize_data(test_data_path, norm_stats_path, paper_symbols)
     
     trainlog_cfg = cfg.get("trainlog", {})
     

@@ -291,8 +291,8 @@ except NameError:
 # --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
 # Эти пути строятся динамически для обеспечения переносимости.
 # Замените имена папок с временными метками на актуальные.
-long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_222425"
-short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_SHORT" / "saved_models" / "rl_binance_futures_trading_date_20251210_time_200357"
+long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
+short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_SHORT" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
 single_model_dir = BASE_DIR / "output" / "alpha_seed_404" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
 
 # Для валидации одиночного агента (раскомментируйте, если нужно)
