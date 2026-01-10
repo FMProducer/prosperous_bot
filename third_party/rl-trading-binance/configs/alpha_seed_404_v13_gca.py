@@ -45,7 +45,7 @@ cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
-cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
+cfg.paths.test_data_path = "data/val_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""
 
@@ -291,8 +291,8 @@ except NameError:
 # --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
 # Эти пути строятся динамически для обеспечения переносимости.
 # Замените имена папок с временными метками на актуальные.
-long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
-short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_SHORT" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
+long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
+short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_SHORT_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
 single_model_dir = BASE_DIR / "output" / "alpha_seed_404" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
 
 # Для валидации одиночного агента (раскомментируйте, если нужно)
@@ -322,6 +322,10 @@ cfg.ensemble.use_confidence = True  # False = простое голосован�
 cfg.ensemble.long_threshold = 0.00365  # Порог уверенности для LONG 0.00365
 cfg.ensemble.short_threshold = 0.00365 # Порог уверенности для SHORT 0.00365
 cfg.ensemble.weights = [1.0, 1.0] # Веса [Long, Short] (пока 50/50)
+
+# Маски признаков для согласования с additional_feats=4
+cfg.ensemble.long_features_mask = [0, 1, 2, 3]
+cfg.ensemble.short_features_mask = [0, 1, 2, 3]
 
 # --- НОВЫЙ ПАРАМЕТР ---
 # Если True, отключает логику, при которой открытие позиции одним агентом

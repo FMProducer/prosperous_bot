@@ -1,7 +1,9 @@
 $env:PGPASSWORD="9691"
 python C:\Python\Prosperous_Bot\regenerate_stats.py
 
-python find_best_seed.py configs/alpha_seed_search.py --num-seeds 20
+python find_best_seed.py configs/alpha_seed_404_v13_gca.py --num-seeds 20
+
+python optimize_cfg.py --config configs/alpha_seed_404_v13.py
 
 python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 40 --jobs 1 --topn 4
 
@@ -17,11 +19,12 @@ C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python validate_ensemble.py --ensemble configs/alpha_seed_404_v11.py
-python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v12.py
 
-python validate_ensemble_prod_q.py configs/alpha_seed_404_v12.py --ensemble --long_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_LONG\saved_models\rl_binance_futures_trading_date_20251210_time_222425\best.pth" --short_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v11_SHORT\saved_models\rl_binance_futures_trading_date_20251210_time_200357\best.pth" --mode val
+python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v13_gca.py
 
-python train.py configs/alpha_seed_998_v13.py               этот
+python validate_ensemble_prod_q.py configs/alpha_seed_404_v13_gca.py --ensemble --long_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_LONG_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_133651\best.pth" --short_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_SHORT_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_191747\best.pth" --mode val
+
+python train.py configs/alpha_seed_404_v13_gca.py               этот
 python train.py --config configs/alpha_seed_404_v12.py           
 *python train.py configs/alpha.py
 python train.py 

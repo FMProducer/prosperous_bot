@@ -56,25 +56,32 @@ class EnsembleAgent:
         self.verbose = verbose
         self.agent_creator = agent_creator
 
-        # Устанавливаем маски, используя дефолтные значения, если они не предоставлены
-        self.long_mask = long_mask if long_mask is not None else [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
-        self.short_mask = short_mask if short_mask is not None else [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
+        # БЫЛО (СТАРОЕ):
+        # self.long_mask = long_mask if long_mask is not None else [0, 1, 2, 3, 4, 5, 7, 8, 9, 11]
+        # self.short_mask = short_mask if short_mask is not None else [0, 1, 2, 3, 4, 6, 7, 8, 10, 11]
+
+        # СТАЛО (НОВОЕ, для 4 признаков):
+        # Pos(1) + Unrealized(1) + Time(2) = 4
+        default_mask = [0, 1, 2, 3] 
+        self.long_mask = long_mask if long_mask is not None else default_mask
+        self.short_mask = short_mask if short_mask is not None else default_mask
         
         logger.info(f"🎭 Initializing Ensemble Agent...")
         logger.info(f"   - Long mask: {self.long_mask}")
         logger.info(f"   - Short mask: {self.short_mask}")
 
         logger.info(f"   Loading LONG specialist from {long_agent_path}...")
-        self.agent_long = self._load_agent(long_agent_path, "LONG")
+        self.agent_long = self._load_agent(long_agent_path, "LONG", len(self.long_mask))
         
         logger.info(f"   Loading SHORT specialist from {short_agent_path}...")
-        self.agent_short = self._load_agent(short_agent_path, "SHORT")
+        self.agent_short = self._load_agent(short_agent_path, "SHORT", len(self.short_mask))
         logger.info("✅ Ensemble Agent ready.")
 
-    def _load_agent(self, path, name):
-        # При создании агента-специалиста, мы должны указать, что он будет использовать
-        # 10 дополнительных признаков, так как маски отбирают именно это количество.
-        agent = self.agent_creator(action_dim=3, additional_feats_override=10)
+    def _load_agent(self, path, name, mask_len=None):
+        # БЫЛО: additional_feats_override=10
+        # СТАЛО: additional_feats_override=4
+        agent = self.agent_creator(action_dim=3, additional_feats_override=4)
+        
         agent.load_model(path)
         agent.policy_net.eval()
         return agent
