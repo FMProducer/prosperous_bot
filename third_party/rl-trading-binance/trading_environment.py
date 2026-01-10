@@ -53,6 +53,7 @@ class TradingEnvironment(gym.Env):
         otherchannels: List[str],
         action_history_len: int,
         inaction_penalty_ratio: float,
+        time_sl_penalty_ratio: float = 0.0,
         backtest_mode: bool = False,
         use_risk_management: bool = False,
         # TSL parameters
@@ -162,7 +163,7 @@ class TradingEnvironment(gym.Env):
         self.action_history_len = action_history_len
         self.num_actions = num_actions
         self.inaction_penalty_ratio = inaction_penalty_ratio
-        self.time_sl_penalty_ratio = getattr(cfg.reward, "time_sl_penalty_ratio", 0.002)
+        self.time_sl_penalty_ratio = time_sl_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
         self.trailing_stop = trailing_stop

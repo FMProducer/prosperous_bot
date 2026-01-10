@@ -1042,6 +1042,7 @@ def run_training_session(
         "otherchannels": cfg.data.otherchannels,
         "action_history_len": action_history_len,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
+        "time_sl_penalty_ratio": cfg.market.time_sl_penalty_ratio,
         "bankruptcy_threshold": cfg.market.bankruptcy_threshold,
         "bankruptcy_penalty": cfg.market.bankruptcy_penalty,
         "max_drawdown_threshold": cfg.market.max_drawdown_threshold,

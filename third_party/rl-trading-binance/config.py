@@ -147,6 +147,7 @@ class MarketConfig(BaseModel):
     
     num_actions: int = 4
     inaction_penalty_ratio: float = 0.001
+    time_sl_penalty_ratio: float = 0.0
     bankruptcy_threshold: float = 0.0
     bankruptcy_penalty: float = 1.0
     # Max Drawdown Penalty
