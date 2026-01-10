@@ -1067,6 +1067,11 @@ def run_training_session(
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
+    # Important Warning:
+    # When using SubprocVecEnv, ensure that filter_direction is passed into env_fns.
+    # Otherwise, workers may be initialized with default (non-inverted) data,
+    # leading to a catastrophic drop in accuracy (the agent will expect a "mirror world"
+    # but trade in a normal one).
     if num_envs > 1:
         base_seed = cfg.global_env_seed
         env_fns = [partial(make_env, env_kwargs={**env_kwargs, "seed": base_seed + i}) for i in range(num_envs)]
