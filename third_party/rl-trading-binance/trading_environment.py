@@ -565,6 +565,7 @@ class TradingEnvironment(gym.Env):
                 "position_closed": True,
                 "trade_realized_pnl": trade_pnl - fee,
                 "win_rate": 1.0 if trade_pnl > 0 else 0.0,
+                "time_sl_penalty": 0.0,
             })
 
             # Reset position state
@@ -694,6 +695,7 @@ class TradingEnvironment(gym.Env):
                     "position_closed": True, # Mark as closed for metrics
                     "trade_realized_pnl": final_pnl,
                     "win_rate": 1.0 if final_pnl > 0 else 0.0,
+                    "time_sl_penalty": self.time_sl_penalty_ratio,
                 })
 
             info["terminal_observation"] = self._get_observation()
