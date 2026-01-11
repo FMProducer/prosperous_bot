@@ -16,7 +16,7 @@ sys.path.append(os.getcwd())
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from trading_environment import TradingEnvironment
-from utils import load_npz_dataset, create_validation_episodes
+from utils import load_npz_dataset, create_validation_episodes, load_config
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -231,10 +231,16 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
         logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
          
-    with open(config_path, 'r') as f:
-        config_dict = json.load(f)
-     
-    cfg = MasterConfig.model_validate(config_dict)
+    # MODIFIED: Support for .py config loading
+    if config_path.endswith('.py'):
+        # load_config returns (cfg, cfg_mod)
+        cfg, _ = load_config(config_path)
+        logger.info(f"Loaded configuration from python file: {config_path}")
+    else:
+        with open(config_path, 'r') as f:
+            config_dict = json.load(f)
+        cfg = MasterConfig.model_validate(config_dict)
+        logger.info(f"Loaded configuration from JSON file: {config_path}")
     
     # Ensure out_dir exists
     os.makedirs(out_dir, exist_ok=True)
