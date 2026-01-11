@@ -234,7 +234,8 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
     # MODIFIED: Support for .py config loading
     if config_path.endswith('.py'):
         # load_config returns (cfg, cfg_mod)
-        cfg, _ = load_config(config_path)
+        result = load_config(config_path)
+        cfg = result[0]
         logger.info(f"Loaded configuration from python file: {config_path}")
     else:
         with open(config_path, 'r') as f:
