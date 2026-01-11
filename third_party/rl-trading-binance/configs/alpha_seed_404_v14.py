@@ -24,7 +24,8 @@ else:
     cfg.paths.config_name = f"alpha_seed_404_v14_{AGENT_MODE}"
 
 
-print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
+# MODIFIED: Removed emoji to prevent UnicodeEncodeError on Windows consoles
+print(f"[CONFIG] CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
 cfg.paths.model_dir = f"output/{cfg.paths.config_name}/saved_models"
 cfg.paths.plot_dir = f"output/{cfg.paths.config_name}/plots"

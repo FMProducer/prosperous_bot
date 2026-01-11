@@ -291,7 +291,10 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
         "volumechannels": cfg.data.volumechannels,
         "otherchannels": cfg.data.otherchannels,
         "action_history_len": cfg.seq.action_history_len,
-        "backtest_mode": True
+        "backtest_mode": True,
+        "render_mode": None,
+        "flat_state_size": cfg.seq.flat_state_size,
+        "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
     }
     val_env = TradingEnvironment(**env_kwargs)
 
