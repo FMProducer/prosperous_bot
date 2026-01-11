@@ -307,6 +307,14 @@ class BacktestConfig(BaseModel):
     selection_strategy: Literal["advantage_based_filter", "ensemble_q_filter"] = "advantage_based_filter"
     plot_backtest_balance_curve: bool = True
     data_source: Literal["npz_keys", "find_spikes"] = "npz_keys"
+
+    @field_validator("data_source", mode='before', check_fields=False)
+    @classmethod
+    def compat_data_source(cls, v):
+        if v == "npz":
+            return "npz_keys"
+        return v
+
     ensemble_n_samples: int = 5
     ensemble_max_sigma: float = 0.01
     time_range: Optional[Dict[str, str]] = None
