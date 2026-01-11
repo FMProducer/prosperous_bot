@@ -532,7 +532,7 @@ def run_external_validation(cfg_path: str, checkpoint_path: str, out_dir: str, e
 
     try:
         # Ensure the script path is correct, assuming it's in the same directory
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, errors='replace')
         logging.info(f"External validation stdout: {result.stdout}")
 
         # MODIFIED: validate_model.py теперь возвращает путь к итоговому JSON в stdout
