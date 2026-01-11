@@ -225,7 +225,7 @@ def evaluate_agent(
     return metrics
 
 
-def validate(config_path, checkpoint_path, output_path, episode_num):
+def validate(config_path, checkpoint_path, out_dir, episode_num):
     # 1. Загрузка конфигурации
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
@@ -235,6 +235,9 @@ def validate(config_path, checkpoint_path, output_path, episode_num):
         config_dict = json.load(f)
 
     cfg = MasterConfig.model_validate(config_dict)
+
+    # Ensure out_dir exists
+    os.makedirs(out_dir, exist_ok=True)
 
     val_data_path = cfg.paths.val_data_path
     norm_stats_path = cfg.paths.norm_stats_path
@@ -326,7 +329,15 @@ def validate(config_path, checkpoint_path, output_path, episode_num):
     # 6. Валидация
     metrics = evaluate_agent(val_env, agent, "Validation", cfg, keys=val_keys)
 
-    # 7. Сохранение результатов
+    # 7. Формирование имени JSON с метриками
+    sortino = metrics.get("Validation_sortino", 0.0)
+    sharpe = metrics.get("Validation_sharpe", 0.0)
+    trades = int(metrics.get("Validation_trades", 0))
+
+    json_filename = f"checkpoint_ep{episode_num:05d}_sortino{sortino:.3f}_sharpe{sharpe:.3f}_trades{trades}.json"
+    output_path = os.path.join(out_dir, json_filename)
+
+    # 8. Сохранение результатов
     with open(output_path, 'w') as f:
         json.dump({
             "episode": episode_num,
@@ -336,12 +347,16 @@ def validate(config_path, checkpoint_path, output_path, episode_num):
 
     logger.info(f"Validation results saved to {output_path}")
 
+    # MODIFIED: Печатаем путь к JSON для train.py
+    print(f"RESULT_JSON: {output_path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate a trained model.")
     parser.add_argument("--config", required=True, help="Path to config_train.json")
     parser.add_argument("--checkpoint", required=True, help="Path to checkpoint.pth")
-    parser.add_argument("--out", required=True, help="Path to output metrics.json")
+    parser.add_argument("--out-dir", required=True, help="Directory to save output metrics JSON")
     parser.add_argument("--episode", required=True, type=int, help="Current episode number for logging")
 
     args = parser.parse_args()
-    validate(args.config, args.checkpoint, args.out, args.episode)
+    validate(args.config, args.checkpoint, args.out_dir, args.episode)
