@@ -9,6 +9,7 @@ import hashlib, tarfile
 import datetime as dt
 from functools import partial
 from pathlib import Path
+import subprocess
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -595,326 +596,39 @@ def _numpy_json_default(obj):
         return obj.tolist()
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
-def evaluate_agent(
-    env: TradingEnvironment,
-    agent: D3QN_PER_Agent,
-    episodes: int,
-    split_label: str,
-    episode_num: int | None,
-    seed: int | None,
-    cfg: MasterConfig,
-    keys: list = None,
-) -> Dict[str, Any]:
-    """
-    Greedy-оценка (без ε-эксплорации и MC-Dropout) в backtest-режиме:
-    считает MeanReward/MeanPnL/WinRate/PF/MaxDD, логирует распределение exit_reason и TSL-срабатывания,
-    возвращает словарь с ключами вроде 'Validation_win_rate', 'Test_profit_factor' и т.д.
-    """
-    # ── Жёстко выключаем стохастику выбора действий
+def run_external_validation(cfg_path: str, checkpoint_path: str, output_path: str, episode_num: int) -> Dict[str, Any]:
+    """Calls the autonomous validate_model.py script."""
+    # Ensure the script path is correct, assuming it's in the same directory
+    script_path = os.path.join(os.path.dirname(__file__), "validate_model.py")
+    
+    cmd = [
+        sys.executable, script_path,
+        "--config", cfg_path,
+        "--checkpoint", checkpoint_path,
+        "--out", output_path,
+        "--episode", str(episode_num)
+    ]
     try:
-        agent.policy_net.eval()
-    except Exception:
-        pass
-    old_eps = getattr(agent, "epsilon", None)
-    old_mc  = getattr(agent, "mc_enable", None)
-    if hasattr(agent, "epsilon"):
-        agent.epsilon = 0.0
-    if hasattr(agent, "mc_enable"):
-        agent.mc_enable = False
-
-    # накопители
-    total_reward = 0.0
-    total_trades = 0
-    total_correct = 0
-    trade_pnls: list[float] = []
-    ep_pnls:   list[float] = []
-    ep_rews:   list[float] = []
-    ep_wrs:    list[float] = []
-    exit_counts: Dict[str,int] = {}
-    tsl_hits = 0
-    bankruptcy_episodes = 0
-    
-    # Дополнительные метрики
-    all_trades_info = []
-    total_commission = 0.0
-    long_trades = 0
-    short_trades = 0
-    holding_times = []
-    total_bars_processed = 0
-    start_time = time.time()
-
-    num_eval_episodes = len(env.sequences)
-
-    for i in range(int(num_eval_episodes)):
-        obs, _ = env.reset(options={"forced_index": i})
-        done = False
-        ep_reward = 0.0
-        ep_trades = 0
-        ep_wins   = 0
-        ep_trade_pnls: list[float] = []
-        is_bankrupt = False
-        
-        # ИСПРАВЛЕНО: Извлекаем дату начала семпла из ключа, а не используем заглушку
-        signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0) # Fallback
-        ticker_name = "UNKNOWN"
-        if keys and i < len(keys):
-            try:
-                key_parts = keys[i].split('_')
-                ticker_name = key_parts[0]
-                # Ожидаемый формат ключа: TICKER_STARTISO_ENDISO
-                if len(key_parts) > 1:
-                    start_dt_str = key_parts[1]
-                    signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
-            except (IndexError, AttributeError, ValueError):
-                logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
-        
-        while not done:
-            action = agent.select_action(obs, training=False)
-            obs, reward, done, _, info = env.backtest_step(
-                action=action,
-                signal_dt=signal_dt_for_step,
-                ticker=ticker_name,
-                stop_loss=None,
-                take_profit=None,
-                trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
-                trailing_stop_min=getattr(cfg.backtest, "trailing_stop_min", None),
-                fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
-                delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
-            )
-            ep_reward += float(reward or 0.0)
-            total_bars_processed += 1
-            if info.get("bankruptcy", False):
-                is_bankrupt = True
-            if info.get("position_closed", False):
-                pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
-                ep_trades += 1
-                trade_pnls.append(pnl)
-                ep_trade_pnls.append(pnl)
-                if info.get("correct_prediction", False):
-                    ep_wins += 1
-                reason = (info.get("exit_reason") or "")
-                if reason:
-                    exit_counts[reason] = exit_counts.get(reason, 0) + 1
-                if info.get("tsl_triggered", False) or ("TSL" in reason):
-                    tsl_hits += 1
-                
-                # Сбор расширенной информации о сделках
-                all_trades_info.append(info)
-                total_commission += info.get('trade_commission', 0.0)
-                direction = info.get('direction', '')
-                if direction == 'LONG':
-                    long_trades += 1
-                elif direction == 'SHORT':
-                    short_trades += 1
-                
-                if 'holding_duration_bars' in info:
-                    holding_times.append(info['holding_duration_bars'])
-
-        # завершение эпизода
-        if is_bankrupt:
-            bankruptcy_episodes += 1
-        total_reward += ep_reward
-        total_trades += ep_trades
-        total_correct += ep_wins
-        ep_pnls.append(sum(ep_trade_pnls))
-        ep_rews.append(ep_reward)
-        ep_wrs.append( ep_wins / max(1, ep_trades) if ep_trades else 0.0 )
-
-    # --- Расчет дополнительных метрик ---
-    total_duration = time.time() - start_time
-    win_count = total_correct
-    loss_count = total_trades - total_correct
-    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
-
-    if all_trades_info:
-        gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
-        net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
-        avg_pnl_per_trade = net_pnl / len(all_trades_info) if all_trades_info else 0.0
-        
-        trade_pnls_all = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
-        best_trade = max(trade_pnls_all) if trade_pnls_all else 0.0
-        worst_trade = min(trade_pnls_all) if trade_pnls_all else 0.0
-        
-        avg_holding_time = np.mean(holding_times) if holding_times else 0.0
-        max_holding_time = max(holding_times) if holding_times else 0.0
-        min_holding_time = min(holding_times) if holding_times else 0.0
-        
-        # Calculate trading time in days
-        bars_per_day = 1440  # 24 hours * 60 minutes
-        trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
-        
-        try:
-            initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
-        except Exception:
-            initial_balance = 10000.0
-        
-        # Calculate derived metrics
-        if trade_pnls:
-            avg_win_size = np.mean([p for p in trade_pnls if p > 0]) if any(p > 0 for p in trade_pnls) else 0.0
-            avg_loss_size = np.mean([p for p in trade_pnls if p < 0]) if any(p < 0 for p in trade_pnls) else 0.0
-            win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size < -1e-6 else float('inf')
-            expectancy = (wr_ratio * avg_win_size) - ((1 - wr_ratio) * abs(avg_loss_size))
-        else:
-            avg_win_size = 0.0
-            avg_loss_size = 0.0
-            win_loss_ratio = 0.0
-            expectancy = 0.0
-        
-        commission_pct = (total_commission / abs(gross_pnl)) * 100 if abs(gross_pnl) > 1e-6 else 0.0
-        roi_percent = (net_pnl / initial_balance) * 100 if initial_balance > 0 else 0.0
-        roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
-    else:
-        gross_pnl = net_pnl = avg_pnl_per_trade = 0.0
-        best_trade = worst_trade = 0.0
-        avg_holding_time = 0.0
-        max_holding_time = 0.0
-        min_holding_time = 0.0
-        trading_time_days = 0.0
-        avg_win_size = 0.0
-        avg_loss_size = 0.0
-        win_loss_ratio = 0.0
-        expectancy = 0.0
-        commission_pct = 0.0
-        roi_percent = 0.0
-        roi_annualized = 0.0
-        # wr_ratio already defined above
-
-    pnl_per_day = net_pnl / trading_time_days if trading_time_days > 0 else 0.0
-
-    # ИСПРАВЛЕНО: MeanReward в валидации — рассчитываем из normalized PnL сделок
-    # (backtest_step возвращает reward=0.0, так как reward не используется в оценке)
-    try:
-        initial_balance = float(getattr(cfg.market, "initial_balance", 10_000.0))
-    except Exception:
-        initial_balance = 10_000.0
-    
-    # Средний normalized reward = sum(pnl) / initial_balance / episodes
-    mean_reward = (sum(trade_pnls) / initial_balance) / max(1, num_eval_episodes) if trade_pnls else 0.0
-    
-    mean_pnl = (sum(trade_pnls) / max(1, total_trades)) if total_trades else 0.0
-    
-    pos_sum = sum(p for p in trade_pnls if p > 0)
-    neg_sum = sum(p for p in trade_pnls if p < 0)
-    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
-    
-    # --- Sharpe / Sortino ---
-    if trade_pnls:
-        denorm_pnls = np.array(trade_pnls, dtype=np.float64)
-        equity = float(initial_balance)
-        peak = float(initial_balance)
-        max_dd = 0.0
-        for pnl in denorm_pnls:
-            equity += pnl
-            if equity > peak:
-                peak = equity
-            if peak > 0.0:
-                dd = (equity - peak) / peak
-                if dd < max_dd:
-                    max_dd = dd
-    else:
-        max_dd = 0.0
-
-    returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
-    if returns.size > 0:
-        mean_r = float(returns.mean())
-        std_r  = float(returns.std(ddof=1)) if returns.size > 1 else float(returns.std(ddof=0))
-        downside = np.minimum(0.0, returns)
-        downside = float(np.sqrt(np.mean(downside * downside)))
-        sharpe   = (mean_r / std_r)      if std_r      > 1e-12 else 0.0
-        sortino  = (mean_r / downside)   if downside   > 1e-12 else (float("inf") if mean_r > 0.0 else 0.0)
-    else:
-        sharpe, sortino = 0.0, 0.0
-
-    bankruptcy_rate = bankruptcy_episodes / max(1, num_eval_episodes)
-
-    # --- Расширенный лог ---
-    logging.info(
-        f"[{split_label}] Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, "
-        f"Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio*100:.2f}% | PF: {profit_factor:.4f}"
-    )
-    logging.info(
-        f"[{split_label}] Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | "
-        f"Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}"
-    )
-    logging.info(
-        f"[{split_label}] Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | "
-        f"MaxDD: {abs(max_dd)*100:.2f}% | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}"
-    )
-    logging.info(
-        f"[{split_label}] Avg Hold: {avg_holding_time:.2f} bars | "
-        f"Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars"
-    )
-    # Enhanced metrics output
-    logging.info(f"[{split_label}] Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | "
-                 f"Trading Days: {trading_time_days:.1f}")
-    logging.info(f"[{split_label}] PnL/Day: {pnl_per_day:.2f} USDT | "
-                 f"ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
-    logging.info(f"[{split_label}] Commission: {commission_pct:.1f}% of gross | "
-                 f"Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | "
-                 f"W/L Ratio: {win_loss_ratio:.2f}")
-    logging.info(f"[{split_label}] Expectancy/Trade: {expectancy:.2f} USDT")
-    
-    if exit_counts:
-        logging.info("[%s] Exit reasons: %s", split_label,
-                     {k:int(v) for k,v in sorted(exit_counts.items(), key=lambda x:(-x[1], x[0]))})
-    if total_trades:
-        logging.info("[%s] TSL hits: %d (%.2f%%)", split_label, tsl_hits, 100.0*tsl_hits/max(1,total_trades))
-
-    # вернуть исходные режимы агента
-    if old_eps is not None:
-        agent.epsilon = old_eps
-    if old_mc  is not None:
-        agent.mc_enable = old_mc
-
-    # сформировать словарь под выбор метрики в тренере
-    L = split_label
-    out: Dict[str,Any] = {
-        f"{L}_mean_reward": float(mean_reward),
-        f"{L}_mean_pnl":    float(mean_pnl),
-        f"{L}_win_rate":    float(wr_ratio),
-        f"{L}_win_rate_percent": float(wr_ratio*100.0),
-        f"{L}_profit_factor": float(profit_factor),
-        f"{L}_max_drawdown": float(max_dd),
-        f"{L}_trades": int(total_trades),
-        f"{L}_tsl_hits": int(tsl_hits),
-        f"{L}_exit_reasons": {k:int(v) for k,v in exit_counts.items()},
-        f"{L}_sharpe":  float(np.clip(sharpe,   -10.0, 10.0)),
-        f"{L}_sortino": float(np.clip(sortino,  -10.0, 10.0)),
-        f"{L}_bankruptcy_rate": float(bankruptcy_rate),
-        # Новые метрики
-        f"{L}_gross_pnl": float(gross_pnl),
-        f"{L}_net_pnl": float(net_pnl),
-        f"{L}_total_commission": float(total_commission),
-        f"{L}_avg_pnl_per_trade": float(avg_pnl_per_trade),
-        f"{L}_pnl_per_day": float(pnl_per_day),
-        f"{L}_best_trade": float(best_trade),
-        f"{L}_worst_trade": float(worst_trade),
-        f"{L}_long_trades": int(long_trades),
-        f"{L}_short_trades": int(short_trades),
-        f"{L}_win_trades": int(win_count),
-        f"{L}_loss_trades": int(loss_count),
-        f"{L}_avg_holding_time": float(avg_holding_time),
-        f"{L}_max_holding_time": float(max_holding_time),
-        f"{L}_min_holding_time": float(min_holding_time),
-        f"{L}_total_duration_seconds": float(total_duration),
-        f"{L}_bars_processed": int(total_bars_processed),
-        f"{L}_trading_time_days": float(trading_time_days),
-        f"{L}_roi_percent": float(roi_percent),
-        f"{L}_roi_annualized": float(roi_annualized),
-        f"{L}_commission_percent": float(commission_pct),
-        f"{L}_avg_win_size": float(avg_win_size),
-        f"{L}_avg_loss_size": float(avg_loss_size),
-        f"{L}_win_loss_ratio": float(win_loss_ratio),
-        f"{L}_expectancy": float(expectancy),
-    }
-    if L == "Test":
-        out.update({
-            "Test_all_pnls": ep_pnls,
-            "Test_all_reward": ep_rews,
-            "Test_all_win_rate": ep_wrs,
-        })
-    return out
-
+        # Using capture_output=True to get stdout/stderr
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
+        logging.info(f"External validation stdout:\n{result.stdout}")
+        with open(output_path, 'r') as f:
+            data = json.load(f)
+        return data.get("metrics", {})
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Validation script failed with exit code {e.returncode}.")
+        logging.error(f"Stderr:\n{e.stderr}")
+        logging.error(f"Stdout:\n{e.stdout}")
+        return {}
+    except FileNotFoundError:
+        logging.error(f"Validation results file not found at: {output_path}")
+        return {}
+    except json.JSONDecodeError:
+        logging.error(f"Failed to decode JSON from validation results at: {output_path}")
+        return {}
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while running or reading validation results: {e}", exc_info=True)
+        return {}
 
 def process_data(raw_list, name_dataset, cfg: MasterConfig):
     seqs = []
@@ -1157,8 +871,38 @@ def run_training_session(
 
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
-        if val_env and ep % cfg.trainlog.val_freq == 0:
-            metrics = evaluate_agent(val_env, agent, len(val_sequences), "Validation", ep, cfg.global_env_seed, cfg, keys=val_keys)
+        if val_env and (ep % cfg.trainlog.val_freq == 0):
+            temp_ckpt_path = os.path.join(models_dir, f"temp_checkpoint_ep{ep}.pth")
+            output_json_path = os.path.join(models_dir, f"temp_metrics_ep{ep}.json")
+
+            try:
+                # 1. Сохраняем временный чекпоинт для валидации
+                agent.save_model(temp_ckpt_path)
+
+                # 2. Убеждаемся, что конфиг на месте
+                config_path = os.path.join(models_dir, "config_train.json")
+
+                # 3. Вызываем внешний скрипт валидации
+                metrics = run_external_validation(config_path, temp_ckpt_path, output_json_path, ep)
+
+                # Если валидация провалилась, metrics будет пустым словарем
+                if not metrics:
+                    logging.warning(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации.")
+                    continue
+
+                # 4. Используем полученные метрики
+                if checkpoint_manager:
+                    checkpoint_manager.save_checkpoint(agent, ep, metrics)
+
+            finally:
+                # Очищаем временные файлы после использования
+                try:
+                    if os.path.exists(temp_ckpt_path):
+                        os.remove(temp_ckpt_path)
+                    if os.path.exists(output_json_path):
+                        os.remove(output_json_path)
+                except OSError as e:
+                    logging.warning(f"Error cleaning up temp files: {e}")
 
             sel_keys = cfg.trainlog.val_selection_metrics
 
