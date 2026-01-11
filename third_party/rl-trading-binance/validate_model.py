@@ -3,259 +3,360 @@ import argparse
 import json
 import logging
 import os
+import sys
+import time
+from typing import Any, Dict
 import numpy as np
 import torch
-from tqdm import tqdm
 import datetime as dt
 
-# --- Project Imports ---
-# Ensure this script is run from the project root or that the path is configured correctly.
-try:
-    from trading_environment import TradingEnvironment
-    from agent import D3QN_PER_Agent
-    from config import PerformanceConfig
-except ImportError:
-    print("ERROR: Make sure to run this script from the project root, e.g., `python third_party/rl-trading-binance/validate_model.py ...`")
-    exit(1)
+# Добавляем текущую директорию в путь, чтобы импортировать модули проекта
+sys.path.append(os.getcwd())
 
-# --- Logging Setup ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+from agent import D3QN_PER_Agent
+from config import MasterConfig
+from trading_environment import TradingEnvironment
+from utils import load_npz_dataset, create_validation_episodes
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def load_data(data_path: str, norm_stats_path: str):
-    """Loads and normalizes data exactly as it was done for training."""
-    logger.info(f"Loading normalization stats from {norm_stats_path}")
-    if not os.path.exists(norm_stats_path):
-        raise FileNotFoundError(f"Normalization stats file not found: {norm_stats_path}")
-    with open(norm_stats_path, 'r') as f:
-        stats = json.load(f)
-    
-    means = np.array(stats['mean'], dtype=np.float32)
-    stds = np.array(stats['std'], dtype=np.float32) + 1e-8
 
-    logger.info(f"Loading validation data from {data_path}")
-    if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Validation data file not found: {data_path}")
-        
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict) -> tuple[list, list]:
+    """
+    Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
+    """
+    if not npz_path or not os.path.exists(npz_path):
+        logger.warning(f"{split_name} data file not found or path not specified: {npz_path}")
+        return [], []
+
+    if not norm_stats:
+        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
+
+    d = np.load(npz_path, allow_pickle=True)
+    data_keys = [k for k in d.files if not k.startswith('_')]
     sequences = []
-    keys = []
-    with np.load(data_path, allow_pickle=True) as d:
-        keys = [k for k in d.files if not k.startswith('_')]
-        for key in tqdm(keys, desc="Loading and normalizing data"):
-            raw_seq = d[key].astype(np.float32)
-            norm_seq = (raw_seq - means) / stds
-            # Reshape for CNN: (L, C) -> (C, L, 1)
-            norm_seq = norm_seq.T
-            norm_seq = np.expand_dims(norm_seq, -1)
-            sequences.append(norm_seq)
-            
-    return sequences, stats, keys
-
-def calculate_and_log_metrics(trade_pnls: list, initial_balance: float, episodes: int, label="Validation"):
-    """Calculates and logs key performance metrics."""
-    if not trade_pnls:
-        logger.warning("No trades were made, cannot calculate performance metrics.")
-        return
-
-    returns = np.array(trade_pnls) / initial_balance
+    valid_keys = []
+    logger.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
     
-    # --- Sharpe & Sortino ---
-    mean_r = returns.mean()
-    std_r = returns.std(ddof=1) if len(returns) > 1 else 0
-    sharpe = (mean_r / std_r) * np.sqrt(252) if std_r > 1e-9 else 0 # Annualized Sharpe
+    for key in data_keys:
+        try:
+            asset_name = key.split('_')[0]
+        except IndexError:
+            logger.warning(f"Пропуск ключа с некорректным форматом: {key}")
+            continue
 
-    downside_returns = returns[returns < 0]
-    downside_dev = np.sqrt((downside_returns**2).mean()) if len(downside_returns) > 0 else 0
-    sortino = (mean_r / downside_dev) * np.sqrt(252) if downside_dev > 1e-9 else (float("inf") if mean_r > 0 else 0)
+        asset_specific_stats = norm_stats.get(asset_name)
+        if asset_specific_stats is None:
+            logger.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
+            continue
 
-    # --- Profit Factor & Win Rate ---
-    pos_pnls = [p for p in trade_pnls if p > 0]
-    neg_pnls = [p for p in trade_pnls if p < 0]
-    profit_factor = sum(pos_pnls) / abs(sum(neg_pnls)) if sum(neg_pnls) != 0 else float("inf")
-    win_rate = len(pos_pnls) / len(trade_pnls) if trade_pnls else 0
+        means = np.array(asset_specific_stats.get('mean', asset_specific_stats.get('means')))
+        stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')))
 
-    # --- Max Drawdown ---
-    equity_curve = np.cumsum(trade_pnls) + initial_balance
-    peak = np.maximum.accumulate(equity_curve)
-    drawdowns = (equity_curve - peak) / peak
-    max_dd = np.min(drawdowns) if len(drawdowns) > 0 else 0.0
+        seq = d[key].astype(np.float32)
+        if seq.shape[1] != len(means):
+            logger.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
+            continue
 
-    # --- Logging ---
-    logger.info("="*50)
-    logger.info(f"📊 {label} Results ({episodes} episodes)")
-    logger.info("="*50)
-    logger.info(f"Total PnL:              ${sum(trade_pnls):,.2f}")
-    logger.info(f"Total Trades:           {len(trade_pnls)}")
-    logger.info(f"Win Rate:               {win_rate:.2%}")
-    logger.info(f"Profit Factor:          {profit_factor:.3f}")
-    logger.info(f"Max Drawdown:           {max_dd:.2%}")
-    logger.info(f"Annualized Sharpe Ratio:  {sharpe:.3f}")
-    logger.info(f"Annualized Sortino Ratio: {sortino:.3f}")
-    logger.info("="*50)
-
-def run_validation(config_path: str, model_path: str):
-    """Main validation function."""
-    logger.info(f"Starting validation for model: {model_path}")
+        # Z-norm по каждому каналу
+        seq = (seq - means) / (stds + 1e-8)
+        # Reshape для CNN: (L, C) -> (C, L, 1)
+        seq = seq.T
+        seq = np.expand_dims(seq, -1)
+        sequences.append(seq)
+        valid_keys.append(key)
     
-    # 1. Load Configuration from JSON
-    with open(config_path, 'r') as f:
-        cfg = json.load(f)
+    d.close()
+    if sequences:
+        logger.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
+    return sequences, valid_keys
 
-    # 2. Setup Environment
-    seed = cfg.get('random_seed', 404)
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.benchmark = False
-        if cfg.get('deterministic', False) or cfg.get('perf', {}).get('cudnn_deterministic', False):
-            logger.info("Enabling full deterministic mode for CUDA.")
-            torch.backends.cudnn.deterministic = True
-            torch.use_deterministic_algorithms(True)
 
-    # 3. Load Data
-    # The paths in the JSON are relative to the 'third_party/rl-trading-binance' directory.
-    subproject_root = 'third_party/rl-trading-binance'
-    val_data_path = os.path.join(subproject_root, cfg['paths']['val_data_path'])
-    norm_stats_path = os.path.join(os.path.dirname(model_path), 'norm_stats.json')
-    
-    sequences, stats_dict, keys = load_data(val_data_path, norm_stats_path)
-    
-    num_episodes = min(cfg['trainlog']['num_val_ep'], len(sequences))
-    logger.info(f"Running validation for {num_episodes} episodes.")
-    sequences = sequences[:num_episodes]
-    keys = keys[:num_episodes]
-
-    # 4. Initialize Environment
-    # Calculate flat_state_size based on config
-    num_features = cfg.get('num_channels', cfg.get('data', {}).get('num_channels'))
-    input_history_len = cfg['seq'].get('input_history_len', cfg['seq']['agent_history_len'])
-    action_history_len = cfg['seq']['action_history_len']
-    num_actions = cfg['market']['num_actions']
-    extras = 4  # position, unrealized, time_elapsed, time_remaining
-    history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
-    flat_features = input_history_len * num_features
-    flat_state_size = flat_features + extras + history_vector_size
-
-    env_kwargs = {
-        "sequences": sequences,
-        "stats": stats_dict,
-        "initial_balance": cfg['market']['initial_balance'],
-        "num_actions": cfg['market']['num_actions'],
-        "agent_history_len": cfg['seq']['agent_history_len'],
-        "agent_session_len": cfg['seq']['agent_session_len'],
-        "backtest_mode": True,
-        "use_risk_management": cfg['backtest'].get('use_risk_management', True),
-        "render_mode": cfg.get('render_mode'),
-        "full_seq_len": cfg['seq']['full_seq_len'],
-        "num_features": num_features,
-        "flat_state_size": flat_state_size,
-        "pre_signal_len": cfg['seq']['pre_signal_len'],
-        "data_channels": cfg['data']['data_channels'],
-        "slippage": cfg['market']['slippage'],
-        "transaction_fee": cfg['market']['transaction_fee'],
-        "input_history_len": input_history_len,
-        "price_channels": cfg['data']['price_channels'],
-        "volume_channels": cfg['data']['volume_channels'],
-        "other_channels": cfg['data']['other_channels'],
-        "action_history_len": action_history_len,
-        "inaction_penalty_ratio": cfg['market']['inaction_penalty_ratio'],
-    }
-    env = TradingEnvironment(**env_kwargs)
-
-    # 5. Initialize Agent
-    perf_cfg = PerformanceConfig()
-    perf_cfg.use_amp = cfg['perf']['use_amp']
-    
-    # Filter out 'name' if it exists in the dictionaries
-    model_params = {k: v for k, v in cfg.get('model', {}).items() if k != 'name'}
-    rl_params = {k: v for k, v in cfg.get('rl', {}).items() if k != 'name'}
-    per_params = {k: v for k, v in cfg.get('per', {}).items() if k != 'name'}
-    eps_params = {k: v for k, v in cfg.get('eps', {}).items() if k != 'name'}
-
-    # Handle parameter name mismatches between config and agent constructor
-    if 'dropout_p' in model_params:
-        model_params['dropout_model'] = model_params.pop('dropout_p')
-    if 'lr' in rl_params:
-        rl_params['learning_rate'] = rl_params.pop('lr')
-    rl_params.pop('clip_range', None)
-    rl_params.pop('n_step', None)
-    rl_params.pop('gamma_n_step_buffer', None)
-    if 'per_eps' in per_params:
-        per_params['epsilon'] = per_params.pop('per_eps')
-    if 'eps_decay_frames' in eps_params:
-        eps_params['eps_frames'] = eps_params.pop('eps_decay_frames')
-
-    agent = D3QN_PER_Agent(
-        state_shape=tuple(cfg['state_shape']),
-        action_dim=cfg['market']['num_actions'],
-        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        perf_cfg=perf_cfg,
-        **model_params,
-        **rl_params,
-        **per_params,
-        **eps_params
-    )
-    agent.load_model(model_path, strict=True)
+def evaluate_agent(
+    env: TradingEnvironment,
+    agent: D3QN_PER_Agent,
+    split_label: str,
+    cfg: MasterConfig,
+    keys: list = None,
+) -> Dict[str, Any]:
+    """
+    Greedy-оценка (без ε-эксплорации и MC-Dropout) в backtest-режиме:
+    считает MeanReward/MeanPnL/WinRate/PF/MaxDD, логирует распределение exit_reason и TSL-срабатывания,
+    возвращает словарь с ключами вроде 'Validation_win_rate', 'Test_profit_factor' и т.д.
+    """
     agent.policy_net.eval()
+    if hasattr(agent, "epsilon"):
+        agent.epsilon = 0.0
 
-    # 6. Run Validation Loop
-    all_trade_pnls = []
-    stub_dt = dt.datetime(2000, 1, 1, 0, 0)
+    total_reward = 0.0
+    total_trades = 0
+    total_correct = 0
+    trade_pnls: list[float] = []
+    ep_pnls: list[float] = []
+    exit_counts: Dict[str, int] = {}
+    tsl_hits = 0
+    bankruptcy_episodes = 0
     
-    for i in tqdm(range(num_episodes), desc="Validating Episodes"):
+    all_trades_info = []
+    total_commission = 0.0
+    long_trades = 0
+    short_trades = 0
+    holding_times = []
+    total_bars_processed = 0
+    start_time = time.time()
+
+    num_eval_episodes = len(env.sequences)
+
+    for i in range(num_eval_episodes):
         obs, _ = env.reset(options={"forced_index": i})
         done = False
-        
-        try:
-            ticker_name = keys[i].split('_')[0]
-        except (IndexError, AttributeError):
-            ticker_name = "UNKNOWN"
+        ep_reward = 0.0
+        is_bankrupt = False
 
+        signal_dt_for_step = dt.datetime(2000, 1, 1, 0, 0)
+        ticker_name = "UNKNOWN"
+        if keys and i < len(keys):
+            try:
+                key_parts = keys[i].split('_')
+                ticker_name = key_parts[0]
+                if len(key_parts) > 1:
+                    start_dt_str = key_parts[1]
+                    signal_dt_for_step = dt.datetime.fromisoformat(start_dt_str)
+            except (IndexError, AttributeError, ValueError):
+                logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
+        
         while not done:
             action = agent.select_action(obs, training=False)
-            
-            # Per user request: TSL only, no separate SL/TP
-            backtest_kwargs = {
-                'stop_loss': None,
-                'take_profit': None,
-                'trailing_stop': cfg['backtest'].get('trailing_stop'),
-                'trailing_stop_min': cfg['backtest'].get('trailing_stop_min'),
-                'fee_buffer_mult': cfg['backtest'].get('fee_buffer_mult'),
-                'delta_p_hysteresis': cfg['backtest'].get('delta_p_hysteresis'),
-            }
-            
-            obs, _, terminated, truncated, info = env.backtest_step(
+            obs, reward, done, _, info = env.backtest_step(
                 action=action,
-                signal_dt=stub_dt,
+                signal_dt=signal_dt_for_step,
                 ticker=ticker_name,
-                **backtest_kwargs
+                stop_loss=None,
+                take_profit=None,
+                trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
+                fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
             )
-            done = terminated or truncated
-            
+            ep_reward += float(reward or 0.0)
+            total_bars_processed += 1
+            if info.get("bankruptcy", False):
+                is_bankrupt = True
             if info.get("position_closed", False):
-                pnl = info.get("trade_realized_pnl", 0.0)
-                all_trade_pnls.append(pnl)
+                pnl = float(info.get("trade_realized_pnl", 0.0) or 0.0)
+                total_trades += 1
+                trade_pnls.append(pnl)
+                if info.get("correct_prediction", False):
+                    total_correct += 1
+                reason = (info.get("exit_reason") or "")
+                if reason:
+                    exit_counts[reason] = exit_counts.get(reason, 0) + 1
+                if info.get("tsl_triggered", False) or ("TSL" in reason):
+                    tsl_hits += 1
 
-    # 7. Calculate and Log Metrics
-    calculate_and_log_metrics(all_trade_pnls, cfg['market']['initial_balance'], num_episodes)
+                all_trades_info.append(info)
+                total_commission += info.get('trade_commission', 0.0)
+                direction = info.get('direction', '')
+                if direction == 'LONG':
+                    long_trades += 1
+                elif direction == 'SHORT':
+                    short_trades += 1
+
+                if 'holding_duration_bars' in info:
+                    holding_times.append(info['holding_duration_bars'])
+
+        if is_bankrupt:
+            bankruptcy_episodes += 1
+        total_reward += ep_reward
+        ep_pnls.append(sum(trade_pnls))
+
+    total_duration = time.time() - start_time
+    win_count = total_correct
+    loss_count = total_trades - total_correct
+    wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
+
+    net_pnl = sum(trade_pnls)
+    initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
+
+    if trade_pnls:
+        equity = float(initial_balance)
+        peak = float(initial_balance)
+        max_dd = 0.0
+        for pnl in trade_pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            if peak > 0.0:
+                dd = (equity - peak) / peak
+                if dd < max_dd:
+                    max_dd = dd
+    else:
+        max_dd = 0.0
+
+    returns = np.asarray(trade_pnls, dtype=np.float64) / max(1e-9, initial_balance)
+    if returns.size > 1:
+        mean_r = float(returns.mean())
+        std_r  = float(returns.std(ddof=1))
+        downside = np.minimum(0.0, returns)
+        downside_std = float(np.sqrt(np.mean(downside * downside)))
+        sharpe   = (mean_r / std_r) if std_r > 1e-12 else 0.0
+        sortino  = (mean_r / downside_std) if downside_std > 1e-12 else (float("inf") if mean_r > 0.0 else 0.0)
+    else:
+        sharpe, sortino = 0.0, 0.0
+
+    pos_sum = sum(p for p in trade_pnls if p > 0)
+    neg_sum = sum(p for p in trade_pnls if p < 0)
+    profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
+
+    L = split_label
+    metrics: Dict[str, Any] = {
+        f"{L}_sortino": float(np.clip(sortino, -10.0, 10.0)),
+        f"{L}_sharpe": float(np.clip(sharpe, -10.0, 10.0)),
+        f"{L}_net_pnl": float(net_pnl),
+        f"{L}_win_rate": float(wr_ratio),
+        f"{L}_trades": int(total_trades),
+        f"{L}_profit_factor": float(profit_factor),
+        f"{L}_max_drawdown": float(max_dd),
+        # Add other metrics as needed
+    }
+
+    logger.info(f"[{L}] Validation Complete. Trades: {metrics[f'{L}_trades']}, Net PnL: {metrics[f'{L}_net_pnl']:.2f}, Sortino: {metrics[f'{L}_sortino']:.3f}")
+
+    return metrics
+
+
+def validate(config_path, checkpoint_path, out_dir, episode_num):
+    # 1. Загрузка конфигурации
+    if not os.path.exists(config_path):
+        logger.error(f"Config file not found: {config_path}")
+        sys.exit(1)
+         
+    with open(config_path, 'r') as f:
+        config_dict = json.load(f)
+     
+    cfg = MasterConfig.model_validate(config_dict)
+    
+    # Ensure out_dir exists
+    os.makedirs(out_dir, exist_ok=True)
+     
+    val_data_path = cfg.paths.val_data_path
+    norm_stats_path = cfg.paths.norm_stats_path
+
+    # 2. Загрузка данных
+    if not norm_stats_path or not os.path.exists(norm_stats_path):
+        logger.error(f"Norm stats not found: {norm_stats_path}")
+        sys.exit(1)
+
+    with open(norm_stats_path, 'r') as f:
+        norm_stats = json.load(f)
+
+    device = torch.device("cpu")
+
+    # 3. Подготовка данных и среды
+    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", norm_stats)
+    if not val_seqs:
+        logger.error("No validation data loaded. Exiting.")
+        sys.exit(1)
+
+    val_seqs, val_keys = create_validation_episodes(
+        val_sequences=val_seqs,
+        val_keys=val_keys,
+        num_episodes=cfg.trainlog.num_val_ep,
+        seed=cfg.random_seed
+    )
+
+    env_kwargs = {
+        "sequences": val_seqs,
+        "keys": val_keys,
+        "stats": norm_stats,
+        "full_seq_len": cfg.seq.full_seq_len,
+        "num_features": val_seqs[0].shape[0],
+        "num_actions": cfg.market.num_actions,
+        "initial_balance": cfg.market.initial_balance,
+        "pre_signal_len": cfg.seq.pre_signal_len,
+        "datachannels": cfg.data.datachannels,
+        "position_fraction": cfg.market.position_fraction,
+        "slippage": cfg.market.slippage,
+        "transaction_fee": cfg.market.transaction_fee,
+        "agent_session_len": cfg.seq.agent_session_len,
+        "agent_history_len": cfg.seq.agent_history_len,
+        "input_history_len": cfg.seq.input_history_len,
+        "pricechannels": cfg.data.pricechannels,
+        "volumechannels": cfg.data.volumechannels,
+        "otherchannels": cfg.data.otherchannels,
+        "action_history_len": cfg.seq.action_history_len,
+        "backtest_mode": True
+    }
+    val_env = TradingEnvironment(**env_kwargs)
+
+    # 4. Инициализация Агента
+    agent = D3QN_PER_Agent(
+        state_shape=tuple(cfg.seq.state_shape),
+        action_dim=cfg.market.num_actions,
+        cnn_maps=cfg.model.cnn_maps,
+        cnn_kernels=cfg.model.cnn_kernels,
+        cnn_strides=cfg.model.cnn_strides,
+        dense_val=cfg.model.dense_val,
+        dense_adv=cfg.model.dense_adv,
+        additional_feats=cfg.model.additional_feats,
+        dropout_model=cfg.model.dropout_p,
+        device=device,
+        gamma=cfg.rl.gamma,
+        learning_rate=cfg.rl.lr,
+        batch_size=cfg.rl.batch_size,
+        buffer_size=cfg.per.buffer_size,
+        target_update_freq=cfg.rl.target_update_freq,
+        train_start=cfg.rl.train_start,
+        per_alpha=cfg.per.per_alpha,
+        per_beta_start=cfg.per.per_beta_start,
+        per_beta_frames=cfg.per.per_beta_frames,
+        eps_start=0.0,
+        eps_end=0.0,
+        eps_frames=1,
+        epsilon=0.0,
+        max_gradient_norm=cfg.rl.max_gradient_norm,
+        cnn_dilations=cfg.model.cnn_dilations
+    )
+
+    # 5. Загрузка чекпойнта
+    try:
+        agent.load_model(checkpoint_path, strict=False) # Use strict=False for flexibility
+        logger.info(f"Loaded model from {checkpoint_path}")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}", exc_info=True)
+        sys.exit(1)
+
+    # 6. Валидация
+    metrics = evaluate_agent(val_env, agent, "Validation", cfg, keys=val_keys)
+     
+    # 7. Формирование имени JSON с метриками
+    sortino = metrics.get("Validation_sortino", 0.0)
+    sharpe = metrics.get("Validation_sharpe", 0.0)
+    trades = int(metrics.get("Validation_trades", 0))
+    
+    json_filename = f"checkpoint_ep{episode_num:05d}_sortino{sortino:.3f}_sharpe{sharpe:.3f}_trades{trades}.json"
+    output_path = os.path.join(out_dir, json_filename)
+    
+    # 8. Сохранение результатов
+    with open(output_path, 'w') as f:
+        json.dump({
+            "episode": episode_num,
+            "metrics": metrics,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }, f, indent=2)
+     
+    logger.info(f"Validation results saved to {output_path}")
+    
+    # MODIFIED: Печатаем путь к JSON для train.py
+    print(f"RESULT_JSON: {output_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run validation for a trained model.")
-    parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Path to the config_train.json file from a training run."
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        help="Path to the best.pth or final.pth model file."
-    )
+    parser = argparse.ArgumentParser(description="Validate a trained model.")
+    parser.add_argument("--config", required=True, help="Path to config_train.json")
+    parser.add_argument("--checkpoint", required=True, help="Path to checkpoint.pth")
+    parser.add_argument("--out-dir", required=True, help="Directory to save output metrics JSON")
+    parser.add_argument("--episode", required=True, type=int, help="Current episode number for logging")
+
     args = parser.parse_args()
-    
-    # The arguments are passed as paths relative to the project root where the command is run.
-    run_validation(config_path=args.config, model_path=args.model)
+    validate(args.config, args.checkpoint, args.out_dir, args.episode)
