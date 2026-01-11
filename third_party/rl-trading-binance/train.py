@@ -10,7 +10,6 @@ import datetime as dt
 from functools import partial
 from pathlib import Path
 import subprocess
-import shutil
 # CuBLAS: детерминизм требует рабочего пространства; задаём до импорта torch
 if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -44,19 +43,97 @@ from utils import (
 
 class TopKCheckpointManager:
     """
-    Менеджер для отслеживания в памяти топ-K лучших чекпоинтов.
+    Менеджер для сохранения топ-K лучших чекпоинтов с метаданными. 
     
-    Не выполняет никаких файловых операций. Только хранит и сортирует
-    список кортежей с информацией о чекпоинтах.
+    Автоматически удаляет худшие чекпоинты при превышении лимита top_k.
+    Сохраняет полные метрики в JSON для последующего анализа.
     """
     
-    def __init__(self, top_k: int = 10, metric_key: str = "Validation_sortino", mode: str = "max"):
+    def __init__(self, save_dir: str, top_k: int = 10, metric_key: str = "Validation_sortino", mode: str = "max"):
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
         self.top_k = top_k
         self.metric_key = metric_key
         self.mode = mode
         self.checkpoints = []  # List of (metric_value, episode, filepath, metrics_dict)
         
-        logging.info(f"TopKCheckpointManager initialized: top_k={top_k}, metric={metric_key}, mode={mode}")
+        logging.info(f"TopKCheckpointManager initialized: save_dir={save_dir}, top_k={top_k}, metric={metric_key}, mode={mode})")
+    
+    def save_checkpoint(self, agent, episode: int, metrics: Dict[str, Any]) -> bool:
+        """
+        Сохраняет чекпоинт, если он входит в топ-K по целевой метрике. 
+        
+        Returns:
+            bool: True если чекпоинт сохранён, False если отклонён
+        """
+        
+        metric_value = metrics.get(self.metric_key, None)
+        
+        if metric_value is None:
+            logging.warning(f"Metric '{self.metric_key}' not found in validation metrics. Skipping checkpoint save.")
+            return False
+        
+        try:
+            metric_value = float(metric_value)
+        except (TypeError, ValueError):
+            logging.warning(f"Metric '{self.metric_key}' has non-numeric value: {metric_value}. Skipping.")
+            return False
+        
+        # Создать имя файла с ключевыми метриками
+        sortino = metrics.get("Validation_sortino", 0.0)
+        sharpe = metrics.get("Validation_sharpe", 0.0)
+        trades = metrics.get("Validation_trades", 0)
+        
+        filename = (
+            f"checkpoint_ep{episode:05d}_"
+            f"sortino{sortino:.3f}_"
+            f"sharpe{sharpe:.3f}_"
+            f"trades{trades:.0f}.pth"
+        )
+        filepath = self.save_dir / filename
+        
+        # Сохранить модель
+        try:
+            agent.save_model(str(filepath))
+        except Exception as e:
+            logging.error(f"Failed to save model checkpoint: {e}")
+            return False
+        
+        # Сохранить метаданные отдельно в JSON
+        metadata_path = filepath.with_suffix('.json')
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump({
+                    'episode': episode,
+                    'metrics': metrics,
+                    'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }, f, indent=2, default=_numpy_json_default)
+        except Exception as e:
+            logging.warning(f"Failed to save checkpoint metadata: {e}")
+        
+        # Добавить в список и отсортировать
+        self.checkpoints.append((metric_value, episode, filepath, metrics))
+        self.checkpoints.sort(key=lambda x: x[0], reverse=(self.mode == "max"))
+        
+        # Удалить худшие чекпоинты, если превышен лимит
+        if len(self.checkpoints) > self.top_k:
+            to_remove = self.checkpoints[self.top_k:]
+            for _, _, fpath, _ in to_remove:
+                try:
+                    fpath.unlink(missing_ok=True)
+                    fpath.with_suffix('.json').unlink(missing_ok=True)
+                    logging.debug(f"Removed old checkpoint: {fpath.name}")
+                except Exception as e:
+                    logging.warning(f"Failed to remove checkpoint {fpath}: {e}")
+            
+            self.checkpoints = self.checkpoints[:self.top_k]
+        
+        logging.info(
+            f"[TopK] Saved checkpoint (rank {len([c for c in self.checkpoints if c[0] >= metric_value])}/{len(self.checkpoints)}): "
+            f"{filename} | {self.metric_key}={metric_value:.4f}"
+        )
+        
+        return True
     
     def get_best_checkpoint(self) -> Optional[Path]:
         """Возвращает путь к лучшему чекпоинту"""
@@ -519,44 +596,35 @@ def _numpy_json_default(obj):
         return obj.tolist()
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
-def run_external_validation(cfg_path: str, checkpoint_path: str, out_dir: str, episode_num: int) -> Dict[str, Any]:
+def run_external_validation(cfg_path: str, checkpoint_path: str, output_path: str, episode_num: int) -> Dict[str, Any]:
     """Calls the autonomous validate_model.py script."""
+    # Ensure the script path is correct, assuming it's in the same directory
     script_path = os.path.join(os.path.dirname(__file__), "validate_model.py")
+    
     cmd = [
         sys.executable, script_path,
         "--config", cfg_path,
         "--checkpoint", checkpoint_path,
-        "--out-dir", out_dir,
+        "--out", output_path,
         "--episode", str(episode_num)
     ]
-
     try:
-        # Ensure the script path is correct, assuming it's in the same directory
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, errors='replace')
-        logging.info(f"External validation stdout: {result.stdout}")
-
-        # MODIFIED: validate_model.py теперь возвращает путь к итоговому JSON в stdout
-        # Извлекаем путь из последней строки вывода (или парсим JSON-ответ)
-        # Простейший вариант: скрипт пишет в конце "RESULT_JSON: <path>"
-        for line in result.stdout.strip().split('\n'):
-            if line.startswith("RESULT_JSON:"):
-                json_path = line.split("RESULT_JSON:")[1].strip()
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                return data.get("metrics", {}), json_path
-
-        return {}, None
-
+        # Using capture_output=True to get stdout/stderr
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
+        logging.info(f"External validation stdout:\n{result.stdout}")
+        with open(output_path, 'r') as f:
+            data = json.load(f)
+        return data.get("metrics", {})
     except subprocess.CalledProcessError as e:
         logging.error(f"Validation script failed with exit code {e.returncode}.")
-        logging.error(f"Stderr: {e.stderr}")
-        logging.error(f"Stdout: {e.stdout}")
+        logging.error(f"Stderr:\n{e.stderr}")
+        logging.error(f"Stdout:\n{e.stdout}")
         return {}
     except FileNotFoundError:
-        logging.error(f"Validation script not found at {script_path}")
+        logging.error(f"Validation results file not found at: {output_path}")
         return {}
     except json.JSONDecodeError:
-        logging.error(f"Failed to decode JSON from validation results")
+        logging.error(f"Failed to decode JSON from validation results at: {output_path}")
         return {}
     except Exception as e:
         logging.error(f"An unexpected error occurred while running or reading validation results: {e}", exc_info=True)
@@ -751,6 +819,7 @@ def run_training_session(
     checkpoint_manager = None
     if getattr(cfg.trainlog, "save_top_k", 0) > 0:
         checkpoint_manager = TopKCheckpointManager(
+            save_dir=os.path.join(models_dir, "checkpoints"),
             top_k=cfg.trainlog.save_top_k,
             metric_key=cfg.trainlog.checkpoint_metric,
             mode=cfg.trainlog.save_mode
@@ -803,45 +872,37 @@ def run_training_session(
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
         if val_env and (ep % cfg.trainlog.val_freq == 0):
-            # MODIFIED: Сохраняем постоянный чекпоинт БЕЗ метрик в имени
-            ckpt_dir = os.path.join(models_dir, "checkpoints")
-            os.makedirs(ckpt_dir, exist_ok=True)
-
-            ckpt_filename = f"checkpoint_ep{ep:05d}.pth"
-            ckpt_path = os.path.join(ckpt_dir, ckpt_filename)
+            temp_ckpt_path = os.path.join(models_dir, f"temp_checkpoint_ep{ep}.pth")
+            output_json_path = os.path.join(models_dir, f"temp_metrics_ep{ep}.json")
 
             try:
-                # 1. Сохраняем чекпоинт для валидации (постоянный файл)
-                agent.save_model(ckpt_path)
+                # 1. Сохраняем временный чекпоинт для валидации
+                agent.save_model(temp_ckpt_path)
 
                 # 2. Убеждаемся, что конфиг на месте
                 config_path = os.path.join(models_dir, "config_train.json")
 
-                # 3. Вызываем внешний скрипт валидации (он сам формирует имя JSON с метриками)
-                result = run_external_validation(config_path, ckpt_path, ckpt_dir, ep)
+                # 3. Вызываем внешний скрипт валидации
+                metrics = run_external_validation(config_path, temp_ckpt_path, output_json_path, ep)
 
-                if isinstance(result, tuple):
-                    metrics, json_path = result
-                else:
-                    metrics = result
-                    json_path = None
-
-                if not metrics or not json_path:
+                # Если валидация провалилась, metrics будет пустым словарем
+                if not metrics:
                     logging.warning(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации.")
                     continue
 
-                # 4. Регистрируем в менеджере (файл .pth уже сохранён, JSON создан валидацией)
-                # TopKCheckpointManager теперь не удаляет файлы, только ведёт список
+                # 4. Используем полученные метрики
                 if checkpoint_manager:
-                    # Добавляем запись вручную, так как файл уже на диске
-                    metric_val = metrics.get(cfg.trainlog.checkpoint_metric, -float('inf'))
-                    checkpoint_manager.checkpoints.append((metric_val, ep, Path(ckpt_path), metrics))
-                    checkpoint_manager.checkpoints.sort(key=lambda x: x[0], reverse=checkpoint_manager.mode == 'max')
-                    if len(checkpoint_manager.checkpoints) > checkpoint_manager.top_k:
-                        checkpoint_manager.checkpoints = checkpoint_manager.checkpoints[:checkpoint_manager.top_k]
+                    checkpoint_manager.save_checkpoint(agent, ep, metrics)
 
-            except Exception as e:
-                logging.error(f"Error during validation at episode {ep}: {e}", exc_info=True)
+            finally:
+                # Очищаем временные файлы после использования
+                try:
+                    if os.path.exists(temp_ckpt_path):
+                        os.remove(temp_ckpt_path)
+                    if os.path.exists(output_json_path):
+                        os.remove(output_json_path)
+                except OSError as e:
+                    logging.warning(f"Error cleaning up temp files: {e}")
 
             sel_keys = cfg.trainlog.val_selection_metrics
 
@@ -928,24 +989,6 @@ def run_training_session(
 
     final_path = os.path.join(models_dir, "final.pth")
     agent.save_model(final_path)
-
-    # MODIFIED: Сохраняем best.pth рядом с final.pth
-    # Ищем лучший чекпоинт по лексикографическому порядку из val_selection_metrics
-    if checkpoint_manager and checkpoint_manager.checkpoints:
-        # checkpoints уже отсортированы по checkpoint_metric, но нам нужен лексикографический порядок
-        # Пересортируем по val_selection_metrics
-        sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
-
-        def get_sort_key(item):
-            metrics = item[3]  # item = (metric_val, ep, path, metrics_dict)
-            return tuple(metrics.get(k, -float('inf')) for k in sel_keys)
-
-        sorted_checkpoints = sorted(checkpoint_manager.checkpoints, key=get_sort_key, reverse=True)
-        best_ckpt_path = sorted_checkpoints[0][2]
-        target_best = os.path.join(models_dir, "best.pth")
-        shutil.copy(best_ckpt_path, target_best)
-        logging.info(f"Copied best checkpoint {best_ckpt_path.name} to best.pth")
-
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
     train_env.close()
