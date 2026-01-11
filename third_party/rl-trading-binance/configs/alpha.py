@@ -131,7 +131,7 @@ cfg.db.dsn = "postgresql://postgres:9691@localhost:5432/marketdata"
 cfg.paper.source = "database"
 cfg.paper.leverage = 2.0
 cfg.paper.symbols = "ALL"  # Or list from tickers.txt
-cfg.backtest.data_source = "npz"  # For test/backtest
+cfg.backtest.data_source = "npz_keys"  # For test/backtest
 
 # Random/Logging
 cfg.random_seed = 404
