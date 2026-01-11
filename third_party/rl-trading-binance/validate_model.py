@@ -13,13 +13,10 @@ import datetime as dt
 # Добавляем текущую директорию в путь, чтобы импортировать модули проекта
 sys.path.append(os.getcwd())
 
-from third_party.rl_trading_binance.agent import D3QN_PER_Agent
-from third_party.rl_trading_binance.config import MasterConfig
-from third_party.rl_trading_binance.trading_environment import TradingEnvironment
-from third_party.rl_trading_binance.utils import (
-    load_npz_dataset,
-    create_validation_episodes
-)
+from agent import D3QN_PER_Agent
+from config import MasterConfig
+from trading_environment import TradingEnvironment
+from utils import load_npz_dataset, create_validation_episodes
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
