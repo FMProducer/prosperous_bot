@@ -581,7 +581,8 @@ def run_training_session(
     models_dir: str,
     plots_dir: str,
     session_name: str,
-    cfg_mod: Optional[Any] = None
+    cfg_mod: Optional[Any] = None,
+    py_config_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Runs a complete training and validation session for a given dataset.
@@ -813,12 +814,12 @@ def run_training_session(
             try:
                 # 1. Сохраняем чекпоинт для валидации (постоянный файл)
                 agent.save_model(ckpt_path)
-                 
-                # 2. Убеждаемся, что конфиг на месте
-                config_path = os.path.join(models_dir, "config_train.json")
+
+                # 2. Выбираем конфиг для валидации (.py приоритетнее)
+                val_config_path = py_config_path if py_config_path else os.path.join(models_dir, "config_train.json")
                  
                 # 3. Вызываем внешний скрипт валидации (он сам формирует имя JSON с метриками)
-                result = run_external_validation(config_path, ckpt_path, ckpt_dir, ep)
+                result = run_external_validation(val_config_path, ckpt_path, ckpt_dir, ep)
                  
                 if isinstance(result, tuple):
                     metrics, json_path = result
@@ -971,6 +972,16 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
+    # MODIFIED: Копируем исходный .py конфиг, если он был передан
+    py_config_path = None
+    if len(sys.argv) > 1 and sys.argv[1].endswith('.py') and os.path.exists(sys.argv[1]):
+        src_cfg_path = sys.argv[1]
+        dst_cfg_name = os.path.basename(src_cfg_path)
+        dst_cfg_path = os.path.join(models_dir, dst_cfg_name)
+        shutil.copy(src_cfg_path, dst_cfg_path)
+        py_config_path = dst_cfg_path
+        logging.info(f"Copied python config to {dst_cfg_path}")
+
     with open(os.path.join(models_dir, "config_train.json"), "w") as f:
         json.dump(cfg.model_dump(), f, indent=2, default=str)
 
@@ -1091,7 +1102,8 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
             models_dir=models_dir,
             plots_dir=plots_dir,
             session_name=session_name,
-            cfg_mod=cfg_mod
+            cfg_mod=cfg_mod,
+            py_config_path=py_config_path # Pass the path
         )
 
         bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))
