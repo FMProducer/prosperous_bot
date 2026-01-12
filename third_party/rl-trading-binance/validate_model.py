@@ -242,7 +242,7 @@ def evaluate_agent(
     return metrics
 
 
-def validate(config_path, checkpoint_path, out_dir, episode_num):
+def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     # 1. Загрузка конфигурации
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
@@ -301,6 +301,17 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
         seed=cfg.random_seed
     )
 
+    # Mapping AGENT_MODE to Environment internal filters
+    raw_mode = getattr(args, "agent_mode", None) or getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+    logger.info(f"💠 Validation Agent Mode: {raw_mode}")
+
+    if raw_mode == "SHORT_ONLY":
+        env_filter, env_allowed = "SHORT", ["SHORT"]
+    elif raw_mode == "LONG_ONLY":
+        env_filter, env_allowed = "LONG", ["LONG"]
+    else:
+        env_filter, env_allowed = None, ["LONG", "SHORT"]
+
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
@@ -325,6 +336,8 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
         "render_mode": None,
         "flat_state_size": cfg.seq.flat_state_size,
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
+        "filter_direction": env_filter,
+        "allowed_directions": env_allowed,
     }
     val_env = TradingEnvironment(**env_kwargs)
 
@@ -397,6 +410,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", required=True, help="Path to checkpoint.pth")
     parser.add_argument("--out-dir", required=True, help="Directory to save output metrics JSON")
     parser.add_argument("--episode", required=True, type=int, help="Current episode number for logging")
+    parser.add_argument("--agent-mode", type=str, help="Override agent mode (LONG_ONLY, SHORT_ONLY)")
 
     args = parser.parse_args()
-    validate(args.config, args.checkpoint, args.out_dir, args.episode)
+    validate(args.config, args.checkpoint, args.out_dir, args.episode, args)
