@@ -1201,8 +1201,14 @@ class TradingEnvironment(gym.Env):
                 self.trailing_max_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
-            self._position_entry_step = self.step_idx  # Запомнить шаг входа
-            logging.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
+            self._position_entry_step = self.step_idx
+            info.update({
+                "trade_opened": True,
+                "direction": "LONG",
+                "position_size": volume,
+                "entry_price": real_exec_price,
+                "entry_date": current_dt.strftime('%Y-%m-%d %H:%M'),
+            })
 
         elif action == 2 and self.position == 0: # OPEN SHORT
             real_exec_price = real_price * (1 - self.slippage)
@@ -1231,8 +1237,14 @@ class TradingEnvironment(gym.Env):
                 self.trailing_min_price = real_exec_price
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
-            self._position_entry_step = self.step_idx  # Запомнить шаг входа
-            logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
+            self._position_entry_step = self.step_idx
+            info.update({
+                "trade_opened": True,
+                "direction": "SHORT",
+                "position_size": volume,
+                "entry_price": real_exec_price,
+                "entry_date": current_dt.strftime('%Y-%m-%d %H:%M'),
+            })
 
         # --- Position Closing ---
         elif action == 3 and self.position != 0:
@@ -1340,6 +1352,8 @@ class TradingEnvironment(gym.Env):
             # Note: single_trade_realized_pnl and opening_fee were calculated above
             trade_info = {
                 "position_closed": position_closed,
+                "exit_price": real_exec_price,
+                "current_date": current_dt.strftime('%Y-%m-%d %H:%M'),
                 "trade_realized_pnl": single_trade_realized_pnl,
                 "trade_commission": fee + opening_fee,
                 "total_commission": self.total_commission,
