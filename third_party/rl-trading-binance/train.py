@@ -218,18 +218,20 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         obs_batch, _ = reset_out   # (obs, infos)
     else:
         obs_batch = reset_out      # на случай старого API
+
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
-    ep_reward_per_episode = []
-    win_rates = []
     ep_trades = np.zeros(train_env.num_envs, dtype=int)
     ep_wins = np.zeros(train_env.num_envs, dtype=int)
+
+    ep_reward_per_episode = []
+    win_rates = []
     ep_losses = []
     last_info = {}
     transitions_count = 0
     episode_infos = []
 
-    # FIX: создаем 4 прогресс-бара по ЭПИЗОДАМ, а не по шагам
+    # FIX: создаем N прогресс-баров по ЭПИЗОДАМ
     pbars = [
         tqdm(
             total=0,            # будем увеличивать total динамически
@@ -248,9 +250,14 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         transitions_count += train_env.num_envs  # один переход на каждую среду
 
         for i in range(train_env.num_envs):
+            # --- MANUAL WR TRACKING ---
+            if isinstance(infos[i], dict) and infos[i].get('position_closed'):
+                ep_trades[i] += 1
+                if infos[i].get('correct_prediction'):
+                    ep_wins[i] += 1
+            # --------------------------
+
             # Корректный next_state при done: брать финальное наблюдение из info
-            # В векторизованном режиме всегда используем batched next_obs_b[i]
-            # чтобы гарантировать одинаковую форму состояний в буфере.
             next_state = next_obs_b[i]
             if dones[i] and isinstance(infos[i], dict):
                 next_state = infos[i].get("terminal_observation", infos[i].get("final_observation", next_state))
@@ -258,26 +265,22 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             # Накапливаем награды для каждого env отдельно
             ep_reward[i] += float(rewards[i])
 
-            # Track Win Rate Manually
-            if isinstance(infos[i], dict) and infos[i].get('position_closed'):
-                ep_trades[i] += 1
-                if infos[i].get('correct_prediction'):
-                    ep_wins[i] += 1
-
             # Жёстко приводим и state, и next_state к плоскому float32-вектору.
             state_vec = np.asarray(obs_batch[i], dtype=np.float32).reshape(-1)
             next_state_vec = np.asarray(next_state, dtype=np.float32).reshape(-1)
 
             agent.store_experience(state_vec, actions[i], float(rewards[i]), next_state_vec, bool(dones[i])) # noqa: E501
+
             if bool(dones[i]) and isinstance(infos[i], dict):
                 episode_infos.append(infos[i])
                 ep_reward_per_episode.append(ep_reward[i])
-                wr = infos[i].get("episode_win_rate")
-                if not wr and ep_trades[i] > 0:
-                    wr = ep_wins[i] / ep_trades[i]
-                if wr is None: wr = 0.0
 
-                # считаем завершённый эпизод для этого env
+                # --- WR CALCULATION ---
+                wr = infos[i].get("episode_win_rate", 0.0)
+                if wr == 0.0 and ep_trades[i] > 0:
+                    wr = ep_wins[i] / ep_trades[i]
+
+                # Обновляем pbar всегда при завершении эпизода
                 pbars[i].total += 1
                 pbars[i].update(1)
                 pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
@@ -288,12 +291,12 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                 ep_reward[i] = 0.0
 
         last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
-        # Шаги больше не рисуем: бары будут обновляться только при завершении эпизода.
-        prev_done = done_mask.copy()
+        prev_done = done_mask.copy() # noqa: F841
 
         # Накапливать награды только для тех подсред, которые ещё не были завершены до этого шага
-        obs_batch = next_obs_b # noqa: F841
+        obs_batch = next_obs_b
         done_mask |= dones  # эпизод для каждой под-среды
+
         # В каждом "батч-шаге" получаем по одному переходу на среду
         for _ in range(train_env.num_envs):
             agent.increment_step()
@@ -317,8 +320,7 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-    # Aggregate infos from all sub-environments. A simple approach is to merge them,
-    # or return the info from the first completed environment. Here we just return the last one.
+
     return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info
 
 
