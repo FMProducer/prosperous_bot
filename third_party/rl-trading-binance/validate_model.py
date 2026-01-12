@@ -19,7 +19,7 @@ from trading_environment import TradingEnvironment
 from utils import load_npz_dataset, create_validation_episodes, load_config
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
 
@@ -388,6 +388,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
     
     # MODIFIED: Печатаем путь к JSON для train.py
     print(f"RESULT_JSON: {output_path}")
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":
