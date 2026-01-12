@@ -992,6 +992,9 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     else:
         norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
 
+    # MODIFIED: Copy norm_stats to models_dir for validation self-containment
+    shutil.copy(norm_stats_path, os.path.join(models_dir, "norm_stats.json"))
+
     if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
         logging.info("Walk-Forward Validation ENABLED.")
         all_sequences = []

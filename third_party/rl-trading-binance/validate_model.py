@@ -252,7 +252,16 @@ def validate(config_path, checkpoint_path, out_dir, episode_num):
     val_data_path = cfg.paths.val_data_path
     norm_stats_path = cfg.paths.norm_stats_path
 
-    # 2. Загрузка данных
+    # 2. Load data
+    # MODIFIED: Fallback for norm_stats path
+    if not norm_stats_path or not os.path.exists(norm_stats_path):
+        # Try same dir as config
+        config_dir = os.path.dirname(config_path)
+        alt_path = os.path.join(config_dir, "norm_stats.json")
+        if os.path.exists(alt_path):
+            logger.info(f"Using norm_stats from alternative path: {alt_path}")
+            norm_stats_path = alt_path
+
     if not norm_stats_path or not os.path.exists(norm_stats_path):
         logger.error(f"Norm stats not found: {norm_stats_path}")
         sys.exit(1)
