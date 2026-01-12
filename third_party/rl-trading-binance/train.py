@@ -67,7 +67,8 @@ class TopKCheckpointManager:
             val = -float('inf')
 
         # Add new
-        self.checkpoints.append((val, ep, Path(pth_path), Path(json_path) if json_path else None))
+        # Format: (metric_val, episode, pth_path, metrics_dict, json_path)
+        self.checkpoints.append((val, ep, Path(pth_path), metrics, Path(json_path) if json_path else None))
 
         # Sort
         reverse = (self.mode == 'max')
@@ -78,7 +79,7 @@ class TopKCheckpointManager:
             to_remove = self.checkpoints.pop() # Last one is worst
             # Delete files
             if to_remove[2] and to_remove[2].exists(): to_remove[2].unlink()
-            if to_remove[3] and to_remove[3].exists(): to_remove[3].unlink()
+            if len(to_remove) > 4 and to_remove[4] and to_remove[4].exists(): to_remove[4].unlink()
             logging.info(f"Removed old checkpoint: {to_remove[2].name}")
     
     def get_best_checkpoint(self) -> Optional[Path]:
