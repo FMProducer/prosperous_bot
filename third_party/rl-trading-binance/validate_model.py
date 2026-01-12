@@ -140,6 +140,23 @@ def evaluate_agent(
             )
             ep_reward += float(reward or 0.0)
             total_bars_processed += 1
+
+            # LOGGING: Trade Opened
+            if info.get("trade_opened", False):
+                d_log = "LONG" if info.get("direction") == "LONG" else "SHORT"
+                sz_log = info.get("position_size", 0.0)
+                pr_log = info.get("entry_price", 0.0)
+                dt_log = info.get("entry_date", "N/A")
+                logger.info(f": ({d_log}) OPEN {sz_log} {ticker_name} for {pr_log:.5f} at {dt_log}")
+
+            # LOGGING: Trade Closed
+            if info.get("position_closed", False):
+                reason = info.get("exit_reason", "Unknown")
+                pr_log = info.get("exit_price", 0.0)
+                pnl_log = info.get("trade_realized_pnl", 0.0)
+                dt_log = info.get("current_date", "N/A")
+                logger.info(f": (CLOSE) {reason} {ticker_name} for {pr_log:.5f} at {dt_log} PnL = {pnl_log:.2f}")
+
             if info.get("bankruptcy", False):
                 is_bankrupt = True
             if info.get("position_closed", False):
