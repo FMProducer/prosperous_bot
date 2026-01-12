@@ -222,6 +222,8 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
     ep_reward_per_episode = []
     win_rates = []
+    ep_trades = np.zeros(train_env.num_envs, dtype=int)
+    ep_wins = np.zeros(train_env.num_envs, dtype=int)
     ep_losses = []
     last_info = {}
     transitions_count = 0
@@ -256,6 +258,12 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             # Накапливаем награды для каждого env отдельно
             ep_reward[i] += float(rewards[i])
 
+            # Track Win Rate Manually
+            if isinstance(infos[i], dict) and infos[i].get('position_closed'):
+                ep_trades[i] += 1
+                if infos[i].get('correct_prediction'):
+                    ep_wins[i] += 1
+
             # Жёстко приводим и state, и next_state к плоскому float32-вектору.
             state_vec = np.asarray(obs_batch[i], dtype=np.float32).reshape(-1)
             next_state_vec = np.asarray(next_state, dtype=np.float32).reshape(-1)
@@ -264,14 +272,19 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             if bool(dones[i]) and isinstance(infos[i], dict):
                 episode_infos.append(infos[i])
                 ep_reward_per_episode.append(ep_reward[i])
-                wr = infos[i].get("episode_win_rate", None)
-                if wr is not None:
-                    # считаем завершённый эпизод для этого env
-                    pbars[i].total += 1
-                    pbars[i].update(1)
-                    pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
-                    win_rates.append(float(wr))
-                
+                wr = infos[i].get("episode_win_rate")
+                if not wr and ep_trades[i] > 0:
+                    wr = ep_wins[i] / ep_trades[i]
+                if wr is None: wr = 0.0
+
+                # считаем завершённый эпизод для этого env
+                pbars[i].total += 1
+                pbars[i].update(1)
+                pbars[i].set_postfix_str(f"R={ep_reward[i]:.3f} WR={wr:.2%}")
+                win_rates.append(float(wr))
+
+                ep_trades[i] = 0
+                ep_wins[i] = 0
                 ep_reward[i] = 0.0
 
         last_info = infos[0] if len(infos) > 0 and isinstance(infos[0], dict) else {}
@@ -795,6 +808,7 @@ def run_training_session(
         else:
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward, ep_losses, done = 0.0, [], False
+            ep_trades, ep_wins = 0, 0
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
@@ -802,6 +816,10 @@ def run_training_session(
                 agent.store_experience(obs, action, reward, next_state_to_store, done)
                 loss = agent.learn()
                 if loss: ep_losses.append(loss)
+                if info.get('position_closed'):
+                    ep_trades += 1
+                    if info.get('correct_prediction'):
+                        ep_wins += 1
                 obs = next_obs
                 agent.increment_step()
                 train_steps += 1
@@ -821,6 +839,8 @@ def run_training_session(
         history["epsilons"].append(eps_current)
 
         current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
+        if current_win_rate == 0.0 and num_envs == 1 and ep_trades > 0:
+            current_win_rate = ep_wins / ep_trades
         episode_win_rate_deque.append(current_win_rate)
         history["win_rates"].append(current_win_rate)
         history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
