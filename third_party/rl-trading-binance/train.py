@@ -55,6 +55,7 @@ class TopKCheckpointManager:
         self.metric_key = metric_key
         self.mode = mode
         self.checkpoints = []  # List of (metric_value, episode, filepath, metrics_dict)
+        logging.info(f"TopKCheckpointManager initialized: top_k={top_k}, metric={metric_key}, mode={mode}")
 
     def register_checkpoint(self, ep, metrics, pth_path, json_path=None):
         """Registers a checkpoint and deletes old ones if exceding top_k."""
@@ -79,8 +80,6 @@ class TopKCheckpointManager:
             if to_remove[2] and to_remove[2].exists(): to_remove[2].unlink()
             if to_remove[3] and to_remove[3].exists(): to_remove[3].unlink()
             logging.info(f"Removed old checkpoint: {to_remove[2].name}")
-        
-        logging.info(f"TopKCheckpointManager initialized: top_k={top_k}, metric={metric_key}, mode={mode}")
     
     def get_best_checkpoint(self) -> Optional[Path]:
         """Возвращает путь к лучшему чекпоинту"""
