@@ -558,15 +558,18 @@ def _numpy_json_default(obj):
         return obj.tolist()
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
-def run_external_validation(cfg_path: str, checkpoint_path: str, out_dir: str, episode_num: int) -> Dict[str, Any]:
+def run_external_validation(cfg: MasterConfig, cfg_path: str, checkpoint_path: str, out_dir: str, episode_num: int) -> Dict[str, Any]:
     """Calls the autonomous validate_model.py script."""
     script_path = os.path.join(os.path.dirname(__file__), "validate_model.py")
+    agent_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+
     cmd = [
         sys.executable, script_path,
         "--config", cfg_path,
         "--checkpoint", checkpoint_path,
         "--out-dir", out_dir,
-        "--episode", str(episode_num)
+        "--episode", str(episode_num),
+        "--agent-mode", agent_mode
     ]
      
     try:
@@ -865,7 +868,7 @@ def run_training_session(
                 val_config_path = py_config_path if py_config_path else os.path.join(models_dir, "config_train.json")
                  
                 # 3. Вызываем внешний скрипт валидации (он сам формирует имя JSON с метриками)
-                result = run_external_validation(val_config_path, ckpt_path, ckpt_dir, ep)
+                result = run_external_validation(cfg, val_config_path, ckpt_path, ckpt_dir, ep)
                  
                 if isinstance(result, tuple):
                     metrics, json_path = result
