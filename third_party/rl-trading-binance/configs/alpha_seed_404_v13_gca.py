@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-# AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "LONG_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_v13"
@@ -24,7 +24,7 @@ else:
     cfg.paths.config_name = f"alpha_seed_404_v13_{AGENT_MODE}"
 
 
-print(f"🚀 CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
+print(f"CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
 cfg.paths.model_dir = f"output/{cfg.paths.config_name}/saved_models"
 cfg.paths.plot_dir = f"output/{cfg.paths.config_name}/plots"

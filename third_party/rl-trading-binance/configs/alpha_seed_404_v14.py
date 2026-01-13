@@ -19,13 +19,12 @@ AGENT_MODE = "LONG_ONLY"
 # AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
-    cfg.paths.config_name = "alpha_seed_404_v14"
+    cfg.paths.config_name = "alpha_seed_404_v13"
 else:
-    cfg.paths.config_name = f"alpha_seed_404_v14_{AGENT_MODE}"
+    cfg.paths.config_name = f"alpha_seed_404_v13_{AGENT_MODE}"
 
 
-# MODIFIED: Removed emoji to prevent UnicodeEncodeError on Windows consoles
-print(f"[CONFIG] CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
+print(f"CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
 
 cfg.paths.model_dir = f"output/{cfg.paths.config_name}/saved_models"
 cfg.paths.plot_dir = f"output/{cfg.paths.config_name}/plots"
@@ -155,22 +154,22 @@ cfg.trainlog.save_mode = "max"  # Максимизировать метрику
 # --- Shaped Rewards & Penalties ---
 
 # --- Bonuses ---
-cfg.market.new_equity_peak_reward = 10.0   # Награда за достижение нового максимума эквити
+cfg.market.new_equity_peak_reward = 0.0   # Награда за достижение нового максимума эквити
 cfg.market.perfect_entry_reward = 0.0   # Награда за прибыльную сделку, которая не уходила в минус
 cfg.market.risk_reward_ratio_reward = 0.0   # Награда за сделку с высоким соотношением риск/прибыль
 cfg.market.good_exit_bonus = 0.0   # Награда за хороший выход (закрытие сделки с >=80% от пиковой прибыли)
 cfg.market.fast_exit_bonus = 0.0   # Награда за быстрый выход (< 20 шагов)
 # --- Penalties ---
-cfg.market.bankruptcy_penalty = 0.0   # Штраф за банкротство
+cfg.market.bankruptcy_penalty = 10.0   # Штраф за банкротство
 cfg.market.bankruptcy_threshold = 0.0
-cfg.market.bankruptcy_slippage_penalty = 0.0   # Штрафное проскальзывание при принудительной ликвидации
-cfg.market.max_drawdown_threshold = -0.99   # Штраф за превышение максимальной просадки (MaxDD)
+cfg.market.bankruptcy_slippage_penalty = 0.05   # Штрафное проскальзывание при принудительной ликвидации
+cfg.market.max_drawdown_threshold = -0.10   # Штраф за превышение максимальной просадки (MaxDD)
 cfg.market.max_drawdown_penalty_type = "proportional"
-cfg.market.max_drawdown_penalty = 0.0
+cfg.market.max_drawdown_penalty = 1.0
 cfg.market.continuous_pain_penalty_ratio = 0.0   # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.inaction_penalty_ratio = 0.0   # Штраф за бездействие (когда нет открытых позиций)
-cfg.market.time_sl_penalty_ratio = 0.0   # Штраф за Time SL
-cfg.market.low_balance_penalty = 0.0   # Штраф за попытку торговли с низким балансом
+cfg.market.inaction_penalty_ratio = 0.001   # Штраф за бездействие (когда нет открытых позиций)
+cfg.market.time_sl_penalty_ratio = 0.01   # Штраф за Time SL
+cfg.market.low_balance_penalty = 1.0   # Штраф за попытку торговли с низким балансом
 cfg.market.holding_penalty_multiplier = 0.0   # Множитель для прогрессивного штрафа за удержание убыточной позиции
 cfg.market.greed_penalty_multiplier = 0.0   # "Штраф за жадность" (незафиксированная прибыль)
 cfg.market.premature_profit_exit_penalty = 0.0   # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
@@ -180,7 +179,7 @@ cfg.market.profit_holding_bonus = 0.0    # Легаси параметр, зам
 # --- Thresholds for Shaped Rewards ---
 cfg.market.risk_reward_ratio_threshold = 0.0   # Порог для соотношения риск/прибыль (3:1)
 cfg.market.profit_exit_threshold = 0   # Порог времени удержания для прибыльных позиций (минимум для выхода без штрафа) bars
-cfg.market.greed_penalty_threshold = 0.0   # Порог отката прибыли для штрафа за жадность, разрешаем откат на 60% (удерживаем 40%)
+cfg.market.greed_penalty_threshold = 0.4   # Порог отката прибыли для штрафа за жадность, разрешаем откат на 60% (удерживаем 40%)
 cfg.market.exit_quality_threshold = 0.8   # Порог качества выхода для бонуса (0.80 = 80% от максимальной прибыли)
 cfg.market.loss_exit_threshold = 70   # Порог времени удержания для убыточных позиций (максимум для выхода без штрафа) bars
 cfg.market.holding_penalty_threshold = 70   # Порог времени удержания для начала прогрессивного штрафа (шагов)
@@ -292,8 +291,8 @@ except NameError:
 # --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
 # Эти пути строятся динамически для обеспечения переносимости.
 # Замените имена папок с временными метками на актуальные.
-long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v14_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
-short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v14_SHORT_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
+long_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
+short_model_dir = BASE_DIR / "output" / "alpha_seed_404_v13_SHORT_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
 single_model_dir = BASE_DIR / "output" / "alpha_seed_404" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
 
 # Для валидации одиночного агента (раскомментируйте, если нужно)

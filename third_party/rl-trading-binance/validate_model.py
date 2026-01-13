@@ -141,22 +141,6 @@ def evaluate_agent(
             ep_reward += float(reward or 0.0)
             total_bars_processed += 1
 
-            # LOGGING: Trade Opened
-            if info.get("trade_opened", False):
-                d_log = "LONG" if info.get("direction") == "LONG" else "SHORT"
-                sz_log = info.get("position_size", 0.0)
-                pr_log = info.get("entry_price", 0.0)
-                dt_log = info.get("entry_date", "N/A")
-                logger.info(f": ({d_log}) OPEN {sz_log} {ticker_name} for {pr_log:.5f} at {dt_log}")
-
-            # LOGGING: Trade Closed
-            if info.get("position_closed", False):
-                reason = info.get("exit_reason", "Unknown")
-                pr_log = info.get("exit_price", 0.0)
-                pnl_log = info.get("trade_realized_pnl", 0.0)
-                dt_log = info.get("current_date", "N/A")
-                logger.info(f": (CLOSE) {reason} {ticker_name} for {pr_log:.5f} at {dt_log} PnL = {pnl_log:.2f}")
-
             if info.get("bankruptcy", False):
                 is_bankrupt = True
             if info.get("position_closed", False):
@@ -267,21 +251,17 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     os.makedirs(out_dir, exist_ok=True)
      
     val_data_path = cfg.paths.val_data_path
-    norm_stats_path = cfg.paths.norm_stats_path
 
     # 2. Load data
-    # MODIFIED: Fallback for norm_stats path
-    if not norm_stats_path or not os.path.exists(norm_stats_path):
-        # Try same dir as config
-        config_dir = os.path.dirname(config_path)
-        alt_path = os.path.join(config_dir, "norm_stats.json")
-        if os.path.exists(alt_path):
-            logger.info(f"Using norm_stats from alternative path: {alt_path}")
-            norm_stats_path = alt_path
+    # STRICTLY load norm_stats from the directory containing the checkpoint
+    model_dir = os.path.dirname(checkpoint_path)
+    norm_stats_path = os.path.join(model_dir, "norm_stats.json")
 
-    if not norm_stats_path or not os.path.exists(norm_stats_path):
-        logger.error(f"Norm stats not found: {norm_stats_path}")
+    if not os.path.exists(norm_stats_path):
+        logger.error(f"Norm stats not found in model directory: {norm_stats_path}")
         sys.exit(1)
+
+    logger.info(f"Using norm_stats from model directory: {norm_stats_path}")
 
     with open(norm_stats_path, 'r') as f:
         norm_stats = json.load(f)
@@ -302,8 +282,18 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     )
 
     # Mapping AGENT_MODE to Environment internal filters
-    raw_mode = getattr(args, "agent_mode", None) or getattr(cfg, "AGENT_MODE", "UNIVERSAL")
-    logger.info(f"💠 Validation Agent Mode: {raw_mode}")
+    raw_mode = getattr(args, "agent_mode", None)
+    if not raw_mode:
+        # Infer from allowed_directions if not provided in args
+        allowed = getattr(cfg.market, "allowed_directions", [])
+        if allowed == ['LONG']:
+            raw_mode = "LONG_ONLY"
+        elif allowed == ['SHORT']:
+            raw_mode = "SHORT_ONLY"
+        else:
+            raw_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+
+    logger.info(f"Validation Agent Mode: {raw_mode}")
 
     if raw_mode == "SHORT_ONLY":
         env_filter, env_allowed = "SHORT", ["SHORT"]
