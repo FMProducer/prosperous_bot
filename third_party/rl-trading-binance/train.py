@@ -86,7 +86,7 @@ class TopKCheckpointManager:
         """Возвращает путь к лучшему чекпоинту"""
         return self.checkpoints[0][2] if self.checkpoints else None
 
-def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -> dict:
+def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: Optional[str] = None) -> dict:
     """
     Вычисляет mean/std для каждого актива (тикера) в файле NPZ.
     Берет случайную выборку `num_samples_per_asset` для каждого тикера для ускорения.
@@ -140,8 +140,9 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: str) -
     d.close()
     
     # Сохраняем в файл
-    Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
-    logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
+    if norm_stats_path:
+        Path(norm_stats_path).write_text(json.dumps(all_stats, indent=2))
+        logging.info(f"Сохранены статистики для {len(all_stats)} активов в {norm_stats_path}")
     return all_stats
 
 def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, allowed_assets: Optional[List[str]] = None) -> tuple[list, list]:
@@ -1033,10 +1034,12 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
         with open(norm_stats_path, 'r') as f:
             norm_stats = json.load(f)
     else:
-        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path)
+        # Don't save to root (norm_stats_path=None) to avoid duplication
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path=None)
 
-    # MODIFIED: Copy norm_stats to models_dir for validation self-containment
-    shutil.copy(norm_stats_path, os.path.join(models_dir, "norm_stats.json"))
+    # MODIFIED: Save norm_stats to models_dir for validation self-containment (always)
+    with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:
+        json.dump(norm_stats, f, indent=2)
 
     if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
         logging.info("Walk-Forward Validation ENABLED.")
