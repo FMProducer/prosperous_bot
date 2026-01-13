@@ -175,9 +175,47 @@ def evaluate_agent(
     win_count = total_correct
     loss_count = total_trades - total_correct
     wr_ratio = total_correct / max(1, total_trades) if total_trades > 0 else 0.0
-
-    net_pnl = sum(trade_pnls)
     initial_balance = float(getattr(cfg.market, "initial_balance", 10000.0))
+
+    if all_trades_info:
+        gross_pnl = sum(t.get('trade_realized_pnl', 0.0) + t.get('trade_commission', 0.0) for t in all_trades_info)
+        net_pnl = sum(t.get('trade_realized_pnl', 0.0) for t in all_trades_info)
+        avg_pnl_per_trade = net_pnl / len(all_trades_info) if all_trades_info else 0.0
+        
+        trade_pnls_all = [t.get('trade_realized_pnl', 0.0) for t in all_trades_info]
+        best_trade = max(trade_pnls_all) if trade_pnls_all else 0.0
+        worst_trade = min(trade_pnls_all) if trade_pnls_all else 0.0
+        
+        avg_holding_time = np.mean(holding_times) if holding_times else 0.0
+        max_holding_time = max(holding_times) if holding_times else 0.0
+        min_holding_time = min(holding_times) if holding_times else 0.0
+        
+        bars_per_day = 1440
+        trading_time_days = total_bars_processed / bars_per_day if bars_per_day > 0 else 0.0
+        
+        if trade_pnls:
+            avg_win_size = np.mean([p for p in trade_pnls if p > 0]) if any(p > 0 for p in trade_pnls) else 0.0
+            avg_loss_size = np.mean([p for p in trade_pnls if p < 0]) if any(p < 0 for p in trade_pnls) else 0.0
+            win_loss_ratio = abs(avg_win_size / avg_loss_size) if avg_loss_size < -1e-6 else float('inf')
+            expectancy = (wr_ratio * avg_win_size) - ((1 - wr_ratio) * abs(avg_loss_size))
+        else:
+            avg_win_size = 0.0
+            avg_loss_size = 0.0
+            win_loss_ratio = 0.0
+            expectancy = 0.0
+            
+        commission_pct = (total_commission / abs(gross_pnl)) * 100 if abs(gross_pnl) > 1e-6 else 0.0
+        roi_percent = (net_pnl / initial_balance) * 100 if initial_balance > 0 else 0.0
+        roi_annualized = roi_percent * (365.0 / trading_time_days) if trading_time_days > 0 else 0.0
+    else:
+        gross_pnl = net_pnl = avg_pnl_per_trade = 0.0
+        best_trade = worst_trade = 0.0
+        avg_holding_time = max_holding_time = min_holding_time = 0.0
+        trading_time_days = 0.0
+        avg_win_size = avg_loss_size = win_loss_ratio = expectancy = 0.0
+        commission_pct = roi_percent = roi_annualized = 0.0
+
+    pnl_per_day = net_pnl / trading_time_days if trading_time_days > 0 else 0.0
 
     if trade_pnls:
         equity = float(initial_balance)
@@ -210,6 +248,37 @@ def evaluate_agent(
     profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
 
     L = split_label
+    
+    logger.info(
+        f"[{L}] Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, "
+        f"Win: {win_count}, Loss: {loss_count}) | WinRate: {wr_ratio*100:.2f}% | PF: {profit_factor:.4f}"
+    )
+    logger.info(
+        f"[{L}] Gross PnL: {gross_pnl:.2f} | Net PnL: {net_pnl:.2f} | "
+        f"Commission: {total_commission:.2f} | Avg/Trade: {avg_pnl_per_trade:.2f}"
+    )
+    logger.info(
+        f"[{L}] Best Trade: {best_trade:+.2f} | Worst Trade: {worst_trade:+.2f} | "
+        f"MaxDD: {abs(max_dd)*100:.2f}% | Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f}"
+    )
+    logger.info(
+        f"[{L}] Avg Hold: {avg_holding_time:.2f} bars | "
+        f"Min Hold: {min_holding_time} bars | Max Hold: {max_holding_time} bars"
+    )
+    logger.info(f"[{L}] Duration: {total_duration:.2f}s | Bars: {total_bars_processed} | "
+                 f"Trading Days: {trading_time_days:.1f}")
+    logger.info(f"[{L}] PnL/Day: {pnl_per_day:.2f} USDT | "
+                 f"ROI: {roi_percent:.2f}% | Annualized ROI: {roi_annualized:.1f}%")
+    logger.info(f"[{L}] Commission: {commission_pct:.1f}% of gross | "
+                 f"Avg Win: {avg_win_size:.2f} | Avg Loss: {avg_loss_size:.2f} | "
+                 f"W/L Ratio: {win_loss_ratio:.2f}")
+    logger.info(f"[{L}] Expectancy/Trade: {expectancy:.2f} USDT")
+    
+    if exit_counts:
+        logger.info(f"[{L}] Exit reasons: {dict(sorted(exit_counts.items(), key=lambda x:(-x[1], x[0])))}")
+    if total_trades:
+        logger.info(f"[{L}] TSL hits: {tsl_hits} ({100.0*tsl_hits/max(1,total_trades):.2f}%)")
+
     metrics: Dict[str, Any] = {
         f"{L}_sortino": float(np.clip(sortino, -10.0, 10.0)),
         f"{L}_sharpe": float(np.clip(sharpe, -10.0, 10.0)),
@@ -218,10 +287,32 @@ def evaluate_agent(
         f"{L}_trades": int(total_trades),
         f"{L}_profit_factor": float(profit_factor),
         f"{L}_max_drawdown": float(max_dd),
-        # Add other metrics as needed
+        f"{L}_gross_pnl": float(gross_pnl),
+        f"{L}_total_commission": float(total_commission),
+        f"{L}_avg_pnl_per_trade": float(avg_pnl_per_trade),
+        f"{L}_pnl_per_day": float(pnl_per_day),
+        f"{L}_best_trade": float(best_trade),
+        f"{L}_worst_trade": float(worst_trade),
+        f"{L}_long_trades": int(long_trades),
+        f"{L}_short_trades": int(short_trades),
+        f"{L}_win_trades": int(win_count),
+        f"{L}_loss_trades": int(loss_count),
+        f"{L}_avg_holding_time": float(avg_holding_time),
+        f"{L}_max_holding_time": float(max_holding_time),
+        f"{L}_min_holding_time": float(min_holding_time),
+        f"{L}_total_duration_seconds": float(total_duration),
+        f"{L}_bars_processed": int(total_bars_processed),
+        f"{L}_trading_time_days": float(trading_time_days),
+        f"{L}_roi_percent": float(roi_percent),
+        f"{L}_roi_annualized": float(roi_annualized),
+        f"{L}_commission_percent": float(commission_pct),
+        f"{L}_avg_win_size": float(avg_win_size),
+        f"{L}_avg_loss_size": float(avg_loss_size),
+        f"{L}_win_loss_ratio": float(win_loss_ratio),
+        f"{L}_expectancy": float(expectancy),
+        f"{L}_tsl_hits": int(tsl_hits),
+        f"{L}_exit_reasons": {k: int(v) for k, v in exit_counts.items()},
     }
-
-    logger.info(f"[{L}] Validation Complete. Trades: {metrics[f'{L}_trades']}, Net PnL: {metrics[f'{L}_net_pnl']:.2f}, Sortino: {metrics[f'{L}_sortino']:.3f}")
 
     return metrics
 
