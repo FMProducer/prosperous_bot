@@ -854,8 +854,8 @@ def run_training_session(
 
         if val_env and (ep % cfg.trainlog.val_freq == 0):
             # MODIFIED: Сохраняем постоянный чекпоинт БЕЗ метрик в имени
-            ckpt_dir = os.path.join(models_dir, "checkpoints")
-            os.makedirs(ckpt_dir, exist_ok=True)
+            # Save directly to models_dir so validate_model.py finds norm_stats.json in the same dir
+            ckpt_dir = models_dir
             
             ckpt_filename = f"checkpoint_ep{ep:05d}.pth"
             ckpt_path = os.path.join(ckpt_dir, ckpt_filename)
