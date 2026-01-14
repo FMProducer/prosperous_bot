@@ -375,26 +375,10 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         seed=cfg.random_seed
     )
 
-    # Mapping AGENT_MODE to Environment internal filters
-    raw_mode = getattr(args, "agent_mode", None)
-    if not raw_mode:
-        # Infer from allowed_directions if not provided in args
-        allowed = getattr(cfg.market, "allowed_directions", [])
-        if allowed == ['LONG']:
-            raw_mode = "LONG_ONLY"
-        elif allowed == ['SHORT']:
-            raw_mode = "SHORT_ONLY"
-        else:
-            raw_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
-
-    logger.info(f"Validation Agent Mode: {raw_mode}")
-
-    if raw_mode == "SHORT_ONLY":
-        env_filter, env_allowed = "SHORT", ["SHORT"]
-    elif raw_mode == "LONG_ONLY":
-        env_filter, env_allowed = None, ["LONG"]
-    else:
-        env_filter, env_allowed = None, ["LONG", "SHORT"]
+    # Read direction settings directly from config (same as train.py)
+    env_filter = getattr(cfg.market, "filter_direction", None)
+    env_allowed = getattr(cfg.market, "allowed_directions", None)
+    logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}")
 
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
     if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
