@@ -136,7 +136,9 @@ def evaluate_agent(
                 stop_loss=None,
                 take_profit=None,
                 trailing_stop=getattr(cfg.backtest, "trailing_stop", None),
+                trailing_stop_min=getattr(cfg.backtest, "trailing_stop_min", None),
                 fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
+                delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
             ep_reward += float(reward or 0.0)
             total_bars_processed += 1
@@ -419,6 +421,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "inaction_penalty_ratio": cfg.market.inaction_penalty_ratio,
         "filter_direction": env_filter,
         "allowed_directions": env_allowed,
+        "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
     }
     val_env = TradingEnvironment(**env_kwargs)
 
