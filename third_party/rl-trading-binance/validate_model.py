@@ -324,13 +324,14 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
-         
+    
+    cfg_mod = None
     # MODIFIED: Support for .py config loading
     if config_path.endswith('.py'):
         # Handle both single return value and tuple return value from load_config
-        result = load_config(config_path)
+        result = load_config(config_path, return_module=True)
         if isinstance(result, tuple):
-            cfg = result[0]
+            cfg, cfg_mod = result
         else:
             cfg = result
         logger.info(f"Loaded configuration from python file: {config_path}")
@@ -391,9 +392,14 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     if raw_mode == "SHORT_ONLY":
         env_filter, env_allowed = "SHORT", ["SHORT"]
     elif raw_mode == "LONG_ONLY":
-        env_filter, env_allowed = "LONG", ["LONG"]
+        env_filter, env_allowed = None, ["LONG"]
     else:
         env_filter, env_allowed = None, ["LONG", "SHORT"]
+
+    max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
+    if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
+        max_trades = cfg_mod.MAX_TRADES_PER_EPISODE
+        logger.info(f"Override max_trades_per_episode from config module: {max_trades}")
 
     env_kwargs = {
         "sequences": val_seqs,
@@ -422,6 +428,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "filter_direction": env_filter,
         "allowed_directions": env_allowed,
         "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
+        "max_trades_per_episode": max_trades,
     }
     val_env = TradingEnvironment(**env_kwargs)
 
