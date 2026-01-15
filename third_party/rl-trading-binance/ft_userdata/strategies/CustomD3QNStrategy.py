@@ -171,29 +171,44 @@ class CustomD3QNStrategy(IStrategy):
         return self.feature_engineering(dataframe)
 
     def get_model_input(self, dataframe: DataFrame, pair: str):
+        # 1. Данные (10 каналов, 90 свечей)
         df_slice = dataframe.iloc[-90:].copy()
         
-        # Каналы (10 шт)
         channel_data = [
             df_slice['open'].values, df_slice['high'].values, df_slice['low'].values, df_slice['close'].values, df_slice['volume'].values,
             df_slice['quote_volume'].values, df_slice['num_trades'].values, df_slice['taker_base'].values, df_slice['taker_quote'].values, df_slice['vwap'].values
         ]
         feats = np.stack(channel_data) # (10, 90)
         
-        # Norm Stats
+        # 2. Нормализация
         symbol = pair.split('/')[0] + pair.split('/')[1].split(':')[0] 
         if symbol in self.norm_stats:
             stats = self.norm_stats[symbol]
-            # Учитываем, что в JSON может быть 'mean' или 'means' (вы проверяли это в validate_model.py)
             means = np.array(stats.get('mean', stats.get('means'))).reshape(-1, 1)
             stds = np.array(stats.get('std', stats.get('stds'))).reshape(-1, 1)
             feats = (feats - means) / (stds + 1e-8)
         else:
             feats = (feats - np.mean(feats, axis=1, keepdims=True)) / (np.std(feats, axis=1, keepdims=True) + 1e-8)
 
-        tensor = torch.FloatTensor(feats).unsqueeze(-1).unsqueeze(0).to(self.device)
-        add_feats = torch.zeros((1, 4)).to(self.device)
-        return tensor, add_feats
+        # 3. ПОДГОТОВКА ДЛЯ model.py (Flatten + Concat)
+        # Модель ждет (Batch, 904).
+        # Сначала плющим историю: (10, 90) -> (900,)
+        # Важно: model.py делает view(batch, 10, 90). Это row-major.
+        # np.flatten() по умолчанию тоже row-major (C-style). Всё совпадает.
+        flat_feats = feats.flatten() # (900,)
+        
+        # Доп фичи (4 шт) - Заглушка (0,0,0,0) или реальные данные?
+        # В model.py они идут в extra_part.
+        # Пока заглушка.
+        add_feats = np.zeros(4, dtype=np.float32)
+        
+        # Склеиваем ВМЕСТЕ: [900] + [4] = [904]
+        combined = np.concatenate([flat_feats, add_feats])
+        
+        # Превращаем в тензор (Batch, 904)
+        input_tensor = torch.FloatTensor(combined).unsqueeze(0).to(self.device)
+        
+        return input_tensor
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         if len(dataframe) < 90: return dataframe
@@ -202,11 +217,17 @@ class CustomD3QNStrategy(IStrategy):
         if dataframe.iloc[-1]['volatility_90m'] < 0.015:
             return dataframe
 
-        state, add_feats = self.get_model_input(dataframe, metadata['pair'])
+        # Получаем ОДИН тензор (1, 904)
+        state_tensor = self.get_model_input(dataframe, metadata['pair'])
         
         with torch.no_grad():
-            act_long = self.long_agent.policy_net(state, add_feats).argmax(dim=1).item()
-            act_short = self.short_agent.policy_net(state, add_feats).argmax(dim=1).item()
+            # Передаем ТОЛЬКО state_tensor (без второго аргумента)
+            # D3QN_PER_Agent.policy_net -> DuelingQNetwork.forward(state)
+            q_long = self.long_agent.policy_net(state_tensor)
+            act_long = q_long.argmax(dim=1).item()
+            
+            q_short = self.short_agent.policy_net(state_tensor)
+            act_short = q_short.argmax(dim=1).item()
 
         if act_long == 1: dataframe.loc[last_idx, 'enter_long'] = 1
         if act_short == 2: dataframe.loc[last_idx, 'enter_short'] = 1
