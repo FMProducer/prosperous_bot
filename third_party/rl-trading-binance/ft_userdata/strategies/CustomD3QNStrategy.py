@@ -7,6 +7,11 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 import torch
+try:
+    from freqtrade.persistence import Trade  # type: ignore
+except ImportError:
+    Trade = None
+from datetime import datetime
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
 strategy_file = Path(__file__).resolve()
@@ -17,7 +22,7 @@ if str(project_root) not in sys.path:
 
 # Freqtrade imports
 try:
-    from freqtrade.strategy import IStrategy
+    from freqtrade.strategy import IStrategy  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy: pass
@@ -249,6 +254,34 @@ class CustomD3QNStrategy(IStrategy):
         input_tensor = torch.FloatTensor(combined).unsqueeze(0).to(self.device)
         
         return input_tensor
+
+    def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
+                            time_in_force: str, current_time: datetime, entry_tag: str,
+                            side: str, **kwargs) -> bool:
+        
+        # Получаем список всех активных сделок
+        trades = Trade.get_trades([Trade.is_open.is_(True)]).all()
+        
+        # Считаем текущее количество лонгов и шортов
+        # is_short=True -> Short, is_short=False -> Long
+        current_shorts = sum(1 for t in trades if t.is_short)
+        current_longs = sum(1 for t in trades if not t.is_short)
+        
+        # Лимиты
+        MAX_LONGS = 5
+        MAX_SHORTS = 5
+
+        # Логика отказа
+        if side == "long":
+            if current_longs >= MAX_LONGS:
+                logger.info(f"🚫 LONG blocked: {current_longs}/{MAX_LONGS} limit reached.")
+                return False
+        elif side == "short":
+            if current_shorts >= MAX_SHORTS:
+                logger.info(f"🚫 SHORT blocked: {current_shorts}/{MAX_SHORTS} limit reached.")
+                return False
+                 
+        return True
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         if len(dataframe) < 90: return dataframe
