@@ -10,7 +10,7 @@ import torch
 try:
     from freqtrade.persistence import Trade  # type: ignore
 except ImportError:
-    Trade = None
+    class Trade: pass
 from datetime import datetime
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
@@ -44,10 +44,9 @@ class CustomD3QNStrategy(IStrategy):
     can_long = True
     can_short = True
     minimal_roi = {"0": 100}
-    stoploss = -0.99
-    trailing_stop = True
-    trailing_stop_positive = 0.005
-    trailing_stop_positive_offset = 0.01
+    stoploss = -0.99        # Заглушка, работает custom_stoploss
+    trailing_stop = False   # Встроенный выключаем
+    use_custom_stoploss = True # Явно разрешаем (хотя часто автодетект работает)
 
     # --- FreqUI PLOT CONFIG ---
     plot_config = {
@@ -200,6 +199,52 @@ class CustomD3QNStrategy(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return self.feature_engineering(dataframe)
+
+    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
+                        current_rate: float, current_profit: float, **kwargs) -> float:
+        """
+        TSL с гистерезисом.
+        Параметры из RL:
+          dist = 0.07519 (7.5%)
+          min_profit = 0.00082 (0.08%)
+          hysteresis = 0.00152 (0.15%)
+        """
+        dist = 0.07519862504113693
+        min_activation = 0.0008225518697224519
+        hysteresis = 0.0015218098435784326
+        
+        # 1. Рассчитываем "Идеальный" стоп-лосс от текущей цены
+        # Для лонга: current_rate * (1 - dist)
+        # Для шорта: current_rate * (1 + dist)
+        # Freqtrade сам поймет направление, если мы вернем -dist (относительный %)
+        # НО! Нам нужно сравнить с ТЕКУЩИМ стопом trade.stop_loss.
+        
+        # Если прибыль меньше минимума активации -> держим начальный стоп (или -dist от входа)
+        # Но так как stoploss = -0.99, нам нужно СРАЗУ задать первичный стоп.
+        if current_profit < min_activation:
+            # Если стоп еще далеко (-0.99), ставим первичный стоп на dist
+            if trade.stop_loss is None or abs(trade.stop_loss - trade.open_rate) / trade.open_rate > 0.5:
+                 return -dist
+            # Иначе не трогаем
+            return 1
+            
+        # 2. Логика Гистерезиса
+        # Рассчитываем желаемую цену стопа
+        if trade.is_short:
+            desired_stop_price = current_rate * (1 + dist)
+            # Для шорта мы хотим уменьшать стоп (двигать вниз).
+            # Если новый стоп НИЖЕ текущего на величину гистерезиса -> обновляем.
+            if desired_stop_price < (trade.stop_loss * (1 - hysteresis)):
+                return -dist # Обновить до текущего уровня (API сам пересчитает от current_rate)
+        else:
+            desired_stop_price = current_rate * (1 - dist)
+            # Для лонга мы хотим поднимать стоп.
+            # Если новый стоп ВЫШЕ текущего на величину гистерезиса -> обновляем.
+            if desired_stop_price > (trade.stop_loss * (1 + hysteresis)):
+                return -dist
+                
+        # Иначе оставляем старый
+        return 1
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str):
         # 1. Данные (10 каналов, 90 свечей)
