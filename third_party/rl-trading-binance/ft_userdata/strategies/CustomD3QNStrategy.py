@@ -206,6 +206,13 @@ class CustomD3QNStrategy(IStrategy):
         ]
         feats = np.stack(channel_data) # (10, 90)
         
+        # === ВАЖНО: MIRROR WORLD ИНВЕРСИЯ ===
+        if side == "SHORT":
+            # TradingEnvironment делает: self.sequences = [-1.0 * seq for seq in sequences]
+            # Значит, мы тоже должны умножить ВСЕ фичи на -1
+            feats = feats * -1.0
+        # ====================================
+
         # 2. Нормализация
         symbol = pair.split('/')[0] + pair.split('/')[1].split(':')[0] 
         
@@ -264,7 +271,8 @@ class CustomD3QNStrategy(IStrategy):
             act_short = q_short.argmax(dim=1).item()
 
         if act_long == 1: dataframe.loc[last_idx, 'enter_long'] = 1
-        if act_short == 2: dataframe.loc[last_idx, 'enter_short'] = 1
+        # SHORT Agent (Mirror World): Action 1 (Buy) = Real World Short
+        if act_short == 1: dataframe.loc[last_idx, 'enter_short'] = 1
             
         return dataframe
 
