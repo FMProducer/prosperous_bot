@@ -36,12 +36,25 @@ except ImportError as e:
 class CustomD3QNStrategy(IStrategy):
     INTERFACE_VERSION = 3
     timeframe = '1m'
+    can_long = True
     can_short = True
     minimal_roi = {"0": 100}
     stoploss = -0.99
     trailing_stop = True
     trailing_stop_positive = 0.005
     trailing_stop_positive_offset = 0.01
+
+    # --- FreqUI PLOT CONFIG ---
+    plot_config = {
+        'main_plot': {
+            'vwap': {'color': 'blue'},
+        },
+        'subplots': {
+            "Volatility": {
+                'volatility_90m': {'color': 'orange'}
+            },
+        }
+    }
 
     def __init__(self, config: dict) -> None:
         super().__init__(config)
@@ -57,38 +70,44 @@ class CustomD3QNStrategy(IStrategy):
         self.long_model_dir = self.project_root / "output/alpha_seed_404_v13_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260115_time_162618"
         self.long_model_pth = self.long_model_dir / "best.pth"
         
-        # --- 1. ЗАГРУЗКА КОНФИГА ---
-        # Ищем конфиг .py в папке модели (он там должен быть, если bundle=True)
-        # Обычно имя совпадает с именем конфига, например alpha_seed_404_v13_gca.py
-        # Мы поищем любой .py файл в папке модели (кроме model.py/agent.py если они там есть)
+        # --- 1. ЗАГРУЗКА КОНФИГОВ (ИНДИВИДУАЛЬНО) ---
         
-        config_file = self._find_config_file(self.short_model_dir)
-        if not config_file:
-            # Fallback: берем приложенный вами файл, если он в корне configs (но лучше из папки)
-            logger.warning("Config not found in model dir, trying hardcoded fallback...")
-            # Но вы сказали "находятся в тех же папках", так что должны найти.
+        # SHORT Config
+        cfg_file_short = self._find_config_file(self.short_model_dir)
+        if not cfg_file_short:
             raise FileNotFoundError(f"Config .py not found in {self.short_model_dir}")
-            
-        logger.info(f"Loading config from {config_file}")
-        self.cfg = self._load_py_config(config_file)
+        logger.info(f"Loading SHORT config from {cfg_file_short}")
+        self.cfg_short = self._load_py_config(cfg_file_short)
+
+        # LONG Config
+        cfg_file_long = self._find_config_file(self.long_model_dir)
+        if not cfg_file_long:
+             raise FileNotFoundError(f"Config .py not found in {self.long_model_dir}")
+        logger.info(f"Loading LONG config from {cfg_file_long}")
+        self.cfg_long = self._load_py_config(cfg_file_long)
         
-        # --- 2. ЗАГРУЗКА NORM_STATS ---
-        norm_stats_path = self.short_model_dir / "norm_stats.json"
-        if not norm_stats_path.exists():
-             norm_stats_path = self.long_model_dir / "norm_stats.json"
-             
-        if norm_stats_path.exists():
-            logger.info(f"Loading norm_stats from {norm_stats_path}")
-            with open(norm_stats_path, 'r') as f:
-                self.norm_stats = json.load(f)
+        # --- 2. ЗАГРУЗКА NORM_STATS (ИНДИВИДУАЛЬНО) ---
+        
+        # SHORT Stats
+        ns_path_short = self.short_model_dir / "norm_stats.json"
+        if ns_path_short.exists():
+            with open(ns_path_short, 'r') as f:
+                self.norm_stats_short = json.load(f)
         else:
-            logger.error(f"CRITICAL: norm_stats.json not found in {self.short_model_dir}")
-            raise FileNotFoundError("norm_stats.json missing")
+            raise FileNotFoundError(f"norm_stats.json missing in {self.short_model_dir}")
+
+        # LONG Stats
+        ns_path_long = self.long_model_dir / "norm_stats.json"
+        if ns_path_long.exists():
+            with open(ns_path_long, 'r') as f:
+                self.norm_stats_long = json.load(f)
+        else:
+             raise FileNotFoundError(f"norm_stats.json missing in {self.long_model_dir}")
 
         # --- 3. ИНИЦИАЛИЗАЦИЯ АГЕНТОВ (БЕЗ ЗАГЛУШЕК) ---
-        # Теперь берем параметры прямо из self.cfg
-        self.long_agent = self._create_agent_from_config(self.cfg)
-        self.short_agent = self._create_agent_from_config(self.cfg)
+        # Используем соответствующие конфиги
+        self.long_agent = self._create_agent_from_config(self.cfg_long)
+        self.short_agent = self._create_agent_from_config(self.cfg_short)
 
         # --- 4. ЗАГРУЗКА ВЕСОВ ---
         self._load_weights(self.long_agent, self.long_model_pth, "LONG")
@@ -102,9 +121,16 @@ class CustomD3QNStrategy(IStrategy):
         return None
 
     def _load_py_config(self, path: Path):
-        """Загружает Python-модуль как конфиг."""
-        spec = importlib.util.spec_from_file_location("dynamic_config", path)
+        """Загружает Python-модуль как конфиг с уникальным именем."""
+        # Генерируем уникальное имя модуля (папка_файл), чтобы избежать кеширования sys.modules
+        unique_module_name = f"config_{path.parent.name}_{path.name}"
+        
+        spec = importlib.util.spec_from_file_location(unique_module_name, path)
+        if spec is None or spec.loader is None:
+             raise ImportError(f"Cannot load config from {path}")
+             
         mod = importlib.util.module_from_spec(spec)
+        sys.modules[unique_module_name] = mod # Регистрируем
         spec.loader.exec_module(mod)
         # Возвращаем объект cfg из модуля
         return mod.cfg
@@ -170,7 +196,7 @@ class CustomD3QNStrategy(IStrategy):
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return self.feature_engineering(dataframe)
 
-    def get_model_input(self, dataframe: DataFrame, pair: str):
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str):
         # 1. Данные (10 каналов, 90 свечей)
         df_slice = dataframe.iloc[-90:].copy()
         
@@ -182,8 +208,15 @@ class CustomD3QNStrategy(IStrategy):
         
         # 2. Нормализация
         symbol = pair.split('/')[0] + pair.split('/')[1].split(':')[0] 
-        if symbol in self.norm_stats:
-            stats = self.norm_stats[symbol]
+        
+        # Выбираем правильные статы
+        if side == "LONG":
+            current_norm_stats = self.norm_stats_long
+        else:
+            current_norm_stats = self.norm_stats_short
+
+        if symbol in current_norm_stats:
+            stats = current_norm_stats[symbol]
             means = np.array(stats.get('mean', stats.get('means'))).reshape(-1, 1)
             stds = np.array(stats.get('std', stats.get('stds'))).reshape(-1, 1)
             feats = (feats - means) / (stds + 1e-8)
@@ -217,16 +250,17 @@ class CustomD3QNStrategy(IStrategy):
         if dataframe.iloc[-1]['volatility_90m'] < 0.015:
             return dataframe
 
-        # Получаем ОДИН тензор (1, 904)
-        state_tensor = self.get_model_input(dataframe, metadata['pair'])
+        # Получаем тензоры для каждой стороны
+        state_tensor_long = self.get_model_input(dataframe, metadata['pair'], side="LONG")
+        state_tensor_short = self.get_model_input(dataframe, metadata['pair'], side="SHORT")
         
         with torch.no_grad():
             # Передаем ТОЛЬКО state_tensor (без второго аргумента)
             # D3QN_PER_Agent.policy_net -> DuelingQNetwork.forward(state)
-            q_long = self.long_agent.policy_net(state_tensor)
+            q_long = self.long_agent.policy_net(state_tensor_long)
             act_long = q_long.argmax(dim=1).item()
             
-            q_short = self.short_agent.policy_net(state_tensor)
+            q_short = self.short_agent.policy_net(state_tensor_short)
             act_short = q_short.argmax(dim=1).item()
 
         if act_long == 1: dataframe.loc[last_idx, 'enter_long'] = 1
