@@ -203,6 +203,20 @@ class CustomD3QNStrategy(IStrategy):
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return self.feature_engineering(dataframe)
 
+    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
+                    current_profit: float, **kwargs):
+        
+        # Рассчитываем длительность сделки в минутах
+        # trade.open_date_utc - время открытия
+        if trade.open_date_utc:
+            duration_min = (current_time - trade.open_date_utc).total_seconds() / 60
+            
+            # Если прошло больше 60 минут (баров) -> Закрываем
+            if duration_min >= 60:
+                return "timeout_60m"
+            
+        return None
+
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                         current_rate: float, current_profit: float, **kwargs) -> float:
         
