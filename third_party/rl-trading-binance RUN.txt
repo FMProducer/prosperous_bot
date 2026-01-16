@@ -3,7 +3,7 @@ python C:\Python\Prosperous_Bot\regenerate_stats.py
 
 python find_best_seed.py configs/alpha_seed_404_v13_gca.py --num-seeds 20
 
-python optimize_cfg.py --config configs/alpha_seed_404_v13.py
+python optimize_cfg.py --config configs/alpha_seed_404_v13_gca.py
 
 python third_party/rl-trading-binance/optimize_cfg.py third_party/rl-trading-binance/configs/alpha.py --trials 40 --jobs 1 --topn 4
 
@@ -24,7 +24,11 @@ python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v13_gca.py
 
 python validate_ensemble_prod_q.py configs/alpha_seed_404_v13_gca.py --ensemble --long_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_LONG_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_133651\best.pth" --short_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_SHORT_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_191747\best.pth" --mode val
 
-python train.py configs/alpha_seed_404_v13_gca.py               этот
+freqtrade trade --config ft_userdata/config_rl.json --strategy CustomD3QNStrategy --userdir ft_userdata
+
+Remove-Item tradesv3.dryrun.sqlite
+
+python train.py configs/alpha_seed_404_v13_gca.py              этот
 python train.py --config configs/alpha_seed_404_v12.py           
 *python train.py configs/alpha.py
 python train.py 

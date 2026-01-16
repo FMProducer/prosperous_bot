@@ -65,6 +65,9 @@ class CustomD3QNStrategy(IStrategy):
         self.device = torch.device("cpu")
         self.project_root = Path(__file__).parent.parent.parent
         
+        # Словарь для хранения p_at_last_tsl_update для каждой пары
+        self.tsl_memory = {} 
+        
         # --- ПУТИ К МОДЕЛЯМ ---
         # Папка SHORT модели (ведущая, оттуда берем конфиг)
         self.short_model_dir = self.project_root / "output/alpha_seed_404_v13_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260115_time_002944"
@@ -202,48 +205,60 @@ class CustomD3QNStrategy(IStrategy):
 
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                         current_rate: float, current_profit: float, **kwargs) -> float:
-        """
-        TSL с гистерезисом.
-        Параметры из RL:
-          dist = 0.07519 (7.5%)
-          min_profit = 0.00082 (0.08%)
-          hysteresis = 0.00152 (0.15%)
-        """
-        dist = 0.07519862504113693
-        min_activation = 0.0008225518697224519
+        
+        # --- 1. ПАРАМЕТРЫ (Exact Match) ---
+        d0 = 0.07519862504113693      
+        d_min = 0.0008225518697224519 
         hysteresis = 0.0015218098435784326
+        FEE_BUF = 0.0008 # transaction_fee(0.0004) * fee_buffer_mult(2.0)
         
-        # 1. Рассчитываем "Идеальный" стоп-лосс от текущей цены
-        # Для лонга: current_rate * (1 - dist)
-        # Для шорта: current_rate * (1 + dist)
-        # Freqtrade сам поймет направление, если мы вернем -dist (относительный %)
-        # НО! Нам нужно сравнить с ТЕКУЩИМ стопом trade.stop_loss.
+        # --- 2. РАСЧЕТ МАКСИМАЛЬНОГО ПРОФИТА ---
+        # Freqtrade дает current_profit, который уже учитывает текущую цену.
+        # Но для TSL нам нужно знать High PnL (для лонга) или Low PnL (для шорта)
+        # В рамках вызова custom_stoploss мы работаем с текущим моментом.
+        # Freqtrade сам хранит trade.max_rate / min_rate? Нет, только open_rate.
+        # Но мы можем использовать current_profit как "текущий p", 
+        # и обновлять память, если он вырос.
         
-        # Если прибыль меньше минимума активации -> держим начальный стоп (или -dist от входа)
-        # Но так как stoploss = -0.99, нам нужно СРАЗУ задать первичный стоп.
-        if current_profit < min_activation:
-            # Если стоп еще далеко (-0.99), ставим первичный стоп на dist
-            if trade.stop_loss is None or abs(trade.stop_loss - trade.open_rate) / trade.open_rate > 0.5:
-                 return -dist
-            # Иначе не трогаем
-            return 1
+        # p = profit ratio (без знака, т.е. абсолютный прирост)
+        # В Freqtrade current_profit для шорта уже положительный, если цена упала.
+        p = current_profit 
+        
+        # Инициализация памяти для новой сделки
+        trade_id = trade.id
+        if trade_id not in self.tsl_memory:
+            self.tsl_memory[trade_id] = -999.0 # Начальное значение (чтобы первый update сработал)
+
+        last_p = self.tsl_memory[trade_id]
+
+        # --- 3. ГИСТЕРЕЗИС (Проверяем, вырос ли профит достаточно) ---
+        # Условие: p >= last_p + hysteresis
+        # Если профит упал (откат), мы НЕ обновляем last_p и НЕ ослабляем стоп.
+        # Мы обновляем расчет только на РОСТЕ профита.
+        
+        if p >= (last_p + hysteresis):
+            # Запоминаем новый хай профита
+            self.tsl_memory[trade_id] = p
             
-        # 2. Логика Гистерезиса
-        # Рассчитываем желаемую цену стопа
-        if trade.is_short:
-            desired_stop_price = current_rate * (1 + dist)
-            # Для шорта мы хотим уменьшать стоп (двигать вниз).
-            # Если новый стоп НИЖЕ текущего на величину гистерезиса -> обновляем.
-            if desired_stop_price < (trade.stop_loss * (1 - hysteresis)):
-                return -dist # Обновить до текущего уровня (API сам пересчитает от current_rate)
-        else:
-            desired_stop_price = current_rate * (1 - dist)
-            # Для лонга мы хотим поднимать стоп.
-            # Если новый стоп ВЫШЕ текущего на величину гистерезиса -> обновляем.
-            if desired_stop_price > (trade.stop_loss * (1 + hysteresis)):
-                return -dist
-                
-        # Иначе оставляем старый
+            # --- 4. ТОЧНАЯ ФОРМУЛА СУЖЕНИЯ ---
+            # if p <= fee_buf: return d0
+            # d_eff = d0 - (p - fee_buf)
+            # return max(d_min, d_eff)
+            
+            if p <= FEE_BUF:
+                d_eff = d0
+            else:
+                d_eff = d0 - (p - FEE_BUF)
+                d_eff = max(d_min, d_eff)
+            
+            # Возвращаем новый стоп (относительно текущей цены - Freqtrade переведет)
+            # Важно: Freqtrade custom_stoploss применяется к current_rate.
+            # Если мы вернем -0.05, стоп встанет на 5% от ТЕКУЩЕЙ цены.
+            # А d_eff - это дистанция от ПИКА (текущего, раз мы обновились).
+            return -d_eff
+        
+        # Если профит не вырос достаточно -> оставляем старый стоп
+        # (возвращаем 1, чтобы Freqtrade не трогал стоп-лосс)
         return 1
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str):
@@ -327,6 +342,17 @@ class CustomD3QNStrategy(IStrategy):
                 return False
                  
         return True
+
+    def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
+                           rate: float, time_in_force: str, sell_reason: str,
+                           current_time: datetime, **kwargs) -> bool:
+        
+        # Очищаем память TSL для закрытой сделки
+        if trade.id in self.tsl_memory:
+            del self.tsl_memory[trade.id]
+            # logger.info(f"🧹 TSL memory cleared for trade {trade.id}")
+            
+        return True # Разрешаем выход (стандартное поведение)
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         if len(dataframe) < 90: return dataframe
