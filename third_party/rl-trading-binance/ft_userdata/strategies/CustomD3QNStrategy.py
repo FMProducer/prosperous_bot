@@ -343,8 +343,8 @@ class CustomD3QNStrategy(IStrategy):
         current_longs = sum(1 for t in trades if not t.is_short)
         
         # Лимиты
-        MAX_LONGS = 10
-        MAX_SHORTS = 10
+        MAX_LONGS = 50
+        MAX_SHORTS = 50
 
         # Логика отказа
         if side == "long":
@@ -373,8 +373,8 @@ class CustomD3QNStrategy(IStrategy):
         if len(dataframe) < 90: return dataframe
         last_idx = dataframe.index[-1]
 
-        if dataframe.iloc[-1]['volatility_90m'] < 0.015:
-            return dataframe
+        # if dataframe.iloc[-1]['volatility_90m'] < 0.015:
+        #     return dataframe
 
         # Получаем тензоры для каждой стороны
         state_tensor_long = self.get_model_input(dataframe, metadata['pair'], side="LONG")
