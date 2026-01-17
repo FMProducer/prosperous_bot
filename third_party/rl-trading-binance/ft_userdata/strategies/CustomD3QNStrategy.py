@@ -189,15 +189,29 @@ class CustomD3QNStrategy(IStrategy):
             raise e
 
     def feature_engineering(self, dataframe: DataFrame, **kwargs) -> DataFrame:
+        # 1. Проверка целостности данных
+        required_columns = ['quote_volume', 'num_trades', 'taker_base', 'taker_quote']
+        missing_cols = [col for col in required_columns if col not in dataframe.columns]
+
+        if missing_cols:
+            # ДАННЫХ НЕТ! (Патч Freqtrade не работает)
+            if self.dp and self.dp.runmode.value in ('live', 'dry_run'):
+                logger.error(f"⛔ DATA INTEGRITY ERROR for {kwargs.get('metadata', {}).get('pair')}: Missing {missing_cols}. Trading DISABLED.")
+            
+            # Мы НЕ генерируем фейки. Мы оставляем как есть.
+            # Но чтобы feature_engineering не упал на расчете VWAP, делаем безопасный vwap
+            # (он все равно не будет использован для входа, так как мы заблочим вход)
+            dataframe['vwap'] = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
+            
+            # Ставим флаг "битые данные" в мета-колонку (временную)
+            dataframe['__data_valid'] = False
+        else:
+            # ДАННЫЕ ЕСТЬ!
+            dataframe['vwap'] = dataframe['quote_volume'] / dataframe['volume']
+            dataframe['__data_valid'] = True
+        
         # Спайк-детектор
         dataframe['volatility_90m'] = (dataframe['high'].rolling(90).max() - dataframe['low'].rolling(90).min()) / dataframe['low'].rolling(90).min()
-        
-        # Аппроксимация (ВРЕМЕННАЯ, пока нет реальных данных)
-        dataframe['vwap'] = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
-        dataframe['quote_volume'] = dataframe['volume'] * dataframe['vwap']
-        dataframe['num_trades'] = dataframe['volume'] 
-        dataframe['taker_base'] = dataframe['volume'] * 0.5
-        dataframe['taker_quote'] = dataframe['quote_volume'] * 0.5
         
         return dataframe
 
@@ -207,6 +221,29 @@ class CustomD3QNStrategy(IStrategy):
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
                     current_profit: float, **kwargs):
         
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        
+        # Если данных нет вообще
+        if dataframe is None or dataframe.empty:
+            return None
+            
+        # --- DATA LOSS PROTECTION ---
+        # Проверяем последнюю свечу
+        last_candle = dataframe.iloc[-1]
+        
+        # Если метка валидности False или отсутствуют критические колонки
+        data_invalid = False
+        if '__data_valid' in dataframe.columns:
+            if not last_candle['__data_valid']:
+                data_invalid = True
+        else:
+            # Fallback check
+            if 'quote_volume' not in dataframe.columns:
+                data_invalid = True
+                
+        if data_invalid:
+            return "emergency_exit_data_loss"
+
         # Рассчитываем длительность сделки в минутах
         # trade.open_date_utc - время открытия
         if trade.open_date_utc:
@@ -370,6 +407,22 @@ class CustomD3QNStrategy(IStrategy):
         return True # Разрешаем выход (стандартное поведение)
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # Инициализация
+        dataframe.loc[:, 'enter_long'] = 0
+        dataframe.loc[:, 'enter_short'] = 0
+
+        # --- SAFETY CHECK ---
+        # Если данные битые - выходим сразу
+        if '__data_valid' in dataframe.columns and not dataframe.iloc[-1]['__data_valid']:
+            return dataframe
+            
+        # Если колонки '__data_valid' вообще нет (странно), тоже выходим
+        if '__data_valid' not in dataframe.columns:
+             # Повторная проверка на всякий случай
+             required = ['quote_volume', 'num_trades', 'taker_base', 'taker_quote']
+             if not all(col in dataframe.columns for col in required):
+                 return dataframe
+
         if len(dataframe) < 90: return dataframe
         last_idx = dataframe.index[-1]
 
