@@ -43,6 +43,7 @@ class CustomD3QNStrategy(IStrategy):
     timeframe = '1m'
     can_long = True
     can_short = True
+    startup_candle_count: int = 100
     minimal_roi = {"0": 100}
     stoploss = -0.99        # Заглушка, работает custom_stoploss
     trailing_stop = False   # Встроенный выключаем
@@ -386,8 +387,8 @@ class CustomD3QNStrategy(IStrategy):
             
             # --- Advantage Based Filter ---
             # Пороги для каждой стороны (для будущего тюнинга Optuna)
-            THRESHOLD_LONG = 0.00114
-            THRESHOLD_SHORT = 0.00114
+            THRESHOLD_LONG = 0.015   # 0.00114
+            THRESHOLD_SHORT = 0.015   # 0.00114
 
             # Long Logic
             if q_long[1] > (q_long[0] + THRESHOLD_LONG):
