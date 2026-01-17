@@ -17,7 +17,7 @@ from freqtrade.exchange.binance_public_data import (
     download_archive_trades,
 )
 from freqtrade.exchange.common import retrier
-from freqtrade.exchange.exchange_types import FtHas, Tickers
+from freqtrade.exchange.exchange_types import FtHas, OHLCVResponse, Tickers
 from freqtrade.exchange.exchange_utils_timeframe import timeframe_to_msecs
 from freqtrade.misc import deep_merge_dicts, json_load
 from freqtrade.util import FtTTLCache
@@ -79,6 +79,55 @@ class Binance(Exchange):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._spot_delist_schedule_cache: FtTTLCache = FtTTLCache(maxsize=100, ttl=300)
+
+    async def _async_get_candle_history(
+        self,
+        pair: str,
+        timeframe: str,
+        candle_type: CandleType,
+        since_ms: int | None = None,
+    ) -> OHLCVResponse:
+        """
+        Override to fetch extended klines (QuoteVol, NumTrades, TakerBuy) for Futures.
+        """
+        if self.trading_mode == TradingMode.FUTURES and candle_type == CandleType.FUTURES:
+            try:
+                # We need to override this to get the 10 columns for futures data.
+                market = self.markets[pair]
+                # ccxt uses fapiPrivate for this, which we don't want.
+                # It's a public endpoint, so we can use fapiPublicGetKlines.
+                # TODO: This should be contributed to ccxt.
+                data = await self._api_async.fapiPublicGetKlines(
+                    {
+                        "symbol": market["id"],
+                        "interval": timeframe,
+                        "limit": self.ohlcv_candle_limit(timeframe, candle_type, since_ms),
+                        "startTime": since_ms,
+                    }
+                )
+                # Trim the 12 columns down to the 10 we need
+                parsed_data = [
+                    [
+                        int(row[0]),
+                        float(row[1]),
+                        float(row[2]),
+                        float(row[3]),
+                        float(row[4]),
+                        float(row[5]),
+                        float(row[7]),
+                        float(row[8]),
+                        float(row[9]),
+                        float(row[10]),
+                    ]
+                    for row in data
+                ]
+                return pair, timeframe, candle_type, parsed_data, self._ohlcv_partial_candle
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch extended klines for {pair}, falling back to default: {e}"
+                )
+        # Fallback for Spot or errors
+        return await super()._async_get_candle_history(pair, timeframe, candle_type, since_ms)
 
     def get_proxy_coin(self) -> str:
         """
