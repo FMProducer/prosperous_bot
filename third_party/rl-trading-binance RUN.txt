@@ -28,6 +28,8 @@ freqtrade trade --config ft_userdata/config_rl.json --strategy CustomD3QNStrateg
 
 Remove-Item tradesv3.dryrun.sqlite
 
+freqtrade download-data --config ft_userdata/config_rl.json --timerange 20250601-20250731 --timeframe 1m
+
 python train.py configs/alpha_seed_404_v13_gca.py              этот
 python train.py --config configs/alpha_seed_404_v12.py           
 *python train.py configs/alpha.py

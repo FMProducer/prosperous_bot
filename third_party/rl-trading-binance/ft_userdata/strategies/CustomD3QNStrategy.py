@@ -342,8 +342,8 @@ class CustomD3QNStrategy(IStrategy):
         current_longs = sum(1 for t in trades if not t.is_short)
         
         # Лимиты
-        MAX_LONGS = 5
-        MAX_SHORTS = 5
+        MAX_LONGS = 10
+        MAX_SHORTS = 10
 
         # Логика отказа
         if side == "long":
@@ -380,18 +380,24 @@ class CustomD3QNStrategy(IStrategy):
         state_tensor_short = self.get_model_input(dataframe, metadata['pair'], side="SHORT")
         
         with torch.no_grad():
-            # Передаем ТОЛЬКО state_tensor (без второго аргумента)
-            # D3QN_PER_Agent.policy_net -> DuelingQNetwork.forward(state)
-            q_long = self.long_agent.policy_net(state_tensor_long)
-            act_long = q_long.argmax(dim=1).item()
+            # Получаем Q-значения как numpy массивы [Hold, Buy, Sell]
+            q_long = self.long_agent.policy_net(state_tensor_long).cpu().numpy()[0]
+            q_short = self.short_agent.policy_net(state_tensor_short).cpu().numpy()[0]
             
-            q_short = self.short_agent.policy_net(state_tensor_short)
-            act_short = q_short.argmax(dim=1).item()
+            # --- Advantage Based Filter ---
+            # Пороги для каждой стороны (для будущего тюнинга Optuna)
+            THRESHOLD_LONG = 0.00114
+            THRESHOLD_SHORT = 0.00114
 
-        if act_long == 1: dataframe.loc[last_idx, 'enter_long'] = 1
-        # SHORT Agent (Mirror World): Action 1 (Buy) = Real World Short
-        if act_short == 1: dataframe.loc[last_idx, 'enter_short'] = 1
-            
+            # Long Logic
+            if q_long[1] > (q_long[0] + THRESHOLD_LONG):
+                dataframe.loc[last_idx, 'enter_long'] = 1
+
+            # Short Logic (Mirror World)
+            # Action 1 (Buy Mirror) = Real Short
+            if q_short[1] > (q_short[0] + THRESHOLD_SHORT):
+                dataframe.loc[last_idx, 'enter_short'] = 1
+
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
