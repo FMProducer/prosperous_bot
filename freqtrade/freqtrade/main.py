@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
 Main Freqtrade bot script.
-Read the documentation to know what cli arguments you need.
 """
-
 import logging
 import sys
+import importlib
 from typing import Any
+import pandas as pd
+from datetime import datetime, timezone
 
+# ---------------------------------------------------------------------------------
+# 1. MONKEY PATCH: CCXT (Чтобы скачивал 10 колонок)
+# ---------------------------------------------------------------------------------
 import ccxt
-# 1. Override the CCXT parser for Binance
-# Original: ccxt.binance.parse_ohlcv
+# Пытаемся импортировать async поддержку явно
+try:
+    import ccxt.async_support
+except ImportError:
+    pass
+
 def custom_parse_ohlcv(self, ohlcv, market=None):
-    # Standard fields
     res = [
         self.safe_integer(ohlcv, 0),  # timestamp
         self.safe_number(ohlcv, 1),   # open
@@ -20,22 +27,51 @@ def custom_parse_ohlcv(self, ohlcv, market=None):
         self.safe_number(ohlcv, 3),   # low
         self.safe_number(ohlcv, 4),   # close
         self.safe_number(ohlcv, 5),   # volume
-        # --- ADDED FIELDS ---
-        self.safe_number(ohlcv, 7),   # quote_volume (index 7)
-        self.safe_integer(ohlcv, 8),  # num_trades (index 8)
-        self.safe_number(ohlcv, 9),   # taker_base_vol (index 9)
-        self.safe_number(ohlcv, 10),  # taker_quote_vol (index 10)
     ]
+    # Добавляем 4 доп. колонки
+    res.append(self.safe_number(ohlcv, 7))   # quote_volume (6)
+    res.append(self.safe_integer(ohlcv, 8))  # num_trades (7)
+    res.append(self.safe_number(ohlcv, 9))   # taker_base (8)
+    res.append(self.safe_number(ohlcv, 10))  # taker_quote (9)
     return res
 
-# Apply the patch to the binance class in the ccxt library
+# Применяем патч к CCXT
 ccxt.binance.parse_ohlcv = custom_parse_ohlcv
-# Also patch the async version if you use websockets or async mode
 if hasattr(ccxt, 'async_support'):
     ccxt.async_support.binance.parse_ohlcv = custom_parse_ohlcv
+try:
+    from ccxt.async_support.binance import binance as async_binance
+    async_binance.parse_ohlcv = custom_parse_ohlcv
+except ImportError:
+    pass
+
+print("PATCH 1/2: CCXT patched to return 10 columns.")
+
+# ---------------------------------------------------------------------------------
+# 2. MONKEY PATCH: FREQTRADE CONVERTER (Чтобы создавал DataFrame с 10 колонками)
+# ---------------------------------------------------------------------------------
+from freqtrade.data import converter
+
+def custom_ohlcv_to_dataframe(ohlcv: list, timeframe: str, pair: str, *,
+                            fill_missing: bool = True, drop_incomplete: bool = True) -> pd.DataFrame:
+    cols = ["date", "open", "high", "low", "close", "volume", 
+            "quote_volume", "num_trades", "taker_base", "taker_quote"]
+    df = pd.DataFrame(ohlcv, columns=cols)
+    df["date"] = pd.to_datetime(df["date"], unit="ms", utc=True)
+    if drop_incomplete and not df.empty:
+        df.drop(df.tail(1).index, inplace=True)
+    return df
+
+# Подменяем функцию в модуле FreqTrade
+converter.ohlcv_to_dataframe = custom_ohlcv_to_dataframe
+print("PATCH 2/2: Freqtrade Converter patched to support extended columns.")
+
+# ---------------------------------------------------------------------------------
+# MAIN BOT LOGIC
+# ---------------------------------------------------------------------------------
 
 # check min. python version
-if sys.version_info < (3, 11):  # pragma: no cover  # noqa: UP036
+if sys.version_info < (3, 11):
     sys.exit("Freqtrade requires Python version >= 3.11")
 
 from freqtrade import __version__
@@ -50,16 +86,9 @@ from freqtrade.system import (
     set_mp_start_method,
 )
 
-
 logger = logging.getLogger("freqtrade")
 
-
 def main(sysargv: list[str] | None = None) -> None:
-    """
-    This function will initiate the bot and start the trading loop.
-    :return: None
-    """
-
     return_code: Any = 1
     try:
         setup_logging_pre()
@@ -67,7 +96,6 @@ def main(sysargv: list[str] | None = None) -> None:
         arguments = Arguments(sysargv)
         args = arguments.get_parsed_arg()
 
-        # Call subcommand.
         if args.get("version") or args.get("version_main"):
             print_version_info()
             return_code = 0
@@ -77,26 +105,18 @@ def main(sysargv: list[str] | None = None) -> None:
             set_mp_start_method()
             return_code = args["func"](args)
         else:
-            # No subcommand was issued.
             raise OperationalException(
                 "Usage of Freqtrade requires a subcommand to be specified.\n"
-                "To have the bot executing trades in live/dry-run modes, "
-                "depending on the value of the `dry_run` setting in the config, run Freqtrade "
-                "as `freqtrade trade [options...]`.\n"
-                "To see the full list of options available, please use "
-                "`freqtrade --help` or `freqtrade <command> --help`."
+                "Run `freqtrade trade [options...]`."
             )
 
-    except SystemExit as e:  # pragma: no cover
+    except SystemExit as e:
         return_code = e
     except KeyboardInterrupt:
         logger.info("SIGINT received, aborting ...")
         return_code = 0
     except ConfigurationError as e:
-        logger.error(
-            f"Configuration error: {e}\n"
-            f"Please make sure to review the documentation at {DOCS_LINK}."
-        )
+        logger.error(f"Configuration error: {e}")
     except FreqtradeException as e:
         logger.error(str(e))
         return_code = 2
@@ -105,6 +125,5 @@ def main(sysargv: list[str] | None = None) -> None:
     finally:
         sys.exit(return_code)
 
-
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

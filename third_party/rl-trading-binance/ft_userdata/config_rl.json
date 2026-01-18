@@ -1,5 +1,6 @@
 {
     "initial_state": "running",
+    "use_ws": false,
     "max_open_trades": 100,
     "stake_currency": "USDT",
     "stake_amount": 100,
