@@ -78,11 +78,11 @@ class CustomD3QNStrategy(IStrategy):
         
         # --- ПУТИ К МОДЕЛЯМ ---
         # Папка SHORT модели (ведущая, оттуда берем конфиг)
-        self.short_model_dir = self.project_root / "output/alpha_seed_404_v13_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260115_time_002944"
+        self.short_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_225844"
         self.short_model_pth = self.short_model_dir / "best.pth"
         
         # Папка LONG модели
-        self.long_model_dir = self.project_root / "output/alpha_seed_404_v13_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260115_time_162618"
+        self.long_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_220542"
         self.long_model_pth = self.long_model_dir / "best.pth"
         
         # --- 1. ЗАГРУЗКА КОНФИГОВ (ИНДИВИДУАЛЬНО) ---
@@ -287,11 +287,17 @@ class CustomD3QNStrategy(IStrategy):
         # 1. Данные (10 каналов, 90 свечей)
         df_slice = dataframe.iloc[-90:].copy()
         
+        # ИЗМЕНЕНО: Оставляем только 5 каналов OHLCV
         channel_data = [
-            df_slice['open'].values, df_slice['high'].values, df_slice['low'].values, df_slice['close'].values, df_slice['volume'].values,
-            df_slice['quote_volume'].values, df_slice['num_trades'].values, df_slice['taker_base'].values, df_slice['taker_quote'].values, df_slice['vwap'].values
+            df_slice['open'].values, 
+            df_slice['high'].values, 
+            df_slice['low'].values, 
+            df_slice['close'].values, 
+            df_slice['volume'].values
         ]
-        feats = np.stack(channel_data) # (10, 90)
+        # Остальные каналы (quote_volume, num_trades, taker..., vwap) УДАЛИТЬ из списка
+
+        feats = np.stack(channel_data) # Теперь shape (5, 90)
         
         # === ВАЖНО: MIRROR WORLD ИНВЕРСИЯ ===
         if side == "SHORT":
