@@ -49,6 +49,13 @@ class CustomD3QNStrategy(IStrategy):
     trailing_stop = False   # Встроенный выключаем
     use_custom_stoploss = True # Явно разрешаем (хотя часто автодетект работает)
 
+    order_types = {
+        'entry': 'limit',
+        'exit': 'market',
+        'stoploss': 'market',
+        'stoploss_on_exchange': False
+    }
+
     # --- FreqUI PLOT CONFIG ---
     plot_config = {
         'main_plot': {
@@ -387,8 +394,8 @@ class CustomD3QNStrategy(IStrategy):
             
             # --- Advantage Based Filter ---
             # Пороги для каждой стороны (для будущего тюнинга Optuna)
-            THRESHOLD_LONG = 0.015   # 0.00114
-            THRESHOLD_SHORT = 0.015   # 0.00114
+            THRESHOLD_LONG = 0.0   # 0.00114
+            THRESHOLD_SHORT = 0.0   # 0.00114
 
             # Long Logic
             if q_long[1] > (q_long[0] + THRESHOLD_LONG):
