@@ -17,7 +17,7 @@ from freqtrade.exchange.binance_public_data import (
     download_archive_trades,
 )
 from freqtrade.exchange.common import retrier
-from freqtrade.exchange.exchange_types import FtHas, Tickers
+from freqtrade.exchange.exchange_types import FtHas, OHLCVResponse, Tickers
 from freqtrade.exchange.exchange_utils_timeframe import timeframe_to_msecs
 from freqtrade.misc import deep_merge_dicts, json_load
 from freqtrade.util import FtTTLCache
@@ -146,6 +146,82 @@ class Binance(Exchange):
 
         except ccxt.BaseError as e:
             raise OperationalException(e) from e
+
+    async def _async_get_candle_history(
+        self, pair: str, timeframe: str, candle_type: CandleType, since_ms: int | None = None
+    ) -> OHLCVResponse:
+        """
+        Custom implementation to fetch 10 columns from Binance
+        """
+        # Если это Mark Price или Funding Rate - используем стандартный метод
+        if candle_type is not CandleType.SPOT and candle_type is not CandleType.FUTURES:
+            return await super()._async_get_candle_history(pair, timeframe, candle_type, since_ms)
+
+        # Для торговых пар (Spot/Futures) качаем расширенные данные
+        market = self.markets[pair]
+        symbol = market['id']
+        interval = self._api_async.timeframes[timeframe]
+
+        # Определяем правильный метод API
+        if self.trading_mode == TradingMode.FUTURES:
+            # Используем publicGetKlines напрямую, чтобы обойти фильтры CCXT
+            # fapiPublicGetKlines возвращает [Open time, Open, High, Low, Close, Volume, Close time, Quote asset volume, Number of trades, Taker buy base asset volume, Taker buy quote asset volume, Ignore]
+            method = getattr(self._api_async, 'fapiPublicGetKlines')
+        else:
+            method = getattr(self._api_async, 'publicGetKlines')
+
+        limit = 1000  # Максимум для Binance
+        params = {
+            'symbol': symbol,
+            'interval': interval,
+            'limit': limit
+        }
+        if since_ms:
+            params['startTime'] = since_ms
+
+        try:
+            # Вызов API
+            data = await method(params)
+
+            # Парсинг данных (оставляем 10 колонок)
+            # Формат ответа Binance:
+            # [
+            #   0: Open time,
+            #   1: Open,
+            #   2: High,
+            #   3: Low,
+            #   4: Close,
+            #   5: Volume,
+            #   6: Close time,  <-- ПРОПУСКАЕМ
+            #   7: Quote Asset Volume,
+            #   8: Number of Trades,
+            #   9: Taker Buy Base Asset Volume,
+            #   10: Taker Buy Quote Asset Volume,
+            #   11: Ignore
+            # ]
+
+            new_data = []
+            for row in data:
+                new_row = [
+                    int(row[0]),      # timestamp
+                    float(row[1]),    # open
+                    float(row[2]),    # high
+                    float(row[3]),    # low
+                    float(row[4]),    # close
+                    float(row[5]),    # volume
+                    float(row[7]),    # quote_volume (index 6 в нашем DF)
+                    int(row[8]),      # num_trades (index 7)
+                    float(row[9]),    # taker_base (index 8)
+                    float(row[10])    # taker_quote (index 9)
+                ]
+                new_data.append(new_row)
+
+            return pair, timeframe, candle_type, new_data, False
+
+        except Exception as e:
+            # В случае ошибки откатываемся на стандартный метод (но потеряем колонки)
+            logger.error(f"Error in custom _async_get_candle_history: {e}")
+            return await super()._async_get_candle_history(pair, timeframe, candle_type, since_ms)
 
     def get_historic_ohlcv(
         self,
