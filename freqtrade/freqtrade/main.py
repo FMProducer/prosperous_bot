@@ -8,6 +8,31 @@ import logging
 import sys
 from typing import Any
 
+import ccxt
+# 1. Override the CCXT parser for Binance
+# Original: ccxt.binance.parse_ohlcv
+def custom_parse_ohlcv(self, ohlcv, market=None):
+    # Standard fields
+    res = [
+        self.safe_integer(ohlcv, 0),  # timestamp
+        self.safe_number(ohlcv, 1),   # open
+        self.safe_number(ohlcv, 2),   # high
+        self.safe_number(ohlcv, 3),   # low
+        self.safe_number(ohlcv, 4),   # close
+        self.safe_number(ohlcv, 5),   # volume
+        # --- ADDED FIELDS ---
+        self.safe_number(ohlcv, 7),   # quote_volume (index 7)
+        self.safe_integer(ohlcv, 8),  # num_trades (index 8)
+        self.safe_number(ohlcv, 9),   # taker_base_vol (index 9)
+        self.safe_number(ohlcv, 10),  # taker_quote_vol (index 10)
+    ]
+    return res
+
+# Apply the patch to the binance class in the ccxt library
+ccxt.binance.parse_ohlcv = custom_parse_ohlcv
+# Also patch the async version if you use websockets or async mode
+ccxt.pro.binance.parse_ohlcv = custom_parse_ohlcv
+
 
 # check min. python version
 if sys.version_info < (3, 11):  # pragma: no cover  # noqa: UP036
