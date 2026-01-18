@@ -35,17 +35,11 @@ def ohlcv_to_dataframe(
     :return: DataFrame
     """
     logger.debug(f"Converting candle (OHLCV) data to dataframe for pair {pair}.")
-    # MODIFIED: Support for extended Binance data (10 columns)
     if ohlcv and len(ohlcv[0]) >= 10:
-        cols = [
-            'date', 'open', 'high', 'low', 'close', 'volume',
-            'quote_volume', 'num_trades', 'taker_base', 'taker_quote'
-        ]
-        # Take only the first 10 columns (ignore extra ignore-columns if any)
-        df = DataFrame([row[:10] for row in ohlcv], columns=cols)
+        # Take only the first 10 columns
+        df = DataFrame([row[:10] for row in ohlcv], columns=DEFAULT_DATAFRAME_COLUMNS)
     else:
-        cols = DEFAULT_DATAFRAME_COLUMNS
-        df = DataFrame([row[:6] for row in ohlcv], columns=cols)
+        df = DataFrame([row[:6] for row in ohlcv], columns=DEFAULT_DATAFRAME_COLUMNS[:6])
 
     # Floor date to seconds to account for exchange imprecisions
     df["date"] = to_datetime(df["date"], unit="ms", utc=True).dt.floor("s")
@@ -84,15 +78,23 @@ def clean_ohlcv_dataframe(
     :return: DataFrame
     """
     # group by index and aggregate results to eliminate duplicate ticks
-    data = data.groupby(by="date", as_index=False, sort=True).agg(
-        {
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "max",
-        }
-    )
+    agg_dict = {
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "max",
+    }
+    if "quote_volume" in data.columns:
+        agg_dict.update(
+            {
+                "quote_volume": "max",
+                "num_trades": "max",
+                "taker_base": "max",
+                "taker_quote": "max",
+            }
+        )
+    data = data.groupby(by="date", as_index=False, sort=True).agg(agg_dict)
     # eliminate partial candle
     if drop_incomplete:
         data.drop(data.tail(1).index, inplace=True)
@@ -112,7 +114,22 @@ def ohlcv_fill_up_missing_data(dataframe: DataFrame, timeframe: str, pair: str) 
     """
     from freqtrade.exchange import timeframe_to_resample_freq
 
-    ohlcv_dict = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ohlcv_dict = {
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum",
+    }
+    if "quote_volume" in dataframe.columns:
+        ohlcv_dict.update(
+            {
+                "quote_volume": "sum",
+                "num_trades": "sum",
+                "taker_base": "sum",
+                "taker_quote": "sum",
+            }
+        )
     resample_interval = timeframe_to_resample_freq(timeframe)
     # Resample to create "NAN" values
     df = dataframe.resample(resample_interval, on="date").agg(ohlcv_dict)
