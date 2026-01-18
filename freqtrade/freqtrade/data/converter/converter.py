@@ -78,23 +78,15 @@ def clean_ohlcv_dataframe(
     :return: DataFrame
     """
     # group by index and aggregate results to eliminate duplicate ticks
-    agg_dict = {
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "max",
-    }
-    if "quote_volume" in data.columns:
-        agg_dict.update(
-            {
-                "quote_volume": "max",
-                "num_trades": "max",
-                "taker_base": "max",
-                "taker_quote": "max",
-            }
-        )
-    data = data.groupby(by="date", as_index=False, sort=True).agg(agg_dict)
+    data = data.groupby(by="date", as_index=False, sort=True).agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "max",
+        }
+    )
     # eliminate partial candle
     if drop_incomplete:
         data.drop(data.tail(1).index, inplace=True)
@@ -114,22 +106,7 @@ def ohlcv_fill_up_missing_data(dataframe: DataFrame, timeframe: str, pair: str) 
     """
     from freqtrade.exchange import timeframe_to_resample_freq
 
-    ohlcv_dict = {
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "sum",
-    }
-    if "quote_volume" in dataframe.columns:
-        ohlcv_dict.update(
-            {
-                "quote_volume": "sum",
-                "num_trades": "sum",
-                "taker_base": "sum",
-                "taker_quote": "sum",
-            }
-        )
+    ohlcv_dict = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     resample_interval = timeframe_to_resample_freq(timeframe)
     # Resample to create "NAN" values
     df = dataframe.resample(resample_interval, on="date").agg(ohlcv_dict)
