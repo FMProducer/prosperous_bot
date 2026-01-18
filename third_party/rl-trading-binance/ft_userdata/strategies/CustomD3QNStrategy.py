@@ -400,8 +400,8 @@ class CustomD3QNStrategy(IStrategy):
             
             # --- Advantage Based Filter ---
             # Пороги для каждой стороны (для будущего тюнинга Optuna)
-            THRESHOLD_LONG = 0.00114   # 0.00114
-            THRESHOLD_SHORT = 0.00114   # 0.00114
+            THRESHOLD_LONG = 0.0   # 0.00114
+            THRESHOLD_SHORT = 0.0   # 0.00114
 
             # Long Logic
             if q_long[1] > (q_long[0] + THRESHOLD_LONG):
