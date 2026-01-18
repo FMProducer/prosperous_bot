@@ -76,15 +76,27 @@ def fake_create_dry_run_order(self, pair, ordertype, side, amount, rate, leverag
     }
 
 # ---------------------------------------------------------------------------------
-# 4. ALIEN REPLACEMENT OF create_trade (NO LIMIT CHECK, DATA INTEGRITY)
+# 4. ALIEN REPLACEMENT OF create_trade (LIMITS RESTORED)
 # ---------------------------------------------------------------------------------
 def alien_create_trade(self, pair, entry_tag=None):
     """
-    Alien logic v9: Fix 'get_open_trades_count' crash & keep timeframe fix.
+    Alien logic v10: Stop DB spam by correctly checking limits.
     """
-    print(f"\nDEBUG: 👽 ALIEN create_trade taking control for {pair}")
+    # print(f"\nDEBUG: 👽 ALIEN checking {pair}...") # Комментируем, чтобы не засорять лог
     
     try:
+        from freqtrade.persistence import Trade  # type: ignore
+        
+        # --- ВАЖНО: ПРАВИЛЬНАЯ ПРОВЕРКА ЛИМИТОВ ---
+        # Получаем список всех открытых сделок и считаем их длину
+        open_trades = Trade.get_open_trades()
+        if len(open_trades) >= self.config['max_open_trades']:
+             # Лимит достигнут, тихо выходим, не нагружая базу
+             return False
+        # ------------------------------------------
+
+        print(f"DEBUG: 👽 ALIEN initiating trade for {pair}")
+
         # 1. Get Stake Amount
         stake_amount = self.wallets.get_trade_stake_amount(pair, self.config['max_open_trades'])
         price = 100.0 
@@ -106,9 +118,6 @@ def alien_create_trade(self, pair, entry_tag=None):
         if order:
             # 3. Create Trade Object & SAVE TO DB
             try:
-                from freqtrade.persistence import Trade  # type: ignore
-                
-                # Parse timeframe safely
                 tf_str = self.config.get('timeframe', '1m')
                 tf_int = int(tf_str.replace('m', '').replace('h', '60')) if isinstance(tf_str, str) else 1
                 
@@ -128,12 +137,11 @@ def alien_create_trade(self, pair, entry_tag=None):
                     enter_tag=entry_tag,
                     exchange=self.exchange.id,
                     open_date=now_utc,
-                    timeframe=tf_int,  # UI fix
+                    timeframe=tf_int,
                 )
                 
                 # --- SAVE WITH COMMIT ---
                 print("DEBUG: Saving trade to database (COMMIT)...")
-                
                 try:
                     from freqtrade.persistence.models import _session  # type: ignore
                     _session.add(trade)
@@ -149,14 +157,12 @@ def alien_create_trade(self, pair, entry_tag=None):
 
             except Exception as e_trade:
                 print(f"DEBUG: ⚠️ Error saving Trade to DB: {e_trade}")
-                traceback.print_exc()
                 return True
             
         return False
 
     except Exception as e:
         print(f"DEBUG: 👽 ALIEN FAILED: {e}")
-        traceback.print_exc()
         return False
 
 # 5. INSTALLATION

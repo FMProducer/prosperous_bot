@@ -1,5 +1,4 @@
 import sys
-import random
 import json
 import logging
 import importlib.util
@@ -44,7 +43,7 @@ class CustomD3QNStrategy(IStrategy):
     timeframe = '1m'
     can_long = True
     can_short = True
-    startup_candle_count: int = 1
+    startup_candle_count: int = 100
     minimal_roi = {"0": 100}
     stoploss = -0.99        # Заглушка, работает custom_stoploss
     trailing_stop = False   # Встроенный выключаем
@@ -63,13 +62,6 @@ class CustomD3QNStrategy(IStrategy):
     }
 
     def __init__(self, config: dict) -> None:
-        # --- OPTIMIZATION: Disable OrderBook for Pricing (Speed + Stability) ---
-        if 'entry_pricing' not in config: config['entry_pricing'] = {}
-        config['entry_pricing']['use_order_book'] = False
-        
-        if 'exit_pricing' not in config: config['exit_pricing'] = {}
-        config['exit_pricing']['use_order_book'] = False
-
         super().__init__(config)
         self.device = torch.device("cpu")
         self.project_root = Path(__file__).parent.parent.parent
@@ -322,9 +314,6 @@ class CustomD3QNStrategy(IStrategy):
         ]
         feats = np.stack(channel_data) # (10, 90)
         
-        # FIX: Заменяем NaN на 0, чтобы не крашилось на парах с дырками в данных
-        feats = np.nan_to_num(feats, nan=0.0, posinf=0.0, neginf=0.0)
-
         # === ВАЖНО: MIRROR WORLD ИНВЕРСИЯ ===
         if side == "SHORT":
             # TradingEnvironment делает: self.sequences = [-1.0 * seq for seq in sequences]
@@ -372,8 +361,6 @@ class CustomD3QNStrategy(IStrategy):
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                             time_in_force: str, current_time: datetime, entry_tag: str,
                             side: str, **kwargs) -> bool:
-        
-        logger.info(f"Checking ENTRY for {pair} ({side})...")
         
         # Получаем список всех активных сделок
         trades = Trade.get_trades([Trade.is_open.is_(True)]).all()
@@ -442,13 +429,10 @@ class CustomD3QNStrategy(IStrategy):
             q_long = self.long_agent.policy_net(state_tensor_long).cpu().numpy()[0]
             q_short = self.short_agent.policy_net(state_tensor_short).cpu().numpy()[0]
             
-            if random.random() < 0.01:
-                logger.info(f"DEBUG Q-Values for {metadata['pair']} - LONG: {q_long}, SHORT: {q_short}")
-
             # --- Advantage Based Filter ---
             # Пороги для каждой стороны (для будущего тюнинга Optuna)
-            THRESHOLD_LONG = -99.0   # 0.00114
-            THRESHOLD_SHORT = -99.0   # 0.00114
+            THRESHOLD_LONG = 0.0   # 0.00114
+            THRESHOLD_SHORT = 0.0   # 0.00114
 
             # Long Logic
             if q_long[1] > (q_long[0] + THRESHOLD_LONG):
@@ -458,13 +442,6 @@ class CustomD3QNStrategy(IStrategy):
             # Action 1 (Buy Mirror) = Real Short
             if q_short[1] > (q_short[0] + THRESHOLD_SHORT):
                 dataframe.loc[last_idx, 'enter_short'] = 1
-
-        dataframe.loc[:, 'enter_long'] = 1  # FORCE ENTRY ALL
-        dataframe.loc[:, 'enter_short'] = 1  # FORCE ENTRY ALL
-
-        # Проверка: Хотел ли бот войти?
-        if dataframe.iloc[-1]['enter_long'] == 1:
-            logger.info(f"🚀 STRATEGY SIGNAL DETECTED for {metadata['pair']}! Setting enter_long=1")
 
         return dataframe
 
