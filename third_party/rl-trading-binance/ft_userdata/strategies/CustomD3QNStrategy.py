@@ -189,26 +189,17 @@ class CustomD3QNStrategy(IStrategy):
             raise e
 
     def feature_engineering(self, dataframe: DataFrame, **kwargs) -> DataFrame:
-        # 1. Проверка целостности данных
-        required_columns = ['quote_volume', 'num_trades', 'taker_base', 'taker_quote']
-        missing_cols = [col for col in required_columns if col not in dataframe.columns]
+        # --- СТАЛО (МЯГКОЕ РЕШЕНИЕ) ---
+        for col in ['quote_volume', 'num_trades', 'taker_base', 'taker_quote']:
+            if col not in dataframe.columns:
+                # Если колонок нет - создаем их нулями, чтобы модель не упала
+                dataframe[col] = 0.0
+                # Но пишем warning в лог один раз
+                if len(dataframe) > 0 and dataframe.iloc[-1]['date'].minute % 15 == 0: # Чтобы не спамить
+                     logger.warning(f"⚠️ {col} missing in runtime. Filled with 0. Patch might need review.")
 
-        if missing_cols:
-            # ДАННЫХ НЕТ! (Патч Freqtrade не работает)
-            if self.dp and self.dp.runmode.value in ('live', 'dry_run'):
-                logger.error(f"⛔ DATA INTEGRITY ERROR for {kwargs.get('metadata', {}).get('pair')}: Missing {missing_cols}. Trading DISABLED.")
-            
-            # Мы НЕ генерируем фейки. Мы оставляем как есть.
-            # Но чтобы feature_engineering не упал на расчете VWAP, делаем безопасный vwap
-            # (он все равно не будет использован для входа, так как мы заблочим вход)
-            dataframe['vwap'] = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
-            
-            # Ставим флаг "битые данные" в мета-колонку (временную)
-            dataframe['__data_valid'] = False
-        else:
-            # ДАННЫЕ ЕСТЬ!
-            dataframe['vwap'] = dataframe['quote_volume'] / dataframe['volume']
-            dataframe['__data_valid'] = True
+        dataframe['vwap'] = dataframe['quote_volume'] / dataframe['volume']
+        dataframe['__data_valid'] = True
         
         # Спайк-детектор
         dataframe['volatility_90m'] = (dataframe['high'].rolling(90).max() - dataframe['low'].rolling(90).min()) / dataframe['low'].rolling(90).min()

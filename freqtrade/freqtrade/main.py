@@ -31,8 +31,8 @@ def custom_parse_ohlcv(self, ohlcv, market=None):
 # Apply the patch to the binance class in the ccxt library
 ccxt.binance.parse_ohlcv = custom_parse_ohlcv
 # Also patch the async version if you use websockets or async mode
-ccxt.pro.binance.parse_ohlcv = custom_parse_ohlcv
-
+if hasattr(ccxt, 'async_support'):
+    ccxt.async_support.binance.parse_ohlcv = custom_parse_ohlcv
 
 # check min. python version
 if sys.version_info < (3, 11):  # pragma: no cover  # noqa: UP036
