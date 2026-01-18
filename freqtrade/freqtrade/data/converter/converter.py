@@ -35,17 +35,8 @@ def ohlcv_to_dataframe(
     :return: DataFrame
     """
     logger.debug(f"Converting candle (OHLCV) data to dataframe for pair {pair}.")
-    # MODIFIED: Support for extended Binance data (10 columns)
-    if ohlcv and len(ohlcv[0]) >= 10:
-        cols = [
-            'date', 'open', 'high', 'low', 'close', 'volume',
-            'quote_volume', 'num_trades', 'taker_base', 'taker_quote'
-        ]
-        # Take only the first 10 columns (ignore extra ignore-columns if any)
-        df = DataFrame([row[:10] for row in ohlcv], columns=cols)
-    else:
-        cols = DEFAULT_DATAFRAME_COLUMNS
-        df = DataFrame([row[:6] for row in ohlcv], columns=cols)
+    cols = DEFAULT_DATAFRAME_COLUMNS
+    df = DataFrame(ohlcv, columns=cols)
 
     # Floor date to seconds to account for exchange imprecisions
     df["date"] = to_datetime(df["date"], unit="ms", utc=True).dt.floor("s")
