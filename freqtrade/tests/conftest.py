@@ -11,7 +11,8 @@ from unittest.mock import MagicMock, Mock, PropertyMock
 import numpy as np
 import pandas as pd
 import pytest
-from xdist.scheduler.loadscope import LoadScopeScheduling
+
+# from xdist.scheduler.loadscope import LoadScopeScheduling
 
 from freqtrade import constants
 from freqtrade.commands import Arguments
@@ -74,25 +75,25 @@ def pytest_configure(config):
         config.option.markexpr = "not longrun"
 
 
-class FixtureScheduler(LoadScopeScheduling):
-    # Based on the suggestion in
-    # https://github.com/pytest-dev/pytest-xdist/issues/18
+# class FixtureScheduler(LoadScopeScheduling):
+#     # Based on the suggestion in
+#     # https://github.com/pytest-dev/pytest-xdist/issues/18
 
-    def _split_scope(self, nodeid):
-        if "exchange_online" in nodeid:
-            try:
-                # Extract exchange ID from nodeid
-                exchange_id = nodeid.split("[")[1].split("-")[0].rstrip("]")
-                return exchange_id
-            except Exception as e:
-                print(e)
-                pass
+#     def _split_scope(self, nodeid):
+#         if "exchange_online" in nodeid:
+#             try:
+#                 # Extract exchange ID from nodeid
+#                 exchange_id = nodeid.split("[")[1].split("-")[0].rstrip("]")
+#                 return exchange_id
+#             except Exception as e:
+#                 print(e)
+#                 pass
 
-        return nodeid
+#         return nodeid
 
 
-def pytest_xdist_make_scheduler(config, log):
-    return FixtureScheduler(config, log)
+# def pytest_xdist_make_scheduler(config, log):
+#     return FixtureScheduler(config, log)
 
 
 def log_has(line, logs):
@@ -169,7 +170,9 @@ def generate_trades_history(n_rows, start_date: datetime | None = None, days=5):
     return df
 
 
-def generate_test_data(timeframe: str, size: int, start: str = "2020-07-05", random_seed=42):
+def generate_test_data(
+    timeframe: str, size: int, start: str = "2020-07-05", random_seed=42, num_columns=6
+):
     np.random.seed(random_seed)
 
     base = np.random.normal(20, 2, size=size)
@@ -188,23 +191,33 @@ def generate_test_data(timeframe: str, size: int, start: str = "2020-07-05", ran
         else:
             tf_secs = timeframe_to_seconds(timeframe)
             date = pd.date_range(start, periods=size, freq=f"{tf_secs}s", tz="UTC")
-    df = pd.DataFrame(
-        {
-            "date": date,
-            "open": base,
-            "high": base + np.random.normal(2, 1, size=size),
-            "low": base - np.random.normal(2, 1, size=size),
-            "close": base + np.random.normal(0, 1, size=size),
-            "volume": np.random.normal(200, size=size),
-        }
-    )
+    data = {
+        "date": date,
+        "open": base,
+        "high": base + np.random.normal(2, 1, size=size),
+        "low": base - np.random.normal(2, 1, size=size),
+        "close": base + np.random.normal(0, 1, size=size),
+        "volume": np.random.normal(200, size=size),
+    }
+    if num_columns == 10:
+        data.update(
+            {
+                "quote_volume": np.random.normal(4000, size=size),
+                "num_trades": np.random.randint(10, 100, size=size),
+                "taker_base": np.random.normal(100, size=size),
+                "taker_quote": np.random.normal(2000, size=size),
+            }
+        )
+    df = pd.DataFrame(data)
     df = df.dropna()
     return df
 
 
-def generate_test_data_raw(timeframe: str, size: int, start: str = "2020-07-05", random_seed=42):
+def generate_test_data_raw(
+    timeframe: str, size: int, start: str = "2020-07-05", random_seed=42, num_columns=6
+):
     """Generates data in the ohlcv format used by ccxt"""
-    df = generate_test_data(timeframe, size, start, random_seed)
+    df = generate_test_data(timeframe, size, start, random_seed, num_columns)
     df["date"] = df.loc[:, "date"].astype(np.int64) // 1000 // 1000
     return list(list(x) for x in zip(*(df[x].values.tolist() for x in df.columns), strict=False))
 

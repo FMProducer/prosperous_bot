@@ -35,8 +35,11 @@ def ohlcv_to_dataframe(
     :return: DataFrame
     """
     logger.debug(f"Converting candle (OHLCV) data to dataframe for pair {pair}.")
-    cols = DEFAULT_DATAFRAME_COLUMNS
-    df = DataFrame(ohlcv, columns=cols)
+    if ohlcv and len(ohlcv[0]) >= 10:
+        # Take only the first 10 columns
+        df = DataFrame([row[:10] for row in ohlcv], columns=DEFAULT_DATAFRAME_COLUMNS)
+    else:
+        df = DataFrame([row[:6] for row in ohlcv], columns=DEFAULT_DATAFRAME_COLUMNS[:6])
 
     # Floor date to seconds to account for exchange imprecisions
     df["date"] = to_datetime(df["date"], unit="ms", utc=True).dt.floor("s")
