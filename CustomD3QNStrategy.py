@@ -22,12 +22,14 @@ if str(project_root) not in sys.path:
 
 # Freqtrade imports
 try:
-    from freqtrade.strategy import IStrategy, RealParameter  # type: ignore
+    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy: pass
-    class RealParameter:
+    class DecimalParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
+    class IntParameter:
+        def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0)
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +60,10 @@ class CustomD3QNStrategy(IStrategy):
         'stoploss_on_exchange': False
     }
 
-    # --- Hyperopt Parameters ---
-    d0 = RealParameter(0.03, 0.15, default=0.0751986, space='stoploss')
-    d_min = RealParameter(0.0001, 0.005, default=0.0008225, space='stoploss')
-    hysteresis = RealParameter(0.0005, 0.005, default=0.0015218, space='stoploss')
+    # === ОПТИМИЗИРУЕМЫЕ ПАРАМЕТРЫ (Hyperopt) ===
+    d0 = DecimalParameter(0.02, 0.15, default=0.075, space='stoploss', optimize=True, load=True)
+    d_min = DecimalParameter(0.0001, 0.005, default=0.0008, space='stoploss', optimize=True, load=True)
+    hysteresis = DecimalParameter(0.0005, 0.005, default=0.0015, space='stoploss', optimize=True, load=True)
 
     # --- FreqUI PLOT CONFIG ---
     plot_config = {
@@ -235,11 +237,11 @@ class CustomD3QNStrategy(IStrategy):
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                         current_rate: float, current_profit: float, **kwargs) -> float:
         
-        # --- 1. ПАРАМЕТРЫ (Exact Match) ---
-        # Используем параметры из Hyperopt (или дефолтные)
-        d0 = self.d0.value
-        d_min = self.d_min.value
-        hysteresis = self.hysteresis.value
+        # === БЕРЕМ ЗНАЧЕНИЯ ИЗ ПАРАМЕТРОВ ===
+        # Используем .value для доступа к текущему оптимизируемому значению
+        d0_val = self.d0.value
+        d_min_val = self.d_min.value
+        hysteresis_val = self.hysteresis.value
         
         FEE_BUF = 0.0008 # transaction_fee(0.0004) * fee_buffer_mult(2.0)
         
@@ -262,35 +264,19 @@ class CustomD3QNStrategy(IStrategy):
 
         last_p = self.tsl_memory[trade_id]
 
-        # --- 3. ГИСТЕРЕЗИС (Проверяем, вырос ли профит достаточно) ---
-        # Условие: p >= last_p + hysteresis
-        # Если профит упал (откат), мы НЕ обновляем last_p и НЕ ослабляем стоп.
-        # Мы обновляем расчет только на РОСТЕ профита.
-        
-        if p >= (last_p + hysteresis):
-            # Запоминаем новый хай профита
+        # Используем hysteresis_val вместо хардкода
+        if p >= (last_p + hysteresis_val):
             self.tsl_memory[trade_id] = p
+
+        # Используем d0_val и d_min_val
+        if p <= FEE_BUF:
+            d_eff = d0_val
+        else:
+            d_eff = d0_val - (p - FEE_BUF)
             
-            # --- 4. ТОЧНАЯ ФОРМУЛА СУЖЕНИЯ ---
-            # if p <= fee_buf: return d0
-            # d_eff = d0 - (p - fee_buf)
-            # return max(d_min, d_eff)
-            
-            if p <= FEE_BUF:
-                d_eff = d0
-            else:
-                d_eff = d0 - (p - FEE_BUF)
-                d_eff = max(d_min, d_eff)
-            
-            # Возвращаем новый стоп (относительно текущей цены - Freqtrade переведет)
-            # Важно: Freqtrade custom_stoploss применяется к current_rate.
-            # Если мы вернем -0.05, стоп встанет на 5% от ТЕКУЩЕЙ цены.
-            # А d_eff - это дистанция от ПИКА (текущего, раз мы обновились).
-            return -d_eff
+        d_eff = max(d_min_val, d_eff)
         
-        # Если профит не вырос достаточно -> оставляем старый стоп
-        # (возвращаем 1, чтобы Freqtrade не трогал стоп-лосс)
-        return 1
+        return -d_eff
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str):
         # 1. Данные (10 каналов, 90 свечей)
