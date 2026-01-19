@@ -129,3 +129,6 @@ freqtrade/freqtrade/data/history/datahandlers/__pycache__/featherdatahandler.cpy
 freqtrade/freqtrade/data/history/datahandlers/__pycache__/idatahandler.cpython-313.pyc
 freqtrade/freqtrade/data/history/__pycache__/__init__.cpython-313.pyc
 freqtrade/freqtrade/data/history/__pycache__/history_utils.cpython-313.pyc
+third_party/rl-trading-binance/tradesv3.dryrun.sqlite-wal
+third_party/rl-trading-binance/tradesv3.dryrun.sqlite
+third_party/rl-trading-binance/tradesv3.dryrun.sqlite-shm

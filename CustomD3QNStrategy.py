@@ -22,16 +22,18 @@ if str(project_root) not in sys.path:
 
 # Freqtrade imports
 try:
-    from freqtrade.strategy import IStrategy  # type: ignore
+    from freqtrade.strategy import IStrategy, RealParameter  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy: pass
+    class RealParameter:
+        def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
 
 logger = logging.getLogger(__name__)
 
 # Agent imports
 try:
-    from agent import D3QN_PER_Agent
+    from agent import D3QN_PER_Agent  # type: ignore
     # Нам также нужен load_config, если он у вас есть в utils.py,
     # но чтобы не зависеть от utils, я напишу загрузчик конфига прямо тут.
 except ImportError as e:
@@ -55,6 +57,11 @@ class CustomD3QNStrategy(IStrategy):
         'stoploss': 'market',
         'stoploss_on_exchange': False
     }
+
+    # --- Hyperopt Parameters ---
+    d0 = RealParameter(0.03, 0.15, default=0.0751986, space='stoploss')
+    d_min = RealParameter(0.0001, 0.005, default=0.0008225, space='stoploss')
+    hysteresis = RealParameter(0.0005, 0.005, default=0.0015218, space='stoploss')
 
     # --- FreqUI PLOT CONFIG ---
     plot_config = {
@@ -229,9 +236,11 @@ class CustomD3QNStrategy(IStrategy):
                         current_rate: float, current_profit: float, **kwargs) -> float:
         
         # --- 1. ПАРАМЕТРЫ (Exact Match) ---
-        d0 = 0.07519862504113693      
-        d_min = 0.0008225518697224519 
-        hysteresis = 0.0015218098435784326
+        # Используем параметры из Hyperopt (или дефолтные)
+        d0 = self.d0.value
+        d_min = self.d_min.value
+        hysteresis = self.hysteresis.value
+        
         FEE_BUF = 0.0008 # transaction_fee(0.0004) * fee_buffer_mult(2.0)
         
         # --- 2. РАСЧЕТ МАКСИМАЛЬНОГО ПРОФИТА ---
