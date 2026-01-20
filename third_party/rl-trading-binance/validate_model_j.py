@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig = None) -> tuple[list, list]:
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict) -> tuple[list, list]:
     """
     Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
     """
@@ -56,15 +56,6 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')))
 
         seq = d[key].astype(np.float32)
-
-        if cfg and hasattr(cfg, 'data') and hasattr(cfg.data, 'datachannels'):
-            target_channels = len(cfg.data.datachannels)
-            if seq.shape[1] > target_channels:
-                seq = seq[:, :target_channels]
-                if len(means) > target_channels:
-                    means = means[:target_channels]
-                    stds = stds[:target_channels]
-
         if seq.shape[1] != len(means):
             logger.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
             continue
@@ -372,7 +363,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     device = torch.device("cpu")
 
     # 3. Подготовка данных и среды
-    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", norm_stats, cfg=cfg)
+    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", norm_stats)
     if not val_seqs:
         logger.error("No validation data loaded. Exiting.")
         sys.exit(1)
