@@ -1,4 +1,4 @@
-# validate_model.py 
+# validate_model_ohlcv.py
 import argparse
 import json
 import logging
@@ -9,21 +9,21 @@ from typing import Any, Dict
 import numpy as np
 import torch
 import datetime as dt
+from numpy.lib.stride_tricks import sliding_window_view
 
-# Добавляем текущую директорию в путь, чтобы импортировать модули проекта
+# Добавляем текущую директорию в путь
 sys.path.append(os.getcwd())
 
 from agent import D3QN_PER_Agent
 from config import MasterConfig
 from trading_environment import TradingEnvironment
-from utils import load_npz_dataset, create_validation_episodes, load_config
+from utils import create_validation_episodes, load_config
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
 
-def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig = None) -> tuple[list, list]:
+def load_and_prep_data(npz_path: str, split_name: str, cfg: MasterConfig = None) -> tuple[list, list]:
     """
     Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
     """
@@ -31,57 +31,94 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         logger.warning(f"{split_name} data file not found or path not specified: {npz_path}")
         return [], []
 
-    if not norm_stats:
-        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
-
     d = np.load(npz_path, allow_pickle=True)
     data_keys = [k for k in d.files if not k.startswith('_')]
     sequences = []
     valid_keys = []
     logger.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
-    
+
     for key in data_keys:
-        try:
-            asset_name = key.split('_')[0]
-        except IndexError:
-            logger.warning(f"Пропуск ключа с некорректным форматом: {key}")
-            continue
-
-        asset_specific_stats = norm_stats.get(asset_name)
-        if asset_specific_stats is None:
-            logger.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
-            continue
-
-        means = np.array(asset_specific_stats.get('mean', asset_specific_stats.get('means')))
-        stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')))
-
         seq = d[key].astype(np.float32)
-
-        if cfg and hasattr(cfg, 'data') and hasattr(cfg.data, 'datachannels'):
-            target_channels = len(cfg.data.datachannels)
-            if seq.shape[1] > target_channels:
-                seq = seq[:, :target_channels]
-                if len(means) > target_channels:
-                    means = means[:target_channels]
-                    stds = stds[:target_channels]
-
-        if seq.shape[1] != len(means):
-            logger.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
-            continue
-
-        # Z-norm по каждому каналу
-        seq = (seq - means) / (stds + 1e-8)
-        # Reshape для CNN: (L, C) -> (C, L, 1)
-        seq = seq.T
-        seq = np.expand_dims(seq, -1)
+        # Просто загружаем сырые данные, нормализация будет в среде
         sequences.append(seq)
         valid_keys.append(key)
-    
+
     d.close()
     if sequences:
-        logger.info(f"Подготовлено {len(sequences)} последовательностей, форма: {sequences[0].shape}")
+        logger.info(f"Подготовлено {len(sequences)} сырых последовательностей, форма: {sequences[0].shape}")
     return sequences, valid_keys
 
+
+class RollingZScoreTradingEnvironment(TradingEnvironment):
+    """
+    Среда, которая применяет Rolling Z-score нормализацию на лету.
+    Она ожидает на вход СЫРЫЕ, ненормализованные данные.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Убедимся, что window_size доступен для _get_observation
+        self.window_size = kwargs.get('agent_history_len', 90)
+
+    def _get_observation(self) -> np.ndarray:
+        # --- FIX: Prevent out-of-bounds access ---
+        max_len = len(self.current_seq)
+        end = min(self.pre_signal_len + self.step_idx, max_len)
+        start = end - self.agent_history_len
+        if start < 0: start = 0
+
+        # 1. Получаем окно СЫРЫХ данных
+        raw_window = self.current_seq[start:end]
+
+        if len(raw_window) < self.agent_history_len:
+            pad_len = self.agent_history_len - len(raw_window)
+            padding = np.zeros((pad_len, self.num_features), dtype=np.float32)
+            # Для сырых данных лучше пандировать последним известным значением, но нули проще
+            raw_window = np.concatenate((padding, raw_window), axis=0)
+
+        # 2. Применяем Rolling Z-Score к этому окну
+        # Так как окно уже имеет нужную длину, z-score будет по этому окну
+        means = np.mean(raw_window, axis=0)
+        stds = np.std(raw_window, axis=0)
+        stds = np.where(stds == 0, 1e-6, stds)
+        normalized_window = (raw_window - means) / stds
+
+        # 3. Формируем состояние (state) как в оригинальной среде
+        unrealized = 0.0
+        if self.position != 0:
+            # Важно: self.entry_price здесь - это реальная цена, так как среда работает с сырыми данными
+            current_price = self.current_seq[end - 1, self.close_idx]
+            delta = (current_price - self.entry_price) * self.position
+            # Денормализация не нужна, но для консистентности делим на цену входа
+            unrealized = delta / (self.entry_price + 1e-8)
+
+
+        time_elapsed = float(self.step_idx) / self.agent_session_len
+        time_remaining = float(self.agent_session_len - self.step_idx) / self.agent_session_len
+        extras = np.array(
+            [
+                float(self.position),
+                unrealized,
+                time_elapsed,
+                time_remaining,
+            ],
+            dtype=np.float32,
+        )
+
+        # Reshape для CNN: (L, C) -> (C, L, 1)
+        normalized_window = normalized_window.T
+        normalized_window = np.expand_dims(normalized_window, -1)
+
+        # Этот код для плоского вектора (MLP) нужно адаптировать или удалить, если используется CNN
+        # Для простоты предполагаем, что модель ожидает CNN-формат, как в оригинальном load_and_prep_data
+        # Если нужен плоский вектор, нужно будет раскомментировать и адаптировать код ниже
+
+        # hist_len = normalized_window.size
+        # self._obs_buffer[:hist_len] = normalized_window.ravel()
+        # self._obs_buffer[hist_len:hist_len+4] = extras
+        # ... (код для action history)
+        # return self._obs_buffer
+
+        return normalized_window.astype(np.float32)
 
 def evaluate_agent(
     env: TradingEnvironment,
@@ -95,7 +132,7 @@ def evaluate_agent(
     считает MeanReward/MeanPnL/WinRate/PF/MaxDD, логирует распределение exit_reason и TSL-срабатывания,
     возвращает словарь с ключами вроде 'Validation_win_rate', 'Test_profit_factor' и т.д.
     """
-    agent.policy_net.eval()
+    agent.qnetwork_local.eval()
     if hasattr(agent, "epsilon"):
         agent.epsilon = 0.0
 
@@ -335,9 +372,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         sys.exit(1)
     
     cfg_mod = None
-    # MODIFIED: Support for .py config loading
     if config_path.endswith('.py'):
-        # Handle both single return value and tuple return value from load_config
         result = load_config(config_path, return_module=True)
         if isinstance(result, tuple):
             cfg, cfg_mod = result
@@ -350,29 +385,12 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         cfg = MasterConfig.model_validate(config_dict)
         logger.info(f"Loaded configuration from JSON file: {config_path}")
     
-    # Ensure out_dir exists
     os.makedirs(out_dir, exist_ok=True)
      
     val_data_path = cfg.paths.val_data_path
 
-    # 2. Load data
-    # STRICTLY load norm_stats from the directory containing the checkpoint
-    model_dir = os.path.dirname(checkpoint_path)
-    norm_stats_path = os.path.join(model_dir, "norm_stats.json")
-
-    if not os.path.exists(norm_stats_path):
-        logger.error(f"Norm stats not found in model directory: {norm_stats_path}")
-        sys.exit(1)
-
-    logger.info(f"Using norm_stats from model directory: {norm_stats_path}")
-
-    with open(norm_stats_path, 'r') as f:
-        norm_stats = json.load(f)
-
-    device = torch.device("cpu")
-
-    # 3. Подготовка данных и среды
-    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", norm_stats, cfg=cfg)
+    # 2. Загружаем СЫРЫЕ данные
+    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", cfg=cfg)
     if not val_seqs:
         logger.error("No validation data loaded. Exiting.")
         sys.exit(1)
@@ -384,22 +402,30 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         seed=cfg.random_seed
     )
 
-    # Read direction settings directly from config (same as train.py)
+    # 3. Создаем фиктивные статистики, чтобы среда работала с сырыми ценами
+    # Это заставляет среду думать, что данные уже "нормализованы" (mean=0, std=1)
+    # real_price = norm_price * std + mean  => real_price = raw_price * 1 + 0
+    num_features = val_seqs[0].shape[1]
+    dummy_stats = {
+        key.split('_')[0]: {
+            'mean': np.zeros(num_features),
+            'std': np.ones(num_features)
+        } for key in val_keys
+    }
+
+    device = torch.device("cpu")
+
     env_filter = getattr(cfg.market, "filter_direction", None)
     env_allowed = getattr(cfg.market, "allowed_directions", None)
-    logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}")
-
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
-    if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
-        max_trades = cfg_mod.MAX_TRADES_PER_EPISODE
-        logger.info(f"Override max_trades_per_episode from config module: {max_trades}")
 
+    # Используем нашу кастомную среду
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
-        "stats": norm_stats,
-        "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": val_seqs[0].shape[0],
+        "stats": dummy_stats,
+        "full_seq_len": val_seqs[0].shape[0], # cfg.seq.full_seq_len,
+        "num_features": num_features, # val_seqs[0].shape[0],
         "num_actions": cfg.market.num_actions,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
@@ -423,11 +449,15 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         "max_trades_per_episode": max_trades,
     }
-    val_env = TradingEnvironment(**env_kwargs)
+    val_env = RollingZScoreTradingEnvironment(**env_kwargs)
 
     # 4. Инициализация Агента
+    # Важно: state_shape должен соответствовать выходу _get_observation
+    # (Channels, Length, 1) -> (num_features, agent_history_len, 1)
+    agent_state_shape = (num_features, cfg.seq.agent_history_len, 1)
+
     agent = D3QN_PER_Agent(
-        state_shape=tuple(cfg.seq.state_shape),
+        state_shape=agent_state_shape, #tuple(cfg.seq.state_shape),
         action_dim=cfg.market.num_actions,
         cnn_maps=cfg.model.cnn_maps,
         cnn_kernels=cfg.model.cnn_kernels,
@@ -456,7 +486,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
 
     # 5. Загрузка чекпойнта
     try:
-        agent.load_model(checkpoint_path, strict=False) # Use strict=False for flexibility
+        agent.load_model(checkpoint_path, strict=False)
         logger.info(f"Loaded model from {checkpoint_path}")
     except Exception as e:
         logger.error(f"Failed to load model: {e}", exc_info=True)
@@ -483,7 +513,6 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
      
     logger.info(f"Validation results saved to {output_path}")
     
-    # MODIFIED: Печатаем путь к JSON для train.py
     print(f"RESULT_JSON: {output_path}")
     sys.stdout.flush()
 
