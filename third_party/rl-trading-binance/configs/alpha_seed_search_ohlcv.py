@@ -16,8 +16,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-# AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "LONG_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_ohlcv"
@@ -140,16 +140,16 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 512  # Уменьшаем для быстрой валидации, 100 достаточно
-max_episodes_per_symbol = 2
+cfg.trainlog.num_val_ep = 64  # Уменьшаем для быстрой валидации, 100 достаточно
+max_episodes_per_symbol = 1
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
+cfg.trainlog.episodes = 50       # Меньше (60-bar episodes дольше)
 cfg.trainlog.total_timesteps = 250000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 200             # Валидируемся чуть реже
+cfg.trainlog.val_freq = 10             # Валидируемся чуть реже
 cfg.trainlog.validation_warmup_steps = 15000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [

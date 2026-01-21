@@ -20,9 +20,9 @@ except NameError:
 AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
-    cfg.paths.config_name = "alpha_seed_404_ohlcv"
+    cfg.paths.config_name = "alpha_seed_217_ohlcv"
 else:
-    cfg.paths.config_name = f"alpha_seed_404_ohlcv_{AGENT_MODE}"
+    cfg.paths.config_name = f"alpha_seed_217_ohlcv_{AGENT_MODE}"
 
 
 print(f"CONFIG LOADED: AGENT_MODE = {AGENT_MODE}")
@@ -70,8 +70,8 @@ cfg.seq.post_signal_len = 60
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
-cfg.paths.test_data_path = "data/val_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
+cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""
 
@@ -263,7 +263,7 @@ cfg.paper.symbols = "ALL"  # Or "ALL" or list from tickers.txt
 cfg.backtest.data_source = "npz"  # For test/backtest
 
 # Random/Logging
-cfg.random_seed = 404
+cfg.random_seed = 217
 cfg.logging.per_trial_logs = True
 cfg.debug.debug_max_size_data = None
 cfg.debug.use_final_model = False
@@ -317,9 +317,9 @@ except NameError:
 # --- ПУТИ К МОДЕЛЯМ И АРТЕФАКТАМ ---
 # Эти пути строятся динамически для обеспечения переносимости.
 # Замените имена папок с временными метками на актуальные.
-long_model_dir = BASE_DIR / "output" / "alpha_seed_404_ohlcv_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
-short_model_dir = BASE_DIR / "output" / "alpha_seed_404_ohlcv_SHORT_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
-single_model_dir = BASE_DIR / "output" / "alpha_seed_404_ohlcv_UNIVERSAL" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
+long_model_dir = BASE_DIR / "output" / "alpha_seed_217_ohlcv_LONG_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_133651"
+short_model_dir = BASE_DIR / "output" / "alpha_seed_217_ohlcv_SHORT_ONLY" / "saved_models" / "rl_binance_futures_trading_date_20260110_time_191747"
+single_model_dir = BASE_DIR / "output" / "alpha_seed_217_ohlcv_UNIVERSAL" / "saved_models" / "rl_binance_futures_trading_date_20251120_time_015257"
 
 # Для валидации одиночного агента (раскомментируйте, если нужно)
 # cfg.paths.model_path = single_model_dir / "best.pth"
