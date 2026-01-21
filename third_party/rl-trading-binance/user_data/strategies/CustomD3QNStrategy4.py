@@ -1,0 +1,641 @@
+# user_data/strategies/CustomD3QNStrategy.py
+import sys
+import json
+import logging
+import importlib.util
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from pandas import DataFrame
+import torch
+from numpy.lib.stride_tricks import sliding_window_view
+
+try:
+    from freqtrade.persistence import Trade  # type: ignore
+except ImportError:
+    class Trade: pass
+
+from datetime import datetime
+
+# --- 1. НАСТРОЙКА ПУТЕЙ ---
+strategy_file = Path(__file__).resolve()
+if strategy_file.parent.name == 'strategies':
+    project_root = strategy_file.parent.parent.parent
+else:
+    project_root = strategy_file.parent.parent.parent
+
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Freqtrade imports
+try:
+    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter  # type: ignore
+except ImportError:
+    logging.getLogger(__name__).error("Could not import freqtrade.strategy")
+    class IStrategy: pass
+    class DecimalParameter:
+        def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
+    class IntParameter:
+        def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0)
+
+logger = logging.getLogger(__name__)
+
+# Agent imports
+try:
+    from agent import D3QN_PER_Agent
+except ImportError as e:
+    logger.error(f"CRITICAL: Could not import D3QN Agent! Check path: {project_root}")
+    raise e
+
+
+class CustomD3QNStrategy4(IStrategy):
+    INTERFACE_VERSION = 3
+    timeframe = '1m'
+    can_long = True
+    can_short = True
+    startup_candle_count: int = 100
+    
+    minimal_roi = {"0": 100}
+    stoploss = -0.99  # Заглушка, работает custom_stoploss
+    trailing_stop = False
+    use_custom_stoploss = True
+    
+    order_types = {
+        'entry': 'limit',
+        'exit': 'market',
+        'stoploss': 'market',
+        'stoploss_on_exchange': False
+    }
+    
+    # Параметры TSL
+    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
+    d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.001, 0.02, default=0.002, space='stoploss', load=True)
+    
+    # Пороги агентов (теперь для каждой модели)
+    long_1_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='buy', load=True)
+    long_2_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='buy', load=True)
+    short_1_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='sell', load=True)
+    short_2_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='sell', load=True)
+    
+    # Параметры consensus+veto
+    veto_threshold = DecimalParameter(0.6, 0.8, default=0.65, space='buy', load=True)
+    min_confidence = DecimalParameter(0.5, 0.8, default=0.65, space='buy', load=True)
+    
+    plot_config = {
+        'main_plot': {},
+        'subplots': {}
+    }
+    
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
+        self.device = torch.device("cpu")
+        
+        if Path(__file__).parent.name == 'strategies':
+            self.project_root = Path(__file__).parent.parent.parent
+        else:
+            self.project_root = Path(__file__).parent.parent.parent
+        
+        self.tsl_memory = {}
+        
+        # Статистика конфликтов
+        self.conflict_stats = {
+            'total_signals': 0,
+            'conflicts': 0,
+            'long_entries': 0,
+            'short_entries': 0,
+            'vetoed': 0
+        }
+        
+        # --- ПУТИ К 4 МОДЕЛЯМ ---
+        # Long Model 1: PPO trending
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_220542"
+        self.long_1_model_pth = self.long_1_model_dir / "best.pth"
+        
+        # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_220542"
+        
+        self.long_2_model_pth = self.long_2_model_dir / "best.pth"
+        
+        # Short Model 1: SAC bearish trending
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_225844"
+        self.short_1_model_pth = self.short_1_model_dir / "best.pth"
+        
+        # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_405_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260121_time_223959"
+        self.short_2_model_pth = self.short_2_model_dir / "best.pth"
+        
+        # --- ЗАГРУЗКА КОНФИГОВ ---
+        logger.info("=" * 60)
+        logger.info("🚀 INITIALIZING 2+2 ENSEMBLE SYSTEM")
+        logger.info("=" * 60)
+        
+        # Long 1
+        cfg_file_long_1 = self._find_config_file(self.long_1_model_dir)
+        if not cfg_file_long_1:
+            raise FileNotFoundError(f"Config not found in {self.long_1_model_dir}")
+        logger.info(f"✓ Loading LONG_1 config from {cfg_file_long_1}")
+        self.cfg_long_1 = self._load_py_config(cfg_file_long_1)
+        
+        # Long 2
+        cfg_file_long_2 = self._find_config_file(self.long_2_model_dir)
+        if not cfg_file_long_2:
+            raise FileNotFoundError(f"Config not found in {self.long_2_model_dir}")
+        logger.info(f"✓ Loading LONG_2 config from {cfg_file_long_2}")
+        self.cfg_long_2 = self._load_py_config(cfg_file_long_2)
+        
+        # Short 1
+        cfg_file_short_1 = self._find_config_file(self.short_1_model_dir)
+        if not cfg_file_short_1:
+            raise FileNotFoundError(f"Config not found in {self.short_1_model_dir}")
+        logger.info(f"✓ Loading SHORT_1 config from {cfg_file_short_1}")
+        self.cfg_short_1 = self._load_py_config(cfg_file_short_1)
+        
+        # Short 2
+        cfg_file_short_2 = self._find_config_file(self.short_2_model_dir)
+        if not cfg_file_short_2:
+            raise FileNotFoundError(f"Config not found in {self.short_2_model_dir}")
+        logger.info(f"✓ Loading SHORT_2 config from {cfg_file_short_2}")
+        self.cfg_short_2 = self._load_py_config(cfg_file_short_2)
+        
+        # --- ЗАГРУЗКА NORM_STATS ---
+        self.norm_stats_long_1 = self._load_norm_stats(self.long_1_model_dir)
+        self.norm_stats_long_2 = self._load_norm_stats(self.long_2_model_dir)
+        self.norm_stats_short_1 = self._load_norm_stats(self.short_1_model_dir)
+        self.norm_stats_short_2 = self._load_norm_stats(self.short_2_model_dir)
+        
+        # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
+        logger.info("📦 Creating agents...")
+        self.long_1_agent = self._create_agent_from_config(self.cfg_long_1)
+        self.long_2_agent = self._create_agent_from_config(self.cfg_long_2)
+        self.short_1_agent = self._create_agent_from_config(self.cfg_short_1)
+        self.short_2_agent = self._create_agent_from_config(self.cfg_short_2)
+        
+        # --- ЗАГРУЗКА ВЕСОВ ---
+        self._load_weights(self.long_1_agent, self.long_1_model_pth, "LONG_1")
+        self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
+        self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
+        self._load_weights(self.short_2_agent, self.short_2_model_pth, "SHORT_2")
+        
+        logger.info("=" * 60)
+        logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
+        logger.info("=" * 60)
+    
+    def _find_config_file(self, dir_path: Path):
+        for file in dir_path.glob("*.py"):
+            if "alpha" in file.name or "config" in file.name:
+                return file
+        return None
+    
+    def _load_py_config(self, path: Path):
+        unique_module_name = f"config_{path.parent.name}_{path.stem}"
+        spec = importlib.util.spec_from_file_location(unique_module_name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load config from {path}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[unique_module_name] = mod
+        spec.loader.exec_module(mod)
+        return mod.cfg
+    
+    def _load_norm_stats(self, model_dir: Path):
+        ns_path = model_dir / "norm_stats.json"
+        if ns_path.exists():
+            with open(ns_path, 'r') as f:
+                return json.load(f)
+        else:
+            raise FileNotFoundError(f"norm_stats.json missing in {model_dir}")
+    
+    def _create_agent_from_config(self, cfg):
+        return D3QN_PER_Agent(
+            state_shape=cfg.seq.state_shape,
+            action_dim=cfg.market.num_actions,
+            cnn_maps=cfg.model.cnn_maps,
+            cnn_kernels=cfg.model.cnn_kernels,
+            cnn_strides=cfg.model.cnn_strides,
+            cnn_dilations=cfg.model.cnn_dilations,
+            dense_val=cfg.model.dense_val,
+            dense_adv=cfg.model.dense_adv,
+            additional_feats=cfg.model.additional_feats,
+            dropout_model=cfg.model.dropout_p,
+            device=self.device,
+            gamma=cfg.rl.gamma,
+            learning_rate=cfg.rl.lr,
+            batch_size=cfg.rl.batch_size,
+            buffer_size=cfg.per.buffer_size,
+            target_update_freq=cfg.rl.target_update_freq,
+            train_start=cfg.rl.train_start,
+            per_alpha=cfg.per.per_alpha,
+            per_beta_start=cfg.per.per_beta_start,
+            per_beta_frames=cfg.per.per_beta_frames,
+            eps_start=cfg.eps.eps_start,
+            eps_end=cfg.eps.eps_end,
+            eps_frames=cfg.eps.eps_decay_frames,
+            epsilon=0.0,
+            max_gradient_norm=cfg.rl.max_gradient_norm
+        )
+    
+    def _load_weights(self, agent, path, name):
+        try:
+            agent.load_model(str(path))
+            agent.policy_net.eval()
+            logger.info(f"✅ {name} Agent loaded from {path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to load {name} Agent: {e}")
+            raise e
+    
+    def feature_engineering(self, dataframe: DataFrame, **kwargs) -> DataFrame:
+        # Волатильность
+        dataframe['volatility_90m'] = (
+            (dataframe['high'].rolling(90).max() - dataframe['low'].rolling(90).min()) /
+            (dataframe['low'].rolling(90).min() + 1e-9)
+        )
+        
+        # VWAP и объемы
+        dataframe['vwap'] = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
+        dataframe['quote_volume'] = dataframe['volume'] * dataframe['vwap']
+        dataframe['num_trades'] = dataframe['volume']
+        dataframe['taker_base'] = dataframe['volume'] * 0.5
+        dataframe['taker_quote'] = dataframe['quote_volume'] * 0.5
+        
+        # Заполняем NaN нулями
+        dataframe = dataframe.fillna(0.0)
+        return dataframe
+    
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        return self.feature_engineering(dataframe)
+    
+    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
+                   current_profit: float, **kwargs):
+        if trade.open_date_utc:
+            duration_min = (current_time - trade.open_date_utc).total_seconds() / 60
+            if duration_min >= 60:
+                return "timeout_60m"
+        return None
+    
+    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
+                       current_rate: float, current_profit: float, **kwargs) -> float:
+        d0_val = self.d0.value
+        d_min_val = self.d_min.value
+        hysteresis_val = self.hysteresis.value
+        FEE_BUF = 0.0008
+        
+        p = current_profit
+        trade_id = trade.id
+        
+        if trade_id not in self.tsl_memory:
+            self.tsl_memory[trade_id] = -999.0
+        
+        last_p = self.tsl_memory[trade_id]
+        
+        if p >= (last_p + hysteresis_val):
+            self.tsl_memory[trade_id] = p
+        
+        if p <= FEE_BUF:
+            d_eff = d0_val
+        else:
+            d_eff = d0_val - (p - FEE_BUF)
+            d_eff = max(d_min_val, d_eff)
+        
+        return -d_eff
+    
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
+        """
+        Получение входных данных для конкретной модели
+        model_num: 1 или 2 (для выбора правильных norm_stats)
+        """
+        # 1. Данные (5 каналов)
+        opens = dataframe['open'].values
+        highs = dataframe['high'].values
+        lows = dataframe['low'].values
+        closes = dataframe['close'].values
+        volumes = dataframe['volume'].values
+        
+        # Log Returns
+        eps = 1e-9
+        def calc_log_returns(arr):
+            changes = arr[1:] / (arr[:-1] + eps)
+            return np.log(np.maximum(changes, eps))
+        
+        r_opens = calc_log_returns(opens)
+        r_highs = calc_log_returns(highs)
+        r_lows = calc_log_returns(lows)
+        r_closes = calc_log_returns(closes)
+        r_volumes = np.log(volumes[1:] + 1.0)
+        
+        # Stack (5, N-1)
+        data = np.stack([r_opens, r_highs, r_lows, r_closes, r_volumes])
+        
+        if side == "SHORT":
+            data = data * -1.0
+        
+        # 2. Выбор norm_stats
+        if side == "LONG" and model_num == 1:
+            current_norm_stats = self.norm_stats_long_1
+        elif side == "LONG" and model_num == 2:
+            current_norm_stats = self.norm_stats_long_2
+        elif side == "SHORT" and model_num == 1:
+            current_norm_stats = self.norm_stats_short_1
+        else:  # SHORT model 2
+            current_norm_stats = self.norm_stats_short_2
+        
+        # Нормализация
+        if "means" in current_norm_stats and isinstance(current_norm_stats["means"], dict):
+            stats = current_norm_stats
+            target_channels = ["open", "high", "low", "close", "volume"]
+            means_val = [stats["means"].get(ch, 0.0) for ch in target_channels]
+            stds_val = [stats["stds"].get(ch, 1.0) for ch in target_channels]
+            means = np.array(means_val).reshape(-1, 1)
+            stds = np.array(stds_val).reshape(-1, 1)
+            data = (data - means) / (stds + 1e-8)
+        elif "mean" in current_norm_stats and isinstance(current_norm_stats["mean"], list):
+            stats = current_norm_stats
+            means_val = stats["mean"][:5]
+            stds_val = stats["std"][:5]
+            means = np.array(means_val).reshape(-1, 1)
+            stds = np.array(stds_val).reshape(-1, 1)
+            data = (data - means) / (stds + 1e-8)
+        else:
+            # Fallback
+            df_data = pd.DataFrame(data.T)
+            rolling = df_data.rolling(window=200, min_periods=1)
+            means = rolling.mean().values.T
+            stds = rolling.std().values.T
+            means[np.isnan(means)] = 0.0
+            stds[np.isnan(stds)] = 1.0
+            data = (data - means) / (stds + 1e-8)
+        
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # 3. Sliding window
+        if data.shape[1] < 90:
+            return None
+        
+        windows = sliding_window_view(data, window_shape=90, axis=1)
+        windows = windows.transpose(1, 0, 2)
+        
+        # 4. Flatten & Extra Features
+        batch_size = windows.shape[0]
+        flat_feats = windows.reshape(batch_size, -1)
+        add_feats = np.zeros((batch_size, 4), dtype=np.float32)
+        combined = np.concatenate([flat_feats, add_feats], axis=1)
+        input_tensor = torch.FloatTensor(combined).to(self.device)
+        
+        return input_tensor
+    
+def _apply_consensus_veto_rules(self, long_votes, short_votes, 
+                               long_confidences, short_confidences):
+    """
+    CONSENSUS + VETO логика (ultra-conservative для leverage 5x)
+    
+    Правила:
+    1. Long position открывается если:
+       - Majority (>=50%) long моделей голосуют ЗА
+       - Средняя confidence long >= min_confidence (0.65)
+       - НИ ОДНА short модель не имеет high confidence (>veto_threshold=0.7)
+    
+    2. Short position аналогично
+    
+    3. КОНФЛИКТ (оба направления проходят consensus):
+       - НЕ ОТКРЫВАЕМ НИКАКИЕ ПОЗИЦИИ
+       - Это сигнал неопределенности рынка → stay in cash
+    """
+    result = {
+        'enter_long': 0,
+        'enter_short': 0,
+        'confidence': 0.0,
+        'reason': 'no_signal'
+    }
+    
+    # Подсчет голосов
+    long_entry_count = sum(1 for vote in long_votes if vote == 1)
+    short_entry_count = sum(1 for vote in short_votes if vote == 1)
+    
+    # Средние confidence
+    avg_long_conf = np.mean(long_confidences) if long_confidences else 0.0
+    avg_short_conf = np.mean(short_confidences) if short_confidences else 0.0
+    
+    # Max confidence (для veto check)
+    max_long_conf = max(long_confidences) if long_confidences else 0.0
+    max_short_conf = max(short_confidences) if short_confidences else 0.0
+    
+    # Majority check
+    total_long = len(long_votes)
+    total_short = len(short_votes)
+    
+    long_majority = (long_entry_count >= total_long * 0.5) if total_long > 0 else False
+    short_majority = (short_entry_count >= total_short * 0.5) if total_short > 0 else False
+    
+    # Strong veto check
+    veto_thresh = self.veto_threshold.value
+    min_conf = self.min_confidence.value
+    
+    strong_short_veto = max_short_conf > veto_thresh
+    strong_long_veto = max_long_conf > veto_thresh
+    
+    # PRE-CHECK: Если обе стороны имеют consensus условия, это КОНФЛИКТ
+    long_has_consensus = long_majority and avg_long_conf >= min_conf
+    short_has_consensus = short_majority and avg_short_conf >= min_conf
+    
+    if long_has_consensus and short_has_consensus:
+        # КРИТИЧНО: Конфликт = неопределенность = NO ENTRY
+        result['reason'] = f'market_uncertainty_conflict_L{avg_long_conf:.3f}_S{avg_short_conf:.3f}'
+        result['confidence'] = 0.0
+        return result
+    
+    # DECISION LOGIC (только если нет конфликта)
+    # Case 1: Long signal
+    if long_has_consensus:
+        if not strong_short_veto:
+            # Long разрешен
+            result['enter_long'] = 1
+            result['confidence'] = avg_long_conf
+            result['reason'] = f'long_consensus_{long_entry_count}/{total_long}_conf{avg_long_conf:.3f}'
+        else:
+            # Short veto активирован
+            result['reason'] = f'long_vetoed_by_short_conf{max_short_conf:.3f}'
+    
+    # Case 2: Short signal
+    elif short_has_consensus:
+        if not strong_long_veto:
+            # Short разрешен
+            result['enter_short'] = 1
+            result['confidence'] = avg_short_conf
+            result['reason'] = f'short_consensus_{short_entry_count}/{total_short}_conf{avg_short_conf:.3f}'
+        else:
+            # Long veto активирован
+            result['reason'] = f'short_vetoed_by_long_conf{max_long_conf:.3f}'
+    
+    # Case 3: Ни одна сторона не прошла consensus
+    else:
+        if long_entry_count > 0 or short_entry_count > 0:
+                # Есть голоса, но недостаточно для consensus
+                result['reason'] = f'insufficient_consensus_L{long_entry_count}/{total_long}@{avg_long_conf:.3f}_S{short_entry_count}/{total_short}@{avg_short_conf:.3f}'
+        else:
+            result['reason'] = 'no_signals_from_models'
+    
+    return result
+    
+    def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
+                           time_in_force: str, current_time: datetime, entry_tag: str,
+                           side: str, **kwargs) -> bool:
+        if self.config.get('runmode') not in ['live', 'dry_run']:
+            return True
+        
+        try:
+            from freqtrade.persistence import Trade  # type: ignore
+            trades = Trade.get_trades([Trade.is_open.is_(True)]).all()
+            current_shorts = sum(1 for t in trades if t.is_short)
+            current_longs = sum(1 for t in trades if not t.is_short)
+            
+            MAX_LONGS = 50
+            MAX_SHORTS = 50
+            
+            if side == "long":
+                if current_longs >= MAX_LONGS:
+                    return False
+            elif side == "short":
+                if current_shorts >= MAX_SHORTS:
+                    return False
+        except Exception:
+            return True
+        
+        return True
+    
+    def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
+                          rate: float, time_in_force: str, sell_reason: str,
+                          current_time: datetime, **kwargs) -> bool:
+        if trade.id in self.tsl_memory:
+            del self.tsl_memory[trade.id]
+        return True
+    
+    def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        ENSEMBLE ENTRY LOGIC с 2+2 моделями
+        """
+        # 1. Базовая защита
+        if len(dataframe) < self.startup_candle_count:
+            return dataframe
+        
+        # 2. Оптимизация инференса
+        deep_inference = self.config.get('deep_inference', False)
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            df_input = dataframe.iloc[-91:].copy()
+        elif not deep_inference:
+            lookback = 1000
+            if len(dataframe) > lookback:
+                df_input = dataframe.iloc[-lookback:].copy()
+            else:
+                df_input = dataframe
+            dataframe['enter_long'] = 0
+            dataframe['enter_short'] = 0
+        else:
+            df_input = dataframe
+            dataframe['enter_long'] = 0
+            dataframe['enter_short'] = 0
+        
+        # 3. Инференс для всех 4 моделей
+        tensor_long_1 = self.get_model_input(df_input, metadata['pair'], side="LONG", model_num=1)
+        tensor_long_2 = self.get_model_input(df_input, metadata['pair'], side="LONG", model_num=2)
+        tensor_short_1 = self.get_model_input(df_input, metadata['pair'], side="SHORT", model_num=1)
+        tensor_short_2 = self.get_model_input(df_input, metadata['pair'], side="SHORT", model_num=2)
+        
+        if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
+            return dataframe
+        
+        with torch.no_grad():
+            # Предсказания от всех 4 агентов
+            q_long_1 = self.long_1_agent.policy_net(tensor_long_1).cpu().numpy()
+            q_long_2 = self.long_2_agent.policy_net(tensor_long_2).cpu().numpy()
+            q_short_1 = self.short_1_agent.policy_net(tensor_short_1).cpu().numpy()
+            q_short_2 = self.short_2_agent.policy_net(tensor_short_2).cpu().numpy()
+            
+            # Advantage для каждой модели
+            adv_long_1 = q_long_1[:, 1] - q_long_1[:, 0]
+            adv_long_2 = q_long_2[:, 1] - q_long_2[:, 0]
+            adv_short_1 = q_short_1[:, 1] - q_short_1[:, 0]
+            adv_short_2 = q_short_2[:, 1] - q_short_2[:, 0]
+            
+            # Нормализация advantage в [0, 1] для использования как confidence
+            def normalize_confidence(adv):
+                # Sigmoid нормализация для преобразования advantage в confidence
+                return 1.0 / (1.0 + np.exp(-adv))
+            
+            conf_long_1 = normalize_confidence(adv_long_1)
+            conf_long_2 = normalize_confidence(adv_long_2)
+            conf_short_1 = normalize_confidence(adv_short_1)
+            conf_short_2 = normalize_confidence(adv_short_2)
+            
+            # Маски entry на основе порогов
+            vote_long_1 = (adv_long_1 > self.long_1_threshold.value).astype(int)
+            vote_long_2 = (adv_long_2 > self.long_2_threshold.value).astype(int)
+            vote_short_1 = (adv_short_1 > self.short_1_threshold.value).astype(int)
+            vote_short_2 = (adv_short_2 > self.short_2_threshold.value).astype(int)
+            
+            # Применяем consensus+veto логику для каждой свечи
+            n_predictions = len(adv_long_1)
+            target_idx = slice(-n_predictions, None)
+            
+            if 'enter_long' not in dataframe.columns:
+                dataframe['enter_long'] = 0
+            if 'enter_short' not in dataframe.columns:
+                dataframe['enter_short'] = 0
+            
+            dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
+            dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
+            
+            # Применяем правила для каждой свечи
+            final_long_signals = np.zeros(n_predictions, dtype=np.int8)
+            final_short_signals = np.zeros(n_predictions, dtype=np.int8)
+            
+            for i in range(n_predictions):
+                # Собираем голоса и confidence для текущей свечи
+                long_votes = [vote_long_1[i], vote_long_2[i]]
+                short_votes = [vote_short_1[i], vote_short_2[i]]
+                long_confidences = [conf_long_1[i], conf_long_2[i]]
+                short_confidences = [conf_short_1[i], conf_short_2[i]]
+                
+                # Применяем consensus+veto правила
+                decision = self._apply_consensus_veto_rules(
+                    long_votes,
+                    short_votes,
+                    long_confidences,
+                    short_confidences
+                )
+                
+                # Сбор статистики
+                if any(long_votes) or any(short_votes):
+                    self.conflict_stats['total_signals'] += 1
+                    
+                    if 'conflict' in decision['reason']:
+                        self.conflict_stats['conflicts'] += 1
+                    elif decision['enter_long']:
+                        self.conflict_stats['long_entries'] += 1
+                    elif decision['enter_short']:
+                        self.conflict_stats['short_entries'] += 1
+                    elif 'vetoed' in decision['reason']:
+                        self.conflict_stats['vetoed'] += 1
+                
+                final_long_signals[i] = decision['enter_long']
+                final_short_signals[i] = decision['enter_short']
+                
+                # Логирование важных событий
+                if 'conflict' in decision['reason'] and i < 5:
+                    logger.warning(f"⚠️  CONFLICT DETECTED: {decision['reason']}")
+                elif (decision['enter_long'] or decision['enter_short']) and i < 3:
+                    logger.info(f"📊 ENSEMBLE DECISION: {decision['reason']} | conf={decision['confidence']:.3f}")
+            
+            # Вывод статистики периодически
+            if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
+                conflict_rate = self.conflict_stats['conflicts'] / self.conflict_stats['total_signals'] * 100
+                veto_rate = self.conflict_stats['vetoed'] / self.conflict_stats['total_signals'] * 100
+                logger.info(f"📈 ENSEMBLE STATS: Conflicts={conflict_rate:.1f}% | Vetoed={veto_rate:.1f}% | "
+                           f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
+            
+            # Запись финальных сигналов
+            dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
+            dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_short')] = final_short_signals
+        
+        return dataframe
+    
+    def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        return dataframe
