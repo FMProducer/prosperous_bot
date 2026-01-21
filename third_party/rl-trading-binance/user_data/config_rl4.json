@@ -1,5 +1,7 @@
 {
     "initial_state": "running",
+    "cpu_threads": 6,
+    "deep_inference": false,
     "max_open_trades": 100,
     "stake_currency": "USDT",
     "stake_amount": 100,
@@ -218,7 +220,7 @@
     ],
     
     "internals": {
-        "process_throttle_secs": 1
+        "process_throttle_secs": 6
     },
     
     "ensemble_config": {

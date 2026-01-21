@@ -1,4 +1,3 @@
-# user_data/strategies/CustomD3QNStrategy.py
 import sys
 import json
 import logging
@@ -9,6 +8,8 @@ import pandas as pd
 from pandas import DataFrame
 import torch
 from numpy.lib.stride_tricks import sliding_window_view
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 try:
     from freqtrade.persistence import Trade  # type: ignore
@@ -89,7 +90,22 @@ class CustomD3QNStrategy4(IStrategy):
     
     def __init__(self, config: dict) -> None:
         super().__init__(config)
+        
+        # === CPU ОПТИМИЗАЦИИ ===
+        # 1. Установить количество потоков для PyTorch
+        num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
+        torch.set_num_threads(num_cpu_threads)
+        torch.set_num_interop_threads(num_cpu_threads)
+        
         self.device = torch.device("cpu")
+        
+        # 2. ThreadPool для параллельного inference
+        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
+        
+        # 3. Кэш для feature tensors (экономим на preprocessing)
+        self.feature_cache = {}
+        self.cache_lock = threading.Lock()
+        self.cache_max_size = 100  # храним только последние 100 пар свечей
         
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
@@ -113,8 +129,7 @@ class CustomD3QNStrategy4(IStrategy):
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_220542"
-        
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_405_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260121_time_232557"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
@@ -176,6 +191,38 @@ class CustomD3QNStrategy4(IStrategy):
         self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
         self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
         self._load_weights(self.short_2_agent, self.short_2_model_pth, "SHORT_2")
+        
+        # === ОПТИМИЗАЦИЯ МОДЕЛЕЙ ДЛЯ INFERENCE ===
+        # После загрузки весов, оптимизируем модели
+        logger.info("🔧 Optimizing models for CPU inference...")
+        
+        # Переводим в eval mode и оптимизируем
+        for agent_name, agent in [
+            ("LONG_1", self.long_1_agent),
+            ("LONG_2", self.long_2_agent),
+            ("SHORT_1", self.short_1_agent),
+            ("SHORT_2", self.short_2_agent)
+        ]:
+            agent.policy_net.eval()
+            
+            # Отключаем grad для всех параметров (экономит память и время)
+            for param in agent.policy_net.parameters():
+                param.requires_grad = False
+            
+            # Disabled torch.compile to avoid 'Compiler: cl is not found' on Windows
+            # # Если PyTorch 2.0+, используем compile для ускорения
+            # try:
+            #     if hasattr(torch, 'compile'):
+            #         agent.policy_net = torch.compile(
+            #             agent.policy_net,
+            #             mode='reduce-overhead',  # для CPU лучший режим
+            #             fullgraph=False
+            #         )
+            #         logger.info(f"  ✓ {agent_name}: torch.compile enabled")
+            # except Exception as e:
+            #     logger.warning(f"  ⚠ {agent_name}: torch.compile failed: {e}")
+        
+        logger.info("✅ CPU optimizations applied")
         
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
@@ -382,98 +429,148 @@ class CustomD3QNStrategy4(IStrategy):
         
         return input_tensor
     
-def _apply_consensus_veto_rules(self, long_votes, short_votes, 
+    def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
+        """
+        Кэширующая версия get_model_input
+        Ключ кэша = (pair, last_candle_timestamp, side, model_num)
+        """
+        # Генерируем ключ кэша
+        last_timestamp = dataframe.iloc[-1]['date'] if 'date' in dataframe.columns else dataframe.index[-1]
+        cache_key = (pair, str(last_timestamp), side, model_num)
+        
+        # Проверяем кэш
+        with self.cache_lock:
+            if cache_key in self.feature_cache:
+                return self.feature_cache[cache_key]
+        
+        # Если не в кэше, вычисляем
+        tensor = self.get_model_input(dataframe, pair, side, model_num)
+        
+        # Сохраняем в кэш
+        with self.cache_lock:
+            # Ограничиваем размер кэша
+            if len(self.feature_cache) >= self.cache_max_size:
+                # Удаляем старейший элемент (FIFO)
+                self.feature_cache.pop(next(iter(self.feature_cache)))
+            
+            self.feature_cache[cache_key] = tensor
+        
+        return tensor
+    
+    def _parallel_inference(self, tensors_and_agents):
+        """
+        Выполняет inference для нескольких моделей параллельно
+        tensors_and_agents: [(tensor, agent, name), ...]
+        """
+        def single_inference(tensor, agent):
+            with torch.no_grad():
+                return agent.policy_net(tensor).cpu().numpy()
+        
+        # Запускаем все инференсы параллельно
+        futures = []
+        for tensor, agent, name in tensors_and_agents:
+            future = self.executor.submit(single_inference, tensor, agent)
+            futures.append((future, name))
+        
+        # Собираем результаты
+        results = {}
+        for future, name in futures:
+            results[name] = future.result()
+        
+        return results
+
+    def _apply_consensus_veto_rules(self, long_votes, short_votes, 
                                long_confidences, short_confidences):
-    """
-    CONSENSUS + VETO логика (ultra-conservative для leverage 5x)
-    
-    Правила:
-    1. Long position открывается если:
-       - Majority (>=50%) long моделей голосуют ЗА
-       - Средняя confidence long >= min_confidence (0.65)
-       - НИ ОДНА short модель не имеет high confidence (>veto_threshold=0.7)
-    
-    2. Short position аналогично
-    
-    3. КОНФЛИКТ (оба направления проходят consensus):
-       - НЕ ОТКРЫВАЕМ НИКАКИЕ ПОЗИЦИИ
-       - Это сигнал неопределенности рынка → stay in cash
-    """
-    result = {
-        'enter_long': 0,
-        'enter_short': 0,
-        'confidence': 0.0,
-        'reason': 'no_signal'
-    }
-    
-    # Подсчет голосов
-    long_entry_count = sum(1 for vote in long_votes if vote == 1)
-    short_entry_count = sum(1 for vote in short_votes if vote == 1)
-    
-    # Средние confidence
-    avg_long_conf = np.mean(long_confidences) if long_confidences else 0.0
-    avg_short_conf = np.mean(short_confidences) if short_confidences else 0.0
-    
-    # Max confidence (для veto check)
-    max_long_conf = max(long_confidences) if long_confidences else 0.0
-    max_short_conf = max(short_confidences) if short_confidences else 0.0
-    
-    # Majority check
-    total_long = len(long_votes)
-    total_short = len(short_votes)
-    
-    long_majority = (long_entry_count >= total_long * 0.5) if total_long > 0 else False
-    short_majority = (short_entry_count >= total_short * 0.5) if total_short > 0 else False
-    
-    # Strong veto check
-    veto_thresh = self.veto_threshold.value
-    min_conf = self.min_confidence.value
-    
-    strong_short_veto = max_short_conf > veto_thresh
-    strong_long_veto = max_long_conf > veto_thresh
-    
-    # PRE-CHECK: Если обе стороны имеют consensus условия, это КОНФЛИКТ
-    long_has_consensus = long_majority and avg_long_conf >= min_conf
-    short_has_consensus = short_majority and avg_short_conf >= min_conf
-    
-    if long_has_consensus and short_has_consensus:
-        # КРИТИЧНО: Конфликт = неопределенность = NO ENTRY
-        result['reason'] = f'market_uncertainty_conflict_L{avg_long_conf:.3f}_S{avg_short_conf:.3f}'
-        result['confidence'] = 0.0
+        """
+        CONSENSUS + VETO логика (ultra-conservative для leverage 5x)
+        
+        Правила:
+        1. Long position открывается если:
+           - Majority (>=50%) long моделей голосуют ЗА
+           - Средняя confidence long >= min_confidence (0.65)
+           - НИ ОДНА short модель не имеет high confidence (>veto_threshold=0.7)
+        
+        2. Short position аналогично
+        
+        3. КОНФЛИКТ (оба направления проходят consensus):
+           - НЕ ОТКРЫВАЕМ НИКАКИЕ ПОЗИЦИИ
+           - Это сигнал неопределенности рынка → stay in cash
+        """
+        result = {
+            'enter_long': 0,
+            'enter_short': 0,
+            'confidence': 0.0,
+            'reason': 'no_signal'
+        }
+        
+        # Подсчет голосов
+        long_entry_count = sum(1 for vote in long_votes if vote == 1)
+        short_entry_count = sum(1 for vote in short_votes if vote == 1)
+        
+        # Средние confidence
+        avg_long_conf = np.mean(long_confidences) if long_confidences else 0.0
+        avg_short_conf = np.mean(short_confidences) if short_confidences else 0.0
+        
+        # Max confidence (для veto check)
+        max_long_conf = max(long_confidences) if long_confidences else 0.0
+        max_short_conf = max(short_confidences) if short_confidences else 0.0
+        
+        # Majority check
+        total_long = len(long_votes)
+        total_short = len(short_votes)
+        
+        long_majority = (long_entry_count >= total_long * 0.5) if total_long > 0 else False
+        short_majority = (short_entry_count >= total_short * 0.5) if total_short > 0 else False
+        
+        # Strong veto check
+        veto_thresh = self.veto_threshold.value
+        min_conf = self.min_confidence.value
+        
+        strong_short_veto = max_short_conf > veto_thresh
+        strong_long_veto = max_long_conf > veto_thresh
+        
+        # PRE-CHECK: Если обе стороны имеют consensus условия, это КОНФЛИКТ
+        long_has_consensus = long_majority and avg_long_conf >= min_conf
+        short_has_consensus = short_majority and avg_short_conf >= min_conf
+        
+        if long_has_consensus and short_has_consensus:
+            # КРИТИЧНО: Конфликт = неопределенность = NO ENTRY
+            result['reason'] = f'market_uncertainty_conflict_L{avg_long_conf:.3f}_S{avg_short_conf:.3f}'
+            result['confidence'] = 0.0
+            return result
+        
+        # DECISION LOGIC (только если нет конфликта)
+        # Case 1: Long signal
+        if long_has_consensus:
+            if not strong_short_veto:
+                # Long разрешен
+                result['enter_long'] = 1
+                result['confidence'] = avg_long_conf
+                result['reason'] = f'long_consensus_{long_entry_count}/{total_long}_conf{avg_long_conf:.3f}'
+            else:
+                # Short veto активирован
+                result['reason'] = f'long_vetoed_by_short_conf{max_short_conf:.3f}'
+        
+        # Case 2: Short signal
+        elif short_has_consensus:
+            if not strong_long_veto:
+                # Short разрешен
+                result['enter_short'] = 1
+                result['confidence'] = avg_short_conf
+                result['reason'] = f'short_consensus_{short_entry_count}/{total_short}_conf{avg_short_conf:.3f}'
+            else:
+                # Long veto активирован
+                result['reason'] = f'short_vetoed_by_long_conf{max_long_conf:.3f}'
+        
+        # Case 3: Ни одна сторона не прошла consensus
+        else:
+            if long_entry_count > 0 or short_entry_count > 0:
+                    # Есть голоса, но недостаточно для consensus
+                    result['reason'] = f'insufficient_consensus_L{long_entry_count}/{total_long}@{avg_long_conf:.3f}_S{short_entry_count}/{total_short}@{avg_short_conf:.3f}'
+            else:
+                result['reason'] = 'no_signals_from_models'
+        
         return result
-    
-    # DECISION LOGIC (только если нет конфликта)
-    # Case 1: Long signal
-    if long_has_consensus:
-        if not strong_short_veto:
-            # Long разрешен
-            result['enter_long'] = 1
-            result['confidence'] = avg_long_conf
-            result['reason'] = f'long_consensus_{long_entry_count}/{total_long}_conf{avg_long_conf:.3f}'
-        else:
-            # Short veto активирован
-            result['reason'] = f'long_vetoed_by_short_conf{max_short_conf:.3f}'
-    
-    # Case 2: Short signal
-    elif short_has_consensus:
-        if not strong_long_veto:
-            # Short разрешен
-            result['enter_short'] = 1
-            result['confidence'] = avg_short_conf
-            result['reason'] = f'short_consensus_{short_entry_count}/{total_short}_conf{avg_short_conf:.3f}'
-        else:
-            # Long veto активирован
-            result['reason'] = f'short_vetoed_by_long_conf{max_long_conf:.3f}'
-    
-    # Case 3: Ни одна сторона не прошла consensus
-    else:
-        if long_entry_count > 0 or short_entry_count > 0:
-                # Есть голоса, но недостаточно для consensus
-                result['reason'] = f'insufficient_consensus_L{long_entry_count}/{total_long}@{avg_long_conf:.3f}_S{short_entry_count}/{total_short}@{avg_short_conf:.3f}'
-        else:
-            result['reason'] = 'no_signals_from_models'
-    
-    return result
     
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
@@ -510,7 +607,7 @@ def _apply_consensus_veto_rules(self, long_votes, short_votes,
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        ENSEMBLE ENTRY LOGIC с 2+2 моделями
+        OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
         """
         # 1. Базовая защита
         if len(dataframe) < self.startup_candle_count:
@@ -533,107 +630,117 @@ def _apply_consensus_veto_rules(self, long_votes, short_votes,
             dataframe['enter_long'] = 0
             dataframe['enter_short'] = 0
         
-        # 3. Инференс для всех 4 моделей
-        tensor_long_1 = self.get_model_input(df_input, metadata['pair'], side="LONG", model_num=1)
-        tensor_long_2 = self.get_model_input(df_input, metadata['pair'], side="LONG", model_num=2)
-        tensor_short_1 = self.get_model_input(df_input, metadata['pair'], side="SHORT", model_num=1)
-        tensor_short_2 = self.get_model_input(df_input, metadata['pair'], side="SHORT", model_num=2)
+        # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
+        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1)
+        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2)
+        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1)
+        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2)
         
         if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
             return dataframe
         
-        with torch.no_grad():
-            # Предсказания от всех 4 агентов
-            q_long_1 = self.long_1_agent.policy_net(tensor_long_1).cpu().numpy()
-            q_long_2 = self.long_2_agent.policy_net(tensor_long_2).cpu().numpy()
-            q_short_1 = self.short_1_agent.policy_net(tensor_short_1).cpu().numpy()
-            q_short_2 = self.short_2_agent.policy_net(tensor_short_2).cpu().numpy()
+        # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
+        inference_tasks = [
+            (tensor_long_1, self.long_1_agent, "long_1"),
+            (tensor_long_2, self.long_2_agent, "long_2"),
+            (tensor_short_1, self.short_1_agent, "short_1"),
+            (tensor_short_2, self.short_2_agent, "short_2")
+        ]
+        
+        q_values = self._parallel_inference(inference_tasks)
+        
+        # Распаковываем результаты
+        q_long_1 = q_values["long_1"]
+        q_long_2 = q_values["long_2"]
+        q_short_1 = q_values["short_1"]
+        q_short_2 = q_values["short_2"]
+        
+        # 5. Остальная логика БЕЗ ИЗМЕНЕНИЙ
+        # Advantage для каждой модели
+        adv_long_1 = q_long_1[:, 1] - q_long_1[:, 0]
+        adv_long_2 = q_long_2[:, 1] - q_long_2[:, 0]
+        adv_short_1 = q_short_1[:, 1] - q_short_1[:, 0]
+        adv_short_2 = q_short_2[:, 1] - q_short_2[:, 0]
+        
+        # Нормализация advantage в [0, 1] для использования как confidence
+        def normalize_confidence(adv):
+            # Sigmoid нормализация для преобразования advantage в confidence
+            return 1.0 / (1.0 + np.exp(-adv))
+        
+        conf_long_1 = normalize_confidence(adv_long_1)
+        conf_long_2 = normalize_confidence(adv_long_2)
+        conf_short_1 = normalize_confidence(adv_short_1)
+        conf_short_2 = normalize_confidence(adv_short_2)
+        
+        # Маски entry на основе порогов
+        vote_long_1 = (adv_long_1 > self.long_1_threshold.value).astype(int)
+        vote_long_2 = (adv_long_2 > self.long_2_threshold.value).astype(int)
+        vote_short_1 = (adv_short_1 > self.short_1_threshold.value).astype(int)
+        vote_short_2 = (adv_short_2 > self.short_2_threshold.value).astype(int)
+        
+        # Применяем consensus+veto логику для каждой свечи
+        n_predictions = len(adv_long_1)
+        target_idx = slice(-n_predictions, None)
+        
+        if 'enter_long' not in dataframe.columns:
+            dataframe['enter_long'] = 0
+        if 'enter_short' not in dataframe.columns:
+            dataframe['enter_short'] = 0
+        
+        dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
+        dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
+        
+        # Применяем правила для каждой свечи
+        final_long_signals = np.zeros(n_predictions, dtype=np.int8)
+        final_short_signals = np.zeros(n_predictions, dtype=np.int8)
+        
+        for i in range(n_predictions):
+            # Собираем голоса и confidence для текущей свечи
+            long_votes = [vote_long_1[i], vote_long_2[i]]
+            short_votes = [vote_short_1[i], vote_short_2[i]]
+            long_confidences = [conf_long_1[i], conf_long_2[i]]
+            short_confidences = [conf_short_1[i], conf_short_2[i]]
             
-            # Advantage для каждой модели
-            adv_long_1 = q_long_1[:, 1] - q_long_1[:, 0]
-            adv_long_2 = q_long_2[:, 1] - q_long_2[:, 0]
-            adv_short_1 = q_short_1[:, 1] - q_short_1[:, 0]
-            adv_short_2 = q_short_2[:, 1] - q_short_2[:, 0]
+            # Применяем consensus+veto правила
+            decision = self._apply_consensus_veto_rules(
+                long_votes,
+                short_votes,
+                long_confidences,
+                short_confidences
+            )
             
-            # Нормализация advantage в [0, 1] для использования как confidence
-            def normalize_confidence(adv):
-                # Sigmoid нормализация для преобразования advantage в confidence
-                return 1.0 / (1.0 + np.exp(-adv))
-            
-            conf_long_1 = normalize_confidence(adv_long_1)
-            conf_long_2 = normalize_confidence(adv_long_2)
-            conf_short_1 = normalize_confidence(adv_short_1)
-            conf_short_2 = normalize_confidence(adv_short_2)
-            
-            # Маски entry на основе порогов
-            vote_long_1 = (adv_long_1 > self.long_1_threshold.value).astype(int)
-            vote_long_2 = (adv_long_2 > self.long_2_threshold.value).astype(int)
-            vote_short_1 = (adv_short_1 > self.short_1_threshold.value).astype(int)
-            vote_short_2 = (adv_short_2 > self.short_2_threshold.value).astype(int)
-            
-            # Применяем consensus+veto логику для каждой свечи
-            n_predictions = len(adv_long_1)
-            target_idx = slice(-n_predictions, None)
-            
-            if 'enter_long' not in dataframe.columns:
-                dataframe['enter_long'] = 0
-            if 'enter_short' not in dataframe.columns:
-                dataframe['enter_short'] = 0
-            
-            dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
-            dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
-            
-            # Применяем правила для каждой свечи
-            final_long_signals = np.zeros(n_predictions, dtype=np.int8)
-            final_short_signals = np.zeros(n_predictions, dtype=np.int8)
-            
-            for i in range(n_predictions):
-                # Собираем голоса и confidence для текущей свечи
-                long_votes = [vote_long_1[i], vote_long_2[i]]
-                short_votes = [vote_short_1[i], vote_short_2[i]]
-                long_confidences = [conf_long_1[i], conf_long_2[i]]
-                short_confidences = [conf_short_1[i], conf_short_2[i]]
+            # Сбор статистики
+            if any(long_votes) or any(short_votes):
+                self.conflict_stats['total_signals'] += 1
                 
-                # Применяем consensus+veto правила
-                decision = self._apply_consensus_veto_rules(
-                    long_votes,
-                    short_votes,
-                    long_confidences,
-                    short_confidences
-                )
-                
-                # Сбор статистики
-                if any(long_votes) or any(short_votes):
-                    self.conflict_stats['total_signals'] += 1
-                    
-                    if 'conflict' in decision['reason']:
-                        self.conflict_stats['conflicts'] += 1
-                    elif decision['enter_long']:
-                        self.conflict_stats['long_entries'] += 1
-                    elif decision['enter_short']:
-                        self.conflict_stats['short_entries'] += 1
-                    elif 'vetoed' in decision['reason']:
-                        self.conflict_stats['vetoed'] += 1
-                
-                final_long_signals[i] = decision['enter_long']
-                final_short_signals[i] = decision['enter_short']
-                
-                # Логирование важных событий
-                if 'conflict' in decision['reason'] and i < 5:
-                    logger.warning(f"⚠️  CONFLICT DETECTED: {decision['reason']}")
-                elif (decision['enter_long'] or decision['enter_short']) and i < 3:
-                    logger.info(f"📊 ENSEMBLE DECISION: {decision['reason']} | conf={decision['confidence']:.3f}")
+                if 'conflict' in decision['reason']:
+                    self.conflict_stats['conflicts'] += 1
+                elif decision['enter_long']:
+                    self.conflict_stats['long_entries'] += 1
+                elif decision['enter_short']:
+                    self.conflict_stats['short_entries'] += 1
+                elif 'vetoed' in decision['reason']:
+                    self.conflict_stats['vetoed'] += 1
             
-            # Вывод статистики периодически
-            if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
-                conflict_rate = self.conflict_stats['conflicts'] / self.conflict_stats['total_signals'] * 100
-                veto_rate = self.conflict_stats['vetoed'] / self.conflict_stats['total_signals'] * 100
-                logger.info(f"📈 ENSEMBLE STATS: Conflicts={conflict_rate:.1f}% | Vetoed={veto_rate:.1f}% | "
-                           f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
+            final_long_signals[i] = decision['enter_long']
+            final_short_signals[i] = decision['enter_short']
             
-            # Запись финальных сигналов
-            dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
-            dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_short')] = final_short_signals
+            # Логирование важных событий
+            if 'conflict' in decision['reason'] and i < 5:
+                logger.warning(f"⚠️  CONFLICT DETECTED: {decision['reason']}")
+            elif (decision['enter_long'] or decision['enter_short']) and i < 3:
+                logger.info(f"📊 ENSEMBLE DECISION: {decision['reason']} | conf={decision['confidence']:.3f}")
+        
+        # Вывод статистики периодически
+        if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
+            conflict_rate = self.conflict_stats['conflicts'] / self.conflict_stats['total_signals'] * 100
+            veto_rate = self.conflict_stats['vetoed'] / self.conflict_stats['total_signals'] * 100
+            logger.info(f"📈 ENSEMBLE STATS: Conflicts={conflict_rate:.1f}% | Vetoed={veto_rate:.1f}% | "
+                       f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
+        
+        # Запись финальных сигналов
+        dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
+        dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_short')] = final_short_signals
         
         return dataframe
     
