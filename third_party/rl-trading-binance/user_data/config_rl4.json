@@ -1,4 +1,5 @@
 {
+    "verbosity": 2,
     "initial_state": "running",
     "cpu_threads": 6,
     "deep_inference": false,
@@ -220,7 +221,7 @@
     ],
     
     "internals": {
-        "process_throttle_secs": 6
+        "process_throttle_secs": 7
     },
     
     "ensemble_config": {
