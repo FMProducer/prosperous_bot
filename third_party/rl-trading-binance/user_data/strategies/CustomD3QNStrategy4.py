@@ -655,19 +655,6 @@ class CustomD3QNStrategy4(IStrategy):
         q_short_1 = q_values["short_1"]
         q_short_2 = q_values["short_2"]
         
-        # === DEBUG: Q-values статистика ===
-        # Берем значения для последней свечи (актуальной)
-        long_1_q = q_long_1[-1]
-        long_2_q = q_long_2[-1]
-        short_1_q = q_short_1[-1]
-        short_2_q = q_short_2[-1]
-        
-        logger.debug(f"📊 Q-VALUES | {metadata['pair']} | "
-                     f"L1={long_1_q[1]:.5f}/{long_1_q[2]:.5f} | "
-                     f"L2={long_2_q[1]:.5f}/{long_2_q[2]:.5f} | "
-                     f"S1={short_1_q[1]:.5f}/{short_1_q[2]:.5f} | "
-                     f"S2={short_2_q[1]:.5f}/{short_2_q[2]:.5f}")
-        
         # 5. Остальная логика БЕЗ ИЗМЕНЕНИЙ
         # Advantage для каждой модели
         adv_long_1 = q_long_1[:, 1] - q_long_1[:, 0]
@@ -716,10 +703,10 @@ class CustomD3QNStrategy4(IStrategy):
             
             # Применяем consensus+veto правила
             decision = self._apply_consensus_veto_rules(
-                long_votes=long_votes,
-                short_votes=short_votes,
-                long_confidences=long_confidences,
-                short_confidences=short_confidences
+                long_votes,
+                short_votes,
+                long_confidences,
+                short_confidences
             )
             
             # Сбор статистики
@@ -738,18 +725,11 @@ class CustomD3QNStrategy4(IStrategy):
             final_long_signals[i] = decision['enter_long']
             final_short_signals[i] = decision['enter_short']
             
-            # === DEBUG LOGGING ===
-            pair = metadata['pair']
-            if decision['enter_long'] == 1:
-                logger.info(f"🟢 ENSEMBLE → LONG | {pair} | Conf: {decision['confidence']:.3f} | {decision['reason']}")
-            elif decision['enter_short'] == 1:
-                logger.info(f"🔴 ENSEMBLE → SHORT | {pair} | Conf: {decision['confidence']:.3f} | {decision['reason']}")
-            else:
-                # Логируем почему НЕ вошли (только если были хоть какие-то голоса)
-                if any(long_votes) or any(short_votes):
-                    logger.debug(f"⚪ ENSEMBLE → NO ENTRY | {pair} | {decision['reason']} | "
-                                 f"L_votes={sum(long_votes)}/{len(long_votes)}@{np.mean(long_confidences):.3f} | "
-                                 f"S_votes={sum(short_votes)}/{len(short_votes)}@{np.mean(short_confidences):.3f}")
+            # Логирование важных событий
+            if 'conflict' in decision['reason'] and i < 5:
+                logger.warning(f"⚠️  CONFLICT DETECTED: {decision['reason']}")
+            elif (decision['enter_long'] or decision['enter_short']) and i < 3:
+                logger.info(f"📊 ENSEMBLE DECISION: {decision['reason']} | conf={decision['confidence']:.3f}")
         
         # Вывод статистики периодически
         if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
