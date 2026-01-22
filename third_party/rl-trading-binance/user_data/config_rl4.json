@@ -221,13 +221,5 @@
     
     "internals": {
         "process_throttle_secs": 6
-    },
-    
-    "ensemble_config": {
-        "consensus_type": "softened_majority",
-        "veto_enabled": true,
-        "veto_threshold": 0.7,
-        "min_confidence": 0.65,
-        "description": "2 long + 2 short ensemble with consensus+veto logic for leverage 5x"
     }
 }

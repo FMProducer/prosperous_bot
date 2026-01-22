@@ -73,16 +73,6 @@ class CustomD3QNStrategy4(IStrategy):
     d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
     hysteresis = DecimalParameter(0.001, 0.02, default=0.002, space='stoploss', load=True)
     
-    # Пороги агентов (теперь для каждой модели)
-    long_1_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='buy', load=True)
-    long_2_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='buy', load=True)
-    short_1_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='sell', load=True)
-    short_2_threshold = DecimalParameter(0.0, 0.05, default=0.003, space='sell', load=True)
-    
-    # Параметры consensus+veto
-    veto_threshold = DecimalParameter(0.6, 0.8, default=0.65, space='buy', load=True)
-    min_confidence = DecimalParameter(0.5, 0.8, default=0.65, space='buy', load=True)
-    
     plot_config = {
         'main_plot': {},
         'subplots': {}
@@ -479,96 +469,42 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_consensus_veto_rules(self, long_votes, short_votes, 
-                               long_confidences, short_confidences):
+    def _apply_strict_voting(self, long_actions, short_actions):
         """
-        CONSENSUS + VETO логика (ultra-conservative для leverage 5x)
+        СТРОГОЕ ГОЛОСОВАНИЕ: 2 "за" и 0 "против"
         
-        Правила:
-        1. Long position открывается если:
-           - Majority (>=50%) long моделей голосуют ЗА
-           - Средняя confidence long >= min_confidence (0.65)
-           - НИ ОДНА short модель не имеет high confidence (>veto_threshold=0.7)
-        
-        2. Short position аналогично
-        
-        3. КОНФЛИКТ (оба направления проходят consensus):
-           - НЕ ОТКРЫВАЕМ НИКАКИЕ ПОЗИЦИИ
-           - Это сигнал неопределенности рынка → stay in cash
+        Long entry: обе long модели action=1 И обе short модели action=0
+        Short entry: обе short модели action=1 И обе long модели action=0
         """
         result = {
             'enter_long': 0,
             'enter_short': 0,
-            'confidence': 0.0,
             'reason': 'no_signal'
         }
         
-        # Подсчет голосов
-        long_entry_count = sum(1 for vote in long_votes if vote == 1)
-        short_entry_count = sum(1 for vote in short_votes if vote == 1)
+        # Подсчет действий
+        long_entry_count = sum(1 for a in long_actions if a == 1)
+        short_entry_count = sum(1 for a in short_actions if a == 1)
         
-        # Средние confidence
-        avg_long_conf = np.mean(long_confidences) if long_confidences else 0.0
-        avg_short_conf = np.mean(short_confidences) if short_confidences else 0.0
+        # Строгое правило: ВСЕ модели одной стороны голосуют "за" 
+        # И НИ ОДНА модель противоположной стороны не голосует "за"
         
-        # Max confidence (для veto check)
-        max_long_conf = max(long_confidences) if long_confidences else 0.0
-        max_short_conf = max(short_confidences) if short_confidences else 0.0
-        
-        # Majority check
-        total_long = len(long_votes)
-        total_short = len(short_votes)
-        
-        long_majority = (long_entry_count >= total_long * 0.5) if total_long > 0 else False
-        short_majority = (short_entry_count >= total_short * 0.5) if total_short > 0 else False
-        
-        # Strong veto check
-        veto_thresh = self.veto_threshold.value
-        min_conf = self.min_confidence.value
-        
-        strong_short_veto = max_short_conf > veto_thresh
-        strong_long_veto = max_long_conf > veto_thresh
-        
-        # PRE-CHECK: Если обе стороны имеют consensus условия, это КОНФЛИКТ
-        long_has_consensus = long_majority and avg_long_conf >= min_conf
-        short_has_consensus = short_majority and avg_short_conf >= min_conf
-        
-        if long_has_consensus and short_has_consensus:
-            # КРИТИЧНО: Конфликт = неопределенность = NO ENTRY
-            result['reason'] = f'market_uncertainty_conflict_L{avg_long_conf:.3f}_S{avg_short_conf:.3f}'
-            result['confidence'] = 0.0
-            return result
-        
-        # DECISION LOGIC (только если нет конфликта)
-        # Case 1: Long signal
-        if long_has_consensus:
-            if not strong_short_veto:
-                # Long разрешен
-                result['enter_long'] = 1
-                result['confidence'] = avg_long_conf
-                result['reason'] = f'long_consensus_{long_entry_count}/{total_long}_conf{avg_long_conf:.3f}'
-            else:
-                # Short veto активирован
-                result['reason'] = f'long_vetoed_by_short_conf{max_short_conf:.3f}'
-        
-        # Case 2: Short signal
-        elif short_has_consensus:
-            if not strong_long_veto:
-                # Short разрешен
-                result['enter_short'] = 1
-                result['confidence'] = avg_short_conf
-                result['reason'] = f'short_consensus_{short_entry_count}/{total_short}_conf{avg_short_conf:.3f}'
-            else:
-                # Long veto активирован
-                result['reason'] = f'short_vetoed_by_long_conf{max_long_conf:.3f}'
-        
-        # Case 3: Ни одна сторона не прошла consensus
+        if long_entry_count == 2 and short_entry_count == 0:
+            # Обе long модели "за", обе short модели "против" или hold
+            result['enter_long'] = 1
+            result['reason'] = 'unanimous_long_2/2_short_0/2'
+        elif short_entry_count == 2 and long_entry_count == 0:
+            # Обе short модели "за", обе long модели "против" или hold
+            result['enter_short'] = 1
+            result['reason'] = 'unanimous_short_2/2_long_0/2'
         else:
-            if long_entry_count > 0 or short_entry_count > 0:
-                    # Есть голоса, но недостаточно для consensus
-                    result['reason'] = f'insufficient_consensus_L{long_entry_count}/{total_long}@{avg_long_conf:.3f}_S{short_entry_count}/{total_short}@{avg_short_conf:.3f}'
-            else:
-                result['reason'] = 'no_signals_from_models'
+            # Любой другой случай = нет входа
+            if long_entry_count > 0 and short_entry_count > 0:
+                result['reason'] = f'conflict_L{long_entry_count}/2_S{short_entry_count}/2'
+            elif long_entry_count > 0:
+                result['reason'] = f'partial_long_{long_entry_count}/2'
+            elif short_entry_count > 0:
+                result['reason'] = f'partial_short_{short_entry_count}/2'
         
         return result
     
@@ -655,31 +591,15 @@ class CustomD3QNStrategy4(IStrategy):
         q_short_1 = q_values["short_1"]
         q_short_2 = q_values["short_2"]
         
-        # 5. Остальная логика БЕЗ ИЗМЕНЕНИЙ
-        # Advantage для каждой модели
-        adv_long_1 = q_long_1[:, 1] - q_long_1[:, 0]
-        adv_long_2 = q_long_2[:, 1] - q_long_2[:, 0]
-        adv_short_1 = q_short_1[:, 1] - q_short_1[:, 0]
-        adv_short_2 = q_short_2[:, 1] - q_short_2[:, 0]
-        
-        # Нормализация advantage в [0, 1] для использования как confidence
-        def normalize_confidence(adv):
-            # Sigmoid нормализация для преобразования advantage в confidence
-            return 1.0 / (1.0 + np.exp(-adv))
-        
-        conf_long_1 = normalize_confidence(adv_long_1)
-        conf_long_2 = normalize_confidence(adv_long_2)
-        conf_short_1 = normalize_confidence(adv_short_1)
-        conf_short_2 = normalize_confidence(adv_short_2)
-        
-        # Маски entry на основе порогов
-        vote_long_1 = (adv_long_1 > self.long_1_threshold.value).astype(int)
-        vote_long_2 = (adv_long_2 > self.long_2_threshold.value).astype(int)
-        vote_short_1 = (adv_short_1 > self.short_1_threshold.value).astype(int)
-        vote_short_2 = (adv_short_2 > self.short_2_threshold.value).astype(int)
-        
-        # Применяем consensus+veto логику для каждой свечи
-        n_predictions = len(adv_long_1)
+        # 5. Получение действий напрямую из Q-values (БЕЗ ПОРОГОВ)
+        # argmax по Q-values дает действие: 0=hold, 1=entry
+        action_long_1 = np.argmax(q_long_1, axis=1)
+        action_long_2 = np.argmax(q_long_2, axis=1)
+        action_short_1 = np.argmax(q_short_1, axis=1)
+        action_short_2 = np.argmax(q_short_2, axis=1)
+
+        # 6. Применяем строгое голосование для каждой свечи
+        n_predictions = len(action_long_1)
         target_idx = slice(-n_predictions, None)
         
         if 'enter_long' not in dataframe.columns:
@@ -690,53 +610,41 @@ class CustomD3QNStrategy4(IStrategy):
         dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
         dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
         
-        # Применяем правила для каждой свечи
         final_long_signals = np.zeros(n_predictions, dtype=np.int8)
         final_short_signals = np.zeros(n_predictions, dtype=np.int8)
         
         for i in range(n_predictions):
-            # Собираем голоса и confidence для текущей свечи
-            long_votes = [vote_long_1[i], vote_long_2[i]]
-            short_votes = [vote_short_1[i], vote_short_2[i]]
-            long_confidences = [conf_long_1[i], conf_long_2[i]]
-            short_confidences = [conf_short_1[i], conf_short_2[i]]
+            # Собираем действия для текущей свечи
+            long_actions = [action_long_1[i], action_long_2[i]]
+            short_actions = [action_short_1[i], action_short_2[i]]
             
-            # Применяем consensus+veto правила
-            decision = self._apply_consensus_veto_rules(
-                long_votes,
-                short_votes,
-                long_confidences,
-                short_confidences
-            )
+            # Применяем strict voting правила
+            decision = self._apply_strict_voting(long_actions, short_actions)
             
             # Сбор статистики
-            if any(long_votes) or any(short_votes):
+            if any(long_actions) or any(short_actions):
                 self.conflict_stats['total_signals'] += 1
-                
                 if 'conflict' in decision['reason']:
                     self.conflict_stats['conflicts'] += 1
                 elif decision['enter_long']:
                     self.conflict_stats['long_entries'] += 1
                 elif decision['enter_short']:
                     self.conflict_stats['short_entries'] += 1
-                elif 'vetoed' in decision['reason']:
-                    self.conflict_stats['vetoed'] += 1
             
             final_long_signals[i] = decision['enter_long']
             final_short_signals[i] = decision['enter_short']
             
-            # Логирование важных событий
-            if 'conflict' in decision['reason'] and i < 5:
-                logger.warning(f"⚠️  CONFLICT DETECTED: {decision['reason']}")
-            elif (decision['enter_long'] or decision['enter_short']) and i < 3:
-                logger.info(f"📊 ENSEMBLE DECISION: {decision['reason']} | conf={decision['confidence']:.3f}")
-        
-        # Вывод статистики периодически
+            # Логирование
+            if (decision['enter_long'] or decision['enter_short']) and i < 3:
+                logger.info(f"📊 UNANIMOUS ENTRY: {decision['reason']}")
+            elif 'conflict' in decision['reason'] and i < 5:
+                logger.warning(f"⚠️ VOTING CONFLICT: {decision['reason']}")
+
+        # 7. Вывод статистики
         if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
             conflict_rate = self.conflict_stats['conflicts'] / self.conflict_stats['total_signals'] * 100
-            veto_rate = self.conflict_stats['vetoed'] / self.conflict_stats['total_signals'] * 100
-            logger.info(f"📈 ENSEMBLE STATS: Conflicts={conflict_rate:.1f}% | Vetoed={veto_rate:.1f}% | "
-                       f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
+            logger.info(f"📈 VOTING STATS: Conflicts={conflict_rate:.1f}% | "
+                        f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
         
         # Запись финальных сигналов
         dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
