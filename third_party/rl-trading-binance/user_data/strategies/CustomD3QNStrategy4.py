@@ -599,7 +599,7 @@ class CustomD3QNStrategy4(IStrategy):
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
-        target_idx = slice(-n_predictions, None)
+        target_idx = dataframe.index[-n_predictions:]
         
         if 'enter_long' not in dataframe.columns:
             dataframe['enter_long'] = 0
@@ -615,22 +615,15 @@ class CustomD3QNStrategy4(IStrategy):
         dataframe['exit_long'] = dataframe['exit_long'].astype(np.int8)
         dataframe['exit_short'] = dataframe['exit_short'].astype(np.int8)
         
-        final_long_signals = np.zeros(n_predictions, dtype=np.int8)
-        final_short_signals = np.zeros(n_predictions, dtype=np.int8)
-        final_exit_long = np.zeros(n_predictions, dtype=np.int8)
-        final_exit_short = np.zeros(n_predictions, dtype=np.int8)
-        
         # Получаем информацию об открытой позиции по данному тикеру
         has_long = False
         has_short = False
-        if self.config.get('runmode') in ['live', 'dry_run']:
-            try:
-                open_trade = Trade.get_trades([Trade.pair == metadata['pair'], Trade.is_open.is_(True)]).first()
-                if open_trade:
-                    has_long = (open_trade.is_short is False)
-                    has_short = (open_trade.is_short is True)
-            except Exception as e:
-                logger.warning(f"Could not check open trades for {metadata['pair']}: {e}")
+        try:
+            open_trade = Trade.get_trades([Trade.pair == metadata['pair'], Trade.is_open.is_(True)]).first()
+            has_long = open_trade.is_short is False if open_trade else False
+            has_short = open_trade.is_short is True if open_trade else False
+        except Exception:
+            pass
 
         for i in range(n_predictions):
             # Собираем действия для текущей свечи (Raw actions: 0 or 1)
@@ -660,27 +653,16 @@ class CustomD3QNStrategy4(IStrategy):
                 elif decision['enter_short']:
                     self.conflict_stats['short_entries'] += 1
             
-            final_long_signals[i] = decision['enter_long']
-            final_short_signals[i] = decision['enter_short']
-            
             # Логирование
             # Логируем только последние 2 свечи (0 и 1)
             if i >= n_predictions - 2:
                 logger.info(f"{metadata['pair']} Candle {i} | LONG: {long_actions} | SHORT: {short_actions}")
                 if decision['enter_long'] or decision['enter_short']:
                     logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
-
-        # 7. Вывод статистики
-        if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
-            conflict_rate = self.conflict_stats['conflicts'] / self.conflict_stats['total_signals'] * 100
-            logger.info(f"📈 VOTING STATS: Conflicts={conflict_rate:.1f}% | "
-                        f"Long={self.conflict_stats['long_entries']} | Short={self.conflict_stats['short_entries']}")
-        
-        # Запись финальных сигналов
-        dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
-        dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_short')] = final_short_signals
-        dataframe.iloc[target_idx, dataframe.columns.get_loc('exit_long')] = final_exit_long
-        dataframe.iloc[target_idx, dataframe.columns.get_loc('exit_short')] = final_exit_short
+            
+            # Записываем в DF
+            dataframe.loc[target_idx[i], 'enter_long'] = decision['enter_long']
+            dataframe.loc[target_idx[i], 'enter_short'] = decision['enter_short']
         
         return dataframe
     
