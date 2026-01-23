@@ -130,6 +130,19 @@ class CustomD3QNStrategy4(IStrategy):
         self.short_2_model_dir = self.project_root / "output/alpha_seed_405_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260121_time_223959"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
+        # --- CHECK MODEL PATHS ---
+        model_paths = {
+            "LONG_1": self.long_1_model_pth,
+            "LONG_2": self.long_2_model_pth,
+            "SHORT_1": self.short_1_model_pth,
+            "SHORT_2": self.short_2_model_pth
+        }
+        path_values = list(model_paths.values())
+        if len(set(path_values)) < len(path_values):
+            logger.warning(f"⚠️ WARNING: Duplicate model paths detected! Check your model definitions.")
+            for name, pth in model_paths.items():
+                logger.info(f"  {name}: {pth}")
+
         # --- ЗАГРУЗКА КОНФИГОВ ---
         logger.info("=" * 60)
         logger.info("🚀 INITIALIZING 2+2 ENSEMBLE SYSTEM")
@@ -216,6 +229,7 @@ class CustomD3QNStrategy4(IStrategy):
         
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
+        logger.info(f"ℹ️ Strategy 'can_short' is set to: {self.can_short}. Ensure your config.json also allows shorts.")
         logger.info("=" * 60)
     
     def map_action_for_model(self, action, model_type):
@@ -566,6 +580,11 @@ class CustomD3QNStrategy4(IStrategy):
         tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1)
         tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2)
         
+        # SAFETY CHECK: Ensure Long and Short tensors are different
+        if tensor_long_1 is not None and tensor_short_1 is not None:
+            if torch.equal(tensor_long_1, tensor_short_1):
+                logger.error(f"🚨 CRITICAL: LONG_1 and SHORT_1 tensors are IDENTICAL for {metadata['pair']}! Check normalization/inversion logic.")
+
         if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
             # Логируем причину пропуска (опционально, можно закомментировать)
             # if tensor_long_1 is None: logger.warning(f"Missing input for LONG_1 on {metadata['pair']}")
