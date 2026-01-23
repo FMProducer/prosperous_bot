@@ -89,6 +89,7 @@ class CustomD3QNStrategy4(IStrategy):
         
         self.device = torch.device("cpu")
         
+        self.logger = logging.getLogger(__name__)
         # 2. ThreadPool для параллельного inference
         self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
         
@@ -217,6 +218,34 @@ class CustomD3QNStrategy4(IStrategy):
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
     
+    def map_action_for_model(self, action: int, model_type: str) -> int:
+        """
+        Маппинг для 3 действий: 0=HOLD, 1=BUY, 2=SELL
+        
+        Семантика после маппинга:
+            0 = HOLD
+            1 = ENTER LONG
+           -1 = ENTER SHORT
+            2 = EXIT (close position, universal)
+        
+        Args:
+            action: 0=HOLD, 1=BUY, 2=SELL
+            model_type: 'LONG' или 'SHORT'
+        
+        Returns:
+            0=HOLD, 1=LONG, -1=SHORT, 2=EXIT
+        """
+        if action == 0:  # HOLD
+            return 0
+        elif action == 2:  # SELL/EXIT
+            return 2  # Универсальный выход
+        
+        # action == 1 (BUY)
+        if model_type == 'SHORT':
+            return -1  # BUY в зеркале → SHORT
+        else:  # LONG
+            return 1   # BUY → LONG
+
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
             if "alpha" in file.name or "config" in file.name:
@@ -346,20 +375,12 @@ class CustomD3QNStrategy4(IStrategy):
         closes = dataframe['close'].values
         volumes = dataframe['volume'].values
         
-        # Log Returns
-        eps = 1e-9
-        def calc_log_returns(arr):
-            changes = arr[1:] / (arr[:-1] + eps)
-            return np.log(np.maximum(changes, eps))
+        # ВАЖНО: Используем сырые данные (Raw Data), так как norm_stats.json содержит
+        # средние значения цен (напр. 42.7) и объемов (напр. 29M).
+        # Модель обучалась на Z-нормализованных сырых данных, а не на лог-доходностях.
         
-        r_opens = calc_log_returns(opens)
-        r_highs = calc_log_returns(highs)
-        r_lows = calc_log_returns(lows)
-        r_closes = calc_log_returns(closes)
-        r_volumes = np.log(volumes[1:] + 1.0)
-        
-        # Stack (5, N-1)
-        data = np.stack([r_opens, r_highs, r_lows, r_closes, r_volumes])
+        # Stack (5, N)
+        data = np.stack([opens, highs, lows, closes, volumes])
         
         # 2. Выбор norm_stats
         if side == "LONG" and model_num == 1:
@@ -372,13 +393,11 @@ class CustomD3QNStrategy4(IStrategy):
             current_norm_stats = self.norm_stats_short_2
         
         # Нормализация
-        asset_name = pair.replace('/', '')
-        stats = None
+        # Исправление для фьючерсов: BTC/USDT:USDT -> BTCUSDT
+        asset_name = pair.split(':')[0].replace('/', '')
         
         if asset_name in current_norm_stats:
             stats = current_norm_stats[asset_name]
-            
-        if stats:
             means = np.array(stats["mean"])
             stds = np.array(stats["std"])
             if means.ndim == 1: means = means.reshape(-1, 1)
@@ -391,6 +410,8 @@ class CustomD3QNStrategy4(IStrategy):
                 
             data = (data - means) / (stds + 1e-8)
         else:
+            # Если данные нормализации по конкретному тикеру не найдены, логировать ошибку и отменять действия
+            logger.error(f"Norm stats not found for {asset_name} (pair: {pair}) in model {model_num} {side}")
             return None
         
         # ВАЖНО: Инверсия должна быть ПОСЛЕ нормализации, как в trading_environment.py
@@ -465,39 +486,39 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_soft_voting(self, long_actions, short_actions):
-        """
-        МЯГКОЕ ГОЛОСОВАНИЕ (Soft Voting / OR logic with Veto):
-        
-        Логика (L_open - число лонгистов 'за', S_open - число шортистов 'за'):
-        1. L_open >= 1 И S_open == 0 -> LONG (Хотя бы один лонгист за, шортисты молчат)
-        2. S_open >= 1 И L_open == 0 -> SHORT (Хотя бы один шортист за, лонгисты молчат)
-        3. L_open >= 1 И S_open >= 1 -> CONFLICT (Обе стороны хотят войти -> вето/конфликт -> ждать)
-        4. L_open == 0 И S_open == 0 -> WAIT (Всем пофиг)
-        """
+    def _apply_soft_voting(self, long_actions: list[int], short_actions: list[int]) -> dict:
         result = {
             'enter_long': 0,
             'enter_short': 0,
+            'exit_long': 0,
+            'exit_short': 0,
             'reason': 'no_signal'
         }
-        
-        # Подсчет действий
-        long_entry_count = sum(1 for a in long_actions if a == 1)
-        short_entry_count = sum(1 for a in short_actions if a == 1)
-        
-        if long_entry_count >= 1 and short_entry_count == 0:
-            # Хотя бы одна long модель "за", обе short модели "против" или hold
+
+        long_entries = sum(1 for a in long_actions if a == 1)
+        short_entries = sum(1 for a in short_actions if a == -1)
+        exit_signals = sum(1 for a in (long_actions + short_actions) if a == 2)
+
+        # Приоритет 1: Сигнал выхода (Exit Signal)
+        if exit_signals > 0:
+            result['exit_long'] = 1
+            result['exit_short'] = 1
+            result['reason'] = f'exit_{exit_signals}_models'
+            return result
+
+        # Приоритет 2: Проверка конфликтов (Veto Logic)
+        if long_entries > 0 and short_entries > 0:
+            result['reason'] = f'conflict_L{long_entries}_S{short_entries}'
+            return result
+
+        # Приоритет 3: Входы
+        if long_entries >= 1:
             result['enter_long'] = 1
-            result['reason'] = f'soft_long_{long_entry_count}/2_short_0/2'
-        elif short_entry_count >= 1 and long_entry_count == 0:
-            # Хотя бы одна short модель "за", обе long модели "против" или hold
+            result['reason'] = f'long_{long_entries}/2'
+        elif short_entries >= 1:
             result['enter_short'] = 1
-            result['reason'] = f'soft_short_{short_entry_count}/2_long_0/2'
-        else:
-            # Любой другой случай = нет входа
-            if long_entry_count > 0 and short_entry_count > 0:
-                result['reason'] = f'conflict_L{long_entry_count}/2_S{short_entry_count}/2'
-        
+            result['reason'] = f'short_{short_entries}/2'
+
         return result
     
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
@@ -565,6 +586,11 @@ class CustomD3QNStrategy4(IStrategy):
         tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2)
         
         if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
+            # Логируем причину пропуска (опционально, можно закомментировать)
+            # if tensor_long_1 is None: logger.warning(f"Missing input for LONG_1 on {metadata['pair']}")
+            # if tensor_long_2 is None: logger.warning(f"Missing input for LONG_2 on {metadata['pair']}")
+            # if tensor_short_1 is None: logger.warning(f"Missing input for SHORT_1 on {metadata['pair']}")
+            # if tensor_short_2 is None: logger.warning(f"Missing input for SHORT_2 on {metadata['pair']}")
             return dataframe
         
         # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
@@ -598,17 +624,33 @@ class CustomD3QNStrategy4(IStrategy):
             dataframe['enter_long'] = 0
         if 'enter_short' not in dataframe.columns:
             dataframe['enter_short'] = 0
+        if 'exit_long' not in dataframe.columns:
+            dataframe['exit_long'] = 0
+        if 'exit_short' not in dataframe.columns:
+            dataframe['exit_short'] = 0
         
         dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
         dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
+        dataframe['exit_long'] = dataframe['exit_long'].astype(np.int8)
+        dataframe['exit_short'] = dataframe['exit_short'].astype(np.int8)
         
         final_long_signals = np.zeros(n_predictions, dtype=np.int8)
         final_short_signals = np.zeros(n_predictions, dtype=np.int8)
+        final_exit_long = np.zeros(n_predictions, dtype=np.int8)
+        final_exit_short = np.zeros(n_predictions, dtype=np.int8)
         
         for i in range(n_predictions):
             # Собираем действия для текущей свечи
-            long_actions = [action_long_1[i], action_long_2[i]]
-            short_actions = [action_short_1[i], action_short_2[i]]
+            l1 = self.map_action_for_model(action_long_1[i], 'LONG')
+            l2 = self.map_action_for_model(action_long_2[i], 'LONG')
+            s1 = self.map_action_for_model(action_short_1[i], 'SHORT')
+            s2 = self.map_action_for_model(action_short_2[i], 'SHORT')
+            
+            long_actions = [l1, l2]
+            short_actions = [s1, s2]
+            
+            if i < 5:
+                self.logger.info(f"Candle {i} | LONG: {l1}, {l2} | SHORT: {s1}, {s2}")
             
             # Применяем soft voting правила
             decision = self._apply_soft_voting(long_actions, short_actions)
@@ -625,6 +667,8 @@ class CustomD3QNStrategy4(IStrategy):
             
             final_long_signals[i] = decision['enter_long']
             final_short_signals[i] = decision['enter_short']
+            final_exit_long[i] = decision['exit_long']
+            final_exit_short[i] = decision['exit_short']
             
             # Логирование
             if (decision['enter_long'] or decision['enter_short']) and i < 3:
@@ -641,6 +685,8 @@ class CustomD3QNStrategy4(IStrategy):
         # Запись финальных сигналов
         dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_long')] = final_long_signals
         dataframe.iloc[target_idx, dataframe.columns.get_loc('enter_short')] = final_short_signals
+        dataframe.iloc[target_idx, dataframe.columns.get_loc('exit_long')] = final_exit_long
+        dataframe.iloc[target_idx, dataframe.columns.get_loc('exit_short')] = final_exit_short
         
         return dataframe
     
