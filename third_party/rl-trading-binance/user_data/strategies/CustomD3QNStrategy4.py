@@ -218,33 +218,16 @@ class CustomD3QNStrategy4(IStrategy):
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
     
-    def map_action_for_model(self, action: int, model_type: str) -> int:
+    def map_action_for_model(self, action, model_type):
         """
-        Маппинг для 3 действий: 0=HOLD, 1=BUY, 2=SELL
-        
-        Семантика после маппинга:
-            0 = HOLD
-            1 = ENTER LONG
-           -1 = ENTER SHORT
-            2 = EXIT (close position, universal)
-        
-        Args:
-            action: 0=HOLD, 1=BUY, 2=SELL
-            model_type: 'LONG' или 'SHORT'
-        
-        Returns:
-            0=HOLD, 1=LONG, -1=SHORT, 2=EXIT
+        Маппинг для бинарных моделей (0 - Wait, 1 - Enter).
+        Любые другие значения трактуются как Wait (0).
         """
-        if action == 0:  # HOLD
-            return 0
-        elif action == 2:  # SELL/EXIT
-            return 2  # Универсальный выход
-        
-        # action == 1 (BUY)
-        if model_type == 'SHORT':
-            return -1  # BUY в зеркале → SHORT
-        else:  # LONG
-            return 1   # BUY → LONG
+        action = int(action)
+        if model_type == 'LONG':
+            return 1 if action == 1 else 0  # 1: Long, 0: Wait
+        else: # SHORT
+            return -1 if action == 1 else 0 # -1: Short (Mirror 1), 0: Wait
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -486,40 +469,38 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_soft_voting(self, long_actions: list[int], short_actions: list[int]) -> dict:
-        result = {
-            'enter_long': 0,
-            'enter_short': 0,
-            'exit_long': 0,
-            'exit_short': 0,
-            'reason': 'no_signal'
-        }
+    def _apply_soft_voting(self, long_actions, short_actions, has_long=False, has_short=False):
+        """
+        Бинарное голосование с защитой от перекрестного входа.
+        0 - Модель ждет, 1 - Модель хочет войти.
+        """
+        # Превращаем все, что не 1, в 0 (бинарная очистка)
+        l_votes = list(long_actions).count(1)
+        s_votes = list(short_actions).count(1)
+        
+        total_l = len(long_actions)
+        total_s = len(short_actions)
 
-        long_entries = sum(1 for a in long_actions if a == 1)
-        short_entries = sum(1 for a in short_actions if a == -1)
-        exit_signals = sum(1 for a in (long_actions + short_actions) if a == 2)
+        res = {'enter_long': 0, 'enter_short': 0, 'reason': f"L:{list(long_actions)} S:{list(short_actions)}"}
 
-        # Приоритет 1: Сигнал выхода (Exit Signal)
-        if exit_signals > 0:
-            result['exit_long'] = 1
-            result['exit_short'] = 1
-            result['reason'] = f'exit_{exit_signals}_models'
-            return result
+        # 1. Блокировка новых сигналов, если позиция уже есть (защита от спама)
+        if has_long or has_short:
+            res['reason'] += " | Position exists, signal suppressed"
+            return res
 
-        # Приоритет 2: Проверка конфликтов (Veto Logic)
-        if long_entries > 0 and short_entries > 0:
-            result['reason'] = f'conflict_L{long_entries}_S{short_entries}'
-            return result
+        # 2. Вето: если обе группы моделей топят за вход в разные стороны
+        if l_votes > 0 and s_votes > 0:
+            res['reason'] += " | Veto: Conflict"
+            return res
 
-        # Приоритет 3: Входы
-        if long_entries >= 1:
-            result['enter_long'] = 1
-            result['reason'] = f'long_{long_entries}/2'
-        elif short_entries >= 1:
-            result['enter_short'] = 1
-            result['reason'] = f'short_{short_entries}/2'
+        # 3. Условие входа: Единогласие (100% моделей за вход)
+        if l_votes == total_l and total_l > 0:
+            res['enter_long'] = 1
+        
+        if s_votes == total_s and total_s > 0:
+            res['enter_short'] = 1
 
-        return result
+        return res
     
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
@@ -639,26 +620,40 @@ class CustomD3QNStrategy4(IStrategy):
         final_exit_long = np.zeros(n_predictions, dtype=np.int8)
         final_exit_short = np.zeros(n_predictions, dtype=np.int8)
         
+        # Получаем информацию об открытой позиции по данному тикеру
+        has_long = False
+        has_short = False
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            try:
+                open_trade = Trade.get_trades([Trade.pair == metadata['pair'], Trade.is_open.is_(True)]).first()
+                if open_trade:
+                    has_long = (open_trade.is_short is False)
+                    has_short = (open_trade.is_short is True)
+            except Exception as e:
+                logger.warning(f"Could not check open trades for {metadata['pair']}: {e}")
+
         for i in range(n_predictions):
-            # Собираем действия для текущей свечи
-            l1 = self.map_action_for_model(action_long_1[i], 'LONG')
-            l2 = self.map_action_for_model(action_long_2[i], 'LONG')
-            s1 = self.map_action_for_model(action_short_1[i], 'SHORT')
-            s2 = self.map_action_for_model(action_short_2[i], 'SHORT')
+            # Собираем действия для текущей свечи (Raw actions: 0 or 1)
+            l1 = int(action_long_1[i])
+            l2 = int(action_long_2[i])
+            s1 = int(action_short_1[i])
+            s2 = int(action_short_2[i])
             
             long_actions = [l1, l2]
             short_actions = [s1, s2]
             
-            if i < 5:
-                self.logger.info(f"Candle {i} | LONG: {l1}, {l2} | SHORT: {s1}, {s2}")
-            
             # Применяем soft voting правила
-            decision = self._apply_soft_voting(long_actions, short_actions)
+            decision = self._apply_soft_voting(
+                long_actions, 
+                short_actions,
+                has_long=has_long,
+                has_short=has_short
+            )
             
             # Сбор статистики
             if any(long_actions) or any(short_actions):
                 self.conflict_stats['total_signals'] += 1
-                if 'conflict' in decision['reason']:
+                if 'Conflict' in decision['reason']:
                     self.conflict_stats['conflicts'] += 1
                 elif decision['enter_long']:
                     self.conflict_stats['long_entries'] += 1
@@ -667,14 +662,13 @@ class CustomD3QNStrategy4(IStrategy):
             
             final_long_signals[i] = decision['enter_long']
             final_short_signals[i] = decision['enter_short']
-            final_exit_long[i] = decision['exit_long']
-            final_exit_short[i] = decision['exit_short']
             
             # Логирование
-            if (decision['enter_long'] or decision['enter_short']) and i < 3:
-                logger.info(f"📊 ENTRY SIGNAL: {decision['reason']}")
-            elif 'conflict' in decision['reason'] and i < 5:
-                logger.warning(f"⚠️ VOTING CONFLICT: {decision['reason']}")
+            # Логируем только последние 2 свечи (0 и 1)
+            if i >= n_predictions - 2:
+                logger.info(f"{metadata['pair']} Candle {i} | LONG: {long_actions} | SHORT: {short_actions}")
+                if decision['enter_long'] or decision['enter_short']:
+                    logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
 
         # 7. Вывод статистики
         if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
