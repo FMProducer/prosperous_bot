@@ -469,6 +469,67 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
+    def map_action_for_model(self, action: int, model_type: str) -> int:
+        """
+        Преобразует сырое действие модели (0, 1, 2) в торговый сигнал.
+        0: Hold (бездействие)
+        1: Enter (Long для LONG-модели, Short для SHORT-модели)
+        2: Exit (для обеих моделей)
+
+        Возвращает:
+         1: Enter Long
+        -1: Enter Short
+         2: Exit Position
+         0: Hold
+        """
+        if model_type == 'LONG':
+            if action == 1: return 1   # Long
+            if action == 2: return 2   # Exit
+        elif model_type == 'SHORT':
+            if action == 1: return -1  # Short
+            if action == 2: return 2   # Exit
+        return 0  # Hold
+
+    def _apply_soft_voting(self, long_actions, short_actions):
+        """
+        Применяет гибкую логику голосования ансамбля.
+        - Сигнал на выход (2) имеет наивысший приоритет.
+        - Конфликт (одновременные сигналы Long и Short) приводит к вето (нет сигнала).
+        - Вход, если есть хотя бы один голос "за" и нет конфликтов/выходов.
+        """
+        all_actions = long_actions + short_actions
+        result = {
+            'enter_long': 0,
+            'enter_short': 0,
+            'exit_position': 0,
+            'reason': 'no_signal'
+        }
+
+        # 1. Приоритет ВЫХОДА
+        if 2 in all_actions:
+            result['exit_position'] = 1
+            result['reason'] = 'exit_signal_priority'
+            return result
+
+        # 2. Подсчет голосов на ВХОД
+        long_votes = sum(1 for a in long_actions if a == 1)
+        short_votes = sum(1 for a in short_actions if a == -1)
+
+        # 3. Проверка на КОНФЛИКТ
+        if long_votes > 0 and short_votes > 0:
+            result['reason'] = f'conflict: L_votes={long_votes}, S_votes={short_votes}'
+            return result  # Вето, нет сигнала
+
+        # 4. Определение финального сигнала
+        if long_votes > 0:
+            result['enter_long'] = 1
+            result['reason'] = f'long_signal_votes_{long_votes}'
+        elif short_votes > 0:
+            result['enter_short'] = 1
+            result['reason'] = f'short_signal_votes_{short_votes}'
+
+        return result
+
     def _apply_strict_voting(self, long_actions, short_actions):
         """
         СТРОГОЕ ГОЛОСОВАНИЕ: 2 "за" и 0 "против"
