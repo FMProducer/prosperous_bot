@@ -110,7 +110,6 @@ class CustomD3QNStrategy4(IStrategy):
             'conflicts': 0,
             'long_entries': 0,
             'short_entries': 0,
-            'vetoed': 0
         }
         
         # --- ПУТИ К 4 МОДЕЛЯМ ---
@@ -362,9 +361,6 @@ class CustomD3QNStrategy4(IStrategy):
         # Stack (5, N-1)
         data = np.stack([r_opens, r_highs, r_lows, r_closes, r_volumes])
         
-        if side == "SHORT":
-            data = data * -1.0
-        
         # 2. Выбор norm_stats
         if side == "LONG" and model_num == 1:
             current_norm_stats = self.norm_stats_long_1
@@ -376,31 +372,31 @@ class CustomD3QNStrategy4(IStrategy):
             current_norm_stats = self.norm_stats_short_2
         
         # Нормализация
-        if "means" in current_norm_stats and isinstance(current_norm_stats["means"], dict):
-            stats = current_norm_stats
-            target_channels = ["open", "high", "low", "close", "volume"]
-            means_val = [stats["means"].get(ch, 0.0) for ch in target_channels]
-            stds_val = [stats["stds"].get(ch, 1.0) for ch in target_channels]
-            means = np.array(means_val).reshape(-1, 1)
-            stds = np.array(stds_val).reshape(-1, 1)
-            data = (data - means) / (stds + 1e-8)
-        elif "mean" in current_norm_stats and isinstance(current_norm_stats["mean"], list):
-            stats = current_norm_stats
-            means_val = stats["mean"][:5]
-            stds_val = stats["std"][:5]
-            means = np.array(means_val).reshape(-1, 1)
-            stds = np.array(stds_val).reshape(-1, 1)
+        asset_name = pair.replace('/', '')
+        stats = None
+        
+        if asset_name in current_norm_stats:
+            stats = current_norm_stats[asset_name]
+            
+        if stats:
+            means = np.array(stats["mean"])
+            stds = np.array(stats["std"])
+            if means.ndim == 1: means = means.reshape(-1, 1)
+            if stds.ndim == 1: stds = stds.reshape(-1, 1)
+            
+            # Ensure we use only the first 5 channels if stats has more
+            if means.shape[0] > 5:
+                means = means[:5]
+                stds = stds[:5]
+                
             data = (data - means) / (stds + 1e-8)
         else:
-            # Fallback
-            df_data = pd.DataFrame(data.T)
-            rolling = df_data.rolling(window=200, min_periods=1)
-            means = rolling.mean().values.T
-            stds = rolling.std().values.T
-            means[np.isnan(means)] = 0.0
-            stds[np.isnan(stds)] = 1.0
-            data = (data - means) / (stds + 1e-8)
+            return None
         
+        # ВАЖНО: Инверсия должна быть ПОСЛЕ нормализации, как в trading_environment.py
+        if side == "SHORT":
+            data = data * -1.0
+
         data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
         
         # 3. Sliding window
@@ -469,12 +465,15 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_strict_voting(self, long_actions, short_actions):
+    def _apply_soft_voting(self, long_actions, short_actions):
         """
-        СТРОГОЕ ГОЛОСОВАНИЕ: 2 "за" и 0 "против"
+        МЯГКОЕ ГОЛОСОВАНИЕ (Soft Voting / OR logic with Veto):
         
-        Long entry: обе long модели action=1 И обе short модели action=0
-        Short entry: обе short модели action=1 И обе long модели action=0
+        Логика (L_open - число лонгистов 'за', S_open - число шортистов 'за'):
+        1. L_open >= 1 И S_open == 0 -> LONG (Хотя бы один лонгист за, шортисты молчат)
+        2. S_open >= 1 И L_open == 0 -> SHORT (Хотя бы один шортист за, лонгисты молчат)
+        3. L_open >= 1 И S_open >= 1 -> CONFLICT (Обе стороны хотят войти -> вето/конфликт -> ждать)
+        4. L_open == 0 И S_open == 0 -> WAIT (Всем пофиг)
         """
         result = {
             'enter_long': 0,
@@ -486,25 +485,18 @@ class CustomD3QNStrategy4(IStrategy):
         long_entry_count = sum(1 for a in long_actions if a == 1)
         short_entry_count = sum(1 for a in short_actions if a == 1)
         
-        # Строгое правило: ВСЕ модели одной стороны голосуют "за" 
-        # И НИ ОДНА модель противоположной стороны не голосует "за"
-        
-        if long_entry_count == 2 and short_entry_count == 0:
-            # Обе long модели "за", обе short модели "против" или hold
+        if long_entry_count >= 1 and short_entry_count == 0:
+            # Хотя бы одна long модель "за", обе short модели "против" или hold
             result['enter_long'] = 1
-            result['reason'] = 'unanimous_long_2/2_short_0/2'
-        elif short_entry_count == 2 and long_entry_count == 0:
-            # Обе short модели "за", обе long модели "против" или hold
+            result['reason'] = f'soft_long_{long_entry_count}/2_short_0/2'
+        elif short_entry_count >= 1 and long_entry_count == 0:
+            # Хотя бы одна short модель "за", обе long модели "против" или hold
             result['enter_short'] = 1
-            result['reason'] = 'unanimous_short_2/2_long_0/2'
+            result['reason'] = f'soft_short_{short_entry_count}/2_long_0/2'
         else:
             # Любой другой случай = нет входа
             if long_entry_count > 0 and short_entry_count > 0:
                 result['reason'] = f'conflict_L{long_entry_count}/2_S{short_entry_count}/2'
-            elif long_entry_count > 0:
-                result['reason'] = f'partial_long_{long_entry_count}/2'
-            elif short_entry_count > 0:
-                result['reason'] = f'partial_short_{short_entry_count}/2'
         
         return result
     
@@ -618,8 +610,8 @@ class CustomD3QNStrategy4(IStrategy):
             long_actions = [action_long_1[i], action_long_2[i]]
             short_actions = [action_short_1[i], action_short_2[i]]
             
-            # Применяем strict voting правила
-            decision = self._apply_strict_voting(long_actions, short_actions)
+            # Применяем soft voting правила
+            decision = self._apply_soft_voting(long_actions, short_actions)
             
             # Сбор статистики
             if any(long_actions) or any(short_actions):
@@ -636,7 +628,7 @@ class CustomD3QNStrategy4(IStrategy):
             
             # Логирование
             if (decision['enter_long'] or decision['enter_short']) and i < 3:
-                logger.info(f"📊 UNANIMOUS ENTRY: {decision['reason']}")
+                logger.info(f"📊 ENTRY SIGNAL: {decision['reason']}")
             elif 'conflict' in decision['reason'] and i < 5:
                 logger.warning(f"⚠️ VOTING CONFLICT: {decision['reason']}")
 
