@@ -469,35 +469,34 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_soft_voting(self, long_actions, short_actions, has_long=False, has_short=False):
+    def _apply_soft_voting(self, long_actions, short_actions):
         """
-        Бинарное голосование с защитой от перекрестного входа.
-        0 - Модель ждет, 1 - Модель хочет войти.
+        Логика ансамбля: строгое единогласие для входа.
+        Перекрестное вето при одновременных сигналах Long и Short.
         """
-        # Превращаем все, что не 1, в 0 (бинарная очистка)
-        l_votes = list(long_actions).count(1)
-        s_votes = list(short_actions).count(1)
-        
-        total_l = len(long_actions)
-        total_s = len(short_actions)
+        mapped_long = [self.map_action_for_model(a, 'LONG') for a in long_actions]
+        mapped_short = [self.map_action_for_model(a, 'SHORT') for a in short_actions]
 
-        res = {'enter_long': 0, 'enter_short': 0, 'reason': f"L:{list(long_actions)} S:{list(short_actions)}"}
+        # Количество моделей проголосовавших за вход
+        l_votes = mapped_long.count(1)
+        s_votes = mapped_short.count(-1)
 
-        # 1. Блокировка новых сигналов, если позиция уже есть (защита от спама)
-        if has_long or has_short:
-            res['reason'] += " | Position exists, signal suppressed"
-            return res
+        res = {'enter_long': 0, 'enter_short': 0, 'exit_long': 0, 'exit_short': 0, 'reason': ''}
 
-        # 2. Вето: если обе группы моделей топят за вход в разные стороны
+        # Логирование для отладки (соответствует твоему требованию)
+        res['reason'] = f"L:{long_actions} S:{short_actions}"
+
+        # Проверка конфликта: если обе стороны хотят войти - отменяем всё
         if l_votes > 0 and s_votes > 0:
-            res['reason'] += " | Veto: Conflict"
+            res['reason'] += " | Veto Conflict"
             return res
 
-        # 3. Условие входа: Единогласие (100% моделей за вход)
-        if l_votes == total_l and total_l > 0:
+        # Вход в Long: единогласно ЗА, шорт-модели молчат
+        if l_votes == len(mapped_long) and l_votes > 0:
             res['enter_long'] = 1
         
-        if s_votes == total_s and total_s > 0:
+        # Вход в Short: единогласно ЗА, лонг-модели молчат
+        if s_votes == len(mapped_short) and s_votes > 0:
             res['enter_short'] = 1
 
         return res
@@ -645,9 +644,7 @@ class CustomD3QNStrategy4(IStrategy):
             # Применяем soft voting правила
             decision = self._apply_soft_voting(
                 long_actions, 
-                short_actions,
-                has_long=has_long,
-                has_short=has_short
+                short_actions
             )
             
             # Сбор статистики
