@@ -1,5 +1,4 @@
 import sys
-from typing import Dict, Optional, List, Any
 import json
 import logging
 import importlib.util
@@ -347,39 +346,58 @@ class CustomD3QNStrategy4(IStrategy):
         
         return -d_eff
     
-    def get_model_input(
-        self, 
-        dataframe: pd.DataFrame, 
-        pair: str, 
-        side: str, 
-        model_num: int,
-        asset_name: str  # Оптимизация: передаем уже очищенное имя
-    ) -> Optional[torch.Tensor]:
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
+        """
+        Получение входных данных для конкретной модели
+        model_num: 1 или 2 (для выбора правильных norm_stats)
+        """
+        # 1. Данные (5 каналов)
+        opens = dataframe['open'].values
+        highs = dataframe['high'].values
+        lows = dataframe['low'].values
+        closes = dataframe['close'].values
+        volumes = dataframe['volume'].values
         
-        # 1. Сбор данных через numpy view для скорости
-        cols = ['open', 'high', 'low', 'close', 'volume']
-        data = dataframe[cols].values.T  # (5, N)
+        # ВАЖНО: Используем сырые данные (Raw Data), так как norm_stats.json содержит
+        # средние значения цен (напр. 42.7) и объемов (напр. 29M).
+        # Модель обучалась на Z-нормализованных сырых данных, а не на лог-доходностях.
         
-        # 2. Выбор статистики (O(1) lookup)
-        stats_map = {
-            ("LONG", 1): self.norm_stats_long_1,
-            ("LONG", 2): self.norm_stats_long_2,
-            ("SHORT", 1): self.norm_stats_short_1,
-            ("SHORT", 2): self.norm_stats_short_2
-        }
-        current_norm_stats = stats_map.get((side, model_num))
+        # Stack (5, N)
+        data = np.stack([opens, highs, lows, closes, volumes])
         
-        if not current_norm_stats or asset_name not in current_norm_stats:
-            logger.error(f"Norm stats missing for {asset_name} | Side: {side}")
+        # 2. Выбор norm_stats
+        if side == "LONG" and model_num == 1:
+            current_norm_stats = self.norm_stats_long_1
+        elif side == "LONG" and model_num == 2:
+            current_norm_stats = self.norm_stats_long_2
+        elif side == "SHORT" and model_num == 1:
+            current_norm_stats = self.norm_stats_short_1
+        else:  # SHORT model 2
+            current_norm_stats = self.norm_stats_short_2
+        
+        # Нормализация
+        # Исправление для фьючерсов: BTC/USDT:USDT -> BTCUSDT
+        asset_name = pair.split(':')[0].replace('/', '')
+        
+        if asset_name in current_norm_stats:
+            stats = current_norm_stats[asset_name]
+            means = np.array(stats["mean"])
+            stds = np.array(stats["std"])
+            if means.ndim == 1: means = means.reshape(-1, 1)
+            if stds.ndim == 1: stds = stds.reshape(-1, 1)
+            
+            # Ensure we use only the first 5 channels if stats has more
+            if means.shape[0] > 5:
+                means = means[:5]
+                stds = stds[:5]
+                
+            data = (data - means) / (stds + 1e-8)
+        else:
+            # Если данные нормализации по конкретному тикеру не найдены, логировать ошибку и отменять действия
+            logger.error(f"Norm stats not found for {asset_name} (pair: {pair}) in model {model_num} {side}")
             return None
-
-        stats = current_norm_stats[asset_name]
-        # Векторизованная нормализация
-        means = np.array(stats["mean"][:5]).reshape(5, 1)
-        stds = np.array(stats["std"][:5]).reshape(5, 1)
         
-        data = (data - means) / (stds + 1e-8)
-        
+        # ВАЖНО: Инверсия должна быть ПОСЛЕ нормализации, как в trading_environment.py
         if side == "SHORT":
             data = data * -1.0
 
@@ -397,9 +415,9 @@ class CustomD3QNStrategy4(IStrategy):
         flat_feats = windows.reshape(batch_size, -1)
         add_feats = np.zeros((batch_size, 4), dtype=np.float32)
         combined = np.concatenate([flat_feats, add_feats], axis=1)
+        input_tensor = torch.FloatTensor(combined).to(self.device)
         
-        # Убедитесь, что windows.copy() вызывается перед FloatTensor для стабильности памяти
-        return torch.as_tensor(combined, device=self.device, dtype=torch.float32)
+        return input_tensor
     
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
         """
@@ -416,8 +434,7 @@ class CustomD3QNStrategy4(IStrategy):
                 return self.feature_cache[cache_key]
         
         # Если не в кэше, вычисляем
-        asset_name = pair.split(':')[0].replace('/', '')
-        tensor = self.get_model_input(dataframe, pair, side, model_num, asset_name)
+        tensor = self.get_model_input(dataframe, pair, side, model_num)
         
         # Сохраняем в кэш
         with self.cache_lock:
@@ -452,37 +469,36 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_soft_voting(self, long_actions, short_actions, has_long=False, has_short=False):
+    def _apply_soft_voting(self, long_actions, short_actions):
         """
-        Бинарное голосование с защитой от перекрестного входа.
-        0 - Модель ждет, 1 - Модель хочет войти.
+        Логика ансамбля: строгое единогласие для входа.
+        Перекрестное вето при одновременных сигналах Long и Short.
         """
-        # Превращаем все, что не 1, в 0 (бинарная очистка)
-        l_votes = list(long_actions).count(1)
-        s_votes = list(short_actions).count(1)
-        
-        total_l = len(long_actions)
-        total_s = len(short_actions)
+        mapped_long = [self.map_action_for_model(a, 'LONG') for a in long_actions]
+        mapped_short = [self.map_action_for_model(a, 'SHORT') for a in short_actions]
 
-        res = {'enter_long': 0, 'enter_short': 0, 'reason': f"L:{list(long_actions)} S:{list(short_actions)}"}
+        # Количество моделей проголосовавших за вход
+        l_votes = mapped_long.count(1)
+        s_votes = mapped_short.count(-1)
 
-        # 1. Блокировка новых сигналов, если позиция уже есть (защита от спама)
-        if has_long or has_short:
-            res['reason'] += " | Position exists, signal suppressed"
-            return res
+        res = {'enter_long': 0, 'enter_short': 0, 'exit_long': 0, 'exit_short': 0, 'reason': ''}
 
-        # 2. Вето: если обе группы моделей топят за вход в разные стороны
+        # Логирование для отладки (соответствует твоему требованию)
+        res['reason'] = f"L:{long_actions} S:{short_actions}"
+
+        # Проверка конфликта: если обе стороны хотят войти - отменяем всё
         if l_votes > 0 and s_votes > 0:
-            res['reason'] += " | Veto: Conflict"
+            res['reason'] += " | Veto Conflict"
             return res
 
-        # 3. Условие входа: Единогласие (100% моделей за вход)
-        if l_votes == total_l and total_l > 0:
+        # Вход в Long: единогласно ЗА, шорт-модели молчат
+        if l_votes == len(mapped_long) and l_votes > 0:
             res['enter_long'] = 1
         
-        if s_votes == total_s and total_s > 0:
+        # Вход в Short: единогласно ЗА, лонг-модели молчат
+        if s_votes == len(mapped_short) and s_votes > 0:
             res['enter_short'] = 1
-            
+
         return res
     
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
@@ -603,31 +619,38 @@ class CustomD3QNStrategy4(IStrategy):
         final_exit_long = np.zeros(n_predictions, dtype=np.int8)
         final_exit_short = np.zeros(n_predictions, dtype=np.int8)
         
+        # Получаем информацию об открытой позиции по данному тикеру
+        has_long = False
+        has_short = False
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            try:
+                open_trade = Trade.get_trades([Trade.pair == metadata['pair'], Trade.is_open.is_(True)]).first()
+                if open_trade:
+                    has_long = (open_trade.is_short is False)
+                    has_short = (open_trade.is_short is True)
+            except Exception as e:
+                logger.warning(f"Could not check open trades for {metadata['pair']}: {e}")
+
         for i in range(n_predictions):
-            # Собираем действия для текущей свечи
-            l1 = self.map_action_for_model(action_long_1[i], 'LONG')
-            l2 = self.map_action_for_model(action_long_2[i], 'LONG')
-            s1 = self.map_action_for_model(action_short_1[i], 'SHORT')
-            s2 = self.map_action_for_model(action_short_2[i], 'SHORT')
+            # Собираем действия для текущей свечи (Raw actions: 0 or 1)
+            l1 = int(action_long_1[i])
+            l2 = int(action_long_2[i])
+            s1 = int(action_short_1[i])
+            s2 = int(action_short_2[i])
             
             long_actions = [l1, l2]
             short_actions = [s1, s2]
             
-            if i < 5:
-                self.logger.info(f"Candle {i} | LONG: {l1}, {l2} | SHORT: {s1}, {s2}")
-            
             # Применяем soft voting правила
             decision = self._apply_soft_voting(
                 long_actions, 
-                short_actions,
-                has_long=has_long,
-                has_short=has_short
+                short_actions
             )
             
             # Сбор статистики
             if any(long_actions) or any(short_actions):
                 self.conflict_stats['total_signals'] += 1
-                if 'conflict' in decision['reason']:
+                if 'Conflict' in decision['reason']:
                     self.conflict_stats['conflicts'] += 1
                 elif decision['enter_long']:
                     self.conflict_stats['long_entries'] += 1
@@ -636,14 +659,13 @@ class CustomD3QNStrategy4(IStrategy):
             
             final_long_signals[i] = decision['enter_long']
             final_short_signals[i] = decision['enter_short']
-            final_exit_long[i] = decision['exit_long']
-            final_exit_short[i] = decision['exit_short']
             
             # Логирование
-            if (decision['enter_long'] or decision['enter_short']) and i < 3:
-                logger.info(f"📊 ENTRY SIGNAL: {decision['reason']}")
-            elif 'conflict' in decision['reason'] and i < 5:
-                logger.warning(f"⚠️ VOTING CONFLICT: {decision['reason']}")
+            # Логируем только последние 2 свечи (0 и 1)
+            if i >= n_predictions - 2:
+                logger.info(f"{metadata['pair']} Candle {i} | LONG: {long_actions} | SHORT: {short_actions}")
+                if decision['enter_long'] or decision['enter_short']:
+                    logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
 
         # 7. Вывод статистики
         if self.conflict_stats['total_signals'] > 0 and self.conflict_stats['total_signals'] % 1000 == 0:
