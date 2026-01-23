@@ -169,6 +169,16 @@ class CustomD3QNStrategy4(IStrategy):
         self.norm_stats_short_1 = self._load_norm_stats(self.short_1_model_dir)
         self.norm_stats_short_2 = self._load_norm_stats(self.short_2_model_dir)
         
+        # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
+        self.short_1_is_mirror = self._check_mirror_mode(self.cfg_short_1)
+        self.short_2_is_mirror = self._check_mirror_mode(self.cfg_short_2)
+        
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror}")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror}")
+        
+        if not self.short_1_is_mirror or not self.short_2_is_mirror:
+            logger.info("ℹ️ Note: Non-Mirror Short models expect Action 1 to be mapped to Short.")
+        
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
         self.long_1_agent = self._create_agent_from_config(self.cfg_long_1)
@@ -177,6 +187,12 @@ class CustomD3QNStrategy4(IStrategy):
         self.short_2_agent = self._create_agent_from_config(self.cfg_short_2)
         
         # --- ЗАГРУЗКА ВЕСОВ ---
+        # Safety check: Ensure Long and Short models are not pointing to the same file
+        if self.long_1_model_pth == self.short_1_model_pth:
+            logger.error("🚨 CRITICAL: LONG_1 and SHORT_1 model paths are IDENTICAL! Check paths.")
+        if self.long_2_model_pth == self.short_2_model_pth:
+            logger.error("🚨 CRITICAL: LONG_2 and SHORT_2 model paths are IDENTICAL! Check paths.")
+
         self._load_weights(self.long_1_agent, self.long_1_model_pth, "LONG_1")
         self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
         self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
@@ -214,6 +230,9 @@ class CustomD3QNStrategy4(IStrategy):
         
         logger.info("✅ CPU optimizations applied")
         
+        if not self.can_short:
+            logger.warning("⚠️ WARNING: can_short is False! Short signals will be ignored.")
+
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
@@ -244,6 +263,20 @@ class CustomD3QNStrategy4(IStrategy):
         sys.modules[unique_module_name] = mod
         spec.loader.exec_module(mod)
         return mod.cfg
+    
+    def _check_mirror_mode(self, cfg):
+        """Определяет, использует ли модель Mirror Mode (инверсию данных)"""
+        # 1. Check cfg.env (object or dict)
+        if hasattr(cfg, 'env'):
+            env = cfg.env
+            if isinstance(env, dict):
+                if env.get('filter_direction') == 'SHORT': return True
+            elif hasattr(env, 'filter_direction'):
+                if env.filter_direction == 'SHORT': return True
+        # 2. Check root cfg.filter_direction
+        if hasattr(cfg, 'filter_direction') and cfg.filter_direction == 'SHORT':
+            return True
+        return False
     
     def _load_norm_stats(self, model_dir: Path):
         ns_path = model_dir / "norm_stats.json"
@@ -379,8 +412,13 @@ class CustomD3QNStrategy4(IStrategy):
         # Исправление для фьючерсов: BTC/USDT:USDT -> BTCUSDT
         asset_name = pair.split(':')[0].replace('/', '')
         
-        if asset_name in current_norm_stats:
-            stats = current_norm_stats[asset_name]
+        stats = current_norm_stats.get(asset_name)
+        if not stats:
+            # Try alternative key (e.g. BTC/USDT)
+            alt_name = pair.split(':')[0]
+            stats = current_norm_stats.get(alt_name)
+
+        if stats:
             means = np.array(stats["mean"])
             stds = np.array(stats["std"])
             if means.ndim == 1: means = means.reshape(-1, 1)
@@ -398,7 +436,13 @@ class CustomD3QNStrategy4(IStrategy):
             return None
         
         # ВАЖНО: Инверсия должна быть ПОСЛЕ нормализации, как в trading_environment.py
+        # Проверяем, требует ли конкретная модель инверсии (Mirror Mode)
+        should_invert = False
         if side == "SHORT":
+            if (model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror):
+                should_invert = True
+        
+        if should_invert:
             data = data * -1.0
 
         data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
@@ -574,6 +618,11 @@ class CustomD3QNStrategy4(IStrategy):
             # if tensor_short_2 is None: logger.warning(f"Missing input for SHORT_2 on {metadata['pair']}")
             return dataframe
         
+        # Sanity Check: Ensure Short tensor is not identical to Long tensor (should be inverted)
+        if tensor_long_1 is not None and tensor_short_1 is not None:
+            if torch.equal(tensor_long_1, tensor_short_1):
+                logger.warning(f"🚨 CRITICAL: LONG_1 and SHORT_1 tensors are IDENTICAL for {metadata['pair']}! Inversion failed?")
+
         # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
         inference_tasks = [
             (tensor_long_1, self.long_1_agent, "long_1"),
