@@ -10,6 +10,8 @@ import torch
 from numpy.lib.stride_tricks import sliding_window_view
 from concurrent.futures import ThreadPoolExecutor
 import threading
+from typing import Dict, Optional, List, Any
+
 
 try:
     from freqtrade.persistence import Trade  # type: ignore
@@ -54,7 +56,7 @@ class CustomD3QNStrategy4(IStrategy):
     timeframe = '1m'
     can_long = True
     can_short = True
-    startup_candle_count: int = 100
+    startup_candle_count: int = 200
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -378,65 +380,40 @@ class CustomD3QNStrategy4(IStrategy):
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff
-    
-    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
-        """
-        Получение входных данных для конкретной модели
-        model_num: 1 или 2 (для выбора правильных norm_stats)
-        """
-        # 1. Данные (5 каналов)
-        opens = dataframe['open'].values
-        highs = dataframe['high'].values
-        lows = dataframe['low'].values
-        closes = dataframe['close'].values
-        volumes = dataframe['volume'].values
-        
-        # ВАЖНО: Используем сырые данные (Raw Data), так как norm_stats.json содержит
-        # средние значения цен (напр. 42.7) и объемов (напр. 29M).
-        # Модель обучалась на Z-нормализованных сырых данных, а не на лог-доходностях.
-        
-        # Stack (5, N)
-        data = np.stack([opens, highs, lows, closes, volumes])
-        
-        # 2. Выбор norm_stats
-        if side == "LONG" and model_num == 1:
-            current_norm_stats = self.norm_stats_long_1
-        elif side == "LONG" and model_num == 2:
-            current_norm_stats = self.norm_stats_long_2
-        elif side == "SHORT" and model_num == 1:
-            current_norm_stats = self.norm_stats_short_1
-        else:  # SHORT model 2
-            current_norm_stats = self.norm_stats_short_2
-        
-        # Нормализация
-        # Исправление для фьючерсов: BTC/USDT:USDT -> BTCUSDT
-        asset_name = pair.split(':')[0].replace('/', '')
-        
-        stats = current_norm_stats.get(asset_name)
-        if not stats:
-            # Try alternative key (e.g. BTC/USDT)
-            alt_name = pair.split(':')[0]
-            stats = current_norm_stats.get(alt_name)
 
-        if stats:
-            means = np.array(stats["mean"])
-            stds = np.array(stats["std"])
-            if means.ndim == 1: means = means.reshape(-1, 1)
-            if stds.ndim == 1: stds = stds.reshape(-1, 1)
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
+        # 1. Данные (5 каналов)
+        cols = ['open', 'high', 'low', 'close', 'volume']
+        data = dataframe[cols].values.T.astype(np.float32) # (5, N)
+
+        # 2. Выбор norm_stats
+        if side == "LONG":
+            current_norm_stats = self.norm_stats_long_1 if model_num == 1 else self.norm_stats_long_2
+        else: # SHORT
+            current_norm_stats = self.norm_stats_short_1 if model_num == 1 else self.norm_stats_short_2
             
-            # Ensure we use only the first 5 channels if stats has more
-            if means.shape[0] > 5:
-                means = means[:5]
-                stds = stds[:5]
-                
-            data = (data - means) / (stds + 1e-8)
-        else:
-            # Если данные нормализации по конкретному тикеру не найдены, логировать ошибку и отменять действия
-            logger.error(f"Norm stats not found for {asset_name} (pair: {pair}) in model {model_num} {side}")
+        if not current_norm_stats:
+            logger.error(f"Norm stats missing for model {model_num} {side}")
             return None
+
+        # Нормализация
+        if asset_name not in current_norm_stats:
+            # Fallback logic
+            alt_name = pair.split(':')[0]
+            if alt_name in current_norm_stats:
+                asset_name = alt_name
+            else:
+                return None
+
+        stats = current_norm_stats[asset_name]
         
-        # ВАЖНО: Инверсия должна быть ПОСЛЕ нормализации, как в trading_environment.py
-        # Проверяем, требует ли конкретная модель инверсии (Mirror Mode)
+        # Векторизованная нормализация
+        means = np.array(stats["mean"][:5], dtype=np.float32).reshape(5, 1)
+        stds = np.array(stats["std"][:5], dtype=np.float32).reshape(5, 1)
+        
+        data = (data - means) / (stds + 1e-8)
+        
+        # Inversion logic
         should_invert = False
         if side == "SHORT":
             if (model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror):
@@ -457,13 +434,14 @@ class CustomD3QNStrategy4(IStrategy):
         # 4. Flatten & Extra Features
         batch_size = windows.shape[0]
         flat_feats = windows.reshape(batch_size, -1)
+        
         add_feats = np.zeros((batch_size, 4), dtype=np.float32)
         combined = np.concatenate([flat_feats, add_feats], axis=1)
-        input_tensor = torch.FloatTensor(combined).to(self.device)
         
-        return input_tensor
-    
-    def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int):
+        # Return tensor on device
+        return torch.as_tensor(combined, device=self.device, dtype=torch.float32)
+
+    def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
         Кэширующая версия get_model_input
         Ключ кэша = (pair, last_candle_timestamp, side, model_num)
@@ -472,80 +450,78 @@ class CustomD3QNStrategy4(IStrategy):
         last_timestamp = dataframe.iloc[-1]['date'] if 'date' in dataframe.columns else dataframe.index[-1]
         cache_key = (pair, str(last_timestamp), side, model_num)
         
-        # Проверяем кэш
         with self.cache_lock:
             if cache_key in self.feature_cache:
                 return self.feature_cache[cache_key]
         
-        # Если не в кэше, вычисляем
-        tensor = self.get_model_input(dataframe, pair, side, model_num)
+        tensor = self.get_model_input(dataframe, pair, side, model_num, asset_name)
         
-        # Сохраняем в кэш
         with self.cache_lock:
-            # Ограничиваем размер кэша
             if len(self.feature_cache) >= self.cache_max_size:
-                # Удаляем старейший элемент (FIFO)
                 self.feature_cache.pop(next(iter(self.feature_cache)))
-            
             self.feature_cache[cache_key] = tensor
         
         return tensor
-    
+
     def _parallel_inference(self, tensors_and_agents):
-        """
-        Выполняет inference для нескольких моделей параллельно
-        tensors_and_agents: [(tensor, agent, name), ...]
-        """
         def single_inference(tensor, agent):
-            with torch.no_grad():
-                return agent.policy_net(tensor).cpu().numpy()
+            try:
+                with torch.no_grad():
+                    return agent.policy_net(tensor).cpu().numpy()
+            except Exception as e:
+                logger.error(f"Inference failed: {e}")
+                return np.zeros((tensor.shape[0], agent.action_dim))
         
-        # Запускаем все инференсы параллельно
         futures = []
         for tensor, agent, name in tensors_and_agents:
             future = self.executor.submit(single_inference, tensor, agent)
             futures.append((future, name))
         
-        # Собираем результаты
         results = {}
         for future, name in futures:
             results[name] = future.result()
         
         return results
 
-    def _apply_soft_voting(self, long_actions, short_actions, has_long=False, has_short=False):
-        """
-        Бинарное голосование с защитой от перекрестного входа.
-        0 - Модель ждет, 1 - Модель хочет войти.
-        """
-        # Превращаем все, что не 1, в 0 (бинарная очистка)
+    def _apply_soft_voting(
+        self, 
+        long_actions: List[int], 
+        short_actions: List[int], 
+        has_long: bool, 
+        has_short: bool
+    ) -> Dict[str, Any]:
+        
         l_votes = list(long_actions).count(1)
         s_votes = list(short_actions).count(1)
         
         total_l = len(long_actions)
         total_s = len(short_actions)
+        
+        # Consensus check
+        l_consensus = (l_votes == total_l and total_l > 0)
+        s_consensus = (s_votes == total_s and total_s > 0)
 
-        res = {'enter_long': 0, 'enter_short': 0, 'reason': f"L:{list(long_actions)} S:{list(short_actions)}"}
+        res = {
+            'enter_long': 0, 
+            'enter_short': 0, 
+            'reason': f"L:{long_actions} S:{short_actions}"
+        }
 
-        # 1. Блокировка новых сигналов, если позиция уже есть (защита от спама)
         if has_long or has_short:
-            res['reason'] += " | Position exists, signal suppressed"
+            res['reason'] += " | Position exists"
             return res
 
-        # 2. Вето: если обе группы моделей топят за вход в разные стороны
         if l_votes > 0 and s_votes > 0:
             res['reason'] += " | Veto: Conflict"
             return res
 
-        # 3. Условие входа: Единогласие (100% моделей за вход)
-        if l_votes == total_l and total_l > 0:
+        if l_consensus:
             res['enter_long'] = 1
-        
-        if s_votes == total_s and total_s > 0:
+        elif s_consensus:
             res['enter_short'] = 1
 
         return res
-    
+
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
                            side: str, **kwargs) -> bool:
@@ -605,10 +581,11 @@ class CustomD3QNStrategy4(IStrategy):
             dataframe['enter_short'] = 0
         
         # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
-        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1)
-        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2)
-        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1)
-        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2)
+        asset_name = metadata['pair'].split(':')[0].replace('/', '')
+        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name)
+        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name)
+        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name)
+        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name)
         
         if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
             # Логируем причину пропуска (опционально, можно закомментировать)
