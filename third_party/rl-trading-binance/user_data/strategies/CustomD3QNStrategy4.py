@@ -452,39 +452,35 @@ class CustomD3QNStrategy4(IStrategy):
         
         return results
 
-    def _apply_soft_voting(
-        self, 
-        long_actions: List[int], 
-        short_actions: List[int], 
-        has_long: bool = False, 
-        has_short: bool = False
-    ) -> Dict[str, Any]:
+    def _apply_soft_voting(self, long_actions, short_actions, has_long=False, has_short=False):
         """
-        Математически строгое голосование. 
-        Принимаем 'entry' (1) только при консенсусе всех моделей данного типа.
+        Бинарное голосование с защитой от перекрестного входа.
+        0 - Модель ждет, 1 - Модель хочет войти.
         """
-        l_consensus = all(a == 1 for a in long_actions)
-        s_consensus = all(a == -1 for a in short_actions)
+        # Превращаем все, что не 1, в 0 (бинарная очистка)
+        l_votes = list(long_actions).count(1)
+        s_votes = list(short_actions).count(1)
         
-        res = {
-            'enter_long': 0, 
-            'enter_short': 0, 
-            'exit_long': 0, 
-            'exit_short': 0,
-            'reason': f"L:{long_actions} S:{short_actions}"
-        }
+        total_l = len(long_actions)
+        total_s = len(short_actions)
 
+        res = {'enter_long': 0, 'enter_short': 0, 'reason': f"L:{list(long_actions)} S:{list(short_actions)}"}
+
+        # 1. Блокировка новых сигналов, если позиция уже есть (защита от спама)
         if has_long or has_short:
+            res['reason'] += " | Position exists, signal suppressed"
             return res
 
-        # Взаимное исключение (Veto)
-        if l_consensus and s_consensus:
-            res['reason'] += " | Veto: Double Consensus Conflict"
+        # 2. Вето: если обе группы моделей топят за вход в разные стороны
+        if l_votes > 0 and s_votes > 0:
+            res['reason'] += " | Veto: Conflict"
             return res
 
-        if l_consensus:
+        # 3. Условие входа: Единогласие (100% моделей за вход)
+        if l_votes == total_l and total_l > 0:
             res['enter_long'] = 1
-        elif s_consensus:
+        
+        if s_votes == total_s and total_s > 0:
             res['enter_short'] = 1
             
         return res
@@ -621,7 +617,12 @@ class CustomD3QNStrategy4(IStrategy):
                 self.logger.info(f"Candle {i} | LONG: {l1}, {l2} | SHORT: {s1}, {s2}")
             
             # Применяем soft voting правила
-            decision = self._apply_soft_voting(long_actions, short_actions)
+            decision = self._apply_soft_voting(
+                long_actions, 
+                short_actions,
+                has_long=has_long,
+                has_short=has_short
+            )
             
             # Сбор статистики
             if any(long_actions) or any(short_actions):
