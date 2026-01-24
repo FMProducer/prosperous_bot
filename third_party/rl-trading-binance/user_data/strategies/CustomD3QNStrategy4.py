@@ -83,6 +83,9 @@ class CustomD3QNStrategy4(IStrategy):
     def __init__(self, config: dict) -> None:
         super().__init__(config)
         
+        # Принудительно включаем шорты
+        self.can_short = True
+        
         # === CPU ОПТИМИЗАЦИИ ===
         # 1. Установить количество потоков для PyTorch
         num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
@@ -239,17 +242,6 @@ class CustomD3QNStrategy4(IStrategy):
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
     
-    def map_action_for_model(self, action, model_type):
-        """
-        Маппинг для бинарных моделей (0 - Wait, 1 - Enter).
-        Любые другие значения трактуются как Wait (0).
-        """
-        action = int(action)
-        if model_type == 'LONG':
-            return 1 if action == 1 else 0  # 1: Long, 0: Wait
-        else: # SHORT
-            return -1 if action == 1 else 0 # -1: Short (Mirror 1), 0: Wait
-
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
             if "alpha" in file.name or "config" in file.name:
@@ -265,20 +257,6 @@ class CustomD3QNStrategy4(IStrategy):
         sys.modules[unique_module_name] = mod
         spec.loader.exec_module(mod)
         return mod.cfg
-    
-    def _check_mirror_mode(self, cfg):
-        """Определяет, использует ли модель Mirror Mode (инверсию данных)"""
-        # 1. Check cfg.env (object or dict)
-        if hasattr(cfg, 'env'):
-            env = cfg.env
-            if isinstance(env, dict):
-                if env.get('filter_direction') == 'SHORT': return True
-            elif hasattr(env, 'filter_direction'):
-                if env.filter_direction == 'SHORT': return True
-        # 2. Check root cfg.filter_direction
-        if hasattr(cfg, 'filter_direction') and cfg.filter_direction == 'SHORT':
-            return True
-        return False
     
     def _load_norm_stats(self, model_dir: Path):
         ns_path = model_dir / "norm_stats.json"
@@ -696,3 +674,9 @@ class CustomD3QNStrategy4(IStrategy):
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return dataframe
+
+    def leverage(self, pair: str, current_time: datetime, current_rate: float,
+                 proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
+                 side: str, **kwargs) -> float:
+        """Обязательный метод для торговли фьючерсами (шорт)"""
+        return proposed_leverage
