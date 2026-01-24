@@ -144,7 +144,7 @@ class CustomD3QNStrategy4(IStrategy):
         self.short_1_norm_stats_path = self.short_1_model_dir / "norm_stats.json"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_406_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260123_time_180141"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260124_time_233356"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         self.short_2_norm_stats_path = self.short_2_model_dir / "norm_stats.json"
         
@@ -723,13 +723,13 @@ class CustomD3QNStrategy4(IStrategy):
             # Логируем Q-значения для последней свечи, чтобы видеть "уверенность" модели
             if "long_1" in q_values:
                 a = action_long_1[-1]
-                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "EXIT_LONG")
+                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
                 logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
             if "short_1" in q_values:
                 a = action_short_1[-1]
                 # Mirror Mode: 1=Buy_Inv(Short), 2=Sell_Inv(Exit_Short)
                 if self.short_1_is_mirror:
-                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "EXIT_SHORT(LONG)")
+                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
                 logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")

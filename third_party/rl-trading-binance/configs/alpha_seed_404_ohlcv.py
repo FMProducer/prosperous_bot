@@ -144,12 +144,12 @@ max_episodes_per_symbol = 2
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 1001       # Меньше (60-bar episodes дольше)
-cfg.trainlog.total_timesteps = 250000  # Сокращаем общий бюджет шагов
+cfg.trainlog.episodes = 6000       # Меньше (60-bar episodes дольше)
+cfg.trainlog.total_timesteps = 350000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 200             # Валидируемся чуть реже
-cfg.trainlog.validation_warmup_steps = 15000       # норма 450000 (значительно уменьшено)
+cfg.trainlog.val_freq = 150             # Валидируемся чуть реже
+cfg.trainlog.validation_warmup_steps = 30000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
     "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
@@ -217,8 +217,8 @@ cfg.backtest.max_parallel_sessions = 4
 cfg.backtest.position_fraction = 0.10
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.015
-cfg.backtest.short_action_threshold = -0.015  # Negative for short
+cfg.backtest.long_action_threshold = 0.0  # 0.015
+cfg.backtest.short_action_threshold = 0.0  # -0.015 Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
