@@ -3,7 +3,6 @@ import torch
 from config import cfg  # noqa: F401
 from pathlib import Path
 import json  # Для fallback norm_stats если нужно
-import types
 
 # --- DYNAMIC PATHS SETUP ---
 try:
@@ -70,8 +69,8 @@ cfg.seq.post_signal_len = 60
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
-cfg.paths.test_data_path = "data/val_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
+cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""
 
@@ -145,7 +144,7 @@ max_episodes_per_symbol = 2
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
+cfg.trainlog.episodes = 1001       # Меньше (60-bar episodes дольше)
 cfg.trainlog.total_timesteps = 250000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
@@ -218,8 +217,8 @@ cfg.backtest.max_parallel_sessions = 4
 cfg.backtest.position_fraction = 0.10
 cfg.backtest.order_size_usdt = 0.0
 cfg.backtest.selection_strategy = "advantage_based_filter"
-cfg.backtest.long_action_threshold = 0.0  # 0.015
-cfg.backtest.short_action_threshold = 0.0  # -0.015 Negative for short
+cfg.backtest.long_action_threshold = 0.015
+cfg.backtest.short_action_threshold = -0.015  # Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
@@ -245,7 +244,7 @@ cfg.perf.prefetch_factor = 2
 cfg.perf.cudnn_benchmark = True
 
 # MC-Dropout (ensemble; off by default)
-mc_dropout_cfg = types.SimpleNamespace()
+mc_dropout_cfg = type("obj", (), {})()
 mc_dropout_cfg.enable = False
 mc_dropout_cfg.n_action_samples = 1
 mc_dropout_cfg.action_agg = "mean"
@@ -270,7 +269,7 @@ cfg.debug.use_final_model = False
 cfg.deterministic = False
 
 # Bundle (for saving artifacts)
-bundle_cfg = types.SimpleNamespace()
+bundle_cfg = type("obj", (), {})
 bundle_cfg.enable = True
 bundle_cfg.include_code_snapshot = False
 bundle_cfg.code_snapshot_paths = ["train.py", "model.py", "agent.py", "trading_environment.py"]
@@ -331,7 +330,9 @@ single_model_dir = BASE_DIR / "output" / "alpha_seed_404_ohlcv_UNIVERSAL" / "sav
 # python paper_trader_q.py --model rl_model.pth --config alpha.py  # Backtest
 
 # --- ENSEMBLE CONFIGURATION ---
-cfg.ensemble = types.SimpleNamespace()
+class EnsembleConfig:
+    pass
+cfg.ensemble = EnsembleConfig()
 
 # Пути для валидации ансамбля
 cfg.ensemble.long_model_path = long_model_dir / "best.pth"

@@ -86,11 +86,20 @@ class CustomD3QNStrategy4(IStrategy):
         # Принудительно включаем шорты
         self.can_short = True
         
+        # --- LOGGING FILTERS ---
+        # Убираем спам о отмене стоплосса
+        def filter_stoploss_cancel(record):
+            return "Cancelling stoploss on exchange" not in record.getMessage()
+        logging.getLogger('freqtrade.freqtradebot').addFilter(filter_stoploss_cancel)
+        
         # === CPU ОПТИМИЗАЦИИ ===
         # 1. Установить количество потоков для PyTorch
         num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
-        torch.set_num_threads(num_cpu_threads)
-        torch.set_num_interop_threads(num_cpu_threads)
+        try:
+            torch.set_num_threads(num_cpu_threads)
+            torch.set_num_interop_threads(num_cpu_threads)
+        except RuntimeError as e:
+            logger.warning(f"⚠️ Could not set torch threads (already initialized?): {e}")
         
         self.device = torch.device("cpu")
         
@@ -139,45 +148,64 @@ class CustomD3QNStrategy4(IStrategy):
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         self.short_2_norm_stats_path = self.short_2_model_dir / "norm_stats.json"
         
+        # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
+        self.enable_long_1 = config.get('rl_enable_long_1', True)
+        self.enable_long_2 = config.get('rl_enable_long_2', True)
+        self.enable_short_1 = config.get('rl_enable_short_1', True)
+        self.enable_short_2 = config.get('rl_enable_short_2', True)
+        
         # --- ЗАГРУЗКА КОНФИГОВ ---
         logger.info("=" * 60)
         logger.info("🚀 INITIALIZING 2+2 ENSEMBLE SYSTEM")
         logger.info("=" * 60)
         logger.info(f"Project Root: {self.project_root}")
+        logger.info(f"🔌 Active Models: L1={self.enable_long_1}, L2={self.enable_long_2}, S1={self.enable_short_1}, S2={self.enable_short_2}")
         
         # Long 1
-        cfg_file_long_1 = self._find_config_file(self.long_1_model_dir)
-        if not cfg_file_long_1:
-            raise FileNotFoundError(f"Config not found in {self.long_1_model_dir}")
-        logger.info(f"✓ Loading LONG_1 config from {cfg_file_long_1}")
-        self.cfg_long_1 = self._load_py_config(cfg_file_long_1)
+        if self.enable_long_1:
+            cfg_file_long_1 = self._find_config_file(self.long_1_model_dir)
+            if not cfg_file_long_1:
+                raise FileNotFoundError(f"Config not found in {self.long_1_model_dir}")
+            logger.info(f"✓ Loading LONG_1 config from {cfg_file_long_1}")
+            self.cfg_long_1 = self._load_py_config(cfg_file_long_1)
+        else:
+            self.cfg_long_1 = None
         
         # Long 2
-        cfg_file_long_2 = self._find_config_file(self.long_2_model_dir)
-        if not cfg_file_long_2:
-            raise FileNotFoundError(f"Config not found in {self.long_2_model_dir}")
-        logger.info(f"✓ Loading LONG_2 config from {cfg_file_long_2}")
-        self.cfg_long_2 = self._load_py_config(cfg_file_long_2)
+        if self.enable_long_2:
+            cfg_file_long_2 = self._find_config_file(self.long_2_model_dir)
+            if not cfg_file_long_2:
+                raise FileNotFoundError(f"Config not found in {self.long_2_model_dir}")
+            logger.info(f"✓ Loading LONG_2 config from {cfg_file_long_2}")
+            self.cfg_long_2 = self._load_py_config(cfg_file_long_2)
+        else:
+            self.cfg_long_2 = None
         
         # Short 1
-        cfg_file_short_1 = self._find_config_file(self.short_1_model_dir)
-        if not cfg_file_short_1:
-            raise FileNotFoundError(f"Config not found in {self.short_1_model_dir}")
-        logger.info(f"✓ Loading SHORT_1 config from {cfg_file_short_1}")
-        self.cfg_short_1 = self._load_py_config(cfg_file_short_1)
+        if self.enable_short_1:
+            cfg_file_short_1 = self._find_config_file(self.short_1_model_dir)
+            if not cfg_file_short_1:
+                raise FileNotFoundError(f"Config not found in {self.short_1_model_dir}")
+            logger.info(f"✓ Loading SHORT_1 config from {cfg_file_short_1}")
+            self.cfg_short_1 = self._load_py_config(cfg_file_short_1)
+        else:
+            self.cfg_short_1 = None
         
         # Short 2
-        cfg_file_short_2 = self._find_config_file(self.short_2_model_dir)
-        if not cfg_file_short_2:
-            raise FileNotFoundError(f"Config not found in {self.short_2_model_dir}")
-        logger.info(f"✓ Loading SHORT_2 config from {cfg_file_short_2}")
-        self.cfg_short_2 = self._load_py_config(cfg_file_short_2)
+        if self.enable_short_2:
+            cfg_file_short_2 = self._find_config_file(self.short_2_model_dir)
+            if not cfg_file_short_2:
+                raise FileNotFoundError(f"Config not found in {self.short_2_model_dir}")
+            logger.info(f"✓ Loading SHORT_2 config from {cfg_file_short_2}")
+            self.cfg_short_2 = self._load_py_config(cfg_file_short_2)
+        else:
+            self.cfg_short_2 = None
         
         # --- ЗАГРУЗКА NORM_STATS ---
-        self.norm_stats_long_1 = self._load_norm_stats(self.long_1_norm_stats_path)
-        self.norm_stats_long_2 = self._load_norm_stats(self.long_2_norm_stats_path)
-        self.norm_stats_short_1 = self._load_norm_stats(self.short_1_norm_stats_path)
-        self.norm_stats_short_2 = self._load_norm_stats(self.short_2_norm_stats_path)
+        self.norm_stats_long_1 = self._load_norm_stats(self.long_1_norm_stats_path) if self.enable_long_1 else {}
+        self.norm_stats_long_2 = self._load_norm_stats(self.long_2_norm_stats_path) if self.enable_long_2 else {}
+        self.norm_stats_short_1 = self._load_norm_stats(self.short_1_norm_stats_path) if self.enable_short_1 else {}
+        self.norm_stats_short_2 = self._load_norm_stats(self.short_2_norm_stats_path) if self.enable_short_2 else {}
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
         # ЖЕСТКО ЗАДАЕМ TRUE, так как модели обучены на зеркальном графике.
@@ -191,15 +219,41 @@ class CustomD3QNStrategy4(IStrategy):
         self.vote_threshold_long = config.get('rl_long_threshold', 2)
         self.vote_threshold_short = config.get('rl_short_threshold', 2)
         self.enable_veto = config.get('rl_enable_veto', True)
+        self.min_q_threshold_long = config.get('rl_min_q_threshold_long', 0.0005)
+        self.min_q_threshold_short = config.get('rl_min_q_threshold_short', 0.0015)
         
-        logger.info(f"🗳️ Voting Rules: Long>={self.vote_threshold_long}, Short>={self.vote_threshold_short}, Veto={self.enable_veto}")
+        logger.info(f"🗳️ Voting Rules: Long>={self.vote_threshold_long}, Short>={self.vote_threshold_short}, Veto={self.enable_veto}, Q-Thresh(L/S)={self.min_q_threshold_long}/{self.min_q_threshold_short}")
 
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
-        self.long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
-        self.long_2_agent = self._create_agent_from_config(self.cfg_long_2, mirror_mode=False)
-        self.short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=self.short_1_is_mirror)
-        self.short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=self.short_2_is_mirror)
+        
+        # Long 1
+        if self.enable_long_1:
+            self.long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
+            self._load_weights(self.long_1_agent, self.long_1_model_pth, "LONG_1")
+        else:
+            self.long_1_agent = None
+            
+        # Long 2
+        if self.enable_long_2:
+            self.long_2_agent = self._create_agent_from_config(self.cfg_long_2, mirror_mode=False)
+            self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
+        else:
+            self.long_2_agent = None
+            
+        # Short 1
+        if self.enable_short_1:
+            self.short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=self.short_1_is_mirror)
+            self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
+        else:
+            self.short_1_agent = None
+            
+        # Short 2
+        if self.enable_short_2:
+            self.short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=self.short_2_is_mirror)
+            self._load_weights(self.short_2_agent, self.short_2_model_pth, "SHORT_2")
+        else:
+            self.short_2_agent = None
         
         # --- ЗАГРУЗКА ВЕСОВ ---
         # Safety check: Ensure Long and Short models are not pointing to the same file
@@ -208,40 +262,37 @@ class CustomD3QNStrategy4(IStrategy):
         if self.long_2_model_pth == self.short_2_model_pth:
             logger.error("🚨 CRITICAL: LONG_2 and SHORT_2 model paths are IDENTICAL! Check paths.")
 
-        self._load_weights(self.long_1_agent, self.long_1_model_pth, "LONG_1")
-        self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
-        self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
-        self._load_weights(self.short_2_agent, self.short_2_model_pth, "SHORT_2")
-        
         # === ОПТИМИЗАЦИЯ МОДЕЛЕЙ ДЛЯ INFERENCE ===
         # После загрузки весов, оптимизируем модели
         logger.info("🔧 Optimizing models for CPU inference...")
         
         # Переводим в eval mode и оптимизируем
-        for agent_name, agent in [
-            ("LONG_1", self.long_1_agent),
-            ("LONG_2", self.long_2_agent),
-            ("SHORT_1", self.short_1_agent),
-            ("SHORT_2", self.short_2_agent)
-        ]:
-            agent.policy_net.eval()
-            
-            # Отключаем grad для всех параметров (экономит память и время)
-            for param in agent.policy_net.parameters():
-                param.requires_grad = False
-            
-            # Disabled torch.compile to avoid 'Compiler: cl is not found' on Windows
-            # # Если PyTorch 2.0+, используем compile для ускорения
-            # try:
-            #     if hasattr(torch, 'compile'):
-            #         agent.policy_net = torch.compile(
-            #             agent.policy_net,
-            #             mode='reduce-overhead',  # для CPU лучший режим
-            #             fullgraph=False
-            #         )
-            #         logger.info(f"  ✓ {agent_name}: torch.compile enabled")
-            # except Exception as e:
-            #     logger.warning(f"  ⚠ {agent_name}: torch.compile failed: {e}")
+        agents_to_optimize = []
+        if self.enable_long_1: agents_to_optimize.append(("LONG_1", self.long_1_agent))
+        if self.enable_long_2: agents_to_optimize.append(("LONG_2", self.long_2_agent))
+        if self.enable_short_1: agents_to_optimize.append(("SHORT_1", self.short_1_agent))
+        if self.enable_short_2: agents_to_optimize.append(("SHORT_2", self.short_2_agent))
+
+        for agent_name, agent in agents_to_optimize:
+            if agent:
+                agent.policy_net.eval()
+                
+                # Отключаем grad для всех параметров (экономит память и время)
+                for param in agent.policy_net.parameters():
+                    param.requires_grad = False
+                
+                # Disabled torch.compile to avoid 'Compiler: cl is not found' on Windows
+                # # Если PyTorch 2.0+, используем compile для ускорения
+                # try:
+                #     if hasattr(torch, 'compile'):
+                #         agent.policy_net = torch.compile(
+                #             agent.policy_net,
+                #             mode='reduce-overhead',  # для CPU лучший режим
+                #             fullgraph=False
+                #         )
+                #         logger.info(f"  ✓ {agent_name}: torch.compile enabled")
+                # except Exception as e:
+                #     logger.warning(f"  ⚠ {agent_name}: torch.compile failed: {e}")
         
         logger.info("✅ CPU optimizations applied")
         
@@ -377,23 +428,15 @@ class CustomD3QNStrategy4(IStrategy):
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
         # 1. Данные (5 каналов)
-        # FIX: Calculate Log Returns and Log Volume to match training data!
-        # Raw prices (e.g. 60000) vs Log Returns (e.g. 0.001) caused the model to fail.
-        opens = dataframe['open'].values
-        highs = dataframe['high'].values
-        lows = dataframe['low'].values
-        closes = dataframe['close'].values
-        volumes = dataframe['volume'].values
-        
-        eps = 1e-9
-        # returns are (t) / (t-1). Result length is N-1.
-        r_opens = np.log(np.maximum(opens[1:] / (opens[:-1] + eps), eps))
-        r_highs = np.log(np.maximum(highs[1:] / (highs[:-1] + eps), eps))
-        r_lows = np.log(np.maximum(lows[1:] / (lows[:-1] + eps), eps))
-        r_closes = np.log(np.maximum(closes[1:] / (closes[:-1] + eps), eps))
-        r_volumes = np.log(volumes[1:] + 1.0) # Align length with returns
-        
-        data = np.stack([r_opens, r_highs, r_lows, r_closes, r_volumes]).astype(np.float32) # (5, N-1)
+        # STRICTLY RAW DATA (No log returns, no extra math)
+        # norm_stats.json contains raw means (e.g. ~42) and stds, so we must use raw prices.
+        data = np.stack([
+            dataframe['open'].values,
+            dataframe['high'].values,
+            dataframe['low'].values,
+            dataframe['close'].values,
+            dataframe['volume'].values
+        ]).astype(np.float32) # (5, N)
 
         # 2. Выбор norm_stats
         if side == "LONG":
@@ -407,14 +450,8 @@ class CustomD3QNStrategy4(IStrategy):
 
         # Нормализация
         if asset_name not in current_norm_stats:
-            # Fallback logic
-            alt_name = pair.split(':')[0]
-            if alt_name in current_norm_stats:
-                asset_name = alt_name
-            else:
-                # Uncomment for debugging if signals are missing
-                # logger.warning(f"Missing norm_stats for {asset_name} in model {model_num} {side}")
-                return None
+            # logger.warning(f"Missing norm_stats for {asset_name} in model {model_num} {side}")
+            return None
 
         stats = current_norm_stats[asset_name]
         
@@ -423,6 +460,12 @@ class CustomD3QNStrategy4(IStrategy):
         stds = np.array(stats["std"][:5], dtype=np.float32).reshape(5, 1)
         
         data = (data - means) / (stds + 1e-8)
+        
+        # --- SAFETY: OUTLIER DETECTION ---
+        # Если данные отклоняются более чем на 20 сигм, это ошибка нормализации -> пропускаем
+        if np.any(np.abs(data) > 20):
+            logger.warning(f"🚨 OUTLIER in {asset_name} (Model {model_num} {side}): Max sigma={np.max(np.abs(data)):.1f}. Skipping.")
+            return None
         
         # Inversion logic
         should_invert = False
@@ -545,10 +588,13 @@ class CustomD3QNStrategy4(IStrategy):
         if l_signal:
             res['enter_long'] = 1
             res['reason'] += " | LONG Signal"
-        elif s_signal and self.can_short:
+        
+        # Используем IF вместо ELIF, чтобы при veto=False сигналы не блокировали друг друга
+        if s_signal and self.can_short:
             res['enter_short'] = 1
             res['reason'] += " | SHORT Signal"
-        else:
+            
+        if res['enter_long'] == 0 and res['enter_short'] == 0:
             res['reason'] += " | No Consensus"
 
         return res
@@ -597,7 +643,8 @@ class CustomD3QNStrategy4(IStrategy):
         # 2. Оптимизация инференса
         deep_inference = self.config.get('deep_inference', False)
         if self.config.get('runmode') in ['live', 'dry_run']:
-            df_input = dataframe.iloc[-91:].copy()
+            # Оптимизация: берем ровно 90 свечей для 1 предсказания (вместо 91 для 2)
+            df_input = dataframe.iloc[-90:].copy()
         elif not deep_inference:
             lookback = 1000
             if len(dataframe) > lookback:
@@ -613,17 +660,20 @@ class CustomD3QNStrategy4(IStrategy):
         
         # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
         asset_name = metadata['pair'].split(':')[0].replace('/', '')
-        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name)
-        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name)
-        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name)
-        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name)
         
-        if None in [tensor_long_1, tensor_long_2, tensor_short_1, tensor_short_2]:
-            # Логируем причину пропуска (опционально, можно закомментировать)
-            # if tensor_long_1 is None: logger.warning(f"Missing input for LONG_1 on {metadata['pair']}")
-            # if tensor_long_2 is None: logger.warning(f"Missing input for LONG_2 on {metadata['pair']}")
-            # if tensor_short_1 is None: logger.warning(f"Missing input for SHORT_1 on {metadata['pair']}")
-            # if tensor_short_2 is None: logger.warning(f"Missing input for SHORT_2 on {metadata['pair']}")
+        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name) if self.enable_long_1 else None
+        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name) if self.enable_long_2 else None
+        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name) if self.enable_short_1 else None
+        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name) if self.enable_short_2 else None
+        
+        # Проверяем, что все ВКЛЮЧЕННЫЕ модели получили данные
+        missing_data = False
+        if self.enable_long_1 and tensor_long_1 is None: missing_data = True
+        if self.enable_long_2 and tensor_long_2 is None: missing_data = True
+        if self.enable_short_1 and tensor_short_1 is None: missing_data = True
+        if self.enable_short_2 and tensor_short_2 is None: missing_data = True
+
+        if missing_data:
             return dataframe
         
         # Sanity Check: Ensure Short tensor is not identical to Long tensor (should be inverted)
@@ -632,33 +682,57 @@ class CustomD3QNStrategy4(IStrategy):
                 logger.warning(f"🚨 CRITICAL: LONG_1 and SHORT_1 tensors are IDENTICAL for {metadata['pair']}! Inversion failed?")
 
         # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
-        inference_tasks = [
-            (tensor_long_1, self.long_1_agent, "long_1"),
-            (tensor_long_2, self.long_2_agent, "long_2"),
-            (tensor_short_1, self.short_1_agent, "short_1"),
-            (tensor_short_2, self.short_2_agent, "short_2")
-        ]
+        inference_tasks = []
+        if self.enable_long_1 and tensor_long_1 is not None:
+            inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
+        if self.enable_long_2 and tensor_long_2 is not None:
+            inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
+        if self.enable_short_1 and tensor_short_1 is not None:
+            inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
+        if self.enable_short_2 and tensor_short_2 is not None:
+            inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
+            
+        if not inference_tasks:
+            return dataframe
         
         q_values = self._parallel_inference(inference_tasks)
         
-        # Распаковываем результаты
-        q_long_1 = q_values["long_1"]
-        q_long_2 = q_values["long_2"]
-        q_short_1 = q_values["short_1"]
-        q_short_2 = q_values["short_2"]
+        # Определяем размер батча из первого доступного результата
+        batch_size = next(iter(q_values.values())).shape[0]
         
-        # 5. Получение действий напрямую из Q-values (БЕЗ ПОРОГОВ)
-        # argmax по Q-values дает действие: 0=hold, 1=entry
-        action_long_1 = np.argmax(q_long_1, axis=1)
-        action_long_2 = np.argmax(q_long_2, axis=1)
-        action_short_1 = np.argmax(q_short_1, axis=1)
-        action_short_2 = np.argmax(q_short_2, axis=1)
+        # 5. Получение действий с порогом уверенности (Q-Threshold)
+        # Фильтруем слабые сигналы, где Q(Action) почти равно Q(Hold)
+
+        def get_action_with_threshold(name, threshold):
+            if name not in q_values:
+                return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
+            q = q_values[name]
+            actions = np.argmax(q, axis=1)
+            # Advantage = Q(Selected) - Q(Hold)
+            advantage = q[np.arange(len(q)), actions] - q[:, 0]
+            final_actions = np.where(advantage > threshold, actions, 0)
+            return final_actions, advantage
+
+        action_long_1, adv_long_1 = get_action_with_threshold("long_1", self.min_q_threshold_long)
+        action_long_2, adv_long_2 = get_action_with_threshold("long_2", self.min_q_threshold_long)
+        action_short_1, adv_short_1 = get_action_with_threshold("short_1", self.min_q_threshold_short)
+        action_short_2, adv_short_2 = get_action_with_threshold("short_2", self.min_q_threshold_short)
 
         # DEBUG: Log action distribution to verify models are outputting signals
-        if self.config.get('runmode') not in ['live', 'dry_run']:
-            u_s1, c_s1 = np.unique(action_short_1, return_counts=True)
-            u_s2, c_s2 = np.unique(action_short_2, return_counts=True)
-            logger.info(f"DEBUG {metadata['pair']} Short Actions: S1={dict(zip(u_s1, c_s1))} S2={dict(zip(u_s2, c_s2))}")
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            # Логируем Q-значения для последней свечи, чтобы видеть "уверенность" модели
+            if "long_1" in q_values:
+                a = action_long_1[-1]
+                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "EXIT_LONG")
+                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
+            if "short_1" in q_values:
+                a = action_short_1[-1]
+                # Mirror Mode: 1=Buy_Inv(Short), 2=Sell_Inv(Exit_Short)
+                if self.short_1_is_mirror:
+                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "EXIT_SHORT(LONG)")
+                else:
+                    a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
+                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
