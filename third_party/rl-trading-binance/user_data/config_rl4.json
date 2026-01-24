@@ -9,6 +9,9 @@
     "dry_run": true,
     "dry_run_wallet": 100000,
     "mirror_mode": true,
+    "rl_long_threshold": 3,
+    "rl_short_threshold": 1,
+    "rl_enable_veto": false,
     
     "api_server": {
         "enabled": true,

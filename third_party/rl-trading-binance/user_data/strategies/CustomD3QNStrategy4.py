@@ -180,15 +180,20 @@ class CustomD3QNStrategy4(IStrategy):
         self.norm_stats_short_2 = self._load_norm_stats(self.short_2_norm_stats_path)
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
-        self.short_1_is_mirror = config.get('mirror_mode', False)
-        self.short_2_is_mirror = config.get('mirror_mode', False)
+        # ЖЕСТКО ЗАДАЕМ TRUE, так как модели обучены на зеркальном графике.
+        self.short_1_is_mirror = True
+        self.short_2_is_mirror = True
         
-        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
-        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (Hardcoded)")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (Hardcoded)")
         
-        if not self.short_1_is_mirror or not self.short_2_is_mirror:
-            logger.info("ℹ️ Note: Non-Mirror Short models expect Action 1 to be mapped to Short.")
+        # --- НАСТРОЙКИ ГОЛОСОВАНИЯ (из конфига) ---
+        self.vote_threshold_long = config.get('rl_long_threshold', 2)
+        self.vote_threshold_short = config.get('rl_short_threshold', 2)
+        self.enable_veto = config.get('rl_enable_veto', True)
         
+        logger.info(f"🗳️ Voting Rules: Long>={self.vote_threshold_long}, Short>={self.vote_threshold_short}, Veto={self.enable_veto}")
+
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
         self.long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
@@ -411,7 +416,8 @@ class CustomD3QNStrategy4(IStrategy):
                 should_invert = True
         
         if should_invert:
-            data = data * -1.0
+            # FIX: Invert only OHLC (0-3), leave Volume (4) alone
+            data[:4, :] = data[:4, :] * -1.0
 
         data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -420,7 +426,8 @@ class CustomD3QNStrategy4(IStrategy):
             return None
         
         windows = sliding_window_view(data, window_shape=90, axis=1)
-        windows = windows.transpose(1, 0, 2)
+        # FIX: Transpose to (Batch, 90, 5) to match TradingEnvironment's Time-major flattening
+        windows = windows.transpose(1, 2, 0)
         
         # 4. Flatten & Extra Features
         batch_size = windows.shape[0]
@@ -499,34 +506,31 @@ class CustomD3QNStrategy4(IStrategy):
         else:
             if short_actions[1] == 2: s_votes += 1
 
-        total_l = len(long_actions)
-        total_s = len(short_actions)
-        
-        # Проверка на консенсус: ВСЕ модели в группе должны быть согласны.
-        l_consensus = (l_votes == total_l and total_l > 0)
-        s_consensus = (s_votes == total_s and total_s > 0)
+        # Проверка по порогу (Threshold) из конфига
+        l_signal = (l_votes >= self.vote_threshold_long and l_votes > 0)
+        s_signal = (s_votes >= self.vote_threshold_short and s_votes > 0)
 
         res = {
             'enter_long': 0, 
             'enter_short': 0, 
-            'reason': f"L_votes:{l_votes}/{total_l} S_votes:{s_votes}/{total_s}"
+            'reason': f"L_votes:{l_votes} (Need {self.vote_threshold_long}) S_votes:{s_votes} (Need {self.vote_threshold_short})"
         }
 
         if has_long or has_short:
             res['reason'] += " | Position exists"
             return res
 
-        # Вето, только если ОБЕ группы достигли консенсуса.
-        if l_consensus and s_consensus:
+        # Вето, если обе стороны дали сигнал и вето включено
+        if self.enable_veto and l_signal and s_signal:
             res['reason'] += " | Veto: Conflict"
             return res
 
-        if l_consensus:
+        if l_signal:
             res['enter_long'] = 1
-            res['reason'] += " | LONG Consensus"
-        elif s_consensus and self.can_short:
+            res['reason'] += " | LONG Signal"
+        elif s_signal and self.can_short:
             res['enter_short'] = 1
-            res['reason'] += " | SHORT Consensus"
+            res['reason'] += " | SHORT Signal"
         else:
             res['reason'] += " | No Consensus"
 
@@ -698,7 +702,22 @@ class CustomD3QNStrategy4(IStrategy):
             # Логирование
             # Логируем только последние 2 свечи (0 и 1)
             if i >= n_predictions - 2:
-                logger.info(f"{metadata['pair']} Candle {i} | LONG: {long_actions} | SHORT: {short_actions}")
+                # Преобразуем сырые действия в голоса (1=ЗА, 0=ПРОТИВ/ЖДАТЬ) для лога
+                l_votes_log = [1 if a == 1 else 0 for a in long_actions]
+                
+                s_votes_log = []
+                # Short 1
+                if self.short_1_is_mirror:
+                    s_votes_log.append(1 if short_actions[0] == 1 else 0)
+                else:
+                    s_votes_log.append(1 if short_actions[0] == 2 else 0)
+                # Short 2
+                if self.short_2_is_mirror:
+                    s_votes_log.append(1 if short_actions[1] == 1 else 0)
+                else:
+                    s_votes_log.append(1 if short_actions[1] == 2 else 0)
+
+                logger.info(f"{metadata['pair']} Candle {i} | LONG: {l_votes_log} | SHORT: {s_votes_log}")
                 if decision['enter_long'] or decision['enter_short']:
                     logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
             
