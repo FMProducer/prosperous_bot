@@ -377,8 +377,23 @@ class CustomD3QNStrategy4(IStrategy):
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
         # 1. Данные (5 каналов)
-        cols = ['open', 'high', 'low', 'close', 'volume']
-        data = dataframe[cols].values.T.astype(np.float32) # (5, N)
+        # FIX: Calculate Log Returns and Log Volume to match training data!
+        # Raw prices (e.g. 60000) vs Log Returns (e.g. 0.001) caused the model to fail.
+        opens = dataframe['open'].values
+        highs = dataframe['high'].values
+        lows = dataframe['low'].values
+        closes = dataframe['close'].values
+        volumes = dataframe['volume'].values
+        
+        eps = 1e-9
+        # returns are (t) / (t-1). Result length is N-1.
+        r_opens = np.log(np.maximum(opens[1:] / (opens[:-1] + eps), eps))
+        r_highs = np.log(np.maximum(highs[1:] / (highs[:-1] + eps), eps))
+        r_lows = np.log(np.maximum(lows[1:] / (lows[:-1] + eps), eps))
+        r_closes = np.log(np.maximum(closes[1:] / (closes[:-1] + eps), eps))
+        r_volumes = np.log(volumes[1:] + 1.0) # Align length with returns
+        
+        data = np.stack([r_opens, r_highs, r_lows, r_closes, r_volumes]).astype(np.float32) # (5, N-1)
 
         # 2. Выбор norm_stats
         if side == "LONG":
@@ -416,8 +431,8 @@ class CustomD3QNStrategy4(IStrategy):
                 should_invert = True
         
         if should_invert:
-            # FIX: Invert only OHLC (0-3), leave Volume (4) alone
-            data[:4, :] = data[:4, :] * -1.0
+            # Revert: Invert ALL channels (including Volume) to match TradingEnvironment training logic
+            data = data * -1.0
 
         data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -434,6 +449,8 @@ class CustomD3QNStrategy4(IStrategy):
         flat_feats = windows.reshape(batch_size, -1)
         
         add_feats = np.zeros((batch_size, 4), dtype=np.float32)
+        # Set time_remaining (index 3) to 1.0 (start of session)
+        add_feats[:, 3] = 1.0
         combined = np.concatenate([flat_feats, add_feats], axis=1)
         
         # Return tensor on device
