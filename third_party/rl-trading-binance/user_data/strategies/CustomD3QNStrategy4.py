@@ -143,6 +143,7 @@ class CustomD3QNStrategy4(IStrategy):
         logger.info("=" * 60)
         logger.info("🚀 INITIALIZING 2+2 ENSEMBLE SYSTEM")
         logger.info("=" * 60)
+        logger.info(f"Project Root: {self.project_root}")
         
         # Long 1
         cfg_file_long_1 = self._find_config_file(self.long_1_model_dir)
@@ -264,8 +265,13 @@ class CustomD3QNStrategy4(IStrategy):
     
     def _load_norm_stats(self, ns_path: Path):
         if ns_path.exists():
+            logger.info(f"Loading norm_stats from {ns_path}")
             with open(ns_path, 'r') as f:
-                return json.load(f)
+                stats = json.load(f)
+                # Basic validation to ensure file is not empty or malformed
+                if not stats:
+                    logger.warning(f"⚠️ WARNING: norm_stats at {ns_path} is empty!")
+                return stats
         else:
             raise FileNotFoundError(f"norm_stats.json missing at {ns_path}")
     
@@ -386,6 +392,8 @@ class CustomD3QNStrategy4(IStrategy):
             if alt_name in current_norm_stats:
                 asset_name = alt_name
             else:
+                # Uncomment for debugging if signals are missing
+                # logger.warning(f"Missing norm_stats for {asset_name} in model {model_num} {side}")
                 return None
 
         stats = current_norm_stats[asset_name]
