@@ -55,7 +55,7 @@ class CustomD3QNStrategy4(IStrategy):
     INTERFACE_VERSION = 3
     timeframe = '1m'
     can_long = True
-    can_short = True
+    can_short: bool = True  # Это критично для Futures режима
     startup_candle_count: int = 200
     
     minimal_roi = {"0": 100}
@@ -122,18 +122,22 @@ class CustomD3QNStrategy4(IStrategy):
         # Long Model 1: PPO trending
         self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_220542"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
+        self.long_1_norm_stats_path = self.long_1_model_dir / "norm_stats.json"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
         self.long_2_model_dir = self.project_root / "output/alpha_seed_405_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260121_time_232557"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
+        self.long_2_norm_stats_path = self.long_2_model_dir / "norm_stats.json"
         
         # Short Model 1: SAC bearish trending
         self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_225844"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
+        self.short_1_norm_stats_path = self.short_1_model_dir / "norm_stats.json"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
         self.short_2_model_dir = self.project_root / "output/alpha_seed_405_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260121_time_223959"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
+        self.short_2_norm_stats_path = self.short_2_model_dir / "norm_stats.json"
         
         # --- ЗАГРУЗКА КОНФИГОВ ---
         logger.info("=" * 60)
@@ -169,10 +173,10 @@ class CustomD3QNStrategy4(IStrategy):
         self.cfg_short_2 = self._load_py_config(cfg_file_short_2)
         
         # --- ЗАГРУЗКА NORM_STATS ---
-        self.norm_stats_long_1 = self._load_norm_stats(self.long_1_model_dir)
-        self.norm_stats_long_2 = self._load_norm_stats(self.long_2_model_dir)
-        self.norm_stats_short_1 = self._load_norm_stats(self.short_1_model_dir)
-        self.norm_stats_short_2 = self._load_norm_stats(self.short_2_model_dir)
+        self.norm_stats_long_1 = self._load_norm_stats(self.long_1_norm_stats_path)
+        self.norm_stats_long_2 = self._load_norm_stats(self.long_2_norm_stats_path)
+        self.norm_stats_short_1 = self._load_norm_stats(self.short_1_norm_stats_path)
+        self.norm_stats_short_2 = self._load_norm_stats(self.short_2_norm_stats_path)
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
         self.short_1_is_mirror = config.get('mirror_mode', False)
@@ -258,13 +262,12 @@ class CustomD3QNStrategy4(IStrategy):
         spec.loader.exec_module(mod)
         return mod.cfg
     
-    def _load_norm_stats(self, model_dir: Path):
-        ns_path = model_dir / "norm_stats.json"
+    def _load_norm_stats(self, ns_path: Path):
         if ns_path.exists():
             with open(ns_path, 'r') as f:
                 return json.load(f)
         else:
-            raise FileNotFoundError(f"norm_stats.json missing in {model_dir}")
+            raise FileNotFoundError(f"norm_stats.json missing at {ns_path}")
     
     def _create_agent_from_config(self, cfg, mirror_mode=False):
         agent = D3QN_PER_Agent(
@@ -472,7 +475,7 @@ class CustomD3QNStrategy4(IStrategy):
     ) -> Dict[str, Any]:
         
         l_votes = list(long_actions).count(1)
-        s_votes = list(short_actions).count(1)
+        s_votes = list(short_actions).count(2)
         
         total_l = len(long_actions)
         total_s = len(short_actions)
@@ -602,6 +605,12 @@ class CustomD3QNStrategy4(IStrategy):
         action_long_2 = np.argmax(q_long_2, axis=1)
         action_short_1 = np.argmax(q_short_1, axis=1)
         action_short_2 = np.argmax(q_short_2, axis=1)
+
+        # DEBUG: Log action distribution to verify models are outputting signals
+        if self.config.get('runmode') not in ['live', 'dry_run']:
+            u_s1, c_s1 = np.unique(action_short_1, return_counts=True)
+            u_s2, c_s2 = np.unique(action_short_2, return_counts=True)
+            logger.info(f"DEBUG {metadata['pair']} Short Actions: S1={dict(zip(u_s1, c_s1))} S2={dict(zip(u_s2, c_s2))}")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
