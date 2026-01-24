@@ -172,21 +172,21 @@ class CustomD3QNStrategy4(IStrategy):
         self.norm_stats_short_2 = self._load_norm_stats(self.short_2_model_dir)
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
-        self.short_1_is_mirror = self._check_mirror_mode(self.cfg_short_1)
-        self.short_2_is_mirror = self._check_mirror_mode(self.cfg_short_2)
+        self.short_1_is_mirror = config.get('mirror_mode', False)
+        self.short_2_is_mirror = config.get('mirror_mode', False)
         
-        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror}")
-        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror}")
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
         
         if not self.short_1_is_mirror or not self.short_2_is_mirror:
             logger.info("ℹ️ Note: Non-Mirror Short models expect Action 1 to be mapped to Short.")
         
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
-        self.long_1_agent = self._create_agent_from_config(self.cfg_long_1)
-        self.long_2_agent = self._create_agent_from_config(self.cfg_long_2)
-        self.short_1_agent = self._create_agent_from_config(self.cfg_short_1)
-        self.short_2_agent = self._create_agent_from_config(self.cfg_short_2)
+        self.long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
+        self.long_2_agent = self._create_agent_from_config(self.cfg_long_2, mirror_mode=False)
+        self.short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=self.short_1_is_mirror)
+        self.short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=self.short_2_is_mirror)
         
         # --- ЗАГРУЗКА ВЕСОВ ---
         # Safety check: Ensure Long and Short models are not pointing to the same file
@@ -288,8 +288,8 @@ class CustomD3QNStrategy4(IStrategy):
         else:
             raise FileNotFoundError(f"norm_stats.json missing in {model_dir}")
     
-    def _create_agent_from_config(self, cfg):
-        return D3QN_PER_Agent(
+    def _create_agent_from_config(self, cfg, mirror_mode=False):
+        agent = D3QN_PER_Agent(
             state_shape=cfg.seq.state_shape,
             action_dim=cfg.market.num_actions,
             cnn_maps=cfg.model.cnn_maps,
@@ -316,6 +316,8 @@ class CustomD3QNStrategy4(IStrategy):
             epsilon=0.0,
             max_gradient_norm=cfg.rl.max_gradient_norm
         )
+        agent.mirror_mode = mirror_mode
+        return agent
     
     def _load_weights(self, agent, path, name):
         try:

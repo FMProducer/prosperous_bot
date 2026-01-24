@@ -8,6 +8,7 @@
     "tradable_balance_ratio": 0.99,
     "dry_run": true,
     "dry_run_wallet": 100000,
+    "mirror_mode": true,
     
     "api_server": {
         "enabled": true,
