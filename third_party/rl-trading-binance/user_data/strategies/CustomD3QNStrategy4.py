@@ -481,35 +481,54 @@ class CustomD3QNStrategy4(IStrategy):
         has_long: bool, 
         has_short: bool
     ) -> Dict[str, Any]:
-        
+
+        # --- Корректный подсчет голосов с учетом mirror_mode ---
+        # Для LONG моделей, голос "ЗА" - это всегда действие 1.
         l_votes = list(long_actions).count(1)
-        s_votes = list(short_actions).count(2)
-        
+
+        # Для SHORT моделей, голос "ЗА" зависит от режима.
+        s_votes = 0
+        # Модель 1
+        if self.short_1_is_mirror:
+            if short_actions[0] == 1: s_votes += 1  # В зеркальном режиме "лонг" (1) означает шорт.
+        else:
+            if short_actions[0] == 2: s_votes += 1  # В обычном режиме "шорт" - это действие 2.
+        # Модель 2
+        if self.short_2_is_mirror:
+            if short_actions[1] == 1: s_votes += 1
+        else:
+            if short_actions[1] == 2: s_votes += 1
+
         total_l = len(long_actions)
         total_s = len(short_actions)
         
-        # Consensus check
+        # Проверка на консенсус: ВСЕ модели в группе должны быть согласны.
         l_consensus = (l_votes == total_l and total_l > 0)
         s_consensus = (s_votes == total_s and total_s > 0)
 
         res = {
             'enter_long': 0, 
             'enter_short': 0, 
-            'reason': f"L:{long_actions} S:{short_actions}"
+            'reason': f"L_votes:{l_votes}/{total_l} S_votes:{s_votes}/{total_s}"
         }
 
         if has_long or has_short:
             res['reason'] += " | Position exists"
             return res
 
-        if l_votes > 0 and s_votes > 0:
+        # Вето, только если ОБЕ группы достигли консенсуса.
+        if l_consensus and s_consensus:
             res['reason'] += " | Veto: Conflict"
             return res
 
         if l_consensus:
             res['enter_long'] = 1
-        elif s_consensus:
+            res['reason'] += " | LONG Consensus"
+        elif s_consensus and self.can_short:
             res['enter_short'] = 1
+            res['reason'] += " | SHORT Consensus"
+        else:
+            res['reason'] += " | No Consensus"
 
         return res
 
