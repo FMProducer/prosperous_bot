@@ -89,7 +89,8 @@ class CustomD3QNStrategy4(IStrategy):
         # --- LOGGING FILTERS ---
         # Убираем спам о отмене стоплосса
         def filter_stoploss_cancel(record):
-            return "Cancelling stoploss on exchange" not in record.getMessage()
+            msg = record.getMessage()
+            return "Cancelling stoploss on exchange" not in msg and "Cancelling current stoploss on exchange" not in msg
         logging.getLogger('freqtrade.freqtradebot').addFilter(filter_stoploss_cancel)
         
         # === CPU ОПТИМИЗАЦИИ ===
@@ -725,6 +726,11 @@ class CustomD3QNStrategy4(IStrategy):
                 a = action_long_1[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
                 logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
+            if "long_2" in q_values:
+                a = action_long_2[-1]
+                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
+                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv_long_2[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
+
             if "short_1" in q_values:
                 a = action_short_1[-1]
                 # Mirror Mode: 1=Buy_Inv(Short), 2=Sell_Inv(Exit_Short)
@@ -733,6 +739,13 @@ class CustomD3QNStrategy4(IStrategy):
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
                 logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")
+            if "short_2" in q_values:
+                a = action_short_2[-1]
+                if self.short_2_is_mirror:
+                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
+                else:
+                    a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
+                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv_short_2[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
