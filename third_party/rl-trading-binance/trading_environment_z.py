@@ -130,8 +130,7 @@ class TradingEnvironment(gym.Env):
         self.num_features = num_features
         self.datachannels = datachannels
 
-        if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
-            filter_direction = kwargs['filter_direction']
+        if filter_direction in ['LONG', 'SHORT']:
             logging.info(f"Filtering sequences for direction: {filter_direction}")
             
             original_count = len(self.sequences)
@@ -1058,7 +1057,19 @@ class TradingEnvironment(gym.Env):
         trade_pnl = None
         exit_reason = ""
         
-        # --- Strict Balance Check ---
+        # --- Direction & Balance Checks ---
+
+        # 1) Respect allowed_directions for backtest (same semantics as in step())
+        if action == 1 and self.position == 0:
+            # OPEN LONG requested
+            if self.allowed_directions and "LONG" not in self.allowed_directions:
+                action = 0  # Force HOLD
+        elif action == 2 and self.position == 0:
+            # OPEN SHORT requested
+            if self.allowed_directions and "SHORT" not in self.allowed_directions:
+                action = 0  # Force HOLD
+
+        # 2) Strict Balance Check (unchanged logic)
         MIN_SAFE_FRACTION = 1.2
         if action in [1, 2] and self.position == 0:
             if self.balance <= self.bankruptcy_threshold * MIN_SAFE_FRACTION:

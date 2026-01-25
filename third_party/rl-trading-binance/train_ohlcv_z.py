@@ -667,6 +667,32 @@ def run_training_session(
         if isinstance(obj, dict): return obj.get(key, default)
         return getattr(obj, key, default)
 
+    agent_mode = getattr(cfg, "AGENT_MODE", None)
+
+    # 3-действий: 0=hold, 1=buy, 2=sell
+    if cfg.market.num_actions != 3:
+        raise ValueError(
+            f"Expected cfg.market.num_actions == 3 (0=hold,1=buy,2=sell), "
+            f"got {cfg.market.num_actions}"
+        )
+
+    if agent_mode == "SHORT_ONLY":
+        if cfg.market.allowed_directions != ["SHORT"] or cfg.market.filter_direction != "SHORT":
+            raise ValueError(
+                "AGENT_MODE='SHORT_ONLY' requires "
+                "cfg.market.allowed_directions == ['SHORT'] and "
+                "cfg.market.filter_direction == 'SHORT', got "
+                f"allowed_directions={cfg.market.allowed_directions}, "
+                f"filter_direction={cfg.market.filter_direction}"
+            )
+
+    logging.info(
+        "Training env directions: allowed_directions=%s, filter_direction=%s, num_actions=%d",
+        getattr(cfg.market, "allowed_directions", None),
+        getattr(cfg.market, "filter_direction", None),
+        cfg.market.num_actions,
+    )
+
     agent = D3QN_PER_Agent(
         state_shape=cfg.state_shape,  # (10,150,1)
         action_dim=cfg.market.num_actions,

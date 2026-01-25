@@ -350,6 +350,20 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         cfg = MasterConfig.model_validate(config_dict)
         logger.info(f"Loaded configuration from JSON file: {config_path}")
     
+    # Override config based on agent-mode if provided
+    agent_mode = getattr(args, "agent_mode", None)
+    if agent_mode:
+        agent_mode = agent_mode.upper()
+        if agent_mode == "LONG_ONLY":
+            cfg.market.allowed_directions = ["LONG"]
+            cfg.market.filter_direction = None
+        elif agent_mode == "SHORT_ONLY":
+            cfg.market.allowed_directions = ["SHORT"]
+            cfg.market.filter_direction = "SHORT"
+        else:
+            logger.warning(f"Unknown agent_mode='{agent_mode}', using config values as-is.")
+        logger.info(f"Agent mode override: {agent_mode}, allowed_directions={cfg.market.allowed_directions}, filter_direction={cfg.market.filter_direction}")
+
     # Ensure out_dir exists
     os.makedirs(out_dir, exist_ok=True)
      

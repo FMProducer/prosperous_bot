@@ -1,5 +1,4 @@
 import sys
-import json
 import logging
 import importlib.util
 from pathlib import Path
@@ -132,12 +131,10 @@ class CustomD3QNStrategy4z(IStrategy):
         # Long Model 1: PPO trending
         self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
-        self.long_1_norm_stats_path = self.long_1_model_dir / "norm_stats.json"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
         self.long_2_model_dir = self.project_root / "output/alpha_seed_406_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260124_time_061330"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
-        self.long_2_norm_stats_path = self.long_2_model_dir / "norm_stats.json"
         
         # Short Model 1: SAC bearish trending
         self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_225844"
