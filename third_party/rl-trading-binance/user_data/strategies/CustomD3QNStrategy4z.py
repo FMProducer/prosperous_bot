@@ -137,7 +137,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260118_time_225844"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_001108"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -574,11 +574,12 @@ class CustomD3QNStrategy4z(IStrategy):
                     c_date = c_date.replace(tzinfo=None)
 
                 minutes_since = (current_time - c_date).total_seconds() / 60.0
-                if minutes_since < 90:
+                # Smart Cooldown: Блокируем только если сделка была убыточной
+                if minutes_since < 90 and (last_trade.close_profit is not None and last_trade.close_profit < 0):
                     last_side = "short" if last_trade.is_short else "long"
                     # Блокируем только если направление совпадает (Long после Long или Short после Short)
                     if last_side == side:
-                        self.logger.info(f"⏳ TIMEOUT {pair}: Last {last_side} closed {minutes_since:.1f}m ago. Blocking new {side}.")
+                        self.logger.info(f"⏳ TIMEOUT {pair}: Last {last_side} (P={last_trade.close_profit:.2%}) closed {minutes_since:.1f}m ago. Blocking new {side}.")
                         return False
             # -------------------------------------
 
