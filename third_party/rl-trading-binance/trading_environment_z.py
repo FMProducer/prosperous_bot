@@ -123,8 +123,34 @@ class TradingEnvironment(gym.Env):
         #   - LONG: растущие тренды в реале;
         #   - SHORT: растущие тренды в зеркале (что соответствует падающим трендам в реале).
         if filter_direction == 'SHORT':
-            logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent.")
-            self.sequences = [-1.0 * seq for seq in sequences]
+            logger.info("MIRROR MODE: Performing geometric inversion for SHORT-only agent.")
+
+            # Находим индексы OHLC
+            try:
+                idx_o = self.keys.index('open')
+                idx_h = self.keys.index('high')
+                idx_l = self.keys.index('low')
+                idx_c = self.keys.index('close')
+
+                mirrored = []
+                for seq in sequences:
+                    m_seq = seq.copy()
+                    # Геометрически верная инверсия: High_s = -Low_l, Low_s = -High_l
+                    m_seq[:, [idx_o, idx_c]] *= -1.0
+                    m_seq[:, idx_h], m_seq[:, idx_l] = -seq[:, idx_l], -seq[:, idx_h]
+
+                    # Инвертируем остальные каналы (Volume не трогаем, если он есть)
+                    # Если в keys есть другие ценовые индикаторы (MA и т.д.),
+                    # их тоже нужно умножить на -1.0
+                    other_price_indices = [i for i, k in enumerate(self.keys)
+                                         if k not in ['open', 'high', 'low', 'close', 'volume']]
+                    m_seq[:, other_price_indices] *= -1.0
+
+                    mirrored.append(m_seq)
+                self.sequences = mirrored
+            except ValueError as e:
+                logger.error(f"Mirror mode failed: missing OHLC columns in keys. {e}")
+                self.sequences = sequences
         else:
             self.sequences = sequences
 
