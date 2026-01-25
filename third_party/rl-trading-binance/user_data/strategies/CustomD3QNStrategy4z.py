@@ -554,6 +554,28 @@ class CustomD3QNStrategy4z(IStrategy):
         
         try:
             from freqtrade.persistence import Trade  # type: ignore
+            
+            # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
+            # 1. Находим последнюю закрытую сделку по этой паре
+            last_trade = Trade.get_trades([Trade.pair == pair, Trade.is_open.is_(False)]).order_by(Trade.close_date.desc()).first()
+            
+            if last_trade and last_trade.close_date:
+                # Синхронизация таймзон (на случай если current_time aware, а close_date naive)
+                c_date = last_trade.close_date
+                if current_time.tzinfo and not c_date.tzinfo:
+                    c_date = c_date.replace(tzinfo=current_time.tzinfo)
+                elif not current_time.tzinfo and c_date.tzinfo:
+                    c_date = c_date.replace(tzinfo=None)
+
+                minutes_since = (current_time - c_date).total_seconds() / 60.0
+                if minutes_since < 90:
+                    last_side = "short" if last_trade.is_short else "long"
+                    # Блокируем только если направление совпадает (Long после Long или Short после Short)
+                    if last_side == side:
+                        self.logger.info(f"⏳ TIMEOUT {pair}: Last {last_side} closed {minutes_since:.1f}m ago. Blocking new {side}.")
+                        return False
+            # -------------------------------------
+
             trades = Trade.get_trades([Trade.is_open.is_(True)]).all()
             current_shorts = sum(1 for t in trades if t.is_short)
             current_longs = sum(1 for t in trades if not t.is_short)
