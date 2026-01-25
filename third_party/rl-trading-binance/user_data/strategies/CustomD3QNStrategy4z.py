@@ -557,14 +557,20 @@ class CustomD3QNStrategy4z(IStrategy):
             
             # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
             # 1. Находим последнюю закрытую сделку по этой паре
-            last_trade = Trade.get_trades([Trade.pair == pair, Trade.is_open.is_(False)]).order_by(Trade.close_date.desc()).first()
+            trades_query = Trade.get_trades([Trade.pair == pair, Trade.is_open.is_(False)])
+            if hasattr(trades_query, 'order_by'):
+                last_trade = trades_query.order_by(Trade.close_date.desc()).first()
+            else:
+                # Fallback if get_trades returns a list
+                sorted_trades = sorted(trades_query, key=lambda x: x.close_date if x.close_date else datetime.min, reverse=True)
+                last_trade = sorted_trades[0] if sorted_trades else None
             
             if last_trade and last_trade.close_date:
                 # Синхронизация таймзон (на случай если current_time aware, а close_date naive)
                 c_date = last_trade.close_date
-                if current_time.tzinfo and not c_date.tzinfo:
+                if current_time.tzinfo is not None and c_date.tzinfo is None:
                     c_date = c_date.replace(tzinfo=current_time.tzinfo)
-                elif not current_time.tzinfo and c_date.tzinfo:
+                elif current_time.tzinfo is None and c_date.tzinfo is not None:
                     c_date = c_date.replace(tzinfo=None)
 
                 minutes_since = (current_time - c_date).total_seconds() / 60.0
@@ -576,7 +582,12 @@ class CustomD3QNStrategy4z(IStrategy):
                         return False
             # -------------------------------------
 
-            trades = Trade.get_trades([Trade.is_open.is_(True)]).all()
+            open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])
+            if hasattr(open_trades_q, 'all'):
+                trades = open_trades_q.all()
+            else:
+                trades = open_trades_q
+
             current_shorts = sum(1 for t in trades if t.is_short)
             current_longs = sum(1 for t in trades if not t.is_short)
             
@@ -589,7 +600,8 @@ class CustomD3QNStrategy4z(IStrategy):
             elif side == "short":
                 if current_shorts >= MAX_SHORTS:
                     return False
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error in confirm_trade_entry: {e}")
             return True
         
         return True
