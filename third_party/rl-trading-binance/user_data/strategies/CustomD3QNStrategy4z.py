@@ -133,7 +133,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_406_ohlcv_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260124_time_061330"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_406_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_133204"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
@@ -783,5 +783,21 @@ class CustomD3QNStrategy4z(IStrategy):
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
                  side: str, **kwargs) -> float:
-        """Обязательный метод для торговли фьючерсами (шорт)"""
+        """
+        Обязательный метод для торговли фьючерсами.
+        В логах видно, что proposed_leverage может приходить как 1.0, даже если в конфиге указано иное.
+        Этот код добавляет "защиту", чтобы всегда использовать плечо из конфига.
+        """
+        leverage_conf = self.config.get('leverage', {})
+
+        # Ищем плечо для конкретной пары
+        if pair in leverage_conf:
+            return float(leverage_conf[pair])
+
+        # Если для пары нет, ищем значение по умолчанию "*"
+        if '*' in leverage_conf:
+            return float(leverage_conf['*'])
+
+        # Если ничего не найдено, возвращаем предложенное значение (вероятно, 1.0)
+        logger.warning(f"Leverage not found for {pair} in config. Falling back to proposed: {proposed_leverage}")
         return proposed_leverage
