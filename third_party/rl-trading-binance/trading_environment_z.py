@@ -118,12 +118,16 @@ class TradingEnvironment(gym.Env):
         # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
         # If filter_direction is 'SHORT', the agent is a specialist SHORT-only agent.
         # We invert the market data (up becomes down) so the agent can learn a LONG-only
-        # policy, which is simpler than learning both directions.
+        # policy on a mirrored chart. For LONG and SHORT agents мы далее всегда
+        # отбираем РАСТУЩИЕ тренды в своём пространстве:
+        #   - LONG: растущие тренды в реале;
+        #   - SHORT: растущие тренды в зеркале (что соответствует падающим трендам в реале).
         if filter_direction == 'SHORT':
             logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent.")
             self.sequences = [-1.0 * seq for seq in sequences]
         else:
             self.sequences = sequences
+
         self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
@@ -132,26 +136,28 @@ class TradingEnvironment(gym.Env):
 
         if filter_direction in ['LONG', 'SHORT']:
             logging.info(f"Filtering sequences for direction: {filter_direction}")
-            
             original_count = len(self.sequences)
-            filtered_sequences = []
-            filtered_keys = []
-            
+            filtered_sequences: list[np.ndarray] = []
+            filtered_keys: list[str] = []
             close_idx = self.datachannels.index("close")
 
             for seq, key in zip(self.sequences, self.keys):
                 start_price = seq[0, close_idx]
                 end_price = seq[-1, close_idx]
-                
+                # LONG-agent: реальный растущий тренд (end > start)
                 if filter_direction == 'LONG' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
-                elif filter_direction == 'SHORT' and end_price < start_price:
+                # SHORT-agent: растущий тренд В ЗЕРКАЛЕ (после инверсии),
+                # что соответствует падающему тренду в реале.
+                elif filter_direction == 'SHORT' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
 
             if not filtered_sequences:
-                logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
+                logging.warning(
+                    f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter."
+                )
             else:
                 self.sequences = filtered_sequences
                 self.keys = filtered_keys
@@ -1073,7 +1079,7 @@ class TradingEnvironment(gym.Env):
         MIN_SAFE_FRACTION = 1.2
         if action in [1, 2] and self.position == 0:
             if self.balance <= self.bankruptcy_threshold * MIN_SAFE_FRACTION:
-                 action = 0 # Force HOLD
+                action = 0  # Force HOLD
 
         # --- Risk Management (CORRECTED: Uses REAL PRICE) ---
         if self.use_risk_management and self.position != 0:
