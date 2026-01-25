@@ -403,6 +403,15 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     env_allowed = getattr(cfg.market, "allowed_directions", None)
     logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}")
 
+    # Инверсия статистик для SHORT-агента, если они еще не инвертированы
+    if env_filter == 'SHORT':
+        logger.info("Mirroring norm_stats mean for SHORT-agent validation consistency.")
+        vol_indices = {i for i, c in enumerate(cfg.data.datachannels) if c in cfg.data.volumechannels}
+        for asset, stat in norm_stats.items():
+            if 'mean' in stat:
+                # Invert means for non-volume channels
+                stat['mean'] = [-abs(m) if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
+
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
     if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
         max_trades = cfg_mod.MAX_TRADES_PER_EPISODE

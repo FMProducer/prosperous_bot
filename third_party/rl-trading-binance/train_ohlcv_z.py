@@ -1083,6 +1083,14 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:
         json.dump(norm_stats, f, indent=2)
 
+    # Adjust norm_stats for Mirror Mode (SHORT-only training)
+    if getattr(cfg.market, "filter_direction", None) == 'SHORT':
+        logging.info("Adjusting norm_stats for Mirror Mode (SHORT-only training)")
+        vol_indices = {i for i, c in enumerate(cfg.data.datachannels) if c in cfg.data.volumechannels}
+        for asset, stat in norm_stats.items():
+            if 'mean' in stat:
+                stat['mean'] = [-m if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
+
     if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
         logging.info("Walk-Forward Validation ENABLED.")
         all_sequences = []
