@@ -119,7 +119,7 @@ cfg.rl.lr = 0.0003  # Снижаем скорость обучения для б
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
 cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
 cfg.rl.batch_size = 64  # Увеличиваем батч для более стабильного градиента
-cfg.rl.train_start = 1000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
+cfg.rl.train_start = 15000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
 
@@ -140,17 +140,17 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 20  # Уменьшаем для быстрой валидации, 100 достаточно
+cfg.trainlog.num_val_ep = 512  # Уменьшаем для быстрой валидации, 100 достаточно
 max_episodes_per_symbol = 2
 
 # При 4 env один эпизод даёт ~4× больше шагов.
 # Чтобы общий бюджет шагов остался ≈600k, эпизодов можно делать ~в 4 раза меньше.
-cfg.trainlog.episodes = 50       # Меньше (60-bar episodes дольше)
-cfg.trainlog.total_timesteps = 10000  # Сокращаем общий бюджет шагов
+cfg.trainlog.episodes = 6000       # Меньше (60-bar episodes дольше)
+cfg.trainlog.total_timesteps = 350000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 10             # Валидируемся чуть реже
-cfg.trainlog.validation_warmup_steps = 1000       # норма 450000 (значительно уменьшено)
+cfg.trainlog.val_freq = 150             # Валидируемся чуть реже
+cfg.trainlog.validation_warmup_steps = 30000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
     "Validation_mean_reward", "Validation_mean_pnl", "Validation_win_rate",
