@@ -134,21 +134,20 @@ class TradingEnvironment(gym.Env):
             logger.info("MIRROR MODE: Applying geometric OHLC inversion.")
             idx = {name: i for i, name in enumerate(datachannels)}
 
-            # Определяем все ценовые каналы для инверсии (все, кроме volume)
-            price_indices_to_invert = [i for i, name in enumerate(datachannels) if name not in volumechannels]
+            # 1. Инвертируем всё, что не объем (включая OHLC и все ценовые индикаторы)
+            price_indices = [i for i, name in enumerate(datachannels) if name not in volumechannels]
 
             mirrored = []
             for seq in sequences:
                 m_seq = seq.copy()
 
-                # 1. Сначала инвертируем все ценовые каналы знаком минус
-                if price_indices_to_invert:
-                    m_seq[:, price_indices_to_invert] *= -1.0
+                if price_indices:
+                    m_seq[:, price_indices] *= -1.0
 
-                # 2. Затем исправляем геометрию High/Low, используя исходные данные из `seq`
+                # 2. Восстанавливаем геометрию: High должен быть -Low_original
                 if 'high' in idx and 'low' in idx:
-                    # Геометрически верная инверсия: High_short = -Low_long, Low_short = -High_long
-                    m_seq[:, idx['high']], m_seq[:, idx['low']] = -seq[:, idx['low']], -seq[:, idx['high']]
+                    m_seq[:, idx['high']] = -seq[:, idx['low']]
+                    m_seq[:, idx['low']] = -seq[:, idx['high']]
 
                 mirrored.append(m_seq)
             self.sequences = mirrored
@@ -156,15 +155,26 @@ class TradingEnvironment(gym.Env):
             # 3. Синхронизируем локальные stats (если они не были инвертированы снаружи)
             # Эта логика является запасным вариантом. Основная инверсия должна происходить
             # в вызывающем скрипте (train/validate) для корректного сохранения артефактов.
-            for stats_dict in self.stats.values():
-                # Invert all price channels
-                for channel, channel_stats in stats_dict.items():
-                    if channel not in volumechannels and channel_stats.get('mean', 0) > 0:
-                        channel_stats['mean'] *= -1.0
+            high_idx = idx.get('high')
+            low_idx = idx.get('low')
 
-                # Swap high and low stats to match geometric inversion
-                if 'high' in stats_dict and 'low' in stats_dict:
-                    stats_dict['high'], stats_dict['low'] = stats_dict['low'], stats_dict['high']
+            for stats_dict in self.stats.values():
+                # stats_dict structure: {'mean': [v1, v2...], 'std': [v1, v2...]}
+                if 'mean' in stats_dict:
+                    means = stats_dict['mean']
+                    # Invert means for price channels
+                    for i in price_indices:
+                        if i < len(means) and means[i] > 0:
+                            means[i] *= -1.0
+                    # Swap High and Low means
+                    if high_idx is not None and low_idx is not None and high_idx < len(means) and low_idx < len(means):
+                        means[high_idx], means[low_idx] = means[low_idx], means[high_idx]
+                
+                if 'std' in stats_dict:
+                    stds = stats_dict['std']
+                    # Swap High and Low stds
+                    if high_idx is not None and low_idx is not None and high_idx < len(stds) and low_idx < len(stds):
+                        stds[high_idx], stds[low_idx] = stds[low_idx], stds[high_idx]
         else:
             self.sequences = sequences
         self.keys = keys
