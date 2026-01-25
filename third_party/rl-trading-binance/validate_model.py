@@ -360,6 +360,20 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     with open(norm_stats_path, 'r') as f:
         norm_stats = json.load(f)
 
+    # --- PREVENTIVE STATS INVERSION FOR SHORT AGENT ---
+    if getattr(cfg.market, "filter_direction", None) == 'SHORT':
+        logging.info("SHORT mode detected. Performing preventive inversion of norm_stats for validation.")
+        volume_channels = set(cfg.data.volumechannels)
+        for asset_stats in norm_stats.values():
+            # 1. Invert the mean for all price channels
+            for channel, stats_values in asset_stats.items():
+                if channel not in volume_channels:
+                    stats_values['mean'] *= -1.0
+
+            # 2. Swap the stats for 'high' and 'low' channels
+            if 'high' in asset_stats and 'low' in asset_stats:
+                asset_stats['high'], asset_stats['low'] = asset_stats['low'], asset_stats['high']
+
     device = torch.device("cpu")
 
     # 3. Подготовка данных и среды
