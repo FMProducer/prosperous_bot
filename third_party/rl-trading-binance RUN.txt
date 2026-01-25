@@ -1,7 +1,7 @@
 $env:PGPASSWORD="9691"
 python C:\Python\Prosperous_Bot\regenerate_stats.py
 
-python find_best_seed.py configs/alpha_seed_404_v13_gca.py --num-seeds 20
+python find_best_seed_ohlcv.py configs/alpha_seed_search_ohlcv.py --num-seeds 10
 
 python optimize_cfg.py --config configs/alpha_seed_404_v13_gca.py
 
@@ -24,11 +24,16 @@ python validate_ensemble_prod_q.py --ensemble configs/alpha_seed_404_v13_gca.py
 
 python validate_ensemble_prod_q.py configs/alpha_seed_404_v13_gca.py --ensemble --long_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_LONG_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_133651\best.pth" --short_model "C:\Python\Prosperous_Bot\third_party\rl-trading-binance\output\alpha_seed_404_v13_SHORT_ONLY\saved_models\rl_binance_futures_trading_date_20260110_time_191747\best.pth" --mode val
 
-freqtrade trade --config ft_userdata/config_rl.json --strategy CustomD3QNStrategy --userdir ft_userdata
+freqtrade trade --config user_data/config_rl.json --strategy CustomD3QNStrategy --userdir user_data
+freqtrade trade --config user_data/config_rl4.json --strategy CustomD3QNStrategy4 --userdir user_data
 
-Remove-Item tradesv3.dryrun.sqlite
+freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z --userdir user_data
+
+rm tradesv3.dryrun.sqlite
 
 freqtrade download-data --config ft_userdata/config_rl.json --timerange 20250601-20250731 --timeframe 1m
+
+python train_ohlcv_z.py configs/alpha_seed_404_ohlcv_z.py              этот
 
 python train.py configs/alpha_seed_404_v13_gca.py              этот
 python train.py --config configs/alpha_seed_404_v12.py           
