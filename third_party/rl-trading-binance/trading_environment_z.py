@@ -115,6 +115,11 @@ class TradingEnvironment(gym.Env):
             raise ValueError("`keys` must be a non-empty list of strings")
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
+        if sequences and datachannels and sequences[0].shape[1] != len(datachannels):
+            raise ValueError(
+                f"Data shape mismatch: sequence has {sequences[0].shape[1]} columns (features), "
+                f"but {len(datachannels)} datachannels (feature names) were provided."
+            )
 
         # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
         # If filter_direction is 'SHORT', the agent is a specialist SHORT-only agent.
