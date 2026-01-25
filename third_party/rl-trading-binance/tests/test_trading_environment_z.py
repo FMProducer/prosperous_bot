@@ -11,14 +11,17 @@ from trading_environment_z import TradingEnvironment
 @pytest.fixture
 def base_env_kwargs():
     """Provides a base set of arguments for TradingEnvironment initialization."""
-    sequences = [np.random.rand(100, 5) for _ in range(10)]
+    sequences = [np.random.rand(100, 5)]
     stats = {
         'TEST': {
-            'mean': np.zeros(5),
-            'std': np.ones(5)
+            'open': {'mean': 0.0, 'std': 1.0},
+            'high': {'mean': 0.0, 'std': 1.0},
+            'low': {'mean': 0.0, 'std': 1.0},
+            'close': {'mean': 0.0, 'std': 1.0},
+            'volume': {'mean': 0.0, 'std': 1.0}
         }
     }
-    keys = [f'TEST_{i}' for i in range(10)]
+    keys = ['TEST']
     return {
         "sequences": sequences,
         "stats": stats,
@@ -56,3 +59,54 @@ def test_environment_construction(base_env_kwargs):
     # Test with SHORT filter
     env_short = TradingEnvironment(**base_env_kwargs, filter_direction='SHORT')
     assert env_short is not None
+
+def test_short_mode_inversion(base_env_kwargs):
+    """Tests the geometric inversion of data and stats in SHORT mode."""
+    # Original data for one sequence (falling trend to pass the filter in SHORT mode)
+    original_sequence = np.array([
+        [110, 115, 95, 105, 1200],  # o, h, l, c, v
+        [105, 110, 90, 100, 1000],
+    ], dtype=np.float32)
+    original_stats = {
+        'TEST_ASSET': {
+            'open': {'mean': 107.5, 'std': 1.0},
+            'high': {'mean': 112.5, 'std': 1.0},
+            'low': {'mean': 92.5, 'std': 1.0},
+            'close': {'mean': 102.5, 'std': 1.0},
+            'volume': {'mean': 1100, 'std': 1.0}
+        }
+    }
+
+    kwargs = base_env_kwargs.copy()
+    kwargs['sequences'] = [original_sequence]
+    kwargs['keys'] = ['TEST_ASSET_0']
+    kwargs['stats'] = original_stats
+    kwargs['full_seq_len'] = 2
+
+    # Create the environment in SHORT mode
+    env_short = TradingEnvironment(**kwargs, filter_direction='SHORT')
+
+    # 1. Check sequence data inversion
+    inverted_sequence = env_short.sequences[0]
+
+    # Expected: open, close, and other price channels are negated
+    # Expected: high_short = -low_long, low_short = -high_long
+    # Expected: volume is unchanged
+    expected_inverted_sequence = np.array([
+        [-110, -95, -115, -105, 1200], # -o, -l, -h, -c, v
+        [-105, -90, -110, -100, 1000],
+    ], dtype=np.float32)
+
+    np.testing.assert_allclose(inverted_sequence, expected_inverted_sequence, rtol=1e-5)
+
+    # 2. Check internal stats inversion
+    # The environment makes a deep copy, so we check the env's internal stats
+    inverted_stats = env_short.stats['TEST_ASSET']
+
+    # Assert that means are inverted
+    assert inverted_stats['open']['mean'] == -107.5
+    assert inverted_stats['close']['mean'] == -102.5
+    # Assert that high and low means are swapped and inverted
+    assert inverted_stats['high']['mean'] == -92.5  # Swapped from original low
+    assert inverted_stats['low']['mean'] == -112.5 # Swapped from original high
+    assert inverted_stats['volume']['mean'] == 1100  # Volume mean should not be inverted

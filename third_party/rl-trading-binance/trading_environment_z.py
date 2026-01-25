@@ -1,6 +1,7 @@
 # trading_environment.py
 import datetime as dt
 import logging
+import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
@@ -122,39 +123,50 @@ class TradingEnvironment(gym.Env):
         # отбираем РАСТУЩИЕ тренды в своём пространстве:
         #   - LONG: растущие тренды в реале;
         #   - SHORT: растущие тренды в зеркале (что соответствует падающим трендам в реале).
+        self.use_risk_management = use_risk_management
+        self.allowed_directions = allowed_directions
+        self.filter_direction = filter_direction
+        self.stats = copy.deepcopy(stats) # Изолируем статистики
+        self.keys = keys
+        self.full_seq_len = full_seq_len
+
         if filter_direction == 'SHORT':
-            logger.info("MIRROR MODE: Performing geometric inversion for SHORT-only agent.")
+            logger.info("MIRROR MODE: Applying geometric OHLC inversion.")
+            idx = {name: i for i, name in enumerate(datachannels)}
 
-            # Находим индексы OHLC
-            try:
-                idx_o = self.keys.index('open')
-                idx_h = self.keys.index('high')
-                idx_l = self.keys.index('low')
-                idx_c = self.keys.index('close')
+            # Определяем все ценовые каналы для инверсии (все, кроме volume)
+            price_indices_to_invert = [i for i, name in enumerate(datachannels) if name not in volumechannels]
 
-                mirrored = []
-                for seq in sequences:
-                    m_seq = seq.copy()
-                    # Геометрически верная инверсия: High_s = -Low_l, Low_s = -High_l
-                    m_seq[:, [idx_o, idx_c]] *= -1.0
-                    m_seq[:, idx_h], m_seq[:, idx_l] = -seq[:, idx_l], -seq[:, idx_h]
+            mirrored = []
+            for seq in sequences:
+                m_seq = seq.copy()
 
-                    # Инвертируем остальные каналы (Volume не трогаем, если он есть)
-                    # Если в keys есть другие ценовые индикаторы (MA и т.д.),
-                    # их тоже нужно умножить на -1.0
-                    other_price_indices = [i for i, k in enumerate(self.keys)
-                                         if k not in ['open', 'high', 'low', 'close', 'volume']]
-                    m_seq[:, other_price_indices] *= -1.0
+                # 1. Сначала инвертируем все ценовые каналы знаком минус
+                if price_indices_to_invert:
+                    m_seq[:, price_indices_to_invert] *= -1.0
 
-                    mirrored.append(m_seq)
-                self.sequences = mirrored
-            except ValueError as e:
-                logger.error(f"Mirror mode failed: missing OHLC columns in keys. {e}")
-                self.sequences = sequences
+                # 2. Затем исправляем геометрию High/Low, используя исходные данные из `seq`
+                if 'high' in idx and 'low' in idx:
+                    # Геометрически верная инверсия: High_short = -Low_long, Low_short = -High_long
+                    m_seq[:, idx['high']], m_seq[:, idx['low']] = -seq[:, idx['low']], -seq[:, idx['high']]
+
+                mirrored.append(m_seq)
+            self.sequences = mirrored
+
+            # 3. Синхронизируем локальные stats (если они не были инвертированы снаружи)
+            # Эта логика является запасным вариантом. Основная инверсия должна происходить
+            # в вызывающем скрипте (train/validate) для корректного сохранения артефактов.
+            for stats_dict in self.stats.values():
+                # Invert all price channels
+                for channel, channel_stats in stats_dict.items():
+                    if channel not in volumechannels and channel_stats.get('mean', 0) > 0:
+                        channel_stats['mean'] *= -1.0
+
+                # Swap high and low stats to match geometric inversion
+                if 'high' in stats_dict and 'low' in stats_dict:
+                    stats_dict['high'], stats_dict['low'] = stats_dict['low'], stats_dict['high']
         else:
             self.sequences = sequences
-
-        self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
         self.num_features = num_features
