@@ -209,8 +209,9 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         # Z-norm по каждому каналу - DISABLED for Rolling Z-Score
         # seq = (seq - means) / stds
         # Reshape для CNN: (L, C) -> (C, L, 1)
-        seq = seq.T
-        seq = np.expand_dims(seq, -1)
+        # DISABLED: TradingEnvironment enforces (L, C) input. We transpose in the loop.
+        # seq = seq.T
+        # seq = np.expand_dims(seq, -1)
         sequences.append(seq)
         valid_keys.append(key)
     
@@ -235,6 +236,10 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         obs_batch, _ = reset_out   # (obs, infos)
     else:
         obs_batch = reset_out      # на случай старого API
+
+    # FIX: Transpose observations (N, L, C) -> (N, C, L, 1)
+    if obs_batch.ndim == 3 and obs_batch.shape[2] == agent.state_shape[0]:
+        obs_batch = np.expand_dims(obs_batch.transpose(0, 2, 1), -1)
 
     done_mask = np.zeros(train_env.num_envs, dtype=bool)
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
@@ -264,6 +269,10 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
         actions = [agent.select_action(obs_batch[i], training=True) for i in range(train_env.num_envs)]
         next_obs_b, rewards, dones, trunc, infos = train_env.step(actions)
 
+        # FIX: Transpose next observations (N, L, C) -> (N, C, L, 1)
+        if next_obs_b.ndim == 3 and next_obs_b.shape[2] == agent.state_shape[0]:
+            next_obs_b = np.expand_dims(next_obs_b.transpose(0, 2, 1), -1)
+
         transitions_count += train_env.num_envs  # один переход на каждую среду
 
         for i in range(train_env.num_envs):
@@ -278,6 +287,9 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
             next_state = next_obs_b[i]
             if dones[i] and isinstance(infos[i], dict):
                 next_state = infos[i].get("terminal_observation", infos[i].get("final_observation", next_state))
+                # Fix shape for terminal observation (L, C) -> (C, L, 1)
+                if next_state.ndim == 2 and next_state.shape[1] == agent.state_shape[0]:
+                    next_state = np.expand_dims(next_state.T, -1)
 
             # Накапливаем награды для каждого env отдельно
             ep_reward[i] += float(rewards[i])
@@ -578,7 +590,7 @@ def _numpy_json_default(obj):
 def run_external_validation(cfg: MasterConfig, cfg_path: str, checkpoint_path: str, out_dir: str, episode_num: int) -> Dict[str, Any]:
     """Calls the autonomous validate_model_ohlcv.py script."""
     script_path = os.path.join(os.path.dirname(__file__), "validate_model_ohlcv_z.py")
-    agent_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+    agent_mode = str(getattr(cfg, "AGENT_MODE", "UNIVERSAL") or "UNIVERSAL")
 
     cmd = [
         sys.executable, script_path,
@@ -589,9 +601,11 @@ def run_external_validation(cfg: MasterConfig, cfg_path: str, checkpoint_path: s
         "--agent-mode", agent_mode
     ]
      
+    logging.info(f"Running validation command: {' '.join(cmd)}")
+
     try:
         # Ensure the script path is correct, assuming it's in the same directory
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, errors='replace')
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, errors='replace', cwd=os.path.dirname(script_path))
         logging.info(f"External validation stdout: {result.stdout}")
 
         # MODIFIED: validate_model_ohlcv.py теперь возвращает путь к итоговому JSON в stdout
@@ -603,6 +617,8 @@ def run_external_validation(cfg: MasterConfig, cfg_path: str, checkpoint_path: s
                 with open(json_path, 'r') as f:
                     data = json.load(f)
                 return data.get("metrics", {}), json_path
+        
+        logging.error(f"Validation script finished but RESULT_JSON not found.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
         
         return {}, None
          
@@ -855,12 +871,24 @@ def run_training_session(
             train_steps += transitions
         else:
             obs, _ = train_env.reset(seed=None, options=None)
+            # Fix shape (L, C) -> (C, L, 1)
+            if obs.ndim == 2 and obs.shape[1] == agent.state_shape[0]:
+                obs = np.expand_dims(obs.T, -1)
+
             ep_reward, ep_losses, done = 0.0, [], False
             ep_trades, ep_wins = 0, 0
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
+
+                # Fix shape (L, C) -> (C, L, 1)
+                if next_obs.ndim == 2 and next_obs.shape[1] == agent.state_shape[0]:
+                    next_obs = np.expand_dims(next_obs.T, -1)
+
                 next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs)) if done else next_obs
+                # Fix shape for terminal
+                if next_state_to_store.ndim == 2 and next_state_to_store.shape[1] == agent.state_shape[0]:
+                    next_state_to_store = np.expand_dims(next_state_to_store.T, -1)
                 agent.store_experience(obs, action, reward, next_state_to_store, done)
                 loss = agent.learn()
                 if loss: ep_losses.append(loss)
@@ -920,7 +948,7 @@ def run_training_session(
                     json_path = None
                 
                 if not metrics or not json_path:
-                    logging.warning(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации.")
+                    logging.error(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации (метрики не получены).")
                     continue
  
                 # 4. Регистрируем в менеджере (файл .pth уже сохранён, JSON создан валидацией)

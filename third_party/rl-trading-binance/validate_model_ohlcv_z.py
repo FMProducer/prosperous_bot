@@ -22,6 +22,7 @@ from utils import load_npz_dataset, create_validation_episodes, load_config
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
+logger.info("Starting validation script...")
 
 def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig = None) -> tuple[list, list]:
     """
@@ -72,8 +73,9 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         # Z-norm по каждому каналу - DISABLED for Rolling Z-Score
         # seq = (seq - means) / (stds + 1e-8)
         # Reshape для CNN: (L, C) -> (C, L, 1)
-        seq = seq.T
-        seq = np.expand_dims(seq, -1)
+        # DISABLED: TradingEnvironment enforces (L, C) input. We transpose in the loop.
+        # seq = seq.T
+        # seq = np.expand_dims(seq, -1)
         sequences.append(seq)
         valid_keys.append(key)
     
@@ -137,7 +139,12 @@ def evaluate_agent(
                 logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
         
         while not done:
-            action = agent.select_action(obs, training=False)
+            # FIX: Transpose obs (L, C) -> (C, L, 1) for Agent
+            obs_agent = obs
+            if obs_agent.ndim == 2 and obs_agent.shape[1] == agent.state_shape[0]:
+                obs_agent = np.expand_dims(obs_agent.T, -1)
+
+            action = agent.select_action(obs_agent, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
                 signal_dt=signal_dt_for_step,
@@ -422,7 +429,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "keys": val_keys,
         "stats": norm_stats,
         "full_seq_len": cfg.seq.full_seq_len,
-        "num_features": val_seqs[0].shape[0],
+        "num_features": val_seqs[0].shape[1],
         "num_actions": cfg.market.num_actions,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
@@ -520,4 +527,8 @@ if __name__ == "__main__":
     parser.add_argument("--agent-mode", type=str, help="Override agent mode (LONG_ONLY, SHORT_ONLY)")
 
     args = parser.parse_args()
-    validate(args.config, args.checkpoint, args.out_dir, args.episode, args)
+    try:
+        validate(args.config, args.checkpoint, args.out_dir, args.episode, args)
+    except Exception as e:
+        logger.error(f"CRITICAL FAILURE IN VALIDATION SCRIPT: {e}", exc_info=True)
+        sys.exit(1)
