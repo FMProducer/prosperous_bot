@@ -141,7 +141,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260124_time_233356"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -198,12 +198,12 @@ class CustomD3QNStrategy4z(IStrategy):
             self.cfg_short_2 = None
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
-        # ЖЕСТКО ЗАДАЕМ TRUE, так как модели обучены на зеркальном графике.
-        self.short_1_is_mirror = True
-        self.short_2_is_mirror = True
+        # Определяем из конфига модели
+        self.short_1_is_mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False) if self.cfg_short_1 else False
+        self.short_2_is_mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False) if self.cfg_short_2 else False
         
-        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (Hardcoded)")
-        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (Hardcoded)")
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
         
         # --- НАСТРОЙКИ ГОЛОСОВАНИЯ (из конфига) ---
         self.vote_threshold_long = config.get('rl_long_threshold', 2)
@@ -302,11 +302,6 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.error(f"❌ Config loading failed: {e}. Attempting to bypass Pydantic validation...")
             # Если критично — здесь можно динамически добавить поле в PathConfig через setattr
             raise e
-        
-        # Убеждаемся, что стратегия НЕ использует внешние файлы статистики для нормализации,
-        # так как нормализация Z-score происходит на лету в get_model_input.
-        if hasattr(mod.cfg, 'paths') and hasattr(mod.cfg.paths, 'norm_stats_path'):
-            mod.cfg.paths.norm_stats_path = None
 
         return mod.cfg
     
