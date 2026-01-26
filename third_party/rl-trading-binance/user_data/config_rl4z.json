@@ -9,13 +9,13 @@
     "dry_run": true,
     "dry_run_wallet": 100000,
     "mirror_mode": false,
-    "rl_long_threshold": 2,
+    "rl_long_threshold": 1,
     "rl_short_threshold": 1,
     "rl_enable_veto": true,
-    "rl_min_q_threshold_long": 0.0005,
-    "rl_min_q_threshold_short": 0.0005,
+    "rl_min_q_threshold_long": 0.0001,
+    "rl_min_q_threshold_short": 0.0001,
     "rl_enable_long_1": true,
-    "rl_enable_long_2": true,
+    "rl_enable_long_2": false,
     "rl_enable_short_1": false,
     "rl_enable_short_2": true,
     
@@ -41,12 +41,12 @@
     },
     
     "order_types": {
-        "entry": "limit",
+        "entry": "market",
         "exit": "market",
         "emergency_exit": "market",
         "force_exit": "market",
         "stoploss": "market",
-        "stoploss_on_exchange": true,
+        "stoploss_on_exchange": false,
         "stoploss_on_exchange_interval": 30,
         "stoploss_price_type": "mark"
     },
@@ -94,7 +94,7 @@
             "min_value": 0,
             "refresh_period": 1800
         },
-        {"method": "AgeFilter", "min_days": 365}
+        {"method": "AgeFilter", "min_days": 488}
     ],
     
     "internals": {

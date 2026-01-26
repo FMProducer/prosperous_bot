@@ -137,7 +137,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_001108"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_234304"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -208,7 +208,11 @@ class CustomD3QNStrategy4z(IStrategy):
         # --- НАСТРОЙКИ ГОЛОСОВАНИЯ (из конфига) ---
         self.vote_threshold_long = config.get('rl_long_threshold', 2)
         self.vote_threshold_short = config.get('rl_short_threshold', 2)
-        self.enable_veto = config.get('rl_enable_veto', True)
+        
+        # Более надежное чтение enable_veto (обработка строк "true"/"false")
+        raw_veto = config.get('rl_enable_veto', True)
+        self.enable_veto = str(raw_veto).lower() in ('true', '1', 'yes') if isinstance(raw_veto, str) else bool(raw_veto)
+        
         self.min_q_threshold_long = config.get('rl_min_q_threshold_long', 0.0005)
         self.min_q_threshold_short = config.get('rl_min_q_threshold_short', 0.0015)
         
@@ -516,11 +520,14 @@ class CustomD3QNStrategy4z(IStrategy):
             res['reason'] += " | Position exists"
             return res
 
-        # Вето, если есть голоса с обеих сторон (>=1) и вето включено.
-        # Это реализует логику "блокировать при любом конфликте голосов", а не сигналов.
-        if self.enable_veto and l_votes > 0 and s_votes > 0:
-            res['reason'] += f" | Veto: Conflict by votes (L:{l_votes}, S:{s_votes})"
-            return res
+        # Вето, если есть голоса с обеих сторон (>=1)
+        if l_votes > 0 and s_votes > 0:
+            if self.enable_veto:
+                res['reason'] += f" | Veto: Conflict by votes (L:{l_votes}, S:{s_votes})"
+                return res
+            else:
+                # Если вето отключено, добавляем это в лог для ясности
+                res['reason'] += f" | Veto DISABLED (L:{l_votes}, S:{s_votes})"
 
         if l_signal:
             res['enter_long'] = 1
@@ -530,6 +537,12 @@ class CustomD3QNStrategy4z(IStrategy):
         if s_signal and self.can_short:
             res['enter_short'] = 1
             res['reason'] += " | SHORT Signal"
+            
+        # Safety: Если активны оба сигнала (конфликт), отменяем оба
+        if res['enter_long'] and res['enter_short']:
+            res['enter_long'] = 0
+            res['enter_short'] = 0
+            res['reason'] += " | CONFLICT: Dual Signal"
             
         if res['enter_long'] == 0 and res['enter_short'] == 0:
             res['reason'] += " | No Consensus"
@@ -650,7 +663,8 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # Sanity Check: Ensure Short tensor is not identical to Long tensor (should be inverted)
         if tensor_long_1 is not None and tensor_short_1 is not None:
-            if torch.equal(tensor_long_1, tensor_short_1):
+            # Предупреждаем только если включен mirror_mode. В обычном режиме они И ДОЛЖНЫ быть одинаковыми.
+            if self.short_1_is_mirror and torch.equal(tensor_long_1, tensor_short_1):
                 logger.warning(f"🚨 CRITICAL: LONG_1 and SHORT_1 tensors are IDENTICAL for {metadata['pair']}! Inversion failed?")
 
         # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
@@ -693,14 +707,17 @@ class CustomD3QNStrategy4z(IStrategy):
         # DEBUG: Log action distribution to verify models are outputting signals
         if self.config.get('runmode') in ['live', 'dry_run']:
             # Логируем Q-значения для последней свечи, чтобы видеть "уверенность" модели
+            thresh_l_str = f"{self.min_q_threshold_long}" if self.min_q_threshold_long >= 0 else "RAW"
+            thresh_s_str = f"{self.min_q_threshold_short}" if self.min_q_threshold_short >= 0 else "RAW"
+
             if "long_1" in q_values:
                 a = action_long_1[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
+                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {thresh_l_str}) | Act: {a} ({a_str})")
             if "long_2" in q_values:
                 a = action_long_2[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv_long_2[-1]:.5f} (Thresh: {self.min_q_threshold_long}) | Act: {a} ({a_str})")
+                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv_long_2[-1]:.5f} (Thresh: {thresh_l_str}) | Act: {a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -709,14 +726,14 @@ class CustomD3QNStrategy4z(IStrategy):
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")
+                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {thresh_s_str}) | Act: {a} ({a_str})")
             if "short_2" in q_values:
                 a = action_short_2[-1]
                 if self.short_2_is_mirror:
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv_short_2[-1]:.5f} (Thresh: {self.min_q_threshold_short}) | Act: {a} ({a_str})")
+                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv_short_2[-1]:.5f} (Thresh: {thresh_s_str}) | Act: {a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
