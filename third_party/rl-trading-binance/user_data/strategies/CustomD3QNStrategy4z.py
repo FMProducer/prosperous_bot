@@ -516,9 +516,10 @@ class CustomD3QNStrategy4z(IStrategy):
             res['reason'] += " | Position exists"
             return res
 
-        # Вето, если обе стороны дали сигнал и вето включено
-        if self.enable_veto and l_signal and s_signal:
-            res['reason'] += " | Veto: Conflict"
+        # Вето, если есть голоса с обеих сторон (>=1) и вето включено.
+        # Это реализует логику "блокировать при любом конфликте голосов", а не сигналов.
+        if self.enable_veto and l_votes > 0 and s_votes > 0:
+            res['reason'] += f" | Veto: Conflict by votes (L:{l_votes}, S:{s_votes})"
             return res
 
         if l_signal:
