@@ -807,7 +807,7 @@ def run_training_session(
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
-        "mirror_mode": getattr(cfg.market, "mirror_mode", True), # Передаем из конфига
+        "mirror_mode": getattr(cfg.market, "mirror_mode", False), # Передаем из конфига
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
     # Important Warning:

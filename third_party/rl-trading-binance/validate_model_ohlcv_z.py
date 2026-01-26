@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 logger.info("Starting validation script...")
 
-def load_and_prep_data(npz_path: str, split_name: str, cfg: MasterConfig = None) -> tuple[list, list]:
+def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: MasterConfig = None) -> tuple[list, list]:
     """
     Загружает NPZ, применяет Z-нормализацию для каждого актива отдельно, решейпит в (C, L, 1).
     """
@@ -39,13 +39,42 @@ def load_and_prep_data(npz_path: str, split_name: str, cfg: MasterConfig = None)
     logger.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
     
     for key in data_keys:
+        try:
+            asset_name = key.split('_')[0]
+        except IndexError:
+            logger.warning(f"Пропуск ключа с некорректным форматом: {key}")
+            continue
+
+        means = None
+        stds = None
+        if norm_stats:
+            asset_specific_stats = norm_stats.get(asset_name)
+            if asset_specific_stats is None:
+                logger.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
+                continue
+            means = np.array(asset_specific_stats.get('mean', asset_specific_stats.get('means')))
+            stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')))
+        
         seq = d[key].astype(np.float32)
 
         if cfg and hasattr(cfg, 'data') and hasattr(cfg.data, 'datachannels'):
             target_channels = len(cfg.data.datachannels)
             if seq.shape[1] > target_channels:
                 seq = seq[:, :target_channels]
+                if means is not None and len(means) > target_channels:
+                    means = means[:target_channels]
+                    stds = stds[:target_channels]
 
+        if means is not None and seq.shape[1] != len(means):
+            logger.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
+            continue
+
+        # Z-norm по каждому каналу - DISABLED for Rolling Z-Score
+        # seq = (seq - means) / (stds + 1e-8)
+        # Reshape для CNN: (L, C) -> (C, L, 1)
+        # DISABLED: TradingEnvironment enforces (L, C) input. We transpose in the loop.
+        # seq = seq.T
+        # seq = np.expand_dims(seq, -1)
         sequences.append(seq)
         valid_keys.append(key)
     
@@ -347,10 +376,22 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     val_data_path = cfg.paths.val_data_path
 
     # 2. Load data
+    # STRICTLY load norm_stats from the directory containing the checkpoint
+    model_dir = os.path.dirname(checkpoint_path)
+    norm_stats_path = os.path.join(model_dir, "norm_stats.json")
+    norm_stats = {}
+
+    if os.path.exists(norm_stats_path):
+        logger.info(f"Using norm_stats from model directory: {norm_stats_path}")
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
+    else:
+        logger.warning(f"Norm stats file not found at {norm_stats_path}. Proceeding without pre-computed stats (assuming rolling normalization).")
+
     device = torch.device("cpu")
 
     # 3. Подготовка данных и среды
-    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", cfg=cfg)
+    val_seqs, val_keys = load_and_prep_data(val_data_path, "Validation", norm_stats, cfg=cfg)
     if not val_seqs:
         logger.error("No validation data loaded. Exiting.")
         sys.exit(1)
@@ -365,7 +406,17 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     # Read direction settings directly from config (same as train.py)
     env_filter = getattr(cfg.market, "filter_direction", None)
     env_allowed = getattr(cfg.market, "allowed_directions", None)
-    logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}")
+    mirror_mode = getattr(cfg.market, "mirror_mode", False)
+    logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}, mirror_mode={mirror_mode}")
+
+    # Инверсия статистик для SHORT-агента, если они еще не инвертированы
+    if mirror_mode:
+        logger.info("Mirroring norm_stats mean because mirror_mode is enabled.")
+        vol_indices = {i for i, c in enumerate(cfg.data.datachannels) if c in cfg.data.volumechannels}
+        for asset, stat in norm_stats.items():
+            if 'mean' in stat:
+                # Invert means for non-volume channels
+                stat['mean'] = [-abs(m) if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
 
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
     if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):
@@ -375,6 +426,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
+        "stats": norm_stats,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": val_seqs[0].shape[1],
         "num_actions": cfg.market.num_actions,
@@ -399,7 +451,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "allowed_directions": env_allowed,
         "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         "max_trades_per_episode": max_trades,
-        "mirror_mode": getattr(cfg, "mirror_mode", True),
+        "mirror_mode": mirror_mode,
     }
     val_env = TradingEnvironment(**env_kwargs)
 
