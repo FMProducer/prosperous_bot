@@ -34,7 +34,6 @@ class TradingEnvironment(gym.Env):
     def __init__(
         self,
         sequences: List[np.ndarray],
-        stats: Dict[str, Dict[str, float]],
         keys: List[str],
         render_mode: Optional[str],
         full_seq_len: int,
@@ -132,7 +131,6 @@ class TradingEnvironment(gym.Env):
         self.use_risk_management = use_risk_management
         self.allowed_directions = allowed_directions
         self.filter_direction = filter_direction
-        self.stats = copy.deepcopy(stats) # Изолируем статистики
         self.keys = keys
         self.full_seq_len = full_seq_len
 
@@ -157,30 +155,6 @@ class TradingEnvironment(gym.Env):
 
                 mirrored.append(m_seq)
             self.sequences = mirrored
-
-            # 3. Синхронизируем локальные stats (если они не были инвертированы снаружи)
-            # Эта логика является запасным вариантом. Основная инверсия должна происходить
-            # в вызывающем скрипте (train/validate) для корректного сохранения артефактов.
-            high_idx = idx.get('high')
-            low_idx = idx.get('low')
-
-            for stats_dict in self.stats.values():
-                # stats_dict structure: {'mean': [v1, v2...], 'std': [v1, v2...]}
-                if 'mean' in stats_dict:
-                    means = stats_dict['mean']
-                    # Invert means for price channels
-                    for i in price_indices:
-                        if i < len(means) and means[i] > 0:
-                            means[i] *= -1.0
-                    # Swap High and Low means
-                    if high_idx is not None and low_idx is not None and high_idx < len(means) and low_idx < len(means):
-                        means[high_idx], means[low_idx] = means[low_idx], means[high_idx]
-                
-                if 'std' in stats_dict:
-                    stds = stats_dict['std']
-                    # Swap High and Low stds
-                    if high_idx is not None and low_idx is not None and high_idx < len(stds) and low_idx < len(stds):
-                        stds[high_idx], stds[low_idx] = stds[low_idx], stds[high_idx]
         else:
             self.sequences = sequences
         self.keys = keys
@@ -388,23 +362,6 @@ class TradingEnvironment(gym.Env):
         self.trailing_min_price = None
         self.tsl_price = None
         self.p_at_last_tsl_update = 0.0
-
-    def _get_asset_stats(self) -> Dict[str, float]:
-        """Helper to get stats for the current asset, with a fallback."""
-        if not self.stats:
-            raise ValueError("Normalization stats are not provided to the environment.")
-        
-        asset_stats = self.stats.get(self.current_asset_name)
-        if asset_stats is None:
-            # OLD DANGEROUS FALLBACK LOGIC HAS BEEN REMOVED.
-            # NEW STRICT BEHAVIOR:
-            raise ValueError(
-                f"CRITICAL ERROR: Normalization stats for asset '{self.current_asset_name}' not found. "
-                "This leads to incorrect reward calculation and model degradation. "
-                "Ensure your norm_stats.json is generated from a dataset containing ALL tickers "
-                "from your train, validation, and test sets."
-            )
-        return asset_stats
 
     def _calculate_effective_trail_distance(
         self, p: float, d0: float, d_min: float, fee_buf: float

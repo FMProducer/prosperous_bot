@@ -72,7 +72,6 @@ cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # T
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
-cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""
 
 # Model: ActorCritic CNN (dilated 1D Conv для ~60-min receptive)
@@ -340,8 +339,6 @@ cfg.ensemble = EnsembleConfig()
 # Пути для валидации ансамбля
 cfg.ensemble.long_model_path = long_model_dir / "best.pth"
 cfg.ensemble.short_model_path = short_model_dir / "best.pth"
-# Статистика нормализации обычно одинакова для long/short специалистов
-cfg.ensemble.norm_stats_path = long_model_dir / "norm_stats.json"
 
 # --- Ensemble Behavior ---
 cfg.ensemble.enable_long = True
