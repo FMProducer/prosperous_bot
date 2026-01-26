@@ -39,7 +39,6 @@ from utils import (
     load_npz_dataset,
     create_walk_forward_folds,
     load_and_prep_data_from_source,
-    calculate_normalization_stats,
 ) # noqa: F401
 
 class TopKCheckpointManager:
@@ -651,7 +650,6 @@ def run_training_session(
     val_sequences: List[np.ndarray],
     val_keys: List[Any],
     cfg: MasterConfig,
-    norm_stats: Dict[str, Any],
     models_dir: str,
     plots_dir: str,
     session_name: str,
@@ -771,7 +769,6 @@ def run_training_session(
     env_kwargs = {
         "sequences": train_sequences,
         "keys": train_keys,
-        "stats": norm_stats,
         "render_mode": cfg.render_mode,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": num_features,
@@ -1101,26 +1098,6 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     with open(os.path.join(models_dir, "config_train.json"), "w") as f:
         json.dump(cfg.model_dump(), f, indent=2, default=str)
 
-    norm_stats_path = getattr(cfg.paths, "norm_stats_path", "norm_stats.json")
-    if os.path.exists(norm_stats_path):
-        with open(norm_stats_path, 'r') as f:
-            norm_stats = json.load(f)
-    else:
-        # Don't save to root (norm_stats_path=None) to avoid duplication
-        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path=None)
-
-    # MODIFIED: Save norm_stats to models_dir for validation self-containment (always)
-    with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:
-        json.dump(norm_stats, f, indent=2)
-
-    # Adjust norm_stats for Mirror Mode (SHORT-only training)
-    if getattr(cfg.market, "filter_direction", None) == 'SHORT':
-        logging.info("Adjusting norm_stats for Mirror Mode (SHORT-only training)")
-        vol_indices = {i for i, c in enumerate(cfg.data.datachannels) if c in cfg.data.volumechannels}
-        for asset, stat in norm_stats.items():
-            if 'mean' in stat:
-                stat['mean'] = [-m if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
-
     if getattr(cfg, "walk_forward", None) and cfg.walk_forward.enabled:
         logging.info("Walk-Forward Validation ENABLED.")
         all_sequences = []
@@ -1155,19 +1132,9 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
             os.makedirs(fold_models_dir, exist_ok=True)
             os.makedirs(fold_plots_dir, exist_ok=True)
 
-            # --- Per-Fold Normalization ---
-            logging.info(f"Calculating normalization stats for Fold {i+1}...")
-            fold_norm_stats = calculate_normalization_stats(
-                [d for _, d in train_s],  # Raw data from the current fold
-                cfg.data.datachannels,
-                cfg.data.pricechannels,
-                cfg.data.volumechannels,
-                cfg.data.otherchannels
-            )
-
             # Pre-process data for the current fold
-            train_seqs, train_keys_prep = load_and_prep_data_from_source(fold_train_data, fold_train_keys, "Train", fold_norm_stats)
-            val_seqs, val_keys_prep = load_and_prep_data_from_source(fold_test_data, fold_test_keys, "Validation", fold_norm_stats)
+            train_seqs, train_keys_prep = load_and_prep_data_from_source(fold_train_data, fold_train_keys, "Train", {})
+            val_seqs, val_keys_prep = load_and_prep_data_from_source(fold_test_data, fold_test_keys, "Validation", {})
 
             best_metrics, _ = run_training_session(
                 train_sequences=train_seqs,
@@ -1175,7 +1142,6 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
                 val_sequences=val_seqs,
                 val_keys=val_keys_prep,
                 cfg=cfg,
-                norm_stats=fold_norm_stats,
                 models_dir=fold_models_dir,
                 plots_dir=fold_plots_dir,
                 session_name=f"{session_name}_fold_{i+1}",
@@ -1196,8 +1162,8 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
         allowed_assets = getattr(cfg.paper, "symbols", None)
         if allowed_assets == "ALL": allowed_assets = None
 
-        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats, cfg, allowed_assets)
-        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats, cfg, allowed_assets)
+        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", {}, cfg, allowed_assets)
+        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", {}, cfg, allowed_assets)
 
         if not train_seqs:
             logging.error("Training data not loaded. Exiting.")
@@ -1227,7 +1193,6 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
             val_sequences=val_seqs,
             val_keys=val_keys,
             cfg=cfg,
-            norm_stats=norm_stats,
             models_dir=models_dir,
             plots_dir=plots_dir,
             session_name=session_name,
