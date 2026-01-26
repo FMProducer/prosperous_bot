@@ -286,14 +286,28 @@ class CustomD3QNStrategy4z(IStrategy):
                 return file
         return None
     
-    def _load_py_config(self, path: Path):
-        unique_module_name = f"config_{path.parent.name}_{path.stem}"
-        spec = importlib.util.spec_from_file_location(unique_module_name, path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Cannot load config from {path}")
+    def _load_py_config(self, file_path: Path):
+        import importlib.util
+        from pydantic import ValidationError
+
+        spec = importlib.util.spec_from_file_location("mod_cfg", file_path)
         mod = importlib.util.module_from_spec(spec)
-        sys.modules[unique_module_name] = mod
-        spec.loader.exec_module(mod)
+        
+        # Хак для обратной совместимости: 
+        # Если в загружаемом файле есть обращение к несуществующим полям Pydantic,
+        # нам нужно это перехватить. 
+        try:
+            spec.loader.exec_module(mod)
+        except ValueError as e:
+            logger.error(f"❌ Config loading failed: {e}. Attempting to bypass Pydantic validation...")
+            # Если критично — здесь можно динамически добавить поле в PathConfig через setattr
+            raise e
+        
+        # Убеждаемся, что стратегия НЕ использует внешние файлы статистики для нормализации,
+        # так как нормализация Z-score происходит на лету в get_model_input.
+        if hasattr(mod.cfg, 'paths') and hasattr(mod.cfg.paths, 'norm_stats_path'):
+            mod.cfg.paths.norm_stats_path = None
+
         return mod.cfg
     
     def _create_agent_from_config(self, cfg, mirror_mode=False):
@@ -336,26 +350,25 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
     
-    def feature_engineering(self, dataframe: DataFrame, **kwargs) -> DataFrame:
-        # Волатильность
-        dataframe['volatility_90m'] = (
-            (dataframe['high'].rolling(90).max() - dataframe['low'].rolling(90).min()) /
-            (dataframe['low'].rolling(90).min() + 1e-9)
-        )
-        
-        # VWAP и объемы
-        dataframe['vwap'] = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
-        dataframe['quote_volume'] = dataframe['volume'] * dataframe['vwap']
-        dataframe['num_trades'] = dataframe['volume']
-        dataframe['taker_base'] = dataframe['volume'] * 0.5
-        dataframe['taker_quote'] = dataframe['quote_volume'] * 0.5
-        
-        # Заполняем NaN нулями
-        dataframe = dataframe.fillna(0.0)
-        return dataframe
-    
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        return self.feature_engineering(dataframe)
+        # Окно нормализации из обучения
+        window = 90
+        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+        
+        for col in ohlcv_cols:
+            rolling = dataframe[col].rolling(window=window, min_periods=window)
+            mean = rolling.mean()
+            std = rolling.std(ddof=0)
+            
+            # Z-score: (x - mean) / std
+            # Добавляем epsilon 1e-8 для защиты от деления на 0 (как в TradingEnvironment)
+            dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-8)
+            
+        # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
+        z_cols = [f'{col}_z' for col in ohlcv_cols]
+        dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
+        
+        return dataframe
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
                    current_profit: float, **kwargs):
@@ -392,38 +405,19 @@ class CustomD3QNStrategy4z(IStrategy):
         return -d_eff
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
-        # 1. Данные (5 каналов)
-        # RAW DATA
-        data = np.stack([
-            dataframe['open'].values,
-            dataframe['high'].values,
-            dataframe['low'].values,
-            dataframe['close'].values,
-            dataframe['volume'].values
-        ]).astype(np.float32) # (5, N)
-
-        # 2. Sliding window
-        if data.shape[1] < 90:
+        # 1. Проверка длины
+        if len(dataframe) < 90:
             return None
+            
+        # 2. Выбор Z-колонок
+        cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
         
-        # (5, N) -> (5, 90, Batch) -> (Batch, 90, 5)
-        windows = sliding_window_view(data, window_shape=90, axis=1).transpose(1, 2, 0)
+        # 3. Sliding window
+        # (N, 5)
+        z_data = dataframe[cols].values.astype(np.float32)
         
-        # 3. Dynamic Window Normalization (Rolling Z-Score)
-        # Prices (Channels 0-3): Normalize together to preserve relative structure
-        prices = windows[:, :, 0:4]
-        p_mean = np.mean(prices, axis=(1, 2), keepdims=True)
-        p_std = np.std(prices, axis=(1, 2), keepdims=True)
-        norm_prices = (prices - p_mean) / (p_std + 1e-8)
-        
-        # Volume (Channel 4): Normalize separately
-        volumes = windows[:, :, 4:5]
-        v_mean = np.mean(volumes, axis=1, keepdims=True)
-        v_std = np.std(volumes, axis=1, keepdims=True)
-        norm_volumes = (volumes - v_mean) / (v_std + 1e-8)
-        
-        # Combine back
-        norm_windows = np.concatenate([norm_prices, norm_volumes], axis=2)
+        # (N, 5) -> (Batch, 90, 5)
+        windows = sliding_window_view(z_data, window_shape=90, axis=0)
         
         # 4. Inversion logic (Mirror Mode)
         should_invert = False
@@ -432,11 +426,11 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
         
         if should_invert:
-            norm_windows = norm_windows * -1.0
+            windows = windows * -1.0
 
         # 5. Flatten & Extra Features
-        batch_size = norm_windows.shape[0]
-        flat_feats = norm_windows.reshape(batch_size, -1)
+        batch_size = windows.shape[0]
+        flat_feats = windows.reshape(batch_size, -1)
         
         add_feats = np.zeros((batch_size, 4), dtype=np.float32)
         # Set time_remaining (index 3) to 1.0 (start of session)

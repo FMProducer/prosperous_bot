@@ -32,6 +32,7 @@ class PathConfig(BaseModel):
     test_data_path: str = "data/test_data.npz"
     backtest_data_path: str = "data/backtest_data.npz"
     model_path: Optional[str] = None # Явный путь к файлу модели (.pth)
+    norm_stats_path: Optional[str] = None # Верните для совместимости со старыми .py конфигами
     # Сделаем model_dir и plot_dir изменяемыми полями
     model_dir: Optional[str] = None
     plot_dir: Optional[str] = None

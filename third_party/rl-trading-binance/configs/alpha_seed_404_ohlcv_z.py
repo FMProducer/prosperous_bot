@@ -275,7 +275,7 @@ bundle_cfg = type("obj", (), {})
 bundle_cfg.enable = True
 bundle_cfg.include_code_snapshot = False
 bundle_cfg.code_snapshot_paths = ["train.py", "model.py", "agent.py", "trading_environment.py"]
-bundle_cfg.extra_files = ["norm_stats.json", "data_manifest.json"]
+bundle_cfg.extra_files = ["data_manifest.json"]
 try:
     cfg.bundle = bundle_cfg
 except ValueError:
@@ -324,8 +324,6 @@ single_model_dir = BASE_DIR / "output" / "alpha_seed_404_ohlcv_z_UNIVERSAL" / "s
 
 # Для валидации одиночного агента (раскомментируйте, если нужно)
 # cfg.paths.model_path = single_model_dir / "best.pth"
-# cfg.paths.norm_stats_path = single_model_dir / "norm_stats.json"
-
 # Workflow notes (run from root):
 # python train.py --config alpha_seed_404_ohlcv_z.py --total_timesteps 10000  # Test
 # python train.py --config alpha_seed_404_ohlcv_z.py  # Full

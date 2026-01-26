@@ -161,8 +161,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         logging.warning(f"{split_name} data file not found or path not specified: {npz_path}")
         return [], []
 
-    if not norm_stats:
-        raise ValueError(f"norm_stats не предоставлен для {split_name}, но он обязателен.")
+    # norm_stats check removed for on-the-fly normalization support
 
     d = np.load(npz_path, allow_pickle=True)
     data_keys = [k for k in d.files if not k.startswith('_')]
@@ -170,7 +169,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
     valid_keys = []
     logging.info(f"Загрузка {len(data_keys)} последовательностей из {split_name}...")
     
-    for key in tqdm(data_keys, desc=f"Normalizing {split_name}"):
+    for key in tqdm(data_keys, desc=f"Loading {split_name}"):
         try:
             asset_name = key.split('_')[0]
         except IndexError:
@@ -181,14 +180,17 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
         if allowed_assets and asset_name not in allowed_assets:
             continue
 
-        asset_specific_stats = norm_stats.get(asset_name)
-        if asset_specific_stats is None:
-            if not allowed_assets or asset_name in allowed_assets:
-                 logging.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
-            continue
+        means = None
+        stds = None
+        # if norm_stats:
+        #     asset_specific_stats = norm_stats.get(asset_name)
+        #     if asset_specific_stats is None:
+        #         if not allowed_assets or asset_name in allowed_assets:
+        #              logging.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
+        #         continue
 
-        means = np.array(asset_specific_stats['mean'])
-        stds = np.array(asset_specific_stats['std'])
+        #     means = np.array(asset_specific_stats['mean'])
+        #     stds = np.array(asset_specific_stats['std'])
         
         seq = d[key].astype(np.float32)
 
@@ -197,20 +199,14 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
             target_channels = len(cfg.data.datachannels)
             if seq.shape[1] > target_channels:
                 seq = seq[:, :target_channels]
-            if len(means) > target_channels:
+            if means is not None and len(means) > target_channels:
                 means = means[:target_channels]
                 stds = stds[:target_channels]
 
-        if seq.shape[1] != len(means):
+        if means is not None and seq.shape[1] != len(means):
             logging.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
             continue
             
-        # Z-norm по каждому каналу - DISABLED for Rolling Z-Score
-        # seq = (seq - means) / stds
-        # Reshape для CNN: (L, C) -> (C, L, 1)
-        # DISABLED: TradingEnvironment enforces (L, C) input. We transpose in the loop.
-        # seq = seq.T
-        # seq = np.expand_dims(seq, -1)
         sequences.append(seq)
         valid_keys.append(key)
     
