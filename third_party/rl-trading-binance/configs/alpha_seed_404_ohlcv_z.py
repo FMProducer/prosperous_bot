@@ -97,6 +97,8 @@ cfg.market.allow_opposite_trades = False # Запрещаем закрытие �
 MAX_TRADES_PER_EPISODE = 1 # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
 
 # --- MODE CONFIGURATION ---
+cfg.market.mirror_mode = False # Trigger "Mirror World" logic in the environment.
+
 if AGENT_MODE == "LONG_ONLY":
     cfg.market.allowed_directions = ['LONG']
     # IMPORTANT: Do not filter data for LONG, as the environment does not invert it.

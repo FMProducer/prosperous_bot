@@ -179,6 +179,7 @@ class MarketConfig(BaseModel):
     loss_exit_threshold: int = 3
     allow_opposite_trades: bool = True
     close_action_index: Optional[int] = None # Индекс для действия "закрыть". Если None, используется num_actions - 1.
+    mirror_mode: bool = True # Добавлено для управления инверсией данных в среде
 
 
 class RLConfig(BaseModel):
