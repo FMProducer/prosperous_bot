@@ -67,13 +67,12 @@ def test_short_mode_inversion(base_env_kwargs):
         [110, 115, 95, 105, 1200],  # o, h, l, c, v
         [105, 110, 90, 100, 1000],
     ], dtype=np.float32)
+        # The environment expects stats in the format {'mean': [...], 'std': [...]}
+        # The order must match datachannels: ['open', 'high', 'low', 'close', 'volume']
     original_stats = {
         'TEST_ASSET': {
-            'open': {'mean': 107.5, 'std': 1.0},
-            'high': {'mean': 112.5, 'std': 1.0},
-            'low': {'mean': 92.5, 'std': 1.0},
-            'close': {'mean': 102.5, 'std': 1.0},
-            'volume': {'mean': 1100, 'std': 1.0}
+                'mean': [107.5, 112.5, 92.5, 102.5, 1100.0],
+                'std': [1.0, 1.0, 1.0, 1.0, 1.0]
         }
     }
 
@@ -103,10 +102,11 @@ def test_short_mode_inversion(base_env_kwargs):
     # The environment makes a deep copy, so we check the env's internal stats
     inverted_stats = env_short.stats['TEST_ASSET']
 
-    # Assert that means are inverted
-    assert inverted_stats['open']['mean'] == -107.5
-    assert inverted_stats['close']['mean'] == -102.5
-    # Assert that high and low means are swapped and inverted
-    assert inverted_stats['high']['mean'] == -92.5  # Swapped from original low
-    assert inverted_stats['low']['mean'] == -112.5 # Swapped from original high
-    assert inverted_stats['volume']['mean'] == 1100  # Volume mean should not be inverted
+    # Assert that means are inverted and swapped for high/low
+    # Order: ['open', 'high', 'low', 'close', 'volume']
+    expected_means = [-107.5, -92.5, -112.5, -102.5, 1100.0]
+    np.testing.assert_allclose(inverted_stats['mean'], expected_means, rtol=1e-5)
+
+    # Assert that stds are swapped for high/low
+    expected_stds = [1.0, 1.0, 1.0, 1.0, 1.0] # In this test, all stds are 1.0, so swapping doesn't change it
+    np.testing.assert_allclose(inverted_stats['std'], expected_stds, rtol=1e-5)

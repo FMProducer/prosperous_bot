@@ -107,6 +107,7 @@ class TradingEnvironment(gym.Env):
         seed: Optional[int] = None,
         filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
+        mirror_mode: bool = True,  # Добавлено для управления инверсией
         **kwargs,
     ) -> None:
         if not sequences:
@@ -135,7 +136,7 @@ class TradingEnvironment(gym.Env):
         self.keys = keys
         self.full_seq_len = full_seq_len
 
-        if filter_direction == 'SHORT':
+        if filter_direction == 'SHORT' and mirror_mode:
             logger.info("MIRROR MODE: Applying geometric OHLC inversion.")
             idx = {name: i for i, name in enumerate(datachannels)}
 
@@ -201,11 +202,14 @@ class TradingEnvironment(gym.Env):
                 if filter_direction == 'LONG' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
-                # SHORT-agent: растущий тренд В ЗЕРКАЛЕ (после инверсии),
-                # что соответствует падающему тренду в реале.
-                elif filter_direction == 'SHORT' and end_price > start_price:
-                    filtered_sequences.append(seq)
-                    filtered_keys.append(key)
+                # SHORT-agent:
+                # Если mirror_mode=True: ищем рост в инвертированных данных (падение в реале)
+                # Если mirror_mode=False: ищем падение в реальных данных
+                elif filter_direction == 'SHORT':
+                    is_trend = (end_price > start_price) if mirror_mode else (end_price < start_price)
+                    if is_trend:
+                        filtered_sequences.append(seq)
+                        filtered_keys.append(key)
 
             if not filtered_sequences:
                 logging.warning(
