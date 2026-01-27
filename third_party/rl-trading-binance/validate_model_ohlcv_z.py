@@ -138,12 +138,8 @@ def evaluate_agent(
                 logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
         
         while not done:
-            # FIX: Transpose obs (L, C) -> (C, L, 1) for Agent
-            obs_agent = obs
-            if obs_agent.ndim == 2 and obs_agent.shape[1] == agent.state_shape[0]:
-                obs_agent = np.expand_dims(obs_agent.T, -1)
-
-            action = agent.select_action(obs_agent, training=False)
+            # Agent is now responsible for flattening and validating the state
+            action = agent.select_action(obs, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
                 signal_dt=signal_dt_for_step,
