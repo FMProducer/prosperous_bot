@@ -57,8 +57,8 @@ class CustomD3QNStrategy4z(IStrategy):
     can_short: bool = True  # Это критично для Futures режима
     startup_candle_count: int = 200
     
-    minimal_roi = {"0": 100}
-    stoploss = -0.99  # Заглушка, работает custom_stoploss
+    minimal_roi = {"0": 1000}  # Отключаем ROI (тейкпрофит), ставим 100000%
+    stoploss = -1  # Отключаем встроенный стоплосс (работает только custom_stoploss)
     trailing_stop = False
     use_custom_stoploss = True
     
@@ -70,9 +70,9 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
-    d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.001, 0.02, default=0.002, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.07519862504113693, space='stoploss', load=True)
+    d_min = DecimalParameter(0.001, 0.05, default=0.0008225518697224519, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.001, 0.02, default=0.0015218098435784326, space='stoploss', load=True)
     
     plot_config = {
         'main_plot': {},
