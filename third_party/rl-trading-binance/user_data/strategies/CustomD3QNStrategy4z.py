@@ -137,7 +137,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_234304"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260127_time_015823"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -693,6 +693,11 @@ class CustomD3QNStrategy4z(IStrategy):
             if name not in q_values:
                 return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
             q = q_values[name]
+            
+            # --- ZOMBIE PROTECTION: Если выходы модели не меняются (дисперсия ~0) ---
+            if batch_size > 5 and np.mean(np.std(q, axis=0)) < 1e-7:
+                return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
+
             actions = np.argmax(q, axis=1)
             # Advantage = Q(Selected) - Q(Hold)
             advantage = q[np.arange(len(q)), actions] - q[:, 0]
