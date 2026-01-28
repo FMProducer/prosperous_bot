@@ -889,12 +889,21 @@ class TradingEnvironment(gym.Env):
 
         # --- NORMALIZATION ---
         normalized = raw_window.astype(np.float32).copy()
-        
+
+        # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
+        if normalized.shape[1] > 4:
+            normalized[:, 4] = np.log1p(normalized[:, 4])
+
         if self.norm_stats and self.current_asset_name in self.norm_stats:
             stats = self.norm_stats[self.current_asset_name]
             means = np.array(stats['mean'], dtype=np.float32)
             stds = np.array(stats['std'], dtype=np.float32)
+            # Обработка потенциальных NaN в статистиках
+            means = np.nan_to_num(means)
+            stds = np.nan_to_num(stds, nan=1.0)
             normalized = (normalized - means) / (stds + 1e-8)
+            # Обработка NaN в результате нормализации
+            normalized = np.nan_to_num(normalized)
         else:
             # Fallback to ROLLING Z-SCORE NORMALIZATION
             # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
@@ -911,7 +920,7 @@ class TradingEnvironment(gym.Env):
                 v_std = np.std(v_data, axis=0) + 1e-8
                 normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
 
-        # Критически важно: ограничиваем выбросы, чтобы не "ослепить" нейронку
+        # Clipping: защита от "выжигания" весов нейросети
         normalized = np.clip(normalized, -5.0, 5.0)
 
         unrealized = 0.0
