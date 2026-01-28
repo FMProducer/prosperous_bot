@@ -12,12 +12,15 @@ import threading
 from typing import Dict, Optional, List, Any
 
 
+import json
+import os
+
 try:
     from freqtrade.persistence import Trade  # type: ignore
 except ImportError:
     class Trade: pass
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
 strategy_file = Path(__file__).resolve()
@@ -112,6 +115,11 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
+        # --- NORMALIZATION STATS ---
+        self.norm_stats = {}
+        self.norm_stats_lock = threading.Lock()
+        self.last_stats_update_day = -1
+
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
         else:
@@ -283,6 +291,52 @@ class CustomD3QNStrategy4z(IStrategy):
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
+
+    def bot_start(self, **kwargs) -> None:
+        """Вызывается один раз при запуске бота."""
+        self.update_norm_stats()
+
+    def update_norm_stats(self) -> None:
+        """Расчет и сохранение Z-Score коэффициентов для всех пар."""
+        logger.info("🔄 Updating Rolling Z-Score normalization stats...")
+        new_stats = {}
+
+        # Колонки для нормализации (OHLCV + ваши индикаторы)
+        cols_to_norm = ['open', 'high', 'low', 'close', 'volume']
+
+        for pair in self.dp.current_whitelist():
+            # Берем достаточно данных для стабильной статистики (например, 2000 свечей)
+            df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
+            if df.empty:
+                continue
+
+            pair_stats = {}
+            for col in cols_to_norm:
+                if col in df.columns:
+                    pair_stats[col] = {
+                        'mean': float(df[col].mean()),
+                        'std': float(df[col].std()) if df[col].std() != 0 else 1.0
+                    }
+            new_stats[pair] = pair_stats
+
+        with self.norm_stats_lock:
+            self.norm_stats = new_stats
+            self.last_stats_update_day = datetime.now(timezone.utc).day
+
+        # Сохранение в файл
+        # Пытаемся взять путь из конфига модели, иначе дефолт
+        stats_rel_path = "data/norm_stats.json"
+        if hasattr(self, 'cfg_long_1') and self.cfg_long_1:
+            stats_rel_path = getattr(self.cfg_long_1.paths, 'norm_stats_path', stats_rel_path)
+
+        stats_path = Path(self.project_root) / stats_rel_path
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(stats_path, 'w') as f:
+                json.dump(new_stats, f, indent=4)
+            logger.info(f"✅ Norm stats saved to {stats_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to save norm stats to {stats_path}: {e}")
     
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -349,23 +403,37 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
     
-    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # Окно нормализации из обучения
-        window = 90
-        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+    def _apply_norm(self, df: DataFrame, pair: str) -> DataFrame:
+        """Применение статической нормализации."""
+        with self.norm_stats_lock:
+            stats = self.norm_stats.get(pair)
         
-        for col in ohlcv_cols:
-            rolling = dataframe[col].rolling(window=window, min_periods=window)
-            mean = rolling.mean()
-            std = rolling.std(ddof=0)
+        if not stats:
+            return df
             
-            # Z-score: (x - mean) / std
-            # Добавляем epsilon 1e-8 для защиты от деления на 0 (как в TradingEnvironment)
-            dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-8)
-            
-        # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
-        z_cols = [f'{col}_z' for col in ohlcv_cols]
-        dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
+        df_norm = df.copy()
+        for col, s in stats.items():
+            if col in df_norm.columns:
+                # Z-score: (x - mean) / std
+                # Добавляем epsilon 1e-8 для защиты от деления на 0
+                df_norm[f'{col}_z'] = (df_norm[col] - s['mean']) / (s['std'] + 1e-8)
+
+        # Заполняем NaN нулями
+        z_cols = [f'{col}_z' for col in stats.keys()]
+        for col in z_cols:
+            if col in df_norm.columns:
+                df_norm[col] = df_norm[col].fillna(0.0)
+
+        return df_norm
+
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # 1. Проверка планировщика (10:00 MSK = 07:00 UTC)
+        now = datetime.now(timezone.utc)
+        if now.hour == 7 and self.last_stats_update_day != now.day:
+            self.update_norm_stats()
+
+        # 2. Нормализация (используем закэшированные статы)
+        dataframe = self._apply_norm(dataframe, metadata['pair'])
         
         return dataframe
     
