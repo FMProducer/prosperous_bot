@@ -52,8 +52,10 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
             if asset_specific_stats is None:
                 logger.warning(f"Пропуск ключа '{key}', т.к. статистики для актива '{asset_name}' не найдены.")
                 continue
-            means = np.array(asset_specific_stats.get('mean', asset_specific_stats.get('means')))
-            stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')))
+            means = np.array(asset_specific_stats.get('mean', asset_specific_stats.get('means')), dtype=np.float32)
+            stds = np.array(asset_specific_stats.get('std', asset_specific_stats.get('stds')), dtype=np.float32)
+            means = np.nan_to_num(means)
+            stds = np.nan_to_num(stds, nan=1.0)
         
         seq = d[key].astype(np.float32)
 
@@ -76,7 +78,7 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
             if seq_proc.shape[1] > 4:
                 seq_proc[:, 4] = np.log1p(seq_proc[:, 4])
 
-            seq = (seq_proc - means) / (stds + 1e-8)
+            seq = (seq_proc - means) / (stds + 1e-6)
             seq = np.clip(seq, -5.0, 5.0)
 
         sequences.append(seq)
@@ -416,7 +418,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         for asset, stat in norm_stats.items():
             if 'mean' in stat:
                 # Invert means for non-volume channels
-                stat['mean'] = [-abs(m) if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
+                stat['mean'] = [-m if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
 
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
     if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):

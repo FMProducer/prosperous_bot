@@ -138,7 +138,7 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: Option
                     asset_data[:, :, 4] = np.log1p(asset_data[:, :, 4])
 
                 means = np.mean(asset_data, axis=(0, 1))
-                stds = np.std(asset_data, axis=(0, 1)) + 1e-8
+                stds = np.std(asset_data, axis=(0, 1)) + 1e-6
                 all_stats[asset] = {'mean': means.tolist(), 'std': stds.tolist()}
             else:
                 logging.warning(f"Неверная форма или пустые данные для ассета {asset}: {asset_data.shape}")
