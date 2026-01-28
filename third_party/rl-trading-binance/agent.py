@@ -721,7 +721,8 @@ class D3QN_PER_Agent:
 
                 self.scaler.scale(weighted_loss).backward()
                 self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+                # Предотвращаем взрыв градиентов, который убивает веса
+                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
         else:
@@ -766,7 +767,8 @@ class D3QN_PER_Agent:
                 weighted_loss = weighted_td_loss
             
             weighted_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
+            # Предотвращаем взрыв градиентов, который убивает веса
+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
             self.optimizer.step()
 
         td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()

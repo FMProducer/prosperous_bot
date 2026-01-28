@@ -894,7 +894,7 @@ class TradingEnvironment(gym.Env):
             stats = self.norm_stats[self.current_asset_name]
             means = np.array(stats['mean'], dtype=np.float32)
             stds = np.array(stats['std'], dtype=np.float32)
-            normalized = (normalized - means) / stds
+            normalized = (normalized - means) / (stds + 1e-8)
         else:
             # Fallback to ROLLING Z-SCORE NORMALIZATION
             # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
@@ -910,6 +910,9 @@ class TradingEnvironment(gym.Env):
                 v_mean = np.mean(v_data, axis=0)
                 v_std = np.std(v_data, axis=0) + 1e-8
                 normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
+
+        # Критически важно: ограничиваем выбросы, чтобы не "ослепить" нейронку
+        normalized = np.clip(normalized, -5.0, 5.0)
 
         unrealized = 0.0
         if self.position != 0:
