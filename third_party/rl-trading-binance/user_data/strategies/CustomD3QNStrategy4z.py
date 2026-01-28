@@ -321,9 +321,11 @@ class CustomD3QNStrategy4z(IStrategy):
             pair_stats = {}
             for col in cols_to_norm:
                 if col in df_calc.columns:
+                    # Data Health Check: if std is too small, force it to 1.0 to avoid extreme scaling
+                    col_std = float(df_calc[col].std())
                     pair_stats[col] = {
                         'mean': float(df_calc[col].mean()),
-                        'std': float(df_calc[col].std()) if df_calc[col].std() != 0 else 1.0
+                        'std': col_std if col_std >= 1e-6 else 1.0
                     }
             new_stats[pair] = pair_stats
 
@@ -420,6 +422,13 @@ class CustomD3QNStrategy4z(IStrategy):
             return df
             
         df_norm = df.copy()
+
+        # Occasionally log raw stats for verification (approx once per 1000 calls)
+        if np.random.random() < 0.001:
+            for col in ['close', 'volume']:
+                if col in df.columns:
+                    logger.info(f"📊 [Data Health Check] {pair} {col} raw: mean={df[col].mean():.6f}, std={df[col].std():.6f}")
+
         for col, s in stats.items():
             if col in df_norm.columns:
                 # Z-score: (x - mean) / std
