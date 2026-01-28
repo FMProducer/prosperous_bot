@@ -650,7 +650,8 @@ def run_training_session(
     plots_dir: str,
     session_name: str,
     cfg_mod: Optional[Any] = None,
-    py_config_path: Optional[str] = None
+    py_config_path: Optional[str] = None,
+    norm_stats: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
     Runs a complete training and validation session for a given dataset.
@@ -808,6 +809,7 @@ def run_training_session(
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
         "mirror_mode": getattr(cfg.market, "mirror_mode", False), # Передаем из конфига
+        "norm_stats": norm_stats,
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
     # Important Warning:
@@ -1141,7 +1143,8 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
                 models_dir=fold_models_dir,
                 plots_dir=fold_plots_dir,
                 session_name=f"{session_name}_fold_{i+1}",
-                cfg_mod=cfg_mod
+                cfg_mod=cfg_mod,
+                norm_stats={} # Fallback to rolling for WFV for now or we could compute stats here
             )
             wfv_results.append(best_metrics)
 
@@ -1158,8 +1161,14 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
         allowed_assets = getattr(cfg.paper, "symbols", None)
         if allowed_assets == "ALL": allowed_assets = None
 
-        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", {}, cfg, allowed_assets)
-        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", {}, cfg, allowed_assets)
+        # --- ГЕНЕРАЦИЯ NORM_STATS.JSON ---
+        logging.info("📊 Calculating static normalization stats...")
+        stats_path = os.path.join(models_dir, "norm_stats.json")
+        norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path=stats_path)
+        logging.info(f"✅ Norm stats saved to {stats_path}")
+
+        train_seqs, train_keys = load_and_prep_data(cfg.paths.train_data_path, "Train", norm_stats, cfg, allowed_assets)
+        val_seqs, val_keys = load_and_prep_data(cfg.paths.val_data_path, "Validation", norm_stats, cfg, allowed_assets)
 
         if not train_seqs:
             logging.error("Training data not loaded. Exiting.")
@@ -1193,7 +1202,8 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
             plots_dir=plots_dir,
             session_name=session_name,
             cfg_mod=cfg_mod,
-            py_config_path=py_config_path # Pass the path
+            py_config_path=py_config_path, # Pass the path
+            norm_stats=norm_stats
         )
 
         bundle_cfg = getattr(cfg_mod, "bundle_cfg", getattr(cfg, "bundle", object()))

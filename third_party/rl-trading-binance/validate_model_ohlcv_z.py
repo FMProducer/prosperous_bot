@@ -422,7 +422,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
-        "stats": norm_stats,
+        "norm_stats": norm_stats,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": val_seqs[0].shape[1],
         "num_actions": cfg.market.num_actions,
