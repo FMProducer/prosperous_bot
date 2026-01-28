@@ -133,6 +133,10 @@ def compute_norm_stats(npz_path: str, cfg: MasterConfig, norm_stats_path: Option
                     asset_data = asset_data[:, :, :target_channels]
 
             if asset_data.ndim == 3 and asset_data.shape[0] > 0: # (N, L, C)
+                # Индекс 4 — это Volume. Применяем log1p перед расчетом статистики.
+                if asset_data.shape[2] > 4:
+                    asset_data[:, :, 4] = np.log1p(asset_data[:, :, 4])
+
                 means = np.mean(asset_data, axis=(0, 1))
                 stds = np.std(asset_data, axis=(0, 1)) + 1e-8
                 all_stats[asset] = {'mean': means.tolist(), 'std': stds.tolist()}

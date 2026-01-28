@@ -58,7 +58,7 @@ def calculate_normalization_stats(
                     transformed_vals = np.log(np.maximum(changes, 1e-9))
             elif ch in volume_channels:
                 # Log transform for volume channels
-                transformed_vals = np.log(channel_data + 1.0)
+                transformed_vals = np.log1p(channel_data)
             elif ch in other_channels:
                 transformed_vals = channel_data
             else:

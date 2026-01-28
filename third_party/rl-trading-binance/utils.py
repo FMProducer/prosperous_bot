@@ -180,7 +180,7 @@ def calculate_normalization_stats(
                 changes = arr[1:] / (arr[:-1] + 1e-9)
                 vals = np.log(np.maximum(changes, 1e-9))
             elif ch in volumechannels:
-                vals = np.log(arr + 1.0)
+                vals = np.log1p(arr)
             elif ch in otherchannels:
                 vals = arr
             else:
@@ -231,7 +231,7 @@ def apply_normalization(
             padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
             normed = padded_normed[-input_history_len:]
         elif ch in volumechannels:
-            logv = np.log(arr + 1.0)
+            logv = np.log1p(arr)
             normed = (logv - mean) / std
             normed = normed[-input_history_len:]
         elif ch in otherchannels:
@@ -582,11 +582,16 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         means = np.array(asset_stats['mean'])
         stds = np.array(asset_stats['std'])
 
-        seq_float = seq.astype(np.float32)
+        seq_float = seq.astype(np.float32).copy()
         if seq_float.shape[1] != len(means):
             continue
 
-        seq_norm = (seq_float - means) / stds
+        # Индекс 4 — это Volume. Применяем log1p перед нормализацией.
+        if seq_float.shape[1] > 4:
+            seq_float[:, 4] = np.log1p(seq_float[:, 4])
+
+        seq_norm = (seq_float - means) / (stds + 1e-8)
+        seq_norm = np.clip(seq_norm, -5.0, 5.0)
         seq_norm = seq_norm.T
         seq_norm = np.expand_dims(seq_norm, -1)
         prepped_sequences.append(seq_norm)

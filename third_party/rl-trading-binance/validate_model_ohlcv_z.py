@@ -69,12 +69,16 @@ def load_and_prep_data(npz_path: str, split_name: str, norm_stats: dict, cfg: Ma
             logger.error(f"Ошибка размерности для ключа {key}: ожидалось {len(means)} каналов, получено {seq.shape[1]}")
             continue
 
-        # Z-norm по каждому каналу - DISABLED for Rolling Z-Score
-        # seq = (seq - means) / (stds + 1e-8)
-        # Reshape для CNN: (L, C) -> (C, L, 1)
-        # DISABLED: TradingEnvironment enforces (L, C) input. We transpose in the loop.
-        # seq = seq.T
-        # seq = np.expand_dims(seq, -1)
+        # Важно: применяем ту же трансформацию, что и при расчете stats
+        if means is not None:
+            seq_proc = seq.astype(np.float32)
+            # Индекс 4 — это Volume.
+            if seq_proc.shape[1] > 4:
+                seq_proc[:, 4] = np.log1p(seq_proc[:, 4])
+
+            seq = (seq_proc - means) / (stds + 1e-8)
+            seq = np.clip(seq, -5.0, 5.0)
+
         sequences.append(seq)
         valid_keys.append(key)
     
@@ -422,7 +426,8 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
-        "norm_stats": norm_stats,
+        "norm_stats": None, # Данные уже нормализованы в load_and_prep_data
+        "use_rolling_norm": False,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": val_seqs[0].shape[1],
         "num_actions": cfg.market.num_actions,
