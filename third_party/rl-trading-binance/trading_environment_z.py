@@ -107,6 +107,7 @@ class TradingEnvironment(gym.Env):
         filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
         mirror_mode: bool = True,  # Добавлено для управления инверсией
+        norm_stats: Optional[Dict] = None,
         **kwargs,
     ) -> None:
         if not sequences:
@@ -256,6 +257,7 @@ class TradingEnvironment(gym.Env):
         self.allow_opposite_trades = allow_opposite_trades
         self.max_trades_per_episode = max_trades_per_episode
         self.allowed_directions = allowed_directions
+        self.norm_stats = norm_stats
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -885,22 +887,29 @@ class TradingEnvironment(gym.Env):
             padding = np.zeros((pad_len, self.num_features), dtype=np.float32)
             raw_window = np.concatenate((padding, raw_window), axis=0)
 
-        # --- ROLLING Z-SCORE NORMALIZATION ---
+        # --- NORMALIZATION ---
         normalized = raw_window.astype(np.float32).copy()
         
-        # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
-        if self.price_indices:
-            p_data = raw_window[:, self.price_indices]
-            p_mean = np.mean(p_data)
-            p_std = np.std(p_data) + 1e-8
-            normalized[:, self.price_indices] = (p_data - p_mean) / p_std
-            
-        # 2. Normalize Volume (Individually per channel)
-        if self.volume_indices:
-            v_data = raw_window[:, self.volume_indices]
-            v_mean = np.mean(v_data, axis=0)
-            v_std = np.std(v_data, axis=0) + 1e-8
-            normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
+        if self.norm_stats and self.current_asset_name in self.norm_stats:
+            stats = self.norm_stats[self.current_asset_name]
+            means = np.array(stats['mean'], dtype=np.float32)
+            stds = np.array(stats['std'], dtype=np.float32)
+            normalized = (normalized - means) / stds
+        else:
+            # Fallback to ROLLING Z-SCORE NORMALIZATION
+            # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
+            if self.price_indices:
+                p_data = raw_window[:, self.price_indices]
+                p_mean = np.mean(p_data)
+                p_std = np.std(p_data) + 1e-8
+                normalized[:, self.price_indices] = (p_data - p_mean) / p_std
+
+            # 2. Normalize Volume (Individually per channel)
+            if self.volume_indices:
+                v_data = raw_window[:, self.volume_indices]
+                v_mean = np.mean(v_data, axis=0)
+                v_std = np.std(v_data, axis=0) + 1e-8
+                normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
 
         unrealized = 0.0
         if self.position != 0:
