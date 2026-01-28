@@ -118,6 +118,7 @@ class CustomD3QNStrategy4z(IStrategy):
         # --- NORMALIZATION STATS ---
         self.norm_stats = {}
         self.norm_stats_lock = threading.Lock()
+        self.calc_lock = threading.Lock()
         self.last_stats_update_day = -1
 
         if Path(__file__).parent.name == 'strategies':
@@ -310,26 +311,33 @@ class CustomD3QNStrategy4z(IStrategy):
             if df.empty:
                 continue
 
+            # Используем окно 90 свечей для расчета статистики (Rolling Z-Score approximation)
+            lookback = 90
+            if len(df) >= lookback:
+                df_calc = df.iloc[-lookback:]
+            else:
+                df_calc = df
+
             pair_stats = {}
             for col in cols_to_norm:
-                if col in df.columns:
+                if col in df_calc.columns:
                     pair_stats[col] = {
-                        'mean': float(df[col].mean()),
-                        'std': float(df[col].std()) if df[col].std() != 0 else 1.0
+                        'mean': float(df_calc[col].mean()),
+                        'std': float(df_calc[col].std()) if df_calc[col].std() != 0 else 1.0
                     }
             new_stats[pair] = pair_stats
+
+        if not new_stats:
+            logger.info("⚠️ No normalization stats calculated (Data Provider returned empty dfs). This is normal during startup. Stats will be updated lazily.")
+            return
 
         with self.norm_stats_lock:
             self.norm_stats = new_stats
             self.last_stats_update_day = datetime.now(timezone.utc).day
 
         # Сохранение в файл
-        # Пытаемся взять путь из конфига модели, иначе дефолт
-        stats_rel_path = "data/norm_stats.json"
-        if hasattr(self, 'cfg_long_1') and self.cfg_long_1:
-            stats_rel_path = getattr(self.cfg_long_1.paths, 'norm_stats_path', stats_rel_path)
-
-        stats_path = Path(self.project_root) / stats_rel_path
+        # Сохраняем в общую папку output/norm_stats.json, так как статистика общая для всех моделей
+        stats_path = Path(self.project_root) / "output" / "norm_stats.json"
         stats_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(stats_path, 'w') as f:
@@ -430,11 +438,25 @@ class CustomD3QNStrategy4z(IStrategy):
         # 1. Проверка планировщика (10:00 MSK = 07:00 UTC)
         now = datetime.now(timezone.utc)
         if now.hour == 7 and self.last_stats_update_day != now.day:
-            self.update_norm_stats()
+            if self.calc_lock.acquire(blocking=False):
+                try:
+                    self.update_norm_stats()
+                finally:
+                    self.calc_lock.release()
 
         # 2. Нормализация (используем закэшированные статы)
         dataframe = self._apply_norm(dataframe, metadata['pair'])
         
+        # Fallback: Если статов нет (пустой файл при старте), пробуем обновить их сейчас, когда данные точно есть
+        if metadata['pair'] not in self.norm_stats and len(dataframe) > 0:
+             with self.calc_lock:
+                 if metadata['pair'] not in self.norm_stats:
+                     logger.info(f"⚠️ Norm stats missing for {metadata['pair']}, triggering lazy update...")
+                     self.update_norm_stats()
+             
+             # Повторно применяем нормализацию после обновления
+             dataframe = self._apply_norm(dataframe, metadata['pair'])
+
         return dataframe
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
