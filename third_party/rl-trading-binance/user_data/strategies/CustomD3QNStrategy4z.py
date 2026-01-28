@@ -58,7 +58,7 @@ class CustomD3QNStrategy4z(IStrategy):
     startup_candle_count: int = 200
     
     minimal_roi = {"0": 1000}  # Отключаем ROI (тейкпрофит), ставим 100000%
-    stoploss = -1  # Отключаем встроенный стоплосс (работает только custom_stoploss)
+    stoploss = -0.15  # Аварийный стоплосс на случай, если TSL не сработает
     trailing_stop = False
     use_custom_stoploss = True
     
