@@ -108,6 +108,7 @@ class TradingEnvironment(gym.Env):
         allowed_directions: Optional[List[str]] = None,
         mirror_mode: bool = True,  # Добавлено для управления инверсией
         norm_stats: Optional[Dict] = None,
+        use_rolling_norm: bool = True, # Добавлено для управления скользящей нормализацией
         **kwargs,
     ) -> None:
         if not sequences:
@@ -258,6 +259,7 @@ class TradingEnvironment(gym.Env):
         self.max_trades_per_episode = max_trades_per_episode
         self.allowed_directions = allowed_directions
         self.norm_stats = norm_stats
+        self.use_rolling_norm = use_rolling_norm
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -868,8 +870,8 @@ class TradingEnvironment(gym.Env):
         return base_reward + shaped_reward - inaction_penalty
 
     def _get_observation(self) -> np.ndarray:
-        # The window from current_seq is already pre-normalized.
-        # load_and_prep_data has already performed Z-normalization.
+        # The window from current_seq is already pre-normalized if norm_stats is None and use_rolling_norm is False.
+        # Otherwise, load_and_prep_data returns raw data.
 
         # --- FIX: Prevent out-of-bounds access ---
         # On the final step, self.step_idx may be equal to self.agent_session_len,
@@ -890,11 +892,11 @@ class TradingEnvironment(gym.Env):
         # --- NORMALIZATION ---
         normalized = raw_window.astype(np.float32).copy()
 
-        # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
-        if normalized.shape[1] > 4:
-            normalized[:, 4] = np.log1p(normalized[:, 4])
-
         if self.norm_stats and self.current_asset_name in self.norm_stats:
+            # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
+            if normalized.shape[1] > 4:
+                normalized[:, 4] = np.log1p(normalized[:, 4])
+
             stats = self.norm_stats[self.current_asset_name]
             means = np.array(stats['mean'], dtype=np.float32)
             stds = np.array(stats['std'], dtype=np.float32)
@@ -904,7 +906,11 @@ class TradingEnvironment(gym.Env):
             normalized = (normalized - means) / (stds + 1e-8)
             # Обработка NaN в результате нормализации
             normalized = np.nan_to_num(normalized)
-        else:
+        elif self.use_rolling_norm:
+            # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
+            if normalized.shape[1] > 4:
+                normalized[:, 4] = np.log1p(normalized[:, 4])
+
             # Fallback to ROLLING Z-SCORE NORMALIZATION
             # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
             if self.price_indices:
@@ -915,7 +921,8 @@ class TradingEnvironment(gym.Env):
 
             # 2. Normalize Volume (Individually per channel)
             if self.volume_indices:
-                v_data = raw_window[:, self.volume_indices]
+                # Используем уже трансформированные данные из normalized (там уже применен log1p для Volume)
+                v_data = normalized[:, self.volume_indices]
                 v_mean = np.mean(v_data, axis=0)
                 v_std = np.std(v_data, axis=0) + 1e-8
                 normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
