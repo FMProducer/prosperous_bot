@@ -83,20 +83,19 @@ class DuelingQNetwork(nn.Module):
         adv_layers.append(nn.Linear(prev, action_dim))
         self.advantage_stream = nn.Sequential(*adv_layers)
 
-        self._init_weights()
+        self.apply(self._init_weights)
 
         # Добавляем модули для квантования
         self.quant = torch.ao.quantization.QuantStub()
         self.dequant = torch.ao.quantization.DeQuantStub()
         logger.info(f"Initialized DuelingQNetwork with QAT support...")
 
-    def _init_weights(self):
-        for m in self.modules():
-            if isinstance(m, (nn.Linear, nn.Conv1d)):
-                # Kaiming He для слоев с ReLU
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
+    def _init_weights(self, module: nn.Module) -> None:
+        if isinstance(module, (nn.Linear, nn.Conv1d)):
+            # Инициализация He для предотвращения затухания градиентов
+            nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+            if module.bias is not None:
+                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, state: Tensor, return_components: bool = False) -> Union[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         # Оборачиваем вычисления для QAT
