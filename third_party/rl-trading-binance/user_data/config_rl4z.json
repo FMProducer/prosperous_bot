@@ -344,6 +344,9 @@
     
     "pairlists": [
         {
+            "method": "StaticPairList"
+        },
+        {
             "method": "VolumePairList",
             "number_assets": 256,
             "sort_key": "quoteVolume",
