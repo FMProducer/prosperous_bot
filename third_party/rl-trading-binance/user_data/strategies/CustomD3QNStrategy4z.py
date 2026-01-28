@@ -129,15 +129,15 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # --- ПУТИ К 4 МОДЕЛЯМ ---
         # Long Model 1: PPO trending
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260127_time_203752"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_190141"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260127_time_015823"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260128_time_005024"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -198,12 +198,12 @@ class CustomD3QNStrategy4z(IStrategy):
             self.cfg_short_2 = None
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
-        # Определяем из конфига модели
-        self.short_1_is_mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False) if self.cfg_short_1 else False
-        self.short_2_is_mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False) if self.cfg_short_2 else False
+        # FORCE FALSE: Action 2 (Sell) must trigger Short.
+        self.short_1_is_mirror = False
+        self.short_2_is_mirror = False
         
-        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
-        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (Forced False)")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (Forced False)")
         
         # --- НАСТРОЙКИ ГОЛОСОВАНИЯ (из конфига) ---
         self.vote_threshold_long = config.get('rl_long_threshold', 2)
@@ -426,6 +426,9 @@ class CustomD3QNStrategy4z(IStrategy):
         
         if should_invert:
             windows = windows * -1.0
+
+        # Transpose to (Batch, 90, 5) as the model seems to be trained on Time-major data
+        windows = windows.transpose(0, 2, 1)
 
         # 5. Flatten & Extra Features
         batch_size = windows.shape[0]
