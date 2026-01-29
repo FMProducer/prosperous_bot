@@ -56,12 +56,18 @@ def test_static_normalization():
     obs = env._get_observation()
 
     # If using MLP mode, obs is a flat vector where the first num_features elements are the normalized data
-    expected_norm = (raw_seq[0] - np.array(norm_stats['TEST']['mean'])) / np.array(norm_stats['TEST']['std'])
+    # Volume (index 4) should be log1p-transformed
+    raw_proc = raw_seq[0].copy()
+    raw_proc[4] = np.log1p(raw_proc[4])
+
+    expected_norm = (raw_proc - np.array(norm_stats['TEST']['mean'])) / (np.array(norm_stats['TEST']['std']) + 1e-6)
+    expected_norm = np.clip(expected_norm, -5.0, 5.0)
 
     # raw_seq[0] = [100, 105, 95, 102, 1000]
     # mean = [102, 107, 99, 104, 1100]
     # std = [2, 2, 2, 2, 100]
-    # expected = [-1, -1, -2, -1, -1]
+    # expected price = [-1, -1, -2, -1]
+    # expected volume = (log1p(1000) - 1100) / 100 = (6.908 - 1100) / 100 = -10.93 -> clipped to -5.0
 
     np.testing.assert_allclose(obs[:5], expected_norm, atol=1e-5)
     print("Static normalization test passed!")
