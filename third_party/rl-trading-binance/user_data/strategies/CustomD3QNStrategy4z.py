@@ -321,10 +321,13 @@ class CustomD3QNStrategy4z(IStrategy):
             pair_stats = {}
             for col in cols_to_norm:
                 if col in df_calc.columns:
+                    data = df_calc[col].values
+                    if col == 'volume':
+                        data = np.log1p(data)
                     # Data Health Check: if std is too small, force it to 1.0 to avoid extreme scaling
-                    col_std = float(df_calc[col].std())
+                    col_std = float(np.std(data))
                     pair_stats[col] = {
-                        'mean': float(df_calc[col].mean()),
+                        'mean': float(np.mean(data)),
                         'std': col_std if col_std >= 1e-6 else 1.0
                     }
             new_stats[pair] = pair_stats
@@ -431,9 +434,12 @@ class CustomD3QNStrategy4z(IStrategy):
 
         for col, s in stats.items():
             if col in df_norm.columns:
+                val = df_norm[col].values
+                if col == 'volume':
+                    val = np.log1p(val)
                 # Z-score: (x - mean) / std
-                # Добавляем epsilon 1e-8 для защиты от деления на 0
-                df_norm[f'{col}_z'] = (df_norm[col] - s['mean']) / (s['std'] + 1e-8)
+                # Добавляем epsilon 1e-6 для защиты от деления на 0
+                df_norm[f'{col}_z'] = (val - s['mean']) / (s['std'] + 1e-6)
 
         # Заполняем NaN нулями
         z_cols = [f'{col}_z' for col in stats.keys()]

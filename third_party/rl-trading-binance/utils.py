@@ -577,10 +577,13 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
 
         asset_stats = norm_stats.get(asset_name)
         if not asset_stats:
+            logger.warning(f"Normalization stats missing for asset: {asset_name} in {split_name}. Skipping.")
             continue
 
-        means = np.array(asset_stats['mean'])
-        stds = np.array(asset_stats['std'])
+        means = np.array(asset_stats['mean'], dtype=np.float32)
+        stds = np.array(asset_stats['std'], dtype=np.float32)
+        means = np.nan_to_num(means)
+        stds = np.nan_to_num(stds, nan=1.0)
 
         seq_float = seq.astype(np.float32).copy()
         if seq_float.shape[1] != len(means):
@@ -590,7 +593,7 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
         if seq_float.shape[1] > 4:
             seq_float[:, 4] = np.log1p(seq_float[:, 4])
 
-        seq_norm = (seq_float - means) / (stds + 1e-8)
+        seq_norm = (seq_float - means) / (stds + 1e-6)
         seq_norm = np.clip(seq_norm, -5.0, 5.0)
         seq_norm = seq_norm.T
         seq_norm = np.expand_dims(seq_norm, -1)
