@@ -180,7 +180,7 @@ def calculate_normalization_stats(
                 changes = arr[1:] / (arr[:-1] + 1e-9)
                 vals = np.log(np.maximum(changes, 1e-9))
             elif ch in volumechannels:
-                vals = np.log1p(arr)
+                vals = np.log(arr + 1.0)
             elif ch in otherchannels:
                 vals = arr
             else:
@@ -231,7 +231,7 @@ def apply_normalization(
             padded_normed = np.concatenate((np.array([0.0], dtype=np.float32), normed_logs.astype(np.float32)))
             normed = padded_normed[-input_history_len:]
         elif ch in volumechannels:
-            logv = np.log1p(arr)
+            logv = np.log(arr + 1.0)
             normed = (logv - mean) / std
             normed = normed[-input_history_len:]
         elif ch in otherchannels:
@@ -577,24 +577,16 @@ def load_and_prep_data_from_source(sequences, keys, split_name, norm_stats):
 
         asset_stats = norm_stats.get(asset_name)
         if not asset_stats:
-            logger.warning(f"Normalization stats missing for asset: {asset_name} in {split_name}. Skipping.")
             continue
 
-        means = np.array(asset_stats['mean'], dtype=np.float32)
-        stds = np.array(asset_stats['std'], dtype=np.float32)
-        means = np.nan_to_num(means)
-        stds = np.nan_to_num(stds, nan=1.0)
+        means = np.array(asset_stats['mean'])
+        stds = np.array(asset_stats['std'])
 
-        seq_float = seq.astype(np.float32).copy()
+        seq_float = seq.astype(np.float32)
         if seq_float.shape[1] != len(means):
             continue
 
-        # Индекс 4 — это Volume. Применяем log1p перед нормализацией.
-        if seq_float.shape[1] > 4:
-            seq_float[:, 4] = np.log1p(seq_float[:, 4])
-
-        seq_norm = (seq_float - means) / (stds + 1e-6)
-        seq_norm = np.clip(seq_norm, -5.0, 5.0)
+        seq_norm = (seq_float - means) / stds
         seq_norm = seq_norm.T
         seq_norm = np.expand_dims(seq_norm, -1)
         prepped_sequences.append(seq_norm)

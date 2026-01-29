@@ -107,8 +107,6 @@ class TradingEnvironment(gym.Env):
         filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
         mirror_mode: bool = True,  # Добавлено для управления инверсией
-        norm_stats: Optional[Dict] = None,
-        use_rolling_norm: bool = True, # Добавлено для управления скользящей нормализацией
         **kwargs,
     ) -> None:
         if not sequences:
@@ -258,21 +256,6 @@ class TradingEnvironment(gym.Env):
         self.allow_opposite_trades = allow_opposite_trades
         self.max_trades_per_episode = max_trades_per_episode
         self.allowed_directions = allowed_directions
-        self.norm_stats = norm_stats
-        self.use_rolling_norm = use_rolling_norm
-
-        # Pre-convert norm_stats to numpy arrays for performance
-        self.norm_stats_np = {}
-        if self.norm_stats:
-            for asset, stats in self.norm_stats.items():
-                m = stats.get('mean', stats.get('means'))
-                s = stats.get('std', stats.get('stds'))
-                if m is not None and s is not None:
-                    self.norm_stats_np[asset] = {
-                        'mean': np.array(m, dtype=np.float32),
-                        'std': np.array(s, dtype=np.float32)
-                    }
-        self._warned_missing_assets = set()
 
         # Определяем индекс действия "закрыть"
         self.close_action = close_action_index
@@ -829,7 +812,7 @@ class TradingEnvironment(gym.Env):
             # Бонус за удержание прибыльной позиции (УЛУЧШЕНО)
             if unrealized_pnl > 0 and holding_duration > 5:
                 # Проверить, что прибыль не откатывается
-                profit_retracement = (self._max_unrealized_pnl - unrealized_pnl) / max(self._max_unrealized_pnl, 1e-6)
+                profit_retracement = (self._max_unrealized_pnl - unrealized_pnl) / max(self._max_unrealized_pnl, 1e-8)
                 
                 # Давать бонус только если откат < 20%
                 if profit_retracement < 0.20:
@@ -883,8 +866,8 @@ class TradingEnvironment(gym.Env):
         return base_reward + shaped_reward - inaction_penalty
 
     def _get_observation(self) -> np.ndarray:
-        # The window from current_seq is already pre-normalized if norm_stats is None and use_rolling_norm is False.
-        # Otherwise, load_and_prep_data returns raw data.
+        # The window from current_seq is already pre-normalized.
+        # load_and_prep_data has already performed Z-normalization.
 
         # --- FIX: Prevent out-of-bounds access ---
         # On the final step, self.step_idx may be equal to self.agent_session_len,
@@ -902,50 +885,22 @@ class TradingEnvironment(gym.Env):
             padding = np.zeros((pad_len, self.num_features), dtype=np.float32)
             raw_window = np.concatenate((padding, raw_window), axis=0)
 
-        # --- NORMALIZATION ---
+        # --- ROLLING Z-SCORE NORMALIZATION ---
         normalized = raw_window.astype(np.float32).copy()
-
-        if self.norm_stats_np and self.current_asset_name in self.norm_stats_np:
-            # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
-            if normalized.shape[1] > 4:
-                normalized[:, 4] = np.log1p(normalized[:, 4])
-
-            stats = self.norm_stats_np[self.current_asset_name]
-            means = stats['mean']
-            stds = stats['std']
-            # Обработка потенциальных NaN в статистиках
-            means = np.nan_to_num(means)
-            stds = np.nan_to_num(stds, nan=1.0)
-            normalized = (normalized - means) / (stds + 1e-6)
-            # Обработка NaN в результате нормализации
-            normalized = np.nan_to_num(normalized)
-        elif self.use_rolling_norm:
-            if self.norm_stats_np and self.current_asset_name not in self._warned_missing_assets:
-                logger.warning(f"Normalization stats missing for asset: {self.current_asset_name}. Falling back to rolling norm.")
-                self._warned_missing_assets.add(self.current_asset_name)
-
-            # Канал 4 (Volume) требует сжатия логарифмом перед нормализацией
-            if normalized.shape[1] > 4:
-                normalized[:, 4] = np.log1p(normalized[:, 4])
-
-            # Fallback to ROLLING Z-SCORE NORMALIZATION
-            # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
-            if self.price_indices:
-                p_data = raw_window[:, self.price_indices]
-                p_mean = np.mean(p_data)
-                p_std = np.std(p_data) + 1e-6
-                normalized[:, self.price_indices] = (p_data - p_mean) / p_std
-
-            # 2. Normalize Volume (Individually per channel)
-            if self.volume_indices:
-                # Используем уже трансформированные данные из normalized (там уже применен log1p для Volume)
-                v_data = normalized[:, self.volume_indices]
-                v_mean = np.mean(v_data, axis=0)
-                v_std = np.std(v_data, axis=0) + 1e-6
-                normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
-
-        # Clipping: защита от "выжигания" весов нейросети
-        normalized = np.clip(normalized, -5.0, 5.0)
+        
+        # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
+        if self.price_indices:
+            p_data = raw_window[:, self.price_indices]
+            p_mean = np.mean(p_data)
+            p_std = np.std(p_data) + 1e-8
+            normalized[:, self.price_indices] = (p_data - p_mean) / p_std
+            
+        # 2. Normalize Volume (Individually per channel)
+        if self.volume_indices:
+            v_data = raw_window[:, self.volume_indices]
+            v_mean = np.mean(v_data, axis=0)
+            v_std = np.std(v_data, axis=0) + 1e-8
+            normalized[:, self.volume_indices] = (v_data - v_mean) / v_std
 
         unrealized = 0.0
         if self.position != 0:

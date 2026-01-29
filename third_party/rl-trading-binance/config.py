@@ -32,7 +32,7 @@ class PathConfig(BaseModel):
     test_data_path: str = "data/test_data.npz"
     backtest_data_path: str = "data/backtest_data.npz"
     model_path: Optional[str] = None # Явный путь к файлу модели (.pth)
-    norm_stats_path: str = "data/norm_stats.json"
+    norm_stats_path: Optional[str] = None # Верните для совместимости со старыми .py конфигами
     # Сделаем model_dir и plot_dir изменяемыми полями
     model_dir: Optional[str] = None
     plot_dir: Optional[str] = None
@@ -192,7 +192,6 @@ class RLConfig(BaseModel):
     max_gradient_norm: float = 1.0
     n_step: int = 5
     gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
-    tau: float = 0.001  # Soft update for target network
 
 
 class PERConfig(BaseModel):

@@ -75,9 +75,6 @@ class D3QN_PER_Agent:
         mc_use_for_target=False, mc_n_target_samples=1, mc_target_agg="mean_max",
         mc_uncertainty_guided_explore=False, mc_uncertainty_beta=0.0
     ) -> None:
-        # Persist state shape for consistency checks with the model
-        self.state_shape = state_shape
-
         # Приводим к torch.device на случай, если из конфига придёт строка "cuda"/"cpu"
         self.device = torch.device(device)
         self.action_dim = action_dim
@@ -125,8 +122,7 @@ class D3QN_PER_Agent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        # Снижаем Learning Rate на 50% для выхода из локального минимума
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate * 0.5)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
         self.replay_buffer = PrioritizedReplayBuffer(
             capacity=buffer_size,
@@ -192,59 +188,6 @@ class D3QN_PER_Agent:
 
 
         logger.info("D3QN_PER_Agent initialized.")
-
-    # ------------------------------------------------------------------
-    # Internal helpers for state flattening
-    # ------------------------------------------------------------------
-    def _flatten_single_state(self, state: np.ndarray) -> np.ndarray:
-        """
-        Ensure that a single state is a flat 1D float32 vector.
-        This matches the expectation of DuelingQNetwork.forward(),
-        which takes a 2D tensor [batch, history_flat_size + additional_feats].
-        """
-        arr = np.asarray(state, dtype=np.float32)
-        if arr.ndim == 1:
-            return arr
-        return arr.reshape(-1)
-
-    def _flatten_batch_states(self, states: np.ndarray) -> np.ndarray:
-        """
-        Ensure that a batch of states is a 2D float32 array [N, F].
-        """
-        arr = np.asarray(states, dtype=np.float32)
-        if arr.ndim == 2:
-            return arr
-        # First dimension is assumed to be batch, flatten the rest
-        new_shape = (arr.shape[0], int(np.prod(arr.shape[1:], dtype=np.int64)))
-        return arr.reshape(new_shape)
-
-    def _check_flat_state_size(self, flat_state: np.ndarray) -> None:
-        """
-        Validate that flat_state length matches model's expected input size.
-        """
-        channels, history_len, _ = self.policy_net.input_shape
-        history_flat_size = channels * history_len
-        additional_feats = getattr(self.policy_net, "additional_feats", 0)
-        expected_size = history_flat_size + additional_feats
-        actual_size = int(flat_state.size)
-        if actual_size != expected_size:
-            logger.error(
-                "State size mismatch for policy_net input: expected %d "
-                "(history: %d, additional: %d), got %d",
-                expected_size, history_flat_size, additional_feats, actual_size,
-            )
-            raise AssertionError(
-                f"Flat state size {actual_size} does not match expected {expected_size}"
-            )
-
-        # Optional: lightweight debug statistics about the input range
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "Flat state stats: min=%.6f max=%.6f std=%.6f",
-                float(flat_state.min(initial=0.0)),
-                float(flat_state.max(initial=0.0)),
-                float(flat_state.std() if flat_state.size > 1 else 0.0),
-            )
 
     def export_to_onnx(self, file_path: str):
         """Exports the policy network to the ONNX format.
@@ -359,15 +302,10 @@ class D3QN_PER_Agent:
         # Базовая ε-жадная логика (epsilon берется из self.eps_* расписания внутри агента)
         # Если mc_enable=False или training=False — используем обычный путь как прежде.
         if not (training and self.mc_enable and self.mc_n_action_samples > 1):
-            # Always flatten and validate the state before passing to the base path
-            flat_state = self._flatten_single_state(state)
-            self._check_flat_state_size(flat_state)
-            return self._select_action_base(flat_state, training, return_qvals, use_cache, cache_key)
+            return self._select_action_base(state, training, return_qvals, use_cache, cache_key)
 
         # MC-dropout: ансамбль из N проходов онлайн-сети.
-        flat_state = self._flatten_single_state(state)
-        self._check_flat_state_size(flat_state)
-        state_tensor = torch.from_numpy(flat_state).float().unsqueeze(0).to(self.device)
+        state_tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         q_samples = self._q_forward_samples(self.policy_net, state_tensor, self.mc_n_action_samples)  # [N,1,A]
         q_mean = q_samples.mean(dim=0).squeeze(0)    # [A]
         q_std  = q_samples.std(dim=0, unbiased=False).squeeze(0)  # [A]
@@ -427,9 +365,7 @@ class D3QN_PER_Agent:
 
         # --- ONNX INFERENCE PATH ---
         if self.ort_session is not None and not training:
-            flat_state = self._flatten_single_state(state)
-            self._check_flat_state_size(flat_state)
-            ort_inputs = {self.ort_session.get_inputs()[0].name: flat_state[np.newaxis, ...]}
+            ort_inputs = {self.ort_session.get_inputs()[0].name: state.astype(np.float32)[np.newaxis, ...]}
             qvals = self.ort_session.run(None, ort_inputs)[0][0] # [1, A] -> [A]
             return qvals if return_qvals else int(np.argmax(qvals))
         # ---------------------------
@@ -439,18 +375,14 @@ class D3QN_PER_Agent:
                 qvals = self.qval_cache[cache_key]
             else:
                 with torch.no_grad():
-                    flat_state = self._flatten_single_state(state)
-                    self._check_flat_state_size(flat_state)
-                    tensor = torch.from_numpy(flat_state).float().unsqueeze(0).to(self.device)
+                    tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
                     qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
                 self.qval_cache[cache_key] = qvals
             qvals = qvals.squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
         with torch.no_grad():
-            flat_state = self._flatten_single_state(state)
-            self._check_flat_state_size(flat_state)
-            tensor = torch.from_numpy(flat_state).float().unsqueeze(0).to(self.device)
+            tensor = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             qvals = self.policy_net(tensor).cpu().numpy().squeeze(0)
             return qvals if return_qvals else int(np.argmax(qvals))
 
@@ -470,20 +402,13 @@ class D3QN_PER_Agent:
         Returns:
             list[int]: A list of selected actions for each state in the batch.
         """
-        # Ensure states have shape [N, F] matching the model's expected input size
-        flat_states = self._flatten_batch_states(states)
-        if flat_states.shape[0] == 0:
-            return []
-        # Validate size on the first sample (all others share the same feature dimension)
-        self._check_flat_state_size(flat_states[0])
-
         self.policy_net.eval()  # детерминированный инференс вне MC-дропаут
-        n = int(flat_states.shape[0])
+        n = int(states.shape[0])
         with torch.no_grad(), torch.autocast(
             device_type=("cuda" if self.device.type == "cuda" else "cpu"),
             enabled=getattr(self, "use_amp", False)
         ):
-            x = torch.as_tensor(flat_states, dtype=torch.float32, device=self.device)
+            x = torch.as_tensor(states, dtype=torch.float32, device=self.device)
             q = self.policy_net(x)              # [N, action_dim]
             greedy = q.argmax(dim=1).detach().to("cpu").numpy()  # [N]
         # epsilon-greedy по батчу
@@ -722,8 +647,7 @@ class D3QN_PER_Agent:
 
                 self.scaler.scale(weighted_loss).backward()
                 self.scaler.unscale_(self.optimizer)
-                # Предотвращаем резкие скачки весов, сохраняя геометрию пространства весов
-                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
         else:
@@ -768,8 +692,7 @@ class D3QN_PER_Agent:
                 weighted_loss = weighted_td_loss
             
             weighted_loss.backward()
-            # Предотвращаем резкие скачки весов, сохраняя геометрию пространства весов
-            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_gradient_norm)
             self.optimizer.step()
 
         td_errors = (target_q_values - current_q_values).abs().detach().cpu().numpy()

@@ -12,15 +12,12 @@ import threading
 from typing import Dict, Optional, List, Any
 
 
-import json
-import os
-
 try:
     from freqtrade.persistence import Trade  # type: ignore
 except ImportError:
     class Trade: pass
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
 strategy_file = Path(__file__).resolve()
@@ -60,8 +57,8 @@ class CustomD3QNStrategy4z(IStrategy):
     can_short: bool = True  # Это критично для Futures режима
     startup_candle_count: int = 200
     
-    minimal_roi = {"0": 1000}  # Отключаем ROI (тейкпрофит), ставим 100000%
-    stoploss = -0.15  # Аварийный стоплосс на случай, если TSL не сработает
+    minimal_roi = {"0": 100}
+    stoploss = -0.99  # Заглушка, работает custom_stoploss
     trailing_stop = False
     use_custom_stoploss = True
     
@@ -73,9 +70,9 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.07519862504113693, space='stoploss', load=True)
-    d_min = DecimalParameter(0.001, 0.05, default=0.0008225518697224519, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.001, 0.02, default=0.0015218098435784326, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
+    d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.001, 0.02, default=0.002, space='stoploss', load=True)
     
     plot_config = {
         'main_plot': {},
@@ -115,12 +112,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
-        # --- NORMALIZATION STATS ---
-        self.norm_stats = {}
-        self.norm_stats_lock = threading.Lock()
-        self.calc_lock = threading.Lock()
-        self.last_stats_update_day = -1
-
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
         else:
@@ -142,11 +133,11 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260129_time_002257"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_190141"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_003819"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_234304"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -292,64 +283,6 @@ class CustomD3QNStrategy4z(IStrategy):
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
-
-    def bot_start(self, **kwargs) -> None:
-        """Вызывается один раз при запуске бота."""
-        self.update_norm_stats()
-
-    def update_norm_stats(self) -> None:
-        """Расчет и сохранение Z-Score коэффициентов для всех пар."""
-        logger.info("🔄 Updating Rolling Z-Score normalization stats...")
-        new_stats = {}
-
-        # Колонки для нормализации (OHLCV + ваши индикаторы)
-        cols_to_norm = ['open', 'high', 'low', 'close', 'volume']
-
-        for pair in self.dp.current_whitelist():
-            # Берем достаточно данных для стабильной статистики (например, 2000 свечей)
-            df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
-            if df.empty:
-                continue
-
-            # Используем окно 90 свечей для расчета статистики (Rolling Z-Score approximation)
-            lookback = 90
-            if len(df) >= lookback:
-                df_calc = df.iloc[-lookback:]
-            else:
-                df_calc = df
-
-            pair_stats = {}
-            for col in cols_to_norm:
-                if col in df_calc.columns:
-                    data = df_calc[col].values
-                    if col == 'volume':
-                        data = np.log1p(data)
-                    # Data Health Check: if std is too small, force it to 1.0 to avoid extreme scaling
-                    col_std = float(np.std(data))
-                    pair_stats[col] = {
-                        'mean': float(np.mean(data)),
-                        'std': col_std if col_std >= 1e-6 else 1.0
-                    }
-            new_stats[pair] = pair_stats
-
-        if not new_stats:
-            logger.info("⚠️ No normalization stats calculated (Data Provider returned empty dfs). This is normal during startup. Stats will be updated lazily.")
-            return
-
-        with self.norm_stats_lock:
-            self.norm_stats = new_stats
-            self.last_stats_update_day = datetime.now(timezone.utc).day
-
-        # Сохранение в файл
-        # Сохраняем в общую папку output/norm_stats.json, так как статистика общая для всех моделей
-        stats_path = Path(self.project_root) / "output" / "norm_stats.json"
-        stats_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(stats_path, 'w') as f:
-                json.dump(new_stats, f, indent=4)
-            logger.info(f"✅ Norm stats saved to {stats_path}")
-        except Exception as e:
-            logger.error(f"❌ Failed to save norm stats to {stats_path}: {e}")
     
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -416,62 +349,24 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
     
-    def _apply_norm(self, df: DataFrame, pair: str) -> DataFrame:
-        """Применение статической нормализации."""
-        with self.norm_stats_lock:
-            stats = self.norm_stats.get(pair)
-        
-        if not stats:
-            return df
-            
-        df_norm = df.copy()
-
-        # Occasionally log raw stats for verification (approx once per 1000 calls)
-        if np.random.random() < 0.001:
-            for col in ['close', 'volume']:
-                if col in df.columns:
-                    logger.info(f"📊 [Data Health Check] {pair} {col} raw: mean={df[col].mean():.6f}, std={df[col].std():.6f}")
-
-        for col, s in stats.items():
-            if col in df_norm.columns:
-                val = df_norm[col].values
-                if col == 'volume':
-                    val = np.log1p(val)
-                # Z-score: (x - mean) / std
-                # Добавляем epsilon 1e-6 для защиты от деления на 0
-                df_norm[f'{col}_z'] = (val - s['mean']) / (s['std'] + 1e-6)
-
-        # Заполняем NaN нулями
-        z_cols = [f'{col}_z' for col in stats.keys()]
-        for col in z_cols:
-            if col in df_norm.columns:
-                df_norm[col] = df_norm[col].fillna(0.0)
-
-        return df_norm
-
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # 1. Проверка планировщика (10:00 MSK = 07:00 UTC)
-        now = datetime.now(timezone.utc)
-        if now.hour == 7 and self.last_stats_update_day != now.day:
-            if self.calc_lock.acquire(blocking=False):
-                try:
-                    self.update_norm_stats()
-                finally:
-                    self.calc_lock.release()
-
-        # 2. Нормализация (используем закэшированные статы)
-        dataframe = self._apply_norm(dataframe, metadata['pair'])
+        # Окно нормализации из обучения
+        window = 90
+        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
         
-        # Fallback: Если статов нет (пустой файл при старте), пробуем обновить их сейчас, когда данные точно есть
-        if metadata['pair'] not in self.norm_stats and len(dataframe) > 0:
-             with self.calc_lock:
-                 if metadata['pair'] not in self.norm_stats:
-                     logger.info(f"⚠️ Norm stats missing for {metadata['pair']}, triggering lazy update...")
-                     self.update_norm_stats()
-             
-             # Повторно применяем нормализацию после обновления
-             dataframe = self._apply_norm(dataframe, metadata['pair'])
-
+        for col in ohlcv_cols:
+            rolling = dataframe[col].rolling(window=window, min_periods=window)
+            mean = rolling.mean()
+            std = rolling.std(ddof=0)
+            
+            # Z-score: (x - mean) / std
+            # Добавляем epsilon 1e-8 для защиты от деления на 0 (как в TradingEnvironment)
+            dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-8)
+            
+        # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
+        z_cols = [f'{col}_z' for col in ohlcv_cols]
+        dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
+        
         return dataframe
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
@@ -798,11 +693,6 @@ class CustomD3QNStrategy4z(IStrategy):
             if name not in q_values:
                 return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
             q = q_values[name]
-            
-            # --- ZOMBIE PROTECTION: Если выходы модели не меняются (дисперсия ~0) ---
-            if batch_size > 5 and np.mean(np.std(q, axis=0)) < 1e-7:
-                return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
-
             actions = np.argmax(q, axis=1)
             # Advantage = Q(Selected) - Q(Hold)
             advantage = q[np.arange(len(q)), actions] - q[:, 0]
