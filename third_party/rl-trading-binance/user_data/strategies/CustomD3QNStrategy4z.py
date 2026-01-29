@@ -146,7 +146,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260127_time_015823"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_003819"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
