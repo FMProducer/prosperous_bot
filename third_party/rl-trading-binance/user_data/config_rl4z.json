@@ -67,6 +67,17 @@
         "use_order_book": true,
         "order_book_top": 1
     },
+
+    "rl_ensemble": {
+        "enable_voting_v2": true,
+        "epsilon_threshold": 0.15,
+        "q_normalization": {
+            "long_1": {"q_min": 0.0001, "q_max": 0.85},
+            "long_2": {"q_min": 0.0002, "q_max": 0.80},
+            "short_1": {"q_min": 0.0001, "q_max": 0.82},
+            "short_2": {"q_min": 0.0003, "q_max": 0.78}
+        }
+    },
     
     "exchange": {
         "name": "binance",
