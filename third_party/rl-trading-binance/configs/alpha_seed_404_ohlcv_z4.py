@@ -116,13 +116,14 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 0.0003  # Снижаем скорость обучения для большей стабильности
+cfg.rl.lr = 0.0001  # Снижаем с 2.5e-4 для более гладкой сходимости
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
 cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
 cfg.rl.batch_size = 64  # Увеличиваем батч для более стабильного градиента
 cfg.rl.train_start = 15000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
 cfg.rl.max_gradient_norm = 1.0  # Clip grads
+cfg.rl.tau = 0.001           # Soft update для Target-сети (важно для D3QN)
 
 # DQN-specific (PER/epsilon)
 cfg.per.buffer_size = 1000000
@@ -194,7 +195,7 @@ cfg.market.max_drawdown_threshold = -0.10   # Штраф за превышени
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 cfg.market.continuous_pain_penalty_ratio = 0.0   # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.inaction_penalty_ratio = 0.001   # Штраф за бездействие (когда нет открытых позиций)
+cfg.market.inaction_penalty_ratio = 0.0002   # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.time_sl_penalty_ratio = 0.01   # Штраф за Time SL
 cfg.market.low_balance_penalty = 1.0   # Штраф за попытку торговли с низким балансом
 cfg.market.holding_penalty_multiplier = 0.0   # Множитель для прогрессивного штрафа за удержание убыточной позиции
@@ -202,7 +203,7 @@ cfg.market.greed_penalty_multiplier = 0.0   # "Штраф за жадность"
 cfg.market.premature_profit_exit_penalty = 0.0   # Штраф за ранний выход из ПРИБЫЛЬНОЙ позиции (< profit_exit_threshold шагов)
 cfg.market.holding_loss_penalty = 0.0   # Штраф за долгое удержание УБЫТОЧНОЙ позиции (> loss_exit_threshold шагов)
 cfg.market.premature_exit_penalty = 0.0  # Легаси параметр
-cfg.market.profit_holding_bonus = 0.0    # Легаси параметр, заменен на асимметричную логику
+cfg.market.profit_holding_bonus = 0.0005    # Стимул удерживать профитную позицию
 # --- Thresholds for Shaped Rewards ---
 cfg.market.risk_reward_ratio_threshold = 0.0   # Порог для соотношения риск/прибыль (3:1)
 cfg.market.profit_exit_threshold = 0   # Порог времени удержания для прибыльных позиций (минимум для выхода без штрафа) bars
