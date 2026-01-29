@@ -192,6 +192,7 @@ class RLConfig(BaseModel):
     max_gradient_norm: float = 1.0
     n_step: int = 5
     gamma_n_step_buffer: float = 0.96  # Synchronized with gamma
+    tau: float = 0.001  # Soft update for target network
 
 
 class PERConfig(BaseModel):
