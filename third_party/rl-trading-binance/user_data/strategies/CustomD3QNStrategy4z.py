@@ -216,7 +216,14 @@ class CustomD3QNStrategy4z(IStrategy):
         self.min_q_threshold_long = config.get('rl_min_q_threshold_long', 0.0005)
         self.min_q_threshold_short = config.get('rl_min_q_threshold_short', 0.0015)
         
+        # --- НАСТРОЙКИ АНСАМБЛЯ V2 ---
+        self.ensemble_cfg = config.get('rl_ensemble', {})
+        self.enable_voting_v2 = self.ensemble_cfg.get('enable_voting_v2', False)
+        self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
+        self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
+
         logger.info(f"🗳️ Voting Rules: Long>={self.vote_threshold_long}, Short>={self.vote_threshold_short}, Veto={self.enable_veto}, Q-Thresh(L/S)={self.min_q_threshold_long}/{self.min_q_threshold_short}")
+        logger.info(f"🎭 Ensemble V2: Enabled={self.enable_voting_v2}, Epsilon={self.epsilon_threshold}")
 
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
@@ -480,6 +487,99 @@ class CustomD3QNStrategy4z(IStrategy):
             results[name] = future.result()
         
         return results
+
+    def _normalize_q_value(self, q_value: float, model_name: str) -> float:
+        """
+        Нормализует Q-value модели в диапазон [0, 1]
+        Использует конфиг rl_ensemble.q_normalization[model_name]
+        """
+        norm_cfg = self.q_normalization
+
+        if model_name not in norm_cfg:
+            logger.warning(f"⚠️ No normalization config for {model_name}, using raw Q limited to [0,1]")
+            return np.clip(q_value, 0.0, 1.0)
+
+        q_min = norm_cfg[model_name]['q_min']
+        q_max = norm_cfg[model_name]['q_max']
+
+        if q_max == q_min:
+            logger.error(f"❌ Q normalization error: q_min == q_max for {model_name}")
+            return 0.5
+
+        q_norm = (q_value - q_min) / (q_max - q_min)
+        # Нормируешь → ограничиваешь в [0, 1]
+        return np.clip(q_norm, 0.0, 1.0)
+
+    def _compute_ensemble_decision_v2(
+        self,
+        q_values: Dict[str, np.ndarray],
+        idx: int,
+        has_long: bool,
+        has_short: bool
+    ) -> Dict[str, Any]:
+        """
+        Новый алгоритм голосования: Нормализация → Сумма → Дельта → Фильтрация по ε
+        """
+
+        s_long = 0.0
+        s_short = 0.0
+
+        # LONG модели (действие 1 = "open long")
+        if "long_1" in q_values and self.enable_long_1:
+            q_raw = q_values["long_1"][idx, 1]
+            if q_raw > 0:
+                q_norm = self._normalize_q_value(q_raw, "long_1")
+                s_long += q_norm
+
+        if "long_2" in q_values and self.enable_long_2:
+            q_raw = q_values["long_2"][idx, 1]
+            if q_raw > 0:
+                q_norm = self._normalize_q_value(q_raw, "long_2")
+                s_long += q_norm
+
+        # SHORT модели (действие зависит от mirror_mode)
+        if "short_1" in q_values and self.enable_short_1:
+            # Если mirror_mode == True, то шорт соответствует действию 1
+            # Если mirror_mode == False, то шорт соответствует действию 2
+            action_idx = 1 if self.short_1_is_mirror else 2
+            q_raw = q_values["short_1"][idx, action_idx]
+            if q_raw > 0:
+                q_norm = self._normalize_q_value(q_raw, "short_1")
+                s_short += q_norm
+
+        if "short_2" in q_values and self.enable_short_2:
+            action_idx = 1 if self.short_2_is_mirror else 2
+            q_raw = q_values["short_2"][idx, action_idx]
+            if q_raw > 0:
+                q_norm = self._normalize_q_value(q_raw, "short_2")
+                s_short += q_norm
+
+        # Вычисляем дельту и принимаем решение
+        delta = abs(s_long - s_short)
+        epsilon = self.epsilon_threshold
+
+        result = {
+            'enter_long': 0,
+            'enter_short': 0,
+            'reason': f"S_L={s_long:.3f} S_S={s_short:.3f} Δ={delta:.3f} (ε={epsilon})"
+        }
+
+        if has_long or has_short:
+            result['reason'] += " | Position exists"
+            return result
+
+        if delta < epsilon:
+            result['reason'] += " | HOLD (noise)"
+            return result
+
+        if s_long > s_short:
+            result['enter_long'] = 1
+            result['reason'] += " | LONG Signal"
+        elif s_short > s_long and self.can_short:
+            result['enter_short'] = 1
+            result['reason'] += " | SHORT Signal"
+
+        return result
 
     def _apply_soft_voting(
         self, 
@@ -773,13 +873,20 @@ class CustomD3QNStrategy4z(IStrategy):
             long_actions = [l1, l2]
             short_actions = [s1, s2]
             
-            # Применяем soft voting правила
-            decision = self._apply_soft_voting(
-                long_actions, 
-                short_actions,
-                has_long=has_long,
-                has_short=has_short
-            )
+            # Используем v2 алгоритм если включен в конфиге
+            if self.enable_voting_v2:
+                # НОВЫЙ МЕТОД: Нормируешь → суммируешь → сравниваешь разницу → фильтруешь по ε
+                decision = self._compute_ensemble_decision_v2(
+                    q_values, i, has_long, has_short
+                )
+            else:
+                # СТАРЫЙ МЕТОД (обратная совместимость)
+                decision = self._apply_soft_voting(
+                    long_actions,
+                    short_actions,
+                    has_long=has_long,
+                    has_short=has_short
+                )
             
             # Сбор статистики
             if any(long_actions) or any(short_actions):
