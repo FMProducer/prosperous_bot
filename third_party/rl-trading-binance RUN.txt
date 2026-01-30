@@ -27,13 +27,13 @@ python validate_ensemble_prod_q.py configs/alpha_seed_404_v13_gca.py --ensemble 
 freqtrade trade --config user_data/config_rl.json --strategy CustomD3QNStrategy --userdir user_data
 freqtrade trade --config user_data/config_rl4.json --strategy CustomD3QNStrategy4 --userdir user_data
 
-freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z --userdir user_data
+freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z --userdir user_data --logfile user_data/logs/freqtrade.log
 
 rm tradesv3.dryrun.sqlite
 
 freqtrade download-data --config ft_userdata/config_rl.json --timerange 20250601-20250731 --timeframe 1m
 
-python train_ohlcv_z.py configs/alpha_seed_404_ohlcv_z.py              этот
+python train_ohlcv.py configs/alpha_seed_404_ohlcv_z.py              этот
 
 python train.py configs/alpha_seed_404_v13_gca.py              этот
 python train.py --config configs/alpha_seed_404_v12.py           

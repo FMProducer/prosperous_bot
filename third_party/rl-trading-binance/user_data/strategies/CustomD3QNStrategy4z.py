@@ -1,5 +1,6 @@
 import sys
 import logging
+import logging.handlers
 import importlib.util
 from pathlib import Path
 import numpy as np
@@ -95,18 +96,17 @@ class CustomD3QNStrategy4z(IStrategy):
         # --- LOG ROTATION (DAILY) ---
         # Настраиваем ротацию логов раз в сутки (midnight), чтобы файл не рос бесконечно
         try:
-            from logging import handlers as log_handlers
             root_logger = logging.getLogger()
             handlers_to_swap = []
             
             for h in root_logger.handlers:
                 # Ищем стандартный FileHandler (не ротируемый)
-                if isinstance(h, logging.FileHandler) and not isinstance(h, log_handlers.TimedRotatingFileHandler):
+                if isinstance(h, logging.FileHandler) and not isinstance(h, logging.handlers.TimedRotatingFileHandler):
                     handlers_to_swap.append(h)
             
             for h in handlers_to_swap:
                 # Создаем новый хендлер с ротацией
-                new_handler = log_handlers.TimedRotatingFileHandler(
+                new_handler = logging.handlers.TimedRotatingFileHandler(
                     filename=h.baseFilename,
                     when='midnight',
                     interval=1,
