@@ -92,6 +92,38 @@ class CustomD3QNStrategy4z(IStrategy):
             return "Cancelling stoploss on exchange" not in msg and "Cancelling current stoploss on exchange" not in msg
         logging.getLogger('freqtrade.freqtradebot').addFilter(filter_stoploss_cancel)
         
+        # --- LOG ROTATION (DAILY) ---
+        # Настраиваем ротацию логов раз в сутки (midnight), чтобы файл не рос бесконечно
+        try:
+            from logging import handlers as log_handlers
+            root_logger = logging.getLogger()
+            handlers_to_swap = []
+            
+            for h in root_logger.handlers:
+                # Ищем стандартный FileHandler (не ротируемый)
+                if isinstance(h, logging.FileHandler) and not isinstance(h, log_handlers.TimedRotatingFileHandler):
+                    handlers_to_swap.append(h)
+            
+            for h in handlers_to_swap:
+                # Создаем новый хендлер с ротацией
+                new_handler = log_handlers.TimedRotatingFileHandler(
+                    filename=h.baseFilename,
+                    when='midnight',
+                    interval=1,
+                    backupCount=1,  # Хранить архивы за 1 день
+                    encoding='utf-8'
+                )
+                new_handler.setFormatter(h.formatter)
+                new_handler.setLevel(h.level)
+                
+                root_logger.removeHandler(h)
+                h.close()
+                root_logger.addHandler(new_handler)
+                logger.info(f"🔄 Log rotation enabled for {h.baseFilename} (Daily at midnight)")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Log rotation setup failed: {e}")
+
         # === CPU ОПТИМИЗАЦИИ ===
         # 1. Установить количество потоков для PyTorch
         num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
@@ -628,9 +660,11 @@ class CustomD3QNStrategy4z(IStrategy):
             
             if side == "long":
                 if current_longs >= MAX_LONGS:
+                    self.logger.info(f"🚫 Denied {pair} LONG: Max longs {current_longs}/{MAX_LONGS} reached")
                     return False
             elif side == "short":
                 if current_shorts >= MAX_SHORTS:
+                    self.logger.info(f"🚫 Denied {pair} SHORT: Max shorts {current_shorts}/{MAX_SHORTS} reached")
                     return False
         except Exception as e:
             self.logger.error(f"Error in confirm_trade_entry: {e}")

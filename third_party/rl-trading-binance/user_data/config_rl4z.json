@@ -67,12 +67,12 @@
     },
 
     "rl_ensemble": {
-        "epsilon_threshold": 0.1,
+        "epsilon_threshold": 0.2,
         "q_normalization": {
-            "long_1": {"q_min": 0.0001, "q_max": 0.0010},
-            "long_2": {"q_min": 0.0001, "q_max": 0.0010},
-            "short_1": {"q_min": 0.0001, "q_max": 0.0010},
-            "short_2": {"q_min": 0.0001, "q_max": 0.0010}
+            "long_1": {"q_min": 0.0, "q_max": 0.000909},
+            "long_2": {"q_min": 0.0, "q_max": 0.0006},
+            "short_1": {"q_min": 0.0, "q_max": 0.0006},
+            "short_2": {"q_min": 0.000050, "q_max": 0.000436}
         }
     },
     
