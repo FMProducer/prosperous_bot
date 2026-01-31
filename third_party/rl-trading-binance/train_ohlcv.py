@@ -1046,7 +1046,7 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
         json.dump(cfg.model_dump(), f, indent=2, default=str)
 
     norm_stats_path = getattr(cfg.paths, "norm_stats_path", "norm_stats.json")
-    if os.path.exists(norm_stats_path):
+    if norm_stats_path and os.path.exists(norm_stats_path):
         with open(norm_stats_path, 'r') as f:
             norm_stats = json.load(f)
     else:
