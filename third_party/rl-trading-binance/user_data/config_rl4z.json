@@ -60,8 +60,8 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
-        "epsilon_threshold": 0.7,
-        "q_update_interval": 900,
+        "epsilon_threshold": 0.8,
+        "q_update_interval": 3600,
         "q_normalization": {
             "long_1": {
                 "q_min": 0.0,

@@ -12,6 +12,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import Dict, Optional, List, Any
+from collections import deque
 
 
 try:
@@ -516,13 +517,10 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
         if name not in self.adv_history:
-            self.adv_history[name] = []
+            self.adv_history[name] = deque(maxlen=50000)
         # Берем последнее значение (текущая свеча)
         if len(adv_array) > 0:
             self.adv_history[name].append(float(adv_array[-1]))
-            # Ограничиваем буфер (например, 5000 свечей ~ 3.5 дня)
-            if len(self.adv_history[name]) > 5000:
-                self.adv_history[name].pop(0)
 
     def update_normalization_config(self):
         try:
