@@ -3,6 +3,7 @@ import logging
 import logging.handlers
 import importlib.util
 from pathlib import Path
+import json
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
@@ -151,6 +152,10 @@ class CustomD3QNStrategy4z(IStrategy):
         
         self.tsl_memory = {}
         
+        # История Advantage для автоподбора q_min/q_max
+        self.adv_history = {}
+        self.last_config_update = datetime.now()
+        
         # Статистика конфликтов
         self.conflict_stats = {
             'total_signals': 0,
@@ -169,7 +174,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_234304"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_203109"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
@@ -240,7 +245,9 @@ class CustomD3QNStrategy4z(IStrategy):
         # --- НАСТРОЙКИ АНСАМБЛЯ V2 ---
         self.ensemble_cfg = config.get('rl_ensemble', {})
         self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
+        self.enable_veto = config.get('rl_enable_veto', False)
         self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
+        self.config_update_interval = self.ensemble_cfg.get('q_update_interval', 14400)
 
         logger.info(f"🗳️ Ensemble Config: Epsilon={self.epsilon_threshold}")
 
@@ -507,6 +514,56 @@ class CustomD3QNStrategy4z(IStrategy):
         
         return results
 
+    def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
+        if name not in self.adv_history:
+            self.adv_history[name] = []
+        # Берем последнее значение (текущая свеча)
+        if len(adv_array) > 0:
+            self.adv_history[name].append(float(adv_array[-1]))
+            # Ограничиваем буфер (например, 5000 свечей ~ 3.5 дня)
+            if len(self.adv_history[name]) > 5000:
+                self.adv_history[name].pop(0)
+
+    def update_normalization_config(self):
+        try:
+            config_path = self.project_root / "user_data/config_rl4z.json"
+            if not config_path.exists():
+                return
+
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            updated = False
+            norm_cfg = data.get('rl_ensemble', {}).get('q_normalization', {})
+            
+            for name, history in self.adv_history.items():
+                if len(history) < 100: continue # Мало данных
+                
+                arr = np.array(history)
+                # Берем только положительные значения (сигналы)
+                pos_arr = arr[arr > 0]
+                if len(pos_arr) < 50: continue
+                
+                # Считаем перцентили: q_min (шум) и q_max (пик)
+                new_min = float(round(np.percentile(pos_arr, 15), 6))
+                new_max = float(round(np.percentile(pos_arr, 99), 6))
+                
+                if name not in norm_cfg: norm_cfg[name] = {}
+                norm_cfg[name]['q_min'] = new_min
+                norm_cfg[name]['q_max'] = new_max
+                updated = True
+                logger.info(f"⚖️ Auto-tuned {name}: q_min={new_min}, q_max={new_max}")
+            
+            if updated:
+                if 'rl_ensemble' not in data: data['rl_ensemble'] = {}
+                data['rl_ensemble']['q_normalization'] = norm_cfg
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4)
+                self.q_normalization = norm_cfg
+                logger.info(f"💾 Config saved to {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to auto-tune config: {e}")
+
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
         Нормализует Q-value модели в диапазон [0, 1]
@@ -528,6 +585,17 @@ class CustomD3QNStrategy4z(IStrategy):
         q_norm = (q_value - q_min) / (q_max - q_min)
         # Нормируешь → ограничиваешь в [0, 1]
         return np.clip(q_norm, 0.0, 1.0)
+
+    def _check_veto(self, q_values, idx, model_name, veto_action_idx):
+        """Проверяет, голосует ли модель ПРОТИВ текущего сигнала"""
+        if model_name not in q_values: return False
+        
+        q_hold = q_values[model_name][idx, 0]
+        q_act = q_values[model_name][idx, veto_action_idx]
+        adv = q_act - q_hold
+        
+        q_min = self.q_normalization.get(model_name, {}).get('q_min', 0.0)
+        return adv > q_min
 
     def _compute_ensemble_decision(
         self,
@@ -603,9 +671,39 @@ class CustomD3QNStrategy4z(IStrategy):
         if s_long > s_short:
             result['enter_long'] = 1
             result['reason'] += " | LONG Signal"
+            
+            # VETO CHECK FOR LONG
+            if self.enable_veto:
+                # Если мы хотим в ЛОНГ, проверяем, не голосует ли кто-то в ШОРТ
+                # Для Short моделей шорт это action 1 (если mirror) или 2 (если нет)
+                s1_act = 1 if self.short_1_is_mirror else 2
+                s2_act = 1 if self.short_2_is_mirror else 2
+                
+                if (self.enable_short_1 and self._check_veto(q_values, idx, "short_1", s1_act)) or \
+                   (self.enable_short_2 and self._check_veto(q_values, idx, "short_2", s2_act)):
+                    result['enter_long'] = 0
+                    result['reason'] += " (BLOCKED by Veto)"
+
         elif s_short > s_long and self.can_short:
             result['enter_short'] = 1
             result['reason'] += " | SHORT Signal"
+
+            # VETO CHECK FOR SHORT
+            if self.enable_veto:
+                # Если мы хотим в ШОРТ, проверяем, не голосует ли кто-то в ЛОНГ (Action 1 для Long моделей, и обычно Action 1 для Short моделей без mirror)
+                # Внимание: Для Short моделей без mirror, Long это Action 1.
+                s1_long_act = 2 if self.short_1_is_mirror else 1
+                s2_long_act = 2 if self.short_2_is_mirror else 1
+                
+                veto_triggered = False
+                if self.enable_long_1 and self._check_veto(q_values, idx, "long_1", 1): veto_triggered = True
+                if self.enable_long_2 and self._check_veto(q_values, idx, "long_2", 1): veto_triggered = True
+                if self.enable_short_1 and self._check_veto(q_values, idx, "short_1", s1_long_act): veto_triggered = True
+                if self.enable_short_2 and self._check_veto(q_values, idx, "short_2", s2_long_act): veto_triggered = True
+                
+                if veto_triggered:
+                    result['enter_short'] = 0
+                    result['reason'] += " (BLOCKED by Veto)"
 
         return result
 
@@ -769,6 +867,16 @@ class CustomD3QNStrategy4z(IStrategy):
         action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2")
         action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1")
         action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2")
+
+        # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            if self.enable_long_1 and "long_1" in q_values: self._collect_adv_stats("long_1", adv_long_1)
+            if self.enable_long_2 and "long_2" in q_values: self._collect_adv_stats("long_2", adv_long_2)
+            if self.enable_short_1 and "short_1" in q_values: self._collect_adv_stats("short_1", adv_short_1)
+            if self.enable_short_2 and "short_2" in q_values: self._collect_adv_stats("short_2", adv_short_2)
+            if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
+                self.update_normalization_config()
+                self.last_config_update = datetime.now()
 
         # DEBUG: Log action distribution to verify models are outputting signals
         if self.config.get('runmode') in ['live', 'dry_run']:
