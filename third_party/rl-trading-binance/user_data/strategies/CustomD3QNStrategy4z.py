@@ -601,42 +601,51 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         votes_long = 0
         votes_short = 0
+        veto_long_count = 0
+        veto_short_count = 0
         details = []
 
         # --- 1. Подсчет голосов LONG ---
         def check_vote(name, action_idx):
-            if name not in q_values: return 0, 0.0
+            if name not in q_values: return 0, False, 0.0
             q_hold = q_values[name][idx, 0]
             q_action = q_values[name][idx, action_idx]
             adv = q_action - q_hold
-            if adv > 0:
+            
+            q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
+            
+            if adv > q_min:
                 norm = self._normalize_q_value(adv, name)
                 if norm >= self.epsilon_threshold:
-                    return 1, norm
-                return 0, norm
-            return 0, 0.0
+                    return 1, True, norm
+                return 0, True, norm
+            return 0, False, 0.0
 
         if self.enable_long_1:
-            v, norm = check_vote("long_1", 1)
+            v, active, norm = check_vote("long_1", 1)
             votes_long += v
+            if active: veto_long_count += 1
             if v: details.append(f"L1({norm:.2f})")
 
         if self.enable_long_2:
-            v, norm = check_vote("long_2", 1)
+            v, active, norm = check_vote("long_2", 1)
             votes_long += v
+            if active: veto_long_count += 1
             if v: details.append(f"L2({norm:.2f})")
 
         # --- 2. Подсчет голосов SHORT ---
         if self.enable_short_1:
             action_idx = 1 if self.short_1_is_mirror else 2
-            v, norm = check_vote("short_1", action_idx)
+            v, active, norm = check_vote("short_1", action_idx)
             votes_short += v
+            if active: veto_short_count += 1
             if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
-            v, norm = check_vote("short_2", action_idx)
+            v, active, norm = check_vote("short_2", action_idx)
             votes_short += v
+            if active: veto_short_count += 1
             if v: details.append(f"S2({norm:.2f})")
 
         result = {
@@ -658,14 +667,14 @@ class CustomD3QNStrategy4z(IStrategy):
             return result
 
         if long_signal:
-            if self.enable_veto and votes_short > 0:
+            if self.enable_veto and veto_short_count > 0:
                 result['reason'] += " | LONG Vetoed (Short vote present)"
             else:
                 result['enter_long'] = 1
                 result['reason'] += " | LONG Signal"
 
         elif short_signal and self.can_short:
-            if self.enable_veto and votes_long > 0:
+            if self.enable_veto and veto_long_count > 0:
                 result['reason'] += " | SHORT Vetoed (Long vote present)"
             else:
                 result['enter_short'] = 1
@@ -815,7 +824,7 @@ class CustomD3QNStrategy4z(IStrategy):
         # 5. Получение действий с порогом уверенности (Q-Threshold)
         # Фильтруем слабые сигналы, где Q(Action) почти равно Q(Hold)
 
-        def get_action_with_threshold(name):
+        def get_action_with_threshold(name, target_action=None):
             if name not in q_values:
                 return np.zeros(batch_size, dtype=int), np.zeros(batch_size), 0.0
             
@@ -823,16 +832,28 @@ class CustomD3QNStrategy4z(IStrategy):
             q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
             
             q = q_values[name]
-            actions = np.argmax(q, axis=1)
-            # Advantage = Q(Selected) - Q(Hold)
-            advantage = q[np.arange(len(q)), actions] - q[:, 0]
-            final_actions = np.where(advantage > q_min, actions, 0)
+            
+            if target_action is not None:
+                # Forced check for specific action (Strict Mode)
+                advantage = q[:, target_action] - q[:, 0]
+                final_actions = np.where(advantage > q_min, target_action, 0)
+            else:
+                # Argmax check (Legacy/Flexible Mode)
+                actions = np.argmax(q, axis=1)
+                # Advantage = Q(Selected) - Q(Hold)
+                advantage = q[np.arange(len(q)), actions] - q[:, 0]
+                final_actions = np.where(advantage > q_min, actions, 0)
+                
             return final_actions, advantage, q_min
 
-        action_long_1, adv_long_1, th_l1 = get_action_with_threshold("long_1")
-        action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2")
-        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1")
-        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2")
+        action_long_1, adv_long_1, th_l1 = get_action_with_threshold("long_1", target_action=1)
+        action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2", target_action=1)
+        
+        s1_act = 1 if self.short_1_is_mirror else 2
+        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=s1_act)
+        
+        s2_act = 1 if self.short_2_is_mirror else 2
+        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=s2_act)
 
         # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
         if self.config.get('runmode') in ['live', 'dry_run']:
@@ -850,12 +871,20 @@ class CustomD3QNStrategy4z(IStrategy):
             if "long_1" in q_values:
                 a = action_long_1[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv_long_1[-1]:.5f} (Thresh: {th_l1:.5f}) | Act: {a} ({a_str})")
+                
+                adv = adv_long_1[-1]
+                norm = self._normalize_q_value(adv, "long_1")
+                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
+                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv:.5f} (Thresh: {th_l1:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
             
             if "long_2" in q_values:
                 a = action_long_2[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv_long_2[-1]:.5f} (Thresh: {th_l2:.5f}) | Act: {a} ({a_str})")
+                
+                adv = adv_long_2[-1]
+                norm = self._normalize_q_value(adv, "long_2")
+                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
+                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv:.5f} (Thresh: {th_l2:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -864,14 +893,23 @@ class CustomD3QNStrategy4z(IStrategy):
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv_short_1[-1]:.5f} (Thresh: {th_s1:.5f}) | Act: {a} ({a_str})")
+                
+                adv = adv_short_1[-1]
+                norm = self._normalize_q_value(adv, "short_1")
+                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
+                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv:.5f} (Thresh: {th_s1:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
+
             if "short_2" in q_values:
                 a = action_short_2[-1]
                 if self.short_2_is_mirror:
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv_short_2[-1]:.5f} (Thresh: {th_s2:.5f}) | Act: {a} ({a_str})")
+                
+                adv = adv_short_2[-1]
+                norm = self._normalize_q_value(adv, "short_2")
+                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
+                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv:.5f} (Thresh: {th_s2:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
