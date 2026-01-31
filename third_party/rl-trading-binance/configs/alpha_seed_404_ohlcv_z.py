@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-# AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "LONG_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_ohlcv_z"
@@ -116,7 +116,7 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 0.0003  # Снижаем скорость обучения для большей стабильности
+cfg.rl.lr = 0.00015  # Чуть повышаем (было 0.0001), чтобы быстрее выходить из плато
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
 cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
 cfg.rl.batch_size = 64  # Увеличиваем батч для более стабильного градиента
@@ -132,7 +132,7 @@ cfg.per.per_beta_frames = 250000  # Синхронизируем с новым t
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 180000  # Заканчиваем исследование раньше (под новый бюджет)
+cfg.eps.eps_decay_frames = 85000  # Ускоряем затухание (с учетом 12 envs это ~1M шагов или ~1400 эпизодов)
 
 # Env/Vectorized
 cfg.vec.num_envs = 12             # параллельные среды

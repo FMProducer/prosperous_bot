@@ -171,7 +171,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_190141"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1: SAC bearish trending
