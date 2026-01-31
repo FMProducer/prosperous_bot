@@ -137,6 +137,8 @@ def evaluate_agent(
             except (IndexError, AttributeError, ValueError):
                 logging.warning(f"Could not parse ticker/date from key: {keys[i]}")
         
+        current_step_dt = signal_dt_for_step
+
         while not done:
             # FIX: Transpose obs (L, C) -> (C, L, 1) for Agent
             obs_agent = obs
@@ -146,7 +148,7 @@ def evaluate_agent(
             action = agent.select_action(obs_agent, training=False)
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
-                signal_dt=signal_dt_for_step,
+                signal_dt=current_step_dt,
                 ticker=ticker_name,
                 stop_loss=None,
                 take_profit=None,
@@ -155,6 +157,8 @@ def evaluate_agent(
                 fee_buffer_mult=getattr(cfg.backtest, "fee_buffer_mult", None),
                 delta_p_hysteresis=getattr(cfg.backtest, "delta_p_hysteresis", None),
             )
+            # Assuming 1m candles based on bars_per_day=1440 usage later
+            current_step_dt += dt.timedelta(minutes=1)
             ep_reward += float(reward or 0.0)
             total_bars_processed += 1
 
