@@ -106,5 +106,10 @@ class SubprocVecEnv:
         for p in self.procs:
             try:
                 p.join(timeout=0.2)
+                if p.is_alive():
+                    p.terminate()
+                    p.join(timeout=0.1)
+                    if p.is_alive():
+                        p.kill()
             except Exception:
                 pass
