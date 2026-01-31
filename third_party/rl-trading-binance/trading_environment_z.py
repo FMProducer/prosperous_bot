@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class TradingEnvironment(gym.Env):
+
     """A custom trading environment that simulates the process of trading in a financial market.
 
     This environment conforms to the Gymnasium API and is designed for training
@@ -24,12 +25,14 @@ class TradingEnvironment(gym.Env):
     the agent's current position, unrealized profit/loss, and the time
     remaining in the episode.
 
+
     The reward `r_t` is primarily based on the change in portfolio value (PnL)
     but can be augmented with shaped rewards to encourage desirable behaviors
     such as holding profitable positions and penalizing inaction.
     """
     metadata = {"render_modes": ["human", "ansi"], "render_fps": 1}
     exit_options = np.array(["FORCED", "SL", "TP", "TSL"])
+
 
     def __init__(
         self,
@@ -57,6 +60,7 @@ class TradingEnvironment(gym.Env):
         backtest_mode: bool = False,
         use_risk_management: bool = False,
         # TSL parameters
+
         trailing_stop: float = 0.07519862504113693,
         trailing_stop_min: float = 0.0008225518697224519,
         delta_p_hysteresis: float = 0.0015218098435784326,
@@ -88,7 +92,7 @@ class TradingEnvironment(gym.Env):
         holding_loss_penalty: float = 0.0,
         # OLD: Kept for compatibility (set to 0.0)
         premature_exit_penalty: float = 0.0,
-        profit_holding_bonus: float = 0.0,
+        profit_holding_bonus: float = 0.0, # Deprecated
         
         # Thresholds for shaped rewards (previously hardcoded)
         holding_penalty_threshold: int = 15,
@@ -100,6 +104,7 @@ class TradingEnvironment(gym.Env):
         # NEW: Thresholds for asymmetric logic
         profit_exit_threshold: int = 5,
         loss_exit_threshold: int = 3,
+
         allow_opposite_trades: bool = True, # НОВЫЙ ПАРАМЕТР
         max_trades_per_episode: int = 100,  # Лимит сделок на эпизод
         close_action_index: Optional[int] = None,
@@ -109,6 +114,7 @@ class TradingEnvironment(gym.Env):
         mirror_mode: bool = True,  # Добавлено для управления инверсией
         **kwargs,
     ) -> None:
+
         if not sequences:
             raise ValueError("`sequences` must be a non-empty list of arrays")
         if not keys:
@@ -120,7 +126,6 @@ class TradingEnvironment(gym.Env):
                 f"Data shape mismatch: sequence has {sequences[0].shape[1]} columns (features), "
                 f"but {len(datachannels)} datachannels (feature names) were provided."
             )
-
         # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
         # If filter_direction is 'SHORT', the agent is a specialist SHORT-only agent.
         # We invert the market data (up becomes down) so the agent can learn a LONG-only
@@ -206,6 +211,7 @@ class TradingEnvironment(gym.Env):
         self.volumechannels = volumechannels
         self.otherchannels = otherchannels
         self.action_history_len = action_history_len
+
         self.num_actions = num_actions
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.time_sl_penalty_ratio = time_sl_penalty_ratio
@@ -214,6 +220,7 @@ class TradingEnvironment(gym.Env):
         self.trailing_stop = trailing_stop
         self.trailing_stop_min = trailing_stop_min
         self.delta_p_hysteresis = delta_p_hysteresis
+
         self.cnn_format = cnn_format
         self.position_fraction = position_fraction
         self.order_size_usdt = order_size_usdt
@@ -221,6 +228,7 @@ class TradingEnvironment(gym.Env):
         self.bankruptcy_penalty = bankruptcy_penalty
         self.max_drawdown_threshold = max_drawdown_threshold
         self.max_drawdown_penalty = max_drawdown_penalty
+
         self.max_drawdown_penalty_type = max_drawdown_penalty_type
         # New reward shaping
         self.new_equity_peak_reward = new_equity_peak_reward
@@ -228,6 +236,7 @@ class TradingEnvironment(gym.Env):
         self.risk_reward_ratio_threshold = risk_reward_ratio_threshold
         self.risk_reward_ratio_reward = risk_reward_ratio_reward
         self.continuous_pain_penalty_ratio = continuous_pain_penalty_ratio
+
         
         # Shaped rewards/penalties (previously hardcoded)
         self.good_exit_bonus = good_exit_bonus
@@ -241,6 +250,7 @@ class TradingEnvironment(gym.Env):
         self.holding_loss_penalty = holding_loss_penalty
         # OLD: Kept for compatibility
         self.premature_exit_penalty = premature_exit_penalty
+
         self.profit_holding_bonus = profit_holding_bonus
         
 
@@ -253,6 +263,7 @@ class TradingEnvironment(gym.Env):
         # NEW: Thresholds for asymmetric logic
         self.profit_exit_threshold = profit_exit_threshold
         self.loss_exit_threshold = loss_exit_threshold
+
         self.allow_opposite_trades = allow_opposite_trades
         self.max_trades_per_episode = max_trades_per_episode
         self.allowed_directions = allowed_directions
@@ -261,7 +272,6 @@ class TradingEnvironment(gym.Env):
         self.close_action = close_action_index
         if self.close_action is None:
             self.close_action = self.num_actions - 1 if self.num_actions > 3 else -1 # -1 если close отключен
-
 
         self.seed_value = seed
         # Cache frequently used channel index
@@ -296,6 +306,7 @@ class TradingEnvironment(gym.Env):
             )
         else:
             # For MLP: flat vector
+
             # FIX: Ensure buffer size matches actual data generation logic
             # Calculate expected size based on what _get_obs actually produces
             # Use local argument or self.num_features (now saved)
@@ -354,11 +365,13 @@ class TradingEnvironment(gym.Env):
                 self.tsl_price: float = None
                 self.p_at_last_tsl_update: float = 0.0
 
+
         if self.action_history_len > 0:
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
 
         # TSL state reset
         self.trailing_max_price = None
+
         self.trailing_min_price = None
         self.tsl_price = None
         self.p_at_last_tsl_update = 0.0
@@ -373,6 +386,7 @@ class TradingEnvironment(gym.Env):
         # As profit increases, tighten the trail distance from d0 towards d_min.
         d_eff = d0 - (p - fee_buf)
         return max(d_min, d_eff)
+
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Resets the environment to the beginning of a new episode.
@@ -394,6 +408,7 @@ class TradingEnvironment(gym.Env):
             seed = self.seed_value
         super().reset(seed=seed)
         self._init_episode_vars()
+
         
         # Reset buffer for safety
         self._obs_buffer.fill(0.0)
@@ -415,6 +430,7 @@ class TradingEnvironment(gym.Env):
         if self.render_mode == "human":
             self._render_human(info, first=True)
         return obs, info
+
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Executes a single time step in the environment.
@@ -593,6 +609,7 @@ class TradingEnvironment(gym.Env):
             info.update({
                 "position_closed": True,
                 "trade_realized_pnl": trade_pnl - fee,
+
                 "win_rate": 1.0 if trade_pnl > 0 else 0.0,
                 "time_sl_penalty": 0.0,
             })
@@ -614,6 +631,7 @@ class TradingEnvironment(gym.Env):
         if self.balance <= self.bankruptcy_threshold:
             logging.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
             
+
             # Force-close any open positions with slippage penalty
             if self.position != 0:
                 slippage_penalty = self.bankruptcy_slippage_penalty
@@ -621,6 +639,7 @@ class TradingEnvironment(gym.Env):
                 liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
                                    if self.position == 1 
                                    else (self.real_entry_price - liquidation_price) * self.position_volume)
+
                 self.balance += liquidation_pnl
             
             self.balance = max(0.0, self.balance)  # Cannot go negative
@@ -654,6 +673,7 @@ class TradingEnvironment(gym.Env):
         
         # Use shaped reward
         reward = self._calculate_shaped_reward(
+
             pnlchange=pnl_change,
             inaction_penalty=inaction_penalty,
             action=action,
@@ -667,6 +687,7 @@ class TradingEnvironment(gym.Env):
             m2m_price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx)
             norm_m2m_price = self.current_seq[m2m_price_idx, self.close_idx]
             real_m2m_price = norm_m2m_price
+
             if self.position == 1: # LONG
                 mark2market = (real_m2m_price - self.real_entry_price) * self.position_volume
             elif self.position == -1: # SHORT
@@ -738,6 +759,7 @@ class TradingEnvironment(gym.Env):
         else:
             obs = self._get_observation()
      
+
         reward -= drawdown_penalty
 
         # НОВОЕ: Штраф за каждый шаг с открытой убыточной позицией (Continuous Penalty for unrealized losses)
@@ -752,6 +774,7 @@ class TradingEnvironment(gym.Env):
             self._render_human(info, action, reward)
 
         return obs, reward, terminated, truncated, info
+
 
     def _track_position_metrics(self, action: int, prev_position: int):
         """Tracks metrics related to the current position for shaped rewards."""
@@ -777,6 +800,7 @@ class TradingEnvironment(gym.Env):
             self._max_unrealized_pnl = max(self._max_unrealized_pnl, unrealized_pnl)
             self._min_unrealized_pnl = min(self._min_unrealized_pnl, unrealized_pnl)
 
+
     def _calculate_shaped_reward(self, pnlchange: float, inaction_penalty: float, action: int, prev_position: int, trade_pnl: float) -> float:
         base_reward = pnlchange / self.initial_balance
         shaped_reward = 0.0
@@ -786,6 +810,7 @@ class TradingEnvironment(gym.Env):
             if self.step_idx >= 5:
                 end_idx = self.pre_signal_len + self.step_idx
                 start_idx = end_idx - 5
+
                 recent_prices = self.current_seq[start_idx:end_idx, self.close_idx]
                 real_prices = recent_prices
                 
@@ -859,6 +884,7 @@ class TradingEnvironment(gym.Env):
             if self.risk_reward_ratio_reward > 0 and trade_pnl > 0:
                 max_profit = self._max_unrealized_pnl
                 max_loss = abs(self._min_unrealized_pnl)
+
                 
                 if max_loss > 0 and (max_profit / max_loss) > self.risk_reward_ratio_threshold:
                     shaped_reward += self.risk_reward_ratio_reward
@@ -866,6 +892,7 @@ class TradingEnvironment(gym.Env):
         return base_reward + shaped_reward - inaction_penalty
 
     def _get_observation(self) -> np.ndarray:
+
         # The window from current_seq is already pre-normalized.
         # load_and_prep_data has already performed Z-normalization.
 
@@ -875,6 +902,7 @@ class TradingEnvironment(gym.Env):
         max_len = len(self.current_seq)
         end = min(self.pre_signal_len + self.step_idx, max_len)
         start = end - self.agent_history_len
+
         if start < 0: start = 0 # Safeguard for the beginning of an episode
 
         raw_window = self.current_seq[start:end]
@@ -890,6 +918,7 @@ class TradingEnvironment(gym.Env):
         
         # 1. Normalize Prices (Grouped: Open, High, Low, Close share stats)
         if self.price_indices:
+
             p_data = raw_window[:, self.price_indices]
             p_mean = np.mean(p_data)
             p_std = np.std(p_data) + 1e-8
@@ -897,6 +926,7 @@ class TradingEnvironment(gym.Env):
             
         # 2. Normalize Volume (Individually per channel)
         if self.volume_indices:
+
             v_data = raw_window[:, self.volume_indices]
             v_mean = np.mean(v_data, axis=0)
             v_std = np.std(v_data, axis=0) + 1e-8
