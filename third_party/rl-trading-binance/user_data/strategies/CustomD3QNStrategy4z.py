@@ -247,6 +247,8 @@ class CustomD3QNStrategy4z(IStrategy):
         self.ensemble_cfg = config.get('rl_ensemble', {})
         self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
         self.enable_veto = config.get('rl_enable_veto', False)
+        self.rl_long_threshold = config.get('rl_long_threshold', 1)
+        self.rl_short_threshold = config.get('rl_short_threshold', 1)
         self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
         self.config_update_interval = self.ensemble_cfg.get('q_update_interval', 14400)
 
@@ -584,17 +586,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # Нормируешь → ограничиваешь в [0, 1]
         return np.clip(q_norm, 0.0, 1.0)
 
-    def _check_veto(self, q_values, idx, model_name, veto_action_idx):
-        """Проверяет, голосует ли модель ПРОТИВ текущего сигнала"""
-        if model_name not in q_values: return False
-        
-        q_hold = q_values[model_name][idx, 0]
-        q_act = q_values[model_name][idx, veto_action_idx]
-        adv = q_act - q_hold
-        
-        q_min = self.q_normalization.get(model_name, {}).get('q_min', 0.0)
-        return adv > q_min
-
     def _compute_ensemble_decision(
         self,
         q_values: Dict[str, np.ndarray],
@@ -603,105 +594,79 @@ class CustomD3QNStrategy4z(IStrategy):
         has_short: bool
     ) -> Dict[str, Any]:
         """
-        Алгоритм ансамбля: Нормализация → Сумма → Дельта → Фильтрация по ε
+        Алгоритм ансамбля: Голосование с порогом ε
         """
+        votes_long = 0
+        votes_short = 0
+        details = []
 
-        s_long = 0.0
-        s_short = 0.0
-
-        # LONG модели (действие 1 = "open long")
-        if "long_1" in q_values and self.enable_long_1:
-            # Используем Advantage (Q_Action - Q_Hold) вместо Raw Q
-            q_hold = q_values["long_1"][idx, 0]
-            q_action = q_values["long_1"][idx, 1]
+        # --- 1. Подсчет голосов LONG ---
+        def check_vote(name, action_idx):
+            if name not in q_values: return 0, 0.0
+            q_hold = q_values[name][idx, 0]
+            q_action = q_values[name][idx, action_idx]
             adv = q_action - q_hold
             if adv > 0:
-                q_norm = self._normalize_q_value(adv, "long_1")
-                s_long += q_norm
+                norm = self._normalize_q_value(adv, name)
+                if norm >= self.epsilon_threshold:
+                    return 1, norm
+                return 0, norm
+            return 0, 0.0
 
-        if "long_2" in q_values and self.enable_long_2:
-            q_hold = q_values["long_2"][idx, 0]
-            q_action = q_values["long_2"][idx, 1]
-            adv = q_action - q_hold
-            if adv > 0:
-                q_norm = self._normalize_q_value(adv, "long_2")
-                s_long += q_norm
+        if self.enable_long_1:
+            v, norm = check_vote("long_1", 1)
+            votes_long += v
+            if v: details.append(f"L1({norm:.2f})")
 
-        # SHORT модели (действие зависит от mirror_mode)
-        if "short_1" in q_values and self.enable_short_1:
-            # Если mirror_mode == True, то шорт соответствует действию 1
-            # Если mirror_mode == False, то шорт соответствует действию 2
+        if self.enable_long_2:
+            v, norm = check_vote("long_2", 1)
+            votes_long += v
+            if v: details.append(f"L2({norm:.2f})")
+
+        # --- 2. Подсчет голосов SHORT ---
+        if self.enable_short_1:
             action_idx = 1 if self.short_1_is_mirror else 2
-            q_hold = q_values["short_1"][idx, 0]
-            q_action = q_values["short_1"][idx, action_idx]
-            adv = q_action - q_hold
-            if adv > 0:
-                q_norm = self._normalize_q_value(adv, "short_1")
-                s_short += q_norm
+            v, norm = check_vote("short_1", action_idx)
+            votes_short += v
+            if v: details.append(f"S1({norm:.2f})")
 
-        if "short_2" in q_values and self.enable_short_2:
+        if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
-            q_hold = q_values["short_2"][idx, 0]
-            q_action = q_values["short_2"][idx, action_idx]
-            adv = q_action - q_hold
-            if adv > 0:
-                q_norm = self._normalize_q_value(adv, "short_2")
-                s_short += q_norm
-
-        # Вычисляем дельту и принимаем решение
-        delta = abs(s_long - s_short)
-        epsilon = self.epsilon_threshold
+            v, norm = check_vote("short_2", action_idx)
+            votes_short += v
+            if v: details.append(f"S2({norm:.2f})")
 
         result = {
             'enter_long': 0,
             'enter_short': 0,
-            'reason': f"S_L={s_long:.3f} S_S={s_short:.3f} Δ={delta:.3f} (ε={epsilon})"
+            'reason': f"Votes L:{votes_long}/{self.rl_long_threshold} S:{votes_short}/{self.rl_short_threshold} [{' '.join(details)}]"
         }
 
         if has_long or has_short:
             result['reason'] += " | Position exists"
             return result
 
-        if delta < epsilon:
-            result['reason'] += " | HOLD (noise)"
+        # --- 3. Принятие решения ---
+        long_signal = votes_long >= self.rl_long_threshold
+        short_signal = votes_short >= self.rl_short_threshold
+
+        if long_signal and short_signal:
+            result['reason'] += " | CONFLICT (Both signals)"
             return result
 
-        if s_long > s_short:
-            result['enter_long'] = 1
-            result['reason'] += " | LONG Signal"
-            
-            # VETO CHECK FOR LONG
-            if self.enable_veto:
-                # Если мы хотим в ЛОНГ, проверяем, не голосует ли кто-то в ШОРТ
-                # Для Short моделей шорт это action 1 (если mirror) или 2 (если нет)
-                s1_act = 1 if self.short_1_is_mirror else 2
-                s2_act = 1 if self.short_2_is_mirror else 2
-                
-                if (self.enable_short_1 and self._check_veto(q_values, idx, "short_1", s1_act)) or \
-                   (self.enable_short_2 and self._check_veto(q_values, idx, "short_2", s2_act)):
-                    result['enter_long'] = 0
-                    result['reason'] += " (BLOCKED by Veto)"
+        if long_signal:
+            if self.enable_veto and votes_short > 0:
+                result['reason'] += " | LONG Vetoed (Short vote present)"
+            else:
+                result['enter_long'] = 1
+                result['reason'] += " | LONG Signal"
 
-        elif s_short > s_long and self.can_short:
-            result['enter_short'] = 1
-            result['reason'] += " | SHORT Signal"
-
-            # VETO CHECK FOR SHORT
-            if self.enable_veto:
-                # Если мы хотим в ШОРТ, проверяем, не голосует ли кто-то в ЛОНГ (Action 1 для Long моделей, и обычно Action 1 для Short моделей без mirror)
-                # Внимание: Для Short моделей без mirror, Long это Action 1.
-                s1_long_act = 2 if self.short_1_is_mirror else 1
-                s2_long_act = 2 if self.short_2_is_mirror else 1
-                
-                veto_triggered = False
-                if self.enable_long_1 and self._check_veto(q_values, idx, "long_1", 1): veto_triggered = True
-                if self.enable_long_2 and self._check_veto(q_values, idx, "long_2", 1): veto_triggered = True
-                if self.enable_short_1 and self._check_veto(q_values, idx, "short_1", s1_long_act): veto_triggered = True
-                if self.enable_short_2 and self._check_veto(q_values, idx, "short_2", s2_long_act): veto_triggered = True
-                
-                if veto_triggered:
-                    result['enter_short'] = 0
-                    result['reason'] += " (BLOCKED by Veto)"
+        elif short_signal and self.can_short:
+            if self.enable_veto and votes_long > 0:
+                result['reason'] += " | SHORT Vetoed (Long vote present)"
+            else:
+                result['enter_short'] = 1
+                result['reason'] += " | SHORT Signal"
 
         return result
 
