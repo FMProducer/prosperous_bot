@@ -853,214 +853,216 @@ def run_training_session(
             mode=cfg.trainlog.save_mode
         )
 
-    if num_envs > 1:
-        train_env.reset()
-    else:
-        train_env.reset(seed=cfg.global_env_seed)
-
-    counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
-    for ep in counter:
+    try:
         if num_envs > 1:
-            ep_reward, _, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
-            ep_losses = [avg_loss] if avg_loss > 0 else []
-            train_steps += transitions
+            train_env.reset()
         else:
-            obs, _ = train_env.reset(seed=None, options=None)
-            # Fix shape (L, C) -> (C, L, 1)
-            if obs.ndim == 2 and obs.shape[1] == agent.state_shape[0]:
-                obs = np.expand_dims(obs.T, -1)
+            train_env.reset(seed=cfg.global_env_seed)
 
-            ep_reward, ep_losses, done = 0.0, [], False
-            ep_trades, ep_wins = 0, 0
-            while not done:
-                action = agent.select_action(obs, training=True)
-                next_obs, reward, done, _, info = train_env.step(action)
-
+        counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
+        for ep in counter:
+            if num_envs > 1:
+                ep_reward, _, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+                ep_losses = [avg_loss] if avg_loss > 0 else []
+                train_steps += transitions
+            else:
+                obs, _ = train_env.reset(seed=None, options=None)
                 # Fix shape (L, C) -> (C, L, 1)
-                if next_obs.ndim == 2 and next_obs.shape[1] == agent.state_shape[0]:
-                    next_obs = np.expand_dims(next_obs.T, -1)
+                if obs.ndim == 2 and obs.shape[1] == agent.state_shape[0]:
+                    obs = np.expand_dims(obs.T, -1)
 
-                next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs)) if done else next_obs
-                # Fix shape for terminal
-                if next_state_to_store.ndim == 2 and next_state_to_store.shape[1] == agent.state_shape[0]:
-                    next_state_to_store = np.expand_dims(next_state_to_store.T, -1)
-                agent.store_experience(obs, action, reward, next_state_to_store, done)
-                loss = agent.learn()
-                if loss: ep_losses.append(loss)
-                if info.get('position_closed'):
-                    ep_trades += 1
-                    if info.get('correct_prediction'):
-                        ep_wins += 1
-                obs = next_obs
-                agent.increment_step()
-                train_steps += 1
-                ep_reward += reward
+                ep_reward, ep_losses, done = 0.0, [], False
+                ep_trades, ep_wins = 0, 0
+                while not done:
+                    action = agent.select_action(obs, training=True)
+                    next_obs, reward, done, _, info = train_env.step(action)
 
-        history["episodes"].append(ep)
-        history["rewards"].append(ep_reward)
-        avg_loss = np.mean(ep_losses) if ep_losses else 0.0
-        history["losses"].append(avg_loss)
+                    # Fix shape (L, C) -> (C, L, 1)
+                    if next_obs.ndim == 2 and next_obs.shape[1] == agent.state_shape[0]:
+                        next_obs = np.expand_dims(next_obs.T, -1)
 
-        episode_rewards_deque.append(ep_reward)
-        history["mean_rewards_N"].append(np.mean(episode_rewards_deque))
-        episode_losses_deque.append(avg_loss)
-        history["mean_losses_N"].append(np.mean(episode_losses_deque))
+                    next_state_to_store = info.get("terminal_observation", info.get("final_observation", next_obs)) if done else next_obs
+                    # Fix shape for terminal
+                    if next_state_to_store.ndim == 2 and next_state_to_store.shape[1] == agent.state_shape[0]:
+                        next_state_to_store = np.expand_dims(next_state_to_store.T, -1)
+                    agent.store_experience(obs, action, reward, next_state_to_store, done)
+                    loss = agent.learn()
+                    if loss: ep_losses.append(loss)
+                    if info.get('position_closed'):
+                        ep_trades += 1
+                        if info.get('correct_prediction'):
+                            ep_wins += 1
+                    obs = next_obs
+                    agent.increment_step()
+                    train_steps += 1
+                    ep_reward += reward
 
-        eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
-        history["epsilons"].append(eps_current)
+            history["episodes"].append(ep)
+            history["rewards"].append(ep_reward)
+            avg_loss = np.mean(ep_losses) if ep_losses else 0.0
+            history["losses"].append(avg_loss)
 
-        current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
-        if current_win_rate == 0.0 and num_envs == 1 and ep_trades > 0:
-            current_win_rate = ep_wins / ep_trades
-        episode_win_rate_deque.append(current_win_rate)
-        history["win_rates"].append(current_win_rate)
-        history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
+            episode_rewards_deque.append(ep_reward)
+            history["mean_rewards_N"].append(np.mean(episode_rewards_deque))
+            episode_losses_deque.append(avg_loss)
+            history["mean_losses_N"].append(np.mean(episode_losses_deque))
 
-        counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
+            eps_current = agent.eps_end + (agent.eps_start - agent.eps_end) * np.exp(-train_steps / agent.eps_frames)
+            history["epsilons"].append(eps_current)
 
-        if val_env and (ep % cfg.trainlog.val_freq == 0):
-            # MODIFIED: Сохраняем постоянный чекпоинт БЕЗ метрик в имени
-            # Save directly to models_dir so validate_model_ohlcv.py finds norm_stats.json in the same dir
-            ckpt_dir = models_dir
-            
-            ckpt_filename = f"checkpoint_ep{ep:05d}.pth"
-            ckpt_path = os.path.join(ckpt_dir, ckpt_filename)
-             
-            try:
-                # 1. Сохраняем чекпоинт для валидации (постоянный файл)
-                agent.save_model(ckpt_path)
+            current_win_rate = (ep_info if num_envs > 1 else info).get("episode_win_rate", 0.0)
+            if current_win_rate == 0.0 and num_envs == 1 and ep_trades > 0:
+                current_win_rate = ep_wins / ep_trades
+            episode_win_rate_deque.append(current_win_rate)
+            history["win_rates"].append(current_win_rate)
+            history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
 
-                # 2. Выбираем конфиг для валидации (.py приоритетнее)
-                val_config_path = py_config_path if py_config_path else os.path.join(models_dir, "config_train.json")
-                 
-                # 3. Вызываем внешний скрипт валидации (он сам формирует имя JSON с метриками)
-                result = run_external_validation(cfg, val_config_path, ckpt_path, ckpt_dir, ep, agent_mode=str(agent_mode or "UNIVERSAL"))
-                 
-                if isinstance(result, tuple):
-                    metrics, json_path = result
-                else:
-                    metrics = result
-                    json_path = None
+            counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
+
+            if val_env and (ep % cfg.trainlog.val_freq == 0):
+                # MODIFIED: Сохраняем постоянный чекпоинт БЕЗ метрик в имени
+                # Save directly to models_dir so validate_model_ohlcv.py finds norm_stats.json in the same dir
+                ckpt_dir = models_dir
                 
-                if not metrics or not json_path:
-                    logging.error(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации (метрики не получены).")
-                    continue
- 
-                # 4. Регистрируем в менеджере (файл .pth уже сохранён, JSON создан валидацией)
-                if checkpoint_manager:
-                    checkpoint_manager.register_checkpoint(ep, metrics, ckpt_path, json_path)
-                    
-            except Exception as e:
-                logging.error(f"Error during validation at episode {ep}: {e}", exc_info=True)
+                ckpt_filename = f"checkpoint_ep{ep:05d}.pth"
+                ckpt_path = os.path.join(ckpt_dir, ckpt_filename)
 
-            sel_keys = cfg.trainlog.val_selection_metrics
-
-            def _fetch_metric(name: str, lower_is_better: bool) -> float:
-                v = metrics.get(name, None)
-                if v is None:
-                    logging.warning(f"[Validation] metric '{name}' is missing in metrics dict — using fallback -inf")
-                    return float("-inf")
                 try:
-                    v = float(v)
-                except Exception:
-                    logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
-                    return float("-inf")
-                return -v if lower_is_better else v
+                    # 1. Сохраняем чекпоинт для валидации (постоянный файл)
+                    agent.save_model(ckpt_path)
 
-            last_val_metrics = metrics
+                    # 2. Выбираем конфиг для валидации (.py приоритетнее)
+                    val_config_path = py_config_path if py_config_path else os.path.join(models_dir, "config_train.json")
 
-            gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
-            if gate is None:
-                gate = getattr(cfg, "validation_gate", None)
+                    # 3. Вызываем внешний скрипт валидации (он сам формирует имя JSON с метриками)
+                    result = run_external_validation(cfg, val_config_path, ckpt_path, ckpt_dir, ep, agent_mode=str(agent_mode or "UNIVERSAL"))
 
-            def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
-                if not g:
-                    return True
-                def _f(name: str, default: float | None = None) -> float:
-                    v = m.get(name, default)
-                    try: return float(v)
-                    except Exception: return float("-inf")
-                cur_sharpe  = _f("Validation_sharpe")
-                cur_sortino = _f("Validation_sortino")
-                cur_pf_raw  = m.get("Validation_profit_factor", None)
-                try: cur_pf = float(cur_pf_raw)
-                except Exception: cur_pf = float("-inf")
-                cur_dd      = _f("Validation_max_drawdown")
-                cur_wr      = _f("Validation_win_rate")
-                cur_trades  = int(m.get("Validation_trades", 0) or 0)
-                min_sharpe     = g.get("min_sharpe", None)
-                min_sortino    = g.get("min_sortino", None)
-                min_pf         = g.get("min_profit_factor", None)
-                max_dd_at_most = g.get("max_drawdown_at_most", None)
-                min_wr         = g.get("min_win_rate", None)
-                min_trades     = g.get("min_trades", None)
-                deny_zero_dd   = bool(g.get("deny_zero_drawdown", False))
-                deny_inf_pf    = bool(g.get("deny_inf_pf", False))
-                ok = True
-                if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
-                if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
-                if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
-                if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
-                if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
-                if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False
-                if deny_zero_dd and cur_dd == 0.0:                                                ok = False
-                if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
-                if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
-                return ok
+                    if isinstance(result, tuple):
+                        metrics, json_path = result
+                    else:
+                        metrics = result
+                        json_path = None
+                    
+                    if not metrics or not json_path:
+                        logging.error(f"Пропуск сохранения чекпоинта для эпизода {ep} из-за ошибки валидации (метрики не получены).")
+                        continue
 
-            if _passes_gate(metrics, gate):
-                if isinstance(sel_keys, (list, tuple)):
-                    val_metric = tuple(_fetch_metric(k, lower_is_better=(cfg.trainlog.val_selection_direction == "min")) for k in sel_keys)
-                else:
-                    val_metric = _fetch_metric(str(sel_keys), lower_is_better=(cfg.trainlog.val_selection_direction == "min"))
-
-                def _is_better(current, best):
-                    if best is None: return True
-                    return current > best
-
-                if _is_better(val_metric, best_val_metric):
-                    best_val_metric = val_metric
-                    best_validation = dict(metrics)
-                    best_episode = ep
+                    # 4. Регистрируем в менеджере (файл .pth уже сохранён, JSON создан валидацией)
                     if checkpoint_manager:
                         checkpoint_manager.register_checkpoint(ep, metrics, ckpt_path, json_path)
+
+                except Exception as e:
+                    logging.error(f"Error during validation at episode {ep}: {e}", exc_info=True)
+
+                sel_keys = cfg.trainlog.val_selection_metrics
+
+                def _fetch_metric(name: str, lower_is_better: bool) -> float:
+                    v = metrics.get(name, None)
+                    if v is None:
+                        logging.warning(f"[Validation] metric '{name}' is missing in metrics dict — using fallback -inf")
+                        return float("-inf")
+                    try:
+                        v = float(v)
+                    except Exception:
+                        logging.warning(f"[Validation] metric '{name}' has non-numeric value '{v}' — fallback -inf")
+                        return float("-inf")
+                    return -v if lower_is_better else v
+
+                last_val_metrics = metrics
+
+                gate = getattr(getattr(cfg, "trainlog", object()), "validation_gate", None)
+                if gate is None:
+                    gate = getattr(cfg, "validation_gate", None)
+
+                def _passes_gate(m: Dict[str, Any], g: Dict[str, Any] | None) -> bool:
+                    if not g:
+                        return True
+                    def _f(name: str, default: float | None = None) -> float:
+                        v = m.get(name, default)
+                        try: return float(v)
+                        except Exception: return float("-inf")
+                    cur_sharpe  = _f("Validation_sharpe")
+                    cur_sortino = _f("Validation_sortino")
+                    cur_pf_raw  = m.get("Validation_profit_factor", None)
+                    try: cur_pf = float(cur_pf_raw)
+                    except Exception: cur_pf = float("-inf")
+                    cur_dd      = _f("Validation_max_drawdown")
+                    cur_wr      = _f("Validation_win_rate")
+                    cur_trades  = int(m.get("Validation_trades", 0) or 0)
+                    min_sharpe     = g.get("min_sharpe", None)
+                    min_sortino    = g.get("min_sortino", None)
+                    min_pf         = g.get("min_profit_factor", None)
+                    max_dd_at_most = g.get("max_drawdown_at_most", None)
+                    min_wr         = g.get("min_win_rate", None)
+                    min_trades     = g.get("min_trades", None)
+                    deny_zero_dd   = bool(g.get("deny_zero_drawdown", False))
+                    deny_inf_pf    = bool(g.get("deny_inf_pf", False))
+                    ok = True
+                    if (min_sharpe  is not None) and not (cur_sharpe  >= float(min_sharpe)):         ok = False
+                    if (min_sortino is not None) and not (cur_sortino >= float(min_sortino)):        ok = False
+                    if deny_inf_pf and (isinstance(cur_pf_raw, str) and cur_pf_raw.lower() == "inf"): ok = False
+                    if deny_inf_pf and (cur_pf == float("inf")):                                      ok = False
+                    if (min_pf      is not None) and not (cur_pf      >= float(min_pf)):             ok = False
+                    if (max_dd_at_most is not None) and not (cur_dd   >= float(max_dd_at_most)):     ok = False
+                    if deny_zero_dd and cur_dd == 0.0:                                                ok = False
+                    if (min_wr      is not None) and not (cur_wr      >= float(min_wr)):             ok = False
+                    if (min_trades  is not None) and not (cur_trades  >= int(min_trades)):           ok = False
+                    return ok
+
+                if _passes_gate(metrics, gate):
+                    if isinstance(sel_keys, (list, tuple)):
+                        val_metric = tuple(_fetch_metric(k, lower_is_better=(cfg.trainlog.val_selection_direction == "min")) for k in sel_keys)
                     else:
-                        agent.save_model(os.path.join(models_dir, "best.pth"))
-                    no_improvement_count = 0
+                        val_metric = _fetch_metric(str(sel_keys), lower_is_better=(cfg.trainlog.val_selection_direction == "min"))
+
+                    def _is_better(current, best):
+                        if best is None: return True
+                        return current > best
+
+                    if _is_better(val_metric, best_val_metric):
+                        best_val_metric = val_metric
+                        best_validation = dict(metrics)
+                        best_episode = ep
+                        if checkpoint_manager:
+                            checkpoint_manager.register_checkpoint(ep, metrics, ckpt_path, json_path)
+                        else:
+                            agent.save_model(os.path.join(models_dir, "best.pth"))
+                        no_improvement_count = 0
+                    else:
+                        no_improvement_count += 1
                 else:
                     no_improvement_count += 1
-            else:
-                no_improvement_count += 1
 
-            if no_improvement_count >= cfg.trainlog.early_stopping_patience:
-                logging.info(f"Early stopping at episode {ep}.")
-                break
+                if no_improvement_count >= cfg.trainlog.early_stopping_patience:
+                    logging.info(f"Early stopping at episode {ep}.")
+                    break
 
-    final_path = os.path.join(models_dir, "final.pth")
-    agent.save_model(final_path)
-    
-    # MODIFIED: Сохраняем best.pth рядом с final.pth
-    # Ищем лучший чекпоинт по лексикографическому порядку из val_selection_metrics
-    if checkpoint_manager and checkpoint_manager.checkpoints:
-        # checkpoints уже отсортированы по checkpoint_metric, но нам нужен лексикографический порядок
-        # Пересортируем по val_selection_metrics
-        sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
+        final_path = os.path.join(models_dir, "final.pth")
+        agent.save_model(final_path)
         
-        def get_sort_key(item):
-            metrics = item[3]  # item = (metric_val, ep, path, metrics_dict)
-            return tuple(metrics.get(k, -float('inf')) for k in sel_keys)
-        
-        sorted_checkpoints = sorted(checkpoint_manager.checkpoints, key=get_sort_key, reverse=True)
-        best_ckpt_path = sorted_checkpoints[0][2]
-        target_best = os.path.join(models_dir, "best.pth")
-        shutil.copy(best_ckpt_path, target_best)
-        logging.info(f"Copied best checkpoint {best_ckpt_path.name} to best.pth")
-    
-    plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
+        # MODIFIED: Сохраняем best.pth рядом с final.pth
+        # Ищем лучший чекпоинт по лексикографическому порядку из val_selection_metrics
+        if checkpoint_manager and checkpoint_manager.checkpoints:
+            # checkpoints уже отсортированы по checkpoint_metric, но нам нужен лексикографический порядок
+            # Пересортируем по val_selection_metrics
+            sel_keys = cfg.trainlog.val_selection_metrics if isinstance(cfg.trainlog.val_selection_metrics, (list, tuple)) else [cfg.trainlog.val_selection_metrics]
 
-    train_env.close()
-    if val_env:
-        val_env.close()
+            def get_sort_key(item):
+                metrics = item[3]  # item = (metric_val, ep, path, metrics_dict)
+                return tuple(metrics.get(k, -float('inf')) for k in sel_keys)
+
+            sorted_checkpoints = sorted(checkpoint_manager.checkpoints, key=get_sort_key, reverse=True)
+            best_ckpt_path = sorted_checkpoints[0][2]
+            target_best = os.path.join(models_dir, "best.pth")
+            shutil.copy(best_ckpt_path, target_best)
+            logging.info(f"Copied best checkpoint {best_ckpt_path.name} to best.pth")
+        
+        plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
+
+    finally:
+        train_env.close()
+        if val_env:
+            val_env.close()
 
     return best_validation, history
 

@@ -98,13 +98,23 @@ class SubprocVecEnv:
                 list(infos))
 
     def close(self):
+        # 1. Отправляем команду закрытия всем воркерам
         for r in self.remotes:
             try:
                 r.send((_CMD_CLOSE, None))
+            except (EOFError, BrokenPipeError, ConnectionResetError):
+                # Канал уже может быть закрыт
+                pass
             except Exception:
                 pass
+
+        # 2. Ждем завершения процессов и принудительно убиваем зависшие
         for p in self.procs:
             try:
-                p.join(timeout=0.2)
+                if p.is_alive():
+                    p.join(timeout=0.5)
+                    if p.is_alive():
+                        p.terminate()
+                        p.join()
             except Exception:
                 pass
