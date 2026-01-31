@@ -111,10 +111,11 @@ class SubprocVecEnv:
         # 2. Ждем завершения процессов и принудительно убиваем зависшие
         for p in self.procs:
             try:
+                p.join(timeout=0.2)
                 if p.is_alive():
-                    p.join(timeout=0.5)
+                    p.terminate()
+                    p.join(timeout=0.1)
                     if p.is_alive():
-                        p.terminate()
-                        p.join()
+                        p.kill()
             except Exception:
                 pass

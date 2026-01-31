@@ -1,7 +1,7 @@
 {
     "initial_state": "running",
     "cpu_threads": 6,
-    "deep_inference": false,
+    "deep_inference": true,
     "max_open_trades": 100,
     "stake_currency": "USDT",
     "stake_amount": 200,
@@ -69,10 +69,10 @@
     "rl_ensemble": {
         "epsilon_threshold": 0.5,
         "q_normalization": {
-            "long_1": {"q_min": 0.0, "q_max": 0.001},
+            "long_1": {"q_min": 0.0, "q_max": 0.0005},
             "long_2": {"q_min": 0.0, "q_max": 0.0006},
             "short_1": {"q_min": 0.0, "q_max": 0.0006},
-            "short_2": {"q_min": 0.0, "q_max": 0.001}
+            "short_2": {"q_min": 0.0, "q_max": 0.0005}
         }
     },
     
