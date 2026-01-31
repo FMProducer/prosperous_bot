@@ -75,7 +75,7 @@ class CustomD3QNStrategy4z(IStrategy):
     # Параметры TSL
     d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
     d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.001, 0.02, default=0.002, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.0001, 0.02, default=0.0005, space='stoploss', load=True)
     
     plot_config = {
         'main_plot': {},
@@ -431,10 +431,13 @@ class CustomD3QNStrategy4z(IStrategy):
         if p >= (last_p + hysteresis_val):
             self.tsl_memory[trade_id] = p
         
-        if p <= FEE_BUF:
+        # Используем запомненное значение (ступенчатое), чтобы гистерезис работал
+        calc_p = self.tsl_memory[trade_id]
+
+        if calc_p <= FEE_BUF:
             d_eff = d0_val
         else:
-            d_eff = d0_val - (p - FEE_BUF)
+            d_eff = d0_val - (calc_p - FEE_BUF)
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff
