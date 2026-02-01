@@ -36,9 +36,9 @@ class CustomD3QNStrategyBacktest(IStrategy):
     use_custom_stoploss = True
     
     # TSL Параметры (Hardcoded from original)
-    d0 = 0.07519862504113693
-    d_min = 0.0008225518697224519
-    hysteresis = 0.0015218098435784326
+    d0 = 0.075
+    d_min = 0.01
+    hysteresis = 0.0001
     FEE_BUF = 0.0008 
     
     # Пороги входа
@@ -264,10 +264,13 @@ class CustomD3QNStrategyBacktest(IStrategy):
         if p >= (last_p + self.hysteresis):
             self.tsl_memory[trade.id] = p
             
-        if p <= self.FEE_BUF:
+        # Используем запомненное значение для ступенчатого эффекта
+        calc_p = self.tsl_memory[trade.id]
+
+        if calc_p <= self.FEE_BUF:
             d_eff = self.d0
         else:
-            d_eff = self.d0 - (p - self.FEE_BUF)
+            d_eff = self.d0 - (calc_p - self.FEE_BUF)
             d_eff = max(self.d_min, d_eff)
             
         return -d_eff

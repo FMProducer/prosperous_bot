@@ -116,9 +116,9 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 0.00015  # Чуть повышаем (было 0.0001), чтобы быстрее выходить из плато
+cfg.rl.lr = 0.0002  # Повышаем LR для более агрессивного выхода из локального минимума
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
-cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
+cfg.rl.n_step = 10   # Увеличиваем горизонт n-step для лучшей связности действий и наград
 cfg.rl.batch_size = 64  # Увеличиваем батч для более стабильного градиента
 cfg.rl.train_start = 15000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
@@ -132,7 +132,7 @@ cfg.per.per_beta_frames = 250000  # Синхронизируем с новым t
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 85000  # Ускоряем затухание (с учетом 12 envs это ~1M шагов или ~1400 эпизодов)
+cfg.eps.eps_decay_frames = 20000  # 20k * 12 envs = 240k шагов. Эпсилон упадет до минимума к ~70% обучения (при бюджете 350k).
 
 # Env/Vectorized
 cfg.vec.num_envs = 12             # параллельные среды
@@ -194,7 +194,7 @@ cfg.market.max_drawdown_threshold = -0.10   # Штраф за превышени
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 cfg.market.continuous_pain_penalty_ratio = 0.0   # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.inaction_penalty_ratio = 0.001   # Штраф за бездействие (когда нет открытых позиций)
+cfg.market.inaction_penalty_ratio = 0.0   # ОТКЛЮЧАЕМ штраф за ожидание. Агент должен иметь право не входить в рынок.
 cfg.market.time_sl_penalty_ratio = 0.01   # Штраф за Time SL
 cfg.market.low_balance_penalty = 1.0   # Штраф за попытку торговли с низким балансом
 cfg.market.holding_penalty_multiplier = 0.0   # Множитель для прогрессивного штрафа за удержание убыточной позиции
