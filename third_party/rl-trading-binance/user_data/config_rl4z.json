@@ -61,23 +61,23 @@
     },
     "rl_ensemble": {
         "epsilon_threshold": 0.15,
-        "q_update_interval": 1800,
+        "q_update_interval": 900,
         "q_normalization": {
             "long_1": {
-                "q_min": 6.1e-05,
-                "q_max": 0.000254
+                "q_min": 8.4e-05,
+                "q_max": 0.001277
             },
             "long_2": {
-                "q_min": 0.000226,
-                "q_max": 0.001425
+                "q_min": 7.4e-05,
+                "q_max": 0.000791
             },
             "short_1": {
-                "q_min": 0.000524,
-                "q_max": 0.000706
+                "q_min": 0.000125,
+                "q_max": 0.00088
             },
             "short_2": {
-                "q_min": 8.3e-05,
-                "q_max": 0.000557
+                "q_min": 0.000199,
+                "q_max": 0.000619
             }
         }
     },

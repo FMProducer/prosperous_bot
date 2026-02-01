@@ -73,7 +73,7 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.0375, space='stoploss', load=True)
     d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
     hysteresis = DecimalParameter(0.00005, 0.01, default=0.0001, space='stoploss', load=True)
     
@@ -166,19 +166,19 @@ class CustomD3QNStrategy4z(IStrategy):
         }
         
         # --- ПУТИ К 4 МОДЕЛЯМ ---
-        # Long Model 1: PPO trending
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        # Long Model 1:
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
-        # Long Model 2: A2C mean-reversion (используем ту же модель для примера, замените на вашу вторую)
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
+        # Long Model 2:
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
-        # Short Model 1: SAC bearish trending
+        # Short Model 1:
         self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_203109"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
-        # Short Model 2: PPO short mean-reversion (используем ту же модель для примера, замените на вашу вторую)
+        # Short Model 2:
         self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
