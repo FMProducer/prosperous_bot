@@ -19,7 +19,7 @@
     "dynamic_slots": {
         "enabled": true,
         "min_slots_per_side": 10,
-        "update_interval_sec": 300
+        "update_interval_sec": 0
     },
     "api_server": {
         "enabled": true,

@@ -30,6 +30,7 @@ sys.modules['freqtrade.persistence'] = mock_persistence
 @pytest.fixture
 def strategy_config():
     return {
+        'runmode': 'dry_run',
         'max_open_trades': 100,  # ИСПОЛЬЗУЕМ ГЛОБАЛЬНЫЙ ПАРАМЕТР
         'cpu_threads': 4,
         'rl_enable_long_1': True,
@@ -166,3 +167,25 @@ def test_slot_history_saved(strategy):
     assert len(entry) == 5  # (timestamp, long_slots, short_slots, pnl_long, pnl_short)
     assert entry[3] == 100.0  # pnl_long
     assert entry[4] == 50.0   # pnl_short
+
+def test_on_demand_mode(strategy):
+    """При update_interval_sec == 0 (On-Demand) обновление происходит при каждом вызове"""
+    strategy.slot_update_interval = 0
+    strategy.last_slot_update = datetime.now() - timedelta(seconds=1) # Прошлый апдейт 1 сек назад
+
+    with patch.object(strategy, '_update_slot_allocation') as mock_update:
+        # Симулируем confirm_trade_entry
+        with patch('freqtrade.persistence.Trade.get_trades') as mock_trades:
+            # Mock the query object returned by get_trades
+            mock_query = MagicMock()
+            mock_query.all.return_value = []
+            # Make sure directional timeout is skipped by returning None for last_trade
+            mock_query.order_by.return_value.first.return_value = None
+            mock_trades.return_value = mock_query
+
+            # Первый вызов
+            strategy.confirm_trade_entry("BTC/USDT", "limit", 1.0, 50000.0, "gtc", datetime.now(), "tag", "long")
+            # Второй вызов (через мгновение)
+            strategy.confirm_trade_entry("ETH/USDT", "limit", 1.0, 2500.0, "gtc", datetime.now(), "tag", "long")
+
+    assert mock_update.call_count == 2
