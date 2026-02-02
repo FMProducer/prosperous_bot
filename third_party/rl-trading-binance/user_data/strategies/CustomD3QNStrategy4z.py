@@ -858,9 +858,16 @@ class CustomD3QNStrategy4z(IStrategy):
 
             # === ДИНАМИЧЕСКОЕ ОБНОВЛЕНИЕ СЛОТОВ ===
             if self.dynamic_slots_enabled:
-                if self.last_slot_update is None or (current_time - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                if self.slot_update_interval == 0:
+                    # On-Demand mode: обновляем при каждом входе
                     self._update_slot_allocation(current_time)
                     self.last_slot_update = current_time
+                else:
+                    # Таймер mode: обновляем по интервалу
+                    if self.last_slot_update is None or \
+                       (current_time - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                        self._update_slot_allocation(current_time)
+                        self.last_slot_update = current_time
             else:
                 # Фиксированные лимиты (legacy)
                 if self.total_slots > 0:
