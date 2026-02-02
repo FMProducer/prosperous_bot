@@ -39,9 +39,9 @@ def strategy_config():
         'rl_enable_short_2': True,
         'dynamic_slots': {
             'enabled': True,
-            'min_slots_per_side': 10,
-            'update_interval_sec': 300
-            # БЕЗ total_slots — берётся из max_open_trades
+            'min_slots_per_side': 5,
+            'update_interval_sec': 300,
+            'aggression_factor': 1.5
         },
         'rl_ensemble': {
             'epsilon_threshold': 0.15,
@@ -79,58 +79,66 @@ def test_pnl_calculation_via_freqtrade(strategy):
     assert pnl_short == -20.0
 
 def test_slot_allocation_long_profitable(strategy):
-    """При прибыльных лонгах и убыточных шортах: 70% слотов лонгам"""
+    """При прибыльных лонгах и убыточных шортах: V2 logic с aggression_factor"""
+    # pnl_long = 250, pnl_short = -100.
+    # profit_long = 250, loss_short = 100, total = 350
+    # penalty_ratio = (100/350)**1.5 ≈ 0.1527
+    # long_ratio = 0.8 + 0.15 * 0.1527 ≈ 0.8229
+    # available = 100 - 2*5 = 90
+    # Expected long = 5 + int(90 * 0.8229) = 5 + 74 = 79
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(250.0, -100.0)):
         strategy._update_slot_allocation(datetime.now())
 
-    assert strategy.max_long_slots > strategy.max_short_slots
-    assert strategy.max_long_slots >= 60  # ~70% от 100 минус минимум
+    assert strategy.max_long_slots == 79
+    assert strategy.max_short_slots == 21
 
 def test_slot_allocation_short_profitable(strategy):
-    """При прибыльных шортах и убыточных лонгах: 70% слотов шортам"""
+    """При прибыльных шортах и убыточных лонгах: V2 logic с aggression_factor"""
+    # pnl_long = -150, pnl_short = 300.
+    # profit_short = 300, loss_long = 150, total = 450
+    # penalty_ratio = (150/450)**1.5 ≈ 0.1924
+    # long_ratio = 0.2 - 0.15 * 0.1924 ≈ 0.1711
+    # Expected long = 5 + int(90 * 0.1711) = 5 + 15 = 20
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-150.0, 300.0)):
         strategy._update_slot_allocation(datetime.now())
 
-    assert strategy.max_short_slots > strategy.max_long_slots
-    assert strategy.max_short_slots >= 60
+    assert strategy.max_long_slots == 20
+    assert strategy.max_short_slots == 80
 
 def test_slot_allocation_both_negative(strategy):
     """При убытках по обеим сторонам: распределение обратно пропорционально убытку"""
     # Long -50, Short -80. Total loss 130.
-    # Long ratio = 80 / 130 = 0.615
-    # Available slots = 100 - 2*10 = 80
-    # Expected long = 10 + 80 * 0.615 = 10 + 49 = 59
+    # Long ratio = 80 / 130 = 0.6153
+    # Available slots = 100 - 2*5 = 90
+    # Expected long = 5 + int(90 * 0.6153) = 5 + 55 = 60
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-50.0, -80.0)):
         strategy._update_slot_allocation(datetime.now())
 
-    assert strategy.max_long_slots == 59
-    assert strategy.max_short_slots == 41
+    assert strategy.max_long_slots == 60
+    assert strategy.max_short_slots == 40
 
 def test_slot_allocation_both_negative_extreme(strategy):
     """При сильно разных убытках: значительное преимущество менее убыточному"""
     # Long -500, Short -50. Total loss 550.
-    # Long ratio = 50 / 550 = 0.09
-    # Expected long = 10 + 80 * 0.09 = 10 + 7 = 17
+    # Long ratio = 50 / 550 = 0.0909
+    # Expected long = 5 + int(90 * 0.0909) = 5 + 8 = 13
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-500.0, -50.0)):
         strategy._update_slot_allocation(datetime.now())
 
-    assert strategy.max_long_slots == 17
-    assert strategy.max_short_slots == 83
+    assert strategy.max_long_slots == 13
+    assert strategy.max_short_slots == 87
 
 def test_slot_allocation_both_negative_inverse(strategy):
     """При разных убытках - меньше слотов направлению с большим убытком"""
     # Long теряет меньше (-47), Short теряет больше (-119)
     # Total loss = 166. Long ratio = 119 / 166 = 0.7168
-    # Expected long = 10 + 80 * 0.7168 = 10 + 57 = 67
+    # Expected long = 5 + int(90 * 0.7168) = 5 + 64 = 69
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-47.0, -119.0)):
         strategy._update_slot_allocation(datetime.now())
 
     # Лонгам должно достаться БОЛЬШЕ слотов (т.к. они теряют меньше)
     assert strategy.max_long_slots > strategy.max_short_slots
-
-    # Проверяем примерное соотношение (119/(47+119) ≈ 0.72)
-    expected_long = 10 + int(80 * 0.7168)  # 10 + 57 = 67
-    assert abs(strategy.max_long_slots - expected_long) <= 2
+    assert strategy.max_long_slots == 69
 
 def test_min_slots_guarantee(strategy):
     """Минимальная гарантия соблюдается даже при экстремальном PnL"""

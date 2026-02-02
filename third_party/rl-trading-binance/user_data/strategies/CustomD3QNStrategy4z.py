@@ -172,6 +172,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.dynamic_slots_enabled = self.dynamic_slots_cfg.get('enabled', False)
         self.total_slots = config.get('max_open_trades', 100)  # Используем глобальный параметр
         self.min_slots_per_side = self.dynamic_slots_cfg.get('min_slots_per_side', 10)
+        self.aggression_factor = self.dynamic_slots_cfg.get('aggression_factor', 1.5)
         self.slot_update_interval = self.dynamic_slots_cfg.get('update_interval_sec', 300)
 
         self.max_long_slots = self.total_slots // 2 if self.total_slots > 0 else 50
@@ -660,13 +661,27 @@ class CustomD3QNStrategy4z(IStrategy):
 
         pnl_long, pnl_short = self._get_pnl_from_freqtrade()
 
-        # === УЛУЧШЕННАЯ ЛОГИКА РАСПРЕДЕЛЕНИЯ ===
+        # === УЛУЧШЕННАЯ ЛОГИКА V2 ===
         if pnl_long > 0 and pnl_short < 0:
-            long_ratio = 0.7
-            reason = "Long profitable, Short losing"
+            # Пропорциональное наказание убыточного направления
+            profit_long = pnl_long
+            loss_short = abs(pnl_short)
+            total = profit_long + loss_short
+
+            penalty_ratio = (loss_short / total) ** self.aggression_factor
+            long_ratio = 0.8 + 0.15 * penalty_ratio
+            reason = f"Long profitable (+{pnl_long:.0f}), Short losing (-{loss_short:.0f})"
+
         elif pnl_short > 0 and pnl_long < 0:
-            long_ratio = 0.3
-            reason = "Short profitable, Long losing"
+            # Зеркально
+            profit_short = pnl_short
+            loss_long = abs(pnl_long)
+            total = profit_short + loss_long
+
+            penalty_ratio = (loss_long / total) ** self.aggression_factor
+            long_ratio = 0.2 - 0.15 * penalty_ratio
+            reason = f"Short profitable (+{pnl_short:.0f}), Long losing (-{loss_long:.0f})"
+
         elif pnl_long > 0 and pnl_short > 0:
             long_ratio = pnl_long / (pnl_long + pnl_short)
             reason = f"Both profitable (L:{pnl_long:.0f} S:{pnl_short:.0f})"
@@ -686,6 +701,9 @@ class CustomD3QNStrategy4z(IStrategy):
         else:
             long_ratio = 0.5
             reason = "One side at zero"
+
+        # Ограничиваем в разумных пределах
+        long_ratio = max(0.05, min(0.95, long_ratio))
 
         available = self.total_slots - 2 * self.min_slots_per_side
         if available < 0:

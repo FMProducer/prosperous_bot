@@ -18,8 +18,9 @@
     "rl_enable_short_2": true,
     "dynamic_slots": {
         "enabled": true,
-        "min_slots_per_side": 10,
-        "update_interval_sec": 0
+        "min_slots_per_side": 5,
+        "update_interval_sec": 0,
+        "aggression_factor": 1.5
     },
     "api_server": {
         "enabled": true,
