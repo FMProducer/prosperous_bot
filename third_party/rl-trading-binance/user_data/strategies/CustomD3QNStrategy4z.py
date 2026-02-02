@@ -778,6 +778,7 @@ class CustomD3QNStrategy4z(IStrategy):
         
         try:
             from freqtrade.persistence import Trade  # type: ignore
+            from datetime import timezone
             
             # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
             # 1. Находим последнюю закрытую сделку по этой паре
@@ -785,17 +786,15 @@ class CustomD3QNStrategy4z(IStrategy):
             if hasattr(trades_query, 'order_by'):
                 last_trade = trades_query.order_by(Trade.close_date.desc()).first()
             else:
-                # Fallback if get_trades returns a list
-                sorted_trades = sorted(trades_query, key=lambda x: x.close_date if x.close_date else datetime.min, reverse=True)
+                # Fallback for older freqtrade versions returning a list
+                min_date = datetime.min.replace(tzinfo=timezone.utc)
+                sorted_trades = sorted(trades_query, key=lambda x: x.close_date if x.close_date else min_date, reverse=True)
                 last_trade = sorted_trades[0] if sorted_trades else None
             
             if last_trade and last_trade.close_date:
-                # Синхронизация таймзон (на случай если current_time aware, а close_date naive)
                 c_date = last_trade.close_date
-                if current_time.tzinfo is not None and c_date.tzinfo is None:
-                    c_date = c_date.replace(tzinfo=current_time.tzinfo)
-                elif current_time.tzinfo is None and c_date.tzinfo is not None:
-                    c_date = c_date.replace(tzinfo=None)
+                if c_date.tzinfo is None:
+                    c_date = c_date.replace(tzinfo=timezone.utc)
 
                 minutes_since = (current_time - c_date).total_seconds() / 60.0
                 # Smart Cooldown: Блокируем только если сделка была убыточной
