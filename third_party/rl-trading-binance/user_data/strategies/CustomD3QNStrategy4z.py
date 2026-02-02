@@ -640,17 +640,32 @@ class CustomD3QNStrategy4z(IStrategy):
 
         pnl_long, pnl_short = self._get_pnl_from_freqtrade()
 
-        # УЛУЧШЕННАЯ логика распределения
+        # === УЛУЧШЕННАЯ ЛОГИКА РАСПРЕДЕЛЕНИЯ ===
         if pnl_long > 0 and pnl_short < 0:
             long_ratio = 0.7
+            reason = "Long profitable, Short losing"
         elif pnl_short > 0 and pnl_long < 0:
             long_ratio = 0.3
+            reason = "Short profitable, Long losing"
         elif pnl_long > 0 and pnl_short > 0:
-            # Оба прибыльны → пропорционально вкладу
             long_ratio = pnl_long / (pnl_long + pnl_short)
+            reason = f"Both profitable (L:{pnl_long:.0f} S:{pnl_short:.0f})"
+        elif pnl_long < 0 and pnl_short < 0:
+            # ОБА УБЫТОЧНЫ → ИНВЕРТИРОВАННАЯ ПРОПОРЦИЯ
+            loss_long = abs(pnl_long)
+            loss_short = abs(pnl_short)
+            total_loss = loss_long + loss_short
+
+            if total_loss > 0:
+                # Инвертируем: большему убытку - меньше слотов
+                long_ratio = loss_short / total_loss
+                reason = f"Both losing - inverse allocation (L:-{loss_long:.0f} S:-{loss_short:.0f})"
+            else:
+                long_ratio = 0.5
+                reason = "Both at zero"
         else:
-            # Оба убыточны или нулевые → равное распределение
             long_ratio = 0.5
+            reason = "One side at zero"
 
         available = self.total_slots - 2 * self.min_slots_per_side
         if available < 0:
@@ -662,7 +677,7 @@ class CustomD3QNStrategy4z(IStrategy):
             self.max_short_slots = self.total_slots - self.max_long_slots
 
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
-        logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT)")
+        logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
 
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
