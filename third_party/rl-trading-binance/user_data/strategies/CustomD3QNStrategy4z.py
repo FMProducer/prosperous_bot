@@ -585,18 +585,32 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _get_pnl_from_freqtrade(self) -> tuple:
         """
-        Получает PnL по лонгам и шортам из FreqTrade
+        Получает ОБЩИЙ PnL по лонгам и шортам из FreqTrade
+        ROI All Trades = закрытые сделки + открытые позиции
         Возвращает (pnl_long_usdt, pnl_short_usdt)
         """
         try:
+            # === 1. ЗАКРЫТЫЕ СДЕЛКИ (Realized PnL) ===
+            closed_trades = Trade.get_trades([Trade.is_open.is_(False)]).all()
+
+            pnl_long_closed = 0.0
+            pnl_short_closed = 0.0
+
+            for t in closed_trades:
+                if t.close_profit_abs is not None:
+                    if t.is_short:
+                        pnl_short_closed += t.close_profit_abs
+                    else:
+                        pnl_long_closed += t.close_profit_abs
+
+            # === 2. ОТКРЫТЫЕ ПОЗИЦИИ (Unrealized PnL) ===
             open_trades = Trade.get_open_trades()
 
-            pnl_long = 0.0
-            pnl_short = 0.0
+            pnl_long_open = 0.0
+            pnl_short_open = 0.0
 
             for t in open_trades:
                 try:
-                    # ИСПРАВЛЕНО: calc_profit() возвращает абсолютный PnL в USDT
                     if t.close_rate_requested:
                         profit_usdt = t.calc_profit(rate=t.close_rate_requested)
                     else:
@@ -617,11 +631,21 @@ class CustomD3QNStrategy4z(IStrategy):
                     profit_usdt = 0.0
 
                 if t.is_short:
-                    pnl_short += profit_usdt
+                    pnl_short_open += profit_usdt
                 else:
-                    pnl_long += profit_usdt
+                    pnl_long_open += profit_usdt
 
-            return pnl_long, pnl_short
+            # === 3. ИТОГОВЫЙ PnL (All Trades) ===
+            pnl_long_total = pnl_long_closed + pnl_long_open
+            pnl_short_total = pnl_short_closed + pnl_short_open
+
+            logger.debug(
+                f"PnL Breakdown: "
+                f"Long [Closed: {pnl_long_closed:+.2f} + Open: {pnl_long_open:+.2f} = {pnl_long_total:+.2f}] | "
+                f"Short [Closed: {pnl_short_closed:+.2f} + Open: {pnl_short_open:+.2f} = {pnl_short_total:+.2f}]"
+            )
+
+            return pnl_long_total, pnl_short_total
 
         except Exception as e:
             logger.error(f"Failed to calculate PnL: {e}")
