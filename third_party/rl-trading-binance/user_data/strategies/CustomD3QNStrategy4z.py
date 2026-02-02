@@ -589,8 +589,6 @@ class CustomD3QNStrategy4z(IStrategy):
         Возвращает (pnl_long_usdt, pnl_short_usdt)
         """
         try:
-            from freqtrade.persistence import Trade
-
             open_trades = Trade.get_open_trades()
 
             pnl_long = 0.0
@@ -598,16 +596,20 @@ class CustomD3QNStrategy4z(IStrategy):
 
             for t in open_trades:
                 # Используем calc_profit() для абсолютных значений в USDT
-                # Если нет close_rate_requested, берем текущую цену
-                if t.close_rate_requested:
-                    profit_usdt = t.calc_profit(rate=t.close_rate_requested)
-                else:
-                    # Fallback: текущая рыночная цена (требует dp.get_current_ticker)
-                    try:
-                        current_rate = self.dp.get_current_ticker(t.pair)['last']
-                        profit_usdt = t.calc_profit(rate=current_rate)
-                    except:
-                        profit_usdt = 0.0
+                try:
+                    if t.close_rate_requested:
+                        profit_usdt = t.calc_profit(rate=t.close_rate_requested)
+                    else:
+                        # Защита от отсутствия DataProvider
+                        if hasattr(self, 'dp') and self.dp:
+                            current_rate = self.dp.get_current_ticker(t.pair)['last']
+                            profit_usdt = t.calc_profit(rate=current_rate)
+                        else:
+                            # Консервативный подход: используем open_rate
+                            profit_usdt = t.calc_profit(rate=t.open_rate)
+                except Exception as e:
+                    logger.warning(f"Failed to calc profit for {t.pair}: {e}")
+                    profit_usdt = 0.0
 
                 if t.is_short:
                     pnl_short += profit_usdt
@@ -629,15 +631,17 @@ class CustomD3QNStrategy4z(IStrategy):
 
         pnl_long, pnl_short = self._get_pnl_from_freqtrade()
 
-        # Логика распределения
+        # УЛУЧШЕННАЯ логика распределения
         if pnl_long > 0 and pnl_short < 0:
-            long_ratio = 0.7  # Лонги прибыльны, шорты нет
+            long_ratio = 0.7
         elif pnl_short > 0 and pnl_long < 0:
-            long_ratio = 0.3  # Шорты прибыльны, лонги нет
-        elif (pnl_long + pnl_short) > 0:
+            long_ratio = 0.3
+        elif pnl_long > 0 and pnl_short > 0:
+            # Оба прибыльны → пропорционально вкладу
             long_ratio = pnl_long / (pnl_long + pnl_short)
         else:
-            long_ratio = 0.5  # Оба убыточны — равное распределение
+            # Оба убыточны или нулевые → равное распределение
+            long_ratio = 0.5
 
         available = self.total_slots - 2 * self.min_slots_per_side
         if available < 0:

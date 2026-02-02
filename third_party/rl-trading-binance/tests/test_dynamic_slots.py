@@ -27,8 +27,6 @@ sys.modules['freqtrade'] = MagicMock()
 sys.modules['freqtrade.strategy'] = mock_strategy
 sys.modules['freqtrade.persistence'] = mock_persistence
 
-from user_data.strategies.CustomD3QNStrategy4z import CustomD3QNStrategy4z
-
 @pytest.fixture
 def strategy_config():
     return {
@@ -52,6 +50,8 @@ def strategy_config():
 
 @pytest.fixture
 def strategy(strategy_config):
+    from user_data.strategies.CustomD3QNStrategy4z import CustomD3QNStrategy4z
+
     with patch('user_data.strategies.CustomD3QNStrategy4z.D3QN_PER_Agent'), \
          patch.object(CustomD3QNStrategy4z, '_find_config_file', return_value=Path("dummy_cfg.py")), \
          patch.object(CustomD3QNStrategy4z, '_load_py_config', return_value=MagicMock()), \
@@ -98,7 +98,17 @@ def test_slot_allocation_both_negative(strategy):
     with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-50.0, -80.0)):
         strategy._update_slot_allocation(datetime.now())
 
-    assert abs(strategy.max_long_slots - 50) <= 5  # допуск на округление
+    assert abs(strategy.max_long_slots - 50) <= 1
+    assert abs(strategy.max_short_slots - 50) <= 1
+
+def test_slot_allocation_both_negative_extreme(strategy):
+    """При сильно разных убытках всё равно должно быть 50/50"""
+    with patch.object(strategy, '_get_pnl_from_freqtrade', return_value=(-500.0, -50.0)):
+        strategy._update_slot_allocation(datetime.now())
+
+    # Оба убыточны → равное распределение, независимо от размера убытков
+    assert abs(strategy.max_long_slots - 50) <= 1
+    assert abs(strategy.max_short_slots - 50) <= 1
 
 def test_min_slots_guarantee(strategy):
     """Минимальная гарантия соблюдается даже при экстремальном PnL"""
