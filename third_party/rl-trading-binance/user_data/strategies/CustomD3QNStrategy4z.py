@@ -598,17 +598,26 @@ class CustomD3QNStrategy4z(IStrategy):
                 # Используем calc_profit() для абсолютных значений в USDT
                 try:
                     if t.close_rate_requested:
-                        profit_usdt = t.calc_profit(rate=t.close_rate_requested)
+                        profit_ratio = t.calc_profit(rate=t.close_rate_requested)
                     else:
-                        # Защита от отсутствия DataProvider
+                        # Используем analyzed dataframe для получения текущей цены
                         if hasattr(self, 'dp') and self.dp:
-                            current_rate = self.dp.get_current_ticker(t.pair)['last']
-                            profit_usdt = t.calc_profit(rate=current_rate)
+                            try:
+                                dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)
+                                if not dataframe.empty:
+                                    current_rate = dataframe['close'].iloc[-1]
+                                    profit_ratio = t.calc_profit(rate=current_rate)
+                                else:
+                                    profit_ratio = t.calc_profit(rate=t.open_rate)
+                            except Exception:
+                                profit_ratio = t.calc_profit(rate=t.open_rate)
                         else:
-                            # Консервативный подход: используем open_rate
-                            profit_usdt = t.calc_profit(rate=t.open_rate)
+                            # Консервативный fallback
+                            profit_ratio = t.calc_profit(rate=t.open_rate)
+                    
+                    profit_usdt = profit_ratio * t.stake_amount
                 except Exception as e:
-                    logger.warning(f"Failed to calc profit for {t.pair}: {e}")
+                    logger.debug(f"Failed to calc profit for {t.pair}: {e}")
                     profit_usdt = 0.0
 
                 if t.is_short:
