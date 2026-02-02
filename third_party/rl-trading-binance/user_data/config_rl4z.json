@@ -60,24 +60,24 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
-        "epsilon_threshold": 0.8,
+        "epsilon_threshold": 0.25,
         "q_update_interval": 1800,
         "q_normalization": {
             "long_1": {
-                "q_min": 5.2e-05,
-                "q_max": 0.001449
+                "q_min": 6.9e-05,
+                "q_max": 0.001019
             },
             "long_2": {
-                "q_min": 5.2e-05,
-                "q_max": 0.001449
+                "q_min": 0.000146,
+                "q_max": 0.001414
             },
             "short_1": {
-                "q_min": 0.00023,
-                "q_max": 0.000633
+                "q_min": 0.000206,
+                "q_max": 0.000645
             },
             "short_2": {
-                "q_min": 0.00023,
-                "q_max": 0.000633
+                "q_min": 0.000133,
+                "q_max": 0.000877
             }
         }
     },

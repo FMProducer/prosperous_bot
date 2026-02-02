@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-AGENT_MODE = "LONG_ONLY"
-# AGENT_MODE = "SHORT_ONLY"
+# AGENT_MODE = "LONG_ONLY"
+AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_ohlcv_z"
@@ -70,7 +70,7 @@ cfg.seq.post_signal_len = 60
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.model_path = ""
 
@@ -116,9 +116,9 @@ else: # UNIVERSAL
 # 0=Wait, 1=Buy, 2=Sell. В режиме SHORT_ONLY агент просто не будет нажимать 1.
 
 # RL/DQN Params (custom agent)
-cfg.rl.lr = 0.0002  # Повышаем LR для более агрессивного выхода из локального минимума
+cfg.rl.lr = 0.0003  # Снижаем скорость обучения для большей стабильности
 cfg.rl.gamma = 0.99         # Выше для длинного горизонта
-cfg.rl.n_step = 10   # Увеличиваем горизонт n-step для лучшей связности действий и наград
+cfg.rl.n_step = 5   # Чуть больше для лучшего связывания наград
 cfg.rl.batch_size = 64  # Увеличиваем батч для более стабильного градиента
 cfg.rl.train_start = 15000  # Значительно увеличиваем warmup, чтобы собрать разнообразный опыт перед обучением
 cfg.rl.target_update_freq = 5000   # Чаще для длинных эпизодов
@@ -132,7 +132,7 @@ cfg.per.per_beta_frames = 250000  # Синхронизируем с новым t
 cfg.per.per_eps = 1e-6
 cfg.eps.eps_start = 1.0
 cfg.eps.eps_end = 0.05
-cfg.eps.eps_decay_frames = 20000  # 20k * 12 envs = 240k шагов. Эпсилон упадет до минимума к ~70% обучения (при бюджете 350k).
+cfg.eps.eps_decay_frames = 180000  # Заканчиваем исследование раньше (под новый бюджет)
 
 # Env/Vectorized
 cfg.vec.num_envs = 12             # параллельные среды
@@ -194,7 +194,7 @@ cfg.market.max_drawdown_threshold = -0.10   # Штраф за превышени
 cfg.market.max_drawdown_penalty_type = "proportional"
 cfg.market.max_drawdown_penalty = 1.0
 cfg.market.continuous_pain_penalty_ratio = 0.0   # Штраф за удержание убыточной позиции (каждый шаг)
-cfg.market.inaction_penalty_ratio = 0.0   # ОТКЛЮЧАЕМ штраф за ожидание. Агент должен иметь право не входить в рынок.
+cfg.market.inaction_penalty_ratio = 0.001   # Штраф за бездействие (когда нет открытых позиций)
 cfg.market.time_sl_penalty_ratio = 0.01   # Штраф за Time SL
 cfg.market.low_balance_penalty = 1.0   # Штраф за попытку торговли с низким балансом
 cfg.market.holding_penalty_multiplier = 0.0   # Множитель для прогрессивного штрафа за удержание убыточной позиции
@@ -224,7 +224,7 @@ cfg.backtest.short_action_threshold = 0.0  # -0.015 Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = False # Включаем для работы TSL
+cfg.backtest.use_risk_management = True # Включаем для работы TSL
 cfg.backtest.trailing_stop = 0.07519862504113693
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True
