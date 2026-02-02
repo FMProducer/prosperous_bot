@@ -37,7 +37,9 @@ try:
     from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
-    class IStrategy: pass
+    class IStrategy:
+        def __init__(self, config: dict, **kwargs):
+            self.config = config
     class DecimalParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
     class IntParameter:
@@ -164,7 +166,21 @@ class CustomD3QNStrategy4z(IStrategy):
             'long_entries': 0,
             'short_entries': 0,
         }
-        
+
+        # === DYNAMIC SLOT ALLOCATION ===
+        self.dynamic_slots_cfg = config.get('dynamic_slots', {})
+        self.dynamic_slots_enabled = self.dynamic_slots_cfg.get('enabled', False)
+        self.total_slots = config.get('max_open_trades', 100)  # Используем глобальный параметр
+        self.min_slots_per_side = self.dynamic_slots_cfg.get('min_slots_per_side', 10)
+        self.slot_update_interval = self.dynamic_slots_cfg.get('update_interval_sec', 300)
+
+        self.max_long_slots = self.total_slots // 2 if self.total_slots > 0 else 50
+        self.max_short_slots = self.total_slots - self.max_long_slots if self.total_slots > 0 else 50
+        self.last_slot_update: Optional[datetime] = None
+        self.slot_history = deque(maxlen=100)
+
+        logger.info(f"🎰 Dynamic Slots: {'ENABLED' if self.dynamic_slots_enabled else 'DISABLED'} | Total: {self.total_slots}")
+
         # --- ПУТИ К 4 МОДЕЛЯМ ---
         # Long Model 1:
         self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
@@ -567,6 +583,74 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception as e:
             logger.error(f"Failed to auto-tune config: {e}")
 
+    def _get_pnl_from_freqtrade(self) -> tuple:
+        """
+        Получает PnL по лонгам и шортам из FreqTrade
+        Возвращает (pnl_long_usdt, pnl_short_usdt)
+        """
+        try:
+            from freqtrade.persistence import Trade
+
+            open_trades = Trade.get_open_trades()
+
+            pnl_long = 0.0
+            pnl_short = 0.0
+
+            for t in open_trades:
+                # Используем calc_profit() для абсолютных значений в USDT
+                # Если нет close_rate_requested, берем текущую цену
+                if t.close_rate_requested:
+                    profit_usdt = t.calc_profit(rate=t.close_rate_requested)
+                else:
+                    # Fallback: текущая рыночная цена (требует dp.get_current_ticker)
+                    try:
+                        current_rate = self.dp.get_current_ticker(t.pair)['last']
+                        profit_usdt = t.calc_profit(rate=current_rate)
+                    except:
+                        profit_usdt = 0.0
+
+                if t.is_short:
+                    pnl_short += profit_usdt
+                else:
+                    pnl_long += profit_usdt
+
+            return pnl_long, pnl_short
+
+        except Exception as e:
+            logger.error(f"Failed to calculate PnL: {e}")
+            return 0.0, 0.0
+
+    def _update_slot_allocation(self, current_time: datetime) -> None:
+        """
+        Динамическое перераспределение слотов на основе PnL из FreqTrade
+        """
+        if not self.dynamic_slots_enabled or self.total_slots <= 0:
+            return
+
+        pnl_long, pnl_short = self._get_pnl_from_freqtrade()
+
+        # Логика распределения
+        if pnl_long > 0 and pnl_short < 0:
+            long_ratio = 0.7  # Лонги прибыльны, шорты нет
+        elif pnl_short > 0 and pnl_long < 0:
+            long_ratio = 0.3  # Шорты прибыльны, лонги нет
+        elif (pnl_long + pnl_short) > 0:
+            long_ratio = pnl_long / (pnl_long + pnl_short)
+        else:
+            long_ratio = 0.5  # Оба убыточны — равное распределение
+
+        available = self.total_slots - 2 * self.min_slots_per_side
+        if available < 0:
+            # Защита если min_slots_per_side слишком велик
+            self.max_long_slots = self.total_slots // 2
+            self.max_short_slots = self.total_slots - self.max_long_slots
+        else:
+            self.max_long_slots = self.min_slots_per_side + int(available * long_ratio)
+            self.max_short_slots = self.total_slots - self.max_long_slots
+
+        self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
+        logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT)")
+
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
         Нормализует Q-value модели в диапазон [0, 1]
@@ -725,19 +809,30 @@ class CustomD3QNStrategy4z(IStrategy):
             else:
                 trades = open_trades_q
 
+            # === ДИНАМИЧЕСКОЕ ОБНОВЛЕНИЕ СЛОТОВ ===
+            if self.dynamic_slots_enabled:
+                if self.last_slot_update is None or (current_time - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                    self._update_slot_allocation(current_time)
+                    self.last_slot_update = current_time
+            else:
+                # Фиксированные лимиты (legacy)
+                if self.total_slots > 0:
+                    self.max_long_slots = self.total_slots // 2
+                    self.max_short_slots = self.total_slots - self.max_long_slots
+                else:
+                    self.max_long_slots = 50
+                    self.max_short_slots = 50
+
             current_shorts = sum(1 for t in trades if t.is_short)
             current_longs = sum(1 for t in trades if not t.is_short)
-            
-            MAX_LONGS = 50
-            MAX_SHORTS = 50
-            
+
             if side == "long":
-                if current_longs >= MAX_LONGS:
-                    self.logger.info(f"🚫 Denied {pair} LONG: Max longs {current_longs}/{MAX_LONGS} reached")
+                if current_longs >= self.max_long_slots:
+                    self.logger.info(f"🚫 LONG LIMIT: {pair} {current_longs}/{self.max_long_slots}")
                     return False
             elif side == "short":
-                if current_shorts >= MAX_SHORTS:
-                    self.logger.info(f"🚫 Denied {pair} SHORT: Max shorts {current_shorts}/{MAX_SHORTS} reached")
+                if current_shorts >= self.max_short_slots:
+                    self.logger.info(f"🚫 SHORT LIMIT: {pair} {current_shorts}/{self.max_short_slots}")
                     return False
         except Exception as e:
             self.logger.error(f"Error in confirm_trade_entry: {e}")
