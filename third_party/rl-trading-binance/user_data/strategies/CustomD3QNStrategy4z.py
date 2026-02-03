@@ -196,7 +196,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_203109"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_232020"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
