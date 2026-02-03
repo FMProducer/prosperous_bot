@@ -75,9 +75,9 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.0375, space='stoploss', load=True)
-    d_min = DecimalParameter(0.001, 0.05, default=0.01, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.0001, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.07519862504113693, space='stoploss', load=True)
+    d_min = DecimalParameter(0.001, 0.05, default=0.0008225518697224519, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.0015218098435784326, space='stoploss', load=True)
     
     plot_config = {
         'main_plot': {},
@@ -594,8 +594,8 @@ class CustomD3QNStrategy4z(IStrategy):
             # === 1. ЗАКРЫТЫЕ СДЕЛКИ (Realized PnL) ===
             closed_trades = Trade.get_trades([Trade.is_open.is_(False)]).all()
 
-            pnl_long_closed = 0.0
-            pnl_short_closed = 0.0
+            # pnl_long_closed = 0.0
+            # pnl_short_closed = 0.0
 
             for t in closed_trades:
                 if t.close_profit_abs is not None:
@@ -637,8 +637,8 @@ class CustomD3QNStrategy4z(IStrategy):
                     pnl_long_open += profit_usdt
 
             # === 3. ИТОГОВЫЙ PnL (All Trades) ===
-            pnl_long_total = pnl_long_closed + pnl_long_open
-            pnl_short_total = pnl_short_closed + pnl_short_open
+            pnl_long_total = pnl_long_open
+            pnl_short_total = pnl_short_open
 
             logger.debug(
                 f"PnL Breakdown: "
