@@ -586,25 +586,12 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _get_pnl_from_freqtrade(self) -> tuple:
         """
-        Получает ОБЩИЙ PnL по лонгам и шортам из FreqTrade
-        ROI All Trades = закрытые сделки + открытые позиции
+        Получает ТОЛЬКО Unrealized PnL (открытые позиции)
+        для мгновенной реакции на изменение рынка
         Возвращает (pnl_long_usdt, pnl_short_usdt)
         """
         try:
-            # === 1. ЗАКРЫТЫЕ СДЕЛКИ (Realized PnL) ===
-            closed_trades = Trade.get_trades([Trade.is_open.is_(False)]).all()
-
-            # pnl_long_closed = 0.0
-            # pnl_short_closed = 0.0
-
-            for t in closed_trades:
-                if t.close_profit_abs is not None:
-                    if t.is_short:
-                        pnl_short_closed += t.close_profit_abs
-                    else:
-                        pnl_long_closed += t.close_profit_abs
-
-            # === 2. ОТКРЫТЫЕ ПОЗИЦИИ (Unrealized PnL) ===
+            # === ОТКРЫТЫЕ ПОЗИЦИИ (Unrealized PnL) ===
             open_trades = Trade.get_open_trades()
 
             pnl_long_open = 0.0
@@ -636,17 +623,14 @@ class CustomD3QNStrategy4z(IStrategy):
                 else:
                     pnl_long_open += profit_usdt
 
-            # === 3. ИТОГОВЫЙ PnL (All Trades) ===
-            pnl_long_total = pnl_long_open
-            pnl_short_total = pnl_short_open
-
+            # Возвращаем ТОЛЬКО Unrealized PnL
             logger.debug(
-                f"PnL Breakdown: "
-                f"Long [Closed: {pnl_long_closed:+.2f} + Open: {pnl_long_open:+.2f} = {pnl_long_total:+.2f}] | "
-                f"Short [Closed: {pnl_short_closed:+.2f} + Open: {pnl_short_open:+.2f} = {pnl_short_total:+.2f}]"
+                f"PnL (Unrealized Only): "
+                f"Long Open={pnl_long_open:.2f} | "
+                f"Short Open={pnl_short_open:.2f}"
             )
 
-            return pnl_long_total, pnl_short_total
+            return pnl_long_open, pnl_short_open
 
         except Exception as e:
             logger.error(f"Failed to calculate PnL: {e}")
