@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-AGENT_MODE = "LONG_ONLY"
-# AGENT_MODE = "SHORT_ONLY"
+# AGENT_MODE = "LONG_ONLY"
+AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_ohlcv_z"
@@ -224,7 +224,7 @@ cfg.backtest.short_action_threshold = 0.0  # -0.015 Negative for short
 cfg.backtest.return_qvals = True
 cfg.backtest.use_cache = True
 cfg.backtest.clear_disk_cache = False
-cfg.backtest.use_risk_management = False # Включаем для работы TSL
+cfg.backtest.use_risk_management = True # Включаем для работы TSL
 cfg.backtest.trailing_stop = 0.07519862504113693
 cfg.backtest.exec_delay_bars = 1
 cfg.backtest.plot_backtest_balance_curve = True

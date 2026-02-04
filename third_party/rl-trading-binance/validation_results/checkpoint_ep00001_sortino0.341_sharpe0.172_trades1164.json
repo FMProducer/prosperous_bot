@@ -1,0 +1,43 @@
+{
+  "episode": 1,
+  "metrics": {
+    "Validation_sortino": 0.3413697311540409,
+    "Validation_sharpe": 0.17217968540481352,
+    "Validation_net_pnl": 6028.8193359375,
+    "Validation_win_rate": 0.5103092783505154,
+    "Validation_trades": 1164,
+    "Validation_profit_factor": 1.6413297080051577,
+    "Validation_max_drawdown": -0.024892161120547183,
+    "Validation_gross_pnl": 6957.24072265625,
+    "Validation_total_commission": 928.41748046875,
+    "Validation_avg_pnl_per_trade": 5.179398059844971,
+    "Validation_pnl_per_day": 124.30554962158203,
+    "Validation_best_trade": 188.91403198242188,
+    "Validation_worst_trade": -82.78233337402344,
+    "Validation_long_trades": 0,
+    "Validation_short_trades": 1164,
+    "Validation_win_trades": 594,
+    "Validation_loss_trades": 570,
+    "Validation_avg_holding_time": 52.060137457044675,
+    "Validation_max_holding_time": 60.0,
+    "Validation_min_holding_time": 4.0,
+    "Validation_total_duration_seconds": 280.64431285858154,
+    "Validation_bars_processed": 69840,
+    "Validation_trading_time_days": 48.5,
+    "Validation_roi_percent": 60.28819274902344,
+    "Validation_roi_annualized": 453.71527099609375,
+    "Validation_commission_percent": 13.344621658325195,
+    "Validation_avg_win_size": 25.975281160588217,
+    "Validation_avg_loss_size": -16.49210215195229,
+    "Validation_win_loss_ratio": 1.5750133561665656,
+    "Validation_expectancy": 5.179397579704977,
+    "Validation_tsl_hits": 673,
+    "Validation_exit_reasons": {
+      "Time SL": 491,
+      "TSL": 230,
+      "TSL Time": 364,
+      "TSL SL": 79
+    }
+  },
+  "timestamp": "2026-02-04T20:28:23Z"
+}
