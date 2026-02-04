@@ -538,11 +538,26 @@ class CustomD3QNStrategy4z(IStrategy):
         return results
 
     def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
+        """
+        Сбор статистики advantage для автоподбора q_min/q_max.
+        Вместо одного последнего значения используем все положительные
+        значения из adv_array и храним короткое скользящее окно.
+        """
         if name not in self.adv_history:
-            self.adv_history[name] = deque(maxlen=50000)
-        # Берем последнее значение (текущая свеча)
-        if len(adv_array) > 0:
-            self.adv_history[name].append(float(adv_array[-1]))
+            # Примерно 5 минут истории:
+            # при большом количестве пар метод вызывается очень часто,
+            # поэтому 1280 элементов дают короткое, но репрезентативное окно.
+            self.adv_history[name] = deque(maxlen=1280)
+
+        if adv_array is None or len(adv_array) == 0:
+            return
+
+        # Берем только положительные advantage (сигналы выше нуля)
+        # и добавляем их в общую историю по данной модели.
+        pos_arr = np.asarray(adv_array, dtype=float)
+        pos_arr = pos_arr[pos_arr > 0.0]
+        if pos_arr.size > 0:
+            self.adv_history[name].extend(pos_arr.tolist())
 
     def update_normalization_config(self):
         try:
