@@ -406,20 +406,17 @@ class CustomD3QNStrategy4z(IStrategy):
         # Окно нормализации из обучения
         window = 90
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-        
         for col in ohlcv_cols:
             rolling = dataframe[col].rolling(window=window, min_periods=window)
             mean = rolling.mean()
             std = rolling.std(ddof=0)
-            
             # Z-score: (x - mean) / std
-            # Добавляем epsilon 1e-8 для защиты от деления на 0 (как в TradingEnvironment)
             dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-8)
-            
+
         # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
         z_cols = [f'{col}_z' for col in ohlcv_cols]
         dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
-        
+
         return dataframe
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
