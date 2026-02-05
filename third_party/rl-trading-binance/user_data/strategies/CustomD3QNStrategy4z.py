@@ -1038,33 +1038,54 @@ class CustomD3QNStrategy4z(IStrategy):
             if "long_1" in q_values:
                 a = action_long_1[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                
                 adv = adv_long_1[-1]
+
+                # Вычисляем РЕАЛЬНЫЙ порог голосования
+                cfg = self.q_normalization.get("long_1", {})
+                q_min = cfg.get('q_min', 0.0)
+                q_max = cfg.get('q_max', q_min)
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+
                 norm = self._normalize_q_value(adv, "long_1")
-                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
-                logger.info(f"🔍 {metadata['pair']} L1 Adv: {adv:.5f} (Thresh: {th_l1:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
-            
+                vote = adv > thr
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+
+                logger.info(f"📊 {metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+
             if "long_2" in q_values:
                 a = action_long_2[-1]
                 a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                
                 adv = adv_long_2[-1]
+
+                cfg = self.q_normalization.get("long_2", {})
+                q_min = cfg.get('q_min', 0.0)
+                q_max = cfg.get('q_max', q_min)
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+
                 norm = self._normalize_q_value(adv, "long_2")
-                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
-                logger.info(f"🔍 {metadata['pair']} L2 Adv: {adv:.5f} (Thresh: {th_l2:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
+                vote = adv > thr
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+
+                logger.info(f"📊 {metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
-                # Mirror Mode: 1=Buy_Inv(Short), 2=Sell_Inv(Exit_Short)
                 if self.short_1_is_mirror:
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                
                 adv = adv_short_1[-1]
+
+                cfg = self.q_normalization.get("short_1", {})
+                q_min = cfg.get('q_min', 0.0)
+                q_max = cfg.get('q_max', q_min)
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+
                 norm = self._normalize_q_value(adv, "short_1")
-                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
-                logger.info(f"🔍 {metadata['pair']} S1 Adv: {adv:.5f} (Thresh: {th_s1:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
+                vote = adv > thr
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+
+                logger.info(f"📊 {metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1072,11 +1093,18 @@ class CustomD3QNStrategy4z(IStrategy):
                     a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
                 else:
                     a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                
                 adv = adv_short_2[-1]
+
+                cfg = self.q_normalization.get("short_2", {})
+                q_min = cfg.get('q_min', 0.0)
+                q_max = cfg.get('q_max', q_min)
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+
                 norm = self._normalize_q_value(adv, "short_2")
-                vote_mark = "✅" if (a != 0 and norm >= self.epsilon_threshold) else "❌"
-                logger.info(f"🔍 {metadata['pair']} S2 Adv: {adv:.5f} (Thresh: {th_s2:.5f}) N:{norm:.2f} {vote_mark} | Act: {a} ({a_str})")
+                vote = adv > thr
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+
+                logger.info(f"📊 {metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
