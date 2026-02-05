@@ -192,7 +192,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260204_time_225742"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
@@ -547,7 +547,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Примерно 5 минут истории:
             # при большом количестве пар метод вызывается очень часто,
             # поэтому 1280 элементов дают короткое, но репрезентативное окно.
-            self.adv_history[name] = deque(maxlen=1280)
+            self.adv_history[name] = deque(maxlen=5400)
 
         if adv_array is None or len(adv_array) == 0:
             return
