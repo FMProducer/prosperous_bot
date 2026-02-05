@@ -8,6 +8,8 @@ import time
 from typing import Any, Dict
 import numpy as np
 import torch
+from torch import nn
+
 import datetime as dt
 
 # Добавляем текущую директорию в путь, чтобы импортировать модули проекта
@@ -108,7 +110,10 @@ def evaluate_agent(
     exit_counts: Dict[str, int] = {}
     tsl_hits = 0
     bankruptcy_episodes = 0
-    
+
+    # Будем собирать advantage = Q(action) - Q(hold) для анализа распределения силы сигналов
+    all_advantages: list[float] = []
+
     all_trades_info = []
     total_commission = 0.0
     long_trades = 0
@@ -145,7 +150,27 @@ def evaluate_agent(
             if obs_agent.ndim == 2 and obs_agent.shape[1] == agent.state_shape[0]:
                 obs_agent = np.expand_dims(obs_agent.T, -1)
 
+            # --- Q-values и advantage для анализа распределения ---
+            # Не изменяем логику select_action, только добавляем “зеркальный” проход через policy_net.
             action = agent.select_action(obs_agent, training=False)
+
+            try:
+                with torch.no_grad():
+                    # Приводим obs_agent к тензору нужной формы: (1, C, L, 1)
+                    obs_tensor = torch.as_tensor(
+                        obs_agent, dtype=torch.float32
+                    ).unsqueeze(0)
+                    # Отправляем на тот же девайс, где лежит сеть
+                    device = next(agent.policy_net.parameters()).device
+                    obs_tensor = obs_tensor.to(device)
+                    q_vec: torch.Tensor = agent.policy_net(obs_tensor)  # (1, num_actions)
+                    q_np = q_vec.detach().cpu().numpy()[0]
+                    # Advantage текущего действия относительно HOLD (предполагаем, что индекс 0 — HOLD)
+                    adv = float(q_np[action] - q_np[0])
+                    all_advantages.append(adv)
+            except Exception as e:
+                logger.warning(f"Failed to compute advantage for logging: {e}")
+
             obs, reward, done, _, info = env.backtest_step(
                 action=action,
                 signal_dt=current_step_dt,
@@ -269,6 +294,23 @@ def evaluate_agent(
     profit_factor = (pos_sum / abs(neg_sum)) if neg_sum < 0 else float("inf")
 
     L = split_label
+
+    # --- ЛОГИРОВАНИЕ РАСПРЕДЕЛЕНИЯ ADVANTAGE ---
+    # Это даёт представление о том, какие значения Q(action)-Q(hold) реально встречаются на валидации.
+    if all_advantages:
+        adv_arr = np.asarray(all_advantages, dtype=np.float32)
+        try:
+            p15 = float(np.percentile(adv_arr, 15))
+            p50 = float(np.percentile(adv_arr, 50))
+            p85 = float(np.percentile(adv_arr, 85))
+            p95 = float(np.percentile(adv_arr, 95))
+            p99 = float(np.percentile(adv_arr, 99))
+            logger.info(
+                f"[{L}] Advantage percentiles (Q(action)-Q(hold)): "
+                f"p15={p15:.6f}, p50={p50:.6f}, p85={p85:.6f}, p95={p95:.6f}, p99={p99:.6f}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to compute advantage percentiles: {e}")
     
     logger.info(
         f"[{L}] Trades: {total_trades} (Long: {long_trades}, Short: {short_trades}, "
