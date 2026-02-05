@@ -541,12 +541,12 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         Сбор статистики advantage для автоподбора q_min/q_max.
         Вместо одного последнего значения используем все положительные
-        значения из adv_array и храним короткое скользящее окно.
+        значения из adv_array и храним скользящее окно ≈ 90 минут.
         """
         if name not in self.adv_history:
-            # Примерно 5 минут истории:
-            # при большом количестве пар метод вызывается очень часто,
-            # поэтому 1280 элементов дают короткое, но репрезентативное окно.
+            # При большом количестве пар метод вызывается очень часто,
+            # поэтому 5400 элементов дают ~90 минут положительных advantage
+            # по всей вселенной пар.
             self.adv_history[name] = deque(maxlen=5400)
 
         if adv_array is None or len(adv_array) == 0:
@@ -718,25 +718,31 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
-        Нормализует Q-value модели в диапазон [0, 1]
-        Использует конфиг rl_ensemble.q_normalization[model_name]
+        Нормирует Q-value (advantage) в [0, 1] по текущему q_min/q_max для модели.
+        Семантика:
+          0.0 ~ уровень шума (окрестность q_min),
+          1.0 ~ типичный верхний хвост (окрестность q_max).
+        Используется в основном для логов и дебага.
         """
         norm_cfg = self.q_normalization
+        cfg = norm_cfg.get(model_name)
+        if not cfg:
+            logger.warning(f"[Ensemble] No normalization config for {model_name}, using raw Q limited to [0,1].")
+            return float(np.clip(q_value, 0.0, 1.0))
 
-        if model_name not in norm_cfg:
-            logger.warning(f"⚠️ No normalization config for {model_name}, using raw Q limited to [0,1]")
-            return np.clip(q_value, 0.0, 1.0)
+        q_min = cfg.get('q_min', 0.0)
+        q_max = cfg.get('q_max', q_min)
 
-        q_min = norm_cfg[model_name]['q_min']
-        q_max = norm_cfg[model_name]['q_max']
-
-        if q_max == q_min:
-            logger.error(f"❌ Q normalization error: q_min == q_max for {model_name}")
-            return 0.5
+        # Дегенератный случай: модель-зомби (q_min ~= q_max) — считаем её нейтральной.
+        if q_max <= q_min:
+            logger.warning(
+                f"[Ensemble] Degenerate q_min/q_max for {model_name}: "
+                f"q_min={q_min:.6f}, q_max={q_max:.6f}. Normalized value set to 0.0."
+            )
+            return 0.0
 
         q_norm = (q_value - q_min) / (q_max - q_min)
-        # Нормируешь → ограничиваешь в [0, 1]
-        return np.clip(q_norm, 0.0, 1.0)
+        return float(np.clip(q_norm, 0.0, 1.0))
 
     def _compute_ensemble_decision(
         self,
@@ -746,7 +752,15 @@ class CustomD3QNStrategy4z(IStrategy):
         has_short: bool
     ) -> Dict[str, Any]:
         """
-        Алгоритм ансамбля: Голосование с порогом ε
+        Принимает решение ансамбля по одной свече (индекс idx) на основе
+        Q-значений всех активных моделей.
+
+        Логика силы сигнала:
+          - для каждой модели есть свои q_min/q_max (динамический p15/p99) из последних ~90 минут;
+          - глобальный epsilon_threshold в [0,1] задаёт относительный порог внутри [q_min, q_max];
+          - голос модели считается, если:
+              adv = Q(action) - Q(hold) > q_min          (отсекаем шум)
+              adv > q_min + (q_max - q_min) * epsilon    (сигнал достаточно силён для этой модели).
         """
         votes_long = 0
         votes_short = 0
@@ -755,20 +769,44 @@ class CustomD3QNStrategy4z(IStrategy):
         details = []
 
         # --- 1. Подсчет голосов LONG ---
-        def check_vote(name, action_idx):
-            if name not in q_values: return 0, False, 0.0
+        def check_vote(name: str, action_idx: int):
+            """
+            Возвращает (vote, active, norm):
+              vote   : 1 если модель голосует за действие, иначе 0
+              active : True если модель участвовала в голосовании (может ветоить),
+                       False если модель пропущена (нет q_values или degenerate q_min/q_max)
+              norm   : нормализованный adv в [0,1] для логов
+            """
+            if name not in q_values:
+                return 0, False, 0.0
+
             q_hold = q_values[name][idx, 0]
             q_action = q_values[name][idx, action_idx]
             adv = q_action - q_hold
-            
-            q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
-            
-            if adv > q_min:
-                norm = self._normalize_q_value(adv, name)
-                if norm >= self.epsilon_threshold:
-                    return 1, True, norm
-                return 0, True, norm
-            return 0, False, 0.0
+
+            cfg = self.q_normalization.get(name, {})
+            q_min = cfg.get('q_min', 0.0)
+            q_max = cfg.get('q_max', None)
+
+            # Дегенератный случай: модель-зомби с q_min ~= q_max — полностью исключаем из голосования.
+            if q_max is None or q_max <= q_min:
+                logger.warning(
+                    f"[Ensemble] Skipping votes for {name}: degenerate q_min/q_max "
+                    f"(q_min={q_min:.6f}, q_max={q_max})."
+                )
+                return 0, False, 0.0
+
+            # Слабый сигнал (ниже шумового порога) — модель активна, но не голосует.
+            if adv <= q_min:
+                return 0, True, 0.0
+
+            # Эффективный порог по advantage для данной модели
+            thr = q_min + (q_max - q_min) * float(self.epsilon_threshold)
+            norm = self._normalize_q_value(adv, name)
+
+            if adv > thr:
+                return 1, True, norm
+            return 0, True, norm
 
         if self.enable_long_1:
             v, active, norm = check_vote("long_1", 1)
