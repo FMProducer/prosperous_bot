@@ -719,20 +719,15 @@ class CustomD3QNStrategy4z(IStrategy):
         Использует конфиг rl_ensemble.q_normalization[model_name]
         """
         norm_cfg = self.q_normalization
+        cfg = norm_cfg.get(model_name, {})
+        q_min = cfg.get('q_min', 0.0)
+        q_max = cfg.get('q_max', q_min)
 
-        if model_name not in norm_cfg:
-            logger.warning(f"⚠️ No normalization config for {model_name}, using raw Q limited to [0,1]")
-            return np.clip(q_value, 0.0, 1.0)
-
-        q_min = norm_cfg[model_name]['q_min']
-        q_max = norm_cfg[model_name]['q_max']
-
-        if q_max == q_min:
-            logger.error(f"❌ Q normalization error: q_min == q_max for {model_name}")
-            return 0.5
+        if q_max <= q_min:
+            logger.warning(f"⚠️ Degenerate Q stats for {model_name}: q_min={q_min}, q_max={q_max}. Model is likely a zombie.")
+            return 0.0
 
         q_norm = (q_value - q_min) / (q_max - q_min)
-        # Нормируешь → ограничиваешь в [0, 1]
         return np.clip(q_norm, 0.0, 1.0)
 
     def _compute_ensemble_decision(
@@ -757,15 +752,24 @@ class CustomD3QNStrategy4z(IStrategy):
             q_hold = q_values[name][idx, 0]
             q_action = q_values[name][idx, action_idx]
             adv = q_action - q_hold
-            
-            q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
-            
-            if adv > q_min:
-                norm = self._normalize_q_value(adv, name)
-                if norm >= self.epsilon_threshold:
-                    return 1, True, norm
-                return 0, True, norm
-            return 0, False, 0.0
+
+            cfg = self.q_normalization.get(name, {})
+            q_min = cfg.get('q_min', 0.0)
+            q_max = cfg.get('q_max', None)
+
+            if q_max is None or q_max <= q_min:
+                logger.warning(f"⚠️ Degenerate Q stats for {name}, excluding zombie model.")
+                return 0, False, 0.0
+
+            if adv <= q_min:
+                return 0, True, 0.0
+
+            thr = q_min + (q_max - q_min) * self.epsilon_threshold
+            norm = self._normalize_q_value(adv, name)
+
+            if adv > thr:
+                return 1, True, norm
+            return 0, True, norm
 
         if self.enable_long_1:
             v, active, norm = check_vote("long_1", 1)
