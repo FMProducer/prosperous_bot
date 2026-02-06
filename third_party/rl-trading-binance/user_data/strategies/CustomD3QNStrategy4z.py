@@ -262,7 +262,13 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # --- НАСТРОЙКИ АНСАМБЛЯ V2 ---
         self.ensemble_cfg = config.get('rl_ensemble', {})
+        # Base epsilon from config (used as baseline for dynamic epsilon)
         self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
+        # Effective epsilon actually used for thresholding (will be updated dynamically)
+        self.epsilon_threshold_eff: float = self.epsilon_threshold
+        # Maximum observed equity (realized + unrealized PnL proxy) for drawdown calculation
+        self.equity_max: float = 0.0
+
         self.enable_veto = config.get('rl_enable_veto', False)
         self.rl_long_threshold = config.get('rl_long_threshold', 1)
         self.rl_short_threshold = config.get('rl_short_threshold', 1)
@@ -648,6 +654,55 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.error(f"Failed to calculate PnL: {e}")
             return 0.0, 0.0
 
+    def _update_dynamic_epsilon(self) -> None:
+        """
+        Update effective epsilon based on current equity drawdown.
+
+        Equity is approximated as the sum of unrealized PnL from the long and short books.
+        As drawdown from the maximum observed equity increases, the effective epsilon
+        increases smoothly, requiring stronger model advantages to cast a real vote.
+        When drawdown decreases back towards zero, epsilon gradually returns towards
+        the base value from config.
+        """
+        try:
+            pnl_long, pnl_short = self._get_pnl_from_freqtrade()
+            equity = pnl_long + pnl_short
+
+            # Initialize equity_max on first run
+            if self.equity_max <= 0.0:
+                self.equity_max = equity
+
+            # Track maximum observed equity
+            self.equity_max = max(self.equity_max, equity)
+
+            # Relative drawdown in [0.0, 1.0]
+            if self.equity_max > 0.0:
+                dd = (self.equity_max - equity) / self.equity_max
+            else:
+                dd = 0.0
+            dd = max(0.0, min(dd, 1.0))
+
+            # Linear sensitivity: epsilon_target = epsilon_0 * (1 + k * DD)
+            k = 1.5
+            epsilon_target = self.epsilon_threshold * (1.0 + k * dd)
+
+            # Clamp epsilon_target into [0.3, 0.65]
+            epsilon_target = float(min(max(epsilon_target, 0.3), 0.65))
+
+            # Smooth update via EMA to avoid abrupt jumps
+            alpha = 0.2
+            if not hasattr(self, "epsilon_threshold_eff") or self.epsilon_threshold_eff <= 0.0:
+                self.epsilon_threshold_eff = self.epsilon_threshold
+
+            self.epsilon_threshold_eff = (1.0 - alpha) * self.epsilon_threshold_eff + alpha * epsilon_target
+
+            if self.config.get('runmode') in ['live', 'dry_run']:
+                self.logger.debug(f"EPS-DD | dd={dd:.3f} | base={self.epsilon_threshold:.3f} | eff={self.epsilon_threshold_eff:.3f}")
+        except Exception as e:
+            # Fail-open: fall back to base epsilon
+            self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
+            self.epsilon_threshold_eff = self.epsilon_threshold
+
     def _update_slot_allocation(self, current_time: datetime) -> None:
         """
         Динамическое перераспределение слотов на основе PnL из FreqTrade
@@ -742,8 +797,10 @@ class CustomD3QNStrategy4z(IStrategy):
             if adv <= q_min:
                 return 0, False, 0.0
 
-            # Динамический порог уверенности внутри [q_min, q_max]
             thr = q_min + (q_max - q_min) * self.epsilon_threshold
+            # Динамический порог уверенности внутри [q_min, q_max]
+            thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff
+
             norm = self._normalize_q_value(adv, name)
 
             # Голосуем, только если adv > thr
@@ -918,6 +975,9 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
         """
+        # Update dynamic epsilon once per candle based on current equity drawdown
+        self._update_dynamic_epsilon()
+
         # 1. Базовая защита
         if len(dataframe) < self.startup_candle_count:
             return dataframe
@@ -1039,7 +1099,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("long_1", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "long_1")
                 vote = adv > thr
@@ -1055,7 +1115,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("long_2", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "long_2")
                 vote = adv > thr
@@ -1075,7 +1135,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("short_1", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "short_1")
                 vote = adv > thr
@@ -1095,7 +1155,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("short_2", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "short_2")
                 vote = adv > thr
