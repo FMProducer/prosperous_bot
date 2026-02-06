@@ -184,11 +184,11 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # --- ПУТИ К 4 МОДЕЛЯМ ---
         # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
@@ -196,7 +196,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_232020"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -712,30 +712,58 @@ class CustomD3QNStrategy4z(IStrategy):
 
         pnl_long, pnl_short = self._get_pnl_from_freqtrade()
 
-        # === ЛОГИКА 50/50 С УМЕНЬШЕНИЕМ ПРИ ПРОСАДКЕ ===
-        # 1. Базовое распределение: поровну (например, 50 и 50)
-        half_slots = self.total_slots // 2
-        
-        def calc_slots(base, pnl):
-            # Если прибыль или ноль - оставляем базу (50%)
-            if pnl >= 0:
-                return base
-            
-            # Если убыток - уменьшаем пропорционально
-            # aggression_factor=1.5, pnl=-100 -> 1 / (1 + 1.5) = 0.4 -> 40% от базы (20 слотов)
-            # aggression_factor=1.0, pnl=-50  -> 1 / (1 + 0.5) = 0.66 -> 66% от базы (33 слота)
-            dampener = 0.01 * self.aggression_factor
-            keep_ratio = 1.0 / (1.0 + abs(pnl) * dampener)
-            return int(base * keep_ratio)
+        # === УЛУЧШЕННАЯ ЛОГИКА V2 ===
+        if pnl_long > 0 and pnl_short < 0:
+            # Пропорциональное наказание убыточного направления
+            profit_long = pnl_long
+            loss_short = abs(pnl_short)
+            total = profit_long + loss_short
 
-        new_long = calc_slots(half_slots, pnl_long)
-        new_short = calc_slots(half_slots, pnl_short)
-        
-        # Применяем с учетом минимального лимита (min_slots_per_side)
-        self.max_long_slots = max(self.min_slots_per_side, new_long)
-        self.max_short_slots = max(self.min_slots_per_side, new_short)
-        
-        reason = f"Balanced 50/50 with PnL reduction (L:{pnl_long:.1f} S:{pnl_short:.1f})"
+            penalty_ratio = (loss_short / total) ** self.aggression_factor
+            long_ratio = 0.8 + 0.15 * penalty_ratio
+            reason = f"Long profitable (+{pnl_long:.0f}), Short losing (-{loss_short:.0f})"
+
+        elif pnl_short > 0 and pnl_long < 0:
+            # Зеркально
+            profit_short = pnl_short
+            loss_long = abs(pnl_long)
+            total = profit_short + loss_long
+
+            penalty_ratio = (loss_long / total) ** self.aggression_factor
+            long_ratio = 0.2 - 0.15 * penalty_ratio
+            reason = f"Short profitable (+{pnl_short:.0f}), Long losing (-{loss_long:.0f})"
+
+        elif pnl_long > 0 and pnl_short > 0:
+            long_ratio = pnl_long / (pnl_long + pnl_short)
+            reason = f"Both profitable (L:{pnl_long:.0f} S:{pnl_short:.0f})"
+        elif pnl_long < 0 and pnl_short < 0:
+            # ОБА УБЫТОЧНЫ → ИНВЕРТИРОВАННАЯ ПРОПОРЦИЯ
+            loss_long = abs(pnl_long)
+            loss_short = abs(pnl_short)
+            total_loss = loss_long + loss_short
+
+            if total_loss > 0:
+                # Инвертируем: большему убытку - меньше слотов
+                long_ratio = loss_short / total_loss
+                reason = f"Both losing - inverse allocation (L:-{loss_long:.0f} S:-{loss_short:.0f})"
+            else:
+                long_ratio = 0.5
+                reason = "Both at zero"
+        else:
+            long_ratio = 0.5
+            reason = "One side at zero"
+
+        # Ограничиваем в разумных пределах
+        long_ratio = max(0.05, min(0.95, long_ratio))
+
+        available = self.total_slots - 2 * self.min_slots_per_side
+        if available < 0:
+            # Защита если min_slots_per_side слишком велик
+            self.max_long_slots = self.total_slots // 2
+            self.max_short_slots = self.total_slots - self.max_long_slots
+        else:
+            self.max_long_slots = self.min_slots_per_side + int(available * long_ratio)
+            self.max_short_slots = self.total_slots - self.max_long_slots
 
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
         logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
@@ -767,7 +795,6 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         Алгоритм ансамбля: Голосование с порогом ε
         """
-
         votes_long = 0
         votes_short = 0
         veto_long_count = 0
@@ -775,11 +802,8 @@ class CustomD3QNStrategy4z(IStrategy):
         details = []
 
         # --- 1. Подсчет голосов LONG ---
-
         def check_vote(name, action_idx):
-            if name not in q_values:
-                return 0, False, 0.0
-
+            if name not in q_values: return 0, False, 0.0
             q_hold = q_values[name][idx, 0]
             q_action = q_values[name][idx, action_idx]
             adv = q_action - q_hold
@@ -788,78 +812,58 @@ class CustomD3QNStrategy4z(IStrategy):
             q_min = cfg.get('q_min', 0.0)
             q_max = cfg.get('q_max', None)
 
-            # Зомби-модель (нет адекватной статистики) — полностью исключаем
             if q_max is None or q_max <= q_min:
                 logger.warning(f"⚠️ Degenerate Q stats for {name}, excluding zombie model.")
                 return 0, False, 0.0
 
-            # Ниже порога шума — модель жива, но НЕ голосует и НЕ ветоит
             if adv <= q_min:
-                return 0, False, 0.0
+                return 0, True, 0.0
 
-            thr = q_min + (q_max - q_min) * self.epsilon_threshold
-            # Динамический порог уверенности внутри [q_min, q_max]
-            thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff
-
+            thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
             norm = self._normalize_q_value(adv, name)
 
-            # Голосуем, только если adv > thr
             if adv > thr:
                 return 1, True, norm
-
-            # Выше шума, но ниже ε‑порога: не голосуем, но считаем активной (для статистики, если нужно)
             return 0, True, norm
 
         if self.enable_long_1:
             v, active, norm = check_vote("long_1", 1)
             votes_long += v
-            if v:      # ВЕТО только от реально проголосовавшей модели
-                veto_long_count += 1
-            if v:
-                details.append(f"L1({norm:.2f})")
+            if active: veto_long_count += 1
+            if v: details.append(f"L1({norm:.2f})")
 
         if self.enable_long_2:
             v, active, norm = check_vote("long_2", 1)
             votes_long += v
-            if v:
-                veto_long_count += 1
-            if v:
-                details.append(f"L2({norm:.2f})")
+            if active: veto_long_count += 1
+            if v: details.append(f"L2({norm:.2f})")
 
         # --- 2. Подсчет голосов SHORT ---
-
         if self.enable_short_1:
             action_idx = 1 if self.short_1_is_mirror else 2
             v, active, norm = check_vote("short_1", action_idx)
             votes_short += v
-            if v:
-                veto_short_count += 1
-            if v:
-                details.append(f"S1({norm:.2f})")
+            if active: veto_short_count += 1
+            if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
             v, active, norm = check_vote("short_2", action_idx)
             votes_short += v
-            if v:
-                veto_short_count += 1
-            if v:
-                details.append(f"S2({norm:.2f})")
+            if active: veto_short_count += 1
+            if v: details.append(f"S2({norm:.2f})")
 
         result = {
             'enter_long': 0,
             'enter_short': 0,
-            'reason': f"Votes L:{votes_long}/{self.rl_long_threshold} "
-                      f"S:{votes_short}/{self.rl_short_threshold} [{' '.join(details)}]"
+            'reason': f"Votes L:{votes_long}/{self.rl_long_threshold} S:{votes_short}/{self.rl_short_threshold} [{' '.join(details)}]"
         }
 
-        # Уже есть открытая позиция — только логируем
         if has_long or has_short:
             result['reason'] += " | Position exists"
             return result
 
         # --- 3. Принятие решения ---
-
         long_signal = votes_long >= self.rl_long_threshold
         short_signal = votes_short >= self.rl_short_threshold
 
@@ -868,7 +872,6 @@ class CustomD3QNStrategy4z(IStrategy):
             return result
 
         if long_signal:
-            # Вето работает только если есть РЕАЛЬНЫЕ short‑голоса (v>0)
             if self.enable_veto and veto_short_count > 0:
                 result['reason'] += " | LONG Vetoed (Short vote present)"
             else:
@@ -1103,9 +1106,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "long_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "long_2" in q_values:
                 a = action_long_2[-1]
@@ -1119,10 +1122,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "long_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -1139,10 +1141,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "short_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1159,10 +1160,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "short_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
