@@ -17,8 +17,8 @@
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
     "dynamic_slots": {
-        "enabled": true,
-        "min_slots_per_side": 0,
+        "enabled": false,
+        "min_slots_per_side": 50,
         "update_interval_sec": 30,
         "aggression_factor": 5.0
     },
@@ -66,24 +66,24 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
-        "epsilon_threshold": 0.35,
+        "epsilon_threshold": 0.7,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.000157,
-                "q_max": 0.002647
+                "q_min": 3.2e-05,
+                "q_max": 0.000202
             },
             "long_2": {
-                "q_min": 7.1e-05,
-                "q_max": 0.001239
+                "q_min": 0.00063,
+                "q_max": 0.000631
             },
             "short_1": {
-                "q_min": 0.003183,
-                "q_max": 0.003224
+                "q_min": 0.003198,
+                "q_max": 0.003229
             },
             "short_2": {
-                "q_min": 0.000115,
-                "q_max": 0.000533
+                "q_min": 0.000229,
+                "q_max": 0.000627
             }
         }
     },

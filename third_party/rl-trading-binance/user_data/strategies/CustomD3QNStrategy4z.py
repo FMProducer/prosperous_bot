@@ -184,11 +184,11 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # --- ПУТИ К 4 МОДЕЛЯМ ---
         # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260203_time_001937_no tsl"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
@@ -196,7 +196,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_232020"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -683,11 +683,11 @@ class CustomD3QNStrategy4z(IStrategy):
             dd = max(0.0, min(dd, 1.0))
 
             # Linear sensitivity: epsilon_target = epsilon_0 * (1 + k * DD)
-            k = 1.5
+            k = 3.0
             epsilon_target = self.epsilon_threshold * (1.0 + k * dd)
 
             # Clamp epsilon_target into [0.3, 0.65]
-            epsilon_target = float(min(max(epsilon_target, 0.3), 0.65))
+            epsilon_target = float(min(max(epsilon_target, 0.1), 1.0))
 
             # Smooth update via EMA to avoid abrupt jumps
             alpha = 0.2
@@ -829,13 +829,13 @@ class CustomD3QNStrategy4z(IStrategy):
         if self.enable_long_1:
             v, active, norm = check_vote("long_1", 1)
             votes_long += v
-            if active: veto_long_count += 1
+            if v: veto_long_count += 1
             if v: details.append(f"L1({norm:.2f})")
 
         if self.enable_long_2:
             v, active, norm = check_vote("long_2", 1)
             votes_long += v
-            if active: veto_long_count += 1
+            if v: veto_long_count += 1
             if v: details.append(f"L2({norm:.2f})")
 
         # --- 2. Подсчет голосов SHORT ---
@@ -843,14 +843,14 @@ class CustomD3QNStrategy4z(IStrategy):
             action_idx = 1 if self.short_1_is_mirror else 2
             v, active, norm = check_vote("short_1", action_idx)
             votes_short += v
-            if active: veto_short_count += 1
+            if v: veto_short_count += 1
             if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
             v, active, norm = check_vote("short_2", action_idx)
             votes_short += v
-            if active: veto_short_count += 1
+            if v: veto_short_count += 1
             if v: details.append(f"S2({norm:.2f})")
 
         result = {
@@ -1106,9 +1106,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "long_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+                vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"📊 {metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "long_2" in q_values:
                 a = action_long_2[-1]
@@ -1122,9 +1122,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "long_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+                vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"📊 {metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -1141,9 +1141,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "short_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+                vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"📊 {metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1160,9 +1160,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
                 norm = self._normalize_q_value(adv, "short_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
+                vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"📊 {metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
