@@ -9,13 +9,13 @@
     "dry_run": true,
     "dry_run_wallet": 100000,
     "mirror_mode": false,
-    "rl_long_threshold": 2,
-    "rl_short_threshold": 2,
+    "rl_long_threshold": 1,
+    "rl_short_threshold": 1,
     "rl_enable_veto": true,
     "rl_enable_long_1": true,
-    "rl_enable_long_2": true,
+    "rl_enable_long_2": false,
     "rl_enable_short_1": true,
-    "rl_enable_short_2": true,
+    "rl_enable_short_2": false,
     "dynamic_slots": {
         "enabled": false,
         "min_slots_per_side": 50,
@@ -70,20 +70,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6.8e-05,
-                "q_max": 0.00147
+                "q_min": 7.5e-05,
+                "q_max": 0.001333
             },
             "long_2": {
-                "q_min": 1.3e-05,
-                "q_max": 0.000192
+                "q_min": 5.6e-05,
+                "q_max": 0.000206
             },
             "short_1": {
-                "q_min": 0.003208,
-                "q_max": 0.003234
+                "q_min": 0.00038,
+                "q_max": 0.00053
             },
             "short_2": {
-                "q_min": 0.00024,
-                "q_max": 0.000573
+                "q_min": 0.000247,
+                "q_max": 0.000633
             }
         }
     },
@@ -158,7 +158,6 @@
             "CELO/USDT:USDT",
             "CELR/USDT:USDT",
             "CFX/USDT:USDT",
-            "CHESS/USDT:USDT",
             "CHR/USDT:USDT",
             "CHZ/USDT:USDT",
             "CKB/USDT:USDT",
@@ -194,7 +193,6 @@
             "FLUX/USDT:USDT",
             "GALA/USDT:USDT",
             "GAS/USDT:USDT",
-            "GHST/USDT:USDT",
             "GLM/USDT:USDT",
             "GMT/USDT:USDT",
             "GMX/USDT:USDT",
@@ -250,7 +248,6 @@
             "NEIRO/USDT:USDT",
             "NEO/USDT:USDT",
             "NFP/USDT:USDT",
-            "NKN/USDT:USDT",
             "NMR/USDT:USDT",
             "NOT/USDT:USDT",
             "NTRN/USDT:USDT",
