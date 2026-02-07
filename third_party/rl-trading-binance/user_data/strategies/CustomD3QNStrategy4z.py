@@ -75,9 +75,9 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
-    d_min = DecimalParameter(0.001, 0.05, default=0.0008, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00075, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.07519862504113693, space='stoploss', load=True)
+    d_min = DecimalParameter(0.001, 0.05, default=0.0008225518697224519, space='stoploss', load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.0015218098435784326, space='stoploss', load=True)
     
     plot_config = {
         'main_plot': {},
@@ -188,15 +188,15 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260131_time_235038"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260204_time_225742"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260207_time_144255"
+        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_232020"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -266,22 +266,16 @@ class CustomD3QNStrategy4z(IStrategy):
         self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
         # Effective epsilon actually used for thresholding (will be updated dynamically)
         self.epsilon_threshold_eff: float = self.epsilon_threshold
-        # Раздельные эффективные eps для лонгов и шортов
-        self.epsilon_threshold_eff_long: float = self.epsilon_threshold
-        self.epsilon_threshold_eff_short: float = self.epsilon_threshold
-        # Максимальная наблюдаемая equity по unrealized PnL для лонгов и шортов
-        self.equity_max_long: float = 0.0
-        self.equity_max_short: float = 0.0
-        # Старое поле equity_max оставляем для обратной совместимости (не используется напрямую)
+        # Maximum observed equity (realized + unrealized PnL proxy) for drawdown calculation
         self.equity_max: float = 0.0
 
         self.enable_veto = config.get('rl_enable_veto', False)
         self.rl_long_threshold = config.get('rl_long_threshold', 1)
         self.rl_short_threshold = config.get('rl_short_threshold', 1)
         self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
-        self.config_update_interval = self.ensemble_cfg.get('q_update_interval', config.get('q_update_interval', 14400))
+        self.config_update_interval = self.ensemble_cfg.get('q_update_interval', 14400)
 
-        logger.info(f"🗳️ Ensemble Config: Epsilon={self.epsilon_threshold} | UpdateInterval={self.config_update_interval}s")
+        logger.info(f"🗳️ Ensemble Config: Epsilon={self.epsilon_threshold}")
 
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
         logger.info("📦 Creating agents...")
@@ -572,7 +566,6 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             config_path = self.project_root / "user_data/config_rl4z.json"
             if not config_path.exists():
-                logger.warning(f"⚠️ Config update skipped: {config_path} not found")
                 return
 
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -582,15 +575,12 @@ class CustomD3QNStrategy4z(IStrategy):
             norm_cfg = data.get('rl_ensemble', {}).get('q_normalization', {})
             
             for name, history in self.adv_history.items():
-                if len(history) < 100: 
-                    logger.info(f"⏳ {name}: Insufficient history for Q-update ({len(history)}/100)")
-                    continue # Мало данных
+                if len(history) < 100: continue # Мало данных
                 
                 arr = np.array(history)
                 # Берем только положительные значения (сигналы)
                 pos_arr = arr[arr > 0]
-                if len(pos_arr) < 50: 
-                    continue
+                if len(pos_arr) < 50: continue
                 
                 # Считаем перцентили: q_min (шум) и q_max (пик)
                 new_min = float(round(np.percentile(pos_arr, 15), 6))
@@ -676,93 +666,42 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         try:
             pnl_long, pnl_short = self._get_pnl_from_freqtrade()
-            equity_long = pnl_long
-            equity_short = pnl_short
+            equity = pnl_long + pnl_short
 
-            # Reset dynamic epsilon if there are no open trades
-            try:
-                from freqtrade.persistence import Trade  # type: ignore
-                open_trades_q = Trade.get_open_trades()
-                if hasattr(open_trades_q, "all"):
-                    open_trades = open_trades_q.all()
-                else:
-                    open_trades = open_trades_q
-            except Exception:
-                open_trades = []
+            # Initialize equity_max on first run
+            if self.equity_max <= 0.0:
+                self.equity_max = equity
 
-            if not open_trades:
-                # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
-                self.equity_max = 0.0
-                self.equity_max_long = 0.0
-                self.equity_max_short = 0.0
+            # Track maximum observed equity
+            self.equity_max = max(self.equity_max, equity)
+
+            # Relative drawdown in [0.0, 1.0]
+            if self.equity_max > 0.0:
+                dd = (self.equity_max - equity) / self.equity_max
+            else:
+                dd = 0.0
+            dd = max(0.0, min(dd, 1.0))
+
+            # Linear sensitivity: epsilon_target = epsilon_0 * (1 + k * DD)
+            k = 1.5
+            epsilon_target = self.epsilon_threshold * (1.0 + k * dd)
+
+            # Clamp epsilon_target into [0.3, 0.65]
+            epsilon_target = float(min(max(epsilon_target, 0.3), 0.65))
+
+            # Smooth update via EMA to avoid abrupt jumps
+            alpha = 0.2
+            if not hasattr(self, "epsilon_threshold_eff") or self.epsilon_threshold_eff <= 0.0:
                 self.epsilon_threshold_eff = self.epsilon_threshold
-                self.epsilon_threshold_eff_long = self.epsilon_threshold
-                self.epsilon_threshold_eff_short = self.epsilon_threshold
-                if self.config.get('runmode') in ['live', 'dry_run']:
-                    self.logger.debug(f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}")
-                return
 
-            # Initialize equity_max_long/short on first run
-            if self.equity_max_long <= 0.0:
-                self.equity_max_long = equity_long
-            if self.equity_max_short <= 0.0:
-                self.equity_max_short = equity_short
-
-            # Track maximum observed equity per side
-            self.equity_max_long = max(self.equity_max_long, equity_long)
-            self.equity_max_short = max(self.equity_max_short, equity_short)
-
-            # Relative drawdown per side in [0.0, 1.0]
-            if self.equity_max_long > 0.0:
-                dd_long = (self.equity_max_long - equity_long) / self.equity_max_long
-            else:
-                dd_long = 0.0
-            if self.equity_max_short > 0.0:
-                dd_short = (self.equity_max_short - equity_short) / self.equity_max_short
-            else:
-                dd_short = 0.0
-
-            dd_long = max(0.0, min(dd_long, 1.0))
-            dd_short = max(0.0, min(dd_short, 1.0))
-
-            # Linear sensitivity: epsilon_target = epsilon_0 * (1 + k * DD) — раздельно для long/short
-            k = 6.0
-            epsilon_target_long = self.epsilon_threshold * (1.0 + k * dd_long)
-            epsilon_target_short = self.epsilon_threshold * (1.0 + k * dd_short)
-
-            # Clamp epsilon_target into [0.1, 1.0] — как было, раздельно для long/short
-            epsilon_target_long = float(min(max(epsilon_target_long, 0.1), 1.0))
-            epsilon_target_short = float(min(max(epsilon_target_short, 0.1), 1.0))
-
-            # Smooth update via EMA to avoid abrupt jumps — раздельно для long/short
-            alpha = 0.4
-
-            if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long <= 0.0:
-                self.epsilon_threshold_eff_long = self.epsilon_threshold
-            if not hasattr(self, "epsilon_threshold_eff_short") or self.epsilon_threshold_eff_short <= 0.0:
-                self.epsilon_threshold_eff_short = self.epsilon_threshold
-
-            self.epsilon_threshold_eff_long = (
-                (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * epsilon_target_long
-            )
-            self.epsilon_threshold_eff_short = (
-                (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * epsilon_target_short
-            )
-
-            # Глобальный epsilon_threshold_eff оставляем как среднее (для обратной совместимости, если где-то используется)
-            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
+            self.epsilon_threshold_eff = (1.0 - alpha) * self.epsilon_threshold_eff + alpha * epsilon_target
 
             if self.config.get('runmode') in ['live', 'dry_run']:
-                self.logger.debug(
-                    f"EPS-DD | ddL={dd_long:.3f} ddS={dd_short:.3f} | base={self.epsilon_threshold:.3f} | "
-                    f"effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}"
-                )
+                self.logger.debug(f"EPS-DD | dd={dd:.3f} | base={self.epsilon_threshold:.3f} | eff={self.epsilon_threshold_eff:.3f}")
         except Exception as e:
             # Fail-open: fall back to base epsilon
             self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
             self.epsilon_threshold_eff = self.epsilon_threshold
-            self.epsilon_threshold_eff_long = self.epsilon_threshold
-            self.epsilon_threshold_eff_short = self.epsilon_threshold
 
     def _update_slot_allocation(self, current_time: datetime) -> None:
         """
@@ -880,13 +819,7 @@ class CustomD3QNStrategy4z(IStrategy):
             if adv <= q_min:
                 return 0, True, 0.0
 
-            # Раздельный epsilon по направлению
-            if name.startswith("long_"):
-                eps_eff = self.epsilon_threshold_eff_long
-            else:
-                eps_eff = self.epsilon_threshold_eff_short
-
-            thr = q_min + (q_max - q_min) * eps_eff if q_max > q_min else q_min
+            thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
             norm = self._normalize_q_value(adv, name)
 
             if adv > thr:
@@ -896,13 +829,13 @@ class CustomD3QNStrategy4z(IStrategy):
         if self.enable_long_1:
             v, active, norm = check_vote("long_1", 1)
             votes_long += v
-            if v: veto_long_count += 1
+            if active: veto_long_count += 1
             if v: details.append(f"L1({norm:.2f})")
 
         if self.enable_long_2:
             v, active, norm = check_vote("long_2", 1)
             votes_long += v
-            if v: veto_long_count += 1
+            if active: veto_long_count += 1
             if v: details.append(f"L2({norm:.2f})")
 
         # --- 2. Подсчет голосов SHORT ---
@@ -910,14 +843,14 @@ class CustomD3QNStrategy4z(IStrategy):
             action_idx = 1 if self.short_1_is_mirror else 2
             v, active, norm = check_vote("short_1", action_idx)
             votes_short += v
-            if v: veto_short_count += 1
+            if active: veto_short_count += 1
             if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
             v, active, norm = check_vote("short_2", action_idx)
             votes_short += v
-            if v: veto_short_count += 1
+            if active: veto_short_count += 1
             if v: details.append(f"S2({norm:.2f})")
 
         result = {
@@ -1169,13 +1102,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("long_1", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_long if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "long_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "long_2" in q_values:
                 a = action_long_2[-1]
@@ -1185,13 +1118,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("long_2", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_long if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "long_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -1204,13 +1137,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("short_1", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_short if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "short_1")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1223,13 +1156,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 cfg = self.q_normalization.get("short_2", {})
                 q_min = cfg.get('q_min', 0.0)
                 q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_short if q_max > q_min else q_min
+                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff if q_max > q_min else q_min
 
                 norm = self._normalize_q_value(adv, "short_2")
                 vote = adv > thr
-                vote_mark = "🟢 VOTE" if vote else "NO"
+                vote_mark = "🟢 VOTE" if vote else "🔴 NO"
 
-                logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                logger.info(f"📊 {metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
