@@ -184,11 +184,11 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # --- ПУТИ К 4 МОДЕЛЯМ ---
         # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
+        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260203_time_001937_no tsl"
+        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
@@ -667,6 +667,25 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             pnl_long, pnl_short = self._get_pnl_from_freqtrade()
             equity = pnl_long + pnl_short
+
+            # Reset dynamic epsilon if there are no open trades
+            try:
+                from freqtrade.persistence import Trade  # type: ignore
+                open_trades_q = Trade.get_open_trades()
+                if hasattr(open_trades_q, "all"):
+                    open_trades = open_trades_q.all()
+                else:
+                    open_trades = open_trades_q
+            except Exception:
+                open_trades = []
+
+            if not open_trades:
+                # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
+                self.equity_max = 0.0
+                self.epsilon_threshold_eff = self.epsilon_threshold
+                if self.config.get('runmode') in ['live', 'dry_run']:
+                    self.logger.debug(f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | eff={self.epsilon_threshold_eff:.3f}")
+                return
 
             # Initialize equity_max on first run
             if self.equity_max <= 0.0:
