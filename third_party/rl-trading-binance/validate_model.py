@@ -275,16 +275,10 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     
     # Check if 'close' mean is negative for a sample asset
     sample_stat = next(iter(norm_stats.values()))
-    
-    # Dynamically find 'close' index
-    try:
-        close_idx = cfg.data.datachannels.index('close')
-    except ValueError:
-        close_idx = 3 # Fallback
-        
-    if len(sample_stat['mean']) > close_idx and sample_stat['mean'][close_idx] < 0:
+    # Assuming 'close' is at index 3 (standard OHLCV)
+    if sample_stat['mean'][3] < 0:
         logger.info("Detected INVERTED stats in norm_stats.json. Reverting to normal for validation normalization.")
-        price_indices = [i for i, ch in enumerate(cfg.data.datachannels) if ch in cfg.data.pricechannels]
+        price_indices = [0, 1, 2, 3] # Open, High, Low, Close
         for asset, stats in norm_stats.items():
             means = stats['mean']
             stds = stats['std']
@@ -293,12 +287,9 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
                 if idx < len(means):
                     means[idx] = abs(means[idx]) # Force positive
             # Swap High (1) and Low (2) back if they were swapped
-            if 'high' in cfg.data.datachannels and 'low' in cfg.data.datachannels:
-                h_idx = cfg.data.datachannels.index('high')
-                l_idx = cfg.data.datachannels.index('low')
-                if h_idx < len(means) and l_idx < len(means):
-                    means[h_idx], means[l_idx] = means[l_idx], means[h_idx]
-                    stds[h_idx], stds[l_idx] = stds[l_idx], stds[h_idx]
+            if len(means) > 2:
+                means[1], means[2] = means[2], means[1]
+                stds[1], stds[2] = stds[2], stds[1]
 
     device = torch.device("cpu")
 

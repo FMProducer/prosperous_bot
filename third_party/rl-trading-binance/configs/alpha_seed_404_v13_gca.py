@@ -69,7 +69,7 @@ cfg.market.slippage = 0.0002
 cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
 # cfg.market.max_trades_per_episode = 1    # Caused ValueError in Pydantic
 MAX_TRADES_PER_EPISODE = 1 # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
-INVERT_STATS_FOR_SHORT = True # Default: Enable Mirror Graph for SHORT
+INVERT_STATS_FOR_SHORT = True # Set True to enable Mirror Graph (invert data for SHORT agents)
 
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
@@ -81,7 +81,6 @@ elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
     # CRITICAL: Enable filter_direction to trigger "Mirror World" logic in the environment.
     cfg.market.filter_direction = 'SHORT'
-    INVERT_STATS_FOR_SHORT = True # Disable Mirror Graph (Train on normal down-trend)
     
 else: # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
