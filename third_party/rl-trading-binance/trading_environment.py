@@ -56,6 +56,8 @@ class TradingEnvironment(gym.Env):
         time_sl_penalty_ratio: float = 0.0,
         backtest_mode: bool = False,
         use_risk_management: bool = False,
+        stop_loss: float = 0.0,
+        take_profit: float = 0.0,
         # TSL parameters
         trailing_stop: float = 0.07519862504113693,
         trailing_stop_min: float = 0.0008225518697224519,
@@ -172,8 +174,11 @@ class TradingEnvironment(gym.Env):
         self.num_features = num_features
         self.datachannels = datachannels
 
-        if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
+        if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT', 'LONG_ONLY', 'SHORT_ONLY']:
             filter_direction = kwargs['filter_direction']
+            if filter_direction == 'LONG_ONLY': filter_direction = 'LONG'
+            if filter_direction == 'SHORT_ONLY': filter_direction = 'SHORT'
+
             logging.info(f"Filtering sequences for direction: {filter_direction}")
             
             original_count = len(self.sequences)
@@ -189,9 +194,13 @@ class TradingEnvironment(gym.Env):
                 if filter_direction == 'LONG' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
-                elif filter_direction == 'SHORT' and end_price < start_price:
-                    filtered_sequences.append(seq)
-                    filtered_keys.append(key)
+                elif filter_direction == 'SHORT':
+                    # Если данные инвертированы, ищем рост (который в реале падение)
+                    # Если не инвертированы, ищем падение.
+                    is_falling = (end_price > start_price) if invert_data else (end_price < start_price)
+                    if is_falling:
+                        filtered_sequences.append(seq)
+                        filtered_keys.append(key)
 
             if not filtered_sequences:
                 logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
@@ -217,6 +226,8 @@ class TradingEnvironment(gym.Env):
         self.time_sl_penalty_ratio = time_sl_penalty_ratio
         self.backtest_mode = backtest_mode
         self.use_risk_management = use_risk_management
+        self.stop_loss = stop_loss
+        self.take_profit = take_profit
         self.trailing_stop = trailing_stop
         self.trailing_stop_min = trailing_stop_min
         self.delta_p_hysteresis = delta_p_hysteresis
@@ -346,15 +357,16 @@ class TradingEnvironment(gym.Env):
         self._max_unrealized_pnl = 0.0
         self._min_unrealized_pnl = 0.0
         
+        self.direction: Optional[str] = None
         if self.backtest_mode:
             self.total_commission: float = 0.0
-            self.direction: Optional[str] = None
             self.trade_dt: dt.datetime = None
-            if self.use_risk_management:
-                self.trailing_max_price: float = None
-                self.trailing_min_price: float = None
-                self.tsl_price: float = None
-                self.p_at_last_tsl_update: float = 0.0
+
+        if self.use_risk_management:
+            self.trailing_max_price: float = None
+            self.trailing_min_price: float = None
+            self.tsl_price: float = None
+            self.p_at_last_tsl_update: float = 0.0
 
         if self.action_history_len > 0:
             self.history_actions: List[Optional[int]] = [None] * self.action_history_len
@@ -392,6 +404,62 @@ class TradingEnvironment(gym.Env):
         # As profit increases, tighten the trail distance from d0 towards d_min.
         d_eff = d0 - (p - fee_buf)
         return max(d_min, d_eff)
+
+    def _apply_risk_management(self, real_price: float) -> Optional[int]:
+        """Checks for SL, TP, or TSL triggers and returns close action if triggered."""
+        if not self.use_risk_management or self.position == 0:
+            return None
+
+        sl_pct = self.stop_loss
+        tp_pct = self.take_profit
+        d0 = self.trailing_stop
+        d_min = self.trailing_stop_min
+        delta_p = self.delta_p_hysteresis
+
+        if self.direction == "LONG":
+            # Update trailing max
+            self.trailing_max_price = max(self.trailing_max_price or real_price, real_price)
+
+            # TSL Update
+            p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
+            if self.tsl_price is None or p >= self.p_at_last_tsl_update + delta_p:
+                self.p_at_last_tsl_update = p
+                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                # tsl_price only moves up
+                new_tsl = self.trailing_max_price * (1 - d_eff)
+                self.tsl_price = max(self.tsl_price or -np.inf, new_tsl)
+
+            # Exit Checks
+            if real_price <= self.tsl_price:
+                return self.close_action
+            if sl_pct > 0 and real_price <= self.real_entry_price * (1 - sl_pct):
+                return self.close_action
+            if tp_pct > 0 and real_price >= self.real_entry_price * (1 + tp_pct):
+                return self.close_action
+
+        elif self.direction == "SHORT":
+            # Update trailing min
+            self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
+
+            # TSL Update
+            # Profit for short grows when price falls
+            p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
+            if self.tsl_price is None or p >= self.p_at_last_tsl_update + delta_p:
+                self.p_at_last_tsl_update = p
+                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                # tsl_price only moves down
+                new_tsl = self.trailing_min_price * (1 + d_eff)
+                self.tsl_price = min(self.tsl_price or np.inf, new_tsl)
+
+            # Exit Checks
+            if real_price >= self.tsl_price:
+                return self.close_action
+            if sl_pct > 0 and real_price >= self.real_entry_price * (1 + sl_pct):
+                return self.close_action
+            if tp_pct > 0 and real_price <= self.real_entry_price * (1 - tp_pct):
+                return self.close_action
+
+        return None
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Resets the environment to the beginning of a new episode.
@@ -502,46 +570,11 @@ class TradingEnvironment(gym.Env):
         position_closed_this_step = False
         info = {}
 
-        # --- TSL Logic ---
+        # --- Risk Management ---
         if self.use_risk_management and self.position != 0:
-            d0 = self.trailing_stop
-            d_min = self.trailing_stop_min
-            delta_p = self.delta_p_hysteresis
-            tsl_price = self.tsl_price
-
-            if tsl_price is None:
-                tsl_price = -np.inf if self.position == 1 else np.inf
-
-            if self.position == 1:  # LONG
-                self.trailing_max_price = max(self.trailing_max_price or real_price, real_price)
-                base_tsl = self.trailing_max_price * (1 - d0)
-                tsl_price = max(tsl_price, base_tsl)
-
-                p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
-                if p >= self.p_at_last_tsl_update + delta_p:
-                    self.p_at_last_tsl_update = p
-                    d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
-                    advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
-                    tsl_price = max(tsl_price, advanced_tsl_price)
-
-                self.tsl_price = tsl_price
-                if real_price <= tsl_price and self.close_action is not None:
-                    action = self.close_action
-            else:  # SHORT
-                self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
-                base_tsl = self.trailing_min_price * (1 + d0)
-                tsl_price = min(tsl_price, base_tsl)
-
-                p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
-                if p >= self.p_at_last_tsl_update + delta_p:
-                    self.p_at_last_tsl_update = p
-                    d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
-                    advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
-                    tsl_price = min(tsl_price, advanced_tsl_price)
-
-                self.tsl_price = tsl_price
-                if real_price >= tsl_price and self.close_action is not None:
-                    action = self.close_action
+            rm_action = self._apply_risk_management(real_price)
+            if rm_action is not None:
+                action = rm_action
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2
@@ -560,9 +593,10 @@ class TradingEnvironment(gym.Env):
                 if trade_amount > 0:
                     real_exec_price = real_price * (1 + self.slippage)
                     self.position = 1
+                    self.direction = "LONG"
                     self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
                     self.real_entry_price = real_exec_price
-                    self.position_volume = trade_amount / real_exec_price
+                    self.position_volume = trade_amount / abs(real_exec_price)
                     self.trades_count += 1
                     pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
                     # Initialize TSL state for new position
@@ -582,9 +616,10 @@ class TradingEnvironment(gym.Env):
                 if trade_amount > 0:
                     real_exec_price = real_price * (1 - self.slippage)
                     self.position = -1
+                    self.direction = "SHORT"
                     self.entry_price = real_exec_price / (close_std + 1e-8) - close_mean
                     self.real_entry_price = real_exec_price
-                    self.position_volume = trade_amount / real_exec_price
+                    self.position_volume = trade_amount / abs(real_exec_price)
                     self.trades_count += 1
                     pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
                     # Initialize TSL state for new position
@@ -621,6 +656,7 @@ class TradingEnvironment(gym.Env):
 
             # Reset position state
             self.position = 0
+            self.direction = None
             self.position_volume = 0.0
             self.entry_price = 0.0
             self.real_entry_price = 0.0
@@ -1011,9 +1047,19 @@ class TradingEnvironment(gym.Env):
         if self.position != 0:
             exec_delay = getattr(self, "exec_delay_bars", 0)
             price_idx = min(len(self.current_seq) - 1, self.pre_signal_len - 1 + self.step_idx + exec_delay)
-            current_price = self.current_seq[price_idx, self.close_idx]
-            # MTM по зафиксированному объёму, а не по "текущий баланс / entry_price"
-            mark2market = (current_price - self.entry_price) * self.position * self.position_volume
+
+            # Get real price for correct MTM calculation
+            asset_stats = self._get_asset_stats()
+            close_mean = asset_stats['mean'][self.close_idx]
+            close_std = asset_stats['std'][self.close_idx]
+            norm_price = self.current_seq[price_idx, self.close_idx]
+            real_current_price = norm_price * close_std + close_mean
+
+            if self.position == 1: # LONG
+                mark2market = (real_current_price - self.real_entry_price) * self.position_volume
+            else: # SHORT
+                mark2market = (self.real_entry_price - real_current_price) * self.position_volume
+
             info["portfolio_value"] = self.balance + mark2market
         else:
             info["portfolio_value"] = self.balance
@@ -1112,96 +1158,29 @@ class TradingEnvironment(gym.Env):
             if self.balance <= self.bankruptcy_threshold * MIN_SAFE_FRACTION:
                  action = 0 # Force HOLD
 
-        # --- Risk Management (CORRECTED: Uses REAL PRICE) ---
+        # --- Risk Management ---
         if self.use_risk_management and self.position != 0:
-            d0 = trailing_stop
-            d_min = trailing_stop_min
-            fee = self.transaction_fee
-            fee_buf = fee * (fee_buffer_mult or 2.0)
+            # Temporary override SL/TP/TSL params from backtest_step arguments if provided
+            orig_sl, orig_tp = self.stop_loss, self.take_profit
+            orig_ts, orig_ts_min = self.trailing_stop, self.trailing_stop_min
             
-            # Работаем только с REAL PRICE для TSL
-            tsl_price = self.tsl_price
-            
-            # Инициализация tsl_price, если None (например, после загрузки состояния)
-            if tsl_price is None:
-                 # Для безопасности ставим очень далекий стоп при старте,
-                 # он сразу же подтянется на следующей строке
-                 tsl_price = -999999.0 if self.position == 1 else 999999.0
+            if stop_loss is not None: self.stop_loss = stop_loss
+            if take_profit is not None: self.take_profit = take_profit
+            if trailing_stop is not None: self.trailing_stop = trailing_stop
+            if trailing_stop_min is not None: self.trailing_stop_min = trailing_stop_min
 
-            if self.position == 1: # LONG
-                # 1. Обновляем локальный максимум цены (Highest High)
-                # Используем real_price!
-                current_max = getattr(self, "trailing_max_price", real_price)
-                if current_max is None: current_max = real_price # Защита
-                self.trailing_max_price = max(current_max, real_price)
-                
-                # 2. Базовый уровень TSL (расстояние d0 от макс. цены)
-                base_tsl = self.trailing_max_price * (1 - d0)
-                
-                # 3. Подтягиваем TSL (он не может идти вниз)
-                tsl_price = max(tsl_price, base_tsl)
-                
-                # 4. Умное сужение (Smart tightening)
-                if d_min is not None:
-                    # Прибыль в процентах
-                    p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
-                    
-                    # Гистерезис обновления
-                    if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
-                        if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
-                        
-                        if p <= fee_buf: 
-                            d_eff = d0
-                        else: 
-                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
-                            
-                        advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
-                        tsl_price = max(tsl_price, advanced_tsl_price)
-                
-                self.tsl_price = tsl_price
-                trailing_trigger = real_price <= tsl_price # Сравниваем REAL с REAL
+            rm_action = self._apply_risk_management(real_price)
 
-                # DIAGNOSTIC
-                # if self.step_idx % 10 == 0:
-                #    logger.info(f"[TSL-L] Step={self.step_idx}, Price={real_price:.2f}, TSL={tsl_price:.2f}, Trigger={trailing_trigger}")
+            # Restore original params
+            self.stop_loss, self.take_profit = orig_sl, orig_tp
+            self.trailing_stop, self.trailing_stop_min = orig_ts, orig_ts_min
 
-            else: # SHORT
-                # 1. Обновляем локальный минимум цены (Lowest Low)
-                current_min = getattr(self, "trailing_min_price", real_price)
-                if current_min is None: current_min = real_price
-                self.trailing_min_price = min(current_min, real_price)
-                
-                # 2. Базовый уровень TSL
-                base_tsl = self.trailing_min_price * (1 + d0)
-                
-                # 3. Подтягиваем TSL (он не может идти вверх)
-                tsl_price = min(tsl_price, base_tsl)
-
-                if d_min is not None:
-                    p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
-                    
-                    if delta_p_hysteresis is None or p >= self.p_at_last_tsl_update + (delta_p_hysteresis or 0.0):
-                        if delta_p_hysteresis is not None: self.p_at_last_tsl_update = p
-                        
-                        if p <= fee_buf:
-                            d_eff = d0
-                        else:
-                            d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
-                        
-                        advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
-                        tsl_price = min(tsl_price, advanced_tsl_price)
-
-                self.tsl_price = tsl_price
-                trailing_trigger = real_price >= tsl_price
-
-            # --- Trigger Logic ---
-            if trailing_trigger or self.last_step:
-                action = 3 # CLOSE
-                if trailing_trigger:
-                    exit_reason = "TSL"
-                    # logger.info(f"🎯 TSL TRIGGERED! Pos={self.position}, Price={real_price:.4f}, TSL={tsl_price:.4f}")
-                elif self.last_step:
-                    exit_reason = "FORCED"
+            if rm_action is not None:
+                action = 3 # CLOSE in backtest mode
+                exit_reason = "TSL" # Simplification, could be SL or TP
+            elif self.last_step:
+                action = 3
+                exit_reason = "FORCED"
 
         current_dt = signal_dt + dt.timedelta(minutes=self.step_idx)
 
@@ -1230,7 +1209,7 @@ class TradingEnvironment(gym.Env):
                 trade_amount = self.balance * self.position_fraction
             trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
-            volume = trade_amount / real_exec_price
+            volume = trade_amount / abs(real_exec_price)
             self.position_volume = volume
             self.trades_count += 1
             
@@ -1260,7 +1239,7 @@ class TradingEnvironment(gym.Env):
                 trade_amount = self.balance * self.position_fraction
             trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
-            volume = trade_amount / real_exec_price
+            volume = trade_amount / abs(real_exec_price)
             self.position_volume = volume
             self.trades_count += 1
             
