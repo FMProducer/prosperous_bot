@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-# AGENT_MODE = "LONG_ONLY"
-AGENT_MODE = "SHORT_ONLY"
+AGENT_MODE = "LONG_ONLY"
+# AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_v13"
@@ -44,7 +44,7 @@ cfg.seq.state_shape = (10, 90, 1)
 cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
-cfg.paths.val_data_path = "data/backtest_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
+cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
 cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""

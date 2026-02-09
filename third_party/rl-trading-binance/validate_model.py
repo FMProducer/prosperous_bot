@@ -341,6 +341,18 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
 
     logger.info(f"Validation Invert Stats Mode: {invert_stats}")
 
+    if getattr(cfg, "INVERT_STATS_FOR_SHORT", False):
+        logger.info("Inverting validation data to match model training...")
+        for i in range(len(val_seqs)):
+            val_seqs[i] = -val_seqs[i]
+            # Swap High/Low logic if channels match indices 1 and 2
+            # (Убедитесь, что индексы совпадают с вашим cfg.keys)
+            h_idx, l_idx = 1, 2 
+            if val_seqs[i].shape[0] > l_idx:
+                temp = val_seqs[i][h_idx].copy()
+                val_seqs[i][h_idx] = val_seqs[i][l_idx]
+                val_seqs[i][l_idx] = temp
+
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
