@@ -15,8 +15,8 @@ except NameError:
 # LONG_ONLY:  Force Long trades only (Train specialist)
 # SHORT_ONLY: Force Short trades only (Train specialist)
 # AGENT_MODE = "UNIVERSAL" 
-AGENT_MODE = "LONG_ONLY"
-# AGENT_MODE = "SHORT_ONLY"
+# AGENT_MODE = "LONG_ONLY"
+AGENT_MODE = "SHORT_ONLY"
 
 if AGENT_MODE == "UNIVERSAL":
     cfg.paths.config_name = "alpha_seed_404_v13"
@@ -45,7 +45,7 @@ cfg.seq.input_history_len = 90
 cfg.episodes_per_epoch = 10000  # Sampling для memory (full 24k fallback) # This line was not in the diff but seems to belong with this block.
 cfg.paths.train_data_path = "data/train_data_fair_8m.npz"
 cfg.paths.val_data_path = "data/val_data_fair_2m.npz"  # Или data/val_data_fair_2m.npz
-cfg.paths.test_data_path = "data/val_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
+cfg.paths.test_data_path = "data/backtest_data_fair_2m.npz"  # Или data/backtest_data_fair_2m.npz
 cfg.paths.norm_stats_path = str(BASE_DIR / "norm_stats.json")
 cfg.paths.model_path = ""
 
@@ -69,6 +69,7 @@ cfg.market.slippage = 0.0002
 cfg.market.allow_opposite_trades = False # Запрещаем закрытие противоположной сделкой
 # cfg.market.max_trades_per_episode = 1    # Caused ValueError in Pydantic
 MAX_TRADES_PER_EPISODE = 1 # 1 сделка на сессию (60 баров). Запрет перезахода после TSL.
+INVERT_STATS_FOR_SHORT = True # Default: Enable Mirror Graph for SHORT
 
 # --- MODE CONFIGURATION ---
 if AGENT_MODE == "LONG_ONLY":
@@ -80,6 +81,7 @@ elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
     # CRITICAL: Enable filter_direction to trigger "Mirror World" logic in the environment.
     cfg.market.filter_direction = 'SHORT'
+    INVERT_STATS_FOR_SHORT = False # Disable Mirror Graph (Train on normal down-trend)
     
 else: # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
@@ -114,7 +116,7 @@ cfg.vec.start_method = "spawn"
 cfg.vec.scale_epsilon_by_envs = True  # Adjust eps decay
 
 # Training Log/Validation
-cfg.trainlog.num_val_ep = 512  # Уменьшаем для быстрой валидации, 100 достаточно
+cfg.trainlog.num_val_ep = 50  # Уменьшаем для быстрой валидации, 100 достаточно
 max_episodes_per_symbol = 2
 
 # При 4 env один эпизод даёт ~4× больше шагов.
@@ -123,7 +125,7 @@ cfg.trainlog.episodes = 5000       # Меньше (60-bar episodes дольше)
 cfg.trainlog.total_timesteps = 250000  # Сокращаем общий бюджет шагов
 
 # Валидация: масштабируем по эпизодам, чтобы частота и прогрев соответствовали новому числу эпизодов.
-cfg.trainlog.val_freq = 200             # Валидируемся чуть реже
+cfg.trainlog.val_freq = 50             # Валидируемся чуть реже
 cfg.trainlog.validation_warmup_steps = 15000       # норма 450000 (значительно уменьшено)
 cfg.trainlog.plot_top_n = 10
 cfg.trainlog.available_metrics = [
