@@ -123,7 +123,47 @@ class TradingEnvironment(gym.Env):
         # policy, which is simpler than learning both directions.
         if filter_direction == 'SHORT' and invert_data:
             logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent.")
-            self.sequences = [-1.0 * seq for seq in sequences]
+            
+            # Identify indices
+            try:
+                h_idx = datachannels.index('high')
+                l_idx = datachannels.index('low')
+            except ValueError:
+                h_idx = l_idx = -1
+            
+            # Identify price indices to invert
+            price_indices = [i for i, ch in enumerate(datachannels) if ch in pricechannels]
+            
+            mirrored_sequences = []
+            for seq in sequences:
+                m_seq = seq.copy()
+                
+                # Handle (C, L, 1) shape from train.py
+                if m_seq.ndim == 3 and m_seq.shape[2] == 1:
+                    # Invert prices
+                    for idx in price_indices:
+                        m_seq[idx] *= -1.0
+                    # Swap High/Low
+                    if h_idx != -1 and l_idx != -1:
+                        m_seq[[h_idx, l_idx], :, :] = m_seq[[l_idx, h_idx], :, :]
+                        
+                # Handle (L, C) shape (standard gym / fallback)
+                elif m_seq.ndim == 2 and m_seq.shape[1] == len(datachannels):
+                    # Invert prices
+                    for idx in price_indices:
+                        m_seq[:, idx] *= -1.0
+                    # Swap High/Low
+                    if h_idx != -1 and l_idx != -1:
+                        m_seq[:, [h_idx, l_idx]] = m_seq[:, [l_idx, h_idx]]
+                
+                else:
+                    # Fallback for unexpected shapes
+                    logger.warning(f"Mirror Mode: Unexpected sequence shape {m_seq.shape}. Falling back to full inversion.")
+                    m_seq *= -1.0
+                
+                mirrored_sequences.append(m_seq)
+            
+            self.sequences = mirrored_sequences
         else:
             self.sequences = sequences
         self.stats = stats

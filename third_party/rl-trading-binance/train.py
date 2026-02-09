@@ -708,38 +708,10 @@ def run_training_session(
     history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
     flat_state_size = flat_features + extras + history_vector_size
     
-    # --- PREVENTIVE STATS INVERSION FOR SHORT AGENT ---
-    # This is critical for saving the correct (inverted) stats with the model artifacts.
-    # The environment itself works on a deep copy, so modifications there won't persist.
-    invert_stats = getattr(cfg.market, "invert_stats_for_short", True)
+    # Determine if data should be inverted for the environment
+    invert_data_for_env = True # Default
     if cfg_mod is not None:
-        invert_stats = getattr(cfg_mod, "INVERT_STATS_FOR_SHORT", invert_stats)
-
-    if invert_stats and getattr(cfg.market, "filter_direction", None) == 'SHORT':
-        logging.info("SHORT mode detected. Performing preventive inversion of norm_stats.")
-        volume_channels = set(cfg.data.volumechannels)
-        datachannels = cfg.data.datachannels
-
-        for asset_stats in norm_stats.values():
-            means = asset_stats.get('mean')
-            stds = asset_stats.get('std')
-            if means is None: continue
-
-            # 1. Invert the mean for all price channels
-            for i, channel in enumerate(datachannels):
-                if i < len(means) and channel not in volume_channels:
-                    means[i] *= -1.0
-
-            # 2. Swap the stats for 'high' and 'low' channels
-            if 'high' in datachannels and 'low' in datachannels:
-                h_idx = datachannels.index('high')
-                l_idx = datachannels.index('low')
-                
-                if h_idx < len(means) and l_idx < len(means):
-                    means[h_idx], means[l_idx] = means[l_idx], means[h_idx]
-                
-                if stds and h_idx < len(stds) and l_idx < len(stds):
-                    stds[h_idx], stds[l_idx] = stds[l_idx], stds[h_idx]
+        invert_data_for_env = getattr(cfg_mod, "INVERT_STATS_FOR_SHORT", True)
 
     env_kwargs = {
         "sequences": train_sequences,
@@ -787,7 +759,7 @@ def run_training_session(
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
         "allowed_directions": getattr(cfg.market, "allowed_directions", None),
-        "invert_data": invert_stats,
+        "invert_data": invert_data_for_env,
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
     # Important Warning:
@@ -1073,6 +1045,34 @@ def main(cfg: MasterConfig = None, cfg_mod: Optional[Any] = None):
     else:
         # Don't save to root (norm_stats_path=None) to avoid duplication
         norm_stats = compute_norm_stats(cfg.paths.train_data_path, cfg, norm_stats_path=None)
+
+    # --- PREVENTIVE STATS INVERSION FOR SHORT AGENT ---
+    # This is critical for saving the correct (inverted) stats with the model artifacts.
+    invert_stats = True # Default
+    if cfg_mod is not None:
+        invert_stats = getattr(cfg_mod, "INVERT_STATS_FOR_SHORT", True)
+
+    if invert_stats and getattr(cfg.market, "filter_direction", None) == 'SHORT':
+        logging.info("SHORT mode detected. Performing preventive inversion of norm_stats.")
+        volume_channels = set(cfg.data.volumechannels)
+        datachannels = cfg.data.datachannels
+
+        for asset_stats in norm_stats.values():
+            means = asset_stats.get('mean')
+            stds = asset_stats.get('std')
+            if means is None: continue
+
+            # 1. Invert the mean for all price channels
+            for i, channel in enumerate(datachannels):
+                if i < len(means) and channel in cfg.data.pricechannels:
+                    means[i] *= -1.0
+
+            # 2. Swap the stats for 'high' and 'low' channels
+            if 'high' in datachannels and 'low' in datachannels:
+                h_idx = datachannels.index('high')
+                l_idx = datachannels.index('low')
+                if h_idx < len(means) and l_idx < len(means): means[h_idx], means[l_idx] = means[l_idx], means[h_idx]
+                if stds and h_idx < len(stds) and l_idx < len(stds): stds[h_idx], stds[l_idx] = stds[l_idx], stds[h_idx]
 
     # MODIFIED: Save norm_stats to models_dir for validation self-containment (always)
     with open(os.path.join(models_dir, "norm_stats.json"), "w") as f:

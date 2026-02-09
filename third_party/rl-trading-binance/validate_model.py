@@ -267,6 +267,39 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     with open(norm_stats_path, 'r') as f:
         norm_stats = json.load(f)
 
+    # --- FIX: Handle Inverted Stats for SHORT Agent ---
+    # If the agent was trained in SHORT_ONLY mode with Mirror World, 
+    # norm_stats.json will have inverted (negative) means for prices.
+    # We must revert them to normal to correctly normalize the raw (positive) validation data.
+    # The TradingEnvironment will then handle the inversion (mirroring) for the agent.
+    
+    # Check if 'close' mean is negative for a sample asset
+    sample_stat = next(iter(norm_stats.values()))
+    
+    # Dynamically find 'close' index
+    try:
+        close_idx = cfg.data.datachannels.index('close')
+    except ValueError:
+        close_idx = 3 # Fallback
+        
+    if len(sample_stat['mean']) > close_idx and sample_stat['mean'][close_idx] < 0:
+        logger.info("Detected INVERTED stats in norm_stats.json. Reverting to normal for validation normalization.")
+        price_indices = [i for i, ch in enumerate(cfg.data.datachannels) if ch in cfg.data.pricechannels]
+        for asset, stats in norm_stats.items():
+            means = stats['mean']
+            stds = stats['std']
+            # Revert signs
+            for idx in price_indices:
+                if idx < len(means):
+                    means[idx] = abs(means[idx]) # Force positive
+            # Swap High (1) and Low (2) back if they were swapped
+            if 'high' in cfg.data.datachannels and 'low' in cfg.data.datachannels:
+                h_idx = cfg.data.datachannels.index('high')
+                l_idx = cfg.data.datachannels.index('low')
+                if h_idx < len(means) and l_idx < len(means):
+                    means[h_idx], means[l_idx] = means[l_idx], means[h_idx]
+                    stds[h_idx], stds[l_idx] = stds[l_idx], stds[h_idx]
+
     device = torch.device("cpu")
 
     # 3. Подготовка данных и среды

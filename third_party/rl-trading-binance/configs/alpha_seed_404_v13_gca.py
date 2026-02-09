@@ -81,7 +81,7 @@ elif AGENT_MODE == "SHORT_ONLY":
     cfg.market.allowed_directions = ['SHORT']
     # CRITICAL: Enable filter_direction to trigger "Mirror World" logic in the environment.
     cfg.market.filter_direction = 'SHORT'
-    INVERT_STATS_FOR_SHORT = False # Disable Mirror Graph (Train on normal down-trend)
+    INVERT_STATS_FOR_SHORT = True # Disable Mirror Graph (Train on normal down-trend)
     
 else: # UNIVERSAL
     cfg.market.allowed_directions = ['LONG', 'SHORT']
