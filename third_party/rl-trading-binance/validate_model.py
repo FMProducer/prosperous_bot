@@ -330,9 +330,16 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     else:
         env_filter, env_allowed = None, ["LONG", "SHORT"]
 
-    invert_stats = getattr(cfg.market, "invert_stats_for_short", True)
+    # ИЗМЕНЕНО: Значение по умолчанию False (Normal mode). 
+    # Теперь мы полагаемся на то, что cfg.market.invert_stats_for_short 
+    # было сохранено в config_train.json (см. шаг 1).
+    invert_stats = getattr(cfg.market, "invert_stats_for_short", False)
+    
+    # Если загружен .py конфиг, проверяем глобальную переменную (приоритет .py)
     if cfg_mod is not None:
         invert_stats = getattr(cfg_mod, "INVERT_STATS_FOR_SHORT", invert_stats)
+
+    logger.info(f"Validation Invert Stats Mode: {invert_stats}")
 
     env_kwargs = {
         "sequences": val_seqs,
