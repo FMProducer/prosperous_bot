@@ -108,6 +108,7 @@ class TradingEnvironment(gym.Env):
         seed: Optional[int] = None,
         filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
+        agent_mode: str = "UNIVERSAL", # "LONG_ONLY", "SHORT_ONLY", "MIRROR_SHORT"
         **kwargs,
     ) -> None:
         if not sequences:
@@ -224,7 +225,13 @@ class TradingEnvironment(gym.Env):
         self.volumechannels = volumechannels
         self.otherchannels = otherchannels
         self.action_history_len = action_history_len
-        self.num_actions = num_actions
+
+        self.agent_mode = agent_mode
+        if self.agent_mode in ["LONG_ONLY", "SHORT_ONLY", "MIRROR_SHORT"]:
+            self.num_actions = 2
+        else:
+            self.num_actions = 3 # Universal: 0-Stay, 1-Long, 2-Short
+
         self.inaction_penalty_ratio = inaction_penalty_ratio
         self.time_sl_penalty_ratio = time_sl_penalty_ratio
         self.backtest_mode = backtest_mode
@@ -287,7 +294,7 @@ class TradingEnvironment(gym.Env):
         # Cache frequently used channel index
         self.close_idx = self.datachannels.index("close")
 
-        self.history_vector_size = num_actions * self.action_history_len
+        self.history_vector_size = self.num_actions * self.action_history_len
         # Validate sequence shape
         # Support both (L, C) and (C, L, 1) formats
         expected_shape = (full_seq_len, num_features)
@@ -300,7 +307,7 @@ class TradingEnvironment(gym.Env):
                 raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
 
         # Define observation and action spaces
-        self.action_space = spaces.Discrete(num_actions)
+        self.action_space = spaces.Discrete(self.num_actions)
         if self.cnn_format:
             # For CNN: (num_features + extras + action_history_onehot, agent_history_len)
             # We will treat extras and action history as additional channels
@@ -315,7 +322,7 @@ class TradingEnvironment(gym.Env):
             # FIX: Ensure buffer size matches actual data generation logic
             # Calculate expected size based on what _get_obs actually produces
             # Use local argument or self.num_features (now saved)
-            real_data_size = (num_features * agent_history_len) + 4 + (num_actions * action_history_len)
+            real_data_size = (num_features * agent_history_len) + 4 + (self.num_actions * action_history_len)
             self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(real_data_size,), dtype=np.float32)
 
         # PERFORMANCE: Pre-allocate reusable observation buffer
@@ -519,43 +526,45 @@ class TradingEnvironment(gym.Env):
             self._render_human(info, first=True)
         return obs, info
 
+    def _get_direction_from_action(self, action: int) -> int:
+        if self.agent_mode == "SHORT_ONLY":
+            return -1 if action == 1 else 0
+        if self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
+            return 1 if action == 1 else 0
+        # UNIVERSAL mode: 0-Stay, 1-Long, 2-Short
+        return {0: 0, 1: 1, 2: -1}.get(action, 0)
+
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        """Executes a single time step in the environment.
-
-        This method processes the agent's action, updates the environment's
-        state, and calculates the reward. The state transition from `s_t` to
-        `s_{t+1}` is determined by the market data and the agent's action `a_t`.
-        The reward `r_t` is calculated based on the resulting change in
-        portfolio value and any applicable shaped rewards or penalties.
-
-        Args:
-            action (int): The action selected by the agent.
-
-        Returns:
-            Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]: A tuple
-                containing the next observation, the reward, a flag indicating
-                if the episode has terminated, a flag indicating if the episode
-                has been truncated, and an info dictionary.
-        """
+        """Executes a single time step in the environment."""
         assert self.current_seq is not None, "reset() must be called before step()"
 
-        # Action Masking for Specialists
+        # Action Mapping
         penalty = 0.0
+
+        # Determine target_action: 0=HOLD, 1=LONG, 2=SHORT
+        if self.agent_mode == "SHORT_ONLY":
+            target_action = 2 if action == 1 else 0
+        elif self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
+            target_action = 1 if action == 1 else 0
+        else:
+            target_action = action
+
+        # Compatibility with existing filter_direction logic
         if self.filter_direction == "SHORT":
-            # If mirrored, action 1 is the intended action (acting as Short), action 2 is prohibited (acting as Long)
             if self.invert_data:
-                if action == 2:
-                    action = 0
+                if target_action == 2:
+                    target_action = 0
                     penalty = -0.01
             else:
-                if action == 1:
-                    action = 0
+                if target_action == 1:
+                    target_action = 0
                     penalty = -0.01
         elif self.filter_direction == "LONG":
-            if action == 2:
-                action = 0
+            if target_action == 2:
+                target_action = 0
                 penalty = -0.01
 
+        action = target_action
         prev_position = self.position
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
@@ -1176,6 +1185,15 @@ class TradingEnvironment(gym.Env):
                 info dictionary with detailed trade information.
         """
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
+
+        # Action Mapping
+        if self.agent_mode == "SHORT_ONLY":
+            action = 2 if action == 1 else 0
+        elif self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
+            action = 1 if action == 1 else 0
+        else:
+            # Universal mode
+            pass
 
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:

@@ -366,13 +366,23 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
                 val_seqs[i][h_idx] = val_seqs[i][l_idx]
                 val_seqs[i][l_idx] = temp
 
+    # Determine num_actions based on mode
+    if raw_mode in ["LONG_ONLY", "SHORT_ONLY", "MIRROR_SHORT"]:
+        num_actions = 2
+    else:
+        num_actions = 3
+
+    cfg.market.num_actions = num_actions
+    logger.info(f"Set num_actions to {num_actions} for validation mode {raw_mode}")
+
     env_kwargs = {
         "sequences": val_seqs,
         "keys": val_keys,
         "stats": norm_stats,
         "full_seq_len": cfg.seq.full_seq_len,
         "num_features": val_seqs[0].shape[0],
-        "num_actions": cfg.market.num_actions,
+        "num_actions": num_actions,
+        "agent_mode": raw_mode,
         "initial_balance": cfg.market.initial_balance,
         "pre_signal_len": cfg.seq.pre_signal_len,
         "datachannels": cfg.data.datachannels,
