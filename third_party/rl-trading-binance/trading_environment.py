@@ -343,6 +343,29 @@ class TradingEnvironment(gym.Env):
         self.p_at_last_tsl_update: float = 0.0
 
         self._init_episode_vars()
+
+    def _get_direction(self, action: int) -> int:
+        """
+        Resolves the trading direction based on agent mode and action index.
+        Returns:
+            1: Long
+           -1: Short
+            0: Hold/Neutral
+        """
+        # Universal Mode: 0=Hold, 1=Long, 2=Short
+        if self.agent_mode == "UNIVERSAL":
+            return {1: 1, 2: -1}.get(action, 0)
+
+        # Specialist Modes (2 actions: 0=Hold, 1=Trade)
+        if action == 0:
+            return 0
+
+        if self.agent_mode == "SHORT_ONLY":
+            return -1
+
+        # LONG_ONLY and MIRROR_SHORT (Trade = 1)
+        return 1
+
     def _init_episode_vars(self) -> None:
         self.current_seq: Optional[np.ndarray] = None
         self.current_asset_name: Optional[str] = None
@@ -526,45 +549,34 @@ class TradingEnvironment(gym.Env):
             self._render_human(info, first=True)
         return obs, info
 
-    def _get_direction_from_action(self, action: int) -> int:
-        if self.agent_mode == "SHORT_ONLY":
-            return -1 if action == 1 else 0
-        if self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
-            return 1 if action == 1 else 0
-        # UNIVERSAL mode: 0-Stay, 1-Long, 2-Short
-        return {0: 0, 1: 1, 2: -1}.get(action, 0)
-
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Executes a single time step in the environment."""
         assert self.current_seq is not None, "reset() must be called before step()"
 
-        # Action Mapping
-        penalty = 0.0
-
-        # Determine target_action: 0=HOLD, 1=LONG, 2=SHORT
-        if self.agent_mode == "SHORT_ONLY":
-            target_action = 2 if action == 1 else 0
-        elif self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
-            target_action = 1 if action == 1 else 0
-        else:
-            target_action = action
+        # --- ARCHITECTURE FIX: Resolve Action Logic ---
+        # Map inputs (0, 1) or (0, 1, 2) to internal Logic (0=Hold, 1=Long, 2=Short)
+        direction = self._get_direction(action)
+        if direction == 1: action = 1
+        elif direction == -1: action = 2
+        else: action = 0
+        # ----------------------------------------------
 
         # Compatibility with existing filter_direction logic
+        penalty = 0.0
         if self.filter_direction == "SHORT":
             if self.invert_data:
-                if target_action == 2:
-                    target_action = 0
+                if action == 2:
+                    action = 0
                     penalty = -0.01
             else:
-                if target_action == 1:
-                    target_action = 0
+                if action == 1:
+                    action = 0
                     penalty = -0.01
         elif self.filter_direction == "LONG":
-            if target_action == 2:
-                target_action = 0
+            if action == 2:
+                action = 0
                 penalty = -0.01
 
-        action = target_action
         prev_position = self.position
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
@@ -1187,13 +1199,10 @@ class TradingEnvironment(gym.Env):
         assert self.current_seq is not None, "reset() must be called before backtest_step()"
 
         # Action Mapping
-        if self.agent_mode == "SHORT_ONLY":
-            action = 2 if action == 1 else 0
-        elif self.agent_mode in ["LONG_ONLY", "MIRROR_SHORT"]:
-            action = 1 if action == 1 else 0
-        else:
-            # Universal mode
-            pass
+        direction = self._get_direction(action)
+        if direction == 1: action = 1
+        elif direction == -1: action = 2
+        else: action = 0
 
         self.last_step = self.step_idx == self.agent_session_len - 1
         if self.last_step:
