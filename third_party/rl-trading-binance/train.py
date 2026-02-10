@@ -663,7 +663,38 @@ def run_training_session(
     """
     Runs a complete training and validation session for a given dataset.
     """
+    # Handle AGENT_MODE to control allowed_directions
+    agent_mode = "UNIVERSAL"
+    if cfg_mod is not None and hasattr(cfg_mod, "AGENT_MODE"):
+        agent_mode = cfg_mod.AGENT_MODE
+    else:
+        agent_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+
+    # Detection of MIRROR_SHORT from data if not explicitly set
+    is_inverted = False
+    if len(train_sequences) > 0:
+        close_idx = cfg.data.datachannels.index("close")
+        sample_asset = train_keys[0].split('_')[0]
+        asset_stats = norm_stats.get(sample_asset)
+        if asset_stats:
+            avg_price = asset_stats['mean'][close_idx]
+            if 0 < avg_price < 0.001:
+                is_inverted = True
+                logging.info(f"Detected potential inverted data for {sample_asset} (mean price: {avg_price:.6f})")
+
+    if is_inverted and agent_mode == "UNIVERSAL":
+        logging.info("Setting agent_mode to MIRROR_SHORT due to detected inverted data.")
+        agent_mode = "MIRROR_SHORT"
+
+    # Handle Specialist num_actions and update config
+    if agent_mode in ["LONG_ONLY", "SHORT_ONLY", "MIRROR_SHORT"]:
+        num_actions = 2
+    else:
+        num_actions = 3
     
+    cfg.market.num_actions = num_actions
+    logging.info(f"Set num_actions to {num_actions} for agent_mode {agent_mode}")
+
     # --- MC-dropout: ищем внешний объект `mc_dropout_cfg` или создаём пустышку ---
     mc_cfg = getattr(cfg_mod, "mc_dropout_cfg", type("obj", (), {})())
 
@@ -762,6 +793,9 @@ def run_training_session(
         allowed_dirs = ["SHORT"]
     elif agent_mode == "LONG_ONLY":
         filter_dir = "LONG"
+        allowed_dirs = ["LONG"]
+    elif agent_mode == "MIRROR_SHORT":
+        filter_dir = "LONG" # Trades Long on mirrored data
         allowed_dirs = ["LONG"]
 
     env_kwargs = {
