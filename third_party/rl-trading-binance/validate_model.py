@@ -218,10 +218,23 @@ def evaluate_agent(
         f"{L}_trades": int(total_trades),
         f"{L}_profit_factor": float(profit_factor),
         f"{L}_max_drawdown": float(max_dd),
-        # Add other metrics as needed
     }
 
+    # Direction-specific metrics
+    if total_trades > 0:
+        long_wins = sum(1 for t in all_trades_info if t.get('direction') == 'LONG' and t.get('correct_prediction'))
+        short_wins = sum(1 for t in all_trades_info if t.get('direction') == 'SHORT' and t.get('correct_prediction'))
+
+        metrics.update({
+            f"{L}_long_win_rate": float(long_wins / max(1, long_trades)),
+            f"{L}_short_win_rate": float(short_wins / max(1, short_trades)),
+            f"{L}_long_trades": int(long_trades),
+            f"{L}_short_trades": int(short_trades),
+        })
+
     logger.info(f"[{L}] Validation Complete. Trades: {metrics[f'{L}_trades']}, Net PnL: {metrics[f'{L}_net_pnl']:.2f}, Sortino: {metrics[f'{L}_sortino']:.3f}")
+    if short_trades > 0:
+        logger.info(f"[{L}] Short Win Rate: {metrics[f'{L}_short_win_rate']:.2%}")
 
     return metrics
 

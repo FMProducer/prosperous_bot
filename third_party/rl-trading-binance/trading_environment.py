@@ -173,13 +173,16 @@ class TradingEnvironment(gym.Env):
         # FIX: Save num_features immediately
         self.num_features = num_features
         self.datachannels = datachannels
+        self.filter_direction = filter_direction
+        self.invert_data = invert_data
 
         if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT', 'LONG_ONLY', 'SHORT_ONLY']:
             filter_direction = kwargs['filter_direction']
             if filter_direction == 'LONG_ONLY': filter_direction = 'LONG'
             if filter_direction == 'SHORT_ONLY': filter_direction = 'SHORT'
+            self.filter_direction = filter_direction
 
-            logging.info(f"Filtering sequences for direction: {filter_direction}")
+            logger.info(f"Filtering sequences for direction: {filter_direction}")
             
             original_count = len(self.sequences)
             filtered_sequences = []
@@ -203,11 +206,11 @@ class TradingEnvironment(gym.Env):
                         filtered_keys.append(key)
 
             if not filtered_sequences:
-                logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
+                logger.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
             else:
                 self.sequences = filtered_sequences
                 self.keys = filtered_keys
-                logging.info(f"Filtered sequences: {original_count} -> {len(self.sequences)}")
+                logger.info(f"Filtered sequences: {original_count} -> {len(self.sequences)}")
 
         self.render_mode = render_mode
         self.initial_balance = initial_balance
@@ -292,7 +295,7 @@ class TradingEnvironment(gym.Env):
             # Try to reshape (C, L, 1) to (L, C)
             if len(self.sequences[0].shape) == 3 and self.sequences[0].shape[2] == 1:
                 self.sequences = [seq.squeeze(-1).T for seq in self.sequences]
-                logging.info(f"Reshaped sequences from (C, L, 1) to (L, C): {self.sequences[0].shape}")
+                logger.info(f"Reshaped sequences from (C, L, 1) to (L, C): {self.sequences[0].shape}")
             else:
                 raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
 
@@ -405,59 +408,72 @@ class TradingEnvironment(gym.Env):
         d_eff = d0 - (p - fee_buf)
         return max(d_min, d_eff)
 
-    def _apply_risk_management(self, real_price: float) -> Optional[int]:
-        """Checks for SL, TP, or TSL triggers and returns close action if triggered."""
+    def _apply_risk_management(self, real_close: float, real_high: float, real_low: float) -> Optional[Tuple[int, float]]:
+        """Checks for SL, TP, or TSL triggers and returns (close action, exec_price) if triggered.
+        Optimized for performance and handles intra-bar volatility.
+        """
         if not self.use_risk_management or self.position == 0:
             return None
 
+        # Local cache for performance
+        entry_price = self.real_entry_price
+        direction = self.direction
         sl_pct = self.stop_loss
         tp_pct = self.take_profit
         d0 = self.trailing_stop
         d_min = self.trailing_stop_min
         delta_p = self.delta_p_hysteresis
+        fee_buf = self.transaction_fee * 2.0
+        close_action = self.close_action
 
-        if self.direction == "LONG":
-            # Update trailing max
-            self.trailing_max_price = max(self.trailing_max_price or real_price, real_price)
+        if direction == "LONG":
+            # SL triggers first if both SL and TP/TSL are hit in the same bar
+            if sl_pct > 0 and real_low <= entry_price * (1.0 - sl_pct):
+                return close_action, entry_price * (1.0 - sl_pct)
+
+            # Update trailing max based on HIGH
+            t_max = max(self.trailing_max_price or real_high, real_high)
+            self.trailing_max_price = t_max
 
             # TSL Update
-            p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
+            p = max(0.0, t_max / entry_price - 1.0)
             if self.tsl_price is None or p >= self.p_at_last_tsl_update + delta_p:
                 self.p_at_last_tsl_update = p
-                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                 # tsl_price only moves up
-                new_tsl = self.trailing_max_price * (1 - d_eff)
+                new_tsl = t_max * (1.0 - d_eff)
                 self.tsl_price = max(self.tsl_price or -np.inf, new_tsl)
 
-            # Exit Checks
-            if real_price <= self.tsl_price:
-                return self.close_action
-            if sl_pct > 0 and real_price <= self.real_entry_price * (1 - sl_pct):
-                return self.close_action
-            if tp_pct > 0 and real_price >= self.real_entry_price * (1 + tp_pct):
-                return self.close_action
+            # Exit Checks (TSL and TP)
+            if self.tsl_price is not None and real_low <= self.tsl_price:
+                return close_action, self.tsl_price
+            if tp_pct > 0 and real_high >= entry_price * (1.0 + tp_pct):
+                return close_action, entry_price * (1.0 + tp_pct)
 
-        elif self.direction == "SHORT":
-            # Update trailing min
-            self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
+        elif direction == "SHORT":
+            # SL triggers first (price goes UP for short)
+            if sl_pct > 0 and real_high >= entry_price * (1.0 + sl_pct):
+                return close_action, entry_price * (1.0 + sl_pct)
+
+            # Update trailing min based on LOW
+            t_min = min(self.trailing_min_price or real_low, real_low)
+            self.trailing_min_price = t_min
 
             # TSL Update
-            # Profit for short grows when price falls
-            p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
+            p = max(0.0, 1.0 - t_min / entry_price)
             if self.tsl_price is None or p >= self.p_at_last_tsl_update + delta_p:
+                logger.debug(f"TSL Update SHORT: p={p}, t_min={t_min}, entry={entry_price}")
                 self.p_at_last_tsl_update = p
-                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
+                d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                 # tsl_price only moves down
-                new_tsl = self.trailing_min_price * (1 + d_eff)
+                new_tsl = t_min * (1.0 + d_eff)
                 self.tsl_price = min(self.tsl_price or np.inf, new_tsl)
 
-            # Exit Checks
-            if real_price >= self.tsl_price:
-                return self.close_action
-            if sl_pct > 0 and real_price >= self.real_entry_price * (1 + sl_pct):
-                return self.close_action
-            if tp_pct > 0 and real_price <= self.real_entry_price * (1 - tp_pct):
-                return self.close_action
+            # Exit Checks (TSL and TP)
+            if self.tsl_price is not None and real_high >= self.tsl_price:
+                return close_action, self.tsl_price
+            if tp_pct > 0 and real_low <= entry_price * (1.0 - tp_pct):
+                return close_action, entry_price * (1.0 - tp_pct)
 
         return None
 
@@ -493,7 +509,7 @@ class TradingEnvironment(gym.Env):
         try:
             self.current_asset_name = self.keys[idx].split('_')[0]
         except IndexError:
-            logging.error(f"Could not parse asset name from key: {self.keys[idx]}")
+            logger.error(f"Could not parse asset name from key: {self.keys[idx]}")
             self.current_asset_name = "UNKNOWN"
 
         obs = self._get_observation()
@@ -522,6 +538,24 @@ class TradingEnvironment(gym.Env):
                 has been truncated, and an info dictionary.
         """
         assert self.current_seq is not None, "reset() must be called before step()"
+
+        # Action Masking for Specialists
+        penalty = 0.0
+        if self.filter_direction == "SHORT":
+            # If mirrored, action 1 is the intended action (acting as Short), action 2 is prohibited (acting as Long)
+            if self.invert_data:
+                if action == 2:
+                    action = 0
+                    penalty = -0.01
+            else:
+                if action == 1:
+                    action = 0
+                    penalty = -0.01
+        elif self.filter_direction == "LONG":
+            if action == 2:
+                action = 0
+                penalty = -0.01
+
         prev_position = self.position
 
         # Определяем действие "закрыть" (3 для num_actions=4, или -1 если close отключен)
@@ -571,10 +605,20 @@ class TradingEnvironment(gym.Env):
         info = {}
 
         # --- Risk Management ---
+        rm_exec_price = None
         if self.use_risk_management and self.position != 0:
-            rm_action = self._apply_risk_management(real_price)
-            if rm_action is not None:
-                action = rm_action
+            # Get High and Low for intra-bar RM
+            try:
+                h_idx = self.datachannels.index('high')
+                l_idx = self.datachannels.index('low')
+                real_high = self.current_seq[price_idx, h_idx] * asset_stats['std'][h_idx] + asset_stats['mean'][h_idx]
+                real_low = self.current_seq[price_idx, l_idx] * asset_stats['std'][l_idx] + asset_stats['mean'][l_idx]
+            except (ValueError, KeyError):
+                real_high = real_low = real_price
+
+            res = self._apply_risk_management(real_price, real_high, real_low)
+            if res is not None:
+                action, rm_exec_price = res
 
         # --- Risk-based Balance Check ---
         MIN_SAFE_FRACTION = 1.2
@@ -633,11 +677,14 @@ class TradingEnvironment(gym.Env):
         # --- Position Closing ---
         elif action == close_action and self.position != 0 and close_action != -1:
             volume = self.position_volume
+            # If RM triggered, use its execution price. Otherwise use current close.
+            exec_price = rm_exec_price if rm_exec_price is not None else real_price
+
             if self.position == 1:  # CLOSE LONG
-                real_exec_price = real_price * (1 - self.slippage)
+                real_exec_price = exec_price * (1 - self.slippage)
                 trade_pnl = (real_exec_price - self.real_entry_price) * volume
             else:  # CLOSE SHORT
-                real_exec_price = real_price * (1 + self.slippage)
+                real_exec_price = exec_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
 
             fee = real_exec_price * volume * self.transaction_fee
@@ -670,7 +717,7 @@ class TradingEnvironment(gym.Env):
 
         # BANKRUPTCY CHECK: Strict balance validation
         if self.balance <= self.bankruptcy_threshold:
-            logging.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
+            logger.warning(f"BANKRUPTCY at step {self.step_idx}: balance={self.balance:.2f} USDT")
             
             # Force-close any open positions with slippage penalty
             if self.position != 0:
@@ -717,7 +764,7 @@ class TradingEnvironment(gym.Env):
             action=action,
             prev_position=prev_position,
             trade_pnl=trade_pnl
-        )
+        ) + penalty
         
         # --- Drawdown Calculation (using real financial values) ---
         portfolio_value = self.balance
@@ -1159,6 +1206,7 @@ class TradingEnvironment(gym.Env):
                  action = 0 # Force HOLD
 
         # --- Risk Management ---
+        rm_exec_price = None
         if self.use_risk_management and self.position != 0:
             # Temporary override SL/TP/TSL params from backtest_step arguments if provided
             orig_sl, orig_tp = self.stop_loss, self.take_profit
@@ -1169,13 +1217,23 @@ class TradingEnvironment(gym.Env):
             if trailing_stop is not None: self.trailing_stop = trailing_stop
             if trailing_stop_min is not None: self.trailing_stop_min = trailing_stop_min
 
-            rm_action = self._apply_risk_management(real_price)
+            # Get High and Low
+            try:
+                h_idx = self.datachannels.index('high')
+                l_idx = self.datachannels.index('low')
+                real_high = self.current_seq[price_idx, h_idx] * asset_stats['std'][h_idx] + asset_stats['mean'][h_idx]
+                real_low = self.current_seq[price_idx, l_idx] * asset_stats['std'][l_idx] + asset_stats['mean'][l_idx]
+            except (ValueError, KeyError):
+                real_high = real_low = real_price
+
+            res = self._apply_risk_management(real_price, real_high, real_low)
 
             # Restore original params
             self.stop_loss, self.take_profit = orig_sl, orig_tp
             self.trailing_stop, self.trailing_stop_min = orig_ts, orig_ts_min
 
-            if rm_action is not None:
+            if res is not None:
+                action, rm_exec_price = res
                 action = 3 # CLOSE in backtest mode
                 exit_reason = "TSL" # Simplification, could be SL or TP
             elif self.last_step:
@@ -1223,7 +1281,7 @@ class TradingEnvironment(gym.Env):
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
-            logging.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
+            logger.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         elif action == 2 and self.position == 0: # OPEN SHORT
             real_exec_price = real_price * (1 - self.slippage)
@@ -1253,7 +1311,7 @@ class TradingEnvironment(gym.Env):
                 self.tsl_price = None
                 self.p_at_last_tsl_update = 0.0
             self._position_entry_step = self.step_idx  # Запомнить шаг входа
-            logging.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
+            logger.info(f": (SHORT) SELL {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         # --- Position Closing ---
         elif action == 3 and self.position != 0:
@@ -1261,13 +1319,16 @@ class TradingEnvironment(gym.Env):
             volume = self.position_volume
             was_long = (self.position == 1)
             
+            # If RM triggered, use its execution price. Otherwise use current close.
+            exec_price = rm_exec_price if rm_exec_price is not None else real_price
+
             if was_long:
-                real_exec_price = real_price * (1 - self.slippage)
+                real_exec_price = exec_price * (1 - self.slippage)
                 trade_pnl = (real_exec_price - self.real_entry_price) * volume
                 close_action = "SELL"
                 trade_price_delta = (real_exec_price - self.real_entry_price) / self.real_entry_price
             else: # SHORT
-                real_exec_price = real_price * (1 + self.slippage)
+                real_exec_price = exec_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
                 close_action = "BUY"
                 trade_price_delta = (self.real_entry_price - real_exec_price) / self.real_entry_price
@@ -1297,7 +1358,7 @@ class TradingEnvironment(gym.Env):
         if position_closed:
             opening_fee = self.real_entry_price * volume * self.transaction_fee
             single_trade_realized_pnl = trade_pnl - fee - opening_fee
-            logging.info(
+            logger.info(
                 f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {real_exec_price:.5f} at "
                 f"{current_dt.strftime('%Y-%m-%d %H:%M')} PnL = {single_trade_realized_pnl:+.2f}"
             )

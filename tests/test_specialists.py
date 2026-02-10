@@ -107,13 +107,16 @@ def test_short_specialist_inverted_chart_pnl():
 
 def test_short_tsl_logic():
     env = mock_env(mode="SHORT", invert=False, trend='down', use_rm=True)
+    env.trailing_stop = 0.10 # Large trailing stop to avoid instant trigger
     env.reset(options={"forced_index": 0})
 
     # Step 0: Open Short
     env.step(2)
 
-    # Step 1: Trigger RM logic once
+    # Step 1: Hold. Price falls, TSL should be initialized/updated
     env.step(0)
+
+    assert env.position == -1, "Position should still be open"
     initial_tsl = env.tsl_price
     assert initial_tsl is not None
     assert initial_tsl > env.current_seq[env.pre_signal_len + env.step_idx, env.close_idx]
@@ -160,3 +163,137 @@ def test_short_tp_logic():
 
     assert env.position == 0, "Short position should be closed by TP"
     assert env.realized_pnl > 0, "TP should result in profit"
+
+def test_high_volatility_wipeout():
+    """Verify that if price hits both SL and TP in same bar, SL triggers first."""
+    # Start at 100. For SHORT: SL at 105, TP at 95.
+    # Bar: Open=100, High=110, Low=90, Close=90.
+    data = np.array([
+        [100, 100, 100, 100, 1000], # Padding
+        [100, 110, 90, 90, 1000],   # The Wipeout bar
+        [90, 90, 90, 90, 1000],     # More padding
+    ], dtype=np.float32)
+
+    sequences = [data]
+    keys = ["BTCUSDT_wipeout"]
+    stats = {"BTCUSDT": {"mean": [0.0]*5, "std": [1.0]*5}}
+
+    env = TradingEnvironment(
+        sequences=sequences, stats=stats, keys=keys, render_mode=None,
+        full_seq_len=3, num_features=5, num_actions=4, flat_state_size=0,
+        initial_balance=1000.0, pre_signal_len=1, datachannels=['open', 'high', 'low', 'close', 'volume'],
+        slippage=0.0, transaction_fee=0.0, agent_session_len=2, agent_history_len=1,
+        input_history_len=1, pricechannels=['open', 'high', 'low', 'close'],
+        volumechannels=['volume'], otherchannels=[], action_history_len=0,
+        inaction_penalty_ratio=0.0, use_risk_management=True,
+        stop_loss=0.05, take_profit=0.05, filter_direction="SHORT",
+        invert_data=False # Stay on normal chart
+    )
+
+    env.reset()
+    # Step 0: Open Short at price 100
+    env.step(2)
+    assert env.position == -1, f"Expected position -1, got {env.position}"
+    assert env.real_entry_price == 100
+
+    # Step 1: The volatile bar
+    # High is 110 (+10%), Low is 90 (-10%).
+    # Both SL (105) and TP (95) are hit.
+    _, reward, done, _, info = env.step(0)
+
+    assert env.position == 0, "Position should be closed"
+    # SL triggers first, so we should have a LOSS.
+    # Entry 100, SL at 105 -> Loss of 5 USDT per unit.
+    assert env.realized_pnl < 0, f"SL should trigger first, but got PnL={env.realized_pnl}"
+    assert env.balance < 1000.0
+
+def test_mirrored_short_pnl():
+    """Verify PnL when invert_data=True and action is 1 (acting as a Short)."""
+    # Original data: price falls from 100 to 90.
+    data = np.array([
+        [100, 100, 100, 100, 1000],
+        [90, 90, 90, 90, 1000],
+        [80, 80, 80, 80, 1000],
+    ], dtype=np.float32)
+
+    sequences = [data]
+    keys = ["BTCUSDT_mirrored"]
+    # We must provide inverted stats if we want real_price to be -real_original
+    stats = {"BTCUSDT": {"mean": [0.0]*5, "std": [1.0]*5}}
+
+    # If we use TradingEnvironment with filter_direction="SHORT" and invert_data=True,
+    # it will invert the sequences internally.
+    env = TradingEnvironment(
+        sequences=sequences, stats=stats, keys=keys, render_mode=None,
+        full_seq_len=3, num_features=5, num_actions=4, flat_state_size=0,
+        initial_balance=1000.0, pre_signal_len=1, datachannels=['open', 'high', 'low', 'close', 'volume'],
+        slippage=0.0, transaction_fee=0.0, agent_session_len=2, agent_history_len=1,
+        input_history_len=1, pricechannels=['open', 'high', 'low', 'close'],
+        volumechannels=['volume'], otherchannels=[], action_history_len=0,
+        inaction_penalty_ratio=0.0, use_risk_management=False,
+        filter_direction="SHORT", invert_data=True
+    )
+
+    env.reset()
+    # In mirrored world, price started at -100 and went to -90 (it rose!)
+    # Agent takes action 1 (LONG)
+    env.step(1)
+    assert env.position == 1
+    assert env.direction == "LONG" # Environment sees it as LONG in its mirrored view
+
+    # Let's check how it calculates PnL.
+    # real_entry_price will be -100.
+    # Next bar real_price will be -90.
+    _, reward, done, _, info = env.step(0)
+
+    # PnL for Long: (exit - entry) * volume
+    # (-90 - (-100)) * volume = 10 * volume.
+    # Volume = 1000 / |-100| = 10.
+    # PnL = 10 * 10 = 100.
+    # This matches the profit of a SHORT from 100 to 90.
+    assert env.realized_pnl > 0
+    assert env.balance > 1000.0
+
+def test_action_masking():
+    """Verify that action masking correctly remaps and penalizes invalid actions."""
+    data = np.ones((10, 5), dtype=np.float32) * 100
+    sequences = [data]
+    keys = ["BTCUSDT_masking"]
+    stats = {"BTCUSDT": {"mean": [0.0]*5, "std": [1.0]*5}}
+
+    # SHORT_ONLY environment on NORMAL chart
+    env = TradingEnvironment(
+        sequences=sequences, stats=stats, keys=keys, render_mode=None,
+        full_seq_len=10, num_features=5, num_actions=4, flat_state_size=0,
+        initial_balance=1000.0, pre_signal_len=1, datachannels=['open', 'high', 'low', 'close', 'volume'],
+        slippage=0.0, transaction_fee=0.0, agent_session_len=5, agent_history_len=1,
+        input_history_len=1, pricechannels=['open', 'high', 'low', 'close'],
+        volumechannels=['volume'], otherchannels=[], action_history_len=0,
+        inaction_penalty_ratio=0.0, use_risk_management=False,
+        filter_direction="SHORT",
+        invert_data=False # Normal chart
+    )
+
+    env.reset()
+    # Try action 1 (LONG) in SHORT_ONLY mode
+    _, reward, _, _, _ = env.step(1)
+
+    assert env.position == 0, "Action 1 should have been masked to HOLD"
+    assert reward == -0.01, "Should have received masking penalty"
+
+    # LONG_ONLY environment
+    env_long = TradingEnvironment(
+        sequences=sequences, stats=stats, keys=keys, render_mode=None,
+        full_seq_len=10, num_features=5, num_actions=4, flat_state_size=0,
+        initial_balance=1000.0, pre_signal_len=1, datachannels=['open', 'high', 'low', 'close', 'volume'],
+        slippage=0.0, transaction_fee=0.0, agent_session_len=5, agent_history_len=1,
+        input_history_len=1, pricechannels=['open', 'high', 'low', 'close'],
+        volumechannels=['volume'], otherchannels=[], action_history_len=0,
+        inaction_penalty_ratio=0.0, use_risk_management=False,
+        filter_direction="LONG"
+    )
+    env_long.reset()
+    # Try action 2 (SHORT) in LONG_ONLY mode
+    _, reward, _, _, _ = env_long.step(2)
+    assert env_long.position == 0, "Action 2 should have been masked to HOLD"
+    assert reward == -0.01, "Should have received masking penalty"

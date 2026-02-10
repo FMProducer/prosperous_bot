@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
 from agent import D3QN_PER_Agent
@@ -224,9 +225,12 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
     ep_reward = np.zeros(train_env.num_envs, dtype=float)
     ep_trades = np.zeros(train_env.num_envs, dtype=int)
     ep_wins = np.zeros(train_env.num_envs, dtype=int)
+    ep_short_trades = np.zeros(train_env.num_envs, dtype=int)
+    ep_short_wins = np.zeros(train_env.num_envs, dtype=int)
 
     ep_reward_per_episode = []
     win_rates = []
+    short_win_rates = []
     ep_losses = []
     last_info = {}
     transitions_count = 0
@@ -256,6 +260,11 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                 ep_trades[i] += 1
                 if infos[i].get('correct_prediction'):
                     ep_wins[i] += 1
+
+                if infos[i].get('direction') == 'SHORT':
+                    ep_short_trades[i] += 1
+                    if infos[i].get('correct_prediction'):
+                        ep_short_wins[i] += 1
             # --------------------------
 
             # Корректный next_state при done: брать финальное наблюдение из info
@@ -280,6 +289,9 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
                 wr = infos[i].get("episode_win_rate", 0.0)
                 if wr == 0.0 and ep_trades[i] > 0:
                     wr = ep_wins[i] / ep_trades[i]
+
+                if ep_short_trades[i] > 0:
+                    short_win_rates.append(ep_short_wins[i] / ep_short_trades[i])
 
                 # Обновляем pbar всегда при завершении эпизода
                 pbars[i].total += 1
@@ -320,9 +332,10 @@ def _rollout_vectorized_episode(train_env: DummyVecEnv, agent: D3QN_PER_Agent, a
 
     avg_reward = float(np.mean(ep_reward_per_episode)) if ep_reward_per_episode else 0.0
     avg_win_rate = float(np.mean(win_rates)) if win_rates else 0.0
+    avg_short_wr = float(np.mean(short_win_rates)) if short_win_rates else 0.0
     avg_loss = np.mean(ep_losses) if ep_losses else 0.0
 
-    return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info
+    return avg_reward, avg_win_rate, transitions_count, avg_loss, last_info, avg_short_wr
 
 
 def plot_training_progress(history: dict, save_dir: str, window_size: int) -> None:
@@ -337,6 +350,7 @@ def plot_training_progress(history: dict, save_dir: str, window_size: int) -> No
     epsilons = history.get("epsilons", [])
     win_rates = history.get("win_rates", [])
     mean_win_rates = history.get("mean_win_rates_N", [])
+    short_win_rates = history.get("short_win_rates", [])
 
     if episodes and rewards:
         plt.figure(figsize=(12, 6))
@@ -404,6 +418,26 @@ def plot_training_progress(history: dict, save_dir: str, window_size: int) -> No
         logging.info(f"Saved loss plot: {save_path}")
     else:
         logging.warning("No 'episodes' or 'losses' data available to plot the loss graph.")
+
+    if episodes and short_win_rates and any(swr > 0 for swr in short_win_rates):
+        plt.figure(figsize=(12, 6))
+        sns.lineplot(
+            x=episodes,
+            y=[wr * 100 for wr in short_win_rates],
+            label="Short Win Rate (%)",
+            color="tab:purple",
+            alpha=0.6,
+            linewidth=2.0,
+        )
+        plt.title("Short Specialist Performance", fontsize=16, fontweight="bold")
+        plt.xlabel("Episode", fontsize=14)
+        plt.ylabel("Win Rate (%)", fontsize=14)
+        plt.ylim(-5, 105)
+        plt.tight_layout()
+        save_path = os.path.join(save_dir, "short_specialist_performance.png")
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+        logging.info(f"Saved Short Win Rate plot: {save_path}")
 
     if episodes and win_rates:
         plt.figure(figsize=(12, 6))
@@ -713,6 +747,23 @@ def run_training_session(
     if cfg_mod is not None:
         invert_data_for_env = getattr(cfg_mod, "INVERT_STATS_FOR_SHORT", True)
 
+    # Handle AGENT_MODE to control allowed_directions
+    agent_mode = "UNIVERSAL"
+    if cfg_mod is not None and hasattr(cfg_mod, "AGENT_MODE"):
+        agent_mode = cfg_mod.AGENT_MODE
+    else:
+        agent_mode = getattr(cfg, "AGENT_MODE", "UNIVERSAL")
+
+    filter_dir = getattr(cfg.market, "filter_direction", None)
+    allowed_dirs = getattr(cfg.market, "allowed_directions", None)
+
+    if agent_mode == "SHORT_ONLY":
+        filter_dir = "SHORT"
+        allowed_dirs = ["SHORT"]
+    elif agent_mode == "LONG_ONLY":
+        filter_dir = "LONG"
+        allowed_dirs = ["LONG"]
+
     env_kwargs = {
         "sequences": train_sequences,
         "keys": train_keys,
@@ -757,8 +808,8 @@ def run_training_session(
         "allow_opposite_trades": getattr(cfg.market, "allow_opposite_trades", True),
         "max_trades_per_episode": max_trades,
         "close_action_index": getattr(cfg.market, "close_action_index", None),
-        "filter_direction": getattr(cfg.market, "filter_direction", None),
-        "allowed_directions": getattr(cfg.market, "allowed_directions", None),
+        "filter_direction": filter_dir,
+        "allowed_directions": allowed_dirs,
         "invert_data": invert_data_for_env,
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
@@ -805,6 +856,11 @@ def run_training_session(
             mode=cfg.trainlog.save_mode
         )
 
+    # TensorBoard initialization
+    tb_dir = os.path.join(cfg.paths.log_dir, session_name)
+    writer = SummaryWriter(log_dir=tb_dir)
+    logging.info(f"TensorBoard logging enabled: {tb_dir}")
+
     if num_envs > 1:
         train_env.reset()
     else:
@@ -813,13 +869,14 @@ def run_training_session(
     counter = trange(1, cfg.trainlog.episodes + 1, desc="Training in episodes", leave=False)
     for ep in counter:
         if num_envs > 1:
-            ep_reward, _, transitions, avg_loss, ep_info = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
+            ep_reward, _, transitions, avg_loss, ep_info, avg_short_wr = _rollout_vectorized_episode(train_env, agent, cfg.seq.agent_session_len)
             ep_losses = [avg_loss] if avg_loss > 0 else []
             train_steps += transitions
         else:
             obs, _ = train_env.reset(seed=None, options=None)
             ep_reward, ep_losses, done = 0.0, [], False
             ep_trades, ep_wins = 0, 0
+            ep_short_trades, ep_short_wins = 0, 0
             while not done:
                 action = agent.select_action(obs, training=True)
                 next_obs, reward, done, _, info = train_env.step(action)
@@ -831,10 +888,16 @@ def run_training_session(
                     ep_trades += 1
                     if info.get('correct_prediction'):
                         ep_wins += 1
+                    if info.get('direction') == 'SHORT':
+                        ep_short_trades += 1
+                        if info.get('correct_prediction'):
+                            ep_short_wins += 1
                 obs = next_obs
                 agent.increment_step()
                 train_steps += 1
                 ep_reward += reward
+
+            avg_short_wr = ep_short_wins / max(1, ep_short_trades) if ep_short_trades > 0 else 0.0
 
         history["episodes"].append(ep)
         history["rewards"].append(ep_reward)
@@ -855,6 +918,16 @@ def run_training_session(
         episode_win_rate_deque.append(current_win_rate)
         history["win_rates"].append(current_win_rate)
         history["mean_win_rates_N"].append(np.mean(episode_win_rate_deque))
+
+        # Log Short Win Rate
+        history["short_win_rates"].append(avg_short_wr)
+
+        # TB Logging
+        writer.add_scalar("Train/Reward", ep_reward, ep)
+        writer.add_scalar("Train/Loss", avg_loss, ep)
+        writer.add_scalar("Train/WinRate", current_win_rate, ep)
+        writer.add_scalar("Train/ShortWinRate", avg_short_wr, ep)
+        writer.add_scalar("Train/Epsilon", eps_current, ep)
 
         counter.desc = f"Training loss={avg_loss:.7f}, reward={ep_reward:.5f}"
 
@@ -891,6 +964,11 @@ def run_training_session(
                     continue
  
                 # 4. Регистрируем в менеджере (файл .pth уже сохранён, JSON создан валидацией)
+                # TB Logging for Validation
+                for k, v in metrics.items():
+                    if isinstance(v, (int, float)):
+                        writer.add_scalar(f"Val/{k}", v, ep)
+
                 if checkpoint_manager:
                     checkpoint_manager.register_checkpoint(ep, metrics, ckpt_path, json_path)
                     
@@ -1002,6 +1080,7 @@ def run_training_session(
     
     plot_training_progress(history, plots_dir, cfg.trainlog.plot_moving_avg_window)
 
+    writer.close()
     train_env.close()
     if val_env:
         val_env.close()
