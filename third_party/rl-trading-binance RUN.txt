@@ -16,7 +16,6 @@ python c:\Python\Prosperous_Bot\third_party\rl-trading-binance\paper_trader_q.py
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\SYSTEM_PROMPT.md
 C:\Python\Prosperous_Bot\third_party\rl-trading-binance\README.md
 
-
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 python validate_ensemble.py --ensemble configs/alpha_seed_404_v11.py
 
@@ -36,6 +35,7 @@ freqtrade download-data --config ft_userdata/config_rl.json --timerange 20250601
 python train_ohlcv_z.py configs/alpha_seed_404_ohlcv_z.py              этот
 
 python train.py configs/alpha_seed_404_v13_gca.py              этот
+
 python train.py --config configs/alpha_seed_404_v12.py           
 *python train.py configs/alpha.py
 python train.py 

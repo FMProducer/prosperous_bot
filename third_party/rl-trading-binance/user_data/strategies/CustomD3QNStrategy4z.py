@@ -79,6 +79,10 @@ class CustomD3QNStrategy4z(IStrategy):
     d_min = DecimalParameter(0.001, 0.05, default=0.0008, space='stoploss', load=True)
     hysteresis = DecimalParameter(0.00005, 0.01, default=0.00075, space='stoploss', load=True)
     
+    # Hyperoptable Voting Thresholds
+    rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
+    rl_short_threshold_opt = IntParameter(1, 2, default=1, space='sell', optimize=True, load=True)
+
     plot_config = {
         'main_plot': {},
         'subplots': {}
@@ -349,6 +353,20 @@ class CustomD3QNStrategy4z(IStrategy):
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
     
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop('executor', None)
+        state.pop('cache_lock', None)
+        state.pop('logger', None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.logger = logging.getLogger(__name__)
+        self.cache_lock = threading.Lock()
+        num_cpu_threads = self.config.get('cpu_threads', 4)
+        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
+
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
             if "alpha" in file.name or "config" in file.name:
@@ -674,6 +692,10 @@ class CustomD3QNStrategy4z(IStrategy):
         When drawdown decreases back towards zero, epsilon gradually returns towards
         the base value from config.
         """
+        # Skip dynamic epsilon update in backtesting/hyperopt to avoid DB calls
+        if self.config.get('runmode') not in ['live', 'dry_run']:
+            return
+
         try:
             pnl_long, pnl_short = self._get_pnl_from_freqtrade()
             equity_long = pnl_long
@@ -856,6 +878,14 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         Алгоритм ансамбля: Голосование с порогом ε
         """
+        # Determine thresholds (Hyperopt support)
+        if self.config.get('runmode') == 'hyperopt':
+            thresh_long = self.rl_long_threshold_opt.value
+            thresh_short = self.rl_short_threshold_opt.value
+        else:
+            thresh_long = self.rl_long_threshold
+            thresh_short = self.rl_short_threshold
+
         votes_long = 0
         votes_short = 0
         veto_long_count = 0
@@ -923,7 +953,7 @@ class CustomD3QNStrategy4z(IStrategy):
         result = {
             'enter_long': 0,
             'enter_short': 0,
-            'reason': f"Votes L:{votes_long}/{self.rl_long_threshold} S:{votes_short}/{self.rl_short_threshold} [{' '.join(details)}]"
+            'reason': f"Votes L:{votes_long}/{thresh_long} S:{votes_short}/{thresh_short} [{' '.join(details)}]"
         }
 
         if has_long or has_short:
@@ -931,8 +961,8 @@ class CustomD3QNStrategy4z(IStrategy):
             return result
 
         # --- 3. Принятие решения ---
-        long_signal = votes_long >= self.rl_long_threshold
-        short_signal = votes_short >= self.rl_short_threshold
+        long_signal = votes_long >= thresh_long
+        short_signal = votes_short >= thresh_short
 
         if long_signal and short_signal:
             result['reason'] += " | CONFLICT (Both signals)"
@@ -957,6 +987,7 @@ class CustomD3QNStrategy4z(IStrategy):
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
                            side: str, **kwargs) -> bool:
+        # Разрешаем проверку слотов в бэктесте для полнофункциональной симуляции
         if self.config.get('runmode') not in ['live', 'dry_run']:
             return True
         
