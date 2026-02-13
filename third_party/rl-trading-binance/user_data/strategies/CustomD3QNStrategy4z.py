@@ -75,9 +75,9 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.075, space='stoploss', load=True)
-    d_min = DecimalParameter(0.001, 0.05, default=0.0008, space='stoploss', load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00075, space='stoploss', load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.098, space='sell', load=True)
+    d_min = DecimalParameter(0.0005, 0.05, default=0.043, space='sell', load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.01, space='sell', load=True)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
@@ -149,6 +149,7 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # 3. Кэш для feature tensors (экономим на preprocessing)
         self.feature_cache = {}
+        self.q_value_cache = {}  # Кэш для результатов инференса (Q-values)
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
@@ -196,7 +197,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260126_time_214322"
+        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
@@ -1104,42 +1105,53 @@ class CustomD3QNStrategy4z(IStrategy):
         # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
         asset_name = metadata['pair'].split(':')[0].replace('/', '')
         
-        tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name) if self.enable_long_1 else None
-        tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name) if self.enable_long_2 else None
-        tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name) if self.enable_short_1 else None
-        tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name) if self.enable_short_2 else None
+        # --- Q-VALUE CACHING FOR HYPEROPT ---
+        # Ключ кэша: пара + время последней свечи.
+        # Это гарантирует, что мы не пересчитываем нейросеть, если данные не изменились.
+        last_date = dataframe.iloc[-1]['date']
+        q_cache_key = (metadata['pair'], str(last_date))
         
-        # Проверяем, что все ВКЛЮЧЕННЫЕ модели получили данные
-        missing_data = False
-        if self.enable_long_1 and tensor_long_1 is None: missing_data = True
-        if self.enable_long_2 and tensor_long_2 is None: missing_data = True
-        if self.enable_short_1 and tensor_short_1 is None: missing_data = True
-        if self.enable_short_2 and tensor_short_2 is None: missing_data = True
-
-        if missing_data:
-            return dataframe
+        q_values = None
+        with self.cache_lock:
+            if q_cache_key in self.q_value_cache:
+                q_values = self.q_value_cache[q_cache_key]
         
-        # Sanity Check: Ensure Short tensor is not identical to Long tensor (should be inverted)
-        if tensor_long_1 is not None and tensor_short_1 is not None:
-            # Предупреждаем только если включен mirror_mode. В обычном режиме они И ДОЛЖНЫ быть одинаковыми.
-            if self.short_1_is_mirror and torch.equal(tensor_long_1, tensor_short_1):
-                logger.warning(f"🚨 CRITICAL: LONG_1 and SHORT_1 tensors are IDENTICAL for {metadata['pair']}! Inversion failed?")
-
-        # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE для всех 4 моделей одновременно
-        inference_tasks = []
-        if self.enable_long_1 and tensor_long_1 is not None:
-            inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
-        if self.enable_long_2 and tensor_long_2 is not None:
-            inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
-        if self.enable_short_1 and tensor_short_1 is not None:
-            inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
-        if self.enable_short_2 and tensor_short_2 is not None:
-            inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
+        if q_values is None:
+            # Если в кэше нет - считаем (Тяжелая операция)
+            tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name) if self.enable_long_1 else None
+            tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name) if self.enable_long_2 else None
+            tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name) if self.enable_short_1 else None
+            tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name) if self.enable_short_2 else None
             
-        if not inference_tasks:
-            return dataframe
-        
-        q_values = self._parallel_inference(inference_tasks)
+            # Проверяем, что все ВКЛЮЧЕННЫЕ модели получили данные
+            missing_data = False
+            if self.enable_long_1 and tensor_long_1 is None: missing_data = True
+            if self.enable_long_2 and tensor_long_2 is None: missing_data = True
+            if self.enable_short_1 and tensor_short_1 is None: missing_data = True
+            if self.enable_short_2 and tensor_short_2 is None: missing_data = True
+
+            if missing_data:
+                return dataframe
+            
+            # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE
+            inference_tasks = []
+            if self.enable_long_1 and tensor_long_1 is not None:
+                inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
+            if self.enable_long_2 and tensor_long_2 is not None:
+                inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
+            if self.enable_short_1 and tensor_short_1 is not None:
+                inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
+            if self.enable_short_2 and tensor_short_2 is not None:
+                inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
+                
+            if not inference_tasks:
+                return dataframe
+            
+            q_values = self._parallel_inference(inference_tasks)
+            
+            # Сохраняем в кэш
+            with self.cache_lock:
+                self.q_value_cache[q_cache_key] = q_values
         
         # Определяем размер батча из первого доступного результата
         batch_size = next(iter(q_values.values())).shape[0]
@@ -1290,6 +1302,10 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception:
             pass
 
+        # --- OPTIMIZATION: Pre-allocate arrays to avoid dataframe.loc inside loop ---
+        enter_long_vals = np.zeros(n_predictions, dtype=np.int8)
+        enter_short_vals = np.zeros(n_predictions, dtype=np.int8)
+
         for i in range(n_predictions):
             # Собираем действия для текущей свечи (Raw actions: 0 or 1)
             # НОВЫЙ МЕТОД: Нормируешь → суммируешь → сравниваешь разницу → фильтруешь по ε
@@ -1313,10 +1329,14 @@ class CustomD3QNStrategy4z(IStrategy):
                 if decision['enter_long'] or decision['enter_short']:
                     logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
             
-            # Записываем в DF
-            dataframe.loc[target_idx[i], 'enter_long'] = decision['enter_long']
-            dataframe.loc[target_idx[i], 'enter_short'] = decision['enter_short']
+            # Записываем в массив (быстро)
+            enter_long_vals[i] = decision['enter_long']
+            enter_short_vals[i] = decision['enter_short']
         
+        # Mass assignment (один раз для всех строк)
+        dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
+        dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
+
         return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:

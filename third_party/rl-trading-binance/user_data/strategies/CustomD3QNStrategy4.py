@@ -209,12 +209,12 @@ class CustomD3QNStrategy4(IStrategy):
         self.norm_stats_short_2 = self._load_norm_stats(self.short_2_norm_stats_path) if self.enable_short_2 else {}
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
-        # ЖЕСТКО ЗАДАЕМ TRUE, так как модели обучены на зеркальном графике.
-        self.short_1_is_mirror = True
-        self.short_2_is_mirror = True
+        # Определяем из конфига модели
+        self.short_1_is_mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False) if self.cfg_short_1 else False
+        self.short_2_is_mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False) if self.cfg_short_2 else False
         
-        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (Hardcoded)")
-        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (Hardcoded)")
+        logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
+        logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
         
         # --- НАСТРОЙКИ ГОЛОСОВАНИЯ (из конфига) ---
         self.vote_threshold_long = config.get('rl_long_threshold', 2)

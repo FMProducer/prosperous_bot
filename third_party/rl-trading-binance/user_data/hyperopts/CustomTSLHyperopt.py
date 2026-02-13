@@ -43,7 +43,12 @@ class CustomTSLHyperopt(IHyperOptLoss):
         sharpe_ratio = annual_return / annual_std if annual_std > 0 else -999
         
         # Штраф за превышение Max Drawdown > 20%
-        max_drawdown = results['max_drawdown_abs'].max()
+        # Рассчитываем Max Drawdown вручную по кривой доходности
+        cumulative_profit = results.sort_values('close_date')['profit_ratio'].cumsum()
+        max_profit = cumulative_profit.cummax()
+        drawdowns = cumulative_profit - max_profit
+        max_drawdown = abs(drawdowns.min()) if not drawdowns.empty else 0.0
+        
         penalty = 0
         if max_drawdown > 0.20:
             penalty = (max_drawdown - 0.20) * 10
