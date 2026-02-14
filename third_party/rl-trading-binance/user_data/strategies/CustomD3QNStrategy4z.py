@@ -267,13 +267,25 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # --- НАСТРОЙКИ АНСАМБЛЯ V2 ---
         self.ensemble_cfg = config.get('rl_ensemble', {})
-        # Base epsilon from config (used as baseline for dynamic epsilon)
+        # Common legacy epsilon for backward compatibility
         self.epsilon_threshold = self.ensemble_cfg.get('epsilon_threshold', 0.15)
-        # Effective epsilon actually used for thresholding (will be updated dynamically)
-        self.epsilon_threshold_eff: float = self.epsilon_threshold
-        # Раздельные эффективные eps для лонгов и шортов
-        self.epsilon_threshold_eff_long: float = self.epsilon_threshold
-        self.epsilon_threshold_eff_short: float = self.epsilon_threshold
+
+        # Separate base thresholds for long/short sides, defaulting to common epsilon
+        self.epsilon_threshold_long = self.ensemble_cfg.get(
+            "epsilon_threshold_long", self.epsilon_threshold
+        )
+        self.epsilon_threshold_short = self.ensemble_cfg.get(
+            "epsilon_threshold_short", self.epsilon_threshold
+        )
+
+        # Effective epsilons used for thresholding, updated dynamically around per-side bases
+        self.epsilon_threshold_eff_long: float = float(self.epsilon_threshold_long)
+        self.epsilon_threshold_eff_short: float = float(self.epsilon_threshold_short)
+        # Aggregate value for logging/compatibility
+        self.epsilon_threshold_eff: float = 0.5 * (
+            self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+        )
+
         # Максимальная наблюдаемая equity по unrealized PnL для лонгов и шортов
         self.equity_max_long: float = 0.0
         self.equity_max_short: float = 0.0
@@ -283,6 +295,24 @@ class CustomD3QNStrategy4z(IStrategy):
         self.enable_veto = config.get('rl_enable_veto', False)
         self.rl_long_threshold = config.get('rl_long_threshold', 1)
         self.rl_short_threshold = config.get('rl_short_threshold', 1)
+
+        # --- Calibration Mode ---
+        # When enabled, disable policy layers (veto, dynamic slots, dynamic epsilon)
+        self.calibration_mode = config.get("rl_calibration_mode", False)
+        if self.calibration_mode:
+            self.logger.warning(
+                "⚠️ STRATEGY RUNNING IN CALIBRATION MODE! "
+                "Veto, dynamic slots and dynamic epsilon are disabled."
+            )
+            # Disable veto and dynamic slots in calibration
+            self.enable_veto = False
+            self.dynamic_slots_enabled = False
+            # Effective epsilons fixed to base values in calibration mode
+            self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
+            self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
+            self.epsilon_threshold_eff = 0.5 * (
+                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+            )
         self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
         self.config_update_interval = self.ensemble_cfg.get('q_update_interval', config.get('q_update_interval', 14400))
 
@@ -686,13 +716,18 @@ class CustomD3QNStrategy4z(IStrategy):
     def _update_dynamic_epsilon(self) -> None:
         """
         Update effective epsilon based on current equity drawdown.
-
-        Equity is approximated as the sum of unrealized PnL from the long and short books.
-        As drawdown from the maximum observed equity increases, the effective epsilon
-        increases smoothly, requiring stronger model advantages to cast a real vote.
-        When drawdown decreases back towards zero, epsilon gradually returns towards
-        the base value from config.
+        In calibration mode, dynamic epsilon is disabled and effective thresholds
+        are kept equal to their base values.
         """
+        # In calibration mode we want static, base thresholds only
+        if getattr(self, "calibration_mode", False):
+            self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
+            self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
+            self.epsilon_threshold_eff = 0.5 * (
+                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+            )
+            return
+
         # Skip dynamic epsilon update in backtesting/hyperopt to avoid DB calls
         if self.config.get('runmode') not in ['live', 'dry_run']:
             return
