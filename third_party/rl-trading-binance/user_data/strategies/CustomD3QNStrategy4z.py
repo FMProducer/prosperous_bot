@@ -785,8 +785,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
             # Linear sensitivity: epsilon_target = epsilon_0 * (1 + k * DD) — раздельно для long/short
             k = 6.0
-            epsilon_target_long = self.epsilon_threshold * (1.0 + k * dd_long)
-            epsilon_target_short = self.epsilon_threshold * (1.0 + k * dd_short)
+            # Scale dynamic targets around side-specific base thresholds
+            epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
+            epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
 
             # Clamp epsilon_target into [0.1, 1.0] — как было, раздельно для long/short
             epsilon_target_long = float(min(max(epsilon_target_long, 0.1), 1.0))
