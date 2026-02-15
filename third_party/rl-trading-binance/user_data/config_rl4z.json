@@ -67,22 +67,21 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
-        "epsilon_threshold": 0.6,
-        "epsilon_threshold_long": 0.6,
-        "epsilon_threshold_short": 0.6,
+        "epsilon_threshold_long": 0.39,
+        "epsilon_threshold_short": 0.9,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 7.4e-05,
-                "q_max": 0.001516
+                "q_min": 9.1e-05,
+                "q_max": 0.001574
             },
             "long_2": {
-                "q_min": 5.3e-05,
-                "q_max": 0.0002
+                "q_min": 8.6e-05,
+                "q_max": 0.000207
             },
             "short_1": {
-                "q_min": 9.8e-05,
-                "q_max": 0.000559
+                "q_min": 4.2e-05,
+                "q_max": 0.000521
             },
             "short_2": {
                 "q_min": 8.5e-05,

@@ -183,7 +183,7 @@ class BalanceOptimizer:
         v_diff = abs(v_l - v_s) / total
 
         # Proxy PnL using future returns over 120m horizon
-        horizon = 120
+        horizon = 60  # Sync with strategy timeout_60m
         close = df["close"].to_numpy()
         future_ret = np.zeros_like(close)
         future_ret[:-horizon] = (close[horizon:] / close[:-horizon]) - 1.0
@@ -202,6 +202,10 @@ class BalanceOptimizer:
         """
         Execute grid search to find best balanced epsilon thresholds.
         """
+        if not self.strategy.q_normalization:
+            print("⚠️ WARNING: 'q_normalization' is empty in config! Optimization requires pre-calculated stats.")
+            print("   Run the strategy in dry-run/live first or populate config_rl4z.json manually.")
+
         pair = "BTC/USDT:USDT"
         df = self.load_data_sample(pair)
         signals = self.get_signals_matrix(df, pair)
@@ -210,8 +214,8 @@ class BalanceOptimizer:
         print("-" * 65)
 
         candidates = []
-        for eps_l in np.arange(0.70, 0.95, 0.02):
-            for eps_s in np.arange(0.70, 0.99, 0.02):
+        for eps_l in np.arange(0.30, 0.99, 0.03):
+            for eps_s in np.arange(0.30, 0.99, 0.03):
                 v_diff, p_diff, total = self.evaluate_metric(df, signals, eps_l, eps_s)
                 ok = (v_diff <= 0.15) and (p_diff <= 0.20) and (total >= 50)
                 if ok:

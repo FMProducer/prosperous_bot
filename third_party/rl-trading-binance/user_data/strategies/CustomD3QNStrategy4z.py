@@ -319,14 +319,24 @@ class CustomD3QNStrategy4z(IStrategy):
             self.epsilon_threshold_eff = 0.5 * (
                 self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
             )
+            
+        # --- RUNMODE & CALIBRATION LOGGING ---
+        self.runmode = config.get('runmode', 'unknown')
+        self.logger.info(f"⚙️ Runmode: {self.runmode}")
+        if self.calibration_mode:
+            self.logger.info("⚠️ CALIBRATION MODE: Dynamic Epsilon & Veto DISABLED (Fixed to base values)")
+        elif self.runmode in ('live', 'dry_run'):
+            self.logger.info("✅ LIVE MODE: Dynamic Epsilon ENABLED (Sensitivity to Drawdown active)")
+        else:
+            self.logger.info("ℹ️ BACKTEST/OTHER: Dynamic Epsilon DISABLED (Fixed to base values)")
 
         # Q-normalization config (snake_case)
         self.q_normalization: Dict[str, Dict[str, float]] = self.ensemble_cfg.get('q_normalization', {})
         self.config_update_interval: int = self.ensemble_cfg.get(
             'q_update_interval', config.get('q_update_interval', 14400)
         )
-        logger.info(
-            f"🗳️ Ensemble Config: Epsilon={self.epsilon_threshold} | "
+        self.logger.info(
+            f"🗳️ Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
             f"UpdateInterval={self.config_update_interval}s"
         )
 
