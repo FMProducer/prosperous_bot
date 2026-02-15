@@ -192,8 +192,9 @@ class BalanceOptimizer:
         pnl_s = float(-future_ret[mask_s].sum())
 
         denom = abs(pnl_l) + abs(pnl_s)
-        # PnL-Diff measures the relative profit imbalance between sides
-        p_diff = abs(pnl_l - pnl_s) / denom if denom > 1e-6 else 1.0
+        # PnL-Diff: насколько нейтральна сумма PnL двух сторон
+        # |PnL_L + PnL_S| / (|PnL_L| + |PnL_S|)
+        p_diff = abs(pnl_l + pnl_s) / denom if denom > 1e-6 else 1.0
 
         return v_diff, p_diff, total
 
@@ -227,8 +228,8 @@ class BalanceOptimizer:
         best_l, best_s, v_diff, p_diff, total = candidates[0]
 
         print("\nBest balanced configuration:")
-        print(f"  epsilonthreshold_long  = {best_l:.3f}")
-        print(f"  epsilonthreshold_short = {best_s:.3f}")
+        print(f"  epsilon_threshold_long  = {best_l:.3f}")
+        print(f"  epsilon_threshold_short = {best_s:.3f}")
         print(f"  V-Diff  = {v_diff:.2%}")
         print(f"  PnL-Diff = {p_diff:.2%}")
         print(f"  Total signals = {total}")
