@@ -34,7 +34,7 @@ if str(project_root) not in sys.path:
 
 # Freqtrade imports
 try:
-    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter  # type: ignore
+    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter, merge_informative_pair  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy:
@@ -44,6 +44,9 @@ except ImportError:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
     class IntParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0)
+    # Fallback для merge_informative_pair, чтобы не ломать оффлайн-инструменты
+    def merge_informative_pair(dataframe, informative, timeframe, informative_timeframe, ffill=True):
+        return dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,9 @@ class CustomD3QNStrategy4z(IStrategy):
     can_long = True
     can_short: bool = True  # Это критично для Futures режима
     startup_candle_count: int = 200
+
+    # Информативный таймфрейм для режима рынка
+    informative_timeframe = '15m'
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -83,9 +89,18 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
     rl_short_threshold_opt = IntParameter(1, 2, default=1, space='sell', optimize=True, load=True)
 
+    # Параметры Supertrend для режима рынка (будут оптимизироваться hyperopt'ом)
+    supertrend_period = IntParameter(7, 20, default=10, space='buy', optimize=True, load=True)
+    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=3.0, space='buy', optimize=True, load=True)
+
     plot_config = {
         'main_plot': {},
-        'subplots': {}
+        'subplots': {
+            # Визуальный контроль режима на 15m (после merge_informative_pair)
+            'regime_15m': {
+                'st_regime_15m': {'color': 'blue'},
+            },
+        },
     }
     
     def __init__(self, config: dict) -> None:
@@ -272,6 +287,9 @@ class CustomD3QNStrategy4z(IStrategy):
         # --- НАСТРОЙКИ АНСАМБЛЯ V2 (snake_case: rl_ensemble) ---
         self.ensemble_cfg = config.get('rl_ensemble', {})
 
+        # Включение/выключение regime-фильтра (Supertrend на 15m)
+        self.use_regime_filter: bool = self.ensemble_cfg.get('use_regime_filter', True)
+
         # Base epsilon from config (common legacy value)
         self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.15)
 
@@ -335,6 +353,9 @@ class CustomD3QNStrategy4z(IStrategy):
         self.config_update_interval: int = self.ensemble_cfg.get(
             'q_update_interval', config.get('q_update_interval', 14400)
         )
+
+        self.logger.info(f"📡 Regime filter (Supertrend 15m) enabled: {self.use_regime_filter}")
+
         self.logger.info(
             f"🗳️ Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
             f"UpdateInterval={self.config_update_interval}s"
@@ -484,9 +505,62 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception as e:
             logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
-    
+
+    # === HELPER: Supertrend на одном таймфрейме (для 15m режима) ===
+    def _compute_supertrend(self, df: DataFrame, period: int, multiplier: float) -> DataFrame:
+        """
+        Вычисляет Supertrend для данного OHLCV DataFrame.
+        Возвращает DataFrame с колонками:
+            - 'st'      : линия Supertrend
+            - 'st_dir'  : направление (+1 / -1)
+        """
+        if df is None or df.empty:
+            return pd.DataFrame(index=df.index if df is not None else None)
+
+        df = df.copy()
+        high = df['high']
+        low = df['low']
+        close = df['close']
+
+        # True Range и ATR
+        hl = high - low
+        hc = (high - close.shift(1)).abs()
+        lc = (low - close.shift(1)).abs()
+        tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+        atr = tr.ewm(span=period, min_periods=period, adjust=False).mean()
+
+        # Базовые уровни
+        mid = (high + low) / 2.0
+        upperband = mid + multiplier * atr
+        lowerband = mid - multiplier * atr
+
+        st = pd.Series(index=df.index, dtype='float64')
+        direction = pd.Series(index=df.index, dtype='int8')
+
+        for i in range(len(df)):
+            if i == 0:
+                direction.iloc[i] = 1
+                st.iloc[i] = upperband.iloc[i]
+            else:
+                if close.iloc[i] > upperband.iloc[i - 1]:
+                    direction.iloc[i] = 1
+                elif close.iloc[i] < lowerband.iloc[i - 1]:
+                    direction.iloc[i] = -1
+                else:
+                    direction.iloc[i] = direction.iloc[i - 1]
+                    if direction.iloc[i] == 1:
+                        upperband.iloc[i] = min(upperband.iloc[i], upperband.iloc[i - 1])
+                    else:
+                        lowerband.iloc[i] = max(lowerband.iloc[i], lowerband.iloc[i - 1])
+                st.iloc[i] = lowerband.iloc[i] if direction.iloc[i] == 1 else upperband.iloc[i]
+
+        out = pd.DataFrame(index=df.index)
+        out['st'] = st
+        out['st_dir'] = direction
+        return out
+
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # Окно нормализации из обучения
+        # 1. Z-score нормализация (как в обучении)
         window = 90
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_cols:
@@ -500,7 +574,56 @@ class CustomD3QNStrategy4z(IStrategy):
         z_cols = [f'{col}_z' for col in ohlcv_cols]
         dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
 
+        # 2. Supertrend-регим на 15m, мержим в 1m как st_regime_15m
+        try:
+            if hasattr(self, 'dp') and self.dp:
+                inf_tf = getattr(self, 'informative_timeframe', '15m')
+                # Берем уже проанализированный DF на 15m, чтобы не дублировать расчеты
+                inf_df, _ = self.dp.get_analyzed_dataframe(metadata['pair'], inf_tf)
+                if inf_df is not None and not inf_df.empty:
+                    st_period = int(self.supertrend_period.value) if hasattr(self, 'supertrend_period') else 10
+                    st_mult = float(self.supertrend_multiplier.value) if hasattr(self, 'supertrend_multiplier') else 3.0
+                    st_df = self._compute_supertrend(
+                        inf_df[['high', 'low', 'close']],
+                        period=st_period,
+                        multiplier=st_mult,
+                    )
+                    if not st_df.empty:
+                        inf_df = inf_df.join(st_df[['st_dir']])
+                        inf_df.rename(columns={'st_dir': 'st_regime_15m'}, inplace=True)
+                        # Оставляем только нужную колонку
+                        inf_df = inf_df[['st_regime_15m']]
+
+                        dataframe = merge_informative_pair(
+                            dataframe,
+                            inf_df,
+                            self.timeframe,
+                            inf_tf,
+                            ffill=True,
+                        )
+                        # Режим ∈ {-1, +1}, NaN → 0 (нет сигнала)
+                        if 'st_regime_15m' in dataframe.columns:
+                            dataframe['st_regime_15m'] = (
+                                dataframe['st_regime_15m']
+                                .fillna(0)
+                                .astype(np.int8)
+                            )
+        except Exception as e:
+            self.logger.warning(f"Supertrend regime calculation failed for {metadata.get('pair', '')}: {e}")
+
         return dataframe
+
+    def informative_pairs(self):
+        """
+        Информативные пары для 15m Supertrend (режим рынка).
+        """
+        pairs = []
+        if hasattr(self, 'dp') and self.dp:
+            try:
+                pairs = self.dp.current_whitelist()
+            except Exception:
+                pairs = []
+        return [(pair, self.informative_timeframe) for pair in pairs]
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
                    current_profit: float, **kwargs):
@@ -1133,8 +1256,36 @@ class CustomD3QNStrategy4z(IStrategy):
         # 1. Базовая защита
         if len(dataframe) < self.startup_candle_count:
             return dataframe
-        
-        # 2. Оптимизация инференса
+
+        # 2. Regime-фильтр на основе 15m Supertrend (если включен)
+        regime = 0
+        allow_long = True
+        allow_short = self.can_short
+
+        if self.use_regime_filter and 'st_regime_15m' in dataframe.columns:
+            try:
+                last_regime = dataframe['st_regime_15m'].iloc[-1]
+                # st_regime_15m ∈ {-1, 0, +1}
+                if not np.isnan(last_regime):
+                    regime = int(np.sign(last_regime))
+                    if regime > 0:
+                        # Бычий режим: разрешаем только лонги
+                        allow_long = True
+                        allow_short = False
+                    elif regime < 0:
+                        # Медвежий: только шорты
+                        allow_long = False
+                        allow_short = self.can_short
+                    else:
+                        # Флэт/нет сигнала: можно вообще все вырубить, если нужно
+                        allow_long = False
+                        allow_short = False
+            except Exception as e:
+                self.logger.warning(f"Regime filter failed for {metadata.get('pair', '')}: {e}")
+                allow_long = True
+                allow_short = self.can_short
+
+        # 3. Оптимизация инференса
         deep_inference = self.config.get('deep_inference', False)
         if self.config.get('runmode') in ['live', 'dry_run']:
             # Оптимизация: берем ровно 90 свечей для 1 предсказания (вместо 91 для 2)
@@ -1168,30 +1319,38 @@ class CustomD3QNStrategy4z(IStrategy):
         
         if q_values is None:
             # Если в кэше нет - считаем (Тяжелая операция)
-            tensor_long_1 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name) if self.enable_long_1 else None
-            tensor_long_2 = self.get_model_input_cached(df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name) if self.enable_long_2 else None
-            tensor_short_1 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name) if self.enable_short_1 else None
-            tensor_short_2 = self.get_model_input_cached(df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name) if self.enable_short_2 else None
-            
+            tensor_long_1 = self.get_model_input_cached(
+                df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name
+            ) if (self.enable_long_1 and allow_long) else None
+            tensor_long_2 = self.get_model_input_cached(
+                df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name
+            ) if (self.enable_long_2 and allow_long) else None
+            tensor_short_1 = self.get_model_input_cached(
+                df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name
+            ) if (self.enable_short_1 and allow_short) else None
+            tensor_short_2 = self.get_model_input_cached(
+                df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name
+            ) if (self.enable_short_2 and allow_short) else None
+
             # Проверяем, что все ВКЛЮЧЕННЫЕ модели получили данные
             missing_data = False
-            if self.enable_long_1 and tensor_long_1 is None: missing_data = True
-            if self.enable_long_2 and tensor_long_2 is None: missing_data = True
-            if self.enable_short_1 and tensor_short_1 is None: missing_data = True
-            if self.enable_short_2 and tensor_short_2 is None: missing_data = True
+            if self.enable_long_1 and allow_long and tensor_long_1 is None: missing_data = True
+            if self.enable_long_2 and allow_long and tensor_long_2 is None: missing_data = True
+            if self.enable_short_1 and allow_short and tensor_short_1 is None: missing_data = True
+            if self.enable_short_2 and allow_short and tensor_short_2 is None: missing_data = True
 
             if missing_data:
                 return dataframe
-            
+
             # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE
             inference_tasks = []
-            if self.enable_long_1 and tensor_long_1 is not None:
+            if self.enable_long_1 and allow_long and tensor_long_1 is not None:
                 inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
-            if self.enable_long_2 and tensor_long_2 is not None:
+            if self.enable_long_2 and allow_long and tensor_long_2 is not None:
                 inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
-            if self.enable_short_1 and tensor_short_1 is not None:
+            if self.enable_short_1 and allow_short and tensor_short_1 is not None:
                 inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
-            if self.enable_short_2 and tensor_short_2 is not None:
+            if self.enable_short_2 and allow_short and tensor_short_2 is not None:
                 inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
                 
             if not inference_tasks:
@@ -1362,7 +1521,14 @@ class CustomD3QNStrategy4z(IStrategy):
             decision = self._compute_ensemble_decision(
                 q_values, i, has_long, has_short
             )
-            
+
+            # Жёсткий режим-фильтр поверх ансамбля
+            if self.use_regime_filter:
+                if not allow_long:
+                    decision['enter_long'] = 0
+                if not allow_short:
+                    decision['enter_short'] = 0
+
             # Сбор статистики
             if decision['enter_long'] or decision['enter_short']:
                 self.conflict_stats['total_signals'] += 1
