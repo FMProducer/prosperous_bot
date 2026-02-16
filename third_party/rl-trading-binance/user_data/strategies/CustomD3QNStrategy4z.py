@@ -1262,10 +1262,13 @@ class CustomD3QNStrategy4z(IStrategy):
         allow_long = True
         allow_short = self.can_short
 
-        if self.use_regime_filter and 'st_regime_15m' in dataframe.columns:
+        # Detect backtest/deep_inference mode
+        is_backtest = self.config.get('runmode') not in ['live', 'dry_run'] or self.config.get('deep_inference', False)
+
+        # Optimization for Live: Check regime only for the last candle to skip tensor generation
+        if not is_backtest and self.use_regime_filter and 'st_regime_15m' in dataframe.columns:
             try:
                 last_regime = dataframe['st_regime_15m'].iloc[-1]
-                # st_regime_15m ∈ {-1, 0, +1}
                 if not np.isnan(last_regime):
                     regime = int(np.sign(last_regime))
                     if regime > 0:
@@ -1515,6 +1518,11 @@ class CustomD3QNStrategy4z(IStrategy):
         enter_long_vals = np.zeros(n_predictions, dtype=np.int8)
         enter_short_vals = np.zeros(n_predictions, dtype=np.int8)
 
+        # Prepare regime array for backtest filtering
+        regime_vals = None
+        if is_backtest and self.use_regime_filter and 'st_regime_15m' in dataframe.columns:
+             regime_vals = dataframe['st_regime_15m'].iloc[-n_predictions:].values
+
         for i in range(n_predictions):
             # Собираем действия для текущей свечи (Raw actions: 0 or 1)
             # НОВЫЙ МЕТОД: Нормируешь → суммируешь → сравниваешь разницу → фильтруешь по ε
@@ -1524,10 +1532,22 @@ class CustomD3QNStrategy4z(IStrategy):
 
             # Жёсткий режим-фильтр поверх ансамбля
             if self.use_regime_filter:
-                if not allow_long:
-                    decision['enter_long'] = 0
-                if not allow_short:
-                    decision['enter_short'] = 0
+                if is_backtest and regime_vals is not None:
+                    # Backtest: check regime per candle
+                    r = regime_vals[i]
+                    if r > 0: # Bullish
+                        decision['enter_short'] = 0
+                    elif r < 0: # Bearish
+                        decision['enter_long'] = 0
+                    else: # Flat/None
+                        decision['enter_long'] = 0
+                        decision['enter_short'] = 0
+                else:
+                    # Live: use pre-calculated flags
+                    if not allow_long:
+                        decision['enter_long'] = 0
+                    if not allow_short:
+                        decision['enter_short'] = 0
 
             # Сбор статистики
             if decision['enter_long'] or decision['enter_short']:
