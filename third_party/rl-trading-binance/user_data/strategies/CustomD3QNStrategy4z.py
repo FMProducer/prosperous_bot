@@ -766,7 +766,7 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             config_path = self.project_root / "user_data/config_rl4z.json"
             if not config_path.exists():
-                logger.warning(f"⚠️ Config update skipped: {config_path} not found")
+                self.logger.warning(f"⚠️ Config update skipped: {config_path} not found")
                 return
 
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -777,7 +777,7 @@ class CustomD3QNStrategy4z(IStrategy):
             
             for name, history in self.adv_history.items():
                 if len(history) < 100: 
-                    logger.info(f"⏳ {name}: Insufficient history for Q-update ({len(history)}/100)")
+                    self.logger.info(f"⏳ {name}: Insufficient history for Q-update ({len(history)}/100)")
                     continue # Мало данных
                 
                 arr = np.array(history)
@@ -794,7 +794,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 norm_cfg[name]['q_min'] = new_min
                 norm_cfg[name]['q_max'] = new_max
                 updated = True
-                logger.info(f"⚖️ Auto-tuned {name}: q_min={new_min}, q_max={new_max}")
+                self.logger.info(f"⚖️ Auto-tuned {name}: q_min={new_min}, q_max={new_max}")
             
             if updated:
                 if 'rl_ensemble' not in data: data['rl_ensemble'] = {}
@@ -802,9 +802,9 @@ class CustomD3QNStrategy4z(IStrategy):
                 with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4)
                 self.q_normalization = norm_cfg
-                logger.info(f"💾 Config saved to {config_path}")
+                self.logger.info(f"💾 Config saved to {config_path}")
         except Exception as e:
-            logger.error(f"Failed to auto-tune config: {e}")
+            self.logger.error(f"Failed to auto-tune config: {e}")
 
     def _get_pnl_from_freqtrade(self) -> tuple:
         """
@@ -846,7 +846,7 @@ class CustomD3QNStrategy4z(IStrategy):
                     pnl_long_open += profit_usdt
 
             # Возвращаем ТОЛЬКО Unrealized PnL
-            logger.debug(
+            self.logger.debug(
                 f"PnL (Unrealized Only): "
                 f"Long Open={pnl_long_open:.2f} | "
                 f"Short Open={pnl_short_open:.2f}"
@@ -855,7 +855,7 @@ class CustomD3QNStrategy4z(IStrategy):
             return pnl_long_open, pnl_short_open
 
         except Exception as e:
-            logger.error(f"Failed to calculate PnL: {e}")
+            self.logger.error(f"Failed to calculate PnL: {e}")
             return 0.0, 0.0
 
     def _update_dynamic_epsilon(self) -> None:
@@ -1023,7 +1023,7 @@ class CustomD3QNStrategy4z(IStrategy):
             self.max_short_slots = self.total_slots - self.max_long_slots
 
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
-        logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
+        self.logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
 
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
@@ -1036,7 +1036,7 @@ class CustomD3QNStrategy4z(IStrategy):
         q_max = cfg.get('q_max', q_min)
 
         if q_max <= q_min:
-            logger.warning(f"⚠️ Degenerate Q stats for {model_name}: q_min={q_min}, q_max={q_max}. Model is likely a zombie.")
+            self.logger.warning(f"⚠️ Degenerate Q stats for {model_name}: q_min={q_min}, q_max={q_max}. Model is likely a zombie.")
             return 0.0
 
         q_norm = (q_value - q_min) / (q_max - q_min)
@@ -1078,7 +1078,7 @@ class CustomD3QNStrategy4z(IStrategy):
             q_max = cfg.get('q_max', None)
 
             if q_max is None or q_max <= q_min:
-                logger.warning(f"⚠️ Degenerate Q stats for {name}, excluding zombie model.")
+                self.logger.warning(f"⚠️ Degenerate Q stats for {name}, excluding zombie model.")
                 return 0, False, 0.0
 
             if adv <= q_min:
@@ -1430,7 +1430,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                self.logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "long_2" in q_values:
                 a = action_long_2[-1]
@@ -1446,7 +1446,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                self.logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -1465,7 +1465,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                self.logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1484,7 +1484,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "🟢 VOTE" if vote else "NO"
 
-                logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                self.logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)
@@ -1563,7 +1563,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Логируем только последние 2 свечи (0 и 1)
             if i >= n_predictions - 2:
                 if decision['enter_long'] or decision['enter_short']:
-                    logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
+                    self.logger.info(f"📊 {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
             
             # Записываем в массив (быстро)
             enter_long_vals[i] = decision['enter_long']
@@ -1597,5 +1597,5 @@ class CustomD3QNStrategy4z(IStrategy):
             return float(leverage_conf['*'])
 
         # Если ничего не найдено, возвращаем предложенное значение (вероятно, 1.0)
-        logger.warning(f"Leverage not found for {pair} in config. Falling back to proposed: {proposed_leverage}")
+        self.logger.warning(f"Leverage not found for {pair} in config. Falling back to proposed: {proposed_leverage}")
         return proposed_leverage
