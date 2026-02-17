@@ -81,9 +81,10 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.098, space='sell', load=True)
-    d_min = DecimalParameter(0.0005, 0.05, default=0.043, space='sell', load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.01, space='sell', load=True)
+    # load=False и optimize=False гарантируют использование значений default (из обучения)
+    d0 = DecimalParameter(0.01, 0.10, default=0.0752, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00152, space='sell', optimize=False, load=False)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
@@ -589,11 +590,13 @@ class CustomD3QNStrategy4z(IStrategy):
                         multiplier=st_mult,
                     )
                     if not st_df.empty:
+                        # 1) На 15m называем колонку ОБЩО: 'st_regime'
                         inf_df = inf_df.join(st_df[['st_dir']])
-                        inf_df.rename(columns={'st_dir': 'st_regime_15m'}, inplace=True)
-                        # Оставляем только нужную колонку
-                        inf_df = inf_df[['st_regime_15m']]
+                        inf_df.rename(columns={'st_dir': 'st_regime'}, inplace=True)
+                        # 2) Оставляем только нужную колонку
+                        inf_df = inf_df[['st_regime']]
 
+                        # 3) После merge получим 'st_regime_15m' в основном DF
                         dataframe = merge_informative_pair(
                             dataframe,
                             inf_df,
@@ -623,6 +626,10 @@ class CustomD3QNStrategy4z(IStrategy):
                 pairs = self.dp.current_whitelist()
             except Exception:
                 pairs = []
+        
+        if not pairs:
+            pairs = self.config.get('exchange', {}).get('pair_whitelist', [])
+            
         return [(pair, self.informative_timeframe) for pair in pairs]
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
@@ -1161,8 +1168,10 @@ class CustomD3QNStrategy4z(IStrategy):
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
                            side: str, **kwargs) -> bool:
-        # Разрешаем проверку слотов в бэктесте для полнофункциональной симуляции
-        if self.config.get('runmode') not in ['live', 'dry_run']:
+        # Проверки слотов, таймаутов и т.д. работают только в live/dry-run режимах.
+        # В режиме бэктеста эта функция пропускается для ускорения и потому, что
+        # методы `Trade.get_...` ведут себя иначе.
+        if self.config.get('runmode') not in ('live', 'dry_run'):
             return True
         
         try:

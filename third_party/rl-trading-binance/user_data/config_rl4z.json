@@ -18,10 +18,10 @@
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
     "dynamic_slots": {
-        "enabled": false,
-        "min_slots_per_side": 50,
-        "update_interval_sec": 30,
-        "aggression_factor": 5.0
+        "enabled": true,
+        "min_slots_per_side": 20,
+        "update_interval_sec": 60,
+        "aggression_factor": 2.5
     },
     "api_server": {
         "enabled": true,
@@ -70,23 +70,23 @@
         "use_regime_filter": true,
         "epsilon_threshold_long": 0.86,
         "epsilon_threshold_short": 0.88,
-        "q_update_interval": 3600,
+        "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 8.1e-05,
-                "q_max": 0.00096
+                "q_min": 8.6e-05,
+                "q_max": 0.00161
             },
             "long_2": {
-                "q_min": 3.6e-05,
-                "q_max": 0.000203
+                "q_min": 4.8e-05,
+                "q_max": 0.000205
             },
             "short_1": {
-                "q_min": 0.00016,
-                "q_max": 0.000538
+                "q_min": 0.000138,
+                "q_max": 0.000531
             },
             "short_2": {
-                "q_min": 0.000138,
-                "q_max": 0.000592
+                "q_min": 0.000157,
+                "q_max": 0.000517
             }
         }
     },
@@ -174,7 +174,6 @@
             "FLUX/USDT:USDT",
             "G/USDT:USDT",
             "GALA/USDT:USDT",
-            "GHST/USDT:USDT",
             "GRT/USDT:USDT",
             "GTC/USDT:USDT",
             "HBAR/USDT:USDT",
@@ -265,10 +264,6 @@
     "pairlists": [
         {
             "method": "StaticPairList"
-        },
-        {
-            "method": "AgeFilter",
-            "min_days": 488
         }
     ],
     "internals": {
