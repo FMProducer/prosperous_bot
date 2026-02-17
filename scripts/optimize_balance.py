@@ -35,7 +35,7 @@ class BalanceOptimizer:
         # Enable calibration mode and offline run
         self.config["rl_calibration_mode"] = True
         self.config["runmode"] = "backtest"
-        self.config["deep_inference"] = True
+        self.config["deep_inference"] = False
 
         # Mock models to ensure script runs in environments with missing weights
         self._setup_strategy_environment()
@@ -192,9 +192,8 @@ class BalanceOptimizer:
         pnl_s = float(-future_ret[mask_s].sum())
 
         denom = abs(pnl_l) + abs(pnl_s)
-        # PnL-Diff: насколько нейтральна сумма PnL двух сторон
-        # |PnL_L + PnL_S| / (|PnL_L| + |PnL_S|)
-        p_diff = abs(pnl_l + pnl_s) / denom if denom > 1e-6 else 1.0
+        # PnL-Diff: Balance of profit contribution (we want L and S to contribute equally)
+        p_diff = abs(pnl_l - pnl_s) / denom if denom > 1e-6 else 1.0
 
         return v_diff, p_diff, total
 
@@ -214,8 +213,8 @@ class BalanceOptimizer:
         print("-" * 65)
 
         candidates = []
-        for eps_l in np.arange(0.30, 0.99, 0.03):
-            for eps_s in np.arange(0.30, 0.99, 0.03):
+        for eps_l in np.arange(0.10, 0.99, 0.02):
+            for eps_s in np.arange(0.10, 0.99, 0.02):
                 v_diff, p_diff, total = self.evaluate_metric(df, signals, eps_l, eps_s)
                 ok = (v_diff <= 0.15) and (p_diff <= 0.20) and (total >= 50)
                 if ok:
@@ -228,7 +227,15 @@ class BalanceOptimizer:
             print("\nNo balanced configuration found. Consider widening search ranges or reviewing signals.")
             return
 
+        # OPTION 1: Prioritize V-Diff (Volume Balance) above everything else
+        # candidates.sort(key=lambda x: x[2])
+        
+        # OPTION 2: Prioritize Total Signals (find the most active balanced config)
+        # candidates.sort(key=lambda x: x[4], reverse=True)
+
+        # CURRENT: Minimize sum of V-Diff and PnL-Diff (Balanced approach)
         candidates.sort(key=lambda x: x[2] + x[3])
+        
         best_l, best_s, v_diff, p_diff, total = candidates[0]
 
         print("\nBest balanced configuration:")
@@ -237,6 +244,26 @@ class BalanceOptimizer:
         print(f"  V-Diff  = {v_diff:.2%}")
         print(f"  PnL-Diff = {p_diff:.2%}")
         print(f"  Total signals = {total}")
+
+        self.update_config(best_l, best_s)
+
+    def update_config(self, best_l: float, best_s: float) -> None:
+        """
+        Update the configuration file with the optimized thresholds.
+        """
+        print(f"\nSaving optimized thresholds to {self.config_path}...")
+        try:
+            with self.config_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            data["rl_long_threshold"] = round(best_l, 3)
+            data["rl_short_threshold"] = round(best_s, 3)
+            
+            with self.config_path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            print("✅ Configuration updated.")
+        except Exception as e:
+            print(f"❌ Failed to update config: {e}")
 
 def main():
     config_path = "user_data/config_rl4z.json"
