@@ -74,20 +74,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.000113,
-                "q_max": 0.001521
+                "q_min": 8.1e-05,
+                "q_max": 0.001507
             },
             "long_2": {
-                "q_min": 8.2e-05,
-                "q_max": 0.00022
+                "q_min": 6.5e-05,
+                "q_max": 0.000217
             },
             "short_1": {
-                "q_min": 7.1e-05,
-                "q_max": 0.000491
+                "q_min": 8.5e-05,
+                "q_max": 0.000512
             },
             "short_2": {
-                "q_min": 4.9e-05,
-                "q_max": 0.000488
+                "q_min": 7.5e-05,
+                "q_max": 0.000548
             }
         }
     },
