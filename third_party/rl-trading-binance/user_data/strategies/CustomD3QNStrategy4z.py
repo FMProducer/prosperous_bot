@@ -94,6 +94,9 @@ class CustomD3QNStrategy4z(IStrategy):
     supertrend_period = IntParameter(7, 20, default=10, space='buy', optimize=True, load=True)
     supertrend_multiplier = DecimalParameter(1.5, 4.0, default=3.0, space='buy', optimize=True, load=True)
 
+    # Фильтр по объему для отсеивания неликвидных пар (особенно в бэктесте)
+    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=True, load=True)
+
     plot_config = {
         'main_plot': {},
         'subplots': {
@@ -101,6 +104,9 @@ class CustomD3QNStrategy4z(IStrategy):
             'regime_15m': {
                 'st_regime_15m': {'color': 'blue'},
             },
+            'volume': {
+                'quote_volume_sma': {'color': 'green', 'type': 'line'},
+            }
         },
     }
     
@@ -110,6 +116,11 @@ class CustomD3QNStrategy4z(IStrategy):
         # Принудительно включаем шорты
         self.can_short = True
         
+        # Override min_quote_volume_usd from config if present
+        if 'min_quote_volume_usd' in config:
+            self.min_quote_volume_usd.value = float(config['min_quote_volume_usd'])
+            logger.info(f"🔧 min_quote_volume_usd overridden from config: {self.min_quote_volume_usd.value}")
+
         # --- LOGGING FILTERS ---
         # Убираем спам о отмене стоплосса
         def filter_stoploss_cancel(record):
@@ -574,6 +585,12 @@ class CustomD3QNStrategy4z(IStrategy):
         # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
         z_cols = [f'{col}_z' for col in ohlcv_cols]
         dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
+
+        # 2. Quote Volume для фильтрации неликвида
+        # Расчет среднего объема за 24 часа (1440 свечей на 1m)
+        dataframe['quote_volume'] = dataframe['volume'] * dataframe['close']
+        dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=1440, min_periods=200).mean()
+        dataframe['quote_volume_sma'] = dataframe['quote_volume_sma'].fillna(0)
 
         # 2. Supertrend-регим на 15m, мержим в 1m как st_regime_15m
         try:
@@ -1069,12 +1086,10 @@ class CustomD3QNStrategy4z(IStrategy):
 
         votes_long = 0
         votes_short = 0
-        veto_long_count = 0
-        veto_short_count = 0
         details = []
 
         # --- 1. Подсчет голосов LONG ---
-        def check_vote(name, action_idx):
+        def _get_model_vote(name, action_idx):
             if name not in q_values: return 0, False, 0.0
             q_hold = q_values[name][idx, 0]
             q_action = q_values[name][idx, action_idx]
@@ -1105,63 +1120,57 @@ class CustomD3QNStrategy4z(IStrategy):
             return 0, True, norm
 
         if self.enable_long_1:
-            v, active, norm = check_vote("long_1", 1)
+            v, active, norm = _get_model_vote("long_1", 1)
             votes_long += v
-            if v: veto_long_count += 1
             if v: details.append(f"L1({norm:.2f})")
 
         if self.enable_long_2:
-            v, active, norm = check_vote("long_2", 1)
+            v, active, norm = _get_model_vote("long_2", 1)
             votes_long += v
-            if v: veto_long_count += 1
             if v: details.append(f"L2({norm:.2f})")
 
         # --- 2. Подсчет голосов SHORT ---
         if self.enable_short_1:
             action_idx = 1 if self.short_1_is_mirror else 2
-            v, active, norm = check_vote("short_1", action_idx)
+            v, active, norm = _get_model_vote("short_1", action_idx)
             votes_short += v
-            if v: veto_short_count += 1
             if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
             action_idx = 1 if self.short_2_is_mirror else 2
-            v, active, norm = check_vote("short_2", action_idx)
+            v, active, norm = _get_model_vote("short_2", action_idx)
             votes_short += v
-            if v: veto_short_count += 1
             if v: details.append(f"S2({norm:.2f})")
 
         result = {
             'enter_long': 0,
             'enter_short': 0,
-            'reason': f"Votes L:{votes_long}/{thresh_long} S:{votes_short}/{thresh_short} [{' '.join(details)}]"
+            'reason': f"Votes L:{votes_long}/{thresh_long} S:{votes_short}/{thresh_short} [{' '.join(details)}]",
         }
 
         if has_long or has_short:
             result['reason'] += " | Position exists"
             return result
 
-        # --- 3. Принятие решения ---
+        # --- 3. Логика принятия решения и вето ---
         long_signal = votes_long >= thresh_long
         short_signal = votes_short >= thresh_short
 
-        if long_signal and short_signal:
-            result['reason'] += " | CONFLICT (Both signals)"
-            return result
+        # Вето срабатывает, если есть хотя бы один голос с противоположной стороны
+        long_is_vetoed = self.enable_veto and votes_short > 0
+        short_is_vetoed = self.enable_veto and votes_long > 0
 
-        if long_signal:
-            if self.enable_veto and veto_short_count > 0:
-                result['reason'] += " | LONG Vetoed (Short vote present)"
-            else:
-                result['enter_long'] = 1
-                result['reason'] += " | LONG Signal"
-
-        elif short_signal and self.can_short:
-            if self.enable_veto and veto_long_count > 0:
-                result['reason'] += " | SHORT Vetoed (Long vote present)"
-            else:
-                result['enter_short'] = 1
-                result['reason'] += " | SHORT Signal"
+        if long_signal and not short_signal and not long_is_vetoed:
+            result['enter_long'] = 1
+            result['reason'] += " | LONG Signal"
+        elif short_signal and not long_signal and not short_is_vetoed and self.can_short:
+            result['enter_short'] = 1
+            result['reason'] += " | SHORT Signal"
+        else:
+            # Логируем причину, почему не вошли
+            if long_signal and short_signal: result['reason'] += " | CONFLICT"
+            elif long_signal and long_is_vetoed: result['reason'] += " | LONG Vetoed"
+            elif short_signal and short_is_vetoed: result['reason'] += " | SHORT Vetoed"
 
         return result
 
@@ -1280,6 +1289,11 @@ class CustomD3QNStrategy4z(IStrategy):
                 last_regime = dataframe['st_regime_15m'].iloc[-1]
                 if not np.isnan(last_regime):
                     regime = int(np.sign(last_regime))
+                    
+                    # LOGGING: Показываем текущий режим рынка для пары
+                    regime_str = "🟢 BULLISH (Longs Only)" if regime > 0 else "🔴 BEARISH (Shorts Only)"
+                    # self.logger.info(f"🌍 {metadata['pair']} Regime (15m ST): {regime_str}")
+
                     if regime > 0:
                         # Бычий режим: разрешаем только лонги
                         allow_long = True
@@ -1527,6 +1541,24 @@ class CustomD3QNStrategy4z(IStrategy):
         enter_long_vals = np.zeros(n_predictions, dtype=np.int8)
         enter_short_vals = np.zeros(n_predictions, dtype=np.int8)
 
+        # --- Volume Filter Preparation ---
+        volume_vals = None
+        if 'quote_volume_sma' in dataframe.columns:
+            min_volume = self.min_quote_volume_usd.value
+            volume_vals = dataframe['quote_volume_sma'].iloc[-n_predictions:].values
+            # Оптимизация для live/dry-run: если последняя свеча не проходит, выходим сразу
+            if self.config.get('runmode') in ['live', 'dry_run']:
+                if volume_vals[-1] < min_volume:
+                    self.logger.info(
+                        f"📉 {metadata['pair']}: Volume too low "
+                        f"({volume_vals[-1]:.0f} < {min_volume:.0f} USD). "
+                        f"Skipping signal generation."
+                    )
+                    # Убедимся, что колонки существуют, прежде чем возвращать
+                    if 'enter_long' not in dataframe.columns: dataframe['enter_long'] = 0
+                    if 'enter_short' not in dataframe.columns: dataframe['enter_short'] = 0
+                    return dataframe
+
         # Prepare regime array for backtest filtering
         regime_vals = None
         if is_backtest and self.use_regime_filter and 'st_regime_15m' in dataframe.columns:
@@ -1539,14 +1571,29 @@ class CustomD3QNStrategy4z(IStrategy):
                 q_values, i, has_long, has_short
             )
 
+            # --- Volume Filter ---
+            # Применяется после генерации сигнала, чтобы можно было залогировать причину
+            if volume_vals is not None:
+                min_volume = self.min_quote_volume_usd.value
+                current_volume = volume_vals[i]
+                if current_volume < min_volume:
+                    if decision['enter_long'] == 1 or decision['enter_short'] == 1:
+                        decision['reason'] += f" | ⛔ Filtered by Volume ({current_volume:.0f} < {min_volume:.0f})"
+                    decision['enter_long'] = 0
+                    decision['enter_short'] = 0
+
             # Жёсткий режим-фильтр поверх ансамбля
             if self.use_regime_filter:
                 if is_backtest and regime_vals is not None:
                     # Backtest: check regime per candle
                     r = regime_vals[i]
                     if r > 0: # Bullish
+                        if decision['enter_short'] == 1:
+                            decision['reason'] += " | ⛔ Filtered by ST (Bullish)"
                         decision['enter_short'] = 0
                     elif r < 0: # Bearish
+                        if decision['enter_long'] == 1:
+                            decision['reason'] += " | ⛔ Filtered by ST (Bearish)"
                         decision['enter_long'] = 0
                     else: # Flat/None
                         decision['enter_long'] = 0
@@ -1554,8 +1601,12 @@ class CustomD3QNStrategy4z(IStrategy):
                 else:
                     # Live: use pre-calculated flags
                     if not allow_long:
+                        if decision['enter_long'] == 1:
+                            decision['reason'] += " | ⛔ Filtered by ST (Bearish)"
                         decision['enter_long'] = 0
                     if not allow_short:
+                        if decision['enter_short'] == 1:
+                            decision['reason'] += " | ⛔ Filtered by ST (Bullish)"
                         decision['enter_short'] = 0
 
             # Сбор статистики
