@@ -97,6 +97,9 @@ class CustomD3QNStrategy4z(IStrategy):
     # Фильтр по объему для отсеивания неликвидных пар (особенно в бэктесте)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=True, load=True)
 
+    # Коэффициент агрессии для Dynamic Epsilon (чувствительность к просадке)
+    dd_aggression_k = DecimalParameter(0.1, 2.0, default=0.55, space='buy', optimize=True, load=True)
+
     plot_config = {
         'main_plot': {},
         'subplots': {
@@ -120,6 +123,11 @@ class CustomD3QNStrategy4z(IStrategy):
         if 'min_quote_volume_usd' in config:
             self.min_quote_volume_usd.value = float(config['min_quote_volume_usd'])
             logger.info(f"🔧 min_quote_volume_usd overridden from config: {self.min_quote_volume_usd.value}")
+        
+        # Загрузка dd_aggression_k из конфига, если он там есть
+        if 'dd_aggression_k' in config.get('rl_ensemble', {}):
+            self.dd_aggression_k.value = float(config['rl_ensemble']['dd_aggression_k'])
+            logger.info(f"🔧 dd_aggression_k overridden from config: {self.dd_aggression_k.value}")
 
         # --- LOGGING FILTERS ---
         # Убираем спам о отмене стоплосса
@@ -949,7 +957,8 @@ class CustomD3QNStrategy4z(IStrategy):
             dd_long = max(0.0, min(dd_long, 1.0))
             dd_short = max(0.0, min(dd_short, 1.0))
 
-            k = 6.0
+            # Используем настраиваемый коэффициент агрессии
+            k = self.dd_aggression_k.value
             # Scale dynamic targets around side-specific base thresholds
             epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
             epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
@@ -972,12 +981,18 @@ class CustomD3QNStrategy4z(IStrategy):
                 self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
             )
             if self.config.get("runmode") in ("live", "dry_run"):
-                self.logger.debug(
-                    f"EPS-DD ddL={dd_long:.3f} ddS={dd_short:.3f} "
-                    f"base={self.epsilon_threshold:.3f} "
-                    f"effL={self.epsilon_threshold_eff_long:.3f} "
-                    f"effS={self.epsilon_threshold_eff_short:.3f}"
-                )
+                # Логируем изменение режима, чтобы не спамить в консоль
+                if self.epsilon_threshold_eff > self.epsilon_threshold * 1.1:
+                    self.logger.info(
+                        f"🛡️ DEFENSIVE MODE: Epsilon increased due to DD. "
+                        f"ddL={dd_long:.2f} ddS={dd_short:.2f} | "
+                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
+                    )
+                elif self.epsilon_threshold_eff < self.epsilon_threshold * 0.9:
+                    self.logger.info(
+                        f"🚀 AGGRESSIVE MODE: Epsilon is low (no DD). "
+                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
+                    )
         except Exception as e:
             self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
             self.epsilon_threshold_eff = self.epsilon_threshold
