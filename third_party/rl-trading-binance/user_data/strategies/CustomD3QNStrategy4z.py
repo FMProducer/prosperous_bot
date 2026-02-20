@@ -11,6 +11,7 @@ import torch
 from numpy.lib.stride_tricks import sliding_window_view
 from concurrent.futures import ThreadPoolExecutor
 import threading
+from typing import Dict, Optional, List, Any, Tuple
 from typing import Dict, Optional, List, Any
 from collections import deque
 
@@ -234,6 +235,7 @@ class CustomD3QNStrategy4z(IStrategy):
         # Long Model 2:
         self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
+        pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
         self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
@@ -694,7 +696,7 @@ class CustomD3QNStrategy4z(IStrategy):
         
         return -d_eff
 
-    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
         # 1. Проверка длины
         if len(dataframe) < 90:
             return None
@@ -718,17 +720,31 @@ class CustomD3QNStrategy4z(IStrategy):
         if should_invert:
             windows = windows * -1.0
 
-        # 5. Flatten & Extra Features
+        # 5. Transpose to (Batch, Channels, Length, 1) to match Validation/Training
+        # Current: (Batch, Length=90, Channels=5)
+        # Target: (Batch, Channels=5, Length=90, 1)
+        
+        # (Batch, 90, 5) -> (Batch, 5, 90)
+        windows = windows.transpose(0, 2, 1)
+        
+        # (Batch, 5, 90) -> (Batch, 5, 90, 1)
+        windows = np.expand_dims(windows, axis=-1)
+        
+        # Ensure array is writable to avoid PyTorch warning
+        if not windows.flags.writeable:
+            windows = windows.copy()
+        img_tensor = torch.as_tensor(windows, device=self.device, dtype=torch.float32)
+
+        # 6. Create dummy additional features tensor
         batch_size = windows.shape[0]
-        flat_feats = windows.reshape(batch_size, -1)
-        
+        # The model checkpoint expects 4 additional features.
+        # We provide a zero-tensor as they are not used in the new logic,
+        # but are required for the model's forward pass signature.
         add_feats = np.zeros((batch_size, 4), dtype=np.float32)
-        # Set time_remaining (index 3) to 1.0 (start of session)
-        add_feats[:, 3] = 1.0
-        combined = np.concatenate([flat_feats, add_feats], axis=1)
+        feats_tensor = torch.as_tensor(add_feats, device=self.device, dtype=torch.float32)
         
-        # Return tensor on device
-        return torch.as_tensor(combined, device=self.device, dtype=torch.float32)
+        # Return a tuple of (image, features)
+        return (img_tensor, feats_tensor)
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
@@ -753,13 +769,28 @@ class CustomD3QNStrategy4z(IStrategy):
         return tensor
 
     def _parallel_inference(self, tensors_and_agents):
-        def single_inference(tensor, agent):
+        def single_inference(tensor_or_tuple, agent):
             try:
                 with torch.no_grad():
-                    return agent.policy_net(tensor).cpu().numpy()
+                    if isinstance(tensor_or_tuple, tuple):
+                        return agent.policy_net(*tensor_or_tuple).cpu().numpy()
+                    else:
+                        return agent.policy_net(tensor_or_tuple).cpu().numpy()
             except Exception as e:
-                logger.error(f"Inference failed: {e}")
-                return np.zeros((tensor.shape[0], agent.action_dim))
+                # Determine batch size for the zero-array fallback
+                batch_size = 1
+                if isinstance(tensor_or_tuple, tuple) and len(tensor_or_tuple) > 0 and hasattr(tensor_or_tuple[0], 'shape'):
+                    batch_size = tensor_or_tuple[0].shape[0]
+                    img_shape = tensor_or_tuple[0].shape
+                    feat_shape = tensor_or_tuple[1].shape if len(tensor_or_tuple) > 1 else 'N/A'
+                    logger.error(f"Inference failed for shapes img={img_shape}, feat={feat_shape}: {e}")
+                elif hasattr(tensor_or_tuple, 'shape'):
+                    batch_size = tensor_or_tuple.shape[0]
+                    logger.error(f"Inference failed for shape {tensor_or_tuple.shape}: {e}")
+                else:
+                    logger.error(f"Inference failed with unknown input type: {e}")
+
+                return np.zeros((batch_size, agent.action_dim))
         
         futures = []
         for tensor, agent, name in tensors_and_agents:

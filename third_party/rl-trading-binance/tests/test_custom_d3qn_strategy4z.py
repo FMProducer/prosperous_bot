@@ -82,13 +82,19 @@ sys.modules['freqtrade.persistence'] = ft_p
 mock_a = types.ModuleType("agent")
 class MockAg:
     def __init__(self, **kwargs):
-        self.action_dim = 3; self.policy_net = MagicMock(); self.policy_net.eval = MagicMock()
-        self.policy_net.parameters.return_value = []; self.mirror_mode = False
-    def load_model(self, p): pass
-    def __call__(self, t):
-        batch_size = t.shape[0] if len(t.shape) > 1 else 1
-        return torch.tensor(np.tile(np.array([[0.0, 0.5, 0.5]], dtype=np.float32), (batch_size, 1)))
+        self.action_dim = 3
+        self.policy_net = MagicMock()
+        self.policy_net.eval = MagicMock()
+        self.policy_net.parameters.return_value = []
+        self.mirror_mode = False
+        # Set a side effect to handle the call with two arguments
+        self.policy_net.side_effect = self.mock_forward
 
+    def load_model(self, p): pass
+
+    def mock_forward(self, img_tensor, feat_tensor):
+        batch_size = img_tensor.shape[0]
+        return torch.tensor(np.tile(np.array([[0.0, 0.5, 0.5]], dtype=np.float32), (batch_size, 1)))
 mock_a.D3QN_PER_Agent = MockAg
 sys.modules['agent'] = mock_a
 
@@ -106,12 +112,11 @@ CustomD3QNStrategy4z.Trade = MockTClass
 @pytest.fixture
 def strategy():
     cfg_path = PROJECT_ROOT / "user_data" / "config_rl4z.json"
-    with open(cfg_path, "r") as f: cfg = json.load(f)
+    with open(cfg_path, "r", encoding="utf-8") as f: cfg = json.load(f)
     cfg["runmode"] = "live"; cfg["rl_calibration_mode"] = False
     m = MagicMock(); m.seq.state_shape = (90, 5); m.market.num_actions = 3; m.model.additional_feats = 4
     m.rl.gamma = 0.99; m.rl.lr = 0.001; m.rl.target_update_freq = 100; m.rl.train_start = 100
-    m.rl.max_gradient_norm = 1.0; m.per.per_alpha = 0.6; m.per.per_beta_start = 0.4; m.per.per_beta_frames = 1000
-    m.eps.eps_start = 1.0; m.eps.eps_end = 0.1; m.eps.eps_decay_frames = 1000
+    m.rl.max_gradient_norm = 1.0; m.eps.eps_end = 0.1; m.eps.eps_decay_frames = 1000
     with patch("builtins.open", mock_open(read_data='{}')), patch("json.dump"), \
          patch.object(CustomD3QNStrategy4z.CustomD3QNStrategy4z, '_load_weights'), \
          patch.object(CustomD3QNStrategy4z.CustomD3QNStrategy4z, '_find_config_file', return_value=Path("d.py")), \
@@ -190,4 +195,6 @@ class TestCustomD3QNStrategy4z:
         t = MockTrade(id=999); s.custom_stoploss("p", t, now, 100, 0.1); s.custom_exit("p", t, now, 100, 0.2)
         s.get_model_input_cached(gen_df(100, z=True), "p", "LONG", 1, "BTC"); s.update_normalization_config()
         s.informative_pairs(); s.leverage("p", now, 100, 1, 5, None, "long")
-        s._parallel_inference([(torch.zeros((1, 454)), MockAg(), "long_1")])
+        img_tensor = torch.zeros((1, 5, 90, 1))
+        feat_tensor = torch.zeros((1, 4))
+        s._parallel_inference([((img_tensor, feat_tensor), s.long_1_agent, "long_1")])

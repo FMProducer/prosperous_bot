@@ -69,18 +69,18 @@
     },
     "rl_ensemble": {
         "use_regime_filter": true,
-        "epsilon_threshold_long": 0.6,
-        "epsilon_threshold_short": 0.6,
+        "epsilon_threshold_long": 0.5,
+        "epsilon_threshold_short": 0.5,
         "dd_aggression_k": 0.5,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 7.3e-05,
-                "q_max": 0.001464
+                "q_min": 0.00016,
+                "q_max": 0.000386
             },
             "long_2": {
-                "q_min": 5.7e-05,
-                "q_max": 0.00021
+                "q_min": 0.00016,
+                "q_max": 0.000386
             },
             "short_1": {
                 "q_min": 0.00015,
