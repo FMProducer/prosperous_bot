@@ -4,22 +4,37 @@ import logging.handlers
 import importlib.util
 from pathlib import Path
 import json
-import numpy as np
-import pandas as pd
-from pandas import DataFrame
-import torch
-from numpy.lib.stride_tricks import sliding_window_view
+import numpy as np  # type: ignore
+import pandas as pd  # type: ignore
+from pandas import DataFrame  # type: ignore
+import torch  # type: ignore
+from numpy.lib.stride_tricks import sliding_window_view  # type: ignore
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import Dict, Optional, List, Any, Tuple
-from typing import Dict, Optional, List, Any
 from collections import deque
 
 
 try:
     from freqtrade.persistence import Trade  # type: ignore
 except ImportError:
-    class Trade: pass
+    class Trade:
+        id: int
+        pair: str
+        is_open: bool
+        is_short: bool
+        open_date_utc: Optional[datetime] = None
+        close_rate_requested: Optional[float] = None
+        open_rate: float = 0.0
+        close_profit: Optional[float] = None
+        
+        def calc_profit(self, rate: float) -> float: return 0.0
+
+        @classmethod
+        def get_trades(cls, filters): return []
+
+        @classmethod
+        def get_open_trades(cls): return []
 
 from datetime import datetime
 
@@ -39,8 +54,12 @@ try:
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy:
-        def __init__(self, config: dict, **kwargs):
+        dp: Any = None
+        config: Dict[str, Any]
+        logger: Any = None
+        def __init__(self, config: dict):
             self.config = config
+            self.logger = logging.getLogger(__name__)
     class DecimalParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
     class IntParameter:
@@ -53,13 +72,15 @@ logger = logging.getLogger(__name__)
 
 # Agent imports
 try:
-    from agent import D3QN_PER_Agent
+    from agent import D3QN_PER_Agent  # type: ignore
 except ImportError as e:
     logger.error(f"CRITICAL: Could not import D3QN Agent! Check path: {project_root}")
     raise e
 
 
 class CustomD3QNStrategy4z(IStrategy):
+    config: Dict[str, Any]
+    dp: Any
     INTERFACE_VERSION = 3
     timeframe = '1m'
     can_long = True
@@ -115,7 +136,7 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     def __init__(self, config: dict) -> None:
-        super().__init__(config)
+        super().__init__(config)  # type: ignore
         
         # Принудительно включаем шорты
         self.can_short = True
@@ -184,8 +205,8 @@ class CustomD3QNStrategy4z(IStrategy):
         self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
         
         # 3. Кэш для feature tensors (экономим на preprocessing)
-        self.feature_cache = {}
-        self.q_value_cache = {}  # Кэш для результатов инференса (Q-values)
+        self.feature_cache: Dict[tuple, Any] = {}
+        self.q_value_cache: Dict[tuple, Dict[str, np.ndarray]] = {}  # Кэш для результатов инференса (Q-values)
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
@@ -300,8 +321,8 @@ class CustomD3QNStrategy4z(IStrategy):
         
         # --- ОПРЕДЕЛЕНИЕ РЕЖИМА MIRROR MODE ---
         # Определяем из конфига модели
-        self.short_1_is_mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False) if self.cfg_short_1 else False
-        self.short_2_is_mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False) if self.cfg_short_2 else False
+        self.short_1_is_mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False) if self.cfg_short_1 is not None else False  # type: ignore
+        self.short_2_is_mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False) if self.cfg_short_2 is not None else False  # type: ignore
         
         logger.info(f"ℹ️ SHORT_1 Mirror Mode: {self.short_1_is_mirror} (From Config)")
         logger.info(f"ℹ️ SHORT_2 Mirror Mode: {self.short_2_is_mirror} (From Config)")
@@ -471,16 +492,25 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def _load_py_config(self, file_path: Path):
         import importlib.util
-        from pydantic import ValidationError
+        try:
+            from pydantic import ValidationError  # type: ignore
+        except ImportError:
+            class ValidationError(Exception): pass  # type: ignore
 
-        spec = importlib.util.spec_from_file_location("mod_cfg", file_path)
-        mod = importlib.util.module_from_spec(spec)
+        if not hasattr(importlib, 'util'):
+            return None
+
+        spec = importlib.util.spec_from_file_location("mod_cfg", file_path)  # type: ignore
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load spec for {file_path}")
+            
+        mod = importlib.util.module_from_spec(spec)  # type: ignore
         
         # Хак для обратной совместимости: 
         # Если в загружаемом файле есть обращение к несуществующим полям Pydantic,
         # нам нужно это перехватить. 
         try:
-            spec.loader.exec_module(mod)
+            spec.loader.exec_module(mod)  # type: ignore
         except ValueError as e:
             logger.error(f"❌ Config loading failed: {e}. Attempting to bypass Pydantic validation...")
             # Если критично — здесь можно динамически добавить поле в PathConfig через setattr
@@ -604,10 +634,10 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 2. Supertrend-регим на 15m, мержим в 1m как st_regime_15m
         try:
-            if hasattr(self, 'dp') and self.dp:
+            if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
                 inf_tf = getattr(self, 'informative_timeframe', '15m')
                 # Берем уже проанализированный DF на 15m, чтобы не дублировать расчеты
-                inf_df, _ = self.dp.get_analyzed_dataframe(metadata['pair'], inf_tf)
+                inf_df, _ = self.dp.get_analyzed_dataframe(metadata['pair'], inf_tf)  # type: ignore
                 if inf_df is not None and not inf_df.empty:
                     st_period = int(self.supertrend_period.value) if hasattr(self, 'supertrend_period') else 10
                     st_mult = float(self.supertrend_multiplier.value) if hasattr(self, 'supertrend_multiplier') else 3.0
@@ -633,7 +663,7 @@ class CustomD3QNStrategy4z(IStrategy):
                         )
                         # Режим ∈ {-1, +1}, NaN → 0 (нет сигнала)
                         if 'st_regime_15m' in dataframe.columns:
-                            dataframe['st_regime_15m'] = (
+                            dataframe['st_regime_15m'] = (  # type: ignore
                                 dataframe['st_regime_15m']
                                 .fillna(0)
                                 .astype(np.int8)
@@ -647,10 +677,10 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         Информативные пары для 15m Supertrend (режим рынка).
         """
-        pairs = []
-        if hasattr(self, 'dp') and self.dp:
+        pairs: List[Any] = []
+        if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
             try:
-                pairs = self.dp.current_whitelist()
+                pairs = self.dp.current_whitelist()  # type: ignore
             except Exception:
                 pairs = []
         
@@ -661,8 +691,9 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
                    current_profit: float, **kwargs):
-        if trade.open_date_utc:
-            duration_min = (current_time - trade.open_date_utc).total_seconds() / 60
+        trade_open_date = getattr(trade, 'open_date_utc', None)
+        if trade_open_date is not None:
+            duration_min = (current_time - trade_open_date).total_seconds() / 60
             if duration_min >= 60:
                 return "timeout_60m"
         return None
@@ -697,8 +728,16 @@ class CustomD3QNStrategy4z(IStrategy):
         return -d_eff
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+        window = 90
+        if side == "LONG":
+            if model_num == 1 and self.cfg_long_1: window = self.cfg_long_1.seq.agent_history_len  # type: ignore
+            elif model_num == 2 and self.cfg_long_2: window = self.cfg_long_2.seq.agent_history_len  # type: ignore
+        elif side == "SHORT":
+            if model_num == 1 and self.cfg_short_1: window = self.cfg_short_1.seq.agent_history_len  # type: ignore
+            elif model_num == 2 and self.cfg_short_2: window = self.cfg_short_2.seq.agent_history_len  # type: ignore
+
         # 1. Проверка длины
-        if len(dataframe) < 90:
+        if len(dataframe) < window:
             return None
             
         # 2. Выбор Z-колонок
@@ -708,8 +747,8 @@ class CustomD3QNStrategy4z(IStrategy):
         # (N, 5)
         z_data = dataframe[cols].values.astype(np.float32)
         
-        # (N, 5) -> (Batch, 90, 5)
-        windows = sliding_window_view(z_data, window_shape=90, axis=0)
+        # (N, 5) -> (Batch, window, 5)
+        windows = sliding_window_view(z_data, window_shape=window, axis=0)
         
         # 4. Inversion logic (Mirror Mode)
         should_invert = False
@@ -794,7 +833,7 @@ class CustomD3QNStrategy4z(IStrategy):
         
         futures = []
         for tensor, agent, name in tensors_and_agents:
-            future = self.executor.submit(single_inference, tensor, agent)
+            future = self.executor.submit(single_inference, tensor, agent)  # type: ignore
             futures.append((future, name))
         
         results = {}
@@ -879,17 +918,17 @@ class CustomD3QNStrategy4z(IStrategy):
             # === ОТКРЫТЫЕ ПОЗИЦИИ (Unrealized PnL) ===
             open_trades = Trade.get_open_trades()
 
-            pnl_long_open = 0.0
-            pnl_short_open = 0.0
+            pnl_long_open: float = 0.0
+            pnl_short_open: float = 0.0
 
             for t in open_trades:
                 try:
                     if t.close_rate_requested:
                         profit_usdt = t.calc_profit(rate=t.close_rate_requested)
                     else:
-                        if hasattr(self, 'dp') and self.dp:
+                        if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
                             try:
-                                dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)
+                                dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)  # type: ignore
                                 if not dataframe.empty:
                                     current_rate = dataframe['close'].iloc[-1]
                                     profit_usdt = t.calc_profit(rate=current_rate)
@@ -904,16 +943,17 @@ class CustomD3QNStrategy4z(IStrategy):
                     profit_usdt = 0.0
 
                 if t.is_short:
-                    pnl_short_open += profit_usdt
+                    pnl_short_open += profit_usdt  # type: ignore
                 else:
-                    pnl_long_open += profit_usdt
+                    pnl_long_open += profit_usdt  # type: ignore
 
             # Возвращаем ТОЛЬКО Unrealized PnL
-            self.logger.debug(
-                f"PnL (Unrealized Only): "
-                f"Long Open={pnl_long_open:.2f} | "
-                f"Short Open={pnl_short_open:.2f}"
-            )
+            if hasattr(self, 'logger') and self.logger:
+                self.logger.debug(
+                    f"PnL (Unrealized Only): "
+                    f"Long Open={pnl_long_open:.2f} | "
+                    f"Short Open={pnl_short_open:.2f}"
+                )
 
             return pnl_long_open, pnl_short_open
 
@@ -948,13 +988,17 @@ class CustomD3QNStrategy4z(IStrategy):
             # Reset dynamic epsilon if there are no open trades
             try:
                 from freqtrade.persistence import Trade  # type: ignore
-                open_trades_q = Trade.get_open_trades()
+                open_trades_q = Trade.get_open_trades() # type: ignore
                 if hasattr(open_trades_q, "all"):
                     open_trades = open_trades_q.all()
                 else:
                     open_trades = open_trades_q
             except Exception:
-                open_trades = []
+                try:
+                    open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])  # type: ignore
+                    open_trades = open_trades_q.all() if hasattr(open_trades_q, 'all') else open_trades_q
+                except Exception:
+                    open_trades = []
 
             if not open_trades:
                 # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
@@ -1143,7 +1187,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
             cfg = self.q_normalization.get(name, {})
             q_min = cfg.get('q_min', 0.0)
-            q_max = cfg.get('q_max', None)
+            q_max = cfg.get('q_max', q_min)  # fallback to q_min to avoid None comparisons
 
             if q_max is None or q_max <= q_min:
                 self.logger.warning(f"⚠️ Degenerate Q stats for {name}, excluding zombie model.")
@@ -1188,7 +1232,7 @@ class CustomD3QNStrategy4z(IStrategy):
             votes_short += v
             if v: details.append(f"S2({norm:.2f})")
 
-        result = {
+        result: Dict[str, Any] = {
             'enter_long': 0,
             'enter_short': 0,
             'reason': f"Votes L:{votes_long}/{thresh_long} S:{votes_short}/{thresh_short} [{' '.join(details)}]",
@@ -1273,8 +1317,9 @@ class CustomD3QNStrategy4z(IStrategy):
                     self.last_slot_update = current_time
                 else:
                     # Таймер mode: обновляем по интервалу
-                    if self.last_slot_update is None or \
-                       (current_time - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                    last_upd = self.last_slot_update
+                    if last_upd is None or \
+                       (current_time - last_upd).total_seconds() > self.slot_update_interval:
                         self._update_slot_allocation(current_time)
                         self.last_slot_update = current_time
             else:
@@ -1306,8 +1351,8 @@ class CustomD3QNStrategy4z(IStrategy):
     def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
                           rate: float, time_in_force: str, sell_reason: str,
                           current_time: datetime, **kwargs) -> bool:
-        if trade.id in self.tsl_memory:
-            del self.tsl_memory[trade.id]
+        trade_id = trade.id
+        self.tsl_memory.pop(trade_id, None)
         return True
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -1337,21 +1382,20 @@ class CustomD3QNStrategy4z(IStrategy):
                     regime = int(np.sign(last_regime))
                     
                     # LOGGING: Показываем текущий режим рынка для пары
-                    regime_str = "🟢 BULLISH (Longs Only)" if regime > 0 else "🔴 BEARISH (Shorts Only)"
-                    # self.logger.info(f"🌍 {metadata['pair']} Regime (15m ST): {regime_str}")
-
                     if regime > 0:
-                        # Бычий режим: разрешаем только лонги
+                        regime_str = "🟢 BULLISH (Longs Only)"
                         allow_long = True
                         allow_short = False
                     elif regime < 0:
-                        # Медвежий: только шорты
+                        regime_str = "🔴 BEARISH (Shorts Only)"
                         allow_long = False
                         allow_short = self.can_short
                     else:
-                        # Флэт/нет сигнала: можно вообще все вырубить, если нужно
+                        regime_str = "⚪ FLAT (No Trade)"
                         allow_long = False
                         allow_short = False
+
+                    # self.logger.info(f"🌍 {metadata['pair']} Regime (15m ST): {regime_str}")
             except Exception as e:
                 self.logger.warning(f"Regime filter failed for {metadata.get('pair', '')}: {e}")
                 allow_long = True
@@ -1440,14 +1484,14 @@ class CustomD3QNStrategy4z(IStrategy):
         # 5. Получение действий с порогом уверенности (Q-Threshold)
         # Фильтруем слабые сигналы, где Q(Action) почти равно Q(Hold)
 
-        def get_action_with_threshold(name, target_action=None):
-            if name not in q_values:
+        def get_action_with_threshold(name: str, target_action: Optional[int] = None):
+            if q_values is None or name not in q_values:
                 return np.zeros(batch_size, dtype=int), np.zeros(batch_size), 0.0
             
             # Берем порог из нормализации, так как глобального больше нет
             q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
             
-            q = q_values[name]
+            q = q_values[name]  # type: ignore
             
             if target_action is not None:
                 # Forced check for specific action (Strict Mode)
@@ -1577,7 +1621,7 @@ class CustomD3QNStrategy4z(IStrategy):
         has_long = False
         has_short = False
         try:
-            open_trade = Trade.get_trades([Trade.pair == metadata['pair'], Trade.is_open.is_(True)]).first()
+            open_trade = Trade.get_trades([Trade.is_open.is_(True), Trade.pair == metadata['pair']]).first()  # type: ignore
             has_long = open_trade.is_short is False if open_trade else False
             has_short = open_trade.is_short is True if open_trade else False
         except Exception:
@@ -1621,7 +1665,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Применяется после генерации сигнала, чтобы можно было залогировать причину
             if volume_vals is not None:
                 min_volume = self.min_quote_volume_usd.value
-                current_volume = volume_vals[i]
+                current_volume = volume_vals[i]  # type: ignore
                 if current_volume < min_volume:
                     if decision['enter_long'] == 1 or decision['enter_short'] == 1:
                         decision['reason'] += f" | ⛔ Filtered by Volume ({current_volume:.0f} < {min_volume:.0f})"
@@ -1632,7 +1676,7 @@ class CustomD3QNStrategy4z(IStrategy):
             if self.use_regime_filter:
                 if is_backtest and regime_vals is not None:
                     # Backtest: check regime per candle
-                    r = regime_vals[i]
+                    r = regime_vals[i]  # type: ignore
                     if r > 0: # Bullish
                         if decision['enter_short'] == 1:
                             decision['reason'] += " | ⛔ Filtered by ST (Bullish)"
@@ -1648,11 +1692,18 @@ class CustomD3QNStrategy4z(IStrategy):
                     # Live: use pre-calculated flags
                     if not allow_long:
                         if decision['enter_long'] == 1:
-                            decision['reason'] += " | ⛔ Filtered by ST (Bearish)"
+                            reason_str = "Bearish" if regime < 0 else "Flat"
+                            decision['reason'] += f" | ⛔ Filtered by ST ({reason_str})"
                         decision['enter_long'] = 0
                     if not allow_short:
                         if decision['enter_short'] == 1:
-                            decision['reason'] += " | ⛔ Filtered by ST (Bullish)"
+                            if regime > 0:
+                                reason_str = "Bullish"
+                            elif regime < 0 and not self.can_short:
+                                reason_str = "Shorts Disabled"
+                            else:
+                                reason_str = "Flat"
+                            decision['reason'] += f" | ⛔ Filtered by ST ({reason_str})"
                         decision['enter_short'] = 0
 
             # Сбор статистики
