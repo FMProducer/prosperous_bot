@@ -636,8 +636,9 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
                 inf_tf = getattr(self, 'informative_timeframe', '15m')
-                # Берем уже проанализированный DF на 15m, чтобы не дублировать расчеты
-                inf_df, _ = self.dp.get_analyzed_dataframe(metadata['pair'], inf_tf)  # type: ignore
+                # Use BTC for the dashboard's "Regime" panel specifically
+                regime_pair = 'BTC/USDT:USDT' if metadata['pair'] != 'BTC/USDT:USDT' else metadata['pair']
+                inf_df = self.dp.get_pair_dataframe(regime_pair, inf_tf)  # type: ignore
                 if inf_df is not None and not inf_df.empty:
                     st_period = int(self.supertrend_period.value) if hasattr(self, 'supertrend_period') else 10
                     st_mult = float(self.supertrend_multiplier.value) if hasattr(self, 'supertrend_multiplier') else 3.0
@@ -650,8 +651,12 @@ class CustomD3QNStrategy4z(IStrategy):
                         # 1) На 15m называем колонку ОБЩО: 'st_regime'
                         inf_df = inf_df.join(st_df[['st_dir']])
                         inf_df.rename(columns={'st_dir': 'st_regime'}, inplace=True)
-                        # 2) Оставляем только нужную колонку
-                        inf_df = inf_df[['st_regime']]
+                        # 2) Передаем в merge только необходимые данные ('date' нужен для мерджа)
+                        if 'date' in inf_df.columns:
+                            inf_df = inf_df[['date', 'st_regime']]
+                        else:
+                            # Если date в индексе, оставляем только st_regime
+                            inf_df = inf_df[['st_regime']]
 
                         # 3) После merge получим 'st_regime_15m' в основном DF
                         dataframe = merge_informative_pair(
@@ -683,6 +688,11 @@ class CustomD3QNStrategy4z(IStrategy):
                 pairs = self.dp.current_whitelist()  # type: ignore
             except Exception:
                 pairs = []
+        
+        # Force BTC for the dashboard Supertrend panel
+        btc_pair = 'BTC/USDT:USDT'
+        if btc_pair not in pairs:
+            pairs.append(btc_pair)
         
         if not pairs:
             pairs = self.config.get('exchange', {}).get('pair_whitelist', [])

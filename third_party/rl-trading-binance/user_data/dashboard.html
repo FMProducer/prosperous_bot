@@ -991,23 +991,35 @@
         }
 
         async function fetchBTCRegime() {
-            // Try to get /pair_candles for BTC/USDT 15m
-            try {
-                const data = await apiFetch('/pair_candles?pair=BTC/USDT:USDT&timeframe=15m&limit=3');
-                if (data && data.data && data.data.length > 0) {
-                    const last = data.data[data.data.length - 1];
-                    // st_regime_15m or st_regime column
-                    if ('st_regime' in last) return last.st_regime;
-                    if ('st_regime_15m' in last) return last.st_regime_15m;
+            // Priority pairs to check for regime
+            const pairs = ['BTC/USDT:USDT', 'BTC/USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT'];
+            const timeframes = ['15m', '1m'];
+
+            for (const pair of pairs) {
+                for (const tf of timeframes) {
+                    try {
+                        const url = `${API_BASE}/pair_candles?pair=${encodeURIComponent(pair)}&timeframe=${tf}&limit=2`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        if (!resp.ok) continue;
+
+                        const json = await resp.json();
+                        if (!json.data || json.data.length === 0) continue;
+
+                        const cols = json.columns || [];
+                        const lastRow = json.data[json.data.length - 1];
+                        const data = {};
+                        cols.forEach((c, i) => data[c] = lastRow[i]);
+
+                        // Look for ANY regime column
+                        const regimeKey = cols.find(c => c.includes('regime') || c === 'st_dir');
+                        if (regimeKey && data[regimeKey] !== 0 && data[regimeKey] !== undefined) {
+                            console.log(`Found regime ${data[regimeKey]} in ${pair} ${tf} (${regimeKey})`);
+                            return parseInt(data[regimeKey]);
+                        }
+                    } catch (e) {
+                        console.error(`Regime fetch error for ${pair} ${tf}:`, e);
+                    }
                 }
-                // Fallback: try analyzed_dataframe columns from 1m data
-                const data1m = await apiFetch('/pair_candles?pair=BTC/USDT:USDT&timeframe=1m&limit=3&columns=st_regime_15m');
-                if (data1m && data1m.data && data1m.data.length > 0) {
-                    const last = data1m.data[data1m.data.length - 1];
-                    if ('st_regime_15m' in last) return last.st_regime_15m;
-                }
-            } catch (e) {
-                console.error('Regime fetch error:', e);
             }
             return 0;
         }
@@ -1093,11 +1105,15 @@
                 'DOT/USDT:USDT', 'ARB/USDT:USDT'];
             topPairs.forEach(p => pairsToCheck.add(p));
 
-            // Fetch more logs to ensure we don't miss strategy outputs
+            // Fetch logs to get strategy signals
             const logData = await apiFetch('/logs?limit=1000');
-            const qData = parseQValuesFromLogs(logData);
+            console.log('Raw LogData count:', logData?.logs?.length);
+            if (logData?.logs?.length > 0) {
+                console.log('Sample Log Entry:', logData.logs[0]);
+            }
 
-            console.log('Parsed Q-Data:', qData); // Debugging
+            const qData = parseQValuesFromLogs(logData);
+            console.log('Parsed Q-Data:', qData);
 
             // Sort by combined signal strength
             const sorted = Object.entries(qData)
@@ -1148,28 +1164,22 @@
             const result = {};
             if (!logData || !logData.logs) return result;
 
-            // Updated Regex: handles optional spaces and different pair formats
-            const s1Regex = /([\w\d\/-]+(:[\w\d]+)?)\s+S1:\s+adv=([\d.eE+--]+)/i;
-            const s2Regex = /([\w\d\/-]+(:[\w\d]+)?)\s+S2:\s+adv=([\d.eE+--]+)/i;
+            // Robust Regex: matches "Pair [S1/S2]: adv=..." anywhere in the line
+            const qRegex = /([\w\d\/-]+(:[\w\d]+)?)\s+S([12]):\s+adv=([+-]?[\d.eE]+)/i;
 
             for (const logEntry of logData.logs) {
-                // logEntry is [timestamp, epoch, logger, level, message]
-                const msg = logEntry[4] || logEntry[3] || '';
+                // message is usually logEntry[4], but we search the whole joined array if needed
+                const msg = Array.isArray(logEntry) ? logEntry.join(' ') : String(logEntry);
 
-                let m = s1Regex.exec(msg);
+                const m = qRegex.exec(msg);
                 if (m) {
                     const pair = m[1];
-                    if (!result[pair]) result[pair] = {};
-                    result[pair].s1_adv = parseFloat(m[3]);
-                    console.log(`Matched S1 for ${pair}: ${m[3]}`);
-                }
+                    const sensorIdx = m[3]; // "1" or "2"
+                    const val = parseFloat(m[4]);
 
-                m = s2Regex.exec(msg);
-                if (m) {
-                    const pair = m[1];
                     if (!result[pair]) result[pair] = {};
-                    result[pair].s2_adv = parseFloat(m[3]);
-                    console.log(`Matched S2 for ${pair}: ${m[3]}`);
+                    if (sensorIdx === "1") result[pair].s1_adv = val;
+                    if (sensorIdx === "2") result[pair].s2_adv = val;
                 }
             }
             return result;
