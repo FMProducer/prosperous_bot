@@ -3,6 +3,7 @@
     "cpu_threads": 6,
     "deep_inference": true,
     "max_open_trades": 100,
+    "startup_candle_count": 500,
     "stake_currency": "USDT",
     "stake_amount": 200,
     "tradable_balance_ratio": 0.99,
@@ -14,8 +15,8 @@
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
     "min_quote_volume_usd": 10000,
-    "rl_enable_long_1": true,
-    "rl_enable_long_2": true,
+    "rl_enable_long_1": false,
+    "rl_enable_long_2": false,
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
     "dynamic_slots": {
@@ -75,20 +76,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.00016,
-                "q_max": 0.000386
+                "q_min": 2.3e-05,
+                "q_max": 0.003357
             },
             "long_2": {
-                "q_min": 0.00016,
-                "q_max": 0.000386
+                "q_min": 0.000148,
+                "q_max": 0.000427
             },
             "short_1": {
-                "q_min": 0.00015,
-                "q_max": 0.000564
+                "q_min": 0.000234,
+                "q_max": 0.000613
             },
             "short_2": {
-                "q_min": 0.000169,
-                "q_max": 0.000575
+                "q_min": 0.000372,
+                "q_max": 0.000704
             }
         }
     },

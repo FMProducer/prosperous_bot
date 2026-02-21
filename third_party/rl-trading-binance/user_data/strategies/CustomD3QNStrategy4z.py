@@ -613,10 +613,10 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         # 1. Z-score нормализация (как в обучении)
-        window = 90
+        zscore_window = 450
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_cols:
-            rolling = dataframe[col].rolling(window=window, min_periods=window)
+            rolling = dataframe[col].rolling(window=zscore_window, min_periods=zscore_window)
             mean = rolling.mean()
             std = rolling.std(ddof=0)
             # Z-score: (x - mean) / std
@@ -727,14 +727,19 @@ class CustomD3QNStrategy4z(IStrategy):
         
         return -d_eff
 
-    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
-        window = 90
+    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
+        # Default window is 90 (5 channels * 90 = 450 history features)
+        window = 90 
+        
+        # Safe access to model configs to avoid Pyre NoneType errors
+        cfg = None
         if side == "LONG":
-            if model_num == 1 and self.cfg_long_1: window = self.cfg_long_1.seq.agent_history_len  # type: ignore
-            elif model_num == 2 and self.cfg_long_2: window = self.cfg_long_2.seq.agent_history_len  # type: ignore
+            cfg = self.cfg_long_1 if model_num == 1 else self.cfg_long_2
         elif side == "SHORT":
-            if model_num == 1 and self.cfg_short_1: window = self.cfg_short_1.seq.agent_history_len  # type: ignore
-            elif model_num == 2 and self.cfg_short_2: window = self.cfg_short_2.seq.agent_history_len  # type: ignore
+            cfg = self.cfg_short_1 if model_num == 1 else self.cfg_short_2
+            
+        if cfg and hasattr(cfg, 'seq') and cfg.seq:
+            window = getattr(cfg.seq, "agent_history_len", 90)
 
         # 1. Проверка длины
         if len(dataframe) < window:
@@ -743,12 +748,12 @@ class CustomD3QNStrategy4z(IStrategy):
         # 2. Выбор Z-колонок
         cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
         
-        # 3. Sliding window
-        # (N, 5)
+        # 3. Data preparation (N, 5)
         z_data = dataframe[cols].values.astype(np.float32)
         
-        # (N, 5) -> (Batch, window, 5)
-        windows = sliding_window_view(z_data, window_shape=window, axis=0)
+        # Extract last 'window' rows: (window, 5)
+        # Using tail instead of sliding_window_view for simplicity since we only need 1 window
+        last_window = z_data[-window:]
         
         # 4. Inversion logic (Mirror Mode)
         should_invert = False
@@ -757,33 +762,23 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
         
         if should_invert:
-            windows = windows * -1.0
+            last_window = last_window * -1.0
 
-        # 5. Transpose to (Batch, Channels, Length, 1) to match Validation/Training
-        # Current: (Batch, Length=90, Channels=5)
-        # Target: (Batch, Channels=5, Length=90, 1)
+        # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
+        # The model expects a flat vector of size (channels * history_len + additional_feats)
+        # Target shape for history: (channels=5, length=90) -> (450,)
         
-        # (Batch, 90, 5) -> (Batch, 5, 90)
-        windows = windows.transpose(0, 2, 1)
+        # Transpose (90, 5) -> (5, 90) then flatten
+        img_flat = last_window.T.flatten()
         
-        # (Batch, 5, 90) -> (Batch, 5, 90, 1)
-        windows = np.expand_dims(windows, axis=-1)
+        # Additional features (4 dummy values)
+        add_feats = np.zeros(4, dtype=np.float32)
         
-        # Ensure array is writable to avoid PyTorch warning
-        if not windows.flags.writeable:
-            windows = windows.copy()
-        img_tensor = torch.as_tensor(windows, device=self.device, dtype=torch.float32)
-
-        # 6. Create dummy additional features tensor
-        batch_size = windows.shape[0]
-        # The model checkpoint expects 4 additional features.
-        # We provide a zero-tensor as they are not used in the new logic,
-        # but are required for the model's forward pass signature.
-        add_feats = np.zeros((batch_size, 4), dtype=np.float32)
-        feats_tensor = torch.as_tensor(add_feats, device=self.device, dtype=torch.float32)
+        # Concat: (454,)
+        full_input = np.concatenate([img_flat, add_feats])
         
-        # Return a tuple of (image, features)
-        return (img_tensor, feats_tensor)
+        # Convert to tensor and add batch dim: (1, 454)
+        return torch.as_tensor(full_input, device=self.device, dtype=torch.float32).unsqueeze(0)
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
@@ -1221,13 +1216,15 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # --- 2. Подсчет голосов SHORT ---
         if self.enable_short_1:
-            action_idx = 1 if self.short_1_is_mirror else 2
+            # For Mirror Models (and models trained with num_actions=3 but filter_direction=SHORT)
+            # The entry action is always at index 1.
+            action_idx = 1
             v, active, norm = _get_model_vote("short_1", action_idx)
             votes_short += v
             if v: details.append(f"S1({norm:.2f})")
 
         if self.enable_short_2:
-            action_idx = 1 if self.short_2_is_mirror else 2
+            action_idx = 1 
             v, active, norm = _get_model_vote("short_2", action_idx)
             votes_short += v
             if v: details.append(f"S2({norm:.2f})")
@@ -1509,11 +1506,10 @@ class CustomD3QNStrategy4z(IStrategy):
         action_long_1, adv_long_1, th_l1 = get_action_with_threshold("long_1", target_action=1)
         action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2", target_action=1)
         
-        s1_act = 1 if self.short_1_is_mirror else 2
-        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=s1_act)
-        
-        s2_act = 1 if self.short_2_is_mirror else 2
-        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=s2_act)
+        # Mirror mode models (and all models in config trained as SHORT) 
+        # use index 1 for their primary 'ENTRY' action
+        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=1)
+        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=1)
 
         # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
         if self.config.get('runmode') in ['live', 'dry_run']:
