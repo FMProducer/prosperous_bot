@@ -741,12 +741,22 @@
             <!-- 3) BTC Supertrend Regime -->
             <div class="card col-3" id="regimeCard">
                 <div class="card-header">
-                    <span class="card-title">BTC/USDT Supertrend 15m</span>
+                    <span class="card-title">Market Regime (Double Filter)</span>
                     <div class="card-icon">📡</div>
                 </div>
-                <div class="regime-indicator">
-                    <div class="regime-badge neutral" id="regimeBadge">--</div>
-                    <div class="regime-sub" id="regimeSub">Waiting for data…</div>
+                <div class="regime-indicator" style="flex-direction: row; gap: 15px;">
+                    <div style="flex: 1; text-align: center;">
+                        <div class="regime-sub" style="margin-bottom: 5px;">GLOBAL (1h)</div>
+                        <div class="regime-badge neutral" id="regimeBadgeGlobal"
+                            style="padding: 10px 15px; font-size: 16px;">--</div>
+                    </div>
+                    <div style="flex: 1; text-align: center;">
+                        <div class="regime-sub" style="margin-bottom: 5px;">LOCAL (15m)</div>
+                        <div class="regime-badge neutral" id="regimeBadgeLocal"
+                            style="padding: 10px 15px; font-size: 16px;">--</div>
+                    </div>
+                </div>
+                <div class="regime-sub" id="regimeSub" style="margin-top: 10px; text-align: center;">Waiting for data…
                 </div>
             </div>
 
@@ -785,8 +795,36 @@
                 </div>
             </div>
 
-            <!-- 5) Q-Values Table: SHORT_1 + SHORT_2 Top-5 -->
-            <div class="card col-12" id="qValCard">
+            <!-- 5a) Q-Values Table: LONG_1 + LONG_2 Top-5 -->
+            <div class="card col-12" id="qValCardLong">
+                <div class="card-header">
+                    <span class="card-title">LONG_1 + LONG_2 Q-Values — Top 5 by Signal Strength</span>
+                    <div class="card-icon">📈</div>
+                </div>
+                <table class="q-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Pair</th>
+                            <th>L1 Advantage</th>
+                            <th>L1 Norm</th>
+                            <th>L1 Vote</th>
+                            <th>L2 Advantage</th>
+                            <th>L2 Norm</th>
+                            <th>L2 Vote</th>
+                            <th>Combined</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qTableBodyLong">
+                        <tr>
+                            <td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 5b) Q-Values Table: SHORT_1 + SHORT_2 Top-5 -->
+            <div class="card col-12" id="qValCardShort">
                 <div class="card-header">
                     <span class="card-title">SHORT_1 + SHORT_2 Q-Values — Top 5 by Signal Strength</span>
                     <div class="card-icon">🧠</div>
@@ -805,7 +843,7 @@
                             <th>Combined</th>
                         </tr>
                     </thead>
-                    <tbody id="qTableBody">
+                    <tbody id="qTableBodyShort">
                         <tr>
                             <td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td>
                         </tr>
@@ -829,9 +867,12 @@
 
         // Q-normalization from config
         const Q_NORM = {
-            short_1: { q_min: 7.6e-05, q_max: 0.000573 },
-            short_2: { q_min: 0.000114, q_max: 0.00069 }
+            long_1: { q_min: 8.9e-05, q_max: 0.003366 },
+            long_2: { q_min: 0.000334, q_max: 0.000463 },
+            short_1: { q_min: 6.2e-05, q_max: 0.000593 },
+            short_2: { q_min: 0.000131, q_max: 0.000716 }
         };
+        const BASE_EPSILON_LONG = 0.5;
         const BASE_EPSILON_SHORT = 0.5;
 
         let authToken = null;
@@ -905,7 +946,7 @@
             // Realized from profit endpoint
             let realized = 0;
             if (profit) {
-                realized = profit.profit_closed_coin || profit.profit_all_coin || 0;
+                realized = (profit.profit_closed_coin !== undefined && profit.profit_closed_coin !== null) ? profit.profit_closed_coin : 0;
             }
 
             const total = unrealized + realized;
@@ -963,66 +1004,77 @@
         }
 
         // (3) Regime
-        function updateRegime(openTrades) {
-            // We'll derive regime from the pair_whitelist data for BTC/USDT
-            // Since freqtrade API doesn't expose st_regime directly, we parse from logs
-            // or alternatively, we check if BTC/USDT has a current open trade direction
-            // as a proxy. A more reliable approach: parse the analyzed dataframe via /pair_candles
-
-            const badge = document.getElementById('regimeBadge');
+        function updateRegime(openTrades, config) {
             const sub = document.getElementById('regimeSub');
+            const mainTf = (config && config.timeframe) || '1m';
 
-            // We'll use the /pair_candles endpoint to get BTC Supertrend
-            fetchBTCRegime().then(regime => {
-                if (regime === 1) {
-                    badge.className = 'regime-badge bull';
-                    badge.textContent = '🟢 BULL';
-                    sub.textContent = 'Supertrend 15m: Uptrend — LONG allowed';
-                } else if (regime === -1) {
-                    badge.className = 'regime-badge bear';
-                    badge.textContent = '🔴 BEAR';
-                    sub.textContent = 'Supertrend 15m: Downtrend — SHORT favored';
+            // Find a candidate pair (e.g., from whitelist or status)
+            // Even if no trades, we can try BTC or the first pair in the config
+            let candidatePair = 'BTC/USDT:USDT';
+            if (openTrades && openTrades.length > 0) {
+                candidatePair = openTrades[0].pair;
+            }
+
+            // Fetch main timeframe candles for the candidate pair (contains merged regimes)
+            fetchRegimeData(candidatePair, mainTf).then(data => {
+                const bGlobal = document.getElementById('regimeBadgeGlobal');
+                const bLocal = document.getElementById('regimeBadgeLocal');
+
+                const global = data.st_regime_global || 0;
+                const local = data.st_regime_local || 0;
+
+                function updateBadge(badge, val) {
+                    if (val > 0) {
+                        badge.className = 'regime-badge bull';
+                        badge.textContent = '🟢 BULL';
+                    } else if (val < 0) {
+                        badge.className = 'regime-badge bear';
+                        badge.textContent = '🔴 BEAR';
+                    } else {
+                        badge.className = 'regime-badge neutral';
+                        badge.textContent = '⏳ N/A';
+                    }
+                }
+
+                if (bGlobal) updateBadge(bGlobal, global);
+                if (bLocal) updateBadge(bLocal, local);
+
+                if (global === 0 || local === 0) {
+                    sub.textContent = 'Waiting for data…';
+                } else if (global > 0 && local > 0) {
+                    sub.textContent = 'Market is Bullish (Double Entry OK)';
+                } else if (global < 0 && local < 0) {
+                    sub.textContent = 'Market is Bearish (Double Short OK)';
                 } else {
-                    badge.className = 'regime-badge neutral';
-                    badge.textContent = '⏳ N/A';
-                    sub.textContent = 'Regime data unavailable';
+                    sub.textContent = 'Conflict: Global/Local mismatched (Sideways/Trend Change)';
                 }
             });
         }
 
-        async function fetchBTCRegime() {
-            // Priority pairs to check for regime
-            const pairs = ['BTC/USDT:USDT', 'BTC/USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT'];
-            const timeframes = ['15m', '1m'];
+        async function fetchRegimeData(pair, tf) {
+            try {
+                const url = `${API_BASE}/pair_candles?pair=${encodeURIComponent(pair)}&timeframe=${tf}&limit=2`;
+                const resp = await fetch(url, { headers: authHeaders() });
+                if (!resp.ok) return {};
 
-            for (const pair of pairs) {
-                for (const tf of timeframes) {
-                    try {
-                        const url = `${API_BASE}/pair_candles?pair=${encodeURIComponent(pair)}&timeframe=${tf}&limit=2`;
-                        const resp = await fetch(url, { headers: authHeaders() });
-                        if (!resp.ok) continue;
+                const json = await resp.json();
+                if (!json.data || json.data.length === 0) return {};
 
-                        const json = await resp.json();
-                        if (!json.data || json.data.length === 0) continue;
+                const cols = json.columns || [];
+                const lastRow = json.data[json.data.length - 1];
+                const data = {};
+                cols.forEach((c, i) => data[c] = lastRow[i]);
 
-                        const cols = json.columns || [];
-                        const lastRow = json.data[json.data.length - 1];
-                        const data = {};
-                        cols.forEach((c, i) => data[c] = lastRow[i]);
-
-                        // Look for ANY regime column
-                        const regimeKey = cols.find(c => c.includes('regime') || c === 'st_dir');
-                        if (regimeKey && data[regimeKey] !== 0 && data[regimeKey] !== undefined) {
-                            console.log(`Found regime ${data[regimeKey]} in ${pair} ${tf} (${regimeKey})`);
-                            return parseInt(data[regimeKey]);
-                        }
-                    } catch (e) {
-                        console.error(`Regime fetch error for ${pair} ${tf}:`, e);
-                    }
-                }
+                return {
+                    st_regime_global: data['st_regime_global'] || 0,
+                    st_regime_local: data['st_regime_local'] || 0
+                };
+            } catch (e) {
+                console.error(`Regime fetch error for ${pair}:`, e);
+                return {};
             }
-            return 0;
         }
+
 
         // (4) Dynamic Epsilon
         function updateEpsilon(openTrades) {
@@ -1086,100 +1138,87 @@
         }
 
         // (5) Q-values table
+        // (5) Q-values table
         async function updateQValues(openTrades, eps) {
-            const tbody = document.getElementById('qTableBody');
-
-            // Collect Q-value data from logs or approximate from open short trades' profit signals
-            // Since freqtrade API exposes /pair_candles with analyzed data, we'll scan pairs
-            // For performance: scan active short trades + top whitelist pairs
-            const pairsToCheck = new Set();
-
-            // Add currently open short trades
-            if (openTrades) {
-                openTrades.filter(t => t.is_short).forEach(t => pairsToCheck.add(t.pair));
-            }
-
-            // Add some high-activity pairs from whitelist (limited for performance)
-            const topPairs = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'DOGE/USDT:USDT',
-                'XRP/USDT:USDT', 'ADA/USDT:USDT', 'AVAX/USDT:USDT', 'LINK/USDT:USDT',
-                'DOT/USDT:USDT', 'ARB/USDT:USDT'];
-            topPairs.forEach(p => pairsToCheck.add(p));
+            const epsL = eps ? eps.epsEffL : BASE_EPSILON_LONG;
+            const epsS = eps ? eps.epsEffS : BASE_EPSILON_SHORT;
 
             // Fetch logs to get strategy signals
             const logData = await apiFetch('/logs?limit=1000');
-            console.log('Raw LogData count:', logData?.logs?.length);
-            if (logData?.logs?.length > 0) {
-                console.log('Sample Log Entry:', logData.logs[0]);
-            }
-
             const qData = parseQValuesFromLogs(logData);
-            console.log('Parsed Q-Data:', qData);
 
-            // Sort by combined signal strength
-            const sorted = Object.entries(qData)
-                .map(([pair, d]) => {
-                    const s1norm = normalizeQ(d.s1_adv || 0, 'short_1');
-                    const s2norm = normalizeQ(d.s2_adv || 0, 'short_2');
-                    const s1thr = computeThreshold('short_1', eps ? eps.epsEffS : BASE_EPSILON_SHORT);
-                    const s2thr = computeThreshold('short_2', eps ? eps.epsEffS : BASE_EPSILON_SHORT);
-                    return {
-                        pair, s1_adv: d.s1_adv || 0, s2_adv: d.s2_adv || 0,
-                        s1norm, s2norm,
-                        s1vote: (d.s1_adv || 0) > s1thr,
-                        s2vote: (d.s2_adv || 0) > s2thr,
-                        combined: s1norm + s2norm
-                    };
-                })
-                .sort((a, b) => b.combined - a.combined)
-                .slice(0, 5);
+            console.log('Parsed Split Q-Data:', qData);
 
-            if (sorted.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No Q-value data in recent logs. Signals will appear after strategy processes pairs.</td></tr>';
-                return;
+            function renderSide(side, data, epsVal, tbodyId) {
+                const tbody = document.getElementById(tbodyId);
+                const sorted = Object.entries(data)
+                    .map(([pair, d]) => {
+                        const m1 = side + '_1', m2 = side + '_2';
+                        const n1 = normalizeQ(d.s1_adv || 0, m1);
+                        const n2 = normalizeQ(d.s2_adv || 0, m2);
+                        const thr1 = computeThreshold(m1, epsVal);
+                        const thr2 = computeThreshold(m2, epsVal);
+                        return {
+                            pair, s1_adv: d.s1_adv || 0, s2_adv: d.s2_adv || 0,
+                            n1, n2,
+                            v1: (d.s1_adv || 0) > thr1,
+                            v2: (d.s2_adv || 0) > thr2,
+                            combined: n1 + n2
+                        };
+                    })
+                    .sort((a, b) => b.combined - a.combined)
+                    .slice(0, 5);
+
+                if (sorted.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No ${side.toUpperCase()} signals found in logs.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = sorted.map((d, i) => {
+                    const pairShort = d.pair.replace('/USDT:USDT', '').replace('/USDT', '');
+                    return `<tr>
+                        <td style="color:var(--text-muted);font-weight:600;">#${i + 1}</td>
+                        <td class="pair-name">${pairShort}</td>
+                        <td><span class="q-val">${d.s1_adv.toFixed(6)}</span></td>
+                        <td>
+                            <div class="q-bar"><div class="q-bar-fill" style="width:${(d.n1 * 100).toFixed(0)}%"></div></div>
+                            <span style="font-size:10px;color:var(--text-muted);">${(d.n1 * 100).toFixed(0)}%</span>
+                        </td>
+                        <td><span class="vote-tag ${d.v1 ? 'yes' : 'no'}">${d.v1 ? '🟢 VOTE' : 'NO'}</span></td>
+                        <td><span class="q-val">${d.s2_adv.toFixed(6)}</span></td>
+                        <td>
+                            <div class="q-bar"><div class="q-bar-fill" style="width:${(d.n2 * 100).toFixed(0)}%"></div></div>
+                            <span style="font-size:10px;color:var(--text-muted);">${(d.n2 * 100).toFixed(0)}%</span>
+                        </td>
+                        <td><span class="vote-tag ${d.v2 ? 'yes' : 'no'}">${d.v2 ? '🟢 VOTE' : 'NO'}</span></td>
+                        <td style="font-weight:700;color:var(--accent-cyan);">${(d.combined * 100).toFixed(0)}%</td>
+                    </tr>`;
+                }).join('');
             }
 
-            tbody.innerHTML = sorted.map((d, i) => {
-                const pairShort = d.pair.replace('/USDT:USDT', '').replace('/USDT', '');
-                return `<tr>
-      <td style="color:var(--text-muted);font-weight:600;">${i + 1}</td>
-      <td class="pair-name">${pairShort}</td>
-      <td><span class="q-val">${d.s1_adv.toFixed(6)}</span></td>
-      <td>
-        <div class="q-bar"><div class="q-bar-fill" style="width:${(d.s1norm * 100).toFixed(0)}%"></div></div>
-        <span style="font-size:10px;color:var(--text-muted);">${(d.s1norm * 100).toFixed(0)}%</span>
-      </td>
-      <td><span class="vote-tag ${d.s1vote ? 'yes' : 'no'}">${d.s1vote ? '🟢 VOTE' : 'NO'}</span></td>
-      <td><span class="q-val">${d.s2_adv.toFixed(6)}</span></td>
-      <td>
-        <div class="q-bar"><div class="q-bar-fill" style="width:${(d.s2norm * 100).toFixed(0)}%"></div></div>
-        <span style="font-size:10px;color:var(--text-muted);">${(d.s2norm * 100).toFixed(0)}%</span>
-      </td>
-      <td><span class="vote-tag ${d.s2vote ? 'yes' : 'no'}">${d.s2vote ? '🟢 VOTE' : 'NO'}</span></td>
-      <td style="font-weight:700;color:var(--accent-purple);">${(d.combined * 100).toFixed(0)}%</td>
-    </tr>`;
-            }).join('');
+            renderSide('long', qData.long, epsL, 'qTableBodyLong');
+            renderSide('short', qData.short, epsS, 'qTableBodyShort');
         }
 
         function parseQValuesFromLogs(logData) {
-            const result = {};
+            const result = { long: {}, short: {} };
             if (!logData || !logData.logs) return result;
 
-            // Robust Regex: matches "Pair [S1/S2]: adv=..." anywhere in the line
-            const qRegex = /([\w\d\/-]+(:[\w\d]+)?)\s+S([12]):\s+adv=([+-]?[\d.eE]+)/i;
+            // Robust Regex: matches "Pair [LS][12]: adv=..." anywhere in the line
+            const qRegex = /([\w\d\/-]+(:[\w\d]+)?)\s+([LS])([12]):\s+adv=([+-]?[\d.eE]+)/i;
 
             for (const logEntry of logData.logs) {
-                // message is usually logEntry[4], but we search the whole joined array if needed
                 const msg = Array.isArray(logEntry) ? logEntry.join(' ') : String(logEntry);
-
                 const m = qRegex.exec(msg);
                 if (m) {
                     const pair = m[1];
-                    const sensorIdx = m[3]; // "1" or "2"
-                    const val = parseFloat(m[4]);
+                    const type = m[3].toUpperCase() === 'L' ? 'long' : 'short';
+                    const sensorIdx = m[4]; // "1" or "2"
+                    const val = parseFloat(m[5]);
 
-                    if (!result[pair]) result[pair] = {};
-                    if (sensorIdx === "1") result[pair].s1_adv = val;
-                    if (sensorIdx === "2") result[pair].s2_adv = val;
+                    if (!result[type][pair]) result[type][pair] = {};
+                    if (sensorIdx === "1") result[type][pair].s1_adv = val;
+                    if (sensorIdx === "2") result[type][pair].s2_adv = val;
                 }
             }
             return result;
@@ -1202,7 +1241,7 @@
 
             updatePnl(profit, openTrades);
             updateSlots(openTrades, config);
-            updateRegime(openTrades);
+            updateRegime(openTrades, config);
             const eps = updateEpsilon(openTrades);
             await updateQValues(openTrades, eps);
 
