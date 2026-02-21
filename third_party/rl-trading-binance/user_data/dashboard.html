@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RL Trading Dashboard — D3QN Ensemble</title>
+    <meta name="description" content="Real-time monitoring dashboard for D3QN RL Trading ensemble strategy">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: rgba(15, 20, 35, 0.85);
+            --bg-card-hover: rgba(20, 28, 50, 0.95);
+            --border: rgba(99, 102, 241, 0.15);
+            --border-active: rgba(99, 102, 241, 0.4);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #6366f1;
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a78bfa;
+            --green: #10b981;
+            --green-glow: rgba(16, 185, 129, 0.25);
+            --red: #ef4444;
+            --red-glow: rgba(239, 68, 68, 0.25);
+            --yellow: #f59e0b;
+            --yellow-glow: rgba(245, 158, 11, 0.2);
+            --orange: #f97316;
+            --gradient-1: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+            --gradient-green: linear-gradient(135deg, #059669, #10b981);
+            --gradient-red: linear-gradient(135deg, #dc2626, #ef4444);
+            --gradient-bear: linear-gradient(135deg, #be185d, #e11d48);
+            --gradient-bull: linear-gradient(135deg, #047857, #10b981);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --shadow-glow-blue: 0 0 20px rgba(99, 102, 241, 0.15);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 15% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 85% 90%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(34, 211, 238, 0.03) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 0 24px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: var(--gradient-1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .header h1 span {
+            color: var(--accent-blue);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--green);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .update-timer {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .status-badge.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.25);
+            color: var(--red);
+        }
+
+        .status-badge.error .status-dot {
+            background: var(--red);
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 18px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px;
+            position: relative;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .card:hover {
+            border-color: var(--border-active);
+            box-shadow: var(--shadow-glow-blue);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .card-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .card-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        /* Span configs */
+        .col-3 {
+            grid-column: span 3;
+        }
+
+        .col-4 {
+            grid-column: span 4;
+        }
+
+        .col-6 {
+            grid-column: span 6;
+        }
+
+        .col-12 {
+            grid-column: span 12;
+        }
+
+        /* Big Number */
+        .big-number {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -1.5px;
+            line-height: 1;
+            margin: 4px 0 8px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .big-number.positive {
+            color: var(--green);
+        }
+
+        .big-number.negative {
+            color: var(--red);
+        }
+
+        .sub-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Slot Bar */
+        .slot-bar-container {
+            margin-top: 14px;
+        }
+
+        .slot-bar {
+            height: 28px;
+            border-radius: 14px;
+            display: flex;
+            overflow: hidden;
+            background: rgba(30, 40, 60, 0.6);
+            border: 1px solid var(--border);
+        }
+
+        .slot-long {
+            background: linear-gradient(90deg, #059669, #10b981);
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fff;
+            min-width: 40px;
+        }
+
+        .slot-short {
+            background: linear-gradient(90deg, #e11d48, #f43f5e);
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fff;
+            min-width: 40px;
+            flex: 1;
+        }
+
+        .slot-legend {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .slot-legend .long-label {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .slot-legend .short-label {
+            color: var(--red);
+            font-weight: 600;
+        }
+
+        .slot-legend span.muted {
+            color: var(--text-muted);
+        }
+
+        /* Regime Badge */
+        .regime-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-height: 100px;
+        }
+
+        .regime-badge {
+            padding: 10px 28px;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            transition: all 0.5s ease;
+        }
+
+        .regime-badge.bull {
+            background: rgba(16, 185, 129, 0.15);
+            border: 2px solid var(--green);
+            color: var(--green);
+            box-shadow: 0 0 24px var(--green-glow);
+        }
+
+        .regime-badge.bear {
+            background: rgba(239, 68, 68, 0.15);
+            border: 2px solid var(--red);
+            color: var(--red);
+            box-shadow: 0 0 24px var(--red-glow);
+        }
+
+        .regime-badge.neutral {
+            background: rgba(245, 158, 11, 0.12);
+            border: 2px solid var(--yellow);
+            color: var(--yellow);
+        }
+
+        .regime-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Epsilon Gauge */
+        .epsilon-gauge {
+            margin-top: 8px;
+        }
+
+        .gauge-track {
+            position: relative;
+            height: 12px;
+            background: rgba(30, 40, 60, 0.8);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .gauge-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.8s ease, background 0.5s ease;
+        }
+
+        .gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .epsilon-value {
+            font-size: 32px;
+            font-weight: 800;
+            margin: 4px 0;
+            letter-spacing: -1px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .epsilon-mode {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            display: inline-block;
+            margin-top: 4px;
+        }
+
+        .epsilon-mode.aggressive {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .epsilon-mode.defensive {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .epsilon-mode.normal {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--accent-blue);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+        }
+
+        /* Q-values table */
+        .q-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 4px;
+        }
+
+        .q-table th {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 6px 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .q-table td {
+            padding: 8px 10px;
+            font-size: 13px;
+            font-weight: 500;
+            background: rgba(15, 20, 35, 0.4);
+            vertical-align: middle;
+        }
+
+        .q-table tr td:first-child {
+            border-radius: 8px 0 0 8px;
+        }
+
+        .q-table tr td:last-child {
+            border-radius: 0 8px 8px 0;
+        }
+
+        .q-table .pair-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .q-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(30, 40, 60, 0.8);
+            overflow: hidden;
+            min-width: 80px;
+        }
+
+        .q-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s ease;
+            background: var(--gradient-1);
+        }
+
+        .q-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .vote-tag {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .vote-tag.yes {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--green);
+        }
+
+        .vote-tag.no {
+            background: rgba(100, 116, 139, 0.15);
+            color: var(--text-muted);
+        }
+
+        /* PnL Cards */
+        .pnl-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .pnl-item {
+            flex: 1;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            background: rgba(15, 20, 35, 0.5);
+        }
+
+        .pnl-item .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.8px;
+        }
+
+        .pnl-item .value {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 2px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Active trades mini-list */
+        .active-shorts-count {
+            font-size: 48px;
+            font-weight: 900;
+            color: var(--red);
+            text-shadow: 0 0 30px var(--red-glow);
+        }
+
+        .active-longs-count {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--green);
+        }
+
+        /* Drawdown bar */
+        .dd-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .dd-item {
+            flex: 1;
+        }
+
+        .dd-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .dd-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 80px;
+        }
+
+        .spinner {
+            width: 28px;
+            height: 28px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Fade in animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card {
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        .card:nth-child(2) {
+            animation-delay: 0.05s;
+        }
+
+        .card:nth-child(3) {
+            animation-delay: 0.1s;
+        }
+
+        .card:nth-child(4) {
+            animation-delay: 0.15s;
+        }
+
+        .card:nth-child(5) {
+            animation-delay: 0.2s;
+        }
+
+        /* Responsive */
+        @media (max-width: 1100px) {
+            .col-3 {
+                grid-column: span 6;
+            }
+
+            .col-4 {
+                grid-column: span 6;
+            }
+        }
+
+        @media (max-width: 700px) {
+
+            .col-3,
+            .col-4,
+            .col-6 {
+                grid-column: span 12;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .big-number {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">RL</div>
+                <h1><span>D3QN</span> Ensemble Dashboard</h1>
+            </div>
+            <div class="header-right">
+                <div class="status-badge" id="statusBadge">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Connecting…</span>
+                </div>
+                <div class="update-timer" id="timer">--:--</div>
+            </div>
+        </header>
+
+        <!-- Main Grid -->
+        <div class="grid">
+
+            <!-- 1) Total PnL -->
+            <div class="card col-3" id="pnlCard">
+                <div class="card-header">
+                    <span class="card-title">Total PnL USDT</span>
+                    <div class="card-icon">💰</div>
+                </div>
+                <div class="big-number" id="totalPnl">--</div>
+                <div class="sub-label">Unrealized + Realized</div>
+                <div class="pnl-row" style="margin-top:14px;">
+                    <div class="pnl-item">
+                        <div class="label">Unrealized</div>
+                        <div class="value" id="unrealizedPnl">--</div>
+                    </div>
+                    <div class="pnl-item">
+                        <div class="label">Realized</div>
+                        <div class="value" id="realizedPnl">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2) Dynamic Slots -->
+            <div class="card col-3" id="slotsCard">
+                <div class="card-header">
+                    <span class="card-title">Dynamic Slots</span>
+                    <div class="card-icon">🎰</div>
+                </div>
+                <div style="display:flex; align-items:baseline; gap:12px;">
+                    <div>
+                        <div class="sub-label">Active SHORT</div>
+                        <div class="active-shorts-count" id="activeShorts">--</div>
+                    </div>
+                    <div>
+                        <div class="sub-label">Active LONG</div>
+                        <div class="active-longs-count" id="activeLongs">--</div>
+                    </div>
+                </div>
+                <div class="slot-bar-container">
+                    <div class="slot-bar">
+                        <div class="slot-long" id="slotLong" style="width:50%;">L:50</div>
+                        <div class="slot-short" id="slotShort">S:50</div>
+                    </div>
+                    <div class="slot-legend">
+                        <span class="long-label" id="slotLongLabel">LONG: 50</span>
+                        <span class="muted" id="slotTotal">/ 100 total</span>
+                        <span class="short-label" id="slotShortLabel">SHORT: 50</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3) BTC Supertrend Regime -->
+            <div class="card col-3" id="regimeCard">
+                <div class="card-header">
+                    <span class="card-title">BTC/USDT Supertrend 15m</span>
+                    <div class="card-icon">📡</div>
+                </div>
+                <div class="regime-indicator">
+                    <div class="regime-badge neutral" id="regimeBadge">--</div>
+                    <div class="regime-sub" id="regimeSub">Waiting for data…</div>
+                </div>
+            </div>
+
+            <!-- 4) Dynamic Epsilon -->
+            <div class="card col-3" id="epsilonCard">
+                <div class="card-header">
+                    <span class="card-title">Drawdown → Epsilon</span>
+                    <div class="card-icon">⚡</div>
+                </div>
+                <div class="epsilon-value" id="epsilonVal">0.500</div>
+                <div class="epsilon-mode normal" id="epsilonMode">NORMAL</div>
+                <div class="epsilon-gauge">
+                    <div class="gauge-track">
+                        <div class="gauge-fill" id="epsilonFill" style="width:50%; background: var(--gradient-1);">
+                        </div>
+                    </div>
+                    <div class="gauge-labels"><span>0.0</span><span>Base 0.5</span><span>1.0</span></div>
+                </div>
+                <div class="dd-row">
+                    <div class="dd-item">
+                        <div class="dd-label">DD Long</div>
+                        <div class="dd-val" id="ddLong">0.0%</div>
+                    </div>
+                    <div class="dd-item">
+                        <div class="dd-label">DD Short</div>
+                        <div class="dd-val" id="ddShort">0.0%</div>
+                    </div>
+                    <div class="dd-item">
+                        <div class="dd-label">Eps Long</div>
+                        <div class="dd-val" id="epsLong">0.500</div>
+                    </div>
+                    <div class="dd-item">
+                        <div class="dd-label">Eps Short</div>
+                        <div class="dd-val" id="epsShort">0.500</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5) Q-Values Table: SHORT_1 + SHORT_2 Top-5 -->
+            <div class="card col-12" id="qValCard">
+                <div class="card-header">
+                    <span class="card-title">SHORT_1 + SHORT_2 Q-Values — Top 5 by Signal Strength</span>
+                    <div class="card-icon">🧠</div>
+                </div>
+                <table class="q-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Pair</th>
+                            <th>S1 Advantage</th>
+                            <th>S1 Norm</th>
+                            <th>S1 Vote</th>
+                            <th>S2 Advantage</th>
+                            <th>S2 Norm</th>
+                            <th>S2 Vote</th>
+                            <th>Combined</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qTableBody">
+                        <tr>
+                            <td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div><!-- /grid -->
+    </div><!-- /app -->
+
+    <script>
+        // ====================== CONFIG ======================
+        // When served via dashboard_server.py proxy, use relative path
+        // When opened directly (file://), fall back to absolute URL
+        const API_BASE = (location.protocol === 'file:')
+            ? 'http://127.0.0.1:8080/api/v1'
+            : '/api/v1';
+        const USERNAME = 'freqtrader';
+        const PASSWORD = 'Pr0ducti0n';
+        const REFRESH_INTERVAL = 60; // seconds
+
+        // Q-normalization from config
+        const Q_NORM = {
+            short_1: { q_min: 7.6e-05, q_max: 0.000573 },
+            short_2: { q_min: 0.000114, q_max: 0.00069 }
+        };
+        const BASE_EPSILON_SHORT = 0.5;
+
+        let authToken = null;
+        let countdown = REFRESH_INTERVAL;
+        let timerInterval = null;
+
+        // ====================== AUTH ======================
+        const AUTH_HEADER = 'Basic ' + btoa(USERNAME + ':' + PASSWORD);
+
+        function authHeaders() {
+            return {
+                'Authorization': AUTH_HEADER,
+                'Content-Type': 'application/json'
+            };
+        }
+
+        async function apiFetch(endpoint) {
+            try {
+                const resp = await fetch(`${API_BASE}${endpoint}`, { headers: authHeaders() });
+                if (!resp.ok) {
+                    if (resp.status === 401) {
+                        setStatus(false, 'Auth Failed (401)');
+                    }
+                    throw new Error(`API ${endpoint}: ${resp.status}`);
+                }
+                return await resp.json();
+            } catch (e) {
+                console.error(`apiFetch(${endpoint}):`, e);
+                return null;
+            }
+        }
+
+        // ====================== STATUS ======================
+        function setStatus(ok, text) {
+            const badge = document.getElementById('statusBadge');
+            const span = document.getElementById('statusText');
+            badge.className = ok ? 'status-badge' : 'status-badge error';
+            span.textContent = text;
+        }
+
+        // ====================== UPDATE FUNCTIONS ======================
+
+        function formatUSD(val) {
+            if (val == null || isNaN(val)) return '--';
+            const sign = val >= 0 ? '+' : '';
+            return sign + val.toFixed(2);
+        }
+
+        function normalizeQ(adv, modelName) {
+            const cfg = Q_NORM[modelName];
+            if (!cfg || cfg.q_max <= cfg.q_min) return 0;
+            return Math.max(0, Math.min(1, (adv - cfg.q_min) / (cfg.q_max - cfg.q_min)));
+        }
+
+        function computeThreshold(modelName, effEpsilon) {
+            const cfg = Q_NORM[modelName];
+            if (!cfg) return 0;
+            return cfg.q_min + (cfg.q_max - cfg.q_min) * effEpsilon;
+        }
+
+        // (1) PnL
+        function updatePnl(profit, openTrades) {
+            // Unrealized from open trades
+            let unrealized = 0;
+            if (openTrades && Array.isArray(openTrades)) {
+                for (const t of openTrades) {
+                    unrealized += (t.profit_abs || 0);
+                }
+            }
+
+            // Realized from profit endpoint
+            let realized = 0;
+            if (profit) {
+                realized = profit.profit_closed_coin || profit.profit_all_coin || 0;
+            }
+
+            const total = unrealized + realized;
+            const el = document.getElementById('totalPnl');
+            el.textContent = formatUSD(total);
+            el.className = 'big-number ' + (total >= 0 ? 'positive' : 'negative');
+
+            const uel = document.getElementById('unrealizedPnl');
+            uel.textContent = formatUSD(unrealized);
+            uel.style.color = unrealized >= 0 ? 'var(--green)' : 'var(--red)';
+
+            const rel = document.getElementById('realizedPnl');
+            rel.textContent = formatUSD(realized);
+            rel.style.color = realized >= 0 ? 'var(--green)' : 'var(--red)';
+        }
+
+        // (2) Dynamic Slots + Active trades
+        function updateSlots(openTrades, config) {
+            let activeLongs = 0, activeShorts = 0;
+            if (openTrades && Array.isArray(openTrades)) {
+                for (const t of openTrades) {
+                    if (t.is_short) activeShorts++; else activeLongs++;
+                }
+            }
+
+            document.getElementById('activeShorts').textContent = activeShorts;
+            document.getElementById('activeLongs').textContent = activeLongs;
+
+            // Dynamic slots from strategy state (we calculate from config)
+            const totalSlots = (config && config.max_open_trades) || 100;
+            const dsConfig = (config && config.dynamic_slots) || {};
+            const minPerSide = dsConfig.min_slots_per_side || 20;
+
+            // We estimate slot allocation from trade count ratio
+            const total = activeLongs + activeShorts;
+            let longSlots, shortSlots;
+            if (total === 0) {
+                longSlots = totalSlots / 2;
+                shortSlots = totalSlots / 2;
+            } else {
+                // Approximate: use active trade ratio to estimate slot allocation
+                const longRatio = activeLongs / Math.max(total, 1);
+                const available = totalSlots - 2 * minPerSide;
+                longSlots = Math.max(minPerSide, Math.min(totalSlots - minPerSide, minPerSide + Math.round(available * longRatio)));
+                shortSlots = totalSlots - longSlots;
+            }
+
+            const longPct = (longSlots / totalSlots * 100).toFixed(0);
+            document.getElementById('slotLong').style.width = longPct + '%';
+            document.getElementById('slotLong').textContent = `L:${longSlots}`;
+            document.getElementById('slotShort').textContent = `S:${shortSlots}`;
+            document.getElementById('slotLongLabel').textContent = `LONG: ${longSlots}`;
+            document.getElementById('slotShortLabel').textContent = `SHORT: ${shortSlots}`;
+            document.getElementById('slotTotal').textContent = `/ ${totalSlots} total`;
+        }
+
+        // (3) Regime
+        function updateRegime(openTrades) {
+            // We'll derive regime from the pair_whitelist data for BTC/USDT
+            // Since freqtrade API doesn't expose st_regime directly, we parse from logs
+            // or alternatively, we check if BTC/USDT has a current open trade direction
+            // as a proxy. A more reliable approach: parse the analyzed dataframe via /pair_candles
+
+            const badge = document.getElementById('regimeBadge');
+            const sub = document.getElementById('regimeSub');
+
+            // We'll use the /pair_candles endpoint to get BTC Supertrend
+            fetchBTCRegime().then(regime => {
+                if (regime === 1) {
+                    badge.className = 'regime-badge bull';
+                    badge.textContent = '🟢 BULL';
+                    sub.textContent = 'Supertrend 15m: Uptrend — LONG allowed';
+                } else if (regime === -1) {
+                    badge.className = 'regime-badge bear';
+                    badge.textContent = '🔴 BEAR';
+                    sub.textContent = 'Supertrend 15m: Downtrend — SHORT favored';
+                } else {
+                    badge.className = 'regime-badge neutral';
+                    badge.textContent = '⏳ N/A';
+                    sub.textContent = 'Regime data unavailable';
+                }
+            });
+        }
+
+        async function fetchBTCRegime() {
+            // Try to get /pair_candles for BTC/USDT 15m
+            try {
+                const data = await apiFetch('/pair_candles?pair=BTC/USDT:USDT&timeframe=15m&limit=3');
+                if (data && data.data && data.data.length > 0) {
+                    const last = data.data[data.data.length - 1];
+                    // st_regime_15m or st_regime column
+                    if ('st_regime' in last) return last.st_regime;
+                    if ('st_regime_15m' in last) return last.st_regime_15m;
+                }
+                // Fallback: try analyzed_dataframe columns from 1m data
+                const data1m = await apiFetch('/pair_candles?pair=BTC/USDT:USDT&timeframe=1m&limit=3&columns=st_regime_15m');
+                if (data1m && data1m.data && data1m.data.length > 0) {
+                    const last = data1m.data[data1m.data.length - 1];
+                    if ('st_regime_15m' in last) return last.st_regime_15m;
+                }
+            } catch (e) {
+                console.error('Regime fetch error:', e);
+            }
+            return 0;
+        }
+
+        // (4) Dynamic Epsilon
+        function updateEpsilon(openTrades) {
+            // Calculate unrealized PnL per side
+            let pnlLong = 0, pnlShort = 0;
+            if (openTrades && Array.isArray(openTrades)) {
+                for (const t of openTrades) {
+                    const p = t.profit_abs || 0;
+                    if (t.is_short) pnlShort += p; else pnlLong += p;
+                }
+            }
+
+            // Approximate drawdown (we keep a running max in localStorage)
+            const stored = JSON.parse(localStorage.getItem('rl_dash_equity') || '{}');
+            const eqMaxL = Math.max(stored.eqMaxL || 0, pnlLong);
+            const eqMaxS = Math.max(stored.eqMaxS || 0, pnlShort);
+
+            // Reset if no trades
+            const hasOpen = openTrades && openTrades.length > 0;
+            const finalEqMaxL = hasOpen ? eqMaxL : 0;
+            const finalEqMaxS = hasOpen ? eqMaxS : 0;
+
+            localStorage.setItem('rl_dash_equity', JSON.stringify({ eqMaxL: finalEqMaxL, eqMaxS: finalEqMaxS }));
+
+            const ddLong = finalEqMaxL > 0 ? Math.max(0, (finalEqMaxL - pnlLong) / finalEqMaxL) : 0;
+            const ddShort = finalEqMaxS > 0 ? Math.max(0, (finalEqMaxS - pnlShort) / finalEqMaxS) : 0;
+
+            const k = 0.5; // dd_aggression_k
+            const epsTargetL = BASE_EPSILON_SHORT * (1.0 + k * ddLong);
+            const epsTargetS = BASE_EPSILON_SHORT * (1.0 + k * ddShort);
+            const epsEffL = Math.min(1.0, Math.max(0.1, epsTargetL));
+            const epsEffS = Math.min(1.0, Math.max(0.1, epsTargetS));
+            const epsEff = 0.5 * (epsEffL + epsEffS);
+
+            document.getElementById('epsilonVal').textContent = epsEff.toFixed(3);
+            document.getElementById('epsLong').textContent = epsEffL.toFixed(3);
+            document.getElementById('epsShort').textContent = epsEffS.toFixed(3);
+            document.getElementById('ddLong').textContent = (ddLong * 100).toFixed(1) + '%';
+            document.getElementById('ddShort').textContent = (ddShort * 100).toFixed(1) + '%';
+
+            // Fill gauge
+            const fill = document.getElementById('epsilonFill');
+            fill.style.width = (epsEff * 100) + '%';
+
+            const modeEl = document.getElementById('epsilonMode');
+            if (epsEff > 0.65) {
+                modeEl.textContent = '🛡️ DEFENSIVE';
+                modeEl.className = 'epsilon-mode defensive';
+                fill.style.background = 'var(--gradient-green)';
+            } else if (epsEff < 0.45) {
+                modeEl.textContent = '🔥 AGGRESSIVE';
+                modeEl.className = 'epsilon-mode aggressive';
+                fill.style.background = 'var(--gradient-red)';
+            } else {
+                modeEl.textContent = '⚖️ NORMAL';
+                modeEl.className = 'epsilon-mode normal';
+                fill.style.background = 'var(--gradient-1)';
+            }
+
+            return { epsEffL, epsEffS };
+        }
+
+        // (5) Q-values table
+        async function updateQValues(openTrades, eps) {
+            const tbody = document.getElementById('qTableBody');
+
+            // Collect Q-value data from logs or approximate from open short trades' profit signals
+            // Since freqtrade API exposes /pair_candles with analyzed data, we'll scan pairs
+            // For performance: scan active short trades + top whitelist pairs
+            const pairsToCheck = new Set();
+
+            // Add currently open short trades
+            if (openTrades) {
+                openTrades.filter(t => t.is_short).forEach(t => pairsToCheck.add(t.pair));
+            }
+
+            // Add some high-activity pairs from whitelist (limited for performance)
+            const topPairs = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'DOGE/USDT:USDT',
+                'XRP/USDT:USDT', 'ADA/USDT:USDT', 'AVAX/USDT:USDT', 'LINK/USDT:USDT',
+                'DOT/USDT:USDT', 'ARB/USDT:USDT'];
+            topPairs.forEach(p => pairsToCheck.add(p));
+
+            // Fetch more logs to ensure we don't miss strategy outputs
+            const logData = await apiFetch('/logs?limit=1000');
+            const qData = parseQValuesFromLogs(logData);
+
+            console.log('Parsed Q-Data:', qData); // Debugging
+
+            // Sort by combined signal strength
+            const sorted = Object.entries(qData)
+                .map(([pair, d]) => {
+                    const s1norm = normalizeQ(d.s1_adv || 0, 'short_1');
+                    const s2norm = normalizeQ(d.s2_adv || 0, 'short_2');
+                    const s1thr = computeThreshold('short_1', eps ? eps.epsEffS : BASE_EPSILON_SHORT);
+                    const s2thr = computeThreshold('short_2', eps ? eps.epsEffS : BASE_EPSILON_SHORT);
+                    return {
+                        pair, s1_adv: d.s1_adv || 0, s2_adv: d.s2_adv || 0,
+                        s1norm, s2norm,
+                        s1vote: (d.s1_adv || 0) > s1thr,
+                        s2vote: (d.s2_adv || 0) > s2thr,
+                        combined: s1norm + s2norm
+                    };
+                })
+                .sort((a, b) => b.combined - a.combined)
+                .slice(0, 5);
+
+            if (sorted.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No Q-value data in recent logs. Signals will appear after strategy processes pairs.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = sorted.map((d, i) => {
+                const pairShort = d.pair.replace('/USDT:USDT', '').replace('/USDT', '');
+                return `<tr>
+      <td style="color:var(--text-muted);font-weight:600;">${i + 1}</td>
+      <td class="pair-name">${pairShort}</td>
+      <td><span class="q-val">${d.s1_adv.toFixed(6)}</span></td>
+      <td>
+        <div class="q-bar"><div class="q-bar-fill" style="width:${(d.s1norm * 100).toFixed(0)}%"></div></div>
+        <span style="font-size:10px;color:var(--text-muted);">${(d.s1norm * 100).toFixed(0)}%</span>
+      </td>
+      <td><span class="vote-tag ${d.s1vote ? 'yes' : 'no'}">${d.s1vote ? '🟢 VOTE' : 'NO'}</span></td>
+      <td><span class="q-val">${d.s2_adv.toFixed(6)}</span></td>
+      <td>
+        <div class="q-bar"><div class="q-bar-fill" style="width:${(d.s2norm * 100).toFixed(0)}%"></div></div>
+        <span style="font-size:10px;color:var(--text-muted);">${(d.s2norm * 100).toFixed(0)}%</span>
+      </td>
+      <td><span class="vote-tag ${d.s2vote ? 'yes' : 'no'}">${d.s2vote ? '🟢 VOTE' : 'NO'}</span></td>
+      <td style="font-weight:700;color:var(--accent-purple);">${(d.combined * 100).toFixed(0)}%</td>
+    </tr>`;
+            }).join('');
+        }
+
+        function parseQValuesFromLogs(logData) {
+            const result = {};
+            if (!logData || !logData.logs) return result;
+
+            // Updated Regex: handles optional spaces and different pair formats
+            const s1Regex = /([\w\d\/-]+(:[\w\d]+)?)\s+S1:\s+adv=([\d.eE+--]+)/i;
+            const s2Regex = /([\w\d\/-]+(:[\w\d]+)?)\s+S2:\s+adv=([\d.eE+--]+)/i;
+
+            for (const logEntry of logData.logs) {
+                // logEntry is [timestamp, epoch, logger, level, message]
+                const msg = logEntry[4] || logEntry[3] || '';
+
+                let m = s1Regex.exec(msg);
+                if (m) {
+                    const pair = m[1];
+                    if (!result[pair]) result[pair] = {};
+                    result[pair].s1_adv = parseFloat(m[3]);
+                    console.log(`Matched S1 for ${pair}: ${m[3]}`);
+                }
+
+                m = s2Regex.exec(msg);
+                if (m) {
+                    const pair = m[1];
+                    if (!result[pair]) result[pair] = {};
+                    result[pair].s2_adv = parseFloat(m[3]);
+                    console.log(`Matched S2 for ${pair}: ${m[3]}`);
+                }
+            }
+            return result;
+        }
+
+        // ====================== MAIN LOOP ======================
+        async function refreshAll() {
+            setStatus(true, 'Updating…');
+
+            const [openTrades, profit, config] = await Promise.all([
+                apiFetch('/status'),
+                apiFetch('/profit'),
+                apiFetch('/show_config')
+            ]);
+
+            if (!openTrades && !profit) {
+                setStatus(false, 'API Error');
+                return;
+            }
+
+            updatePnl(profit, openTrades);
+            updateSlots(openTrades, config);
+            updateRegime(openTrades);
+            const eps = updateEpsilon(openTrades);
+            await updateQValues(openTrades, eps);
+
+            setStatus(true, 'Live');
+            const now = new Date();
+            document.getElementById('timer').textContent =
+                `Updated ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        }
+
+        function startCountdown() {
+            countdown = REFRESH_INTERVAL;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                countdown--;
+                if (countdown <= 0) {
+                    refreshAll().then(() => { countdown = REFRESH_INTERVAL; });
+                }
+            }, 1000);
+        }
+
+        // ====================== INIT ======================
+        (async () => {
+            // Test connection with a ping/status call
+            const data = await apiFetch('/ping');
+            if (data) {
+                setStatus(true, 'Live');
+                await refreshAll();
+                startCountdown();
+            } else {
+                setStatus(false, 'API Connection Failed');
+            }
+        })();
+    </script>
+</body>
+
+</html>
