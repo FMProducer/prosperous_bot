@@ -978,19 +978,29 @@
             // Dynamic slots from strategy state (we calculate from config)
             const totalSlots = (config && config.max_open_trades) || 100;
             const dsConfig = (config && config.dynamic_slots) || {};
+            const isEnabled = dsConfig.enabled === true;
             const minPerSide = dsConfig.min_slots_per_side || 20;
 
             // We estimate slot allocation from trade count ratio
             const total = activeLongs + activeShorts;
             let longSlots, shortSlots;
-            if (total === 0) {
-                longSlots = totalSlots / 2;
-                shortSlots = totalSlots / 2;
+            
+            if (!isEnabled) {
+                longSlots = Math.floor(totalSlots / 2);
+                shortSlots = totalSlots - longSlots;
+            } else if (total === 0) {
+                longSlots = Math.floor(totalSlots / 2);
+                shortSlots = totalSlots - longSlots;
             } else {
                 // Approximate: use active trade ratio to estimate slot allocation
                 const longRatio = activeLongs / Math.max(total, 1);
                 const available = totalSlots - 2 * minPerSide;
-                longSlots = Math.max(minPerSide, Math.min(totalSlots - minPerSide, minPerSide + Math.round(available * longRatio)));
+                
+                if (available <= 0) {
+                    longSlots = Math.floor(totalSlots / 2);
+                } else {
+                    longSlots = Math.max(minPerSide, Math.min(totalSlots - minPerSide, minPerSide + Math.round(available * longRatio)));
+                }
                 shortSlots = totalSlots - longSlots;
             }
 
