@@ -741,22 +741,13 @@
             <!-- 3) BTC Supertrend Regime -->
             <div class="card col-3" id="regimeCard">
                 <div class="card-header">
-                    <span class="card-title">Market Regime (Double Filter)</span>
+                    <span class="card-title">Market Regime (BTC 15m)</span>
                     <div class="card-icon">📡</div>
                 </div>
-                <div class="regime-indicator" style="flex-direction: row; gap: 15px;">
-                    <div style="flex: 1; text-align: center;">
-                        <div class="regime-sub" style="margin-bottom: 5px;">GLOBAL (1h)</div>
-                        <div class="regime-badge neutral" id="regimeBadgeGlobal"
-                            style="padding: 10px 15px; font-size: 16px;">--</div>
-                    </div>
-                    <div style="flex: 1; text-align: center;">
-                        <div class="regime-sub" style="margin-bottom: 5px;">LOCAL (15m)</div>
-                        <div class="regime-badge neutral" id="regimeBadgeLocal"
-                            style="padding: 10px 15px; font-size: 16px;">--</div>
-                    </div>
+                <div class="regime-indicator">
+                    <div class="regime-badge neutral" id="regimeBadgeGlobal">--</div>
                 </div>
-                <div class="regime-sub" id="regimeSub" style="margin-top: 10px; text-align: center;">Waiting for data…
+                <div class="regime-sub" id="regimeSub" style="margin-top: 12px; text-align: center;">Waiting for data…
                 </div>
             </div>
 
@@ -795,10 +786,10 @@
                 </div>
             </div>
 
-            <!-- 5a) Q-Values Table: LONG_1 + LONG_2 Top-5 -->
+            <!-- 5a) Q-Values Table: LONG_1 + LONG_2 Top-3 -->
             <div class="card col-12" id="qValCardLong">
                 <div class="card-header">
-                    <span class="card-title">LONG_1 + LONG_2 Q-Values — Top 5 by Signal Strength</span>
+                    <span class="card-title">LONG_1 + LONG_2 Q-Values — Top 3 by Signal Strength</span>
                     <div class="card-icon">📈</div>
                 </div>
                 <table class="q-table">
@@ -823,10 +814,10 @@
                 </table>
             </div>
 
-            <!-- 5b) Q-Values Table: SHORT_1 + SHORT_2 Top-5 -->
+            <!-- 5b) Q-Values Table: SHORT_1 + SHORT_2 Top-3 -->
             <div class="card col-12" id="qValCardShort">
                 <div class="card-header">
-                    <span class="card-title">SHORT_1 + SHORT_2 Q-Values — Top 5 by Signal Strength</span>
+                    <span class="card-title">SHORT_1 + SHORT_2 Q-Values — Top 3 by Signal Strength</span>
                     <div class="card-icon">🧠</div>
                 </div>
                 <table class="q-table">
@@ -1028,10 +1019,8 @@
             // Fetch main timeframe candles for the candidate pair (contains merged regimes)
             fetchRegimeData(candidatePair, mainTf).then(data => {
                 const bGlobal = document.getElementById('regimeBadgeGlobal');
-                const bLocal = document.getElementById('regimeBadgeLocal');
 
                 const global = data.st_regime_global || 0;
-                const local = data.st_regime_local || 0;
 
                 function updateBadge(badge, val) {
                     if (val > 0) {
@@ -1047,16 +1036,13 @@
                 }
 
                 if (bGlobal) updateBadge(bGlobal, global);
-                if (bLocal) updateBadge(bLocal, local);
 
-                if (global === 0 || local === 0) {
+                if (global === 0) {
                     sub.textContent = 'Waiting for data…';
-                } else if (global > 0 && local > 0) {
-                    sub.textContent = 'Market is Bullish (Double Entry OK)';
-                } else if (global < 0 && local < 0) {
-                    sub.textContent = 'Market is Bearish (Double Short OK)';
-                } else {
-                    sub.textContent = 'Conflict: Global/Local mismatched (Sideways/Trend Change)';
+                } else if (global > 0) {
+                    sub.textContent = 'BTC is bullish. Longs are prioritized.';
+                } else if (global < 0) {
+                    sub.textContent = 'BTC is bearish. Shorts are prioritized.';
                 }
             });
         }
@@ -1177,7 +1163,7 @@
                         };
                     })
                     .sort((a, b) => b.combined - a.combined)
-                    .slice(0, 5);
+                    .slice(0, 3);
 
                 if (sorted.length === 0) {
                     tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No ${side.toUpperCase()} signals found in logs.</td></tr>`;

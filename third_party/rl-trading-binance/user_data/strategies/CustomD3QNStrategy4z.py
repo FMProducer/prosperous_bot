@@ -89,7 +89,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
     # Информативный таймфрейм для режима рынка
     informative_timeframe = '15m'
-    informative_timeframe_global = '1h'
+    informative_timeframe_global = '15m'
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -340,7 +340,8 @@ class CustomD3QNStrategy4z(IStrategy):
         self.ensemble_cfg = config.get('rl_ensemble', {})
 
         # Включение/выключение regime-фильтра (Supertrend на 15m)
-        self.use_regime_filter: bool = self.ensemble_cfg.get('use_regime_filter', True)
+        self.use_global_regime_filter: bool = self.ensemble_cfg.get('use_global_regime_filter', True)
+        self.use_local_regime_filter: bool = self.ensemble_cfg.get('use_local_regime_filter', True)
 
         # Base epsilon from config (common legacy value)
         self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.15)
@@ -408,7 +409,10 @@ class CustomD3QNStrategy4z(IStrategy):
             'q_update_interval', config.get('q_update_interval', 14400)
         )
 
-        self.logger.info(f"[REGIME] Regime filter (Supertrend 15m) enabled: {self.use_regime_filter}")
+        self.logger.info(
+            f"[REGIME] Global Filter (BTC {self.informative_timeframe_global}): {'ON' if self.use_global_regime_filter else 'OFF'} | "
+            f"Local Filter (Pair 15m): {'ON' if self.use_local_regime_filter else 'OFF'}"
+        )
 
         self.logger.info(
             f"[ENSEMBLE] Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
@@ -591,8 +595,8 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 2. Подготовка базовых линий
         mid = (high + low) / 2.0
-        upperband_p = (mid + multiplier * atr).fillna(method='ffill').values
-        lowerband_p = (mid - multiplier * atr).fillna(method='ffill').values
+        upperband_p = (mid + multiplier * atr).ffill().values
+        lowerband_p = (mid - multiplier * atr).ffill().values
         close_p = close.values
         
         # 3. Основной цикл на NumPy (убираем .iloc, который сильно тормозит)
@@ -655,116 +659,118 @@ class CustomD3QNStrategy4z(IStrategy):
             st_period = int(self.supertrend_period.value)
             st_mult = float(self.supertrend_multiplier.value)
 
-            # --- GLOBAL REGIME (BTC 1h) ---
-            try:
-                inf_tf_global = self.informative_timeframe_global
-                btc_df = self.dp.get_pair_dataframe('BTC/USDT:USDT', inf_tf_global)
-                if btc_df is not None and not btc_df.empty:
-                    last_ts = str(btc_df['date'].iloc[-1])
-                    # Уникальный ключ кэша для глобального режима
-                    cache_key = ("GLOBAL", "BTC/USDT:USDT", inf_tf_global, last_ts)
-                    
-                    merge_df = None
-                    with self._global_regime_lock:
-                        if cache_key in self._global_regime_cache:
-                            merge_df = self._global_regime_cache[cache_key]
-                    
-                    if merge_df is None:
-                        # 1. Сначала вычисляем SuperTrend (Тяжелая операция)
-                        st_global = self._compute_supertrend(
-                            btc_df[['high', 'low', 'close']],
-                            period=st_period,
-                            multiplier=st_mult,
-                        )
-                        if not st_global.empty:
-                            # 2. Создаем временный DF для мерджа
-                            merge_df = btc_df[['date']].copy()
-                            merge_df['st_regime_global'] = st_global['st_dir'].values
-                            
-                            # Сохраняем в кэш
-                            with self._global_regime_lock:
-                                # Очистка старого кэша (чтобы не рос)
-                                if len(self._global_regime_cache) > 200:
-                                    self._global_regime_cache.clear()
-                                self._global_regime_cache[cache_key] = merge_df
-
-                    if merge_df is not None:
-                        # 3. Динамическая подстройка TZ (ВАЖНО для предотвращения падения)
-                        main_tz = dataframe['date'].dt.tz
-                        if merge_df['date'].dt.tz != main_tz:
-                            merge_df = merge_df.copy()
-                            if main_tz is None:
-                                merge_df['date'] = merge_df['date'].dt.tz_localize(None)
-                            else:
-                                if merge_df['date'].dt.tz is None:
-                                    merge_df['date'] = merge_df['date'].dt.tz_localize(main_tz)
-                                else:
-                                    merge_df['date'] = merge_df['date'].dt.tz_convert(main_tz)
-
-                        dataframe = merge_informative_pair(
-                            dataframe, merge_df, 
-                            self.timeframe, inf_tf_global, ffill=True
-                        )
+            # --- GLOBAL REGIME (BTC 15m) ---
+            if self.use_global_regime_filter:
+                try:
+                    inf_tf_global = self.informative_timeframe_global
+                    btc_df = self.dp.get_pair_dataframe('BTC/USDT:USDT', inf_tf_global)
+                    if btc_df is not None and not btc_df.empty:
+                        last_ts = str(btc_df['date'].iloc[-1])
+                        # Уникальный ключ кэша для глобального режима
+                        cache_key = ("GLOBAL", "BTC/USDT:USDT", inf_tf_global, last_ts)
                         
-                        # Извлекаем из колонки с суффиксом (напр. st_regime_global_1h)
-                        inf_col = f"st_regime_global_{inf_tf_global}"
-                        if inf_col in dataframe.columns:
-                            dataframe['st_regime_global'] = dataframe[inf_col].fillna(0).astype(np.int8)
-            except Exception as e:
-                self.logger.warning(f"Global regime calculation failed: {e}")
+                        merge_df = None
+                        with self._global_regime_lock:
+                            if cache_key in self._global_regime_cache:
+                                merge_df = self._global_regime_cache[cache_key]
+                        
+                        if merge_df is None:
+                            # 1. Сначала вычисляем SuperTrend (Тяжелая операция)
+                            st_global = self._compute_supertrend(
+                                btc_df[['high', 'low', 'close']],
+                                period=st_period,
+                                multiplier=st_mult,
+                            )
+                            if not st_global.empty:
+                                # 2. Создаем временный DF для мерджа
+                                merge_df = btc_df[['date']].copy()
+                                merge_df['st_regime_global'] = st_global['st_dir'].values
+                                
+                                # Сохраняем в кэш
+                                with self._global_regime_lock:
+                                    # Очистка старого кэша (чтобы не рос)
+                                    if len(self._global_regime_cache) > 200:
+                                        self._global_regime_cache.clear()
+                                    self._global_regime_cache[cache_key] = merge_df
+
+                        if merge_df is not None:
+                            # 3. Динамическая подстройка TZ (ВАЖНО для предотвращения падения)
+                            main_tz = dataframe['date'].dt.tz
+                            if merge_df['date'].dt.tz != main_tz:
+                                merge_df = merge_df.copy()
+                                if main_tz is None:
+                                    merge_df['date'] = merge_df['date'].dt.tz_localize(None)
+                                else:
+                                    if merge_df['date'].dt.tz is None:
+                                        merge_df['date'] = merge_df['date'].dt.tz_localize(main_tz)
+                                    else:
+                                        merge_df['date'] = merge_df['date'].dt.tz_convert(main_tz)
+
+                            dataframe = merge_informative_pair(
+                                dataframe, merge_df, 
+                                self.timeframe, inf_tf_global, ffill=True
+                            )
+                            
+                            # Извлекаем из колонки с суффиксом (напр. st_regime_global_1h)
+                            inf_col = f"st_regime_global_{inf_tf_global}"
+                            if inf_col in dataframe.columns:
+                                dataframe['st_regime_global'] = dataframe[inf_col].fillna(0).astype(np.int8)
+                except Exception as e:
+                    self.logger.warning(f"Global regime calculation failed: {e}")
 
             # --- LOCAL REGIME (Current Pair 15m) ---
-            try:
-                inf_tf_local = self.informative_timeframe
-                local_df = self.dp.get_pair_dataframe(metadata['pair'], inf_tf_local)
-                if local_df is not None and not local_df.empty:
-                    last_ts_local = str(local_df['date'].iloc[-1])
-                    # Кэшируем и локальный режим (бывает полезно при параллельном вызове)
-                    cache_key_local = ("LOCAL", metadata['pair'], inf_tf_local, last_ts_local)
-                    
-                    merge_df_local = None
-                    with self._global_regime_lock:
-                        if cache_key_local in self._global_regime_cache:
-                            merge_df_local = self._global_regime_cache[cache_key_local]
-                            
-                    if merge_df_local is None:
-                        st_local = self._compute_supertrend(
-                            local_df[['high', 'low', 'close']],
-                            period=st_period,
-                            multiplier=st_mult,
-                        )
-                        if not st_local.empty:
-                            # 2. Создаем временный DF
-                            merge_df_local = local_df[['date']].copy()
-                            merge_df_local['st_regime_local'] = st_local['st_dir'].values
-                            
-                            with self._global_regime_lock:
-                                self._global_regime_cache[cache_key_local] = merge_df_local
+            if self.use_local_regime_filter:
+                try:
+                    inf_tf_local = self.informative_timeframe
+                    local_df = self.dp.get_pair_dataframe(metadata['pair'], inf_tf_local)
+                    if local_df is not None and not local_df.empty:
+                        last_ts_local = str(local_df['date'].iloc[-1])
+                        # Кэшируем и локальный режим (бывает полезно при параллельном вызове)
+                        cache_key_local = ("LOCAL", metadata['pair'], inf_tf_local, last_ts_local)
+                        
+                        merge_df_local = None
+                        with self._global_regime_lock:
+                            if cache_key_local in self._global_regime_cache:
+                                merge_df_local = self._global_regime_cache[cache_key_local]
+                                
+                        if merge_df_local is None:
+                            st_local = self._compute_supertrend(
+                                local_df[['high', 'low', 'close']],
+                                period=st_period,
+                                multiplier=st_mult,
+                            )
+                            if not st_local.empty:
+                                # 2. Создаем временный DF
+                                merge_df_local = local_df[['date']].copy()
+                                merge_df_local['st_regime_local'] = st_local['st_dir'].values
+                                
+                                with self._global_regime_lock:
+                                    self._global_regime_cache[cache_key_local] = merge_df_local
 
-                    if merge_df_local is not None:
-                        # 3. Динамическая подстройка TZ
-                        main_tz = dataframe['date'].dt.tz
-                        if merge_df_local['date'].dt.tz != main_tz:
-                            merge_df_local = merge_df_local.copy()
-                            if main_tz is None:
-                                merge_df_local['date'] = merge_df_local['date'].dt.tz_localize(None)
-                            else:
-                                if merge_df_local['date'].dt.tz is None:
-                                    merge_df_local['date'] = merge_df_local['date'].dt.tz_localize(main_tz)
+                        if merge_df_local is not None:
+                            # 3. Динамическая подстройка TZ
+                            main_tz = dataframe['date'].dt.tz
+                            if merge_df_local['date'].dt.tz != main_tz:
+                                merge_df_local = merge_df_local.copy()
+                                if main_tz is None:
+                                    merge_df_local['date'] = merge_df_local['date'].dt.tz_localize(None)
                                 else:
-                                    merge_df_local['date'] = merge_df_local['date'].dt.tz_convert(main_tz)
-                        
-                        dataframe = merge_informative_pair(
-                            dataframe, merge_df_local, 
-                            self.timeframe, inf_tf_local, ffill=True
-                        )
-                        
-                        # Извлекаем из колонки с суффиксом (напр. st_regime_local_15m)
-                        inf_col_local = f"st_regime_local_{inf_tf_local}"
-                        if inf_col_local in dataframe.columns:
-                            dataframe['st_regime_local'] = dataframe[inf_col_local].fillna(0).astype(np.int8)
-            except Exception as e:
-                self.logger.warning(f"Local regime calculation failed for {metadata['pair']}: {e}")
+                                    if merge_df_local['date'].dt.tz is None:
+                                        merge_df_local['date'] = merge_df_local['date'].dt.tz_localize(main_tz)
+                                    else:
+                                        merge_df_local['date'] = merge_df_local['date'].dt.tz_convert(main_tz)
+                            
+                            dataframe = merge_informative_pair(
+                                dataframe, merge_df_local, 
+                                self.timeframe, inf_tf_local, ffill=True
+                            )
+                            
+                            # Извлекаем из колонки с суффиксом (напр. st_regime_local_15m)
+                            inf_col_local = f"st_regime_local_{inf_tf_local}"
+                            if inf_col_local in dataframe.columns:
+                                dataframe['st_regime_local'] = dataframe[inf_col_local].fillna(0).astype(np.int8)
+                except Exception as e:
+                    self.logger.warning(f"Local regime calculation failed for {metadata['pair']}: {e}")
 
         return dataframe
 
@@ -787,7 +793,7 @@ class CustomD3QNStrategy4z(IStrategy):
         # Формируем список: (pair, 15m) для всех
         info_list = [(pair, self.informative_timeframe) for pair in pairs]
         
-        # Добавляем принудительно BTC на 1h для глобального режима
+        # Добавляем принудительно BTC на 15m для глобального режима
         btc_global = ('BTC/USDT:USDT', self.informative_timeframe_global)
         if btc_global not in info_list:
             info_list.append(btc_global)
@@ -1468,54 +1474,50 @@ class CustomD3QNStrategy4z(IStrategy):
         if len(dataframe) < self.startup_candle_count:
             return dataframe
 
-        # 2. Regime-фильтр: Глобальный (BTC 1h) + Локальный (Asset 15m)
-        regime_global = 0
-        regime_local = 0
-        allow_long = False
-        allow_short = False
+        # 2. Regime-фильтр: Глобальный (BTC 15m) + Локальный (Asset 15m)
+        allow_long = True
+        allow_short = self.can_short
 
         # Detect backtest/deep_inference mode
         is_backtest = self.config.get('runmode') not in ['live', 'dry_run'] or self.config.get('deep_inference', False)
 
-        if not self.use_regime_filter:
-            allow_long = True
-            allow_short = self.can_short
-        else:
-            # Live/Dry-run: Получаем значения из последней свечи
-            if not is_backtest:
-                try:
-                    # Проверяем наличие колонок в DF
-                    has_global = 'st_regime_global' in dataframe.columns
-                    has_local = 'st_regime_local' in dataframe.columns
-
-                    if has_global and has_local:
+        # Live/Dry-run: Получаем значения из последней свечи и применяем фильтры
+        if not is_backtest and (self.use_global_regime_filter or self.use_local_regime_filter):
+            regime_global = 0
+            regime_local = 0
+            try:
+                if self.use_global_regime_filter:
+                    if 'st_regime_global' in dataframe.columns:
                         regime_global = dataframe['st_regime_global'].iloc[-1]
-                        regime_local = dataframe['st_regime_local'].iloc[-1]
-
-                        # DOUBLE FILTER LOGIC (Option B):
-                        # Вход разрешен только если и BTC (1h), и сам актив (15m) смотрят в одну сторону
-                        allow_long = (regime_global > 0) and (regime_local > 0)
-                        allow_short = (regime_global < 0) and (regime_local < 0) and self.can_short
-
-                        # Определяем строку для логирования
-                        g_str = "BULL" if regime_global > 0 else ("BEAR" if regime_global < 0 else "FLAT")
-                        l_str = "BULL" if regime_local > 0 else ("BEAR" if regime_local < 0 else "FLAT")
-                        
-                        if self.config.get('runmode') in ['live', 'dry_run']:
-                            self.logger.info(f"[REGIME] {metadata['pair']} Global {g_str} | Local {l_str} | ALLOW: {'LONG' if allow_long else ('SHORT' if allow_short else 'NONE')}")
+                        allow_long = allow_long and (regime_global > 0)
+                        allow_short = allow_short and (regime_global < 0)
                     else:
-                        missing = []
-                        if not has_global: missing.append('st_regime_global')
-                        if not has_local: missing.append('st_regime_local')
-                        self.logger.warning(f"[WARNING] {metadata['pair']}: Missing columns {missing}. Safe mode (No trades).")
-                except Exception as e:
-                    self.logger.warning(f"Regime filter failed for {metadata.get('pair', '')}: {e}")
-                    # Keep allow_long/short as False (Fail-Closed)
-            else:
-                # В бэктесте мы разрешаем расчет для всех свечей, 
-                # фильтрация происходит позже в цикле
-                allow_long = True
-                allow_short = self.can_short
+                        self.logger.warning(f"Global regime filter enabled but 'st_regime_global' column missing. Disabling trades.")
+                        allow_long = allow_short = False
+
+                if self.use_local_regime_filter:
+                    if 'st_regime_local' in dataframe.columns:
+                        regime_local = dataframe['st_regime_local'].iloc[-1]
+                        allow_long = allow_long and (regime_local > 0)
+                        allow_short = allow_short and (regime_local < 0)
+                    else:
+                        self.logger.warning(f"Local regime filter enabled but 'st_regime_local' column missing. Disabling trades.")
+                        allow_long = allow_short = False
+
+                # Логирование режима
+                g_str = "BULL" if regime_global > 0 else ("BEAR" if regime_global < 0 else "FLAT")
+                l_str = "BULL" if regime_local > 0 else ("BEAR" if regime_local < 0 else "FLAT")
+                g_used = "Y" if self.use_global_regime_filter else "N"
+                l_used = "Y" if self.use_local_regime_filter else "N"
+                
+                if self.config.get('runmode') in ['live', 'dry_run']:
+                    self.logger.info(
+                        f"[REGIME] {metadata['pair']} Global:{g_str}({g_used}) | Local:{l_str}({l_used}) | "
+                        f"ALLOW: {'LONG' if allow_long else ('SHORT' if allow_short else 'NONE')}"
+                    )
+            except Exception as e:
+                self.logger.warning(f"Regime filter failed for {metadata.get('pair', '')}: {e}")
+                allow_long = allow_short = False # Fail-Closed
 
         # 3. Оптимизация инференса
         deep_inference = self.config.get('deep_inference', False)
@@ -1766,12 +1768,12 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # Prepare regime arrays for backtest filtering
         regime_global_vals = None
+        if is_backtest and self.use_global_regime_filter and 'st_regime_global' in dataframe.columns:
+            regime_global_vals = dataframe['st_regime_global'].iloc[-n_predictions:].values
+
         regime_local_vals = None
-        if is_backtest and self.use_regime_filter:
-            if 'st_regime_global' in dataframe.columns:
-                regime_global_vals = dataframe['st_regime_global'].iloc[-n_predictions:].values
-            if 'st_regime_local' in dataframe.columns:
-                regime_local_vals = dataframe['st_regime_local'].iloc[-n_predictions:].values
+        if is_backtest and self.use_local_regime_filter and 'st_regime_local' in dataframe.columns:
+            regime_local_vals = dataframe['st_regime_local'].iloc[-n_predictions:].values
 
         for i in range(n_predictions):
             # Собираем действия для текущей свечи (Raw actions: 0 or 1)
@@ -1791,48 +1793,38 @@ class CustomD3QNStrategy4z(IStrategy):
                     decision['enter_long'] = 0
                     decision['enter_short'] = 0
 
-            # Жёсткий режим-фильтр поверх ансамбля
-            if self.use_regime_filter:
-                if is_backtest:
-                    # Backtest: check both global and local regimes per candle
-                    r_g = regime_global_vals[i] if regime_global_vals is not None else 0
-                    r_l = regime_local_vals[i] if regime_local_vals is not None else 0
-                    
-                    # LONG: Both must be bullish
-                    if decision['enter_long'] == 1:
-                        if r_g <= 0 or r_l <= 0:
-                            reason = "Global Neutral" if r_g == 0 else ("Global Bear" if r_g < 0 else "Local Neutral/Bear")
-                            decision['reason'] += f" | ⛔ Filtered by ST ({reason})"
-                            decision['enter_long'] = 0
-                    
-                    # SHORT: Both must be bearish
-                    if decision['enter_short'] == 1:
-                        if r_g >= 0 or r_l >= 0:
-                            reason = "Global Neutral" if r_g == 0 else ("Global Bull" if r_g > 0 else "Local Neutral/Bull")
-                            decision['reason'] += f" | ⛔ Filtered by ST ({reason})"
-                            decision['enter_short'] = 0
-                else:
-                    # Live: use pre-calculated flags (Double Filter already applied above)
-                    if not allow_long and decision['enter_long'] == 1:
-                        # Determine which filter blocked it for logging
-                        if regime_global <= 0:
-                            r_str = "Global Bear/Flat"
-                        elif regime_local <= 0:
-                            r_str = "Local Bear/Flat"
-                        else:
-                            r_str = "Conflict"
-                        decision['reason'] += f" | ⛔ Filtered by ST ({r_str})"
+            # --- Regime Filter (Post-Ensemble) ---
+            if is_backtest:
+                # Backtest: check regimes per candle
+                if decision['enter_long'] == 1:
+                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] <= 0):
+                        decision['reason'] += f" | ⛔ Filtered by ST (Global Bear/Flat)"
                         decision['enter_long'] = 0
-
-                    if not allow_short and decision['enter_short'] == 1:
-                        if regime_global >= 0:
-                            r_str = "Global Bull/Flat"
-                        elif regime_local >= 0:
-                            r_str = "Local Bull/Flat"
-                        else:
-                            r_str = "Conflict"
-                        decision['reason'] += f" | ⛔ Filtered by ST ({r_str})"
+                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] <= 0) and decision['enter_long'] == 1:
+                        decision['reason'] += f" | ⛔ Filtered by ST (Local Bear/Flat)"
+                        decision['enter_long'] = 0
+                
+                if decision['enter_short'] == 1:
+                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] >= 0):
+                        decision['reason'] += f" | ⛔ Filtered by ST (Global Bull/Flat)"
                         decision['enter_short'] = 0
+                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] >= 0) and decision['enter_short'] == 1:
+                        decision['reason'] += f" | ⛔ Filtered by ST (Local Bull/Flat)"
+                        decision['enter_short'] = 0
+            else:
+                # Live/Dry-run: use pre-calculated flags as a final check
+                if not allow_long and decision['enter_long'] == 1:
+                    reason_str = "Regime"
+                    if self.use_global_regime_filter and 'st_regime_global' in dataframe.columns and dataframe['st_regime_global'].iloc[-1] <= 0:
+                        reason_str = "Global Bear/Flat"
+                    elif self.use_local_regime_filter and 'st_regime_local' in dataframe.columns and dataframe['st_regime_local'].iloc[-1] <= 0:
+                        reason_str = "Local Bear/Flat"
+                    decision['reason'] += f" | ⛔ Filtered by ST ({reason_str})"
+                    decision['enter_long'] = 0
+
+                if not allow_short and decision['enter_short'] == 1:
+                    decision['reason'] += f" | ⛔ Filtered by ST (Regime)"
+                    decision['enter_short'] = 0
 
             # Сбор статистики
             if decision['enter_long'] or decision['enter_short']:
