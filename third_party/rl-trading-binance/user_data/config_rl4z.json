@@ -70,26 +70,28 @@
     },
     "rl_ensemble": {
         "use_regime_filter": true,
+        "informative_timeframe": "15m",
+        "informative_timeframe_global": "30m",
         "epsilon_threshold_long": 0.5,
         "epsilon_threshold_short": 0.5,
         "dd_aggression_k": 0.5,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.000225,
-                "q_max": 0.003444
+                "q_min": 0.000199,
+                "q_max": 0.003371
             },
             "long_2": {
-                "q_min": 0.000357,
-                "q_max": 0.000465
+                "q_min": 0.000361,
+                "q_max": 0.000455
             },
             "short_1": {
-                "q_min": 6.2e-05,
-                "q_max": 0.000554
+                "q_min": 7.3e-05,
+                "q_max": 0.000573
             },
             "short_2": {
-                "q_min": 0.000107,
-                "q_max": 0.00067
+                "q_min": 7.3e-05,
+                "q_max": 0.000721
             }
         }
     },

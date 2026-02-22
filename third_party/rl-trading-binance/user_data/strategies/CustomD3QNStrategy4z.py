@@ -408,7 +408,12 @@ class CustomD3QNStrategy4z(IStrategy):
             'q_update_interval', config.get('q_update_interval', 14400)
         )
 
-        self.logger.info(f"[REGIME] Regime filter (Supertrend 15m) enabled: {self.use_regime_filter}")
+        self.logger.info(f"[REGIME] Regime filter (Supertrend) enabled: {self.use_regime_filter}")
+
+        # --- ИНФОРМАТИВНЫЕ ТАЙМФРЕЙМЫ ИЗ КОНФИГА ---
+        self.informative_timeframe = self.ensemble_cfg.get('informative_timeframe', '15m')
+        self.informative_timeframe_global = self.ensemble_cfg.get('informative_timeframe_global', '1h')
+        self.logger.info(f"[CONFIG] Timeframes: Local={self.informative_timeframe}, Global={self.informative_timeframe_global}")
 
         self.logger.info(
             f"[ENSEMBLE] Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
@@ -591,8 +596,8 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 2. Подготовка базовых линий
         mid = (high + low) / 2.0
-        upperband_p = (mid + multiplier * atr).fillna(method='ffill').values
-        lowerband_p = (mid - multiplier * atr).fillna(method='ffill').values
+        upperband_p = (mid + multiplier * atr).ffill().values
+        lowerband_p = (mid - multiplier * atr).ffill().values
         close_p = close.values
         
         # 3. Основной цикл на NumPy (убираем .iloc, который сильно тормозит)
