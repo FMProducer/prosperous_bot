@@ -660,7 +660,8 @@ class CustomD3QNStrategy4z(IStrategy):
             st_mult = float(self.supertrend_multiplier.value)
 
             # --- GLOBAL REGIME (BTC 15m) ---
-            if self.use_global_regime_filter:
+            # Calculate always for dashboard visibility, even if filter is disabled
+            if True:
                 try:
                     inf_tf_global = self.informative_timeframe_global
                     btc_df = self.dp.get_pair_dataframe('BTC/USDT:USDT', inf_tf_global)
