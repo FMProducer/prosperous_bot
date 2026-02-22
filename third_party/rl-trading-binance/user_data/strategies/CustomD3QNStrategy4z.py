@@ -36,7 +36,7 @@ except ImportError:
         @classmethod
         def get_open_trades(cls): return []
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
 strategy_file = Path(__file__).resolve()
@@ -1243,7 +1243,7 @@ class CustomD3QNStrategy4z(IStrategy):
             self.max_short_slots = self.total_slots - self.max_long_slots
 
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
-        self.logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
+        self.logger.info(f"SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
 
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
@@ -1383,7 +1383,6 @@ class CustomD3QNStrategy4z(IStrategy):
         
         try:
             from freqtrade.persistence import Trade  # type: ignore
-            from datetime import timezone
             
             # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
             # 1. Находим последнюю закрытую сделку по этой паре
@@ -1469,6 +1468,21 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         # Update dynamic epsilon once per candle based on current equity drawdown
         self._update_dynamic_epsilon()
+
+        # --- PERIODIC SLOT UPDATE & LOGGING ---
+        # Ensure slots are logged regularly for the dashboard, even if no trades occur
+        if self.dynamic_slots_enabled:
+            try:
+                now = datetime.now(timezone.utc)
+                if self.last_slot_update is None:
+                    # Force immediate update on first run
+                    self.last_slot_update = now - timedelta(days=1)
+                
+                if (now - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                    self._update_slot_allocation(now)
+                    self.last_slot_update = now
+            except Exception as e:
+                self.logger.error(f"Periodic slot update failed: {e}")
 
         # 1. Базовая защита
         if len(dataframe) < self.startup_candle_count:
@@ -1660,7 +1674,8 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "VOTE" if vote else "NO"
 
-                self.logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                if adv > q_min:
+                    self.logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "long_2" in q_values:
                 a = action_long_2[-1]
@@ -1676,7 +1691,8 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "VOTE" if vote else "NO"
 
-                self.logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                if adv > q_min:
+                    self.logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_1" in q_values:
                 a = action_short_1[-1]
@@ -1695,7 +1711,8 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "VOTE" if vote else "NO"
 
-                self.logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                if adv > q_min:
+                    self.logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
             if "short_2" in q_values:
                 a = action_short_2[-1]
@@ -1714,7 +1731,8 @@ class CustomD3QNStrategy4z(IStrategy):
                 vote = adv > thr
                 vote_mark = "VOTE" if vote else "NO"
 
-                self.logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
+                if adv > q_min:
+                    self.logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
 
         # 6. Применяем строгое голосование для каждой свечи
         n_predictions = len(action_long_1)

@@ -955,7 +955,7 @@
         }
 
         // (2) Dynamic Slots + Active trades
-        function updateSlots(openTrades, config) {
+        function updateSlots(openTrades, config, logData) {
             let activeLongs = 0, activeShorts = 0;
             if (openTrades && Array.isArray(openTrades)) {
                 for (const t of openTrades) {
@@ -972,27 +972,50 @@
             const isEnabled = dsConfig.enabled === true;
             const minPerSide = dsConfig.min_slots_per_side || 20;
 
-            // We estimate slot allocation from trade count ratio
-            const total = activeLongs + activeShorts;
+            // Try to parse real slots from logs
+            let parsedL = null, parsedS = null;
+            if (logData && logData.logs) {
+                // Iterate backwards to find the latest SLOTS log
+                for (let i = logData.logs.length - 1; i >= 0; i--) {
+                    const msg = Array.isArray(logData.logs[i]) ? logData.logs[i].join(' ') : String(logData.logs[i]);
+                    // Match "SLOTS:" followed eventually by "L=..." and "S=..."
+                    const m = /SLOTS:.*?L=(\d+).*?S=(\d+)/i.exec(msg);
+                    if (m) {
+                        parsedL = parseInt(m[1], 10);
+                        parsedS = parseInt(m[2], 10);
+                        break;
+                    }
+                }
+            }
+
             let longSlots, shortSlots;
             
-            if (!isEnabled) {
-                longSlots = Math.floor(totalSlots / 2);
-                shortSlots = totalSlots - longSlots;
-            } else if (total === 0) {
-                longSlots = Math.floor(totalSlots / 2);
-                shortSlots = totalSlots - longSlots;
+            if (parsedL !== null && parsedS !== null) {
+                longSlots = parsedL;
+                shortSlots = parsedS;
+                document.getElementById('slotTotal').textContent = `/ ${totalSlots} total (Logs)`;
             } else {
-                // Approximate: use active trade ratio to estimate slot allocation
-                const longRatio = activeLongs / Math.max(total, 1);
-                const available = totalSlots - 2 * minPerSide;
+                // Fallback: Estimate slot allocation from trade count ratio
+                const total = activeLongs + activeShorts;
                 
-                if (available <= 0) {
+                if (!isEnabled) {
                     longSlots = Math.floor(totalSlots / 2);
+                    shortSlots = totalSlots - longSlots;
+                } else if (total === 0) {
+                    longSlots = Math.floor(totalSlots / 2);
+                    shortSlots = totalSlots - longSlots;
                 } else {
-                    longSlots = Math.max(minPerSide, Math.min(totalSlots - minPerSide, minPerSide + Math.round(available * longRatio)));
+                    const longRatio = activeLongs / Math.max(total, 1);
+                    const available = totalSlots - 2 * minPerSide;
+                    
+                    if (available <= 0) {
+                        longSlots = Math.floor(totalSlots / 2);
+                    } else {
+                        longSlots = Math.max(minPerSide, Math.min(totalSlots - minPerSide, minPerSide + Math.round(available * longRatio)));
+                    }
+                    shortSlots = totalSlots - longSlots;
                 }
-                shortSlots = totalSlots - longSlots;
+                document.getElementById('slotTotal').textContent = `/ ${totalSlots} total (Est)`;
             }
 
             const longPct = (longSlots / totalSlots * 100).toFixed(0);
@@ -1001,7 +1024,6 @@
             document.getElementById('slotShort').textContent = `S:${shortSlots}`;
             document.getElementById('slotLongLabel').textContent = `LONG: ${longSlots}`;
             document.getElementById('slotShortLabel').textContent = `SHORT: ${shortSlots}`;
-            document.getElementById('slotTotal').textContent = `/ ${totalSlots} total`;
         }
 
         // (3) Regime
@@ -1134,13 +1156,11 @@
         }
 
         // (5) Q-values table
-        // (5) Q-values table
-        async function updateQValues(openTrades, eps) {
+        async function updateQValues(openTrades, eps, logData) {
             const epsL = eps ? eps.epsEffL : BASE_EPSILON_LONG;
             const epsS = eps ? eps.epsEffS : BASE_EPSILON_SHORT;
 
-            // Fetch logs to get strategy signals
-            const logData = await apiFetch('/logs?limit=1000');
+            // Use passed logData
             const qData = parseQValuesFromLogs(logData);
 
             console.log('Parsed Split Q-Data:', qData);
@@ -1224,10 +1244,11 @@
         async function refreshAll() {
             setStatus(true, 'Updating…');
 
-            const [openTrades, profit, config] = await Promise.all([
+            const [openTrades, profit, config, logData] = await Promise.all([
                 apiFetch('/status'),
                 apiFetch('/profit'),
-                apiFetch('/show_config')
+                apiFetch('/show_config'),
+                apiFetch('/logs?limit=6000')
             ]);
 
             if (!openTrades && !profit) {
@@ -1236,10 +1257,10 @@
             }
 
             updatePnl(profit, openTrades);
-            updateSlots(openTrades, config);
+            updateSlots(openTrades, config, logData);
             updateRegime(openTrades, config);
             const eps = updateEpsilon(openTrades);
-            await updateQValues(openTrades, eps);
+            await updateQValues(openTrades, eps, logData);
 
             setStatus(true, 'Live');
             const now = new Date();
