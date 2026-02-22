@@ -30,7 +30,7 @@ freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrateg
 
 rm tradesv3.dryrun.sqlite
 
-C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data> python dashboard_server.py
+python user_data/dashboard_server.py
 
 
 

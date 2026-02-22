@@ -86,6 +86,12 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
         self.end_headers()
 
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        super().end_headers()
+
     def log_message(self, format, *args):
         # Quiet logging - only show API proxied calls
         msg = format % args
