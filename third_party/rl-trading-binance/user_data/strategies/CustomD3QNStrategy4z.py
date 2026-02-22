@@ -408,12 +408,7 @@ class CustomD3QNStrategy4z(IStrategy):
             'q_update_interval', config.get('q_update_interval', 14400)
         )
 
-        self.logger.info(f"[REGIME] Regime filter (Supertrend) enabled: {self.use_regime_filter}")
-
-        # --- ИНФОРМАТИВНЫЕ ТАЙМФРЕЙМЫ ИЗ КОНФИГА ---
-        self.informative_timeframe = self.ensemble_cfg.get('informative_timeframe', '15m')
-        self.informative_timeframe_global = self.ensemble_cfg.get('informative_timeframe_global', '1h')
-        self.logger.info(f"[CONFIG] Timeframes: Local={self.informative_timeframe}, Global={self.informative_timeframe_global}")
+        self.logger.info(f"[REGIME] Regime filter (Supertrend 15m) enabled: {self.use_regime_filter}")
 
         self.logger.info(
             f"[ENSEMBLE] Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
@@ -596,8 +591,8 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 2. Подготовка базовых линий
         mid = (high + low) / 2.0
-        upperband_p = (mid + multiplier * atr).ffill().values
-        lowerband_p = (mid - multiplier * atr).ffill().values
+        upperband_p = (mid + multiplier * atr).fillna(method='ffill').values
+        lowerband_p = (mid - multiplier * atr).fillna(method='ffill').values
         close_p = close.values
         
         # 3. Основной цикл на NumPy (убираем .iloc, который сильно тормозит)
@@ -635,11 +630,6 @@ class CustomD3QNStrategy4z(IStrategy):
         return out
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        log_timing = self.config.get('runmode') in ('live', 'dry_run')
-        if log_timing:
-            t_start = datetime.now()
-            pair = metadata.get('pair', 'unknown')
-
         # 1. Z-score нормализация (как в обучении)
         zscore_window = 450
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -654,21 +644,13 @@ class CustomD3QNStrategy4z(IStrategy):
         z_cols = [f'{col}_z' for col in ohlcv_cols]
         dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
 
-        if log_timing:
-            t_zscore = datetime.now()
-
         # 2. Quote Volume для фильтрации неликвида
         # Расчет среднего объема за 24 часа (1440 свечей на 1m)
         dataframe['quote_volume'] = dataframe['volume'] * dataframe['close']
         dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=1440, min_periods=200).mean()
         dataframe['quote_volume_sma'] = dataframe['quote_volume_sma'].fillna(0)
 
-        if log_timing:
-            t_volume = datetime.now()
-
         # 2. Supertrend Режимы
-        t_global_regime = t_volume
-        t_local_regime = t_global_regime
         if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
             st_period = int(self.supertrend_period.value)
             st_mult = float(self.supertrend_multiplier.value)
@@ -728,9 +710,6 @@ class CustomD3QNStrategy4z(IStrategy):
                         inf_col = f"st_regime_global_{inf_tf_global}"
                         if inf_col in dataframe.columns:
                             dataframe['st_regime_global'] = dataframe[inf_col].fillna(0).astype(np.int8)
-                
-                if log_timing:
-                    t_global_regime = datetime.now()
             except Exception as e:
                 self.logger.warning(f"Global regime calculation failed: {e}")
 
@@ -784,25 +763,9 @@ class CustomD3QNStrategy4z(IStrategy):
                         inf_col_local = f"st_regime_local_{inf_tf_local}"
                         if inf_col_local in dataframe.columns:
                             dataframe['st_regime_local'] = dataframe[inf_col_local].fillna(0).astype(np.int8)
-                
-                if log_timing:
-                    t_local_regime = datetime.now()
             except Exception as e:
                 self.logger.warning(f"Local regime calculation failed for {metadata['pair']}: {e}")
 
-        if log_timing:
-            total_duration = (t_local_regime - t_start).total_seconds()
-            if total_duration > 0.1:  # 100ms threshold
-                zscore_t = (t_zscore - t_start).total_seconds()
-                volume_t = (t_volume - t_zscore).total_seconds()
-                global_t = (t_global_regime - t_volume).total_seconds()
-                local_t = (t_local_regime - t_global_regime).total_seconds()
-
-                self.logger.info(
-                    f"[{pair}] TIMING indicators: Total={total_duration:.3f}s | "
-                    f"ZScore={zscore_t:.3f}s, Volume={volume_t:.3f}s, "
-                    f"GlobalR={global_t:.3f}s, LocalR={local_t:.3f}s"
-                )
         return dataframe
 
     def informative_pairs(self):
@@ -1498,11 +1461,6 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
         """
-        log_timing = self.config.get('runmode') in ('live', 'dry_run')
-        if log_timing:
-            timers = {'start': datetime.now()}
-            pair = metadata.get('pair', 'unknown')
-
         # Update dynamic epsilon once per candle based on current equity drawdown
         self._update_dynamic_epsilon()
 
@@ -1580,9 +1538,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
         asset_name = metadata['pair'].split(':')[0].replace('/', '')
         
-        if log_timing:
-            timers['pre_inference'] = datetime.now()
-
         # --- Q-VALUE CACHING FOR HYPEROPT ---
         # Ключ кэша: пара + время последней свечи.
         # Это гарантирует, что мы не пересчитываем нейросеть, если данные не изменились.
@@ -1590,11 +1545,9 @@ class CustomD3QNStrategy4z(IStrategy):
         q_cache_key = (metadata['pair'], str(last_date))
         
         q_values = None
-        was_cached = False  # Flag for timing log
         with self.cache_lock:
             if q_cache_key in self.q_value_cache:
                 q_values = self.q_value_cache[q_cache_key]
-                was_cached = True
         
         if q_values is None:
             # Если в кэше нет - считаем (Тяжелая операция)
@@ -1641,9 +1594,6 @@ class CustomD3QNStrategy4z(IStrategy):
             with self.cache_lock:
                 self.q_value_cache[q_cache_key] = q_values
         
-        if log_timing:
-            timers['post_inference'] = datetime.now()
-
         # Определяем размер батча из первого доступного результата
         batch_size = next(iter(q_values.values())).shape[0]
         
@@ -1907,21 +1857,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # Mass assignment (один раз для всех строк)
         dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
         dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
-
-        if log_timing:
-            timers['end'] = datetime.now()
-            total_duration = (timers['end'] - timers['start']).total_seconds()
-            if total_duration > 0.1:  # 100ms threshold
-                pre_t = (timers['pre_inference'] - timers['start']).total_seconds()
-                infer_t = (timers['post_inference'] - timers['pre_inference']).total_seconds()
-                post_t = (timers['end'] - timers['post_inference']).total_seconds()
-                cache_str = " (cached)" if was_cached else ""
-
-                self.logger.info(
-                    f"[{pair}] TIMING entry: Total={total_duration:.3f}s | "
-                    f"Prep={pre_t:.3f}s, Infer={infer_t:.3f}s{cache_str}, "
-                    f"Decision={post_t:.3f}s"
-                )
 
         return dataframe
     

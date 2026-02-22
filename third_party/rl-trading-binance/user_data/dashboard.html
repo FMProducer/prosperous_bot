@@ -746,12 +746,12 @@
                 </div>
                 <div class="regime-indicator" style="flex-direction: row; gap: 15px;">
                     <div style="flex: 1; text-align: center;">
-                        <div class="regime-sub" style="margin-bottom: 5px;" id="regimeLabelGlobal">GLOBAL (…)</div>
+                        <div class="regime-sub" style="margin-bottom: 5px;">GLOBAL (1h)</div>
                         <div class="regime-badge neutral" id="regimeBadgeGlobal"
                             style="padding: 10px 15px; font-size: 16px;">--</div>
                     </div>
                     <div style="flex: 1; text-align: center;">
-                        <div class="regime-sub" style="margin-bottom: 5px;" id="regimeLabelLocal">LOCAL (…)</div>
+                        <div class="regime-sub" style="margin-bottom: 5px;">LOCAL (15m)</div>
                         <div class="regime-badge neutral" id="regimeBadgeLocal"
                             style="padding: 10px 15px; font-size: 16px;">--</div>
                     </div>
@@ -864,7 +864,6 @@
         const USERNAME = 'freqtrader';
         const PASSWORD = 'Pr0ducti0n';
         const REFRESH_INTERVAL = 60; // seconds
-        const DASHBOARD_VERSION = "2026.02.22.0215"; // Diagnostic version
 
         // Q-normalization from config
         const Q_NORM = {
@@ -1008,30 +1007,6 @@
         function updateRegime(openTrades, config) {
             const sub = document.getElementById('regimeSub');
             const mainTf = (config && config.timeframe) || '1m';
-
-            // Try to find rl_ensemble in common places
-            const ensembleCfg = (config && (
-                config.rl_ensemble ||
-                (config.strategy && config.strategy.rl_ensemble) ||
-                (config.strategy_params && config.strategy_params.rl_ensemble)
-            )) || {};
-
-            const globalTf = ensembleCfg.informative_timeframe_global ||
-                (config && config.informative_timeframe_global) ||
-                (config && config.strategy_params && config.strategy_params.informative_timeframe_global) ||
-                '??';
-            const localTf = ensembleCfg.informative_timeframe ||
-                (config && config.informative_timeframe) ||
-                (config && config.strategy_params && config.strategy_params.informative_timeframe) ||
-                '??';
-
-            console.log(`[DASHBOARD v${DASHBOARD_VERSION}] TFs detected:`, { globalTf, localTf, ensembleCfg });
-
-            // Update labels
-            const lGlobal = document.getElementById('regimeLabelGlobal');
-            const lLocal = document.getElementById('regimeLabelLocal');
-            if (lGlobal) lGlobal.textContent = `GLOBAL (${globalTf})`;
-            if (lLocal) lLocal.textContent = `LOCAL (${localTf})`;
 
             // Find a candidate pair (e.g., from whitelist or status)
             // Even if no trades, we can try BTC or the first pair in the config
@@ -1251,7 +1226,6 @@
 
         // ====================== MAIN LOOP ======================
         async function refreshAll() {
-            console.log(`[DASHBOARD] Refreshing v${DASHBOARD_VERSION} at ${new Date().toLocaleTimeString()}`);
             setStatus(true, 'Updating…');
 
             const [openTrades, profit, config] = await Promise.all([
@@ -1265,9 +1239,6 @@
                 return;
             }
 
-            if (config) {
-                console.log('Bot Config Response:', config);
-            }
             updatePnl(profit, openTrades);
             updateSlots(openTrades, config);
             updateRegime(openTrades, config);
