@@ -39,8 +39,12 @@ except ImportError:
 from datetime import datetime
 
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
+import os
 strategy_file = Path(__file__).resolve()
-if strategy_file.parent.name == 'strategies':
+project_root_env = os.getenv('PROJECT_ROOT')
+if project_root_env:
+    project_root = Path(project_root_env)
+elif strategy_file.parent.name == 'strategies':
     project_root = strategy_file.parent.parent.parent
 else:
     project_root = strategy_file.parent.parent.parent
@@ -198,19 +202,18 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.warning(f"[WARNING] Log rotation setup failed: {e}")
 
         # === CPU ОПТИМИЗАЦИИ ===
-        # 1. Установить количество потоков для PyTorch
+        # На Ryzen 9 лучше дать Torch управлять потоками самостоятельно
         num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
         try:
             torch.set_num_threads(num_cpu_threads)
             torch.set_num_interop_threads(num_cpu_threads)
+            logger.info(f"[OK] Torch threads set to {num_cpu_threads}")
         except RuntimeError as e:
             logger.warning(f"[WARNING] Could not set torch threads (already initialized?): {e}")
         
         self.device = torch.device("cpu")
         
         self.logger = logging.getLogger(__name__)
-        # 2. ThreadPool для параллельного inference
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
         
         # 3. Кэш для feature tensors (экономим на preprocessing)
         self.feature_cache: Dict[tuple, Any] = {}
@@ -218,7 +221,10 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
-        if Path(__file__).parent.name == 'strategies':
+        project_root_env = os.getenv('PROJECT_ROOT')
+        if project_root_env:
+            self.project_root = Path(project_root_env)
+        elif Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
         else:
             self.project_root = Path(__file__).parent.parent.parent
@@ -257,21 +263,22 @@ class CustomD3QNStrategy4z(IStrategy):
         )
 
         # --- ПУТИ К 4 МОДЕЛЯМ ---
+        model_base_path = Path(os.getenv('MODELS_PATH', self.project_root / "models"))
+
         # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        self.long_1_model_dir = model_base_path / "long_1"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
+        self.long_2_model_dir = model_base_path / "long_2"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
-        pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
+        self.short_1_model_dir = model_base_path / "short_1"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
+        self.short_2_model_dir = model_base_path / "short_2"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -487,7 +494,6 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def __getstate__(self):
         state = self.__dict__.copy()
-        state.pop('executor', None)
         state.pop('cache_lock', None)
         state.pop('logger', None)
         return state
@@ -496,8 +502,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.__dict__.update(state)
         self.logger = logging.getLogger(__name__)
         self.cache_lock = threading.Lock()
-        num_cpu_threads = self.config.get('cpu_threads', 4)
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -838,11 +842,12 @@ class CustomD3QNStrategy4z(IStrategy):
         
         return -d_eff
 
-    def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
-        # Default window is 90 (5 channels * 90 = 450 history features)
-        window = 90 
-        
-        # Safe access to model configs to avoid Pyre NoneType errors
+    def _extract_features_batch(self, dataframe: DataFrame, side: str, model_num: int) -> Optional[torch.Tensor]:
+        """
+        Extract features for multiple windows at once using sliding_window_view.
+        Returns tensor of shape (N_windows, 5*window + 4)
+        """
+        window = 90
         cfg = None
         if side == "LONG":
             cfg = self.cfg_long_1 if model_num == 1 else self.cfg_long_2
@@ -851,76 +856,54 @@ class CustomD3QNStrategy4z(IStrategy):
             
         if cfg and hasattr(cfg, 'seq') and cfg.seq:
             window = getattr(cfg.seq, "agent_history_len", 90)
+            if not isinstance(window, int):
+                window = 90
 
-        # 1. Проверка длины
         if len(dataframe) < window:
             return None
-            
-        # 2. Выбор Z-колонок
+
         cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-        
-        # 3. Data preparation (N, 5)
+        for col in cols:
+            if col not in dataframe.columns:
+                return None
+
         z_data = dataframe[cols].values.astype(np.float32)
         
-        # Extract last 'window' rows: (window, 5)
-        # Using tail instead of sliding_window_view for simplicity since we only need 1 window
-        last_window = z_data[-window:]
+        # windows shape: (N_windows, 5, window) where 5=channels, window=time
+        # Resulting shape (Batch, Channels, Window) ensures channel-major order when flattened.
+        windows = sliding_window_view(z_data, window, axis=0)
         
-        # 4. Inversion logic (Mirror Mode)
         should_invert = False
         if side == "SHORT":
             if (model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror):
                 should_invert = True
         
         if should_invert:
-            last_window = last_window * -1.0
+            windows = windows * -1.0
 
-        # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
-        # The model expects a flat vector of size (channels * history_len + additional_feats)
-        # Target shape for history: (channels=5, length=90) -> (450,)
+        # Flatten: (N_windows, 5*window)
+        windows_flat = windows.reshape(len(windows), -1)
         
-        # Transpose (90, 5) -> (5, 90) then flatten
-        img_flat = last_window.T.flatten()
+        # Add dummy features (4)
+        add_feats = np.zeros((len(windows), 4), dtype=np.float32)
         
-        # Additional features (4 dummy values)
-        add_feats = np.zeros(4, dtype=np.float32)
+        full_input = np.concatenate([windows_flat, add_feats], axis=1)
         
-        # Concat: (454,)
-        full_input = np.concatenate([img_flat, add_feats])
-        
-        # Convert to tensor and add batch dim: (1, 454)
-        return torch.as_tensor(full_input, device=self.device, dtype=torch.float32).unsqueeze(0)
+        return torch.as_tensor(full_input, device=self.device, dtype=torch.float32)
 
-    def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
-        """
-        Кэширующая версия get_model_input
-        Ключ кэша = (pair, last_candle_timestamp, side, model_num)
-        """
-        # Генерируем ключ кэша
-        last_timestamp = dataframe.iloc[-1]['date'] if 'date' in dataframe.columns else dataframe.index[-1]
-        cache_key = (pair, str(last_timestamp), side, model_num)
-        
-        with self.cache_lock:
-            if cache_key in self.feature_cache:
-                return self.feature_cache[cache_key]
-        
-        tensor = self.get_model_input(dataframe, pair, side, model_num, asset_name)
-        
-        with self.cache_lock:
-            if len(self.feature_cache) >= self.cache_max_size:
-                self.feature_cache.pop(next(iter(self.feature_cache)))
-            self.feature_cache[cache_key] = tensor
-        
-        return tensor
 
     def _parallel_inference(self, tensors_and_agents):
-        def single_inference(tensor_or_tuple, agent):
+        """
+        Inference with batching support. Sequential execution since torch handles threading.
+        """
+        results = {}
+        for tensor_or_tuple, agent, name in tensors_and_agents:
             try:
                 with torch.no_grad():
                     if isinstance(tensor_or_tuple, tuple):
-                        return agent.policy_net(*tensor_or_tuple).cpu().numpy()
+                        results[name] = agent.policy_net(*tensor_or_tuple).cpu().numpy()
                     else:
-                        return agent.policy_net(tensor_or_tuple).cpu().numpy()
+                        results[name] = agent.policy_net(tensor_or_tuple).cpu().numpy()
             except Exception as e:
                 # Determine batch size for the zero-array fallback
                 batch_size = 1
@@ -935,16 +918,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 else:
                     logger.error(f"Inference failed with unknown input type: {e}")
 
-                return np.zeros((batch_size, agent.action_dim))
-        
-        futures = []
-        for tensor, agent, name in tensors_and_agents:
-            future = self.executor.submit(single_inference, tensor, agent)  # type: ignore
-            futures.append((future, name))
-        
-        results = {}
-        for future, name in futures:
-            results[name] = future.result()
+                results[name] = np.zeros((batch_size, agent.action_dim))
         
         return results
 
@@ -1245,6 +1219,104 @@ class CustomD3QNStrategy4z(IStrategy):
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
         self.logger.info(f"🎰 SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
 
+    def _get_model_vote_batch(self, name: str, q_values_name: np.ndarray, action_idx: int):
+        """
+        Vectorized version of _get_model_vote.
+        Returns: (votes_array, advantage_array, norm_q_array)
+        """
+        q_hold = q_values_name[:, 0]
+        q_action = q_values_name[:, action_idx]
+        adv = q_action - q_hold
+
+        cfg = self.q_normalization.get(name, {})
+        q_min = cfg.get('q_min', 0.0)
+        q_max = cfg.get('q_max', q_min)
+
+        if q_max <= q_min:
+            size = len(adv)
+            return np.zeros(size, dtype=int), adv, np.zeros(size)
+
+        if name.startswith("long_"):
+            eps_eff = self.epsilon_threshold_eff_long
+        else:
+            eps_eff = self.epsilon_threshold_eff_short
+
+        thr = q_min + (q_max - q_min) * eps_eff
+
+        votes = (adv > thr).astype(int)
+        norm = np.clip((adv - q_min) / (q_max - q_min), 0.0, 1.0)
+
+        return votes, adv, norm
+
+    def _compute_ensemble_decision_batch(
+        self,
+        q_values: Dict[str, np.ndarray],
+        has_long: bool,
+        has_short: bool
+    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
+        """
+        Vectorized version of _compute_ensemble_decision.
+        Returns: (enter_long_arr, enter_short_arr, adv_dict)
+        """
+        # Determine batch size from first available result
+        batch_size = next(iter(q_values.values())).shape[0]
+
+        if self.config.get('runmode') == 'hyperopt':
+            thresh_long = self.rl_long_threshold_opt.value
+            thresh_short = self.rl_short_threshold_opt.value
+        else:
+            thresh_long = self.rl_long_threshold
+            thresh_short = self.rl_short_threshold
+
+        votes_long = np.zeros(batch_size, dtype=int)
+        votes_short = np.zeros(batch_size, dtype=int)
+        adv_dict = {}
+
+        if self.enable_long_1 and "long_1" in q_values:
+            v, adv, _ = self._get_model_vote_batch("long_1", q_values["long_1"], 1)
+            votes_long += v
+            adv_dict["long_1"] = adv
+
+        if self.enable_long_2 and "long_2" in q_values:
+            v, adv, _ = self._get_model_vote_batch("long_2", q_values["long_2"], 1)
+            votes_long += v
+            adv_dict["long_2"] = adv
+
+        if self.enable_short_1 and "short_1" in q_values:
+            v, adv, _ = self._get_model_vote_batch("short_1", q_values["short_1"], 1)
+            votes_short += v
+            adv_dict["short_1"] = adv
+
+        if self.enable_short_2 and "short_2" in q_values:
+            v, adv, _ = self._get_model_vote_batch("short_2", q_values["short_2"], 1)
+            votes_short += v
+            adv_dict["short_2"] = adv
+
+        # Logic
+        long_signal = (votes_long >= thresh_long)
+        short_signal = (votes_short >= thresh_short)
+
+        if self.enable_veto:
+            long_signal &= (votes_short == 0)
+            short_signal &= (votes_long == 0)
+
+        if not self.can_short:
+            short_signal[:] = False
+
+        if has_long or has_short:
+            # Entry logic only for new trades.
+            # Note: in backtest we might want to generate signals even if in trade,
+            # but Freqtrade handles that. However, to match legacy:
+            long_signal[:] = False
+            short_signal[:] = False
+
+        # Mutual exclusion
+        conflict = long_signal & short_signal
+        long_signal &= ~conflict
+        short_signal &= ~conflict
+
+        return long_signal.astype(np.int8), short_signal.astype(np.int8), adv_dict
+
     def _normalize_q_value(self, q_value: float, model_name: str) -> float:
         """
         Нормализует Q-value модели в диапазон [0, 1]
@@ -1262,115 +1334,6 @@ class CustomD3QNStrategy4z(IStrategy):
         q_norm = (q_value - q_min) / (q_max - q_min)
         return np.clip(q_norm, 0.0, 1.0)
 
-    def _compute_ensemble_decision(
-        self,
-        q_values: Dict[str, np.ndarray],
-        idx: int,
-        has_long: bool,
-        has_short: bool
-    ) -> Dict[str, Any]:
-        """
-        Алгоритм ансамбля: Голосование с порогом ε
-        """
-        # Determine thresholds (Hyperopt support)
-        if self.config.get('runmode') == 'hyperopt':
-            thresh_long = self.rl_long_threshold_opt.value
-            thresh_short = self.rl_short_threshold_opt.value
-        else:
-            thresh_long = self.rl_long_threshold
-            thresh_short = self.rl_short_threshold
-
-        votes_long = 0
-        votes_short = 0
-        details = []
-
-        # --- 1. Подсчет голосов LONG ---
-        def _get_model_vote(name, action_idx):
-            if name not in q_values: return 0, False, 0.0
-            q_hold = q_values[name][idx, 0]
-            q_action = q_values[name][idx, action_idx]
-            adv = q_action - q_hold
-
-            cfg = self.q_normalization.get(name, {})
-            q_min = cfg.get('q_min', 0.0)
-            q_max = cfg.get('q_max', q_min)  # fallback to q_min to avoid None comparisons
-
-            if q_max is None or q_max <= q_min:
-                self.logger.warning(f"[WARNING] Degenerate Q stats for {name}, excluding zombie model.")
-                return 0, False, 0.0
-
-            if adv <= q_min:
-                return 0, True, 0.0
-
-            # Раздельный epsilon по направлению
-            if name.startswith("long_"):
-                eps_eff = self.epsilon_threshold_eff_long
-            else:
-                eps_eff = self.epsilon_threshold_eff_short
-
-            thr = q_min + (q_max - q_min) * eps_eff if q_max > q_min else q_min
-            norm = self._normalize_q_value(adv, name)
-
-            if adv > thr:
-                return 1, True, norm
-            return 0, True, norm
-
-        if self.enable_long_1:
-            v, active, norm = _get_model_vote("long_1", 1)
-            votes_long += v
-            if v: details.append(f"L1({norm:.2f})")
-
-        if self.enable_long_2:
-            v, active, norm = _get_model_vote("long_2", 1)
-            votes_long += v
-            if v: details.append(f"L2({norm:.2f})")
-
-        # --- 2. Подсчет голосов SHORT ---
-        if self.enable_short_1:
-            # For Mirror Models (and models trained with num_actions=3 but filter_direction=SHORT)
-            # The entry action is always at index 1.
-            action_idx = 1
-            v, active, norm = _get_model_vote("short_1", action_idx)
-            votes_short += v
-            if v: details.append(f"S1({norm:.2f})")
-
-        if self.enable_short_2:
-            action_idx = 1 
-            v, active, norm = _get_model_vote("short_2", action_idx)
-            votes_short += v
-            if v: details.append(f"S2({norm:.2f})")
-
-        result: Dict[str, Any] = {
-            'enter_long': 0,
-            'enter_short': 0,
-            'reason': f"Votes L:{votes_long}/{thresh_long} S:{votes_short}/{thresh_short} [{' '.join(details)}]",
-        }
-
-        if has_long or has_short:
-            result['reason'] += " | Position exists"
-            return result
-
-        # --- 3. Логика принятия решения и вето ---
-        long_signal = votes_long >= thresh_long
-        short_signal = votes_short >= thresh_short
-
-        # Вето срабатывает, если есть хотя бы один голос с противоположной стороны
-        long_is_vetoed = self.enable_veto and votes_short > 0
-        short_is_vetoed = self.enable_veto and votes_long > 0
-
-        if long_signal and not short_signal and not long_is_vetoed:
-            result['enter_long'] = 1
-            result['reason'] += " | LONG Signal"
-        elif short_signal and not long_signal and not short_is_vetoed and self.can_short:
-            result['enter_short'] = 1
-            result['reason'] += " | SHORT Signal"
-        else:
-            # Логируем причину, почему не вошли
-            if long_signal and short_signal: result['reason'] += " | CONFLICT"
-            elif long_signal and long_is_vetoed: result['reason'] += " | LONG Vetoed"
-            elif short_signal and short_is_vetoed: result['reason'] += " | SHORT Vetoed"
-
-        return result
 
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                            time_in_force: str, current_time: datetime, entry_tag: str,
@@ -1465,7 +1428,7 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
+        BATCH INFERENCE ENSEMBLE ENTRY LOGIC
         """
         # Update dynamic epsilon once per candle based on current equity drawdown
         self._update_dynamic_epsilon()
@@ -1505,14 +1468,11 @@ class CustomD3QNStrategy4z(IStrategy):
                         allow_long = allow_short = False
 
                 # Логирование режима
-                g_str = "BULL" if regime_global > 0 else ("BEAR" if regime_global < 0 else "FLAT")
-                l_str = "BULL" if regime_local > 0 else ("BEAR" if regime_local < 0 else "FLAT")
-                g_used = "Y" if self.use_global_regime_filter else "N"
-                l_used = "Y" if self.use_local_regime_filter else "N"
-                
                 if self.config.get('runmode') in ['live', 'dry_run']:
+                    g_str = "BULL" if regime_global > 0 else ("BEAR" if regime_global < 0 else "FLAT")
+                    l_str = "BULL" if regime_local > 0 else ("BEAR" if regime_local < 0 else "FLAT")
                     self.logger.info(
-                        f"[REGIME] {metadata['pair']} Global:{g_str}({g_used}) | Local:{l_str}({l_used}) | "
+                        f"[REGIME] {metadata['pair']} Global:{g_str} | Local:{l_str} | "
                         f"ALLOW: {'LONG' if allow_long else ('SHORT' if allow_short else 'NONE')}"
                     )
             except Exception as e:
@@ -1522,29 +1482,26 @@ class CustomD3QNStrategy4z(IStrategy):
         # 3. Оптимизация инференса
         deep_inference = self.config.get('deep_inference', False)
         if self.config.get('runmode') in ['live', 'dry_run']:
-            # Оптимизация: берем ровно 90 свечей для 1 предсказания (вместо 91 для 2)
-            df_input = dataframe.iloc[-90:].copy()
+            # Оптимизация: берем ровно 200 свечей для инференса последней
+            df_input = dataframe.tail(200).copy()
         elif not deep_inference:
             lookback = 1000
             if len(dataframe) > lookback:
                 df_input = dataframe.iloc[-lookback:].copy()
             else:
                 df_input = dataframe
-            dataframe['enter_long'] = 0
-            dataframe['enter_short'] = 0
         else:
             df_input = dataframe
-            dataframe['enter_long'] = 0
-            dataframe['enter_short'] = 0
         
-        # 3. ОПТИМИЗИРОВАННЫЙ инференс с кэшированием
-        asset_name = metadata['pair'].split(':')[0].replace('/', '')
-        
+        if 'enter_long' not in dataframe.columns: dataframe['enter_long'] = 0
+        if 'enter_short' not in dataframe.columns: dataframe['enter_short'] = 0
+        dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
+        dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
+
+        # 3. ОПТИМИЗИРОВАННЫЙ батч-инференс
         # --- Q-VALUE CACHING FOR HYPEROPT ---
-        # Ключ кэша: пара + время последней свечи.
-        # Это гарантирует, что мы не пересчитываем нейросеть, если данные не изменились.
         last_date = dataframe.iloc[-1]['date']
-        q_cache_key = (metadata['pair'], str(last_date))
+        q_cache_key = (metadata['pair'], str(last_date), len(df_input))
         
         q_values = None
         with self.cache_lock:
@@ -1552,188 +1509,31 @@ class CustomD3QNStrategy4z(IStrategy):
                 q_values = self.q_value_cache[q_cache_key]
         
         if q_values is None:
-            # Если в кэше нет - считаем (Тяжелая операция)
-            tensor_long_1 = self.get_model_input_cached(
-                df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name
-            ) if (self.enable_long_1 and allow_long) else None
-            tensor_long_2 = self.get_model_input_cached(
-                df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name
-            ) if (self.enable_long_2 and allow_long) else None
-            tensor_short_1 = self.get_model_input_cached(
-                df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name
-            ) if (self.enable_short_1 and allow_short) else None
-            tensor_short_2 = self.get_model_input_cached(
-                df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name
-            ) if (self.enable_short_2 and allow_short) else None
-
-            # Проверяем, что все ВКЛЮЧЕННЫЕ модели получили данные
-            missing_data = False
-            if self.enable_long_1 and allow_long and tensor_long_1 is None: missing_data = True
-            if self.enable_long_2 and allow_long and tensor_long_2 is None: missing_data = True
-            if self.enable_short_1 and allow_short and tensor_short_1 is None: missing_data = True
-            if self.enable_short_2 and allow_short and tensor_short_2 is None: missing_data = True
-
-            if missing_data:
-                return dataframe
-
-            # 4. ПАРАЛЛЕЛЬНЫЙ INFERENCE
             inference_tasks = []
-            if self.enable_long_1 and allow_long and tensor_long_1 is not None:
-                inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
-            if self.enable_long_2 and allow_long and tensor_long_2 is not None:
-                inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
-            if self.enable_short_1 and allow_short and tensor_short_1 is not None:
-                inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
-            if self.enable_short_2 and allow_short and tensor_short_2 is not None:
-                inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
+            if self.enable_long_1 and allow_long:
+                t = self._extract_features_batch(df_input, "LONG", 1)
+                if t is not None: inference_tasks.append((t, self.long_1_agent, "long_1"))
+            if self.enable_long_2 and allow_long:
+                t = self._extract_features_batch(df_input, "LONG", 2)
+                if t is not None: inference_tasks.append((t, self.long_2_agent, "long_2"))
+            if self.enable_short_1 and allow_short:
+                t = self._extract_features_batch(df_input, "SHORT", 1)
+                if t is not None: inference_tasks.append((t, self.short_1_agent, "short_1"))
+            if self.enable_short_2 and allow_short:
+                t = self._extract_features_batch(df_input, "SHORT", 2)
+                if t is not None: inference_tasks.append((t, self.short_2_agent, "short_2"))
                 
             if not inference_tasks:
                 return dataframe
             
             q_values = self._parallel_inference(inference_tasks)
             
-            # Сохраняем в кэш
             with self.cache_lock:
+                if len(self.q_value_cache) >= self.cache_max_size:
+                    self.q_value_cache.pop(next(iter(self.q_value_cache)))
                 self.q_value_cache[q_cache_key] = q_values
-        
-        # Определяем размер батча из первого доступного результата
-        batch_size = next(iter(q_values.values())).shape[0]
-        
-        # 5. Получение действий с порогом уверенности (Q-Threshold)
-        # Фильтруем слабые сигналы, где Q(Action) почти равно Q(Hold)
 
-        def get_action_with_threshold(name: str, target_action: Optional[int] = None):
-            if q_values is None or name not in q_values:
-                return np.zeros(batch_size, dtype=int), np.zeros(batch_size), 0.0
-            
-            # Берем порог из нормализации, так как глобального больше нет
-            q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
-            
-            q = q_values[name]  # type: ignore
-            
-            if target_action is not None:
-                # Forced check for specific action (Strict Mode)
-                advantage = q[:, target_action] - q[:, 0]
-                final_actions = np.where(advantage > q_min, target_action, 0)
-            else:
-                # Argmax check (Legacy/Flexible Mode)
-                actions = np.argmax(q, axis=1)
-                # Advantage = Q(Selected) - Q(Hold)
-                advantage = q[np.arange(len(q)), actions] - q[:, 0]
-                final_actions = np.where(advantage > q_min, actions, 0)
-                
-            return final_actions, advantage, q_min
-
-        action_long_1, adv_long_1, th_l1 = get_action_with_threshold("long_1", target_action=1)
-        action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2", target_action=1)
-        
-        # Mirror mode models (and all models in config trained as SHORT) 
-        # use index 1 for their primary 'ENTRY' action
-        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=1)
-        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=1)
-
-        # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
-        if self.config.get('runmode') in ['live', 'dry_run']:
-            if self.enable_long_1 and "long_1" in q_values: self._collect_adv_stats("long_1", adv_long_1)
-            if self.enable_long_2 and "long_2" in q_values: self._collect_adv_stats("long_2", adv_long_2)
-            if self.enable_short_1 and "short_1" in q_values: self._collect_adv_stats("short_1", adv_short_1)
-            if self.enable_short_2 and "short_2" in q_values: self._collect_adv_stats("short_2", adv_short_2)
-            if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
-                self.update_normalization_config()
-                self.last_config_update = datetime.now()
-
-        # DEBUG: Log action distribution to verify models are outputting signals
-        if self.config.get('runmode') in ['live', 'dry_run']:
-            # Логируем Q-значения для последней свечи, чтобы видеть "уверенность" модели
-            if "long_1" in q_values:
-                a = action_long_1[-1]
-                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                adv = adv_long_1[-1]
-
-                # Вычисляем РЕАЛЬНЫЙ порог голосования
-                cfg = self.q_normalization.get("long_1", {})
-                q_min = cfg.get('q_min', 0.0)
-                q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_long if q_max > q_min else q_min
-
-                norm = self._normalize_q_value(adv, "long_1")
-                vote = adv > thr
-                vote_mark = "VOTE" if vote else "NO"
-
-                self.logger.info(f"{metadata['pair']} L1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
-
-            if "long_2" in q_values:
-                a = action_long_2[-1]
-                a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "OPPOSITE(SHORT)")
-                adv = adv_long_2[-1]
-
-                cfg = self.q_normalization.get("long_2", {})
-                q_min = cfg.get('q_min', 0.0)
-                q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_long if q_max > q_min else q_min
-
-                norm = self._normalize_q_value(adv, "long_2")
-                vote = adv > thr
-                vote_mark = "VOTE" if vote else "NO"
-
-                self.logger.info(f"{metadata['pair']} L2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
-
-            if "short_1" in q_values:
-                a = action_short_1[-1]
-                if self.short_1_is_mirror:
-                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
-                else:
-                    a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                adv = adv_short_1[-1]
-
-                cfg = self.q_normalization.get("short_1", {})
-                q_min = cfg.get('q_min', 0.0)
-                q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_short if q_max > q_min else q_min
-
-                norm = self._normalize_q_value(adv, "short_1")
-                vote = adv > thr
-                vote_mark = "VOTE" if vote else "NO"
-
-                self.logger.info(f"{metadata['pair']} S1: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
-
-            if "short_2" in q_values:
-                a = action_short_2[-1]
-                if self.short_2_is_mirror:
-                    a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "OPPOSITE(LONG)")
-                else:
-                    a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
-                adv = adv_short_2[-1]
-
-                cfg = self.q_normalization.get("short_2", {})
-                q_min = cfg.get('q_min', 0.0)
-                q_max = cfg.get('q_max', q_min)
-                thr = q_min + (q_max - q_min) * self.epsilon_threshold_eff_short if q_max > q_min else q_min
-
-                norm = self._normalize_q_value(adv, "short_2")
-                vote = adv > thr
-                vote_mark = "VOTE" if vote else "NO"
-
-                self.logger.info(f"{metadata['pair']} S2: adv={adv:.5f} vs thr={thr:.5f} | norm={norm:.2f} | {vote_mark} | act={a} ({a_str})")
-
-        # 6. Применяем строгое голосование для каждой свечи
-        n_predictions = len(action_long_1)
-        target_idx = dataframe.index[-n_predictions:]
-        
-        if 'enter_long' not in dataframe.columns:
-            dataframe['enter_long'] = 0
-        if 'enter_short' not in dataframe.columns:
-            dataframe['enter_short'] = 0
-        if 'exit_long' not in dataframe.columns:
-            dataframe['exit_long'] = 0
-        if 'exit_short' not in dataframe.columns:
-            dataframe['exit_short'] = 0
-        
-        dataframe['enter_long'] = dataframe['enter_long'].astype(np.int8)
-        dataframe['enter_short'] = dataframe['enter_short'].astype(np.int8)
-        dataframe['exit_long'] = dataframe['exit_long'].astype(np.int8)
-        dataframe['exit_short'] = dataframe['exit_short'].astype(np.int8)
-        
+        # 4. Обработка батча
         # Получаем информацию об открытой позиции по данному тикеру
         has_long = False
         has_short = False
@@ -1744,111 +1544,84 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception:
             pass
 
-        # --- OPTIMIZATION: Pre-allocate arrays to avoid dataframe.loc inside loop ---
-        enter_long_vals = np.zeros(n_predictions, dtype=np.int8)
-        enter_short_vals = np.zeros(n_predictions, dtype=np.int8)
+        enter_long_arr, enter_short_arr, adv_dict = self._compute_ensemble_decision_batch(
+            q_values, has_long, has_short
+        )
 
-        # --- Volume Filter Preparation ---
-        volume_vals = None
+        # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            for name, adv in adv_dict.items():
+                self._collect_adv_stats(name, adv)
+            if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
+                self.update_normalization_config()
+                self.last_config_update = datetime.now()
+
+        # --- Volume Filter ---
         if 'quote_volume_sma' in dataframe.columns:
             min_volume = self.min_quote_volume_usd.value
-            volume_vals = dataframe['quote_volume_sma'].iloc[-n_predictions:].values
-            # Оптимизация для live/dry-run: если последняя свеча не проходит, выходим сразу
-            if self.config.get('runmode') in ['live', 'dry_run']:
-                if volume_vals[-1] < min_volume:
-                    self.logger.info(
-                        f"[LOW_VOLUME] {metadata['pair']}: Volume too low "
-                        f"({volume_vals[-1]:.0f} < {min_volume:.0f} USD). "
-                        f"Skipping signal generation."
-                    )
-                    # Убедимся, что колонки существуют, прежде чем возвращать
-                    if 'enter_long' not in dataframe.columns: dataframe['enter_long'] = 0
-                    if 'enter_short' not in dataframe.columns: dataframe['enter_short'] = 0
-                    return dataframe
+            volume_vals = df_input['quote_volume_sma'].values[-(len(enter_long_arr)):]
+            low_volume_mask = volume_vals < min_volume
 
-        # Prepare regime arrays for backtest filtering
-        regime_global_vals = None
-        if is_backtest and self.use_global_regime_filter and 'st_regime_global' in dataframe.columns:
-            regime_global_vals = dataframe['st_regime_global'].iloc[-n_predictions:].values
+            if self.config.get('runmode') in ['live', 'dry_run'] and low_volume_mask[-1]:
+                 self.logger.info(f"[LOW_VOLUME] {metadata['pair']}: {volume_vals[-1]:.0f} < {min_volume:.0f}")
 
-        regime_local_vals = None
-        if is_backtest and self.use_local_regime_filter and 'st_regime_local' in dataframe.columns:
-            regime_local_vals = dataframe['st_regime_local'].iloc[-n_predictions:].values
+            enter_long_arr[low_volume_mask] = 0
+            enter_short_arr[low_volume_mask] = 0
 
-        for i in range(n_predictions):
-            # Собираем действия для текущей свечи (Raw actions: 0 or 1)
-            # НОВЫЙ МЕТОД: Нормируешь → суммируешь → сравниваешь разницу → фильтруешь по ε
-            decision = self._compute_ensemble_decision(
-                q_values, i, has_long, has_short
-            )
+        # --- Regime Filter (Backtest) ---
+        if is_backtest:
+            if self.use_global_regime_filter and 'st_regime_global' in df_input.columns:
+                reg_glob = df_input['st_regime_global'].values[-(len(enter_long_arr)):]
+                enter_long_arr[reg_glob <= 0] = 0
+                enter_short_arr[reg_glob >= 0] = 0
+            if self.use_local_regime_filter and 'st_regime_local' in df_input.columns:
+                reg_loc = df_input['st_regime_local'].values[-(len(enter_long_arr)):]
+                enter_long_arr[reg_loc <= 0] = 0
+                enter_short_arr[reg_loc >= 0] = 0
+        else:
+            # Live final check
+            if not allow_long: enter_long_arr[:] = 0
+            if not allow_short: enter_short_arr[:] = 0
 
-            # --- Volume Filter ---
-            # Применяется после генерации сигнала, чтобы можно было залогировать причину
-            if volume_vals is not None:
-                min_volume = self.min_quote_volume_usd.value
-                current_volume = volume_vals[i]  # type: ignore
-                if current_volume < min_volume:
-                    if decision['enter_long'] == 1 or decision['enter_short'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by Volume ({current_volume:.0f} < {min_volume:.0f})"
-                    decision['enter_long'] = 0
-                    decision['enter_short'] = 0
+        # --- Mass assignment ---
+        target_idx = df_input.index[-(len(enter_long_arr)):]
+        dataframe.loc[target_idx, 'enter_long'] = enter_long_arr
+        dataframe.loc[target_idx, 'enter_short'] = enter_short_arr
 
-            # --- Regime Filter (Post-Ensemble) ---
-            if is_backtest:
-                # Backtest: check regimes per candle
-                if decision['enter_long'] == 1:
-                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] <= 0):
-                        decision['reason'] += f" | ⛔ Filtered by ST (Global Bear/Flat)"
-                        decision['enter_long'] = 0
-                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] <= 0) and decision['enter_long'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by ST (Local Bear/Flat)"
-                        decision['enter_long'] = 0
-                
-                if decision['enter_short'] == 1:
-                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] >= 0):
-                        decision['reason'] += f" | ⛔ Filtered by ST (Global Bull/Flat)"
-                        decision['enter_short'] = 0
-                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] >= 0) and decision['enter_short'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by ST (Local Bull/Flat)"
-                        decision['enter_short'] = 0
-            else:
-                # Live/Dry-run: use pre-calculated flags as a final check
-                if not allow_long and decision['enter_long'] == 1:
-                    reason_str = "Regime"
-                    if self.use_global_regime_filter and 'st_regime_global' in dataframe.columns and dataframe['st_regime_global'].iloc[-1] <= 0:
-                        reason_str = "Global Bear/Flat"
-                    elif self.use_local_regime_filter and 'st_regime_local' in dataframe.columns and dataframe['st_regime_local'].iloc[-1] <= 0:
-                        reason_str = "Local Bear/Flat"
-                    decision['reason'] += f" | ⛔ Filtered by ST ({reason_str})"
-                    decision['enter_long'] = 0
+        # --- LOGGING (Last candle) ---
+        if self.config.get('runmode') in ['live', 'dry_run']:
+            for name in ["long_1", "long_2", "short_1", "short_2"]:
+                if name in q_values and name in adv_dict:
+                    adv = adv_dict[name][-1]
+                    cfg = self.q_normalization.get(name, {})
+                    q_min = cfg.get('q_min', 0.0)
+                    q_max = cfg.get('q_max', q_min)
 
-                if not allow_short and decision['enter_short'] == 1:
-                    decision['reason'] += f" | ⛔ Filtered by ST (Regime)"
-                    decision['enter_short'] = 0
+                    if q_max > q_min:
+                        eps_eff = self.epsilon_threshold_eff_long if name.startswith("long_") else self.epsilon_threshold_eff_short
+                        thr = q_min + (q_max - q_min) * eps_eff
+                        norm = np.clip((adv - q_min) / (q_max - q_min), 0.0, 1.0)
 
-            # Сбор статистики
-            if decision['enter_long'] or decision['enter_short']:
-                self.conflict_stats['total_signals'] += 1
-                if 'Conflict' in decision['reason']:
-                    self.conflict_stats['conflicts'] += 1
-                elif decision['enter_long']:
-                    self.conflict_stats['long_entries'] += 1
-                elif decision['enter_short']:
-                    self.conflict_stats['short_entries'] += 1
-            
-            # Логирование
-            # Логируем только последние 2 свечи (0 и 1)
-            if i >= n_predictions - 2:
-                if decision['enter_long'] or decision['enter_short']:
-                    self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
-            
-            # Записываем в массив (быстро)
-            enter_long_vals[i] = decision['enter_long']
-            enter_short_vals[i] = decision['enter_short']
-        
-        # Mass assignment (один раз для всех строк)
-        dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
-        dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
+                        # Determine action string for logging
+                        q = q_values[name][-1]
+                        a = np.argmax(q)
+                        if name.startswith("long_"):
+                            a_str = "HOLD" if a == 0 else ("ENTRY_LONG" if a == 1 else "SHORT")
+                        else:
+                            is_mirror = (name == "short_1" and self.short_1_is_mirror) or (name == "short_2" and self.short_2_is_mirror)
+                            if is_mirror:
+                                a_str = "HOLD" if a == 0 else ("ENTRY_SHORT" if a == 1 else "LONG")
+                            else:
+                                a_str = "HOLD" if a == 0 else ("LONG" if a == 1 else "ENTRY_SHORT")
+
+                        vote_mark = "🟢 VOTE" if adv > thr else "🔴 NO"
+                        self.logger.info(
+                            f"{metadata['pair']} {name.upper()}: adv={adv:.5f} vs thr={thr:.5f} | "
+                            f"norm={norm:.2f} | {vote_mark} | act={a}({a_str})"
+                        )
+
+            if enter_long_arr[-1]: self.logger.info(f"🚀 [SIGNAL] {metadata['pair']} ENTER LONG")
+            if enter_short_arr[-1]: self.logger.info(f"🔻 [SIGNAL] {metadata['pair']} ENTER SHORT")
 
         return dataframe
     
