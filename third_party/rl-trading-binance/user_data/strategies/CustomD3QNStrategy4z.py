@@ -77,40 +77,40 @@ logger = logging.getLogger(__name__)
 
 
 # --- NUMBA JIT SUPERTREND LOOP ---
-# Выносим цикл из класса для LLVM компиляции.
+# Выносим цикл из класса для LLVM компиляции. cache=False fixes "No module named '<dynamic>'"
 @njit(cache=False)
-def _numba_supertrend_loop(close: np.ndarray, basic_upper: np.ndarray, basic_lower: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Математически верный расчет SuperTrend без Look-ahead Bias.
     """
-    size = len(close)
+    size = len(close_p)
     st = np.zeros(size, dtype=np.float64)
     direction = np.ones(size, dtype=np.int8)
     final_upper = np.zeros(size, dtype=np.float64)
     final_lower = np.zeros(size, dtype=np.float64)
 
     # Инициализация
-    final_upper[0] = basic_upper[0]
-    final_lower[0] = basic_lower[0]
+    final_upper[0] = upperband_p[0]
+    final_lower[0] = lowerband_p[0]
     direction[0] = 1
     st[0] = final_lower[0]
 
     for i in range(1, size):
-        # 1. Финальные полосы зависят от предыдущих значений и close[i-1]
-        if (basic_upper[i] < final_upper[i - 1]) or (close[i - 1] > final_upper[i - 1]):
-            final_upper[i] = basic_upper[i]
+        # 1. Финальные полосы зависят от предыдущих значений и close_p[i-1]
+        if (upperband_p[i] < final_upper[i - 1]) or (close_p[i - 1] > final_upper[i - 1]):
+            final_upper[i] = upperband_p[i]
         else:
             final_upper[i] = final_upper[i - 1]
 
-        if (basic_lower[i] > final_lower[i - 1]) or (close[i - 1] < final_lower[i - 1]):
-            final_lower[i] = basic_lower[i]
+        if (lowerband_p[i] > final_lower[i - 1]) or (close_p[i - 1] < final_lower[i - 1]):
+            final_lower[i] = lowerband_p[i]
         else:
             final_lower[i] = final_lower[i - 1]
 
         # 2. Направление тренда (строго на основе данных i-1)
-        if close[i - 1] > final_upper[i - 1]:
+        if close_p[i - 1] > final_upper[i - 1]:
             direction[i] = 1
-        elif close[i - 1] < final_lower[i - 1]:
+        elif close_p[i - 1] < final_lower[i - 1]:
             direction[i] = -1
         else:
             direction[i] = direction[i - 1]
