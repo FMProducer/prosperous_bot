@@ -77,8 +77,8 @@ logger = logging.getLogger(__name__)
 
 
 # --- NUMBA JIT SUPERTREND LOOP ---
-# Выносим цикл из класса для LLVM компиляции. cache=True убирает warmup penalty.
-@njit(cache=True)
+# Выносим цикл из класса для LLVM компиляции. cache=False fixes "No module named '<dynamic>'"
+@njit(cache=False)
 def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     size = len(close_p)
     st = np.zeros(size, dtype=np.float64)
@@ -668,7 +668,8 @@ class CustomD3QNStrategy4z(IStrategy):
 
         out = pd.DataFrame(index=df.index)
         out['st'] = st
-        out['st_dir'] = direction
+        # Shift direction by 1 to avoid look-ahead bias (using only closed candle data)
+        out['st_dir'] = pd.Series(direction, index=df.index).shift(1).fillna(0).astype(np.int8)
         return out
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
