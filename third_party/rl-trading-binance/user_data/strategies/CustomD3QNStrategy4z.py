@@ -1197,8 +1197,9 @@ class CustomD3QNStrategy4z(IStrategy):
             loss_short = abs(pnl_short)
             total = profit_long + loss_short
 
-            penalty_ratio = (loss_short / total) ** self.aggression_factor
-            long_ratio = 0.8 + 0.15 * penalty_ratio
+            # Aggression factor as root (1/3) makes penalty curve convex -> harsher punishment
+            penalty_ratio = (loss_short / total) ** (1.0 / self.aggression_factor)
+            long_ratio = 0.85 + 0.10 * penalty_ratio
             reason = f"Long profitable (+{pnl_long:.0f}), Short losing (-{loss_short:.0f})"
 
         elif pnl_short > 0 and pnl_long < 0:
@@ -1207,8 +1208,8 @@ class CustomD3QNStrategy4z(IStrategy):
             loss_long = abs(pnl_long)
             total = profit_short + loss_long
 
-            penalty_ratio = (loss_long / total) ** self.aggression_factor
-            long_ratio = 0.2 - 0.15 * penalty_ratio
+            penalty_ratio = (loss_long / total) ** (1.0 / self.aggression_factor)
+            long_ratio = 0.15 - 0.10 * penalty_ratio
             reason = f"Short profitable (+{pnl_short:.0f}), Long losing (-{loss_long:.0f})"
 
         elif pnl_long > 0 and pnl_short > 0:
@@ -1222,7 +1223,8 @@ class CustomD3QNStrategy4z(IStrategy):
 
             if total_loss > 0:
                 # Инвертируем: большему убытку - меньше слотов
-                long_ratio = loss_short / total_loss
+                base_ratio = loss_short / total_loss
+                long_ratio = base_ratio ** (1.0 / self.aggression_factor)
                 reason = f"Both losing - inverse allocation (L:-{loss_long:.0f} S:-{loss_short:.0f})"
             else:
                 long_ratio = 0.5
