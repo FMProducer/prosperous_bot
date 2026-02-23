@@ -1147,7 +1147,7 @@
 
 
         // (4) Dynamic Epsilon
-        function updateEpsilon(openTrades) {
+        function updateEpsilon(openTrades, config) {
             // Calculate unrealized PnL per side
             let pnlLong = 0, pnlShort = 0;
             if (openTrades && Array.isArray(openTrades)) {
@@ -1172,8 +1172,9 @@
             const ddLong = finalEqMaxL > 0 ? Math.max(0, (finalEqMaxL - pnlLong) / finalEqMaxL) : 0;
             const ddShort = finalEqMaxS > 0 ? Math.max(0, (finalEqMaxS - pnlShort) / finalEqMaxS) : 0;
 
-            const k = 0.5; // dd_aggression_k
-            const epsTargetL = BASE_EPSILON_SHORT * (1.0 + k * ddLong);
+            // NOTE: The dashboard shows a simplified DD-based epsilon, not the full performance-biased one from the strategy.
+            const k = (config && config.rl_ensemble && config.rl_ensemble.dd_aggression_k) || 1.0;
+            const epsTargetL = BASE_EPSILON_LONG * (1.0 + k * ddLong); // Note: this is a simplified view
             const epsTargetS = BASE_EPSILON_SHORT * (1.0 + k * ddShort);
             const epsEffL = Math.min(1.0, Math.max(0.1, epsTargetL));
             const epsEffS = Math.min(1.0, Math.max(0.1, epsTargetS));
@@ -1312,7 +1313,7 @@
             updateStats(profit, openTrades);
             updateSlots(openTrades, config, logData);
             updateRegime(openTrades, config);
-            const eps = updateEpsilon(openTrades);
+            const eps = updateEpsilon(openTrades, config);
             await updateQValues(openTrades, eps, logData);
 
             setStatus(true, 'Live');
