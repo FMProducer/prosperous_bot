@@ -15,6 +15,8 @@ from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
 
 
+from datetime import datetime, timezone, timedelta
+
 try:
     from freqtrade.persistence import Trade  # type: ignore
 except ImportError:
@@ -36,11 +38,13 @@ except ImportError:
         @classmethod
         def get_open_trades(cls): return []
 
-from datetime import datetime, timezone, timedelta
-
 # --- 1. НАСТРОЙКА ПУТЕЙ ---
+import os
 strategy_file = Path(__file__).resolve()
-if strategy_file.parent.name == 'strategies':
+project_root_env = os.getenv('PROJECT_ROOT')
+if project_root_env:
+    project_root = Path(project_root_env)
+elif strategy_file.parent.name == 'strategies':
     project_root = strategy_file.parent.parent.parent
 else:
     project_root = strategy_file.parent.parent.parent
@@ -140,8 +144,15 @@ class CustomD3QNStrategy4z(IStrategy):
     def __init__(self, config: dict) -> None:
         super().__init__(config)  # type: ignore
         
+        # project_root is already defined at module level
+        self.project_root = project_root
+
         # Принудительно включаем шорты
         self.can_short = True
+
+        # --- ENV SECRETS ---
+        self.jwt_secret = os.getenv("JWT_SECRET", "default_secret")
+        self.api_password = os.getenv("API_PASSWORD", "default_password")
         
         # --- PERFORMANCE OPTIMIZATION: GLOBAL REGIME CACHE ---
         # Кэш для хранения результатов расчета индикаторов на информативных таймфреймах (BTC 1h)
@@ -199,6 +210,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # === CPU ОПТИМИЗАЦИИ ===
         # 1. Установить количество потоков для PyTorch
+        # На Ryzen 9 лучше дать Torch управлять потоками самостоятельно
         num_cpu_threads = config.get('cpu_threads', 4)  # по умолчанию 4 потока
         try:
             torch.set_num_threads(num_cpu_threads)
@@ -207,16 +219,19 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.warning(f"[WARNING] Could not set torch threads (already initialized?): {e}")
         
         self.device = torch.device("cpu")
-        
         self.logger = logging.getLogger(__name__)
-        # 2. ThreadPool для параллельного inference
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
+
+        # 2. ThreadPool удален для повышения эффективности CPU-инференса
         
         # 3. Кэш для feature tensors (экономим на preprocessing)
         self.feature_cache: Dict[tuple, Any] = {}
         self.q_value_cache: Dict[tuple, Dict[str, np.ndarray]] = {}  # Кэш для результатов инференса (Q-values)
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
+
+        # 4. GLOBAL INFERENCE CACHE (Batching)
+        self._inference_cache = {}  # {timestamp: {pair: decision_dict}}
+        self._cache_lock = threading.Lock()
         
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
@@ -257,21 +272,30 @@ class CustomD3QNStrategy4z(IStrategy):
         )
 
         # --- ПУТИ К 4 МОДЕЛЯМ ---
+        model_base_path = Path(os.getenv('MODELS_PATH', self.project_root / "models"))
+
         # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        self.long_1_model_dir = model_base_path / "long_1"
+        if not self.long_1_model_dir.exists():
+            self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
         
         # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
+        self.long_2_model_dir = model_base_path / "long_2"
+        if not self.long_2_model_dir.exists():
+            self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
-        pth = self.long_2_model_dir / "best.pth"
         
         # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
+        self.short_1_model_dir = model_base_path / "short_1"
+        if not self.short_1_model_dir.exists():
+            self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
         
         # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
+        self.short_2_model_dir = model_base_path / "short_2"
+        if not self.short_2_model_dir.exists():
+            self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
@@ -468,6 +492,16 @@ class CustomD3QNStrategy4z(IStrategy):
         if self.enable_short_1: agents_to_optimize.append(("SHORT_1", self.short_1_agent))
         if self.enable_short_2: agents_to_optimize.append(("SHORT_2", self.short_2_agent))
 
+        # Check torch version for compile
+        can_compile = False
+        try:
+            # torch is already imported at module level
+            v = torch.__version__.split('.')
+            if int(v[0]) >= 2:
+                can_compile = True
+        except Exception:
+            pass
+
         for agent_name, agent in agents_to_optimize:
             if agent:
                 agent.policy_net.eval()
@@ -475,6 +509,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 # Отключаем grad для всех параметров (экономит память и время)
                 for param in agent.policy_net.parameters():
                     param.requires_grad = False
+
+                if can_compile:
+                    try:
+                        logger.info(f"🚀 Compiling {agent_name} model for extra speed...")
+                        agent.policy_net = torch.compile(agent.policy_net)
+                    except Exception as e:
+                        logger.warning(f"Could not compile {agent_name}: {e}")
         
         logger.info("[OK] CPU optimizations applied")
         
@@ -487,7 +528,6 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def __getstate__(self):
         state = self.__dict__.copy()
-        state.pop('executor', None)
         state.pop('cache_lock', None)
         state.pop('logger', None)
         return state
@@ -496,8 +536,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.__dict__.update(state)
         self.logger = logging.getLogger(__name__)
         self.cache_lock = threading.Lock()
-        num_cpu_threads = self.config.get('cpu_threads', 4)
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -915,38 +953,21 @@ class CustomD3QNStrategy4z(IStrategy):
         return tensor
 
     def _parallel_inference(self, tensors_and_agents):
-        def single_inference(tensor_or_tuple, agent):
-            try:
-                with torch.no_grad():
-                    if isinstance(tensor_or_tuple, tuple):
-                        return agent.policy_net(*tensor_or_tuple).cpu().numpy()
-                    else:
-                        return agent.policy_net(tensor_or_tuple).cpu().numpy()
-            except Exception as e:
-                # Determine batch size for the zero-array fallback
-                batch_size = 1
-                if isinstance(tensor_or_tuple, tuple) and len(tensor_or_tuple) > 0 and hasattr(tensor_or_tuple[0], 'shape'):
-                    batch_size = tensor_or_tuple[0].shape[0]
-                    img_shape = tensor_or_tuple[0].shape
-                    feat_shape = tensor_or_tuple[1].shape if len(tensor_or_tuple) > 1 else 'N/A'
-                    logger.error(f"Inference failed for shapes img={img_shape}, feat={feat_shape}: {e}")
-                elif hasattr(tensor_or_tuple, 'shape'):
-                    batch_size = tensor_or_tuple.shape[0]
-                    logger.error(f"Inference failed for shape {tensor_or_tuple.shape}: {e}")
-                else:
-                    logger.error(f"Inference failed with unknown input type: {e}")
-
-                return np.zeros((batch_size, agent.action_dim))
-        
-        futures = []
-        for tensor, agent, name in tensors_and_agents:
-            future = self.executor.submit(single_inference, tensor, agent)  # type: ignore
-            futures.append((future, name))
-        
+        """
+        Inference optimization: Runs models sequentially but on batches.
+        ThreadPoolExecutor was removed to allow Torch to manage CPU parallelism.
+        """
         results = {}
-        for future, name in futures:
-            results[name] = future.result()
-        
+        with torch.no_grad():
+            for tensor, agent, name in tensors_and_agents:
+                try:
+                    # In batch mode, tensor already has batch dimension
+                    q_vals = agent.policy_net(tensor).cpu().numpy()
+                    results[name] = q_vals
+                except Exception as e:
+                    batch_size = tensor.shape[0] if hasattr(tensor, 'shape') else 1
+                    logger.error(f"Inference failed for {name}: {e}")
+                    results[name] = np.zeros((batch_size, agent.action_dim))
         return results
 
     def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
@@ -1465,10 +1486,234 @@ class CustomD3QNStrategy4z(IStrategy):
         self.tsl_memory.pop(trade_id, None)
         return True
     
+    def _extract_features_batch(self, dataframe: DataFrame, window: int = 90, should_invert: bool = False) -> Optional[np.ndarray]:
+        """
+        Efficiently extract features for a single pair to be part of a batch.
+        Optimized to minimize memory allocations.
+        """
+        if len(dataframe) < window:
+            return None
+
+        cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
+        try:
+            # Get a view of the last N rows
+            data_view = dataframe[cols].values[-window:]
+
+            # Pre-allocate the resulting array to avoid np.concatenate
+            # History is 5 channels * 90 window = 450 + 4 dummy features = 454
+            feat = np.zeros(454, dtype=np.float32)
+
+            # Efficiently fill the pre-allocated array
+            # Transpose (window, 5) -> (5, window) then flatten to (450,)
+            if should_invert:
+                feat[:450] = (data_view.astype(np.float32) * -1.0).T.flatten()
+            else:
+                feat[:450] = data_view.astype(np.float32).T.flatten()
+
+            # feat[450:] is already 0.0 due to np.zeros
+            return feat
+        except Exception as e:
+            logger.error(f"Feature extraction failed: {e}")
+            return None
+
+    def _fill_global_inference_cache(self, current_time: datetime):
+        """
+        Performs batch inference for all pairs in the whitelist at once.
+        """
+        whitelist = self.dp.current_whitelist()
+
+        # Prepare storage for batch tensors
+        model_inputs = {
+            "long_1": [], "long_2": [], "short_1": [], "short_2": []
+        }
+        active_pairs = {
+            "long_1": [], "long_2": [], "short_1": [], "short_2": []
+        }
+
+        # 1. Collect data for all pairs
+        for pair in whitelist:
+            df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+            if df is None or df.empty or len(df) < self.startup_candle_count:
+                continue
+
+            # Check regimes to see which models to run
+            allow_long = True
+            allow_short = self.can_short
+
+            if self.use_global_regime_filter and 'st_regime_global' in df.columns:
+                reg_g = df['st_regime_global'].iloc[-1]
+                allow_long &= (reg_g > 0)
+                allow_short &= (reg_g < 0)
+
+            if self.use_local_regime_filter and 'st_regime_local' in df.columns:
+                reg_l = df['st_regime_local'].iloc[-1]
+                allow_long &= (reg_l > 0)
+                allow_short &= (reg_l < 0)
+
+            # Extract features for each active side/model
+            if allow_long:
+                if self.enable_long_1:
+                    feat = self._extract_features_batch(df, should_invert=False)
+                    if feat is not None:
+                        model_inputs["long_1"].append(feat)
+                        active_pairs["long_1"].append(pair)
+                if self.enable_long_2:
+                    feat = self._extract_features_batch(df, should_invert=False)
+                    if feat is not None:
+                        model_inputs["long_2"].append(feat)
+                        active_pairs["long_2"].append(pair)
+
+            if allow_short:
+                if self.enable_short_1:
+                    feat = self._extract_features_batch(df, should_invert=self.short_1_is_mirror)
+                    if feat is not None:
+                        model_inputs["short_1"].append(feat)
+                        active_pairs["short_1"].append(pair)
+                if self.enable_short_2:
+                    feat = self._extract_features_batch(df, should_invert=self.short_2_is_mirror)
+                    if feat is not None:
+                        model_inputs["short_2"].append(feat)
+                        active_pairs["short_2"].append(pair)
+
+        # 2. Run inference for each model that has inputs
+        inference_tasks = []
+        if model_inputs["long_1"]:
+            t = torch.from_numpy(np.stack(model_inputs["long_1"])).to(self.device)
+            inference_tasks.append((t, self.long_1_agent, "long_1"))
+        if model_inputs["long_2"]:
+            t = torch.from_numpy(np.stack(model_inputs["long_2"])).to(self.device)
+            inference_tasks.append((t, self.long_2_agent, "long_2"))
+        if model_inputs["short_1"]:
+            t = torch.from_numpy(np.stack(model_inputs["short_1"])).to(self.device)
+            inference_tasks.append((t, self.short_1_agent, "short_1"))
+        if model_inputs["short_2"]:
+            t = torch.from_numpy(np.stack(model_inputs["short_2"])).to(self.device)
+            inference_tasks.append((t, self.short_2_agent, "short_2"))
+
+        if not inference_tasks:
+            return
+
+        batch_q_values = self._parallel_inference(inference_tasks)
+
+        # 3. Process results and fill cache
+        pair_q_values = {pair: {} for pair in whitelist}
+        for model_name, q_vals in batch_q_values.items():
+            pairs_for_model = active_pairs[model_name]
+            for i, pair in enumerate(pairs_for_model):
+                pair_q_values[pair][model_name] = q_vals[i:i+1]
+
+        with self._cache_lock:
+            if current_time not in self._inference_cache:
+                self._inference_cache[current_time] = {}
+                if len(self._inference_cache) > 5:
+                    oldest = min(self._inference_cache.keys())
+                    self._inference_cache.pop(oldest)
+
+            for pair in whitelist:
+                q_vals = pair_q_values.get(pair, {})
+                if not q_vals:
+                    continue
+                decision = self._compute_ensemble_decision(q_vals, 0, has_long=False, has_short=False)
+                self._inference_cache[current_time][pair] = decision
+
+    def _populate_entry_trend_backtest(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Simplified and optimized logic for backtesting.
+        """
+        if len(dataframe) < self.startup_candle_count:
+            return dataframe
+
+        lookback = 1000
+        if self.config.get('deep_inference', False):
+            df_input = dataframe
+        else:
+            df_input = dataframe.iloc[-2000:] if len(dataframe) > 2000 else dataframe
+
+        def get_full_batch_q_values(df, side, model_num):
+            window = 90
+            cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
+            data = df[cols].values.astype(np.float32)
+            if side == "SHORT" and ((model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror)):
+                data = data * -1.0
+            try:
+                windows = sliding_window_view(data, window_shape=(window, 5)).squeeze(1)
+                batch_windows = windows.transpose(0, 2, 1).reshape(len(windows), -1)
+                add_feats = np.zeros((len(batch_windows), 4), dtype=np.float32)
+                full_input = np.concatenate([batch_windows, add_feats], axis=1)
+                t = torch.from_numpy(full_input).to(self.device)
+                agent = (self.long_1_agent if model_num == 1 else self.long_2_agent) if side == "LONG" else (self.short_1_agent if model_num == 1 else self.short_2_agent)
+                if agent is None: return None
+                with torch.no_grad(): return agent.policy_net(t).cpu().numpy()
+            except Exception as e:
+                logger.error(f"Backtest batch inference failed: {e}")
+                return None
+
+        q_vals = {}
+        if self.enable_long_1: q_vals['long_1'] = get_full_batch_q_values(df_input, "LONG", 1)
+        if self.enable_long_2: q_vals['long_2'] = get_full_batch_q_values(df_input, "LONG", 2)
+        if self.enable_short_1: q_vals['short_1'] = get_full_batch_q_values(df_input, "SHORT", 1)
+        if self.enable_short_2: q_vals['short_2'] = get_full_batch_q_values(df_input, "SHORT", 2)
+
+        offset = 89
+        target_idx = df_input.index[offset:]
+        n_results = len(target_idx)
+        enter_long_vals = np.zeros(n_results, dtype=np.int8)
+        enter_short_vals = np.zeros(n_results, dtype=np.int8)
+
+        for i in range(n_results):
+            candle_q = {name: vals[i:i+1] for name, vals in q_vals.items() if vals is not None}
+            if not candle_q: continue
+            decision = self._compute_ensemble_decision(candle_q, 0, has_long=False, has_short=False)
+            enter_long_vals[i] = decision['enter_long']
+            enter_short_vals[i] = decision['enter_short']
+
+        dataframe['enter_long'] = 0
+        dataframe['enter_short'] = 0
+        dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
+        dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
+        return dataframe
+
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
+        OPTIMIZED ENSEMBLE ENTRY LOGIC с пакетным инференсом
         """
+        # Backtest handling
+        if self.config.get('runmode') not in ('live', 'dry_run'):
+            return self._populate_entry_trend_backtest(dataframe, metadata)
+
+        pair = metadata['pair']
+        current_time = dataframe.iloc[-1]['date']
+
+        # 1. Проверяем глобальный кэш инференса
+        with self._cache_lock:
+            if current_time in self._inference_cache:
+                decision = self._inference_cache[current_time].get(pair)
+                if decision:
+                    dataframe.loc[dataframe.index[-1], 'enter_long'] = decision.get('enter_long', 0)
+                    dataframe.loc[dataframe.index[-1], 'enter_short'] = decision.get('enter_short', 0)
+                    return dataframe
+
+        # 2. Если кэш пуст — запускаем массовый инференс для всех пар
+        # Перед инференсом обновляем динамический epsilon один раз на весь батч
+        self._update_dynamic_epsilon()
+        self._fill_global_inference_cache(current_time)
+
+        # 3. Пытаемся получить результат снова
+        with self._cache_lock:
+            decision = self._inference_cache.get(current_time, {}).get(pair)
+            if decision:
+                dataframe.loc[dataframe.index[-1], 'enter_long'] = decision.get('enter_long', 0)
+                dataframe.loc[dataframe.index[-1], 'enter_short'] = decision.get('enter_short', 0)
+                return dataframe
+
+        # Fallback to empty if batch failed
+        dataframe['enter_long'] = 0
+        dataframe['enter_short'] = 0
+        return dataframe
+
+    def _legacy_populate_entry_trend_disabled(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # Keep as reference if needed, but not used anymore
+
         # Update dynamic epsilon once per candle based on current equity drawdown
         self._update_dynamic_epsilon()
 
