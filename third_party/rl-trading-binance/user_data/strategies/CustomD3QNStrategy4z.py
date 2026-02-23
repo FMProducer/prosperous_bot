@@ -80,29 +80,48 @@ logger = logging.getLogger(__name__)
 # Выносим цикл из класса для LLVM компиляции. cache=False fixes "No module named '<dynamic>'"
 @njit(cache=False)
 def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Математически верный расчет SuperTrend.
+    Направление в цикле определяется по текущему close_p[i],
+    но в _compute_supertrend результат смещается на 1 для удаления Look-ahead Bias.
+    """
     size = len(close_p)
     st = np.zeros(size, dtype=np.float64)
     direction = np.ones(size, dtype=np.int8)
+    final_upper = np.zeros(size, dtype=np.float64)
+    final_lower = np.zeros(size, dtype=np.float64)
 
-    st[0] = upperband_p[0]
+    # Инициализация
+    final_upper[0] = upperband_p[0]
+    final_lower[0] = lowerband_p[0]
     direction[0] = 1
+    st[0] = final_lower[0]
 
     for i in range(1, size):
-        if close_p[i] > upperband_p[i - 1]:
+        # 1. Финальные полосы зависят от предыдущих значений и close_p[i-1] (рекурсия)
+        if (upperband_p[i] < final_upper[i - 1]) or (close_p[i - 1] > final_upper[i - 1]):
+            final_upper[i] = upperband_p[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
+
+        if (lowerband_p[i] > final_lower[i - 1]) or (close_p[i - 1] < final_lower[i - 1]):
+            final_lower[i] = lowerband_p[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
+
+        # 2. Направление тренда (стандартная логика)
+        if close_p[i] > final_upper[i]:
             direction[i] = 1
-        elif close_p[i] < lowerband_p[i - 1]:
+        elif close_p[i] < final_lower[i]:
             direction[i] = -1
         else:
             direction[i] = direction[i - 1]
 
-            if direction[i] == 1:
-                if upperband_p[i] > upperband_p[i - 1]:
-                    upperband_p[i] = upperband_p[i - 1]
-            else:
-                if lowerband_p[i] < lowerband_p[i - 1]:
-                    lowerband_p[i] = lowerband_p[i - 1]
-
-        st[i] = lowerband_p[i] if direction[i] == 1 else upperband_p[i]
+        # 3. Результирующая линия SuperTrend
+        if direction[i] == 1:
+            st[i] = final_lower[i]
+        else:
+            st[i] = final_upper[i]
 
     return st, direction
 
@@ -667,7 +686,8 @@ class CustomD3QNStrategy4z(IStrategy):
         st, direction = _numba_supertrend_loop(close, upperband_p, lowerband_p)
 
         out = pd.DataFrame(index=df.index)
-        out['st'] = st
+        # Смещаем результаты на 1, чтобы агент не "заглядывал в будущее" (Look-ahead Bias)
+        out['st'] = pd.Series(st, index=df.index).shift(1)
         # Shift direction by 1 to avoid look-ahead bias (using only closed candle data)
         out['st_dir'] = pd.Series(direction, index=df.index).shift(1).fillna(0).astype(np.int8)
         return out
