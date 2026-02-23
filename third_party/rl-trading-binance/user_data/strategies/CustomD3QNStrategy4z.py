@@ -105,9 +105,9 @@ class CustomD3QNStrategy4z(IStrategy):
     
     # Параметры TSL
     # load=False и optimize=False гарантируют использование значений default (из обучения)
-    d0 = DecimalParameter(0.01, 0.10, default=0.0752, space='sell', optimize=False, load=False)
-    d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00152, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.01, 0.10, default=0.0752, space='sell', optimize=True, load=True)
+    d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=True, load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00152, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
