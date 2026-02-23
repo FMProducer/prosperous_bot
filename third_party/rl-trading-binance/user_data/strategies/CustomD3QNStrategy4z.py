@@ -10,6 +10,7 @@ from pandas import DataFrame  # type: ignore
 import torch  # type: ignore
 from numpy.lib.stride_tricks import sliding_window_view  # type: ignore
 from concurrent.futures import ThreadPoolExecutor
+from numba import njit  # type: ignore
 import threading
 from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
@@ -73,6 +74,38 @@ except ImportError:
         return dataframe
 
 logger = logging.getLogger(__name__)
+
+
+# --- NUMBA JIT SUPERTREND LOOP ---
+# Выносим цикл из класса для LLVM компиляции. cache=True убирает warmup penalty.
+@njit(cache=True)
+def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    size = len(close_p)
+    st = np.zeros(size, dtype=np.float64)
+    direction = np.ones(size, dtype=np.int8)
+
+    st[0] = upperband_p[0]
+    direction[0] = 1
+
+    for i in range(1, size):
+        if close_p[i] > upperband_p[i - 1]:
+            direction[i] = 1
+        elif close_p[i] < lowerband_p[i - 1]:
+            direction[i] = -1
+        else:
+            direction[i] = direction[i - 1]
+
+            if direction[i] == 1:
+                if upperband_p[i] > upperband_p[i - 1]:
+                    upperband_p[i] = upperband_p[i - 1]
+            else:
+                if lowerband_p[i] < lowerband_p[i - 1]:
+                    lowerband_p[i] = lowerband_p[i - 1]
+
+        st[i] = lowerband_p[i] if direction[i] == 1 else upperband_p[i]
+
+    return st, direction
+
 
 # Agent imports
 try:
@@ -607,51 +640,25 @@ class CustomD3QNStrategy4z(IStrategy):
         if df is None or df.empty:
             return pd.DataFrame(index=df.index if df is not None else None)
 
-        # 1. Расчет ATR (остаемся в Pandas, т.к. ewm оптимизирован)
-        high = df['high']
-        low = df['low']
-        close = df['close']
-        
-        hl = high - low
-        hc = (high - close.shift(1)).abs()
-        lc = (low - close.shift(1)).abs()
+        # Извлекаем numpy массивы для скорости
+        high = df['high'].values
+        low = df['low'].values
+        close = df['close'].values
+
+        # 1. Расчет ATR
+        hl = df['high'] - df['low']
+        hc = (df['high'] - df['close'].shift(1)).abs()
+        lc = (df['low'] - df['close'].shift(1)).abs()
         tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
         atr = tr.ewm(span=period, min_periods=period, adjust=False).mean()
 
         # 2. Подготовка базовых линий
         mid = (high + low) / 2.0
-        upperband_p = (mid + multiplier * atr).ffill().values
-        lowerband_p = (mid - multiplier * atr).ffill().values
-        close_p = close.values
-        
-        # 3. Основной цикл на NumPy (убираем .iloc, который сильно тормозит)
-        size = len(df)
-        st = np.zeros(size, dtype=np.float64)
-        direction = np.ones(size, dtype=np.int8)
-        
-        # Начальные значения
-        st[0] = upperband_p[0]
-        direction[0] = 1
-        
-        for i in range(1, size):
-            # Предварительное направление на основе предыдущей ленты
-            if close_p[i] > upperband_p[i - 1]:
-                direction[i] = 1
-            elif close_p[i] < lowerband_p[i - 1]:
-                direction[i] = -1
-            else:
-                direction[i] = direction[i - 1]
-                
-                # Трейлинг лент (самая тяжелая логика ST)
-                if direction[i] == 1:
-                    if upperband_p[i] > upperband_p[i - 1]:
-                        upperband_p[i] = upperband_p[i - 1]
-                else:
-                    if lowerband_p[i] < lowerband_p[i - 1]:
-                        lowerband_p[i] = lowerband_p[i - 1]
-            
-            # Результирующее значение ST
-            st[i] = lowerband_p[i] if direction[i] == 1 else upperband_p[i]
+        upperband_p = np.nan_to_num((mid + multiplier * atr).ffill().values, nan=0.0)
+        lowerband_p = np.nan_to_num((mid - multiplier * atr).ffill().values, nan=0.0)
+
+        # 3. Вызов JIT-скомпилированного цикла
+        st, direction = _numba_supertrend_loop(close, upperband_p, lowerband_p)
 
         out = pd.DataFrame(index=df.index)
         out['st'] = st
