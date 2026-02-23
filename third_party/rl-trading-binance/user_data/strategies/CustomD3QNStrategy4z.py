@@ -1102,7 +1102,6 @@ class CustomD3QNStrategy4z(IStrategy):
             return
 
         try:
-            from freqtrade.persistence import Trade
             cutoff_time = now - timedelta(hours=24)
 
             # Получаем закрытые сделки через SQLAlchemy (эффективная фильтрация)
@@ -1429,8 +1428,6 @@ class CustomD3QNStrategy4z(IStrategy):
             return True
         
         try:
-            from freqtrade.persistence import Trade  # type: ignore
-            
             # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
             # 1. Находим последнюю закрытую сделку по этой паре
             trades_query = Trade.get_trades([Trade.pair == pair, Trade.is_open.is_(False)])
