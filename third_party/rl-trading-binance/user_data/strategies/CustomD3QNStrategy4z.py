@@ -268,6 +268,12 @@ class CustomD3QNStrategy4z(IStrategy):
             self.project_root = Path(__file__).parent.parent.parent
         
         self.tsl_memory = {}
+
+        # --- PNL CACHING ---
+        self._realized_pnl_long = 0.0
+        self._realized_pnl_short = 0.0
+        self._last_pnl_refresh = datetime.min.replace(tzinfo=timezone.utc)
+        self._pnl_refresh_interval = 300  # 5 минут
         
         # История Advantage для автоподбора q_min/q_max
         self.adv_history = {}
@@ -1086,11 +1092,51 @@ class CustomD3QNStrategy4z(IStrategy):
             self.logger.error(f"Failed to calculate PnL: {e}")
             return 0.0, 0.0
 
+    def _update_realized_pnl_cache(self, force: bool = False):
+        """
+        Обновляет кэш реализованной прибыли за последние 24 часа.
+        Вызывается периодически, чтобы не нагружать БД.
+        """
+        now = datetime.now(timezone.utc)
+        if not force and (now - self._last_pnl_refresh).total_seconds() < self._pnl_refresh_interval:
+            return
+
+        try:
+            from freqtrade.persistence import Trade
+            cutoff_time = now - timedelta(hours=24)
+
+            # Получаем закрытые сделки через SQLAlchemy (эффективная фильтрация)
+            closed_trades = Trade.get_trades([
+                Trade.is_open.is_(False),
+                Trade.close_date >= cutoff_time
+            ]).all()
+
+            self._realized_pnl_long = sum(t.close_profit_abs for t in closed_trades if not t.is_short)
+            self._realized_pnl_short = sum(t.close_profit_abs for t in closed_trades if t.is_short)
+
+            self._last_pnl_refresh = now
+            # self.logger.info(f"PNL Cache Updated: Long={self._realized_pnl_long:.2f}, Short={self._realized_pnl_short:.2f}")
+        except Exception as e:
+            self.logger.error(f"Error updating PNL cache: {e}")
+
+    def _get_rolling_performance(self) -> Tuple[float, float]:
+        """
+        Возвращает гибридный PnL (Realized Cache + Current Unrealized).
+        """
+        self._update_realized_pnl_cache()
+
+        # Получаем текущий нереализованный профит
+        unrealized_long, unrealized_short = self._get_pnl_from_freqtrade()
+
+        total_long = self._realized_pnl_long + unrealized_long
+        total_short = self._realized_pnl_short + unrealized_short
+
+        return total_long, total_short
+
     def _update_dynamic_epsilon(self) -> None:
         """
-        Update effective epsilon based on current equity drawdown.
-        In calibration mode, dynamic epsilon is disabled and effective thresholds
-        are kept equal to their base values.
+        Улучшенная логика динамического эпсилона с Cross-Correction.
+        Обеспечивает доминирование успешного направления.
         """
 
         # In calibration mode we want static, base thresholds only
@@ -1106,76 +1152,51 @@ class CustomD3QNStrategy4z(IStrategy):
             return
 
         try:
-            pnl_long, pnl_short = self._get_pnl_from_freqtrade()
-            equity_long = pnl_long
-            equity_short = pnl_short
+            # 1. Получаем базовые данные PnL (Unrealized) для расчета Drawdown
+            equity_long, equity_short = self._get_pnl_from_freqtrade()
 
-            # Reset dynamic epsilon if there are no open trades
-            try:
-                from freqtrade.persistence import Trade  # type: ignore
-                open_trades_q = Trade.get_open_trades() # type: ignore
-                if hasattr(open_trades_q, "all"):
-                    open_trades = open_trades_q.all()
-                else:
-                    open_trades = open_trades_q
-            except Exception:
-                try:
-                    open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])  # type: ignore
-                    open_trades = open_trades_q.all() if hasattr(open_trades_q, 'all') else open_trades_q
-                except Exception:
-                    open_trades = []
-
-            if not open_trades:
-                # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
-                self.equity_max = 0.0
-                self.equity_max_long = 0.0
-                self.equity_max_short = 0.0
-                self.epsilon_threshold_eff = self.epsilon_threshold
-                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
-                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
-                if self.config.get("runmode") in ("live", "dry_run"):
-                    self.logger.debug(
-                        f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | "
-                        f"effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}"
-                    )
-                return
-
-            # Initialize equity_max_long/short on first run
-            if self.equity_max_long <= 0.0:
-                self.equity_max_long = equity_long
-            if self.equity_max_short <= 0.0:
-                self.equity_max_short = equity_short
-
-            # Track maximum observed equity per side
+            # Обновляем максимумы для расчета просадки
             self.equity_max_long = max(self.equity_max_long, equity_long)
             self.equity_max_short = max(self.equity_max_short, equity_short)
 
-            # Relative drawdown per side in [0.0, 1.0]
-            dd_long = (self.equity_max_long - equity_long) / self.equity_max_long if self.equity_max_long > 0.0 else 0.0
-            dd_short = (self.equity_max_short - equity_short) / self.equity_max_short if self.equity_max_short > 0.0 else 0.0
+            # Индивидуальные просадки (Self-Correction)
+            dd_long = max(0.0, min((self.equity_max_long - equity_long) / self.equity_max_long, 1.0)) if self.equity_max_long > 0 else 0.0
+            dd_short = max(0.0, min((self.equity_max_short - equity_short) / self.equity_max_short, 1.0)) if self.equity_max_short > 0 else 0.0
 
-            dd_long = max(0.0, min(dd_long, 1.0))
-            dd_short = max(0.0, min(dd_short, 1.0))
+            # 2. Расчет Performance Bias (Cross-Correction) с использованием памяти (24h)
+            perf_long, perf_short = self._get_rolling_performance()
 
-            # Используем настраиваемый коэффициент агрессии
-            k = self.dd_aggression_k.value
-            # Scale dynamic targets around side-specific base thresholds
-            try:
-                k_val = float(k)
-            except (TypeError, ValueError):
-                k_val = 0.55
-            epsilon_target_long = float(self.epsilon_threshold_long) * (1.0 + k_val * dd_long)
-            epsilon_target_short = float(self.epsilon_threshold_short) * (1.0 + k_val * dd_short)
+            pnl_diff = perf_long - perf_short
+            pnl_sum_abs = abs(perf_long) + abs(perf_short)
 
-            alpha = 0.4
+            # Bias от -1.0 (Short доминирует) до +1.0 (Long доминирует)
+            # Добавляем 1.0 к знаменателю для стабилизации при околонулевом профите
+            performance_bias = pnl_diff / (pnl_sum_abs + 1.0) if pnl_sum_abs > 0.0 else 0.0
+            performance_bias = np.clip(performance_bias, -1.0, 1.0)
+
+            # Модуляторы эпсилона: диапазон влияния [0.75, 1.25]
+            # Если bias > 0 (Long тащит), long_mod < 1.0 (снижаем порог уверенности -> агрессивнее)
+            long_perf_mod = 1.0 - (performance_bias * 0.25)
+            short_perf_mod = 1.0 + (performance_bias * 0.25)
+
+            # 3. Итоговый расчет целевых значений
+            k = float(self.dd_aggression_k.value)
+
+            # Формула: (Базовый порог * Модулятор тренда) * (1 + k * Просадка)
+            target_eps_long = (float(self.epsilon_threshold_long) * long_perf_mod) * (1.0 + k * dd_long)
+            target_eps_short = (float(self.epsilon_threshold_short) * short_perf_mod) * (1.0 + k * dd_short)
+
+            # 4. EMA Smoothing (Плавное обновление текущих значений)
+            # Позволяет избежать резких переключений режима при закрытии крупных сделок
+            alpha = 0.2  # Коэффициент сглаживания
+
             if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long == 0.0:
-                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
+                self.epsilon_threshold_eff_long = target_eps_long
             if not hasattr(self, "epsilon_threshold_eff_short") or self.epsilon_threshold_eff_short == 0.0:
-                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
+                self.epsilon_threshold_eff_short = target_eps_short
 
-            # Smooth update via EMA to avoid abrupt jumps (long/short)
-            self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * epsilon_target_long
-            self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * epsilon_target_short
+            self.epsilon_threshold_eff_long = self.epsilon_threshold_eff_long + alpha * (target_eps_long - self.epsilon_threshold_eff_long)
+            self.epsilon_threshold_eff_short = self.epsilon_threshold_eff_short + alpha * (target_eps_short - self.epsilon_threshold_eff_short)
 
             # Clamp effective thresholds into [0.1, 1.0]
             self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, 0.1), 1.0))
@@ -1184,21 +1205,9 @@ class CustomD3QNStrategy4z(IStrategy):
             self.epsilon_threshold_eff = 0.5 * (
                 self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
             )
-            if self.config.get("runmode") in ("live", "dry_run"):
-                # Логируем изменение режима, чтобы не спамить в консоль
-                if self.epsilon_threshold_eff > self.epsilon_threshold * 1.1:
-                    self.logger.info(
-                        f"[DEFENSIVE] Epsilon increased due to DD. "
-                        f"ddL={dd_long:.2f} ddS={dd_short:.2f} | "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
-                elif self.epsilon_threshold_eff < self.epsilon_threshold * 0.9:
-                    self.logger.info(
-                        f"[AGGRESSIVE] Epsilon is low (no DD). "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
+
         except Exception as e:
-            self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
+            self.logger.error(f"Critical error in _update_dynamic_epsilon: {e}")
             self.epsilon_threshold_eff = self.epsilon_threshold
             self.epsilon_threshold_eff_long = self.epsilon_threshold_long
             self.epsilon_threshold_eff_short = self.epsilon_threshold_short
@@ -1506,6 +1515,10 @@ class CustomD3QNStrategy4z(IStrategy):
                           current_time: datetime, **kwargs) -> bool:
         trade_id = trade.id
         self.tsl_memory.pop(trade_id, None)
+
+        # Инвалидируем кэш, чтобы при следующем вызове (после закрытия сделки) он обновился
+        self._last_pnl_refresh = datetime.min.replace(tzinfo=timezone.utc)
+
         return True
     
     def _extract_features_batch(self, dataframe: DataFrame, window: int = 90, should_invert: bool = False) -> Optional[np.ndarray]:
