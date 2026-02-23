@@ -229,10 +229,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
 
-        # 4. GLOBAL INFERENCE CACHE (Batching)
-        self._inference_cache = {}  # {timestamp: {pair: decision_dict}}
-        self._cache_lock = threading.Lock()
-        
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
         else:
@@ -492,16 +488,6 @@ class CustomD3QNStrategy4z(IStrategy):
         if self.enable_short_1: agents_to_optimize.append(("SHORT_1", self.short_1_agent))
         if self.enable_short_2: agents_to_optimize.append(("SHORT_2", self.short_2_agent))
 
-        # Check torch version for compile
-        can_compile = False
-        try:
-            # torch is already imported at module level
-            v = torch.__version__.split('.')
-            if int(v[0]) >= 2:
-                can_compile = True
-        except Exception:
-            pass
-
         for agent_name, agent in agents_to_optimize:
             if agent:
                 agent.policy_net.eval()
@@ -510,12 +496,13 @@ class CustomD3QNStrategy4z(IStrategy):
                 for param in agent.policy_net.parameters():
                     param.requires_grad = False
 
-                if can_compile:
-                    try:
-                        logger.info(f"🚀 Compiling {agent_name} model for extra speed...")
-                        agent.policy_net = torch.compile(agent.policy_net)
-                    except Exception as e:
-                        logger.warning(f"Could not compile {agent_name}: {e}")
+                # TorchScript tracing for Extreme CPU Speed
+                try:
+                    dummy_input = torch.zeros(1, 454, device=self.device)
+                    agent.policy_net = torch.jit.trace(agent.policy_net, dummy_input)
+                    logger.info(f"🚀 {agent_name} successfully JIT-traced for CPU.")
+                except Exception as e:
+                    logger.warning(f"Could not JIT-trace {agent_name}: {e}")
         
         logger.info("[OK] CPU optimizations applied")
         
@@ -889,7 +876,10 @@ class CustomD3QNStrategy4z(IStrategy):
             cfg = self.cfg_short_1 if model_num == 1 else self.cfg_short_2
             
         if cfg and hasattr(cfg, 'seq') and cfg.seq:
-            window = getattr(cfg.seq, "agent_history_len", 90)
+            try:
+                window = int(getattr(cfg.seq, "agent_history_len", 90))
+            except (TypeError, ValueError):
+                window = 90
 
         # 1. Проверка длины
         if len(dataframe) < window:
@@ -1163,8 +1153,12 @@ class CustomD3QNStrategy4z(IStrategy):
             # Используем настраиваемый коэффициент агрессии
             k = self.dd_aggression_k.value
             # Scale dynamic targets around side-specific base thresholds
-            epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
-            epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
+            try:
+                k_val = float(k)
+            except (TypeError, ValueError):
+                k_val = 0.55
+            epsilon_target_long = float(self.epsilon_threshold_long) * (1.0 + k_val * dd_long)
+            epsilon_target_short = float(self.epsilon_threshold_short) * (1.0 + k_val * dd_short)
 
             alpha = 0.4
             if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long == 0.0:
@@ -1212,6 +1206,11 @@ class CustomD3QNStrategy4z(IStrategy):
         pnl_long, pnl_short = self._get_pnl_from_freqtrade()
 
         # === УЛУЧШЕННАЯ ЛОГИКА V2 ===
+        try:
+            agg_factor = float(self.aggression_factor)
+        except (TypeError, ValueError):
+            agg_factor = 1.5
+
         if pnl_long > 0 and pnl_short < 0:
             # Пропорциональное наказание убыточного направления
             profit_long = pnl_long
@@ -1219,7 +1218,7 @@ class CustomD3QNStrategy4z(IStrategy):
             total = profit_long + loss_short
 
             # Aggression factor as root (1/3) makes penalty curve convex -> harsher punishment
-            penalty_ratio = (loss_short / total) ** (1.0 / self.aggression_factor)
+            penalty_ratio = (loss_short / total) ** (1.0 / agg_factor)
             long_ratio = 0.85 + 0.10 * penalty_ratio
             reason = f"Long profitable (+{pnl_long:.0f}), Short losing (-{loss_short:.0f})"
 
@@ -1229,7 +1228,7 @@ class CustomD3QNStrategy4z(IStrategy):
             loss_long = abs(pnl_long)
             total = profit_short + loss_long
 
-            penalty_ratio = (loss_long / total) ** (1.0 / self.aggression_factor)
+            penalty_ratio = (loss_long / total) ** (1.0 / agg_factor)
             long_ratio = 0.15 - 0.10 * penalty_ratio
             reason = f"Short profitable (+{pnl_short:.0f}), Long losing (-{loss_long:.0f})"
 
@@ -1245,7 +1244,7 @@ class CustomD3QNStrategy4z(IStrategy):
             if total_loss > 0:
                 # Инвертируем: большему убытку - меньше слотов
                 base_ratio = loss_short / total_loss
-                long_ratio = base_ratio ** (1.0 / self.aggression_factor)
+                long_ratio = base_ratio ** (1.0 / agg_factor)
                 reason = f"Both losing - inverse allocation (L:-{loss_long:.0f} S:-{loss_short:.0f})"
             else:
                 long_ratio = 0.5
@@ -1257,14 +1256,22 @@ class CustomD3QNStrategy4z(IStrategy):
         # Ограничиваем в разумных пределах
         long_ratio = max(0.05, min(0.95, long_ratio))
 
-        available = self.total_slots - 2 * self.min_slots_per_side
+        try:
+            available = int(self.total_slots) - 2 * int(self.min_slots_per_side)
+        except (TypeError, ValueError):
+            available = 0
+
         if available < 0:
             # Защита если min_slots_per_side слишком велик
             self.max_long_slots = self.total_slots // 2
             self.max_short_slots = self.total_slots - self.max_long_slots
         else:
-            self.max_long_slots = self.min_slots_per_side + int(available * long_ratio)
-            self.max_short_slots = self.total_slots - self.max_long_slots
+            try:
+                self.max_long_slots = int(self.min_slots_per_side) + int(available * long_ratio)
+                self.max_short_slots = self.total_slots - self.max_long_slots
+            except (TypeError, ValueError):
+                self.max_long_slots = self.total_slots // 2
+                self.max_short_slots = self.total_slots - self.max_long_slots
 
         self.slot_history.append((current_time, self.max_long_slots, self.max_short_slots, pnl_long, pnl_short))
         self.logger.info(f"SLOTS: L={self.max_long_slots} ({pnl_long:+.1f} USDT) | S={self.max_short_slots} ({pnl_short:+.1f} USDT) | {reason}")
@@ -1466,12 +1473,20 @@ class CustomD3QNStrategy4z(IStrategy):
             current_longs = sum(1 for t in trades if not t.is_short)
 
             if side == "long":
-                if current_longs >= self.max_long_slots:
-                    self.logger.info(f"[LIMIT] LONG LIMIT: {pair} {current_longs}/{self.max_long_slots}")
+                try:
+                    limit = int(self.max_long_slots)
+                except (TypeError, ValueError):
+                    limit = 50
+                if current_longs >= limit:
+                    self.logger.info(f"[LIMIT] LONG LIMIT: {pair} {current_longs}/{limit}")
                     return False
             elif side == "short":
-                if current_shorts >= self.max_short_slots:
-                    self.logger.info(f"[LIMIT] SHORT LIMIT: {pair} {current_shorts}/{self.max_short_slots}")
+                try:
+                    limit = int(self.max_short_slots)
+                except (TypeError, ValueError):
+                    limit = 50
+                if current_shorts >= limit:
+                    self.logger.info(f"[LIMIT] SHORT LIMIT: {pair} {current_shorts}/{limit}")
                     return False
         except Exception as e:
             self.logger.error(f"Error in confirm_trade_entry: {e}")
@@ -1515,106 +1530,6 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception as e:
             logger.error(f"Feature extraction failed: {e}")
             return None
-
-    def _fill_global_inference_cache(self, current_time: datetime):
-        """
-        Performs batch inference for all pairs in the whitelist at once.
-        """
-        whitelist = self.dp.current_whitelist()
-
-        # Prepare storage for batch tensors
-        model_inputs = {
-            "long_1": [], "long_2": [], "short_1": [], "short_2": []
-        }
-        active_pairs = {
-            "long_1": [], "long_2": [], "short_1": [], "short_2": []
-        }
-
-        # 1. Collect data for all pairs
-        for pair in whitelist:
-            df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-            if df is None or df.empty or len(df) < self.startup_candle_count:
-                continue
-
-            # Check regimes to see which models to run
-            allow_long = True
-            allow_short = self.can_short
-
-            if self.use_global_regime_filter and 'st_regime_global' in df.columns:
-                reg_g = df['st_regime_global'].iloc[-1]
-                allow_long &= (reg_g > 0)
-                allow_short &= (reg_g < 0)
-
-            if self.use_local_regime_filter and 'st_regime_local' in df.columns:
-                reg_l = df['st_regime_local'].iloc[-1]
-                allow_long &= (reg_l > 0)
-                allow_short &= (reg_l < 0)
-
-            # Extract features for each active side/model
-            if allow_long:
-                if self.enable_long_1:
-                    feat = self._extract_features_batch(df, should_invert=False)
-                    if feat is not None:
-                        model_inputs["long_1"].append(feat)
-                        active_pairs["long_1"].append(pair)
-                if self.enable_long_2:
-                    feat = self._extract_features_batch(df, should_invert=False)
-                    if feat is not None:
-                        model_inputs["long_2"].append(feat)
-                        active_pairs["long_2"].append(pair)
-
-            if allow_short:
-                if self.enable_short_1:
-                    feat = self._extract_features_batch(df, should_invert=self.short_1_is_mirror)
-                    if feat is not None:
-                        model_inputs["short_1"].append(feat)
-                        active_pairs["short_1"].append(pair)
-                if self.enable_short_2:
-                    feat = self._extract_features_batch(df, should_invert=self.short_2_is_mirror)
-                    if feat is not None:
-                        model_inputs["short_2"].append(feat)
-                        active_pairs["short_2"].append(pair)
-
-        # 2. Run inference for each model that has inputs
-        inference_tasks = []
-        if model_inputs["long_1"]:
-            t = torch.from_numpy(np.stack(model_inputs["long_1"])).to(self.device)
-            inference_tasks.append((t, self.long_1_agent, "long_1"))
-        if model_inputs["long_2"]:
-            t = torch.from_numpy(np.stack(model_inputs["long_2"])).to(self.device)
-            inference_tasks.append((t, self.long_2_agent, "long_2"))
-        if model_inputs["short_1"]:
-            t = torch.from_numpy(np.stack(model_inputs["short_1"])).to(self.device)
-            inference_tasks.append((t, self.short_1_agent, "short_1"))
-        if model_inputs["short_2"]:
-            t = torch.from_numpy(np.stack(model_inputs["short_2"])).to(self.device)
-            inference_tasks.append((t, self.short_2_agent, "short_2"))
-
-        if not inference_tasks:
-            return
-
-        batch_q_values = self._parallel_inference(inference_tasks)
-
-        # 3. Process results and fill cache
-        pair_q_values = {pair: {} for pair in whitelist}
-        for model_name, q_vals in batch_q_values.items():
-            pairs_for_model = active_pairs[model_name]
-            for i, pair in enumerate(pairs_for_model):
-                pair_q_values[pair][model_name] = q_vals[i:i+1]
-
-        with self._cache_lock:
-            if current_time not in self._inference_cache:
-                self._inference_cache[current_time] = {}
-                if len(self._inference_cache) > 5:
-                    oldest = min(self._inference_cache.keys())
-                    self._inference_cache.pop(oldest)
-
-            for pair in whitelist:
-                q_vals = pair_q_values.get(pair, {})
-                if not q_vals:
-                    continue
-                decision = self._compute_ensemble_decision(q_vals, 0, has_long=False, has_short=False)
-                self._inference_cache[current_time][pair] = decision
 
     def _populate_entry_trend_backtest(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
@@ -1675,40 +1590,120 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        OPTIMIZED ENSEMBLE ENTRY LOGIC с пакетным инференсом
+        OPTIMIZED ENSEMBLE ENTRY LOGIC - Sequential for Live/Dry-run
         """
         # Backtest handling
         if self.config.get('runmode') not in ('live', 'dry_run'):
             return self._populate_entry_trend_backtest(dataframe, metadata)
 
-        pair = metadata['pair']
-        current_time = dataframe.iloc[-1]['date']
-
-        # 1. Проверяем глобальный кэш инференса
-        with self._cache_lock:
-            if current_time in self._inference_cache:
-                decision = self._inference_cache[current_time].get(pair)
-                if decision:
-                    dataframe.loc[dataframe.index[-1], 'enter_long'] = decision.get('enter_long', 0)
-                    dataframe.loc[dataframe.index[-1], 'enter_short'] = decision.get('enter_short', 0)
-                    return dataframe
-
-        # 2. Если кэш пуст — запускаем массовый инференс для всех пар
-        # Перед инференсом обновляем динамический epsilon один раз на весь батч
+        # Single-pair fast inference for Live/Dry-run
         self._update_dynamic_epsilon()
-        self._fill_global_inference_cache(current_time)
 
-        # 3. Пытаемся получить результат снова
-        with self._cache_lock:
-            decision = self._inference_cache.get(current_time, {}).get(pair)
-            if decision:
-                dataframe.loc[dataframe.index[-1], 'enter_long'] = decision.get('enter_long', 0)
-                dataframe.loc[dataframe.index[-1], 'enter_short'] = decision.get('enter_short', 0)
-                return dataframe
+        # 1. Базовая защита
+        if len(dataframe) < self.startup_candle_count:
+            return dataframe
 
-        # Fallback to empty if batch failed
-        dataframe['enter_long'] = 0
-        dataframe['enter_short'] = 0
+        # 2. Regime-фильтр: Глобальный (BTC 15m) + Локальный (Asset 15m)
+        allow_long = True
+        allow_short = self.can_short
+
+        try:
+            if self.use_global_regime_filter:
+                if 'st_regime_global' in dataframe.columns:
+                    regime_global = dataframe['st_regime_global'].iloc[-1]
+                    if isinstance(regime_global, (int, float, np.integer, np.floating)):
+                        allow_long = allow_long and (regime_global > 0)
+                        allow_short = allow_short and (regime_global < 0)
+                else:
+                    allow_long = allow_short = False
+
+            if self.use_local_regime_filter:
+                if 'st_regime_local' in dataframe.columns:
+                    regime_local = dataframe['st_regime_local'].iloc[-1]
+                    if isinstance(regime_local, (int, float, np.integer, np.floating)):
+                        allow_long = allow_long and (regime_local > 0)
+                        allow_short = allow_short and (regime_local < 0)
+                else:
+                    allow_long = allow_short = False
+        except Exception as e:
+            self.logger.warning(f"Regime filter failed for {metadata.get('pair', '')}: {e}")
+            allow_long = allow_short = False # Fail-Closed
+
+        # 3. Оптимизированный инференс (только последняя свеча)
+        asset_name = metadata['pair'].split(':')[0].replace('/', '')
+        df_input = dataframe.iloc[-90:] # Оптимизация: берем последние 90 свечей
+
+        # Инференс (с использованием кэша признаков)
+        tensor_long_1 = self.get_model_input_cached(
+            df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name
+        ) if (self.enable_long_1 and allow_long) else None
+        tensor_long_2 = self.get_model_input_cached(
+            df_input, metadata['pair'], side="LONG", model_num=2, asset_name=asset_name
+        ) if (self.enable_long_2 and allow_long) else None
+        tensor_short_1 = self.get_model_input_cached(
+            df_input, metadata['pair'], side="SHORT", model_num=1, asset_name=asset_name
+        ) if (self.enable_short_1 and allow_short) else None
+        tensor_short_2 = self.get_model_input_cached(
+            df_input, metadata['pair'], side="SHORT", model_num=2, asset_name=asset_name
+        ) if (self.enable_short_2 and allow_short) else None
+
+        # Собираем задачи на инференс
+        inference_tasks = []
+        if tensor_long_1 is not None: inference_tasks.append((tensor_long_1, self.long_1_agent, "long_1"))
+        if tensor_long_2 is not None: inference_tasks.append((tensor_long_2, self.long_2_agent, "long_2"))
+        if tensor_short_1 is not None: inference_tasks.append((tensor_short_1, self.short_1_agent, "short_1"))
+        if tensor_short_2 is not None: inference_tasks.append((tensor_short_2, self.short_2_agent, "short_2"))
+
+        if not inference_tasks:
+            dataframe['enter_long'] = 0
+            dataframe['enter_short'] = 0
+            return dataframe
+
+        # Выполняем инференс
+        q_values = self._parallel_inference(inference_tasks)
+
+        # Сбор статистики advantage для автоподбора q_min/q_max
+        for name, q in q_values.items():
+            adv = q[0, 1] - q[0, 0]
+            self._collect_adv_stats(name, np.array([adv]))
+
+        if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
+            self.update_normalization_config()
+            self.last_config_update = datetime.now()
+
+        # 4. Получение решения ансамбля
+        has_long = False
+        has_short = False
+        try:
+            open_trade = Trade.get_trades([Trade.is_open.is_(True), Trade.pair == metadata['pair']]).first()
+            if open_trade:
+                has_long = not open_trade.is_short
+                has_short = open_trade.is_short
+        except Exception:
+            pass
+
+        decision = self._compute_ensemble_decision(q_values, 0, has_long, has_short)
+
+        # 5. Volume Filter
+        if 'quote_volume_sma' in dataframe.columns:
+            try:
+                min_volume = float(self.min_quote_volume_usd.value)
+                current_volume = dataframe['quote_volume_sma'].iloc[-1]
+                if isinstance(current_volume, (int, float, np.integer, np.floating)):
+                    if current_volume < min_volume:
+                        decision['enter_long'] = 0
+                        decision['enter_short'] = 0
+            except (TypeError, ValueError):
+                pass
+
+        # Записываем результат
+        dataframe.loc[dataframe.index[-1], 'enter_long'] = decision.get('enter_long', 0)
+        dataframe.loc[dataframe.index[-1], 'enter_short'] = decision.get('enter_short', 0)
+
+        # Logging for signals
+        if decision['enter_long'] or decision['enter_short']:
+            self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY: {decision['reason']}")
+
         return dataframe
 
     def _legacy_populate_entry_trend_disabled(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
