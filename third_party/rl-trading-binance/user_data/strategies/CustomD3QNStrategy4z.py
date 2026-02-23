@@ -81,7 +81,9 @@ logger = logging.getLogger(__name__)
 @njit(cache=False)
 def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Математически верный расчет SuperTrend без Look-ahead Bias.
+    Математически верный расчет SuperTrend.
+    Направление в цикле определяется по текущему close_p[i],
+    но в _compute_supertrend результат смещается на 1 для удаления Look-ahead Bias.
     """
     size = len(close_p)
     st = np.zeros(size, dtype=np.float64)
@@ -96,7 +98,7 @@ def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerba
     st[0] = final_lower[0]
 
     for i in range(1, size):
-        # 1. Финальные полосы зависят от предыдущих значений и close_p[i-1]
+        # 1. Финальные полосы зависят от предыдущих значений и close_p[i-1] (рекурсия)
         if (upperband_p[i] < final_upper[i - 1]) or (close_p[i - 1] > final_upper[i - 1]):
             final_upper[i] = upperband_p[i]
         else:
@@ -107,10 +109,10 @@ def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerba
         else:
             final_lower[i] = final_lower[i - 1]
 
-        # 2. Направление тренда (строго на основе данных i-1)
-        if close_p[i - 1] > final_upper[i - 1]:
+        # 2. Направление тренда (стандартная логика)
+        if close_p[i] > final_upper[i]:
             direction[i] = 1
-        elif close_p[i - 1] < final_lower[i - 1]:
+        elif close_p[i] < final_lower[i]:
             direction[i] = -1
         else:
             direction[i] = direction[i - 1]
@@ -684,9 +686,10 @@ class CustomD3QNStrategy4z(IStrategy):
         st, direction = _numba_supertrend_loop(close, upperband_p, lowerband_p)
 
         out = pd.DataFrame(index=df.index)
-        # Дополнительно смещаем на 1, чтобы агент не "заглядывал в будущее"
+        # Смещаем результаты на 1, чтобы агент не "заглядывал в будущее" (Look-ahead Bias)
         out['st'] = pd.Series(st, index=df.index).shift(1)
-        out['st_dir'] = pd.Series(direction, index=df.index).shift(1)
+        # Shift direction by 1 to avoid look-ahead bias (using only closed candle data)
+        out['st_dir'] = pd.Series(direction, index=df.index).shift(1).fillna(0).astype(np.int8)
         return out
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
