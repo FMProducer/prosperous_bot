@@ -77,32 +77,49 @@ logger = logging.getLogger(__name__)
 
 
 # --- NUMBA JIT SUPERTREND LOOP ---
-# Выносим цикл из класса для LLVM компиляции. cache=True убирает warmup penalty.
-@njit(cache=True)
-def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    size = len(close_p)
+# Выносим цикл из класса для LLVM компиляции.
+@njit(cache=False)
+def _numba_supertrend_loop(close: np.ndarray, basic_upper: np.ndarray, basic_lower: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Математически верный расчет SuperTrend без Look-ahead Bias.
+    """
+    size = len(close)
     st = np.zeros(size, dtype=np.float64)
     direction = np.ones(size, dtype=np.int8)
+    final_upper = np.zeros(size, dtype=np.float64)
+    final_lower = np.zeros(size, dtype=np.float64)
 
-    st[0] = upperband_p[0]
+    # Инициализация
+    final_upper[0] = basic_upper[0]
+    final_lower[0] = basic_lower[0]
     direction[0] = 1
+    st[0] = final_lower[0]
 
     for i in range(1, size):
-        if close_p[i] > upperband_p[i - 1]:
+        # 1. Финальные полосы зависят от предыдущих значений и close[i-1]
+        if (basic_upper[i] < final_upper[i - 1]) or (close[i - 1] > final_upper[i - 1]):
+            final_upper[i] = basic_upper[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
+
+        if (basic_lower[i] > final_lower[i - 1]) or (close[i - 1] < final_lower[i - 1]):
+            final_lower[i] = basic_lower[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
+
+        # 2. Направление тренда (строго на основе данных i-1)
+        if close[i - 1] > final_upper[i - 1]:
             direction[i] = 1
-        elif close_p[i] < lowerband_p[i - 1]:
+        elif close[i - 1] < final_lower[i - 1]:
             direction[i] = -1
         else:
             direction[i] = direction[i - 1]
 
-            if direction[i] == 1:
-                if upperband_p[i] > upperband_p[i - 1]:
-                    upperband_p[i] = upperband_p[i - 1]
-            else:
-                if lowerband_p[i] < lowerband_p[i - 1]:
-                    lowerband_p[i] = lowerband_p[i - 1]
-
-        st[i] = lowerband_p[i] if direction[i] == 1 else upperband_p[i]
+        # 3. Результирующая линия SuperTrend
+        if direction[i] == 1:
+            st[i] = final_lower[i]
+        else:
+            st[i] = final_upper[i]
 
     return st, direction
 
@@ -667,8 +684,9 @@ class CustomD3QNStrategy4z(IStrategy):
         st, direction = _numba_supertrend_loop(close, upperband_p, lowerband_p)
 
         out = pd.DataFrame(index=df.index)
-        out['st'] = st
-        out['st_dir'] = direction
+        # Дополнительно смещаем на 1, чтобы агент не "заглядывал в будущее"
+        out['st'] = pd.Series(st, index=df.index).shift(1)
+        out['st_dir'] = pd.Series(direction, index=df.index).shift(1)
         return out
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
