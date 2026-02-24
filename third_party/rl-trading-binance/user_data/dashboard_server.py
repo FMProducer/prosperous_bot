@@ -22,7 +22,9 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=DASHBOARD_DIR, **kwargs)
 
     def do_GET(self):
-        if self.path.startswith('/api/'):
+        if self.path == '/api/rl_stats':
+            self._serve_rl_stats()
+        elif self.path.startswith('/api/'):
             self._proxy('GET')
         else:
             # Serve static files (dashboard.html)
@@ -35,6 +37,23 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self._proxy('POST')
         else:
             self.send_error(404)
+
+    def _serve_rl_stats(self):
+        file_path = os.path.join(DASHBOARD_DIR, 'rl_stats.json')
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Length', str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404, "Stats file not found")
+        except Exception as e:
+            self.send_error(500, str(e))
 
     def _proxy(self, method):
         target_url = FREQTRADE_API + self.path
