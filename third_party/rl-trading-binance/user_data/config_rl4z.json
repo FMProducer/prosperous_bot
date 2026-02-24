@@ -70,27 +70,27 @@
     },
     "rl_ensemble": {
         "use_global_regime_filter": false,
-        "use_local_regime_filter": true,
+        "use_local_regime_filter": false,
         "epsilon_threshold_long": 0.5,
         "epsilon_threshold_short": 0.5,
         "dd_aggression_k": 1.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 4.9e-05,
-                "q_max": 0.003446
+                "q_min": 4.7e-05,
+                "q_max": 0.003422
             },
             "long_2": {
-                "q_min": 0.000102,
-                "q_max": 0.000407
+                "q_min": 0.000117,
+                "q_max": 0.000427
             },
             "short_1": {
-                "q_min": 8.1e-05,
-                "q_max": 0.000552
+                "q_min": 0.000378,
+                "q_max": 0.000583
             },
             "short_2": {
-                "q_min": 0.000194,
-                "q_max": 0.000702
+                "q_min": 0.000587,
+                "q_max": 0.0007
             }
         }
     },
