@@ -21,7 +21,7 @@
     "rl_enable_short_2": true,
     "dynamic_slots": {
         "enabled": true,
-        "min_slots_per_side": 15,
+        "min_slots_per_side": 0,
         "update_interval_sec": 10,
         "aggression_factor": 3.0
     },
@@ -70,27 +70,27 @@
     },
     "rl_ensemble": {
         "use_global_regime_filter": false,
-        "use_local_regime_filter": false,
+        "use_local_regime_filter": true,
         "epsilon_threshold_long": 0.5,
         "epsilon_threshold_short": 0.5,
         "dd_aggression_k": 1.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 4.7e-05,
-                "q_max": 0.003422
+                "q_min": 7.9e-05,
+                "q_max": 0.00357
             },
             "long_2": {
-                "q_min": 0.000117,
-                "q_max": 0.000427
+                "q_min": 0.000119,
+                "q_max": 0.000451
             },
             "short_1": {
-                "q_min": 0.000378,
-                "q_max": 0.000583
+                "q_min": 0.000126,
+                "q_max": 0.000577
             },
             "short_2": {
-                "q_min": 0.000587,
-                "q_max": 0.0007
+                "q_min": 0.000188,
+                "q_max": 0.000675
             }
         }
     },

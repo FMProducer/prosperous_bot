@@ -163,7 +163,9 @@ class CustomD3QNStrategy4z(IStrategy):
     # load=False и optimize=False гарантируют использование значений default (из обучения)
     d0 = DecimalParameter(0.01, 0.10, default=0.0752, space='sell', optimize=True, load=True)
     d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=True, load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00152, space='sell', optimize=True, load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00005, space='sell', optimize=True, load=True)
+    # Расширим диапазон p_target, чтобы Hyperopt мог проверить и более консервативные (до 10%), и агрессивные варианты
+    p_target = DecimalParameter(0.01, 0.10, default=0.0224, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
@@ -890,10 +892,18 @@ class CustomD3QNStrategy4z(IStrategy):
         # Используем запомненное значение (ступенчатое), чтобы гистерезис работал
         calc_p = self.tsl_memory[trade_id]
 
+        # НЕЛИНЕЙНЫЙ ТРЕЙЛИНГ (агрессивный в начале)
+        # Стоп подтягивается быстро при малом профите (корень квадратный)
         if calc_p <= FEE_BUF:
             d_eff = d0_val
         else:
-            d_eff = d0_val - (calc_p - FEE_BUF)
+            p_factor = calc_p - FEE_BUF
+            # Целевой профит, при котором отступ сужается до d_min (берем из параметра)
+            p_target_val = self.p_target.value
+            # Нормализуем (0..1)
+            p_norm = min(1.0, p_factor / p_target_val) 
+            # Степенная функция (0.5 = корень). Чем меньше степень, тем резче старт.
+            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.5)
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff
