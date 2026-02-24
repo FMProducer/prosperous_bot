@@ -81,8 +81,8 @@ logger = logging.getLogger(__name__)
 @njit(cache=False)
 def _numba_supertrend_loop(close_p: np.ndarray, upperband_p: np.ndarray, lowerband_p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Математически верный расчет SuperTrend.
-    Направление в цикле определяется по текущему close_p[i],
+    Математически верный расчет SuperTrend. 
+    Направление в цикле определяется по текущему close_p[i], 
     но в _compute_supertrend результат смещается на 1 для удаления Look-ahead Bias.
     """
     size = len(close_p)
@@ -1194,11 +1194,6 @@ class CustomD3QNStrategy4z(IStrategy):
             performance_bias = pnl_diff / (pnl_sum_abs + 1.0) if pnl_sum_abs > 0.0 else 0.0
             performance_bias = np.clip(performance_bias, -1.0, 1.0)
 
-            # Store for monitoring
-            self._last_perf_bias = performance_bias
-            self._last_dd_long = dd_long
-            self._last_dd_short = dd_short
-
             # Модуляторы эпсилона: диапазон влияния [0.75, 1.25]
             # Если bias > 0 (Long тащит), long_mod < 1.0 (снижаем порог уверенности -> агрессивнее)
             long_perf_mod = 1.0 - (performance_bias * 0.25)
@@ -1705,26 +1700,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # Выполняем инференс
         q_values = self._parallel_inference(inference_tasks)
 
-        # Calculate Advantage Spread (Confidence) for monitoring
-        adv_spread = 0.0
-        if q_values:
-            # Difference between best action (idx 1) and hold (idx 0)
-            all_advs = [float(q[0, 1] - q[0, 0]) for q in q_values.values()]
-            adv_spread = max(all_advs) if all_advs else 0.0
-
-        # Save stats once per candle (using first pair in whitelist)
-        first_pair = ""
-        if hasattr(self, 'dp') and self.dp:
-            whitelist = self.dp.current_whitelist()
-            if whitelist:
-                first_pair = whitelist[0]
-
-        if metadata['pair'] == first_pair:
-            bias = getattr(self, '_last_perf_bias', 0.0)
-            dd_l = getattr(self, '_last_dd_long', 0.0)
-            dd_s = getattr(self, '_last_dd_short', 0.0)
-            self._save_rl_monitoring_stats(bias, dd_l, dd_s, adv_spread)
-
         # Сбор статистики advantage для автоподбора q_min/q_max
         for name, q in q_values.items():
             adv = q[0, 1] - q[0, 0]
@@ -2178,28 +2153,6 @@ class CustomD3QNStrategy4z(IStrategy):
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return dataframe
-
-    def _save_rl_monitoring_stats(self, bias, dd_l, dd_s, adv):
-        try:
-            stats = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "performance_bias": round(float(bias), 4),
-                "dd_long": round(float(dd_l), 4),
-                "dd_short": round(float(dd_s), 4),
-                "eps_long": round(float(getattr(self, 'epsilon_threshold_eff_long', 0.15)), 3),
-                "eps_short": round(float(getattr(self, 'epsilon_threshold_eff_short', 0.15)), 3),
-                "adv_spread": round(float(adv), 5),
-                "max_long_slots": int(getattr(self, 'max_long_slots', 50)),
-                "max_short_slots": int(getattr(self, 'max_short_slots', 50)),
-            }
-
-            # Save to user_data/rl_stats.json
-            project_root = getattr(self, 'project_root', Path('.'))
-            file_path = project_root / "user_data/rl_stats.json"
-            with open(file_path, "w") as f:
-                json.dump(stats, f)
-        except Exception as e:
-            logger.error(f"Failed to save RL monitoring stats: {e}")
 
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
