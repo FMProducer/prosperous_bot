@@ -3,7 +3,6 @@ import logging
 import logging.handlers
 import importlib.util
 from pathlib import Path
-import json
 import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 from pandas import DataFrame  # type: ignore
@@ -295,10 +294,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self._realized_pnl_short = 0.0
         self._last_pnl_refresh = datetime.min.replace(tzinfo=timezone.utc)
         self._pnl_refresh_interval = 300  # 5 минут
-        
-        # История Advantage для автоподбора q_min/q_max
-        self.adv_history = {}
-        self.last_config_update = datetime.now()
         
         # Статистика конфликтов
         self.conflict_stats = {
@@ -1004,72 +999,6 @@ class CustomD3QNStrategy4z(IStrategy):
                     results[name] = np.zeros((batch_size, agent.action_dim))
         return results
 
-    def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
-        """
-        Сбор статистики advantage для автоподбора q_min/q_max.
-        Вместо одного последнего значения используем все положительные
-        значения из adv_array и храним короткое скользящее окно.
-        """
-        if name not in self.adv_history:
-            # Примерно 5 минут истории:
-            # при большом количестве пар метод вызывается очень часто,
-            # поэтому 1280 элементов дают короткое, но репрезентативное окно.
-            self.adv_history[name] = deque(maxlen=5400)
-
-        if adv_array is None or len(adv_array) == 0:
-            return
-
-        # Берем только положительные advantage (сигналы выше нуля)
-        # и добавляем их в общую историю по данной модели.
-        pos_arr = np.asarray(adv_array, dtype=float)
-        pos_arr = pos_arr[pos_arr > 0.0]
-        if pos_arr.size > 0:
-            self.adv_history[name].extend(pos_arr.tolist())
-
-    def update_normalization_config(self):
-        try:
-            config_path = self.project_root / "user_data/config_rl4z.json"
-            if not config_path.exists():
-                self.logger.warning(f"⚠️ Config update skipped: {config_path} not found")
-                return
-
-            with open(config_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            updated = False
-            norm_cfg = data.get('rl_ensemble', {}).get('q_normalization', {})
-            
-            for name, history in self.adv_history.items():
-                if len(history) < 100: 
-                    self.logger.info(f"⏳ {name}: Insufficient history for Q-update ({len(history)}/100)")
-                    continue # Мало данных
-                
-                arr = np.array(history)
-                # Берем только положительные значения (сигналы)
-                pos_arr = arr[arr > 0]
-                if len(pos_arr) < 50: 
-                    continue
-                
-                # Считаем перцентили: q_min (шум) и q_max (пик)
-                new_min = float(round(np.percentile(pos_arr, 15), 6))
-                new_max = float(round(np.percentile(pos_arr, 99), 6))
-                
-                if name not in norm_cfg: norm_cfg[name] = {}
-                norm_cfg[name]['q_min'] = new_min
-                norm_cfg[name]['q_max'] = new_max
-                updated = True
-                self.logger.info(f"⚖️ Auto-tuned {name}: q_min={new_min}, q_max={new_max}")
-            
-            if updated:
-                if 'rl_ensemble' not in data: data['rl_ensemble'] = {}
-                data['rl_ensemble']['q_normalization'] = norm_cfg
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4)
-                self.q_normalization = norm_cfg
-                self.logger.info(f"💾 Config saved to {config_path}")
-        except Exception as e:
-            self.logger.error(f"Failed to auto-tune config: {e}")
-
     def _get_pnl_from_freqtrade(self) -> tuple:
         """
         Получает ТОЛЬКО Unrealized PnL (открытые позиции)
@@ -1710,15 +1639,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # Выполняем инференс
         q_values = self._parallel_inference(inference_tasks)
 
-        # Сбор статистики advantage для автоподбора q_min/q_max
-        for name, q in q_values.items():
-            adv = q[0, 1] - q[0, 0]
-            self._collect_adv_stats(name, np.array([adv]))
-
-        if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
-            self.update_normalization_config()
-            self.last_config_update = datetime.now()
-
         # 4. Получение решения ансамбля
         has_long = False
         has_short = False
@@ -1936,16 +1856,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # use index 1 for their primary 'ENTRY' action
         action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=1)
         action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=1)
-
-        # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
-        if self.config.get('runmode') in ['live', 'dry_run']:
-            if self.enable_long_1 and "long_1" in q_values: self._collect_adv_stats("long_1", adv_long_1)
-            if self.enable_long_2 and "long_2" in q_values: self._collect_adv_stats("long_2", adv_long_2)
-            if self.enable_short_1 and "short_1" in q_values: self._collect_adv_stats("short_1", adv_short_1)
-            if self.enable_short_2 and "short_2" in q_values: self._collect_adv_stats("short_2", adv_short_2)
-            if self.config_update_interval > 0 and (datetime.now() - self.last_config_update).total_seconds() > self.config_update_interval:
-                self.update_normalization_config()
-                self.last_config_update = datetime.now()
 
         # DEBUG: Log action distribution to verify models are outputting signals
         if self.config.get('runmode') in ['live', 'dry_run']:
