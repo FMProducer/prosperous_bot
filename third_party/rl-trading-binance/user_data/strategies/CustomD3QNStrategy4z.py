@@ -109,7 +109,7 @@ class CustomD3QNStrategy4z(IStrategy):
     d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=True, load=True)
     hysteresis = DecimalParameter(0.00005, 0.01, default=0.00005, space='sell', optimize=True, load=True)
     # Расширим диапазон p_target, чтобы Hyperopt мог проверить и более консервативные (до 10%), и агрессивные варианты
-    p_target = DecimalParameter(0.01, 0.10, default=0.0224, space='sell', optimize=True, load=True)
+    p_target = DecimalParameter(0.01, 0.10, default=0.0217, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
@@ -345,18 +345,19 @@ class CustomD3QNStrategy4z(IStrategy):
         self.use_global_regime_filter: bool = self.ensemble_cfg.get('use_global_regime_filter', True)
         self.use_local_regime_filter: bool = self.ensemble_cfg.get('use_local_regime_filter', True)
 
+        # --- DYNAMIC EPSILON V2 CONFIG ---
         # Base epsilon from config (common legacy value)
-        self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.15)
+        self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.75) # Legacy fallback
 
-        # Separate base thresholds for long/short sides, defaulting to common epsilon
-        self.epsilon_threshold_long: float = self.ensemble_cfg.get(
-            "epsilon_threshold_long", self.epsilon_threshold
-        )
-        self.epsilon_threshold_short: float = self.ensemble_cfg.get(
-            "epsilon_threshold_short", self.epsilon_threshold
-        )
+        # V2: Base/Target Epsilon
+        self.epsilon_threshold_long: float = self.ensemble_cfg.get("epsilon_threshold_long", 0.75)
+        self.epsilon_threshold_short: float = self.ensemble_cfg.get("epsilon_threshold_short", 0.75)
 
-        # Effective epsilons used for thresholding, updated dynamically around per-side bases
+        # V2: Epsilon Range
+        self.epsilon_min: float = self.ensemble_cfg.get("epsilon_min", 0.1)
+        self.epsilon_max: float = self.ensemble_cfg.get("epsilon_max", 1.0)
+
+        # Effective epsilons used for thresholding, updated dynamically
         self.epsilon_threshold_eff_long: float = float(self.epsilon_threshold_long)
         self.epsilon_threshold_eff_short: float = float(self.epsilon_threshold_short)
         # Aggregate value for logging/compatibility
@@ -364,11 +365,9 @@ class CustomD3QNStrategy4z(IStrategy):
             self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
         )
 
-        # Максимальная наблюдаемая equity по unrealized PnL для лонгов и шортов
-        self.equity_max_long: float = 0.0
-        self.equity_max_short: float = 0.0
-        # Старое поле equity_max оставляем для обратной совместимости (не используется напрямую)
-        self.equity_max: float = 0.0
+        # V2: Максимальная наблюдаемая нереализованная прибыль (PnL) по направлениям
+        self.pnl_max_long: float = 0.0
+        self.pnl_max_short: float = 0.0
 
         # RL voting and veto flags (snake_case)
         self.enable_veto: bool = config.get('rl_enable_veto', False)
@@ -389,9 +388,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Effective epsilons fixed to base values in calibration mode
             self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
             self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
-            self.epsilon_threshold_eff = 0.5 * (
-                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
-            )
+            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
             
         # --- RUNMODE & CALIBRATION LOGGING ---
         self.runmode = config.get('runmode', 'unknown')
@@ -418,7 +415,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
         self.logger.info(
             f"[ENSEMBLE] Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
-            f"UpdateInterval={self.config_update_interval}s"
+            f"Range=[{self.epsilon_min}, {self.epsilon_max}]"
         )
 
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
@@ -844,7 +841,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Нормализуем (0..1)
             p_norm = min(1.0, p_factor / p_target_val) 
             # Степенная функция (0.5 = корень). Чем меньше степень, тем резче старт.
-            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.5)
+            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.3)
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff
@@ -1080,116 +1077,70 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _update_dynamic_epsilon(self) -> None:
         """
-        Update effective epsilon based on current equity drawdown.
-        In calibration mode, dynamic epsilon is disabled and effective thresholds
-        are kept equal to their base values.
+        Update effective epsilon based on current PnL drawdown per side (v2).
+        In calibration mode, dynamic epsilon is disabled.
         """
-
-        # In calibration mode we want static, base thresholds only
-        if getattr(self, "calibration_mode", False):
+        if getattr(self, "calibration_mode", False) or self.config.get("runmode") not in ("live", "dry_run"):
+            # In calibration or backtest, use static base values
             self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
             self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
-            self.epsilon_threshold_eff = 0.5 * (
-                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
-            )
-            return
-
-        if self.config.get("runmode") not in ("live", "dry_run"):
+            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
             return
 
         try:
+            # 1. Get current PnL and open trade counts per side
             pnl_long, pnl_short = self._get_pnl_from_freqtrade()
-            equity_long = pnl_long
-            equity_short = pnl_short
+            open_trades = Trade.get_open_trades()
+            count_long = sum(1 for t in open_trades if not t.is_short)
+            count_short = sum(1 for t in open_trades if t.is_short)
 
-            # Reset dynamic epsilon if there are no open trades
-            try:
-                from freqtrade.persistence import Trade  # type: ignore
-                open_trades_q = Trade.get_open_trades() # type: ignore
-                if hasattr(open_trades_q, "all"):
-                    open_trades = open_trades_q.all()
-                else:
-                    open_trades = open_trades_q
-            except Exception:
-                try:
-                    open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])  # type: ignore
-                    open_trades = open_trades_q.all() if hasattr(open_trades_q, 'all') else open_trades_q
-                except Exception:
-                    open_trades = []
+            # 2. Independent reset of high-water mark
+            if count_long == 0: self.pnl_max_long = 0.0
+            if count_short == 0: self.pnl_max_short = 0.0
 
-            if not open_trades:
-                # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
-                self.equity_max = 0.0
-                self.equity_max_long = 0.0
-                self.equity_max_short = 0.0
-                self.epsilon_threshold_eff = self.epsilon_threshold
-                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
-                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
-                if self.config.get("runmode") in ("live", "dry_run"):
-                    self.logger.debug(
-                        f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | "
-                        f"effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}"
-                    )
-                return
+            # 3. Update high-water mark (peak PnL)
+            if count_long > 0: self.pnl_max_long = max(self.pnl_max_long, pnl_long)
+            if count_short > 0: self.pnl_max_short = max(self.pnl_max_short, pnl_short)
 
-            # Initialize equity_max_long/short on first run
-            if self.equity_max_long <= 0.0:
-                self.equity_max_long = equity_long
-            if self.equity_max_short <= 0.0:
-                self.equity_max_short = equity_short
-
-            # Track maximum observed equity per side
-            self.equity_max_long = max(self.equity_max_long, equity_long)
-            self.equity_max_short = max(self.equity_max_short, equity_short)
-
-            # Relative drawdown per side in [0.0, 1.0]
-            dd_long = (self.equity_max_long - equity_long) / self.equity_max_long if self.equity_max_long > 0.0 else 0.0
-            dd_short = (self.equity_max_short - equity_short) / self.equity_max_short if self.equity_max_short > 0.0 else 0.0
-
+            # 4. Calculate drawdown relative to peak PnL (with protection for immediate drawdowns)
+            # Using 10.0 as a base USDT denominator for immediate drops when max_pnl is 0
+            min_denom = 10.0
+            dd_long = (self.pnl_max_long - pnl_long) / max(self.pnl_max_long, min_denom)
+            dd_short = (self.pnl_max_short - pnl_short) / max(self.pnl_max_short, min_denom)
+            
             dd_long = max(0.0, min(dd_long, 1.0))
             dd_short = max(0.0, min(dd_short, 1.0))
 
-            # Используем настраиваемый коэффициент агрессии
+            # 5. Calculate target Epsilon based on drawdown (Linear interpolation to max)
             k = self.dd_aggression_k.value
-            # Scale dynamic targets around side-specific base thresholds
-            epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
-            epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
+            # Map drawdown [0, 1] -> [epsilon_threshold, epsilon_max]
+            target_eps_long = self.epsilon_threshold_long + (self.epsilon_max - self.epsilon_threshold_long) * min(dd_long * k, 1.0)
+            target_eps_short = self.epsilon_threshold_short + (self.epsilon_max - self.epsilon_threshold_short) * min(dd_short * k, 1.0)
 
-            alpha = 0.4
-            if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long == 0.0:
-                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
-            if not hasattr(self, "epsilon_threshold_eff_short") or self.epsilon_threshold_eff_short == 0.0:
-                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
+            # 6. Smooth update via EMA
+            alpha = 0.3  # Smoothing factor
+            self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * target_eps_long
+            self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * target_eps_short
 
-            # Smooth update via EMA to avoid abrupt jumps (long/short)
-            self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * epsilon_target_long
-            self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * epsilon_target_short
+            # 7. Clamp effective thresholds into the configured [min, max] range
+            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, self.epsilon_min), self.epsilon_max))
+            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, self.epsilon_min), self.epsilon_max))
 
-            # Clamp effective thresholds into [0.1, 1.0]
-            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, 0.1), 1.0))
-            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, 0.1), 1.0))
+            # Update aggregate value for logging
+            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
 
-            self.epsilon_threshold_eff = 0.5 * (
-                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
-            )
+            # Logging for visibility
             if self.config.get("runmode") in ("live", "dry_run"):
-                # Логируем изменение режима, чтобы не спамить в консоль
-                if self.epsilon_threshold_eff > self.epsilon_threshold * 1.1:
-                    self.logger.info(
-                        f"[DEFENSIVE] Epsilon increased due to DD. "
-                        f"ddL={dd_long:.2f} ddS={dd_short:.2f} | "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
-                elif self.epsilon_threshold_eff < self.epsilon_threshold * 0.9:
-                    self.logger.info(
-                        f"[AGGRESSIVE] Epsilon is low (no DD). "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
+                self.logger.debug(
+                    f"EPS-DDv2 | ddL={dd_long:.2f} ddS={dd_short:.2f} | "
+                    f"EpsL: {self.epsilon_threshold_long:.3f} -> {self.epsilon_threshold_eff_long:.3f} | "
+                    f"EpsS: {self.epsilon_threshold_short:.3f} -> {self.epsilon_threshold_eff_short:.3f}"
+                )
         except Exception as e:
-            self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
-            self.epsilon_threshold_eff = self.epsilon_threshold
+            self.logger.warning(f"Dynamic epsilon v2 update failed: {e}. Falling back to base epsilon.")
             self.epsilon_threshold_eff_long = self.epsilon_threshold_long
             self.epsilon_threshold_eff_short = self.epsilon_threshold_short
+            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
 
     def _update_slot_allocation(self, current_time: datetime) -> None:
         """

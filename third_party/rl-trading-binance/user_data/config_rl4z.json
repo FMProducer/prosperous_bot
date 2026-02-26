@@ -73,24 +73,26 @@
         "use_local_regime_filter": false,
         "epsilon_threshold_long": 0.5,
         "epsilon_threshold_short": 0.5,
-        "dd_aggression_k": 1.0,
-        "q_update_interval": 60,
+        "epsilon_min": 0.5,
+        "epsilon_max": 1.0,
+        "dd_aggression_k": 0.8,
+        "q_update_interval": 30,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.00213,
-                "q_max": 0.003227
+                "q_min": 7.1e-05,
+                "q_max": 0.003716
             },
             "long_2": {
-                "q_min": 0.000398,
-                "q_max": 0.000458
+                "q_min": 4.7e-05,
+                "q_max": 0.000432
             },
             "short_1": {
-                "q_min": 2.3e-05,
-                "q_max": 0.000581
+                "q_min": 7.2e-05,
+                "q_max": 0.000575
             },
             "short_2": {
-                "q_min": 3.8e-05,
-                "q_max": 0.000667
+                "q_min": 0.000218,
+                "q_max": 0.000678
             }
         }
     },
