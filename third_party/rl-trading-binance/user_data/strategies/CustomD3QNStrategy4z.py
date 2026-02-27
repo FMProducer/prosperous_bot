@@ -881,7 +881,25 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
         
         if should_invert:
-            last_window = last_window * -1.0
+            # Создаем копию, чтобы не мутировать исходный массив
+            inverted_window = last_window.copy()
+
+            # 1. Инвертируем только ценовые каналы (Open, High, Low, Close -> индексы 0, 1, 2, 3)
+            inverted_window[:, 0:4] = inverted_window[:, 0:4] * -1.0
+
+            # 2. Делаем Swap для High и Low (индексы 1 и 2)
+            # После умножения на -1, бывший Low стал самым большим (новым High),
+            # а бывший High стал самым маленьким (новым Low).
+            temp_new_high = inverted_window[:, 2].copy() # -old_low
+            temp_new_low = inverted_window[:, 1].copy()  # -old_high
+
+            inverted_window[:, 1] = temp_new_high
+            inverted_window[:, 2] = temp_new_low
+
+            # ВАЖНО: Канал 4 (volume_z) остается без изменений (inverted_window[:, 4] == last_window[:, 4])
+            # Всплеск объемов должен оставаться всплеском.
+
+            last_window = inverted_window
 
         # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
         # The model expects a flat vector of size (channels * history_len + additional_feats)
@@ -1426,6 +1444,93 @@ class CustomD3QNStrategy4z(IStrategy):
         self.tsl_memory.pop(trade_id, None)
         return True
     
+    def _extract_features_batch(self, dataframe: DataFrame, window: int = 90, should_invert: bool = False) -> Optional[np.ndarray]:
+        """
+        Efficiently extract features for a single pair to be part of a batch.
+        Optimized to minimize memory allocations.
+        """
+        if len(dataframe) < window:
+            return None
+
+        cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
+        try:
+            # Get a view of the last N rows
+            data_view = dataframe[cols].values[-window:]
+
+            # Pre-allocate the resulting array to avoid np.concatenate
+            # History is 5 channels * 90 window = 450 + 4 dummy features = 454
+            feat = np.zeros(454, dtype=np.float32)
+
+            # Efficiently fill the pre-allocated array
+            # Transpose (window, 5) -> (5, window) then flatten to (450,)
+            if should_invert:
+                feat[:450] = (data_view.astype(np.float32) * -1.0).T.flatten()
+            else:
+                feat[:450] = data_view.astype(np.float32).T.flatten()
+
+            # feat[450:] is already 0.0 due to np.zeros
+            return feat
+        except Exception as e:
+            logger.error(f"Feature extraction failed: {e}")
+            return None
+
+    def _populate_entry_trend_backtest(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Simplified and optimized logic for backtesting.
+        """
+        if len(dataframe) < self.startup_candle_count:
+            return dataframe
+
+        lookback = 1000
+        if self.config.get('deep_inference', False):
+            df_input = dataframe
+        else:
+            df_input = dataframe.iloc[-2000:] if len(dataframe) > 2000 else dataframe
+
+        def get_full_batch_q_values(df, side, model_num):
+            window = 90
+            cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
+            data = df[cols].values.astype(np.float32)
+            if side == "SHORT" and ((model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror)):
+                data = data * -1.0
+            try:
+                windows = sliding_window_view(data, window_shape=(window, 5)).squeeze(1)
+                batch_windows = windows.transpose(0, 2, 1).reshape(len(windows), -1)
+                add_feats = np.zeros((len(batch_windows), 4), dtype=np.float32)
+                full_input = np.concatenate([batch_windows, add_feats], axis=1)
+                t = torch.from_numpy(full_input).to(self.device)
+                agent = (self.long_1_agent if model_num == 1 else self.long_2_agent) if side == "LONG" else (self.short_1_agent if model_num == 1 else self.short_2_agent)
+                if agent is None: return None
+                with torch.no_grad(): return agent.policy_net(t).cpu().numpy()
+            except Exception as e:
+                logger.error(f"Backtest batch inference failed: {e}")
+                return None
+
+        q_vals = {}
+        if self.enable_long_1: q_vals['long_1'] = get_full_batch_q_values(df_input, "LONG", 1)
+        if self.enable_long_2: q_vals['long_2'] = get_full_batch_q_values(df_input, "LONG", 2)
+        if self.enable_short_1: q_vals['short_1'] = get_full_batch_q_values(df_input, "SHORT", 1)
+        if self.enable_short_2: q_vals['short_2'] = get_full_batch_q_values(df_input, "SHORT", 2)
+
+        offset = 89
+        target_idx = df_input.index[offset:]
+        n_results = len(target_idx)
+        enter_long_vals = np.zeros(n_results, dtype=np.int8)
+        enter_short_vals = np.zeros(n_results, dtype=np.int8)
+
+        for i in range(n_results):
+            candle_q = {name: vals[i:i+1] for name, vals in q_vals.items() if vals is not None}
+            if not candle_q: continue
+            decision = self._compute_ensemble_decision(candle_q, 0, has_long=False, has_short=False)
+            enter_long_vals[i] = decision['enter_long']
+            enter_short_vals[i] = decision['enter_short']
+
+        dataframe['enter_long'] = 0
+        dataframe['enter_short'] = 0
+        dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
+        dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
+        return dataframe
+
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
         OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом

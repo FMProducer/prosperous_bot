@@ -709,24 +709,6 @@ def run_training_session(
     history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
     flat_state_size = flat_features + extras + history_vector_size
     
-    # --- PREVENTIVE STATS INVERSION FOR SHORT AGENT ---
-    # This is critical for saving the correct (inverted) stats with the model artifacts.
-    # The environment itself works on a deep copy, so modifications there won't persist.
-    if getattr(cfg.market, "filter_direction", None) == 'SHORT':
-        logging.info("SHORT mode detected. Performing preventive inversion of norm_stats.")
-        price_channels = set(cfg.data.pricechannels)
-        volume_channels = set(cfg.data.volumechannels)
-
-        for asset_stats in norm_stats.values():
-            # 1. Invert the mean for all price channels
-            for channel, stats_values in asset_stats.items():
-                if channel not in volume_channels:
-                    stats_values['mean'] *= -1.0
-
-            # 2. Swap the stats for 'high' and 'low' channels
-            if 'high' in asset_stats and 'low' in asset_stats:
-                asset_stats['high'], asset_stats['low'] = asset_stats['low'], asset_stats['high']
-
     env_kwargs = {
         "sequences": train_sequences,
         "keys": train_keys,
