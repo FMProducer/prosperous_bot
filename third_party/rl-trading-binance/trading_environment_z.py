@@ -143,20 +143,22 @@ class TradingEnvironment(gym.Env):
             logger.info("MIRROR MODE: Applying geometric OHLC inversion.")
             idx = {name: i for i, name in enumerate(datachannels)}
 
-            # 1. Инвертируем всё, что не объем (включая OHLC и все ценовые индикаторы)
-            price_indices = [i for i, name in enumerate(datachannels) if name not in volumechannels]
-
             mirrored = []
             for seq in sequences:
                 m_seq = seq.copy()
 
+                # 1. Инвертируем только ценовые каналы (Open, High, Low, Close, vwap)
+                price_indices = [i for i, name in enumerate(datachannels) if name in pricechannels]
                 if price_indices:
                     m_seq[:, price_indices] *= -1.0
 
-                # 2. Восстанавливаем геометрию: High должен быть -Low_original
+                # 2. Делаем Swap для High и Low
+                # После умножения на -1, бывший Low стал самым большим (новым High),
+                # а бывший High стал самым маленьким (новым Low).
                 if 'high' in idx and 'low' in idx:
-                    m_seq[:, idx['high']] = -seq[:, idx['low']]
-                    m_seq[:, idx['low']] = -seq[:, idx['high']]
+                    h_idx, l_idx = idx['high'], idx['low']
+                    # Атомарный Swap через индексацию NumPy
+                    m_seq[:, [h_idx, l_idx]] = m_seq[:, [l_idx, h_idx]]
 
                 mirrored.append(m_seq)
             self.sequences = mirrored

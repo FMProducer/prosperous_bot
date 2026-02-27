@@ -941,7 +941,25 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
         
         if should_invert:
-            last_window = last_window * -1.0
+            # Создаем копию, чтобы не мутировать исходный массив
+            inverted_window = last_window.copy()
+
+            # 1. Инвертируем только ценовые каналы (Open, High, Low, Close -> индексы 0, 1, 2, 3)
+            inverted_window[:, 0:4] = inverted_window[:, 0:4] * -1.0
+
+            # 2. Делаем Swap для High и Low (индексы 1 и 2)
+            # После умножения на -1, бывший Low стал самым большим (новым High),
+            # а бывший High стал самым маленьким (новым Low).
+            temp_new_high = inverted_window[:, 2].copy() # -old_low
+            temp_new_low = inverted_window[:, 1].copy()  # -old_high
+
+            inverted_window[:, 1] = temp_new_high
+            inverted_window[:, 2] = temp_new_low
+
+            # ВАЖНО: Канал 4 (volume_z) остается без изменений (inverted_window[:, 4] == last_window[:, 4])
+            # Всплеск объемов должен оставаться всплеском.
+
+            last_window = inverted_window
 
         # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
         # The model expects a flat vector of size (channels * history_len + additional_feats)
@@ -1498,7 +1516,16 @@ class CustomD3QNStrategy4z(IStrategy):
             # Efficiently fill the pre-allocated array
             # Transpose (window, 5) -> (5, window) then flatten to (450,)
             if should_invert:
-                feat[:450] = (data_view.astype(np.float32) * -1.0).T.flatten()
+                inverted_data = data_view.astype(np.float32).copy()
+                # Инвертируем только Open, High, Low, Close (0:4)
+                inverted_data[:, 0:4] *= -1.0
+                # Swap High/Low (1 и 2)
+                new_high = inverted_data[:, 2].copy()
+                new_low = inverted_data[:, 1].copy()
+                inverted_data[:, 1] = new_high
+                inverted_data[:, 2] = new_low
+                # Volume (4) остается без изменений
+                feat[:450] = inverted_data.T.flatten()
             else:
                 feat[:450] = data_view.astype(np.float32).T.flatten()
 
@@ -1524,9 +1551,16 @@ class CustomD3QNStrategy4z(IStrategy):
         def get_full_batch_q_values(df, side, model_num):
             window = 90
             cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-            data = df[cols].values.astype(np.float32)
+            data = df[cols].values.astype(np.float32).copy()
             if side == "SHORT" and ((model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror)):
-                data = data * -1.0
+                # Инвертируем только Open, High, Low, Close (0:4)
+                data[:, 0:4] *= -1.0
+                # Swap High/Low (1 и 2)
+                new_high = data[:, 2].copy()
+                new_low = data[:, 1].copy()
+                data[:, 1] = new_high
+                data[:, 2] = new_low
+                # Volume (4) остается без изменений
             try:
                 windows = sliding_window_view(data, window_shape=(window, 5)).squeeze(1)
                 batch_windows = windows.transpose(0, 2, 1).reshape(len(windows), -1)
