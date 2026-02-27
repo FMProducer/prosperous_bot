@@ -88,8 +88,8 @@ class CustomD3QNStrategy4z(IStrategy):
     startup_candle_count: int = 200
 
     # Информативный таймфрейм для режима рынка
-    informative_timeframe = '15m'
-    informative_timeframe_global = '15m'
+    informative_timeframe = '1m'
+    informative_timeframe_global = '1m'
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -885,16 +885,11 @@ class CustomD3QNStrategy4z(IStrategy):
             inverted_window = last_window.copy()
 
             # 1. Инвертируем только ценовые каналы (Open, High, Low, Close -> индексы 0, 1, 2, 3)
-            inverted_window[:, 0:4] = inverted_window[:, 0:4] * -1.0
+            inverted_window[:, 0:4] *= -1.0
 
             # 2. Делаем Swap для High и Low (индексы 1 и 2)
-            # После умножения на -1, бывший Low стал самым большим (новым High),
-            # а бывший High стал самым маленьким (новым Low).
-            temp_new_high = inverted_window[:, 2].copy() # -old_low
-            temp_new_low = inverted_window[:, 1].copy()  # -old_high
-
-            inverted_window[:, 1] = temp_new_high
-            inverted_window[:, 2] = temp_new_low
+            # Атомарный swap колонок, идентичный логике в trading_environment_z.py
+            inverted_window[:, [1, 2]] = inverted_window[:, [2, 1]]
 
             # ВАЖНО: Канал 4 (volume_z) остается без изменений (inverted_window[:, 4] == last_window[:, 4])
             # Всплеск объемов должен оставаться всплеском.
@@ -1451,23 +1446,28 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         if len(dataframe) < window:
             return None
-
+    
         cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
         try:
             # Get a view of the last N rows
             data_view = dataframe[cols].values[-window:]
-
+    
+            if should_invert:
+                # Create a copy to modify
+                data_view = data_view.copy()
+                # 1. Invert price channels (0, 1, 2, 3), leave volume (4) untouched.
+                data_view[:, 0:4] *= -1.0
+                # 2. Swap high (1) and low (2) columns
+                data_view[:, [1, 2]] = data_view[:, [2, 1]]
+    
             # Pre-allocate the resulting array to avoid np.concatenate
             # History is 5 channels * 90 window = 450 + 4 dummy features = 454
             feat = np.zeros(454, dtype=np.float32)
-
+    
             # Efficiently fill the pre-allocated array
             # Transpose (window, 5) -> (5, window) then flatten to (450,)
-            if should_invert:
-                feat[:450] = (data_view.astype(np.float32) * -1.0).T.flatten()
-            else:
-                feat[:450] = data_view.astype(np.float32).T.flatten()
-
+            feat[:450] = data_view.astype(np.float32).T.flatten()
+    
             # feat[450:] is already 0.0 due to np.zeros
             return feat
         except Exception as e:
@@ -1492,7 +1492,11 @@ class CustomD3QNStrategy4z(IStrategy):
             cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
             data = df[cols].values.astype(np.float32)
             if side == "SHORT" and ((model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror)):
-                data = data * -1.0
+                # Correct Inversion Logic
+                # 1. Invert price channels (0, 1, 2, 3), leave volume (4) untouched.
+                data[:, 0:4] *= -1.0
+                # 2. Swap high (1) and low (2) columns
+                data[:, [1, 2]] = data[:, [2, 1]]
             try:
                 windows = sliding_window_view(data, window_shape=(window, 5)).squeeze(1)
                 batch_windows = windows.transpose(0, 2, 1).reshape(len(windows), -1)
