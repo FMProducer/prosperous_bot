@@ -1,6 +1,7 @@
 # trading_environment.py
 import datetime as dt
 import logging
+import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
@@ -106,6 +107,7 @@ class TradingEnvironment(gym.Env):
         seed: Optional[int] = None,
         filter_direction: Optional[str] = None,
         allowed_directions: Optional[List[str]] = None,
+        mirror_mode: bool = True,  # Добавлено для управления инверсией
         **kwargs,
     ) -> None:
         if not sequences:
@@ -207,11 +209,11 @@ class TradingEnvironment(gym.Env):
                 raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
 
         # 2. Inversion logic for Mirror Mode (SHORT specialist)
-        if filter_direction == 'SHORT':
-            logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent using geometric OHLC inversion.")
+        if filter_direction == 'SHORT' and mirror_mode:
+            logger.info("MIRROR MODE: Inverting sequences and stats for SHORT-only agent using geometric OHLC inversion.")
             idx = {name: i for i, name in enumerate(datachannels)}
-            # Инвертируем всё, что не объем (включая OHLC и все ценовые индикаторы)
-            price_indices = [i for i, name in enumerate(datachannels) if name not in volumechannels]
+            # Инвертируем только ценовые каналы (Open, High, Low, Close, vwap)
+            price_indices = [i for i, name in enumerate(datachannels) if name in pricechannels]
 
             mirrored = []
             for seq in self.sequences:
@@ -224,13 +226,31 @@ class TradingEnvironment(gym.Env):
                 # а бывший High стал самым маленьким (новым Low).
                 if 'high' in idx and 'low' in idx:
                     h_idx, l_idx = idx['high'], idx['low']
-                    temp_new_high = m_seq[:, l_idx].copy() # -old_low
-                    temp_new_low = m_seq[:, h_idx].copy()  # -old_high
-                    m_seq[:, h_idx] = temp_new_high
-                    m_seq[:, l_idx] = temp_new_low
+                    # Используем продвинутую индексацию NumPy для атомарного обмена
+                    m_seq[:, [h_idx, l_idx]] = m_seq[:, [l_idx, h_idx]]
 
                 mirrored.append(m_seq)
             self.sequences = mirrored
+
+            # --- ALSO INVERT STATS FOR CONSISTENT DE-NORMALIZATION ---
+            if self.stats:
+                # We work on a copy to avoid side effects if stats are shared
+                self.stats = copy.deepcopy(self.stats)
+                for asset_stats in self.stats.values():
+                    # 1. Invert the mean for all price channels
+                    for i, (m, s) in enumerate(zip(asset_stats['mean'], asset_stats['std'])):
+                        if i in price_indices:
+                            asset_stats['mean'][i] = -m
+
+                    # 2. Swap the stats for 'high' and 'low' channels
+                    if 'high' in idx and 'low' in idx:
+                        h_idx, l_idx = idx['high'], idx['low']
+                        # Swap means
+                        asset_stats['mean'][h_idx], asset_stats['mean'][l_idx] = \
+                            asset_stats['mean'][l_idx], asset_stats['mean'][h_idx]
+                        # Swap stds
+                        asset_stats['std'][h_idx], asset_stats['std'][l_idx] = \
+                            asset_stats['std'][l_idx], asset_stats['std'][h_idx]
 
         # 3. Filtering sequences by direction
         if filter_direction in ['LONG', 'SHORT']:
@@ -247,11 +267,13 @@ class TradingEnvironment(gym.Env):
                 if filter_direction == 'LONG' and end_price > start_price:
                     filtered_sequences.append(seq)
                     filtered_keys.append(key)
-                elif filter_direction == 'SHORT' and end_price > start_price:
+                elif filter_direction == 'SHORT':
                     # Specialist SHORT expects to see RISING trends in its mirrored space
                     # (which corresponds to falling trends in real space).
-                    filtered_sequences.append(seq)
-                    filtered_keys.append(key)
+                    is_trend = (end_price > start_price) if mirror_mode else (end_price < start_price)
+                    if is_trend:
+                        filtered_sequences.append(seq)
+                        filtered_keys.append(key)
 
             if not filtered_sequences:
                 logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
