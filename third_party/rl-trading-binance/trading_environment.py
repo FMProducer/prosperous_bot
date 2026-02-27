@@ -115,48 +115,12 @@ class TradingEnvironment(gym.Env):
         if len(sequences) != len(keys):
             raise ValueError("Length of `sequences` and `keys` must be the same")
 
-        # --- INVERT DATA FOR SHORT AGENT (Mirror World) ---
-        # If filter_direction is 'SHORT', the agent is a specialist SHORT-only agent.
-        # We invert the market data (up becomes down) so the agent can learn a LONG-only
-        # policy, which is simpler than learning both directions.
-        if filter_direction == 'SHORT':
-            logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent.")
-            self.sequences = [-1.0 * seq for seq in sequences]
-        else:
-            self.sequences = sequences
         self.stats = stats
         self.keys = keys
         # FIX: Save num_features immediately
         self.num_features = num_features
         self.datachannels = datachannels
-
-        if 'filter_direction' in kwargs and kwargs['filter_direction'] in ['LONG', 'SHORT']:
-            filter_direction = kwargs['filter_direction']
-            logging.info(f"Filtering sequences for direction: {filter_direction}")
-            
-            original_count = len(self.sequences)
-            filtered_sequences = []
-            filtered_keys = []
-            
-            close_idx = self.datachannels.index("close")
-
-            for seq, key in zip(self.sequences, self.keys):
-                start_price = seq[0, close_idx]
-                end_price = seq[-1, close_idx]
-                
-                if filter_direction == 'LONG' and end_price > start_price:
-                    filtered_sequences.append(seq)
-                    filtered_keys.append(key)
-                elif filter_direction == 'SHORT' and end_price < start_price:
-                    filtered_sequences.append(seq)
-                    filtered_keys.append(key)
-
-            if not filtered_sequences:
-                logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
-            else:
-                self.sequences = filtered_sequences
-                self.keys = filtered_keys
-                logging.info(f"Filtered sequences: {original_count} -> {len(self.sequences)}")
+        self.sequences = sequences
 
         self.render_mode = render_mode
         self.initial_balance = initial_balance
@@ -232,8 +196,7 @@ class TradingEnvironment(gym.Env):
         self.close_idx = self.datachannels.index("close")
 
         self.history_vector_size = num_actions * self.action_history_len
-        # Validate sequence shape
-        # Support both (L, C) and (C, L, 1) formats
+        # 1. Validate and standardize sequence shape to (L, C)
         expected_shape = (full_seq_len, num_features)
         if self.sequences and self.sequences[0].shape != expected_shape:
             # Try to reshape (C, L, 1) to (L, C)
@@ -242,6 +205,60 @@ class TradingEnvironment(gym.Env):
                 logging.info(f"Reshaped sequences from (C, L, 1) to (L, C): {self.sequences[0].shape}")
             else:
                 raise ValueError(f"Expected sequence shape {expected_shape}, but got {self.sequences[0].shape}")
+
+        # 2. Inversion logic for Mirror Mode (SHORT specialist)
+        if filter_direction == 'SHORT':
+            logger.info("MIRROR MODE: Inverting sequences for SHORT-only agent using geometric OHLC inversion.")
+            idx = {name: i for i, name in enumerate(datachannels)}
+            # Инвертируем всё, что не объем (включая OHLC и все ценовые индикаторы)
+            price_indices = [i for i, name in enumerate(datachannels) if name not in volumechannels]
+
+            mirrored = []
+            for seq in self.sequences:
+                m_seq = seq.copy()
+                if price_indices:
+                    m_seq[:, price_indices] *= -1.0
+
+                # 2. Делаем Swap для High и Low
+                # После умножения на -1, бывший Low стал самым большим (новым High),
+                # а бывший High стал самым маленьким (новым Low).
+                if 'high' in idx and 'low' in idx:
+                    h_idx, l_idx = idx['high'], idx['low']
+                    temp_new_high = m_seq[:, l_idx].copy() # -old_low
+                    temp_new_low = m_seq[:, h_idx].copy()  # -old_high
+                    m_seq[:, h_idx] = temp_new_high
+                    m_seq[:, l_idx] = temp_new_low
+
+                mirrored.append(m_seq)
+            self.sequences = mirrored
+
+        # 3. Filtering sequences by direction
+        if filter_direction in ['LONG', 'SHORT']:
+            logging.info(f"Filtering sequences for direction: {filter_direction}")
+            original_count = len(self.sequences)
+            filtered_sequences = []
+            filtered_keys = []
+            close_idx = self.datachannels.index("close")
+
+            for seq, key in zip(self.sequences, self.keys):
+                start_price = seq[0, close_idx]
+                end_price = seq[-1, close_idx]
+
+                if filter_direction == 'LONG' and end_price > start_price:
+                    filtered_sequences.append(seq)
+                    filtered_keys.append(key)
+                elif filter_direction == 'SHORT' and end_price > start_price:
+                    # Specialist SHORT expects to see RISING trends in its mirrored space
+                    # (which corresponds to falling trends in real space).
+                    filtered_sequences.append(seq)
+                    filtered_keys.append(key)
+
+            if not filtered_sequences:
+                logging.warning(f"Filtering for {filter_direction} resulted in zero sequences. Disabling filter.")
+            else:
+                self.sequences = filtered_sequences
+                self.keys = filtered_keys
+                logging.info(f"Filtered sequences: {original_count} -> {len(self.sequences)}")
 
         # Define observation and action spaces
         self.action_space = spaces.Discrete(num_actions)
