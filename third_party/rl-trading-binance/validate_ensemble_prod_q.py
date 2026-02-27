@@ -114,6 +114,11 @@ class EnsembleAgent:
             # Проверяем, достаточно ли признаков для применения маски
             if len(features_part) >= max(mask) + 1:
                 feats_prepared = features_part[mask]
+
+                # IMPORTANT: Invert data for mirror mode SHORT
+                if direction == "SHORT":
+                    data_part = data_part * -1.0
+
                 state_prepared = np.concatenate([data_part, feats_prepared])
             else:
                 # Если признаков не хватает, используем то, что есть (до 10)
@@ -145,12 +150,13 @@ class EnsembleAgent:
         q_values = self.agent_short.select_action(
             state_mapped, training=False, return_qvals=True, use_cache=False, cache_key=None
         )
-        wants_to_open = (q_values[2] > q_values[0])
+        # Mirror mode uses index 1 for its primary ENTRY action
+        wants_to_open = (q_values[1] > q_values[0])
 
         # For confidence, we still need probabilities, so we'll use softmax on the q_values
         q_tensor = torch.from_numpy(q_values)
         probs = torch.softmax(q_tensor, dim=0)
-        confidence = (probs[2] - 0.33).item() if self.use_confidence else 1.0
+        confidence = (probs[1] - 0.33).item() if self.use_confidence else 1.0
 
         return wants_to_open, confidence
 
