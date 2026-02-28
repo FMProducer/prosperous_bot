@@ -455,14 +455,11 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
     mirror_mode = getattr(cfg.market, "mirror_mode", False)
     logger.info(f"Validation direction settings: filter={env_filter}, allowed={env_allowed}, mirror_mode={mirror_mode}")
 
-    # Инверсия статистик для SHORT-агента, если они еще не инвертированы
-    if mirror_mode:
-        logger.info("Mirroring norm_stats mean because mirror_mode is enabled.")
-        vol_indices = {i for i, c in enumerate(cfg.data.datachannels) if c in cfg.data.volumechannels}
-        for asset, stat in norm_stats.items():
-            if 'mean' in stat:
-                # Invert means for non-volume channels
-                stat['mean'] = [-abs(m) if i not in vol_indices else m for i, m in enumerate(stat['mean'])]
+    # --- MIRROR MODE FIX ---
+    # Аналогично train.py: разрешаем LONG в среде, если это зеркальный SHORT
+    if mirror_mode and env_filter == 'SHORT':
+        logging.info("MIRROR MODE: Swapping allowed_directions to ['LONG'] for validation environment.")
+        env_allowed = ['LONG']
 
     max_trades = getattr(cfg.market, "max_trades_per_episode", 100)
     if cfg_mod is not None and hasattr(cfg_mod, "MAX_TRADES_PER_EPISODE"):

@@ -762,6 +762,14 @@ def run_training_session(
     history_vector_size = num_actions * action_history_len if action_history_len > 0 else 0
     flat_state_size = flat_features + extras + history_vector_size
     
+    # --- MIRROR MODE FIX ---
+    # Если мы обучаем SHORT агента на ЗЕРКАЛЬНЫХ данных, данные инвертированы (падение -> рост).
+    # Чтобы заработать на росте, агент должен делать LONG.
+    env_allowed_directions = getattr(cfg.market, "allowed_directions", None)
+    if getattr(cfg.market, "mirror_mode", False) and getattr(cfg.market, "filter_direction", None) == 'SHORT':
+        logging.info("MIRROR MODE DETECTED: Swapping allowed_directions to ['LONG'] for environment execution.")
+        env_allowed_directions = ['LONG']
+
     env_kwargs = {
         "sequences": train_sequences,
         "keys": train_keys,
@@ -806,7 +814,7 @@ def run_training_session(
         "max_trades_per_episode": max_trades,
         "close_action_index": getattr(cfg.market, "close_action_index", None),
         "filter_direction": getattr(cfg.market, "filter_direction", None),
-        "allowed_directions": getattr(cfg.market, "allowed_directions", None),
+        "allowed_directions": env_allowed_directions,
         "mirror_mode": getattr(cfg.market, "mirror_mode", False), # Передаем из конфига
     }
     num_envs = getattr(cfg.vec, "num_envs", 1)
