@@ -510,14 +510,22 @@ class TradingEnvironment(gym.Env):
 
             if self.position == 1:  # LONG
                 self.trailing_max_price = max(self.trailing_max_price or real_price, real_price)
-                base_tsl = self.trailing_max_price * (1 - d0)
+                # FIX: Handle negative prices (Mirror Mode)
+                if self.trailing_max_price < 0:
+                    # For negative numbers, (1+d0) makes it smaller (more negative/lower)
+                    base_tsl = self.trailing_max_price * (1 + d0)
+                else:
+                    base_tsl = self.trailing_max_price * (1 - d0)
                 tsl_price = max(tsl_price, base_tsl)
 
                 p = max(0.0, self.trailing_max_price / self.real_entry_price - 1.0)
                 if p >= self.p_at_last_tsl_update + delta_p:
                     self.p_at_last_tsl_update = p
                     d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
-                    advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
+                    if self.trailing_max_price < 0:
+                        advanced_tsl_price = self.trailing_max_price * (1 + d_eff)
+                    else:
+                        advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                     tsl_price = max(tsl_price, advanced_tsl_price)
 
                 self.tsl_price = tsl_price
@@ -525,14 +533,21 @@ class TradingEnvironment(gym.Env):
                     action = self.close_action
             else:  # SHORT
                 self.trailing_min_price = min(self.trailing_min_price or real_price, real_price)
-                base_tsl = self.trailing_min_price * (1 + d0)
+                # FIX: Handle negative prices
+                if self.trailing_min_price < 0:
+                    base_tsl = self.trailing_min_price * (1 - d0)
+                else:
+                    base_tsl = self.trailing_min_price * (1 + d0)
                 tsl_price = min(tsl_price, base_tsl)
 
                 p = max(0.0, 1.0 - self.trailing_min_price / self.real_entry_price)
                 if p >= self.p_at_last_tsl_update + delta_p:
                     self.p_at_last_tsl_update = p
                     d_eff = self._calculate_effective_trail_distance(p, d0, d_min, self.transaction_fee * 2)
-                    advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
+                    if self.trailing_min_price < 0:
+                        advanced_tsl_price = self.trailing_min_price * (1 - d_eff)
+                    else:
+                        advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                     tsl_price = min(tsl_price, advanced_tsl_price)
 
                 self.tsl_price = tsl_price
@@ -554,13 +569,17 @@ class TradingEnvironment(gym.Env):
                     trade_amount = min(self.order_size_usdt, self.balance * 0.95)
 
                 if trade_amount > 0:
-                    real_exec_price = real_price * (1 + self.slippage)
+                    # FIX: Slippage for negative prices (Long wants lower price, so penalty is higher price)
+                    if real_price < 0:
+                        real_exec_price = real_price * (1 - self.slippage)
+                    else:
+                        real_exec_price = real_price * (1 + self.slippage)
                     self.position = 1
                     self.entry_price = real_exec_price
                     self.real_entry_price = real_exec_price
-                    self.position_volume = trade_amount / real_exec_price
+                    self.position_volume = trade_amount / abs(real_exec_price)
                     self.trades_count += 1
-                    pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
+                    pnl_change -= self.position_volume * abs(real_exec_price) * self.transaction_fee
                     # Initialize TSL state for new position
                     self.trailing_max_price = real_exec_price
                     self.tsl_price = None
@@ -576,13 +595,17 @@ class TradingEnvironment(gym.Env):
                     trade_amount = min(self.order_size_usdt, self.balance * 0.95)
 
                 if trade_amount > 0:
-                    real_exec_price = real_price * (1 - self.slippage)
+                    # FIX: Slippage for negative prices (Short wants higher price, so penalty is lower price)
+                    if real_price < 0:
+                        real_exec_price = real_price * (1 + self.slippage)
+                    else:
+                        real_exec_price = real_price * (1 - self.slippage)
                     self.position = -1
                     self.entry_price = real_exec_price
                     self.real_entry_price = real_exec_price
-                    self.position_volume = trade_amount / real_exec_price
+                    self.position_volume = trade_amount / abs(real_exec_price)
                     self.trades_count += 1
-                    pnl_change -= self.position_volume * real_exec_price * self.transaction_fee
+                    pnl_change -= self.position_volume * abs(real_exec_price) * self.transaction_fee
                     # Initialize TSL state for new position
                     self.trailing_min_price = real_exec_price
                     self.tsl_price = None
@@ -595,13 +618,21 @@ class TradingEnvironment(gym.Env):
         elif action == close_action and self.position != 0 and close_action != -1:
             volume = self.position_volume
             if self.position == 1:  # CLOSE LONG
-                real_exec_price = real_price * (1 - self.slippage)
+                # FIX: Slippage on Close Long (Sell)
+                if real_price < 0:
+                    real_exec_price = real_price * (1 + self.slippage)
+                else:
+                    real_exec_price = real_price * (1 - self.slippage)
                 trade_pnl = (real_exec_price - self.real_entry_price) * volume
             else:  # CLOSE SHORT
-                real_exec_price = real_price * (1 + self.slippage)
+                # FIX: Slippage on Close Short (Buy)
+                if real_price < 0:
+                    real_exec_price = real_price * (1 - self.slippage)
+                else:
+                    real_exec_price = real_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
 
-            fee = real_exec_price * volume * self.transaction_fee
+            fee = abs(real_exec_price) * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
             self.closed_trades += 1
             if trade_pnl > 0:
@@ -637,7 +668,11 @@ class TradingEnvironment(gym.Env):
             # Force-close any open positions with slippage penalty
             if self.position != 0:
                 slippage_penalty = self.bankruptcy_slippage_penalty
-                liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
+                # Apply simplified slippage logic for liquidation
+                if real_price < 0:
+                    liquidation_price = real_price * (1 + slippage_penalty if self.position == 1 else 1 - slippage_penalty)
+                else:
+                    liquidation_price = real_price * (1 - slippage_penalty if self.position == 1 else 1 + slippage_penalty)
                 liquidation_pnl = ((liquidation_price - self.real_entry_price) * self.position_volume 
                                    if self.position == 1 
                                    else (self.real_entry_price - liquidation_price) * self.position_volume)
@@ -1151,7 +1186,10 @@ class TradingEnvironment(gym.Env):
                 self.trailing_max_price = max(current_max, real_price)
                 
                 # 2. Базовый уровень TSL (расстояние d0 от макс. цены)
-                base_tsl = self.trailing_max_price * (1 - d0)
+                if self.trailing_max_price < 0:
+                    base_tsl = self.trailing_max_price * (1 + d0)
+                else:
+                    base_tsl = self.trailing_max_price * (1 - d0)
                 
                 # 3. Подтягиваем TSL (он не может идти вниз)
                 tsl_price = max(tsl_price, base_tsl)
@@ -1170,7 +1208,10 @@ class TradingEnvironment(gym.Env):
                         else: 
                             d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                             
-                        advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
+                        if self.trailing_max_price < 0:
+                            advanced_tsl_price = self.trailing_max_price * (1 + d_eff)
+                        else:
+                            advanced_tsl_price = self.trailing_max_price * (1 - d_eff)
                         tsl_price = max(tsl_price, advanced_tsl_price)
                 
                 self.tsl_price = tsl_price
@@ -1187,7 +1228,10 @@ class TradingEnvironment(gym.Env):
                 self.trailing_min_price = min(current_min, real_price)
                 
                 # 2. Базовый уровень TSL
-                base_tsl = self.trailing_min_price * (1 + d0)
+                if self.trailing_min_price < 0:
+                    base_tsl = self.trailing_min_price * (1 - d0)
+                else:
+                    base_tsl = self.trailing_min_price * (1 + d0)
                 
                 # 3. Подтягиваем TSL (он не может идти вверх)
                 tsl_price = min(tsl_price, base_tsl)
@@ -1203,7 +1247,10 @@ class TradingEnvironment(gym.Env):
                         else:
                             d_eff = self._calculate_effective_trail_distance(p, d0, d_min, fee_buf)
                         
-                        advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
+                        if self.trailing_min_price < 0:
+                            advanced_tsl_price = self.trailing_min_price * (1 - d_eff)
+                        else:
+                            advanced_tsl_price = self.trailing_min_price * (1 + d_eff)
                         tsl_price = min(tsl_price, advanced_tsl_price)
 
                 self.tsl_price = tsl_price
@@ -1232,7 +1279,10 @@ class TradingEnvironment(gym.Env):
 
         # --- Position Opening ---
         if action == 1 and self.position == 0: # OPEN LONG
-            real_exec_price = real_price * (1 + self.slippage)
+            if real_price < 0:
+                real_exec_price = real_price * (1 - self.slippage)
+            else:
+                real_exec_price = real_price * (1 + self.slippage)
             
             self.position = 1
             self.entry_price = real_exec_price      # Store REAL price (since raw)
@@ -1244,11 +1294,11 @@ class TradingEnvironment(gym.Env):
                 trade_amount = self.balance * self.position_fraction
             trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
-            volume = trade_amount / real_exec_price
+            volume = trade_amount / abs(real_exec_price)
             self.position_volume = volume
             self.trades_count += 1
             
-            fee = real_exec_price * volume * self.transaction_fee
+            fee = abs(real_exec_price) * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
             self.direction = "LONG"
@@ -1261,7 +1311,10 @@ class TradingEnvironment(gym.Env):
             logging.info(f": (LONG) BUY {volume:.8f} {ticker} for {real_exec_price:.5f} at {current_dt.strftime('%Y-%m-%d %H:%M')}")
 
         elif action == 2 and self.position == 0: # OPEN SHORT
-            real_exec_price = real_price * (1 - self.slippage)
+            if real_price < 0:
+                real_exec_price = real_price * (1 + self.slippage)
+            else:
+                real_exec_price = real_price * (1 - self.slippage)
 
             self.position = -1
             self.entry_price = real_exec_price      # Store REAL price
@@ -1273,11 +1326,11 @@ class TradingEnvironment(gym.Env):
                 trade_amount = self.balance * self.position_fraction
             trade_amount = max(0.0, min(trade_amount, self.balance * 0.95))
             
-            volume = trade_amount / real_exec_price
+            volume = trade_amount / abs(real_exec_price)
             self.position_volume = volume
             self.trades_count += 1
             
-            fee = real_exec_price * volume * self.transaction_fee
+            fee = abs(real_exec_price) * volume * self.transaction_fee
             pnl_change -= fee
             self.total_commission += fee
             self.direction = "SHORT"
@@ -1296,17 +1349,23 @@ class TradingEnvironment(gym.Env):
             was_long = (self.position == 1)
             
             if was_long:
-                real_exec_price = real_price * (1 - self.slippage)
+                if real_price < 0:
+                    real_exec_price = real_price * (1 + self.slippage)
+                else:
+                    real_exec_price = real_price * (1 - self.slippage)
                 trade_pnl = (real_exec_price - self.real_entry_price) * volume
                 close_action = "SELL"
                 trade_price_delta = (real_exec_price - self.real_entry_price) / self.real_entry_price
             else: # SHORT
-                real_exec_price = real_price * (1 + self.slippage)
+                if real_price < 0:
+                    real_exec_price = real_price * (1 - self.slippage)
+                else:
+                    real_exec_price = real_price * (1 + self.slippage)
                 trade_pnl = (self.real_entry_price - real_exec_price) * volume
                 close_action = "BUY"
                 trade_price_delta = (self.real_entry_price - real_exec_price) / self.real_entry_price
 
-            fee = real_exec_price * volume * self.transaction_fee
+            fee = abs(real_exec_price) * volume * self.transaction_fee
             pnl_change += trade_pnl - fee
             self.total_commission += fee
 
@@ -1329,7 +1388,7 @@ class TradingEnvironment(gym.Env):
         
         single_trade_realized_pnl = 0.0
         if position_closed:
-            opening_fee = self.real_entry_price * volume * self.transaction_fee
+            opening_fee = abs(self.real_entry_price) * volume * self.transaction_fee
             single_trade_realized_pnl = trade_pnl - fee - opening_fee
             logging.info(
                 f": (CLOSE) {close_action} {exit_reason} {volume:.8f} {ticker} for {real_exec_price:.5f} at "
@@ -1367,13 +1426,19 @@ class TradingEnvironment(gym.Env):
                 if self.position != 0:
                     volume = self.position_volume
                     if self.position == 1:  # LONG
-                        real_exec_price = real_price * (1 - self.slippage)
+                        if real_price < 0:
+                            real_exec_price = real_price * (1 + self.slippage)
+                        else:
+                            real_exec_price = real_price * (1 - self.slippage)
                         trade_pnl = (real_exec_price - self.real_entry_price) * volume
                     else:  # SHORT
-                        real_exec_price = real_price * (1 + self.slippage)
+                        if real_price < 0:
+                            real_exec_price = real_price * (1 - self.slippage)
+                        else:
+                            real_exec_price = real_price * (1 + self.slippage)
                         trade_pnl = (self.real_entry_price - real_exec_price) * volume
                     
-                    fee = real_exec_price * volume * self.transaction_fee
+                    fee = abs(real_exec_price) * volume * self.transaction_fee
                     pnl_change = trade_pnl - fee
                     self.balance += pnl_change
                     self.position = 0

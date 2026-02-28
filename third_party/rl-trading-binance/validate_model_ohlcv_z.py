@@ -497,7 +497,7 @@ def validate(config_path, checkpoint_path, out_dir, episode_num, args):
         "allowed_directions": env_allowed,
         "use_risk_management": getattr(cfg.backtest, "use_risk_management", True),
         "max_trades_per_episode": max_trades,
-        "mirror_mode": mirror_mode,
+        "mirror_mode": getattr(cfg.market, "mirror_mode", False),
     }
     val_env = TradingEnvironment(**env_kwargs)
 
