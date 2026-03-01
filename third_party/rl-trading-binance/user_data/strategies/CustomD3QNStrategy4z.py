@@ -85,11 +85,11 @@ class CustomD3QNStrategy4z(IStrategy):
     timeframe = '1m'
     can_long = True
     can_short: bool = True  # Это критично для Futures режима
-    startup_candle_count: int = 200
+    startup_candle_count: int = 180
 
     # Информативный таймфрейм для режима рынка
-    informative_timeframe = '1m'
-    informative_timeframe_global = '1m'
+    informative_timeframe = '15m'
+    informative_timeframe_global = '15m'
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -109,7 +109,7 @@ class CustomD3QNStrategy4z(IStrategy):
     d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=True, load=True)
     hysteresis = DecimalParameter(0.00005, 0.01, default=0.00005, space='sell', optimize=True, load=True)
     # Расширим диапазон p_target, чтобы Hyperopt мог проверить и более консервативные (до 10%), и агрессивные варианты
-    p_target = DecimalParameter(0.01, 0.10, default=0.0217, space='sell', optimize=True, load=True)
+    p_target = DecimalParameter(0.01, 0.10, default=0.0224, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
     rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
@@ -345,19 +345,18 @@ class CustomD3QNStrategy4z(IStrategy):
         self.use_global_regime_filter: bool = self.ensemble_cfg.get('use_global_regime_filter', True)
         self.use_local_regime_filter: bool = self.ensemble_cfg.get('use_local_regime_filter', True)
 
-        # --- DYNAMIC EPSILON V2 CONFIG ---
         # Base epsilon from config (common legacy value)
-        self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.75) # Legacy fallback
+        self.epsilon_threshold: float = self.ensemble_cfg.get('epsilon_threshold', 0.15)
 
-        # V2: Base/Target Epsilon
-        self.epsilon_threshold_long: float = self.ensemble_cfg.get("epsilon_threshold_long", 0.75)
-        self.epsilon_threshold_short: float = self.ensemble_cfg.get("epsilon_threshold_short", 0.75)
+        # Separate base thresholds for long/short sides, defaulting to common epsilon
+        self.epsilon_threshold_long: float = self.ensemble_cfg.get(
+            "epsilon_threshold_long", self.epsilon_threshold
+        )
+        self.epsilon_threshold_short: float = self.ensemble_cfg.get(
+            "epsilon_threshold_short", self.epsilon_threshold
+        )
 
-        # V2: Epsilon Range
-        self.epsilon_min: float = self.ensemble_cfg.get("epsilon_min", 0.1)
-        self.epsilon_max: float = self.ensemble_cfg.get("epsilon_max", 1.0)
-
-        # Effective epsilons used for thresholding, updated dynamically
+        # Effective epsilons used for thresholding, updated dynamically around per-side bases
         self.epsilon_threshold_eff_long: float = float(self.epsilon_threshold_long)
         self.epsilon_threshold_eff_short: float = float(self.epsilon_threshold_short)
         # Aggregate value for logging/compatibility
@@ -365,9 +364,11 @@ class CustomD3QNStrategy4z(IStrategy):
             self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
         )
 
-        # V2: Максимальная наблюдаемая нереализованная прибыль (PnL) по направлениям
-        self.pnl_max_long: float = 0.0
-        self.pnl_max_short: float = 0.0
+        # Максимальная наблюдаемая equity по unrealized PnL для лонгов и шортов
+        self.equity_max_long: float = 0.0
+        self.equity_max_short: float = 0.0
+        # Старое поле equity_max оставляем для обратной совместимости (не используется напрямую)
+        self.equity_max: float = 0.0
 
         # RL voting and veto flags (snake_case)
         self.enable_veto: bool = config.get('rl_enable_veto', False)
@@ -388,7 +389,9 @@ class CustomD3QNStrategy4z(IStrategy):
             # Effective epsilons fixed to base values in calibration mode
             self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
             self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
-            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
+            self.epsilon_threshold_eff = 0.5 * (
+                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+            )
             
         # --- RUNMODE & CALIBRATION LOGGING ---
         self.runmode = config.get('runmode', 'unknown')
@@ -415,7 +418,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
         self.logger.info(
             f"[ENSEMBLE] Ensemble Config: EpsL={self.epsilon_threshold_long} | EpsS={self.epsilon_threshold_short} | "
-            f"Range=[{self.epsilon_min}, {self.epsilon_max}]"
+            f"UpdateInterval={self.config_update_interval}s"
         )
 
         # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
@@ -634,7 +637,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         # 1. Z-score нормализация (как в обучении)
-        zscore_window = 450
+        zscore_window = 90
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_cols:
             rolling = dataframe[col].rolling(window=zscore_window, min_periods=zscore_window)
@@ -841,7 +844,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Нормализуем (0..1)
             p_norm = min(1.0, p_factor / p_target_val) 
             # Степенная функция (0.5 = корень). Чем меньше степень, тем резче старт.
-            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.3)
+            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.5)
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff
@@ -881,20 +884,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
         
         if should_invert:
-            # Создаем копию, чтобы не мутировать исходный массив
-            inverted_window = last_window.copy()
-
-            # 1. Инвертируем только ценовые каналы (Open, High, Low, Close -> индексы 0, 1, 2, 3)
-            inverted_window[:, 0:4] *= -1.0
-
-            # 2. Делаем Swap для High и Low (индексы 1 и 2)
-            # Атомарный swap колонок, идентичный логике в trading_environment_z.py
-            inverted_window[:, [1, 2]] = inverted_window[:, [2, 1]]
-
-            # ВАЖНО: Канал 4 (volume_z) остается без изменений (inverted_window[:, 4] == last_window[:, 4])
-            # Всплеск объемов должен оставаться всплеском.
-
-            last_window = inverted_window
+            last_window = last_window * -1.0
 
         # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
         # The model expects a flat vector of size (channels * history_len + additional_feats)
@@ -979,7 +969,7 @@ class CustomD3QNStrategy4z(IStrategy):
             # Примерно 5 минут истории:
             # при большом количестве пар метод вызывается очень часто,
             # поэтому 1280 элементов дают короткое, но репрезентативное окно.
-            self.adv_history[name] = deque(maxlen=5400)
+            self.adv_history[name] = deque(maxlen=242)
 
         if adv_array is None or len(adv_array) == 0:
             return
@@ -1090,70 +1080,116 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _update_dynamic_epsilon(self) -> None:
         """
-        Update effective epsilon based on current PnL drawdown per side (v2).
-        In calibration mode, dynamic epsilon is disabled.
+        Update effective epsilon based on current equity drawdown.
+        In calibration mode, dynamic epsilon is disabled and effective thresholds
+        are kept equal to their base values.
         """
-        if getattr(self, "calibration_mode", False) or self.config.get("runmode") not in ("live", "dry_run"):
-            # In calibration or backtest, use static base values
+
+        # In calibration mode we want static, base thresholds only
+        if getattr(self, "calibration_mode", False):
             self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
             self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
-            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
+            self.epsilon_threshold_eff = 0.5 * (
+                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+            )
+            return
+
+        if self.config.get("runmode") not in ("live", "dry_run"):
             return
 
         try:
-            # 1. Get current PnL and open trade counts per side
             pnl_long, pnl_short = self._get_pnl_from_freqtrade()
-            open_trades = Trade.get_open_trades()
-            count_long = sum(1 for t in open_trades if not t.is_short)
-            count_short = sum(1 for t in open_trades if t.is_short)
+            equity_long = pnl_long
+            equity_short = pnl_short
 
-            # 2. Independent reset of high-water mark
-            if count_long == 0: self.pnl_max_long = 0.0
-            if count_short == 0: self.pnl_max_short = 0.0
+            # Reset dynamic epsilon if there are no open trades
+            try:
+                from freqtrade.persistence import Trade  # type: ignore
+                open_trades_q = Trade.get_open_trades() # type: ignore
+                if hasattr(open_trades_q, "all"):
+                    open_trades = open_trades_q.all()
+                else:
+                    open_trades = open_trades_q
+            except Exception:
+                try:
+                    open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])  # type: ignore
+                    open_trades = open_trades_q.all() if hasattr(open_trades_q, 'all') else open_trades_q
+                except Exception:
+                    open_trades = []
 
-            # 3. Update high-water mark (peak PnL)
-            if count_long > 0: self.pnl_max_long = max(self.pnl_max_long, pnl_long)
-            if count_short > 0: self.pnl_max_short = max(self.pnl_max_short, pnl_short)
+            if not open_trades:
+                # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
+                self.equity_max = 0.0
+                self.equity_max_long = 0.0
+                self.equity_max_short = 0.0
+                self.epsilon_threshold_eff = self.epsilon_threshold
+                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
+                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
+                if self.config.get("runmode") in ("live", "dry_run"):
+                    self.logger.debug(
+                        f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | "
+                        f"effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}"
+                    )
+                return
 
-            # 4. Calculate drawdown relative to peak PnL (with protection for immediate drawdowns)
-            # Using 10.0 as a base USDT denominator for immediate drops when max_pnl is 0
-            min_denom = 10.0
-            dd_long = (self.pnl_max_long - pnl_long) / max(self.pnl_max_long, min_denom)
-            dd_short = (self.pnl_max_short - pnl_short) / max(self.pnl_max_short, min_denom)
-            
+            # Initialize equity_max_long/short on first run
+            if self.equity_max_long <= 0.0:
+                self.equity_max_long = equity_long
+            if self.equity_max_short <= 0.0:
+                self.equity_max_short = equity_short
+
+            # Track maximum observed equity per side
+            self.equity_max_long = max(self.equity_max_long, equity_long)
+            self.equity_max_short = max(self.equity_max_short, equity_short)
+
+            # Relative drawdown per side in [0.0, 1.0]
+            dd_long = (self.equity_max_long - equity_long) / self.equity_max_long if self.equity_max_long > 0.0 else 0.0
+            dd_short = (self.equity_max_short - equity_short) / self.equity_max_short if self.equity_max_short > 0.0 else 0.0
+
             dd_long = max(0.0, min(dd_long, 1.0))
             dd_short = max(0.0, min(dd_short, 1.0))
 
-            # 5. Calculate target Epsilon based on drawdown (Linear interpolation to max)
+            # Используем настраиваемый коэффициент агрессии
             k = self.dd_aggression_k.value
-            # Map drawdown [0, 1] -> [epsilon_threshold, epsilon_max]
-            target_eps_long = self.epsilon_threshold_long + (self.epsilon_max - self.epsilon_threshold_long) * min(dd_long * k, 1.0)
-            target_eps_short = self.epsilon_threshold_short + (self.epsilon_max - self.epsilon_threshold_short) * min(dd_short * k, 1.0)
+            # Scale dynamic targets around side-specific base thresholds
+            epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
+            epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
 
-            # 6. Smooth update via EMA
-            alpha = 0.3  # Smoothing factor
-            self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * target_eps_long
-            self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * target_eps_short
+            alpha = 0.4
+            if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long == 0.0:
+                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
+            if not hasattr(self, "epsilon_threshold_eff_short") or self.epsilon_threshold_eff_short == 0.0:
+                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
 
-            # 7. Clamp effective thresholds into the configured [min, max] range
-            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, self.epsilon_min), self.epsilon_max))
-            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, self.epsilon_min), self.epsilon_max))
+            # Smooth update via EMA to avoid abrupt jumps (long/short)
+            self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * epsilon_target_long
+            self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * epsilon_target_short
 
-            # Update aggregate value for logging
-            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
+            # Clamp effective thresholds into [0.1, 1.0]
+            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, 0.1), 1.0))
+            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, 0.1), 1.0))
 
-            # Logging for visibility
+            self.epsilon_threshold_eff = 0.5 * (
+                self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+            )
             if self.config.get("runmode") in ("live", "dry_run"):
-                self.logger.debug(
-                    f"EPS-DDv2 | ddL={dd_long:.2f} ddS={dd_short:.2f} | "
-                    f"EpsL: {self.epsilon_threshold_long:.3f} -> {self.epsilon_threshold_eff_long:.3f} | "
-                    f"EpsS: {self.epsilon_threshold_short:.3f} -> {self.epsilon_threshold_eff_short:.3f}"
-                )
+                # Логируем изменение режима, чтобы не спамить в консоль
+                if self.epsilon_threshold_eff > self.epsilon_threshold * 1.1:
+                    self.logger.info(
+                        f"[DEFENSIVE] Epsilon increased due to DD. "
+                        f"ddL={dd_long:.2f} ddS={dd_short:.2f} | "
+                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
+                    )
+                elif self.epsilon_threshold_eff < self.epsilon_threshold * 0.9:
+                    self.logger.info(
+                        f"[AGGRESSIVE] Epsilon is low (no DD). "
+                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
+                    )
         except Exception as e:
-            self.logger.warning(f"Dynamic epsilon v2 update failed: {e}. Falling back to base epsilon.")
+            self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
+            self.epsilon_threshold_eff = self.epsilon_threshold
             self.epsilon_threshold_eff_long = self.epsilon_threshold_long
             self.epsilon_threshold_eff_short = self.epsilon_threshold_short
-            self.epsilon_threshold_eff = 0.5 * (self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short)
 
     def _update_slot_allocation(self, current_time: datetime) -> None:
         """
@@ -1439,102 +1475,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.tsl_memory.pop(trade_id, None)
         return True
     
-    def _extract_features_batch(self, dataframe: DataFrame, window: int = 90, should_invert: bool = False) -> Optional[np.ndarray]:
-        """
-        Efficiently extract features for a single pair to be part of a batch.
-        Optimized to minimize memory allocations.
-        """
-        if len(dataframe) < window:
-            return None
-    
-        cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-        try:
-            # Get a view of the last N rows
-            data_view = dataframe[cols].values[-window:]
-    
-            if should_invert:
-                # Create a copy to modify
-                data_view = data_view.copy()
-                # 1. Invert price channels (0, 1, 2, 3), leave volume (4) untouched.
-                data_view[:, 0:4] *= -1.0
-                # 2. Swap high (1) and low (2) columns
-                data_view[:, [1, 2]] = data_view[:, [2, 1]]
-    
-            # Pre-allocate the resulting array to avoid np.concatenate
-            # History is 5 channels * 90 window = 450 + 4 dummy features = 454
-            feat = np.zeros(454, dtype=np.float32)
-    
-            # Efficiently fill the pre-allocated array
-            # Transpose (window, 5) -> (5, window) then flatten to (450,)
-            feat[:450] = data_view.astype(np.float32).T.flatten()
-    
-            # feat[450:] is already 0.0 due to np.zeros
-            return feat
-        except Exception as e:
-            logger.error(f"Feature extraction failed: {e}")
-            return None
-
-    def _populate_entry_trend_backtest(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """
-        Simplified and optimized logic for backtesting.
-        """
-        if len(dataframe) < self.startup_candle_count:
-            return dataframe
-
-        lookback = 1000
-        if self.config.get('deep_inference', False):
-            df_input = dataframe
-        else:
-            df_input = dataframe.iloc[-2000:] if len(dataframe) > 2000 else dataframe
-
-        def get_full_batch_q_values(df, side, model_num):
-            window = 90
-            cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-            data = df[cols].values.astype(np.float32)
-            if side == "SHORT" and ((model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror)):
-                # Correct Inversion Logic
-                # 1. Invert price channels (0, 1, 2, 3), leave volume (4) untouched.
-                data[:, 0:4] *= -1.0
-                # 2. Swap high (1) and low (2) columns
-                data[:, [1, 2]] = data[:, [2, 1]]
-            try:
-                windows = sliding_window_view(data, window_shape=(window, 5)).squeeze(1)
-                batch_windows = windows.transpose(0, 2, 1).reshape(len(windows), -1)
-                add_feats = np.zeros((len(batch_windows), 4), dtype=np.float32)
-                full_input = np.concatenate([batch_windows, add_feats], axis=1)
-                t = torch.from_numpy(full_input).to(self.device)
-                agent = (self.long_1_agent if model_num == 1 else self.long_2_agent) if side == "LONG" else (self.short_1_agent if model_num == 1 else self.short_2_agent)
-                if agent is None: return None
-                with torch.no_grad(): return agent.policy_net(t).cpu().numpy()
-            except Exception as e:
-                logger.error(f"Backtest batch inference failed: {e}")
-                return None
-
-        q_vals = {}
-        if self.enable_long_1: q_vals['long_1'] = get_full_batch_q_values(df_input, "LONG", 1)
-        if self.enable_long_2: q_vals['long_2'] = get_full_batch_q_values(df_input, "LONG", 2)
-        if self.enable_short_1: q_vals['short_1'] = get_full_batch_q_values(df_input, "SHORT", 1)
-        if self.enable_short_2: q_vals['short_2'] = get_full_batch_q_values(df_input, "SHORT", 2)
-
-        offset = 89
-        target_idx = df_input.index[offset:]
-        n_results = len(target_idx)
-        enter_long_vals = np.zeros(n_results, dtype=np.int8)
-        enter_short_vals = np.zeros(n_results, dtype=np.int8)
-
-        for i in range(n_results):
-            candle_q = {name: vals[i:i+1] for name, vals in q_vals.items() if vals is not None}
-            if not candle_q: continue
-            decision = self._compute_ensemble_decision(candle_q, 0, has_long=False, has_short=False)
-            enter_long_vals[i] = decision['enter_long']
-            enter_short_vals[i] = decision['enter_short']
-
-        dataframe['enter_long'] = 0
-        dataframe['enter_short'] = 0
-        dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
-        dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
-        return dataframe
-
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
         OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом

@@ -3,7 +3,7 @@
     "cpu_threads": 6,
     "deep_inference": true,
     "max_open_trades": 100,
-    "startup_candle_count": 500,
+    "startup_candle_count": 180,
     "stake_currency": "USDT",
     "stake_amount": 200,
     "tradable_balance_ratio": 0.99,
@@ -14,7 +14,7 @@
     "rl_short_threshold": 2,
     "rl_calibration_mode": false,
     "rl_enable_veto": true,
-    "min_quote_volume_usd": 10000,
+    "min_quote_volume_usd": 7500,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
@@ -23,7 +23,7 @@
         "enabled": true,
         "min_slots_per_side": 0,
         "update_interval_sec": 10,
-        "aggression_factor": 3.0
+        "aggression_factor": 10.0
     },
     "api_server": {
         "enabled": true,
@@ -71,28 +71,26 @@
     "rl_ensemble": {
         "use_global_regime_filter": false,
         "use_local_regime_filter": false,
-        "epsilon_threshold_long": 0.5,
-        "epsilon_threshold_short": 0.5,
-        "epsilon_min": 0.5,
-        "epsilon_max": 1.0,
-        "dd_aggression_k": 0.8,
-        "q_update_interval": 30,
+        "epsilon_threshold_long": 0.0,
+        "epsilon_threshold_short": 0.0,
+        "dd_aggression_k": 2.0,
+        "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 8.2e-05,
-                "q_max": 0.003424
+                "q_min": 0.00213,
+                "q_max": 0.003227
             },
             "long_2": {
-                "q_min": 0.000148,
-                "q_max": 0.000451
+                "q_min": 0.000398,
+                "q_max": 0.000458
             },
             "short_1": {
-                "q_min": 6.5e-05,
-                "q_max": 0.000595
+                "q_min": 2.3e-05,
+                "q_max": 0.000581
             },
             "short_2": {
-                "q_min": 0.000117,
-                "q_max": 0.000688
+                "q_min": 3.8e-05,
+                "q_max": 0.000667
             }
         }
     },
@@ -263,7 +261,6 @@
             "NOT/USDT:USDT",
             "NTRN/USDT:USDT",
             "OGN/USDT:USDT",
-            "OM/USDT:USDT",
             "ONDO/USDT:USDT",
             "ONE/USDT:USDT",
             "ONG/USDT:USDT",
