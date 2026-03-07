@@ -32,7 +32,7 @@ The bot dynamically reallocates `max_open_trades` between Long and Short sides b
 - **Logic**: `_update_slot_allocation` calculates ratios based on PnL.
 
 ### 3. Market Regime Filter
-- Uses **Supertrend (15m)** to determine the global market trend.
+- Uses **Supertrend** to determine the global market trend.
 - **Bullish Regime**: Only Long signals are processed.
 - **Bearish Regime**: Only Short signals are processed.
 
@@ -41,7 +41,7 @@ The bot dynamically reallocates `max_open_trades` between Long and Short sides b
 - This ensures consistent voting behavior across different model training epochs.
 
 ## 📊 Data & Features
-- **Timeframe**: 1m (Execution), 15m (Informative).
+- **Timeframe**: Execution, Informative.
 - **Input Features**: 10 channels (Open, High, Low, Close, Volume, QuoteVolume, Trades, TakerBase, TakerQuote, VWAP).
 - **Preprocessing**: Z-score normalization (window=90).
 
