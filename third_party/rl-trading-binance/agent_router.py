@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 class AgentRouter:
-    def __init__(self, config_path: str = "C:\\Users\\svsma\\.continue\\agent_config.yaml"):
+    def __init__(self, 
+                 config_path: str = "C:\\Users\\svsma\\.continue\\config.yaml",
+                 log_dir_path: str = "C:\\Users\\svsma\\.continue\\"):
         self._setup_minimal_logger()
         self.logger.info("AgentRouter initialization started")
         
         try:
-            self._setup_full_logger()
+            self._setup_full_logger(log_dir_path)
             self.logger.info("Full logger initialized")
         except Exception as e:
             self.logger.error(f"File logger setup failed: {e}")
@@ -26,8 +28,12 @@ class AgentRouter:
         try:
             self.config = self._load_config(config_path)
             self.logger.info(f"Config loaded successfully from {config_path}")
+            
+            # Transform the list of models from config.yaml into a dictionary keyed by name
+            models_list = self.config.get("models", [])
+            self.models = {model['name']: model for model in models_list}
+            
             self._validate_config()
-            self.models = self.config.get("models", {})
             router_config = self.config.get("router", {})
             self.fallback_priority = router_config.get("fallback_priority", [])
         except Exception as e:
@@ -36,17 +42,16 @@ class AgentRouter:
 
     def _setup_minimal_logger(self):
         self.logger = logging.getLogger("agent_router_minimal")
-        self.logger.setLevel(logging.INFO)
-        for handler in self.logger.handlers[:]:
-            self.logger.removeHandler(handler)
-        
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-        self.logger.addHandler(console_handler)
+        self.logger.propagate = False
+        if not self.logger.handlers:
+            self.logger.setLevel(logging.INFO)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+            self.logger.addHandler(console_handler)
 
-    def _setup_full_logger(self):
+    def _setup_full_logger(self, log_dir_path: str):
         try:
-            log_dir = Path("C:\\Users\\svsma\\.continue\\")
+            log_dir = Path(log_dir_path)
             log_dir.mkdir(exist_ok=True)
             
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -61,7 +66,7 @@ class AgentRouter:
 
     def _load_config(self, path: str) -> Dict:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
         except Exception as e:
             self.logger.error(f"YAML parse error in {path}: {str(e)}")
@@ -70,18 +75,9 @@ class AgentRouter:
     def _validate_config(self):
         required_models = ["qwen_235b", "nemotron_30b", "step_flash"]
         for model in required_models:
-            if model not in self.config["models"]:
+            if model not in self.models:
                 self.logger.critical(f"Missing model {model} in config")
                 raise ValueError("Incomplete model configuration")
-
-    def _get_log_filename(self) -> str:
-        """Генерирует уникальное имя файла лога"""
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        template = self.config["artifacts"]["filename_template"]
-        return template.format(
-            task_type="router",
-            timestamp=timestamp
-        )
 
     def route(self, task: Dict[str, Any]) -> str:
         task_type = task["type"]
@@ -104,7 +100,12 @@ class AgentRouter:
             raise ValueError(f"Model '{model_name}' not configured.")
 
         api_url = model_config.get("api_url")
-        api_key = model_config.get("api_key")
+        # Support both snake_case (Python style) and camelCase (JS/Config style)
+        api_key = model_config.get("api_key") or model_config.get("apiKey")
+        
+        if not api_key:
+            self.logger.error(f"API key not found for model '{model_name}'")
+            return {"success": False, "model": model_name, "error": "Missing API key"}
         
         self.logger.info(f"Attempting to execute task '{task['id']}' on model '{model_name}'")
 
@@ -115,29 +116,22 @@ class AgentRouter:
             # The payload structure depends on the target model's API
             payload = {
                 "model": model_config.get("model"),
-                "messages": [{"role": "user", "content": f"Process this task: {task}"}]
+                "messages": [{"role": "user", "content": task.get("prompt", str(task))}]
             }
             
             timeout = self.config.get("router", {}).get("timeout", 15)
-            # The following line is commented out to prevent actual network calls during tests
-            # that do not mock the requests library.
-            # response = requests.post(api_url, json=payload, headers=headers, timeout=timeout)
-            # response.raise_for_status()
-            # response_data = response.json()
-            #
-            # # Log remaining tokens if available
-            # tokens_remaining = response_data.get("usage", {}).get("remaining_tokens")
-            # if tokens_remaining is not None:
-            #     self.logger.info(f"API tokens remaining: {tokens_remaining}")
             
-            self.logger.info(f"Task '{task['id']}' executed successfully on model '{model_name}'.")
-            # In a real scenario, you would return the actual response data.
-            # return {"success": True, "model": model_name, "response": response_data}
-            simulated_response = {"result": "simulated_ok", "usage": {"remaining_tokens": 9999}}
-            tokens_remaining = simulated_response.get("usage", {}).get("remaining_tokens")
+            response = requests.post(api_url, json=payload, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            response_data = response.json()
+            
+            # Log remaining tokens if available
+            tokens_remaining = response_data.get("usage", {}).get("remaining_tokens")
             if tokens_remaining is not None:
                 self.logger.info(f"API tokens remaining: {tokens_remaining}")
-            return {"success": True, "model": model_name, "response": simulated_response}
+            
+            self.logger.info(f"Task '{task['id']}' executed successfully on model '{model_name}'.")
+            return {"success": True, "model": model_name, "response": response_data}
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Execution failed for model '{model_name}': {e}")
             return {"success": False, "model": model_name, "error": str(e)}
