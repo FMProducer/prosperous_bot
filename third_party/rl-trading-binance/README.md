@@ -1,52 +1,92 @@
 # RL Trading System for Binance Futures
 
-High-performance Reinforcement Learning trading system integrated with Freqtrade.
+> **❗ Critical Notes**  
+> 1. **Стратегия использует ЕДИНСТВЕННЫЙ конфиг**: `user_data/config_rl4z.json` (не путать с `configs/*.json`!)  
+> 2. **Файлы в `third_party/rl-trading-binance/`**:  
+>    - `agent_router.py`/`config.yaml` → интеграция с **Continue VS Code** (внешний агент-маршрутизатор)  
+>    - **НЕ влияют** на торговую логику стратегии  
+> 3. **Ключевые компоненты стратегии**:  
+>    - `user_data/strategies/CustomD3QNStrategy4z.py`  
+>    - `user_data/config_rl4z.json`  
 
-## 🏗 Architecture
+## 🗂️ File System Map (Обновлено)
 
-### Core Components
-- **Framework**: Freqtrade (Execution Engine) + PyTorch (RL Models).
-- **Strategy**: `CustomD3QNStrategy4z.py` - A sophisticated ensemble strategy.
-- **Agent**: `D3QN_PER_Agent` (Dueling Double DQN with Prioritized Experience Replay).
+| Путь | Назначение | Критично для стратегии | Как проверить |
+|------|------------|-------------------------|--------------|
+| `user_data/strategies/CustomD3QNStrategy4z.py` | Основная стратегия Freqtrade | ✅ | `ls user_data/strategies/` |
+| `user_data/config_rl4z.json` | Единственный конфиг стратегии | ✅ | `cat user_data/config_rl4z.json` |
+| `third_party/rl-trading-binance/agent_router.py` | Маршрутизация запросов в Continue | ❌ | Не редактируйте для торговли |
+| `third_party/rl-trading-binance/config.yaml` | Конфиг Continue VS Code | ❌ | Не влияет на бота |
+| `configs/*.json` | Тренировочные конфиги RL (не используются в live) | ❌ | `ls configs/` → **игнорируйте** |
+| `output/alpha_seed_*/` | Сохраненные модели (пример: `output/alpha_seed_001/saved_models/`) | ✅ | `ls output/` |
 
-### 🧠 Ensemble Logic (2+2)
-The system employs an ensemble of **4 independent neural networks**:
-- **2 Long-only Models**: Trained specifically for long entries.
-- **2 Short-only Models**: Trained for short entries (some using Mirror Mode).
-- **Inference**: Parallel execution using `ThreadPoolExecutor` for low latency.
-- **Voting System**:
-  - Models cast votes if their normalized Q-Advantage exceeds a dynamic threshold.
-  - **Veto Mechanism**: A strong signal from the opposite side blocks entry (e.g., Short models can veto a Long entry).
+## 🧭 Где искать ключевые параметры?
 
-## 🛡️ Risk Management & Dynamic Features
-
-### 1. Dynamic Epsilon (Adaptive Thresholds)
-The voting threshold (`epsilon`) is not static. It adapts to market conditions and portfolio performance:
-- **Defensive Mode**: If the portfolio experiences drawdown, the threshold increases, requiring higher model confidence to trade.
-- **Aggressive Mode**: During profitable periods, thresholds remain at base levels.
-- **Logic**: `_update_dynamic_epsilon` monitors Unrealized PnL.
-
-### 2. Dynamic Slot Allocation
-The bot dynamically reallocates `max_open_trades` between Long and Short sides based on recent performance:
-- If Longs are profitable and Shorts are losing, the system allocates more slots to Longs.
-- **Logic**: `_update_slot_allocation` calculates ratios based on PnL.
-
-### 3. Market Regime Filter
-- Uses **Supertrend** to determine the global market trend.
-- **Bullish Regime**: Only Long signals are processed.
-- **Bearish Regime**: Only Short signals are processed.
-
-### 4. Q-Value Normalization
-- Raw Q-values are normalized to a `[0, 1]` scale using auto-tuned `q_min` and `q_max` percentiles.
-- This ensures consistent voting behavior across different model training epochs.
-
-## 📊 Data & Features
-- **Timeframe**: Execution, Informative.
-- **Input Features**: 10 channels (Open, High, Low, Close, Volume, QuoteVolume, Trades, TakerBase, TakerQuote, VWAP).
-- **Preprocessing**: Z-score normalization (window=90).
-
-## 🚀 Usage
-Run with Freqtrade:
+### Всегда проверяйте эти файлы:
 ```bash
-freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z
+# 1. Конфиг стратегии (единственный источник истины)
+user_data/config_rl4z.json
+
+# 2. Код стратегии
+user_data/strategies/CustomD3QNStrategy4z.py
+
+# 3. Логи бэктеста
+output/<config_name>/backtest_results.csv
 ```
+
+### ❌ Что НЕ нужно редактировать для торговли:
+- Все файлы в `third_party/rl-trading-binance/` (кроме документации)
+- Файлы в `configs/` (используются только для тренировки моделей)
+- `agent_router.py` и `config.yaml` (только для работы с Continue VS Code)
+
+## 🛠️ Как диагностировать проблемы
+
+### Если стратегия не запускается:
+1. **Проверьте конфиг**:
+   ```bash
+   freqtrade validate-config --config user_data/config_rl4z.json
+   ```
+   - Ошибка? Значит, конфиг поврежден или находится в неправильном месте.
+
+2. **Проверьте пути к моделям** в `user_data/config_rl4z.json`:
+   ```json
+   "rl_ensemble": {
+     "long_1_model_dir": "output/alpha_seed_001/saved_models/",
+     "long_2_model_dir": "output/alpha_seed_002/saved_models/",
+     ...
+   }
+   ```
+   - Все пути должны существовать: `ls output/alpha_seed_001/saved_models/`
+
+### Если не генерируются сигналы:
+1. **Проверьте логи** на наличие:
+   - `⚠️ No trades due to dynamic epsilon threshold` → слишком высокий `epsilon_threshold_eff`
+   - `⚠️ Volume filter blocked all pairs` → увеличьте `min_quote_volume_usd`
+
+2. **Временно отключите фильтры** в `user_data/config_rl4z.json`:
+   ```json
+   "use_regime_filter": false,
+   "enable_dynamic_epsilon": false
+   ```
+
+## 📌 Проверка целостности (Шаги перед деплоем)
+```bash
+# 1. Проверка расположения конфига
+ls user_data/config_rl4z.json || echo "❌ Конфиг отсутствует!"
+
+# 2. Валидация стратегии
+freqtrade backtest --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z
+
+# 3. Проверка загрузки моделей (ищите в логах)
+grep "Loaded model" logs/freqtrade.log
+```
+
+## 🔍 Ссылки на документацию
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) → Решение типовых проблем  
+- [RL_ARCHITECT.md](RL_ARCHITECT.md) → Архитектура стратегии  
+- [analysis.md](analysis.md) → Как избежать lookahead bias  
+
+## ❗ Important Reminder
+- **Для торговли используется только `user_data/`**  
+- Все другие конфиги — для тренировки или интеграции с IDE  
+- При сомнениях — выполняйте `ls` и сверяйтесь с этой таблицей

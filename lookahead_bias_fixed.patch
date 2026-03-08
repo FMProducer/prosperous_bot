@@ -1,0 +1,60 @@
+diff --git a/third_party/rl-trading-binance/user_data/strategies/CustomD3QNStrategy4z.py b/third_party/rl-trading-binance/user_data/strategies/CustomD3QNStrategy4z.py
+index 73e6c6a1c00bd3f02edcf605d41037d342b3ce0d..d0ed4c6b9ae50a6c2b54cfe53fe89b625361cd41 100644
+--- a/third_party/rl-trading-binance/user_data/strategies/CustomD3QNStrategy4z.py
++++ b/third_party/rl-trading-binance/user_data/strategies/CustomD3QNStrategy4z.py
+@@
+-    def _get_pnl_from_freqtrade(self) -> tuple:
+-        open_trades = Trade.get_open_trades()
+-        # ... текущая реализация с lookahead bias ...
++    def _get_pnl_from_freqtrade_safe(self, current_time: datetime) -> tuple:
++        """Safe version for backtest and live trading."""
++        pnl_long = 0.0
++        pnl_short = 0.0
++        for trade in Trade.get_open_trades():
++            if self.config.get('runmode') == 'backtest':
++                # Fetch data limited to current_time to avoid lookahead
++                dataframe, _ = self.dp.get_analyzed_dataframe(
++                    trade.pair,
++                    self.timeframe,
++                    max_lines=100  # Limit to prevent lookahead
++                )
++                # Get the candle corresponding to current_time
++                candle = dataframe[dataframe['date'] <= current_time].iloc[-1]
++                profit_usdt = trade.calc_profit(rate=candle['close'])
++            else:
++                # Live trading logic
++                if trade.close_rate_requested:
++                    profit_usdt = trade.calc_profit(rate=trade.close_rate_requested)
++                else:
++                    dataframe, _ = self.dp.get_analyzed_dataframe(
++                        trade.pair,
++                        self.timeframe,
++                        max_lines=100
++                    )
++                    candle = dataframe[dataframe['date'] <= current_time].iloc[-1]
++                    profit_usdt = trade.calc_profit(rate=candle['close'])
++
++            # Accumulate profit based on trade side
++            if trade.side == 'long':
++                pnl_long += profit_usdt
++            else:
++                pnl_short += profit_usdt
++        return pnl_long, pnl_short
+@@
+-    if self.dynamic_slots_enabled:
+-        now = datetime.now(timezone.utc)  # ПРОБЛЕМА
+-        # ... логика ...
++    if self.dynamic_slots_enabled:
++        # Use the passed time instead of system time
++        now = current_time
++        # ... rest of logic unchanged ...
+@@
+-    # ... сущещая логика ...
++    # Lookahead validation
++    if self.config.get('runmode') == 'backtest':
++        last_candle_time = dataframe['date'].max()
++        current_time = dataframe['date'].iloc[-1]
++        if last_candle_time > current_time:
++            self.logger.error("DETECTED LOOKAHEAD BIAS: Future data detected!")
++            raise ValueError("Lookahead bias detected in backtest mode")
++    # ... основная логика ...
