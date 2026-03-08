@@ -1025,7 +1025,22 @@ class CustomD3QNStrategy4z(IStrategy):
         except Exception as e:
             self.logger.error(f"Failed to auto-tune config: {e}")
 
-    def _get_pnl_from_freqtrade(self) -> tuple:
+    def calculate_current_price(self, trade: Trade, current_time: datetime) -> float:
+        """Безопасное получение текущей цены с защитой от lookahead bias"""
+        if self.config.get("runmode") == "backtest":
+            if hasattr(self, 'dp') and self.dp is not None:
+                try:
+                    dataframe, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
+                    mask = dataframe['date'] <= current_time
+                    if mask.any():
+                        return dataframe.loc[mask, 'close'].iloc[-1]
+                except Exception:
+                    pass
+            return trade.open_rate
+        else:
+            return self.dp.current_whitelist_price(trade.pair)
+
+    def _get_pnl_from_freqtrade(self, current_time: Optional[datetime] = None) -> tuple:
         """
         Получает ТОЛЬКО Unrealized PnL (открытые позиции)
         для мгновенной реакции на изменение рынка
@@ -1043,9 +1058,12 @@ class CustomD3QNStrategy4z(IStrategy):
                     if t.close_rate_requested:
                         profit_usdt = t.calc_profit(rate=t.close_rate_requested)
                     else:
-                        if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
+                        if current_time and self.config.get("runmode") == "backtest":
+                            current_rate = self.calculate_current_price(t, current_time)
+                            profit_usdt = t.calc_profit(rate=current_rate)
+                        elif hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
                             try:
-                                dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)  # type: ignore
+                                dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)
                                 if not dataframe.empty:
                                     current_rate = dataframe['close'].iloc[-1]
                                     profit_usdt = t.calc_profit(rate=current_rate)
@@ -1060,9 +1078,9 @@ class CustomD3QNStrategy4z(IStrategy):
                     profit_usdt = 0.0
 
                 if t.is_short:
-                    pnl_short_open += profit_usdt  # type: ignore
+                    pnl_short_open += profit_usdt
                 else:
-                    pnl_long_open += profit_usdt  # type: ignore
+                    pnl_long_open += profit_usdt
 
             # Возвращаем ТОЛЬКО Unrealized PnL
             if hasattr(self, 'logger') and self.logger:
@@ -1078,15 +1096,12 @@ class CustomD3QNStrategy4z(IStrategy):
             self.logger.error(f"Failed to calculate PnL: {e}")
             return 0.0, 0.0
 
-    def _update_dynamic_epsilon(self) -> None:
+    def _update_dynamic_epsilon(self, current_time: Optional[datetime] = None) -> None:
         """
         Update effective epsilon based on current equity drawdown.
-        In calibration mode, dynamic epsilon is disabled and effective thresholds
-        are kept equal to their base values.
+        In calibration mode, dynamic epsilon is disabled.
         """
-
-        # In calibration mode we want static, base thresholds only
-        if getattr(self, "calibration_mode", False):
+        if getattr(self, "calibration_mode", False) or not self.ensemble_cfg.get('enable_dynamic_epsilon', False):
             self.epsilon_threshold_eff_long = float(self.epsilon_threshold_long)
             self.epsilon_threshold_eff_short = float(self.epsilon_threshold_short)
             self.epsilon_threshold_eff = 0.5 * (
@@ -1094,42 +1109,29 @@ class CustomD3QNStrategy4z(IStrategy):
             )
             return
 
-        if self.config.get("runmode") not in ("live", "dry_run"):
+        if self.config.get("runmode") not in ("live", "dry_run", "backtest"):
             return
 
         try:
-            pnl_long, pnl_short = self._get_pnl_from_freqtrade()
+            pnl_long, pnl_short = self._get_pnl_from_freqtrade(current_time)
             equity_long = pnl_long
             equity_short = pnl_short
 
             # Reset dynamic epsilon if there are no open trades
             try:
-                from freqtrade.persistence import Trade  # type: ignore
-                open_trades_q = Trade.get_open_trades() # type: ignore
-                if hasattr(open_trades_q, "all"):
-                    open_trades = open_trades_q.all()
-                else:
-                    open_trades = open_trades_q
+                open_trades = Trade.get_open_trades()
             except Exception:
-                try:
-                    open_trades_q = Trade.get_trades([Trade.is_open.is_(True)])  # type: ignore
-                    open_trades = open_trades_q.all() if hasattr(open_trades_q, 'all') else open_trades_q
-                except Exception:
-                    open_trades = []
+                open_trades = []
 
             if not open_trades:
                 # Вне рынка: сбрасываем состояние drawdown и возвращаемся к базовому epsilon
-                self.equity_max = 0.0
                 self.equity_max_long = 0.0
                 self.equity_max_short = 0.0
-                self.epsilon_threshold_eff = self.epsilon_threshold
                 self.epsilon_threshold_eff_long = self.epsilon_threshold_long
                 self.epsilon_threshold_eff_short = self.epsilon_threshold_short
-                if self.config.get("runmode") in ("live", "dry_run"):
-                    self.logger.debug(
-                        f"EPS-DD | reset (no open trades) | base={self.epsilon_threshold:.3f} | "
-                        f"effL={self.epsilon_threshold_eff_long:.3f} effS={self.epsilon_threshold_eff_short:.3f}"
-                    )
+                self.epsilon_threshold_eff = 0.5 * (
+                    self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
+                )
                 return
 
             # Initialize equity_max_long/short on first run
@@ -1150,41 +1152,25 @@ class CustomD3QNStrategy4z(IStrategy):
             dd_short = max(0.0, min(dd_short, 1.0))
 
             # Используем настраиваемый коэффициент агрессии
-            k = self.dd_aggression_k.value
+            k = self.ensemble_cfg.get('dynamic_epsilon_k', self.dd_aggression_k.value)
+            min_eps = self.ensemble_cfg.get('min_epsilon', 0.1)
+
             # Scale dynamic targets around side-specific base thresholds
             epsilon_target_long = self.epsilon_threshold_long * (1.0 + k * dd_long)
             epsilon_target_short = self.epsilon_threshold_short * (1.0 + k * dd_short)
 
             alpha = 0.4
-            if not hasattr(self, "epsilon_threshold_eff_long") or self.epsilon_threshold_eff_long == 0.0:
-                self.epsilon_threshold_eff_long = self.epsilon_threshold_long
-            if not hasattr(self, "epsilon_threshold_eff_short") or self.epsilon_threshold_eff_short == 0.0:
-                self.epsilon_threshold_eff_short = self.epsilon_threshold_short
-
-            # Smooth update via EMA to avoid abrupt jumps (long/short)
+            # Smooth update via EMA
             self.epsilon_threshold_eff_long = (1.0 - alpha) * self.epsilon_threshold_eff_long + alpha * epsilon_target_long
             self.epsilon_threshold_eff_short = (1.0 - alpha) * self.epsilon_threshold_eff_short + alpha * epsilon_target_short
 
-            # Clamp effective thresholds into [0.1, 1.0]
-            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, 0.1), 1.0))
-            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, 0.1), 1.0))
+            # Clamp effective thresholds
+            self.epsilon_threshold_eff_long = float(min(max(self.epsilon_threshold_eff_long, min_eps), 1.0))
+            self.epsilon_threshold_eff_short = float(min(max(self.epsilon_threshold_eff_short, min_eps), 1.0))
 
             self.epsilon_threshold_eff = 0.5 * (
                 self.epsilon_threshold_eff_long + self.epsilon_threshold_eff_short
             )
-            if self.config.get("runmode") in ("live", "dry_run"):
-                # Логируем изменение режима, чтобы не спамить в консоль
-                if self.epsilon_threshold_eff > self.epsilon_threshold * 1.1:
-                    self.logger.info(
-                        f"[DEFENSIVE] Epsilon increased due to DD. "
-                        f"ddL={dd_long:.2f} ddS={dd_short:.2f} | "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
-                elif self.epsilon_threshold_eff < self.epsilon_threshold * 0.9:
-                    self.logger.info(
-                        f"[AGGRESSIVE] Epsilon is low (no DD). "
-                        f"Eps: {self.epsilon_threshold:.3f} -> {self.epsilon_threshold_eff:.3f}"
-                    )
         except Exception as e:
             self.logger.warning(f"Dynamic epsilon update failed: {e}. Falling back to base epsilon.")
             self.epsilon_threshold_eff = self.epsilon_threshold
@@ -1395,8 +1381,6 @@ class CustomD3QNStrategy4z(IStrategy):
             return True
         
         try:
-            from freqtrade.persistence import Trade  # type: ignore
-            
             # --- 90-MINUTE DIRECTIONAL TIMEOUT ---
             # 1. Находим последнюю закрытую сделку по этой паре
             trades_query = Trade.get_trades([Trade.pair == pair, Trade.is_open.is_(False)])
@@ -1479,21 +1463,38 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         OPTIMIZED ENSEMBLE ENTRY LOGIC с параллельным инференсом
         """
+        if dataframe.empty:
+            return dataframe
+
+        # Get the current time from the last candle
+        current_time = dataframe.iloc[-1]['date']
+
+        # --- 0. LOOKAHEAD VALIDATION (from patch) ---
+        if self.config.get('runmode') == 'backtest':
+            last_candle_time = dataframe['date'].max()
+            if last_candle_time > current_time:
+                self.logger.error(f"DETECTED LOOKAHEAD BIAS in {metadata['pair']}: Future data detected! "
+                                 f"Last in DF: {last_candle_time} | Current: {current_time}")
+                raise ValueError("Lookahead bias detected in backtest mode")
+
         # Update dynamic epsilon once per candle based on current equity drawdown
-        self._update_dynamic_epsilon()
+        self._update_dynamic_epsilon(current_time)
 
         # --- PERIODIC SLOT UPDATE & LOGGING ---
         # Ensure slots are logged regularly for the dashboard, even if no trades occur
         if self.dynamic_slots_enabled:
             try:
-                now = datetime.now(timezone.utc)
+                # В бэктесте используем время свечи, в лайве можно системное, 
+                # но время свечи универсальнее для логики стратегии.
+                now_logic = current_time if self.config.get('runmode') == 'backtest' else datetime.now(timezone.utc)
+                
                 if self.last_slot_update is None:
                     # Force immediate update on first run
-                    self.last_slot_update = now - timedelta(days=1)
+                    self.last_slot_update = now_logic - timedelta(days=1)
                 
-                if (now - self.last_slot_update).total_seconds() > self.slot_update_interval:
-                    self._update_slot_allocation(now)
-                    self.last_slot_update = now
+                if (now_logic - self.last_slot_update).total_seconds() > self.slot_update_interval:
+                    self._update_slot_allocation(now_logic)
+                    self.last_slot_update = now_logic
             except Exception as e:
                 self.logger.error(f"Periodic slot update failed: {e}")
 

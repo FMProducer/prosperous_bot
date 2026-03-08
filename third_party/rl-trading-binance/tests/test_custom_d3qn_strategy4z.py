@@ -114,7 +114,7 @@ def strategy():
     cfg_path = PROJECT_ROOT / "user_data" / "config_rl4z.json"
     with open(cfg_path, "r", encoding="utf-8") as f: cfg = json.load(f)
     cfg["runmode"] = "live"; cfg["rl_calibration_mode"] = False
-    m = MagicMock(); m.seq.state_shape = (90, 5); m.market.num_actions = 3; m.model.additional_feats = 4
+    m = MagicMock(); m.seq.state_shape = (90, 5); m.seq.agent_history_len = 90; m.market.num_actions = 3; m.model.additional_feats = 4
     m.rl.gamma = 0.99; m.rl.lr = 0.001; m.rl.target_update_freq = 100; m.rl.train_start = 100
     m.rl.max_gradient_norm = 1.0; m.eps.eps_end = 0.1; m.eps.eps_decay_frames = 1000
     with patch("builtins.open", mock_open(read_data='{}')), patch("json.dump"), \
