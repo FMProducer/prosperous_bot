@@ -112,8 +112,8 @@ class CustomD3QNStrategy4z(IStrategy):
     p_target = DecimalParameter(0.01, 0.10, default=0.0224, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
-    rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
-    rl_short_threshold_opt = IntParameter(1, 2, default=1, space='sell', optimize=True, load=True)
+    rl_long_threshold_opt = IntParameter(1, 2, default=2, space='buy', optimize=True, load=True)
+    rl_short_threshold_opt = IntParameter(1, 2, default=2, space='sell', optimize=True, load=True)
 
     # Параметры Supertrend для режима рынка (будут оптимизироваться hyperopt'ом)
     supertrend_period = IntParameter(7, 20, default=10, space='buy', optimize=True, load=True)
@@ -570,9 +570,9 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             agent.load_model(str(path))
             agent.policy_net.eval()
-            logger.info(f"✅ {name} Agent loaded from {path}")
+            self.logger.debug(f"✅ {name} Agent loaded from {path}")
         except Exception as e:
-            logger.error(f"❌ Failed to load {name} Agent: {e}")
+            self.logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
 
     # === HELPER: Supertrend на одном таймфрейме (для 15m режима) ===
@@ -853,7 +853,7 @@ class CustomD3QNStrategy4z(IStrategy):
         # Default window is 90 (5 channels * 90 = 450 history features)
         window = 90 
         
-        # Safe access to model configs to avoid Pyre NoneType errors
+        # Safe access to model configs
         cfg = None
         if side == "LONG":
             cfg = self.cfg_long_1 if model_num == 1 else self.cfg_long_2
@@ -863,44 +863,54 @@ class CustomD3QNStrategy4z(IStrategy):
         if cfg and hasattr(cfg, 'seq') and cfg.seq:
             window = getattr(cfg.seq, "agent_history_len", 90)
 
-        # 1. Проверка длины
         if len(dataframe) < window:
             return None
             
-        # 2. Выбор Z-колонок
         cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-        
-        # 3. Data preparation (N, 5)
         z_data = dataframe[cols].values.astype(np.float32)
         
-        # Extract last 'window' rows: (window, 5)
-        # Using tail instead of sliding_window_view for simplicity since we only need 1 window
-        last_window = z_data[-window:]
-        
-        # 4. Inversion logic (Mirror Mode)
+        # Inversion logic (Mirror Mode)
         should_invert = False
         if side == "SHORT":
             if (model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror):
                 should_invert = True
-        
-        if should_invert:
-            last_window = last_window * -1.0
 
-        # 5. Flatten to (450,) and concatenate with dummy additional features (4,)
-        # The model expects a flat vector of size (channels * history_len + additional_feats)
-        # Target shape for history: (channels=5, length=90) -> (450,)
-        
-        # Transpose (90, 5) -> (5, 90) then flatten
-        img_flat = last_window.T.flatten()
-        
-        # Additional features (4 dummy values)
-        add_feats = np.zeros(4, dtype=np.float32)
-        
-        # Concat: (454,)
-        full_input = np.concatenate([img_flat, add_feats])
-        
-        # Convert to tensor and add batch dim: (1, 454)
-        return torch.as_tensor(full_input, device=self.device, dtype=torch.float32).unsqueeze(0)
+        runmode = self.config.get('runmode')
+        deep_inference = self.config.get('deep_inference', False)
+
+        if runmode in ('live', 'dry_run') or not deep_inference:
+            # SINGLE ROW INFERENCE (Live or optimized backtest)
+            last_window = z_data[-window:]
+            if should_invert:
+                last_window = last_window * -1.0
+            
+            # Transpose (90, 5) -> (5, 90) then flatten to (450,)
+            img_flat = last_window.T.flatten()
+            add_feats = np.zeros(4, dtype=np.float32)
+            full_input = np.concatenate([img_flat, add_feats])
+            return torch.as_tensor(full_input, device=self.device, dtype=torch.float32).unsqueeze(0)
+        else:
+            # BATCH INFERENCE (Full Backtest)
+            # Create sliding windows: (N - window + 1, window, 5)
+            # sliding_window_view with (window, 5) on (N, 5) returns (N-window+1, 1, window, 5)
+            try:
+                windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1)
+            except Exception as e:
+                self.logger.error(f"Sliding window failed: {e}")
+                return None
+
+            if should_invert:
+                windows = windows * -1.0
+            
+            # Batch Transpose: (Batch, Window, Channels) -> (Batch, Channels, Window)
+            # then flatten each to (Batch, 450)
+            img_batch = windows.transpose(0, 2, 1).reshape(len(windows), -1)
+            
+            # Add 4 dummy features for each item in batch
+            add_feats = np.zeros((len(windows), 4), dtype=np.float32)
+            full_input = np.concatenate([img_batch, add_feats], axis=1)
+            
+            return torch.as_tensor(full_input, device=self.device, dtype=torch.float32)
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
@@ -1271,13 +1281,10 @@ class CustomD3QNStrategy4z(IStrategy):
         """
         Алгоритм ансамбля: Голосование с порогом ε
         """
-        # Determine thresholds (Hyperopt support)
-        if self.config.get('runmode') == 'hyperopt':
-            thresh_long = self.rl_long_threshold_opt.value
-            thresh_short = self.rl_short_threshold_opt.value
-        else:
-            thresh_long = self.rl_long_threshold
-            thresh_short = self.rl_short_threshold
+        # Always use the value from the Hyperoptable Parameter
+        # Freqtrade handles default/config/hyperopt file automatically
+        thresh_long = self.rl_long_threshold_opt.value
+        thresh_short = self.rl_short_threshold_opt.value
 
         votes_long = 0
         votes_short = 0
@@ -1869,10 +1876,15 @@ class CustomD3QNStrategy4z(IStrategy):
                     self.conflict_stats['short_entries'] += 1
             
             # Логирование
-            # Логируем только последние 2 свечи (0 и 1)
-            if i >= n_predictions - 2:
-                if decision['enter_long'] or decision['enter_short']:
-                    self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
+            if decision['enter_long'] or decision['enter_short']:
+                # В лайве логируем только последнюю свечу
+                if self.config.get('runmode') in ['live', 'dry_run']:
+                    if i == n_predictions - 1:
+                        self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
+                else:
+                    # В бэктесте логируем только последние 3 свечи диапазона, чтобы избежать спама в 1000 строк
+                    if i >= n_predictions - 3:
+                        self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
             
             # Записываем в массив (быстро)
             enter_long_vals[i] = decision['enter_long']
