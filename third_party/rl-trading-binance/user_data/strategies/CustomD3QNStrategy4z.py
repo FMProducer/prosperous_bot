@@ -103,29 +103,32 @@ class CustomD3QNStrategy4z(IStrategy):
         'stoploss_on_exchange': False
     }
     
-    # Параметры TSL
-    d0 = DecimalParameter(0.01, 0.10, default=0.087, space='sell', optimize=True, load=True)
-    d_min = DecimalParameter(0.0005, 0.05, default=0.049, space='sell', optimize=True, load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.008, space='sell', optimize=True, load=True)
-    p_target = DecimalParameter(0.01, 0.10, default=0.093, space='sell', optimize=True, load=True)
+    # Параметры TSL (КОНСЕРВАТИВНЫЕ)
+    d0 = DecimalParameter(0.01, 0.05, default=0.02, space='sell', optimize=True, load=True)
+    d_min = DecimalParameter(0.0005, 0.02, default=0.005, space='sell', optimize=True, load=True)
+    hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=True, load=True)
+    p_target = DecimalParameter(0.005, 0.04, default=0.01, space='sell', optimize=True, load=True)
     
-    # Hyperoptable Voting Thresholds
-    rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
-    rl_short_threshold_opt = IntParameter(1, 2, default=1, space='sell', optimize=True, load=True)
+    # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
+    tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=True, load=True)
 
-    # Параметры Supertrend для режима рынка
-    supertrend_period = IntParameter(7, 20, default=9, space='buy', optimize=True, load=True)
-    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=2.628, space='buy', optimize=True, load=True)
+    # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
+    rl_long_threshold_opt = IntParameter(1, 2, default=2, space='buy', optimize=True, load=True)
+    rl_short_threshold_opt = IntParameter(1, 2, default=2, space='sell', optimize=True, load=True)
 
-    # Фильтр по объему
-    min_quote_volume_usd = DecimalParameter(0, 500000, default=65216, space='buy', optimize=True, load=True)
+    # Параметры Supertrend
+    supertrend_period = IntParameter(7, 20, default=14, space='buy', optimize=True, load=True)
+    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=3.0, space='buy', optimize=True, load=True)
+
+    # Фильтр по объему (Фокус на ликвидности)
+    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=True, load=True)
 
     # Коэффициент агрессии для Dynamic Epsilon
-    dd_aggression_k = DecimalParameter(0.1, 2.0, default=0.529, space='buy', optimize=True, load=True)
+    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=True, load=True)
 
-    # Оптимизируемые пороги уверенности (Epsilon)
-    rl_epsilon_long = DecimalParameter(0.1, 0.6, default=0.597, space='buy', optimize=True, load=True)
-    rl_epsilon_short = DecimalParameter(0.1, 0.6, default=0.574, space='sell', optimize=True, load=True)
+    # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
+    rl_epsilon_long = DecimalParameter(0.2, 0.6, default=0.48, space='buy', optimize=True, load=True)
+    rl_epsilon_short = DecimalParameter(0.2, 0.6, default=0.48, space='sell', optimize=True, load=True)
 
     plot_config = {
         'main_plot': {},
@@ -493,13 +496,9 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.warning("⚠️ WARNING: can_short is False! Short signals will be ignored.")
 
         # --- СИНХРОНИЗАЦИЯ ПАРАМЕТРОВ С КОНФИГОМ ---
-        # Если мы не в режиме hyperopt, берем значения из config_rl4z.json
-        if self.runmode != 'hyperopt':
-            if 'epsilon_threshold_long' in self.ensemble_cfg:
-                self.rl_epsilon_long.value = float(self.ensemble_cfg['epsilon_threshold_long'])
-            if 'epsilon_threshold_short' in self.ensemble_cfg:
-                self.rl_epsilon_short.value = float(self.ensemble_cfg['epsilon_threshold_short'])
-
+        # ВАЖНО: Мы больше не перетираем значения из конфига принудительно, 
+        # чтобы параметры Hyperopt в теле класса имели приоритет.
+        
         # Память для логирования сигналов (чтобы не спамить каждую минуту)
         self._last_logged_signal = {}
 
@@ -860,18 +859,18 @@ class CustomD3QNStrategy4z(IStrategy):
         # Используем запомненное значение (ступенчатое), чтобы гистерезис работал
         calc_p = self.tsl_memory[trade_id]
 
-        # НЕЛИНЕЙНЫЙ ТРЕЙЛИНГ (агрессивный в начале)
-        # Стоп подтягивается быстро при малом профите (корень квадратный)
+        # НЕЛИНЕЙНЫЙ ТРЕЙЛИНГ (агрессивность задается через tsl_exponent)
         if calc_p <= FEE_BUF:
             d_eff = d0_val
         else:
             p_factor = calc_p - FEE_BUF
-            # Целевой профит, при котором отступ сужается до d_min (берем из параметра)
+            # Целевой профит, при котором отступ сужается до d_min
             p_target_val = self.p_target.value
             # Нормализуем (0..1)
             p_norm = min(1.0, p_factor / p_target_val) 
-            # Степенная функция (0.5 = корень). Чем меньше степень, тем резче старт.
-            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**0.5)
+            # Используем оптимизируемую степень
+            exponent = float(self.tsl_exponent.value)
+            d_eff = d0_val - (d0_val - d_min_val) * (p_norm**exponent)
             d_eff = max(d_min_val, d_eff)
         
         return -d_eff

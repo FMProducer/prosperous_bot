@@ -8,20 +8,23 @@
 - **Lookahead Validation**: Added a strict check in `populate_entry_trend` that raises a `ValueError` if future data is detected in the dataframe during a backtest.
 - **Time Synchronization**: Replaced `datetime.now()` calls with `current_time` (the timestamp of the current candle) in all dynamic logic (slots and epsilon) to ensure consistency in backtests.
 
-### 2. Dynamic Epsilon Activation
-- **Configuration**: Added `enable_dynamic_epsilon`, `dynamic_epsilon_k`, and `min_epsilon` to `user_data/config_rl4z.json`.
-- **Logic Enhancement**: Updated `_update_dynamic_epsilon` to support backtest mode and respect the new configuration parameters.
-- **Integration**: Updated `populate_entry_trend` to pass the correct temporal context to the epsilon update logic.
+### 2. Overtrading Prevention & Noise Reduction
+- **Regime Filters**: Enabled Supertrend-based filters (Global BTC 15m + Local Asset 15m) to ensure trading only in confirmed trends.
+- **Liquidity Filtering**: Introduced `min_quote_volume_usd` threshold to filter out low-volume noise (reduced trades from 5900+ to ~200 per day).
+- **Logging Cleanup**: Implemented custom filters to suppress data loading spam and added "Smart Logging" for signals (log once per new signal).
+- **Initial Optimization**: Achieved Profit Factor 2.02 on a high-confidence 1-day backtest.
 
-### 3. Code Quality & Environment Compatibility
-- **Import Error Resolution**: Fixed "Import could not be resolved" errors by removing redundant local imports of `Trade` and using a robust global fallback mechanism.
-- **Pylance/VS Code Optimization**: Cleaned up the strategy file to ensure it passes static analysis even in environments without a full Freqtrade installation.
+### 3. Hyperopt Integration & Multiprocessing
+- **Parameter Exposure**: Converted Epsilon thresholds and Voting Thresholds into optimizeable `DecimalParameters`.
+- **Multiprocessing Fix**: Resolved `PicklingError` by implementing `__getstate__`/`__setstate__` to exclude thread locks during serialization.
+- **RAM Management**: Identified and documented optimal worker counts (`-j 2`) for 24GB RAM systems to prevent disk swapping.
 
-### 4. Testing & Validation
-- **Unit Test Fixes**: Updated `tests/test_custom_d3qn_strategy4z.py` to correctly mock configuration parameters (`agent_history_len`), resolving `TypeError` issues.
-- **Successful Validation**: Verified the strategy with `pytest`, confirming that the core logic and fixes are functioning as expected.
+### 4. Risk Management Refinement (In Progress)
+- **TSL Optimization**: Identified overfitting in TSL parameters (8.7% stops were too wide).
+- **Guardrails**: Tightened optimization ranges for trailing stops (max 5%) and forced 2/2 voting requirements to improve "all-weather" stability.
 
 ## Next Steps
-- [ ] Run a comprehensive backtest over a long period (e.g., 3-6 months) to evaluate the impact of corrected dynamic parameters.
-- [ ] Perform Hyperopt to re-calibrate `epsilon_threshold_long/short` now that lookahead bias is removed.
+- [ ] Run 3-day Hyperopt (`20260102-20260105`) to find a balance between trend-following and chop-avoidance.
+- [ ] Perform a "Walk-forward" test on the week following the optimization period.
+- [ ] Activate Dynamic Epsilon in Dry-run to test real-time drawdown sensitivity.
 - [ ] Monitor logs for `DETECTED LOOKAHEAD BIAS` warnings to ensure data integrity.

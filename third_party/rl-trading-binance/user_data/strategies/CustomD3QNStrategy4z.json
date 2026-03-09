@@ -17,22 +17,23 @@
       "max_open_trades": 100
     },
     "buy": {
-      "dd_aggression_k": 0.529,
-      "min_quote_volume_usd": 65215.979,
-      "rl_epsilon_long": 0.597,
-      "rl_long_threshold_opt": 1,
-      "supertrend_multiplier": 2.628,
-      "supertrend_period": 9
+      "dd_aggression_k": 1.343,
+      "min_quote_volume_usd": 46557.44,
+      "rl_epsilon_long": 0.236,
+      "rl_long_threshold_opt": 2,
+      "supertrend_multiplier": 3.66,
+      "supertrend_period": 14
     },
     "sell": {
-      "d0": 0.087,
-      "d_min": 0.049,
-      "hysteresis": 0.008,
-      "p_target": 0.093,
-      "rl_epsilon_short": 0.574,
-      "rl_short_threshold_opt": 1
+      "d0": 0.047,
+      "d_min": 0.007,
+      "hysteresis": 0.005,
+      "p_target": 0.029,
+      "rl_epsilon_short": 0.315,
+      "rl_short_threshold_opt": 1,
+      "tsl_exponent": 1.318
     }
   },
   "ft_stratparam_v": 1,
-  "export_time": "2026-03-09 00:33:06.645666+00:00"
+  "export_time": "2026-03-09 03:03:29.626193+00:00"
 }

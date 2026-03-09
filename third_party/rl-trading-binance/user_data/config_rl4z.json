@@ -116,11 +116,7 @@
             "SUI/USDT:USDT",
             "ENA/USDT:USDT",
             "1000PEPE/USDT:USDT",
-            "DOGE/USDT:USDT",
-            "WIF/USDT:USDT",
-            "AVAX/USDT:USDT",
-            "FIL/USDT:USDT",
-            "ZEC/USDT:USDT"
+            "DOGE/USDT:USDT"
         ],
         "pair_blacklist": [
             "USDC/USDT:USDT",
