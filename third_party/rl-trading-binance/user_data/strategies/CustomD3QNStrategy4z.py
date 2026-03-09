@@ -104,26 +104,28 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL
-    # load=False и optimize=False гарантируют использование значений default (из обучения)
-    d0 = DecimalParameter(0.01, 0.10, default=0.0752, space='sell', optimize=True, load=True)
-    d_min = DecimalParameter(0.0005, 0.05, default=0.00082, space='sell', optimize=True, load=True)
-    hysteresis = DecimalParameter(0.00005, 0.01, default=0.00005, space='sell', optimize=True, load=True)
-    # Расширим диапазон p_target, чтобы Hyperopt мог проверить и более консервативные (до 10%), и агрессивные варианты
-    p_target = DecimalParameter(0.01, 0.10, default=0.0224, space='sell', optimize=True, load=True)
+    d0 = DecimalParameter(0.01, 0.10, default=0.087, space='sell', optimize=True, load=True)
+    d_min = DecimalParameter(0.0005, 0.05, default=0.049, space='sell', optimize=True, load=True)
+    hysteresis = DecimalParameter(0.00005, 0.01, default=0.008, space='sell', optimize=True, load=True)
+    p_target = DecimalParameter(0.01, 0.10, default=0.093, space='sell', optimize=True, load=True)
     
     # Hyperoptable Voting Thresholds
-    rl_long_threshold_opt = IntParameter(1, 2, default=2, space='buy', optimize=True, load=True)
-    rl_short_threshold_opt = IntParameter(1, 2, default=2, space='sell', optimize=True, load=True)
+    rl_long_threshold_opt = IntParameter(1, 2, default=1, space='buy', optimize=True, load=True)
+    rl_short_threshold_opt = IntParameter(1, 2, default=1, space='sell', optimize=True, load=True)
 
-    # Параметры Supertrend для режима рынка (будут оптимизироваться hyperopt'ом)
-    supertrend_period = IntParameter(7, 20, default=10, space='buy', optimize=True, load=True)
-    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=3.0, space='buy', optimize=True, load=True)
+    # Параметры Supertrend для режима рынка
+    supertrend_period = IntParameter(7, 20, default=9, space='buy', optimize=True, load=True)
+    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=2.628, space='buy', optimize=True, load=True)
 
-    # Фильтр по объему для отсеивания неликвидных пар (особенно в бэктесте)
-    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=True, load=True)
+    # Фильтр по объему
+    min_quote_volume_usd = DecimalParameter(0, 500000, default=65216, space='buy', optimize=True, load=True)
 
-    # Коэффициент агрессии для Dynamic Epsilon (чувствительность к просадке)
-    dd_aggression_k = DecimalParameter(0.1, 2.0, default=0.55, space='buy', optimize=True, load=True)
+    # Коэффициент агрессии для Dynamic Epsilon
+    dd_aggression_k = DecimalParameter(0.1, 2.0, default=0.529, space='buy', optimize=True, load=True)
+
+    # Оптимизируемые пороги уверенности (Epsilon)
+    rl_epsilon_long = DecimalParameter(0.1, 0.6, default=0.597, space='buy', optimize=True, load=True)
+    rl_epsilon_short = DecimalParameter(0.1, 0.6, default=0.574, space='sell', optimize=True, load=True)
 
     plot_config = {
         'main_plot': {},
@@ -167,6 +169,13 @@ class CustomD3QNStrategy4z(IStrategy):
             msg = record.getMessage()
             return "Cancelling stoploss on exchange" not in msg and "Cancelling current stoploss on exchange" not in msg
         logging.getLogger('freqtrade.freqtradebot').addFilter(filter_stoploss_cancel)
+
+        # Убираем спам о загрузке данных (Loading data for ... / data starts at ...)
+        def filter_data_loading_spam(record):
+            msg = record.getMessage()
+            return "Loading data for" not in msg and "data starts at" not in msg
+        logging.getLogger('freqtrade.data.dataprovider').addFilter(filter_data_loading_spam)
+        logging.getLogger('freqtrade.data.history.datahandlers.idatahandler').addFilter(filter_data_loading_spam)
         
         # --- LOG ROTATION (DAILY) ---
         # Настраиваем ротацию логов раз в сутки (midnight), чтобы файл не рос бесконечно
@@ -483,21 +492,39 @@ class CustomD3QNStrategy4z(IStrategy):
         if not self.can_short:
             logger.warning("⚠️ WARNING: can_short is False! Short signals will be ignored.")
 
+        # --- СИНХРОНИЗАЦИЯ ПАРАМЕТРОВ С КОНФИГОМ ---
+        # Если мы не в режиме hyperopt, берем значения из config_rl4z.json
+        if self.runmode != 'hyperopt':
+            if 'epsilon_threshold_long' in self.ensemble_cfg:
+                self.rl_epsilon_long.value = float(self.ensemble_cfg['epsilon_threshold_long'])
+            if 'epsilon_threshold_short' in self.ensemble_cfg:
+                self.rl_epsilon_short.value = float(self.ensemble_cfg['epsilon_threshold_short'])
+
+        # Память для логирования сигналов (чтобы не спамить каждую минуту)
+        self._last_logged_signal = {}
+
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
         logger.info("=" * 60)
     
     def __getstate__(self):
         state = self.__dict__.copy()
+        # Исключаем объекты, которые нельзя пиклить (блокировки, потоки, логгеры)
         state.pop('executor', None)
         state.pop('cache_lock', None)
+        state.pop('_global_regime_lock', None)
         state.pop('logger', None)
+        state.pop('_last_logged_signal', None)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        # Восстанавливаем объекты в каждом воркере Hyperopt
         self.logger = logging.getLogger(__name__)
         self.cache_lock = threading.Lock()
+        self._global_regime_lock = threading.Lock()
+        self._last_logged_signal = {}
+        
         num_cpu_threads = self.config.get('cpu_threads', 4)
         self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
 
@@ -1473,6 +1500,10 @@ class CustomD3QNStrategy4z(IStrategy):
         if dataframe.empty:
             return dataframe
 
+        # СИНХРОНИЗАЦИЯ: Обновляем базовые значения из параметров Hyperopt
+        self.epsilon_threshold_long = float(self.rl_epsilon_long.value)
+        self.epsilon_threshold_short = float(self.rl_epsilon_short.value)
+
         # Get the current time from the last candle
         current_time = dataframe.iloc[-1]['date']
 
@@ -1877,14 +1908,21 @@ class CustomD3QNStrategy4z(IStrategy):
             
             # Логирование
             if decision['enter_long'] or decision['enter_short']:
-                # В лайве логируем только последнюю свечу
+                # Умное логирование: только если сигнал изменился или это live
+                sig_key = f"{metadata['pair']}_{decision['enter_long']}_{decision['enter_short']}"
+                is_new_signal = self._last_logged_signal.get(metadata['pair']) != sig_key
+                
                 if self.config.get('runmode') in ['live', 'dry_run']:
                     if i == n_predictions - 1:
                         self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
                 else:
-                    # В бэктесте логируем только последние 3 свечи диапазона, чтобы избежать спама в 1000 строк
-                    if i >= n_predictions - 3:
+                    # В бэктесте логируем только один раз при появлении сигнала
+                    if is_new_signal:
                         self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
+                        self._last_logged_signal[metadata['pair']] = sig_key
+            else:
+                # Сбрасываем память сигнала, если он исчез
+                self._last_logged_signal[metadata['pair']] = None
             
             # Записываем в массив (быстро)
             enter_long_vals[i] = decision['enter_long']

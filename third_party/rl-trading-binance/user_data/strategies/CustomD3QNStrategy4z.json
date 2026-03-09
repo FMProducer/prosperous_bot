@@ -1,0 +1,38 @@
+{
+  "strategy_name": "CustomD3QNStrategy4z",
+  "params": {
+    "roi": {
+      "0": 100
+    },
+    "stoploss": {
+      "stoploss": -0.99
+    },
+    "trailing": {
+      "trailing_stop": false,
+      "trailing_stop_positive": null,
+      "trailing_stop_positive_offset": 0.0,
+      "trailing_only_offset_is_reached": false
+    },
+    "max_open_trades": {
+      "max_open_trades": 100
+    },
+    "buy": {
+      "dd_aggression_k": 0.529,
+      "min_quote_volume_usd": 65215.979,
+      "rl_epsilon_long": 0.597,
+      "rl_long_threshold_opt": 1,
+      "supertrend_multiplier": 2.628,
+      "supertrend_period": 9
+    },
+    "sell": {
+      "d0": 0.087,
+      "d_min": 0.049,
+      "hysteresis": 0.008,
+      "p_target": 0.093,
+      "rl_epsilon_short": 0.574,
+      "rl_short_threshold_opt": 1
+    }
+  },
+  "ft_stratparam_v": 1,
+  "export_time": "2026-03-09 00:33:06.645666+00:00"
+}
