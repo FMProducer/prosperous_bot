@@ -1,8 +1,1 @@
-{
-  "python.defaultInterpreterPath": "./venv/bin/python",
-  "python.analysis.extraPaths": [
-    "./third_party/rl-trading-binance",
-    "./third_party/rl-trading-binance/agent.py"
-  ],
-  "python.analysis.typeCheckingMode": "off"
-}
+{"python.defaultInterpreterPath": "C:\\Python\\Prosperous_Bot\\.venv\\Scripts\\python.exe"}

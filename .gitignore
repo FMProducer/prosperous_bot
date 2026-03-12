@@ -5,7 +5,7 @@ build/
 __pycache__/
 
 # venvs
-.venv/
+.venv*/
 env/
 
 # IDE / OS
