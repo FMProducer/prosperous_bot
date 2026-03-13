@@ -32,6 +32,20 @@
     - Reduced initial stop-loss to **2%** to minimize risk per trade.
     - Set linear TSL (`exponent: 1.0`) for predictable exit behavior during re-testing.
 
+### 6. System Recovery & Environment Stabilization
+- **Windows Environment Restoration**: Successfully rebuilt the Python 3.11 environment after Linux/WSL migration attempts caused dependency corruption.
+- **Dependency Locking**: Enforced strict version matching using `requirements-lock.txt` from trained models, restoring `PyTorch 2.7.1+cu118` and `Freqtrade` (dev-5a42724).
+- **Network/DNS Fix**: Resolved `aiodns` conflict causing `ExchangeNotAvailable` on Windows by removing the library and forcing standard IPv4 DNS resolution.
+- **Dry-Run Validation**: Confirmed full system functionality:
+    - Strategy loaded (`CustomD3QNStrategy4z`).
+    - All 4 RL Agents initialized with QAT support.
+    - Binance API connectivity restored.
+
+### 7. Windows Optimization & Linux Cleanup
+- **WSL Removal**: Fully uninstalled Windows Subsystem for Linux (Ubuntu), removed `wsl.exe` components, and cleaned registry keys (`Lxss`) to eliminate "hybrid environment" conflicts.
+- **Disk Cleanup**: Reclaimed ~10GB of space by removing old Anaconda/Miniconda installations (`.conda`, `miniconda3`) and leftover Linux file systems.
+- **UI Patching**: Fixed `FileNotFoundError` in Freqtrade API Server by creating fallback UI assets (`fallback_file.html`, `favicon.ico`) in the virtual environment path, stabilizing the web server.
+
 ## Next Steps
 - [ ] Verify "Safety First" performance on a full week backtest (`20260103-20260110`).
 - [ ] If stable, perform a wide Hyperopt on `tsl_exponent` while keeping entry filters strict.
