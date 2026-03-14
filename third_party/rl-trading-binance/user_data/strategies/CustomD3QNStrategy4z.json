@@ -30,7 +30,7 @@
       "hysteresis": 0.005,
       "p_target": 0.029,
       "rl_epsilon_short": 0.315,
-      "rl_short_threshold_opt": 1,
+      "rl_short_threshold_opt": 2,
       "tsl_exponent": 1.318
     }
   },

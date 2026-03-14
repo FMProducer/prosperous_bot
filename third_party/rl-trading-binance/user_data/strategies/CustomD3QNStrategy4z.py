@@ -50,7 +50,7 @@ if str(project_root) not in sys.path:
 
 # Freqtrade imports
 try:
-    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter, merge_informative_pair  # type: ignore
+    from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter, CategoricalParameter, merge_informative_pair  # type: ignore
 except ImportError:
     logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy:
@@ -88,8 +88,8 @@ class CustomD3QNStrategy4z(IStrategy):
     startup_candle_count: int = 180
 
     # Информативный таймфрейм для режима рынка
-    informative_timeframe = '15m'
-    informative_timeframe_global = '15m'
+    informative_timeframe = '1m'
+    informative_timeframe_global = '1m'
     
     minimal_roi = {"0": 100}
     stoploss = -0.99  # Заглушка, работает custom_stoploss
@@ -104,17 +104,20 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.01, 0.05, default=0.02, space='sell', optimize=True, load=True)
+    d0 = DecimalParameter(0.01, 0.05, default=0.075, space='sell', optimize=True, load=True)
     d_min = DecimalParameter(0.0005, 0.02, default=0.005, space='sell', optimize=True, load=True)
     hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=True, load=True)
-    p_target = DecimalParameter(0.005, 0.04, default=0.01, space='sell', optimize=True, load=True)
+    p_target = DecimalParameter(0.005, 0.04, default=0.02, space='sell', optimize=True, load=True)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
     tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=True, load=True)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
-    rl_long_threshold_opt = IntParameter(1, 2, default=2, space='buy', optimize=True, load=True)
-    rl_short_threshold_opt = IntParameter(1, 2, default=2, space='sell', optimize=True, load=True)
+    rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=True, load=True)
+    rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=True, load=True)
+
+    # Оптимизируемый таймфрейм для глобального режима
+    informative_timeframe_global_opt = CategoricalParameter(['1m', '5m', '15m'], default='1m', space='buy', optimize=True, load=True)
 
     # Параметры Supertrend
     supertrend_period = IntParameter(7, 20, default=14, space='buy', optimize=True, load=True)
@@ -147,6 +150,10 @@ class CustomD3QNStrategy4z(IStrategy):
     def __init__(self, config: dict) -> None:
         super().__init__(config)  # type: ignore
         
+        # --- GLOBAL REGIME TIMEFRAME from HYPEROPT ---
+        if hasattr(self, 'informative_timeframe_global_opt'):
+            self.informative_timeframe_global = self.informative_timeframe_global_opt.value
+            
         # Принудительно включаем шорты
         self.can_short = True
         
