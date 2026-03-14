@@ -11,6 +11,7 @@ import torch  # type: ignore
 from numpy.lib.stride_tricks import sliding_window_view  # type: ignore
 import onnxruntime as ort
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
 from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
@@ -231,7 +232,8 @@ class CustomD3QNStrategy4z(IStrategy):
         self.device = torch.device("cpu")
         
         self.logger = logging.getLogger(__name__)
-        # 2. ThreadPool для параллельного inference
+        # 2. ThreadPool для параллельного inference ONNX (GIL-free)
+        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
         # 3. Кэш для feature tensors (экономим на preprocessing)
         self.feature_cache = OrderedDict()
         self.q_value_cache = OrderedDict()  # Кэш для результатов инференса (Q-values)
@@ -519,6 +521,7 @@ class CustomD3QNStrategy4z(IStrategy):
         state.pop('_global_regime_lock', None)
         state.pop('logger', None)
         state.pop('_last_logged_signal', None)
+        state.pop('executor', None)
         return state
 
     def __setstate__(self, state):
@@ -528,6 +531,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self._global_regime_lock = threading.Lock()
         self._last_logged_signal = {}
+        self.executor = ThreadPoolExecutor(max_workers=self.config.get('cpu_threads', 4))
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -932,7 +936,7 @@ class CustomD3QNStrategy4z(IStrategy):
             img_flat = last_window.T.flatten()
             add_feats = np.zeros(4, dtype=np.float32)
             full_input = np.concatenate([img_flat, add_feats])
-            return torch.as_tensor(full_input, device=self.device, dtype=torch.float32).unsqueeze(0)
+            return np.expand_dims(full_input, axis=0).astype(np.float32)
         else:
             # BATCH INFERENCE (Full Backtest)
             # Create sliding windows: (N - window + 1, window, 5)
@@ -954,7 +958,7 @@ class CustomD3QNStrategy4z(IStrategy):
             add_feats = np.zeros((len(windows), 4), dtype=np.float32)
             full_input = np.concatenate([img_batch, add_feats], axis=1)
             
-            return torch.as_tensor(full_input, device=self.device, dtype=torch.float32)
+            return full_input.astype(np.float32)
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
@@ -962,8 +966,10 @@ class CustomD3QNStrategy4z(IStrategy):
         Ключ кэша = (pair, last_candle_timestamp, side, model_num)
         """
         # Генерируем ключ кэша
-        last_timestamp = dataframe.iloc[-1]['date'] if 'date' in dataframe.columns else dataframe.index[-1]
-        cache_key = (pair, str(last_timestamp), side, model_num)
+        last_ts = dataframe.iloc[-1]['date'] if 'date' in dataframe.columns else dataframe.index[-1]
+        # Оптимизация: используем int (value) вместо медленного str()
+        ts_val = last_ts.value if hasattr(last_ts, 'value') else hash(last_ts)
+        cache_key = (pair, ts_val, side, model_num)
         
         with self.cache_lock:
             if cache_key in self.feature_cache:
@@ -981,30 +987,32 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _run_inference(self, tensors_and_agents):
         """
-        Runs inference sequentially for a list of (tensor, agent, name) tuples.
+        Runs inference in parallel for a list of (arr, agent, name) tuples.
         Prioritizes ONNX Runtime if available, otherwise falls back to PyTorch.
         """
         results = {}
-        for tensor, agent, name in tensors_and_agents:
-            if tensor is None:
-                continue
-            
-            # Use ONNX if available
-            if hasattr(agent, 'ort_session') and agent.ort_session is not None:
-                try:
-                    ort_inputs = {agent.ort_session.get_inputs()[0].name: tensor.cpu().numpy()}
-                    q_values = agent.ort_session.run(None, ort_inputs)[0]
-                    results[name] = q_values
-                except Exception as e:
-                    self.logger.error(f"ONNX inference failed for {name}: {e}. Falling back to PyTorch.")
-                    # Fallback to PyTorch on error
-                    with torch.no_grad():
-                        results[name] = agent.policy_net(tensor).cpu().numpy()
+
+        def _infer(arr, agt, nm):
+            if hasattr(agt, 'ort_session') and agt.ort_session is not None:
+                ort_inputs = {agt.ort_session.get_inputs()[0].name: arr}
+                return nm, agt.ort_session.run(None, ort_inputs)[0]
             else:
-                # Fallback to PyTorch
                 with torch.no_grad():
-                    results[name] = agent.policy_net(tensor).cpu().numpy()
-        
+                    t = torch.as_tensor(arr, device=self.device, dtype=torch.float32)
+                    return nm, agt.policy_net(t).cpu().numpy()
+
+        valid_tasks = [t for t in tensors_and_agents if t[0] is not None]
+
+        # Параллельное выполнение (ONNX отпускает GIL)
+        futures = [self.executor.submit(_infer, arr, agt, nm) for arr, agt, nm in valid_tasks]
+
+        for f in as_completed(futures):
+            try:
+                nm, q_val = f.result()
+                results[nm] = q_val
+            except Exception as e:
+                self.logger.error(f"Inference failed: {e}")
+
         return results
 
     def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
