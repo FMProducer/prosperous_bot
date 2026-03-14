@@ -46,8 +46,47 @@
 - **Disk Cleanup**: Reclaimed ~10GB of space by removing old Anaconda/Miniconda installations (`.conda`, `miniconda3`) and leftover Linux file systems.
 - **UI Patching**: Fixed `FileNotFoundError` in Freqtrade API Server by creating fallback UI assets (`fallback_file.html`, `favicon.ico`) in the virtual environment path, stabilizing the web server.
 
+### 8. Доработка стратегии и подготовка к оптимизации
+- **Устранение проблемы с порогом голосования (2/2 Консенсус)**
+    - Выявлено, что файл `CustomD3QNStrategy4z.json` (результат предыдущего Hyperopt) переопределял порог голосования шорт-моделей на 1, игнорируя настройки стратегии.
+    - Файл `CustomD3QNStrategy4z.json` исправлен для принудительного порога `rl_short_threshold_opt = 2`.
+    - В коде стратегии (`CustomD3QNStrategy4z.py`) параметры `rl_long_threshold_opt` и `rl_short_threshold_opt` установлены со строгим диапазоном `[2, 2]` для обеспечения консенсуса 2/2.
+    - Добавлен импорт `CategoricalParameter` в файл стратегии для устранения ошибки `Pylance`.
+- **Оптимизация фильтров режима рынка (Supertrend)**
+    - Локальный фильтр `informative_timeframe` установлен на **`1m`**.
+    - Глобальный фильтр `informative_timeframe_global` теперь оптимизируется (Hyperopt) по диапазону таймфреймов: **`1m`, `5m`, `15m`**.
+- **Подготовка к расширенной оптимизации**
+    - Очищен `pair_whitelist` в `config_rl4z.json`, чтобы включить только активные пары из последнего бэктеста, сосредоточив оптимизацию на проблемных активах.
+
+### 9. Hyperopt Parameter Integration (Trial 30/100)
+- **Configuration Update**: Applied best-performing parameters from Hyperopt trial `30/100` (Objective: 94.66) to both `user_data/strategies/CustomD3QNStrategy4z.json` and `user_data/config_rl4z.json`.
+- **Key Changes**:
+    - Enabled `trailing_stop` with `trailing_stop_positive = 0.181`.
+    - Updated `stoploss` to **-7.3%**.
+    - Adjusted `minimal_roi` table for faster profit-taking.
+    - Synchronized `rl_epsilon_long` (0.492), `rl_epsilon_short` (0.251), `dd_aggression_k` (0.247), and `min_quote_volume_usd` (348k).
+
+## Part 2: Performance & Stability Refactoring
+
+Based on the architectural review in `План_рефакторинга.md`, this multi-stage plan aims to dramatically improve CPU performance, mathematical correctness, and security.
+
+### Этап 1: Критические исправления математики и стабильности
+- [x] **Задача 1.1:** Применить патч для логарифмического преобразования объёма (`np.log1p`) и повышения числовой стабильности (`epsilon` до 1e-6) в `CustomD3QNStrategy4z.py`.
+- [x] **Задача 1.2:** Внедрить симметричный математический расчет PnL для консистентности логики вознаграждения в `CustomD3QNStrategy4z.py`.
+- [x] **Задача 1.3:** Заменить `dict` на `OrderedDict` для кэширования в `CustomD3QNStrategy4z.py`, чтобы устранить "гонки потоков".
+
+### Этап 2: Миграция на ONNX для ускорения CPU
+- [x] **Задача 2.1:** Написать скрипт `tools/export_to_onnx.py` для конвертации моделей из `.pth` в `.onnx`.
+- [x] **Задача 2.2:** Провести верификацию `.onnx` моделей, сравнив их выходы с оригинальными PyTorch моделями.
+- [x] **Задача 2.3:** Модифицировать стратегию `CustomD3QNStrategy4z.py` для загрузки `.onnx` файлов и выполнения инференса через `onnxruntime`.
+- [x] **Задача 2.4:** Удалить `ThreadPoolExecutor` из стратегии.
+
+### Этап 3: Безопасность и конфигурация
+- [ ] **Задача 3.1:** Создать файл `.env` в корне проекта.
+- [ ] **Задача 3.2:** Изменить `config_rl4z.json`, чтобы секретные ключи и пароли (`key`, `secret`, `jwt_secret_key`, `password`) читались из переменных окружения (`.env`), а не были захардкожены.
+
 ## Next Steps
-- [ ] Verify "Safety First" performance on a full week backtest (`20260103-20260110`).
-- [ ] If stable, perform a wide Hyperopt on `tsl_exponent` while keeping entry filters strict.
-- [ ] Activate Dynamic Epsilon in Dry-run to test real-time drawdown sensitivity.
-- [ ] Monitor logs for `DETECTED LOOKAHEAD BIAS` warnings to ensure data integrity.
+- [ ] Запустить Hyperopt на проблемном периоде (`20260101-20260108`) со всеми оптимизируемыми параметрами (включая таймфрейм глобального фильтра) и `SortinoHyperOptLoss` для поиска оптимальных "безопасных" настроек.
+- [ ] Проанализировать результаты Hyperopt и применить лучшие параметры к стратегии.
+- [ ] Активировать Dynamic Epsilon в Dry-run для тестирования чувствительности к просадке в реальном времени.
+- [ ] Мониторить логи на предмет предупреждений `DETECTED LOOKAHEAD BIAS` для обеспечения целостности данных.

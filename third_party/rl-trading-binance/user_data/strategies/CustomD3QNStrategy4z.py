@@ -5,12 +5,13 @@ import importlib.util
 from pathlib import Path
 import json
 import numpy as np  # type: ignore
-import pandas as pd  # type: ignore
-from pandas import DataFrame  # type: ignore
+import pandas as pd
+from pandas import DataFrame
 import torch  # type: ignore
 from numpy.lib.stride_tricks import sliding_window_view  # type: ignore
-from concurrent.futures import ThreadPoolExecutor
+import onnxruntime as ort
 import threading
+from collections import OrderedDict
 from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
 
@@ -231,11 +232,9 @@ class CustomD3QNStrategy4z(IStrategy):
         
         self.logger = logging.getLogger(__name__)
         # 2. ThreadPool для параллельного inference
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
-        
         # 3. Кэш для feature tensors (экономим на preprocessing)
-        self.feature_cache: Dict[tuple, Any] = {}
-        self.q_value_cache: Dict[tuple, Dict[str, np.ndarray]] = {}  # Кэш для результатов инференса (Q-values)
+        self.feature_cache = OrderedDict()
+        self.q_value_cache = OrderedDict()  # Кэш для результатов инференса (Q-values)
         self.cache_lock = threading.Lock()
         self.cache_max_size = 100  # храним только последние 100 пар свечей
         
@@ -516,7 +515,6 @@ class CustomD3QNStrategy4z(IStrategy):
     def __getstate__(self):
         state = self.__dict__.copy()
         # Исключаем объекты, которые нельзя пиклить (блокировки, потоки, логгеры)
-        state.pop('executor', None)
         state.pop('cache_lock', None)
         state.pop('_global_regime_lock', None)
         state.pop('logger', None)
@@ -530,9 +528,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self._global_regime_lock = threading.Lock()
         self._last_logged_signal = {}
-        
-        num_cpu_threads = self.config.get('cpu_threads', 4)
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -603,7 +598,22 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             agent.load_model(str(path))
             agent.policy_net.eval()
-            self.logger.debug(f"✅ {name} Agent loaded from {path}")
+            self.logger.info(f"✅ {name} PyTorch model loaded from {path}")
+
+            # --- NEW: Load ONNX model ---
+            onnx_path = Path(str(path).replace('.pth', '.onnx'))
+            if onnx_path.exists():
+                try:
+                    # Use CPUExecutionProvider for maximum compatibility and speed on CPU
+                    agent.ort_session = ort.InferenceSession(str(onnx_path), providers=['CPUExecutionProvider'])
+                    self.logger.info(f"🚀 {name} ONNX session loaded from {onnx_path}")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to load ONNX model for {name}: {e}")
+                    agent.ort_session = None
+            else:
+                self.logger.warning(f"⚠️ ONNX model not found for {name} at {onnx_path}. Falling back to PyTorch.")
+                agent.ort_session = None
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load {name} Agent: {e}")
             raise e
@@ -672,12 +682,16 @@ class CustomD3QNStrategy4z(IStrategy):
         # 1. Z-score нормализация (как в обучении)
         zscore_window = 90
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+        
+        # Log-transform volume to match training distribution
+        dataframe['volume'] = np.log1p(dataframe['volume'])
+        
         for col in ohlcv_cols:
             rolling = dataframe[col].rolling(window=zscore_window, min_periods=zscore_window)
             mean = rolling.mean()
             std = rolling.std(ddof=0)
-            # Z-score: (x - mean) / std
-            dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-8)
+            # Z-score: numerical stability epsilon updated to 1e-6
+            dataframe[f'{col}_z'] = (dataframe[col] - mean) / (std + 1e-6)
 
         # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
         z_cols = [f'{col}_z' for col in ohlcv_cols]
@@ -908,10 +922,7 @@ class CustomD3QNStrategy4z(IStrategy):
             if (model_num == 1 and self.short_1_is_mirror) or (model_num == 2 and self.short_2_is_mirror):
                 should_invert = True
 
-        runmode = self.config.get('runmode')
-        deep_inference = self.config.get('deep_inference', False)
-
-        if runmode in ('live', 'dry_run') or not deep_inference:
+        if self.config.get('runmode') in ('live', 'dry_run'):
             # SINGLE ROW INFERENCE (Live or optimized backtest)
             last_window = z_data[-window:]
             if should_invert:
@@ -962,43 +973,37 @@ class CustomD3QNStrategy4z(IStrategy):
         
         with self.cache_lock:
             if len(self.feature_cache) >= self.cache_max_size:
-                self.feature_cache.pop(next(iter(self.feature_cache)))
+                self.feature_cache.popitem(last=False)
             self.feature_cache[cache_key] = tensor
+            self.feature_cache.move_to_end(cache_key)
         
         return tensor
 
-    def _parallel_inference(self, tensors_and_agents):
-        def single_inference(tensor_or_tuple, agent):
-            try:
-                with torch.no_grad():
-                    if isinstance(tensor_or_tuple, tuple):
-                        return agent.policy_net(*tensor_or_tuple).cpu().numpy()
-                    else:
-                        return agent.policy_net(tensor_or_tuple).cpu().numpy()
-            except Exception as e:
-                # Determine batch size for the zero-array fallback
-                batch_size = 1
-                if isinstance(tensor_or_tuple, tuple) and len(tensor_or_tuple) > 0 and hasattr(tensor_or_tuple[0], 'shape'):
-                    batch_size = tensor_or_tuple[0].shape[0]
-                    img_shape = tensor_or_tuple[0].shape
-                    feat_shape = tensor_or_tuple[1].shape if len(tensor_or_tuple) > 1 else 'N/A'
-                    logger.error(f"Inference failed for shapes img={img_shape}, feat={feat_shape}: {e}")
-                elif hasattr(tensor_or_tuple, 'shape'):
-                    batch_size = tensor_or_tuple.shape[0]
-                    logger.error(f"Inference failed for shape {tensor_or_tuple.shape}: {e}")
-                else:
-                    logger.error(f"Inference failed with unknown input type: {e}")
-
-                return np.zeros((batch_size, agent.action_dim))
-        
-        futures = []
-        for tensor, agent, name in tensors_and_agents:
-            future = self.executor.submit(single_inference, tensor, agent)  # type: ignore
-            futures.append((future, name))
-        
+    def _run_inference(self, tensors_and_agents):
+        """
+        Runs inference sequentially for a list of (tensor, agent, name) tuples.
+        Prioritizes ONNX Runtime if available, otherwise falls back to PyTorch.
+        """
         results = {}
-        for future, name in futures:
-            results[name] = future.result()
+        for tensor, agent, name in tensors_and_agents:
+            if tensor is None:
+                continue
+            
+            # Use ONNX if available
+            if hasattr(agent, 'ort_session') and agent.ort_session is not None:
+                try:
+                    ort_inputs = {agent.ort_session.get_inputs()[0].name: tensor.cpu().numpy()}
+                    q_values = agent.ort_session.run(None, ort_inputs)[0]
+                    results[name] = q_values
+                except Exception as e:
+                    self.logger.error(f"ONNX inference failed for {name}: {e}. Falling back to PyTorch.")
+                    # Fallback to PyTorch on error
+                    with torch.no_grad():
+                        results[name] = agent.policy_net(tensor).cpu().numpy()
+            else:
+                # Fallback to PyTorch
+                with torch.no_grad():
+                    results[name] = agent.policy_net(tensor).cpu().numpy()
         
         return results
 
@@ -1103,19 +1108,23 @@ class CustomD3QNStrategy4z(IStrategy):
                     else:
                         if current_time and self.config.get("runmode") == "backtest":
                             current_rate = self.calculate_current_price(t, current_time)
-                            profit_usdt = t.calc_profit(rate=current_rate)
                         elif hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
                             try:
                                 dataframe, _ = self.dp.get_analyzed_dataframe(t.pair, self.timeframe)
                                 if not dataframe.empty:
                                     current_rate = dataframe['close'].iloc[-1]
-                                    profit_usdt = t.calc_profit(rate=current_rate)
                                 else:
-                                    profit_usdt = t.calc_profit(rate=t.open_rate)
+                                    current_rate = t.open_rate
                             except Exception:
-                                profit_usdt = t.calc_profit(rate=t.open_rate)
+                                current_rate = t.open_rate
                         else:
-                            profit_usdt = t.calc_profit(rate=t.open_rate)
+                            current_rate = t.open_rate
+                            
+                        # Consistent symmetric PnL calculation across both sides
+                        direction = -1.0 if t.is_short else 1.0
+                        position = t.amount * t.open_rate
+                        profit_usdt = (((current_rate - t.open_rate) / t.open_rate) * direction) * position
+                        
                 except Exception as e:
                     logger.debug(f"Failed to calc profit for {t.pair}: {e}")
                     profit_usdt = 0.0
@@ -1592,19 +1601,11 @@ class CustomD3QNStrategy4z(IStrategy):
                 allow_long = allow_short = False # Fail-Closed
 
         # 3. Оптимизация инференса
-        deep_inference = self.config.get('deep_inference', False)
         if self.config.get('runmode') in ['live', 'dry_run']:
             # Оптимизация: берем ровно 90 свечей для 1 предсказания (вместо 91 для 2)
             df_input = dataframe.iloc[-90:].copy()
-        elif not deep_inference:
-            lookback = 1000
-            if len(dataframe) > lookback:
-                df_input = dataframe.iloc[-lookback:].copy()
-            else:
-                df_input = dataframe
-            dataframe['enter_long'] = 0
-            dataframe['enter_short'] = 0
         else:
+            # Backtest or Hyperopt mode: process the full dataframe
             df_input = dataframe
             dataframe['enter_long'] = 0
             dataframe['enter_short'] = 0
@@ -1662,7 +1663,7 @@ class CustomD3QNStrategy4z(IStrategy):
             if not inference_tasks:
                 return dataframe
             
-            q_values = self._parallel_inference(inference_tasks)
+            q_values = self._run_inference(inference_tasks)
             
             # Сохраняем в кэш
             with self.cache_lock:
@@ -1964,3 +1965,5 @@ class CustomD3QNStrategy4z(IStrategy):
         # Если ничего не найдено, возвращаем предложенное значение (вероятно, 1.0)
         self.logger.warning(f"Leverage not found for {pair} in config. Falling back to proposed: {proposed_leverage}")
         return proposed_leverage
+    
+        self.min_quote_volume_usd.value = 0
