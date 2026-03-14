@@ -11,7 +11,6 @@ import torch  # type: ignore
 from numpy.lib.stride_tricks import sliding_window_view  # type: ignore
 import onnxruntime as ort
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import OrderedDict
 from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
@@ -232,8 +231,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.device = torch.device("cpu")
         
         self.logger = logging.getLogger(__name__)
-        # 2. ThreadPool для параллельного inference ONNX (GIL-free)
-        self.executor = ThreadPoolExecutor(max_workers=num_cpu_threads)
         # 3. Кэш для feature tensors (экономим на preprocessing)
         self.feature_cache = OrderedDict()
         self.q_value_cache = OrderedDict()  # Кэш для результатов инференса (Q-values)
@@ -521,7 +518,6 @@ class CustomD3QNStrategy4z(IStrategy):
         state.pop('_global_regime_lock', None)
         state.pop('logger', None)
         state.pop('_last_logged_signal', None)
-        state.pop('executor', None)
         return state
 
     def __setstate__(self, state):
@@ -531,7 +527,6 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self._global_regime_lock = threading.Lock()
         self._last_logged_signal = {}
-        self.executor = ThreadPoolExecutor(max_workers=self.config.get('cpu_threads', 4))
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -994,31 +989,25 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _run_inference(self, tensors_and_agents):
         """
-        Runs inference in parallel for a list of (arr, agent, name) tuples.
+        Runs inference sequentially for a list of (arr, agent, name) tuples.
         Prioritizes ONNX Runtime if available, otherwise falls back to PyTorch.
         """
         results = {}
 
-        def _infer(arr, agt, nm):
-            if hasattr(agt, 'ort_session') and agt.ort_session is not None:
-                ort_inputs = {agt.ort_session.get_inputs()[0].name: arr}
-                return nm, agt.ort_session.run(None, ort_inputs)[0]
-            else:
-                with torch.no_grad():
-                    t = torch.as_tensor(arr, device=self.device, dtype=torch.float32)
-                    return nm, agt.policy_net(t).cpu().numpy()
-
         valid_tasks = [t for t in tensors_and_agents if t[0] is not None]
 
-        # Параллельное выполнение (ONNX отпускает GIL)
-        futures = [self.executor.submit(_infer, arr, agt, nm) for arr, agt, nm in valid_tasks]
-
-        for f in as_completed(futures):
+        for arr, agt, nm in valid_tasks:
             try:
-                nm, q_val = f.result()
+                if hasattr(agt, 'ort_session') and agt.ort_session is not None:
+                    ort_inputs = {agt.ort_session.get_inputs()[0].name: arr}
+                    q_val = agt.ort_session.run(None, ort_inputs)[0]
+                else:
+                    with torch.no_grad():
+                        t = torch.as_tensor(arr, device=self.device, dtype=torch.float32)
+                        q_val = agt.policy_net(t).cpu().numpy()
                 results[nm] = q_val
             except Exception as e:
-                self.logger.error(f"Inference failed: {e}")
+                self.logger.error(f"Inference failed for {nm}: {e}")
 
         return results
 
