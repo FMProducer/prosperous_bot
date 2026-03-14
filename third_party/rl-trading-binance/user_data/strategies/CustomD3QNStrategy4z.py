@@ -599,24 +599,32 @@ class CustomD3QNStrategy4z(IStrategy):
         return agent
     
     def _load_weights(self, agent, path, name):
+        onnx_path = Path(str(path).replace('.pth', '.onnx'))
         try:
-            agent.load_model(str(path))
-            agent.policy_net.eval()
-            self.logger.info(f"✅ {name} PyTorch model loaded from {path}")
-
-            # --- NEW: Load ONNX model ---
-            onnx_path = Path(str(path).replace('.pth', '.onnx'))
             if onnx_path.exists():
                 try:
-                    # Use CPUExecutionProvider for maximum compatibility and speed on CPU
-                    agent.ort_session = ort.InferenceSession(str(onnx_path), providers=['CPUExecutionProvider'])
+                    # Тонкая настройка потоков для Ryzen 9 5900HX (Предотвращение CPU Thrashing)
+                    sess_options = ort.SessionOptions()
+                    sess_options.intra_op_num_threads = 1
+                    sess_options.inter_op_num_threads = 1
+                    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+                    agent.ort_session = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=['CPUExecutionProvider'])
                     self.logger.info(f"🚀 {name} ONNX session loaded from {onnx_path}")
+
+                    # Пропускаем загрузку весов PyTorch в память, если успешно загружен ONNX
+                    return
                 except Exception as e:
                     self.logger.error(f"❌ Failed to load ONNX model for {name}: {e}")
                     agent.ort_session = None
             else:
                 self.logger.warning(f"⚠️ ONNX model not found for {name} at {onnx_path}. Falling back to PyTorch.")
                 agent.ort_session = None
+
+            # Загружаем PyTorch только как fallback
+            agent.load_model(str(path))
+            agent.policy_net.eval()
+            self.logger.info(f"✅ {name} PyTorch fallback loaded from {path}")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load {name} Agent: {e}")
@@ -687,6 +695,11 @@ class CustomD3QNStrategy4z(IStrategy):
         zscore_window = 90
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
         
+        # 2. Quote Volume для фильтрации неликвида (РАССЧИТЫВАТЬ ДО ЛОГАРИФМИРОВАНИЯ)
+        dataframe['quote_volume'] = dataframe['volume'] * dataframe['close']
+        dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=1440, min_periods=200).mean()
+        dataframe['quote_volume_sma'] = dataframe['quote_volume_sma'].fillna(0)
+
         # Log-transform volume to match training distribution
         dataframe['volume'] = np.log1p(dataframe['volume'])
         
@@ -700,12 +713,6 @@ class CustomD3QNStrategy4z(IStrategy):
         # Заполняем NaN нулями (начало датафрейма), чтобы модель не получала inf/nan
         z_cols = [f'{col}_z' for col in ohlcv_cols]
         dataframe[z_cols] = dataframe[z_cols].fillna(0.0)
-
-        # 2. Quote Volume для фильтрации неликвида
-        # Расчет среднего объема за 24 часа (1440 свечей на 1m)
-        dataframe['quote_volume'] = dataframe['volume'] * dataframe['close']
-        dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=1440, min_periods=200).mean()
-        dataframe['quote_volume_sma'] = dataframe['quote_volume_sma'].fillna(0)
 
         # 2. Supertrend Режимы
         if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
@@ -1973,5 +1980,3 @@ class CustomD3QNStrategy4z(IStrategy):
         # Если ничего не найдено, возвращаем предложенное значение (вероятно, 1.0)
         self.logger.warning(f"Leverage not found for {pair} in config. Falling back to proposed: {proposed_leverage}")
         return proposed_leverage
-    
-        self.min_quote_volume_usd.value = 0
