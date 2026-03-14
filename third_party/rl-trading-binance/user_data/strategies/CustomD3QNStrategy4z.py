@@ -1,4 +1,5 @@
 import sys
+import os
 import logging
 import logging.handlers
 import importlib.util
@@ -14,6 +15,10 @@ import threading
 from collections import OrderedDict
 from typing import Dict, Optional, List, Any, Tuple
 from collections import deque
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 
 try:
@@ -151,6 +156,22 @@ class CustomD3QNStrategy4z(IStrategy):
     def __init__(self, config: dict) -> None:
         super().__init__(config)  # type: ignore
         
+        # --- STAGE 3: SECURITY (Environment Variables) ---
+        # Load .env file explicitly
+        if load_dotenv:
+            env_path = project_root / '.env'
+            load_dotenv(dotenv_path=env_path)
+
+        # Override sensitive data from environment variables if they exist
+        if os.environ.get('FT_PASSWORD'):
+            self.config.get('api_server', {})['password'] = os.environ.get('FT_PASSWORD')
+        if os.environ.get('FT_JWT_SECRET'):
+            self.config.get('api_server', {})['jwt_secret_key'] = os.environ.get('FT_JWT_SECRET')
+        if os.environ.get('EXCHANGE_KEY'):
+            self.config.get('exchange', {})['key'] = os.environ.get('EXCHANGE_KEY')
+        if os.environ.get('EXCHANGE_SECRET'):
+            self.config.get('exchange', {})['secret'] = os.environ.get('EXCHANGE_SECRET')
+
         # --- GLOBAL REGIME TIMEFRAME from HYPEROPT ---
         if hasattr(self, 'informative_timeframe_global_opt'):
             self.informative_timeframe_global = self.informative_timeframe_global_opt.value
