@@ -110,34 +110,34 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.01, 0.05, default=0.075, space='sell', optimize=False, load=True)
-    d_min = DecimalParameter(0.0005, 0.02, default=0.001, space='sell', optimize=False, load=True)
-    hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=False, load=True)
-    p_target = DecimalParameter(0.005, 0.03, default=0.01, space='sell', optimize=False, load=True)
+    d0 = DecimalParameter(0.01, 0.05, default=0.075, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.02, default=0.001, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.03, default=0.01, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=False, load=True)
+    tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
-    rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=True)
-    rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=False, load=True)
+    rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
+    rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=False, load=False)
 
     # Оптимизируемый таймфрейм для глобального режима
-    informative_timeframe_global_opt = CategoricalParameter(['1m', '5m', '15m'], default='1m', space='buy', optimize=False, load=True)
+    informative_timeframe_global_opt = CategoricalParameter(['1m', '5m', '15m'], default='1m', space='buy', optimize=False, load=False)
 
     # Параметры Supertrend
-    supertrend_period = IntParameter(3, 20, default=14, space='buy', optimize=True, load=True)
-    supertrend_multiplier = DecimalParameter(0.5, 5.0, default=3.0, space='buy', optimize=True, load=True)
+    supertrend_period = IntParameter(3, 20, default=14, space='buy', optimize=True, load=False)
+    supertrend_multiplier = DecimalParameter(0.5, 5.0, default=3.0, space='buy', optimize=True, load=False)
 
     # Фильтр по объему (Фокус на ликвидности)
-    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=True)
+    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
 
     # Коэффициент агрессии для Dynamic Epsilon
-    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=False, load=True)
+    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
-    rl_epsilon_long = DecimalParameter(0.2, 0.6, default=0.48, space='buy', optimize=False, load=True)
-    rl_epsilon_short = DecimalParameter(0.2, 0.6, default=0.48, space='sell', optimize=False, load=True)
+    rl_epsilon_long = DecimalParameter(0.2, 0.6, default=0.48, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.2, 0.6, default=0.48, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
