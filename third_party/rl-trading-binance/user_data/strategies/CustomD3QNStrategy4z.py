@@ -194,6 +194,15 @@ class CustomD3QNStrategy4z(IStrategy):
         if 'dd_aggression_k' in config.get('rl_ensemble', {}):
             self.dd_aggression_k.value = float(config['rl_ensemble']['dd_aggression_k'])
             logger.info(f"[CONFIG] dd_aggression_k overridden from config: {self.dd_aggression_k.value}")
+            
+        # Загрузка Epsilon из конфига (Fix для приоритета конфига над дефолтными значениями 0.48)
+        if 'epsilon_threshold_long' in config.get('rl_ensemble', {}):
+            self.rl_epsilon_long.value = float(config['rl_ensemble']['epsilon_threshold_long'])
+            logger.info(f"[CONFIG] rl_epsilon_long overridden from config: {self.rl_epsilon_long.value}")
+
+        if 'epsilon_threshold_short' in config.get('rl_ensemble', {}):
+            self.rl_epsilon_short.value = float(config['rl_ensemble']['epsilon_threshold_short'])
+            logger.info(f"[CONFIG] rl_epsilon_short overridden from config: {self.rl_epsilon_short.value}")
 
         # --- LOGGING FILTERS ---
         # Убираем спам о отмене стоплосса
@@ -1472,12 +1481,13 @@ class CustomD3QNStrategy4z(IStrategy):
                     c_date = c_date.replace(tzinfo=timezone.utc)
 
                 minutes_since = (current_time - c_date).total_seconds() / 60.0
-                # Smart Cooldown: Блокируем только если сделка была убыточной
-                if minutes_since < 90 and (last_trade.close_profit is not None and last_trade.close_profit < 0):
+                # Smart Cooldown: Блокируем после ЛЮБОЙ сделки (win/loss)
+                if minutes_since < 90:
                     last_side = "short" if last_trade.is_short else "long"
                     # Блокируем только если направление совпадает (Long после Long или Short после Short)
                     if last_side == side:
-                        self.logger.info(f"⏳ TIMEOUT {pair}: Last {last_side} (P={last_trade.close_profit:.2%}) closed {minutes_since:.1f}m ago. Blocking new {side}.")
+                        profit_str = f"P={last_trade.close_profit:.2%}" if last_trade.close_profit is not None else "P=N/A"
+                        self.logger.info(f"⏳ TIMEOUT {pair}: Last {last_side} ({profit_str}) closed {minutes_since:.1f}m ago. Blocking new {side}.")
                         return False
             # -------------------------------------
 
