@@ -110,34 +110,34 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.01, 0.05, default=0.075, space='sell', optimize=True, load=True)
-    d_min = DecimalParameter(0.0005, 0.02, default=0.005, space='sell', optimize=True, load=True)
-    hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=True, load=True)
-    p_target = DecimalParameter(0.005, 0.04, default=0.02, space='sell', optimize=True, load=True)
+    d0 = DecimalParameter(0.01, 0.05, default=0.075, space='sell', optimize=False, load=True)
+    d_min = DecimalParameter(0.0005, 0.02, default=0.001, space='sell', optimize=False, load=True)
+    hysteresis = DecimalParameter(0.00005, 0.005, default=0.001, space='sell', optimize=False, load=True)
+    p_target = DecimalParameter(0.005, 0.03, default=0.01, space='sell', optimize=False, load=True)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=True, load=True)
+    tsl_exponent = DecimalParameter(0.1, 2.0, default=1.0, space='sell', optimize=False, load=True)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
-    rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=True, load=True)
-    rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=True, load=True)
+    rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=True)
+    rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=False, load=True)
 
     # Оптимизируемый таймфрейм для глобального режима
-    informative_timeframe_global_opt = CategoricalParameter(['1m', '5m', '15m'], default='1m', space='buy', optimize=True, load=True)
+    informative_timeframe_global_opt = CategoricalParameter(['1m', '5m', '15m'], default='1m', space='buy', optimize=False, load=True)
 
     # Параметры Supertrend
-    supertrend_period = IntParameter(7, 20, default=14, space='buy', optimize=True, load=True)
-    supertrend_multiplier = DecimalParameter(1.5, 4.0, default=3.0, space='buy', optimize=True, load=True)
+    supertrend_period = IntParameter(3, 20, default=14, space='buy', optimize=True, load=True)
+    supertrend_multiplier = DecimalParameter(0.5, 5.0, default=3.0, space='buy', optimize=True, load=True)
 
     # Фильтр по объему (Фокус на ликвидности)
-    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=True, load=True)
+    min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=True)
 
     # Коэффициент агрессии для Dynamic Epsilon
-    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=True, load=True)
+    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=False, load=True)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
-    rl_epsilon_long = DecimalParameter(0.2, 0.6, default=0.48, space='buy', optimize=True, load=True)
-    rl_epsilon_short = DecimalParameter(0.2, 0.6, default=0.48, space='sell', optimize=True, load=True)
+    rl_epsilon_long = DecimalParameter(0.2, 0.6, default=0.48, space='buy', optimize=False, load=True)
+    rl_epsilon_short = DecimalParameter(0.2, 0.6, default=0.48, space='sell', optimize=False, load=True)
 
     plot_config = {
         'main_plot': {},
@@ -299,6 +299,12 @@ class CustomD3QNStrategy4z(IStrategy):
         self.max_short_slots = self.total_slots - self.max_long_slots if self.total_slots > 0 else 50
         self.last_slot_update: Optional[datetime] = None
         self.slot_history = deque(maxlen=100)
+
+        # --- LAZY-LOADED AGENTS & SESSIONS ---
+        self._long_1_agent: Optional[D3QN_PER_Agent] = None
+        self._long_2_agent: Optional[D3QN_PER_Agent] = None
+        self._short_1_agent: Optional[D3QN_PER_Agent] = None
+        self._short_2_agent: Optional[D3QN_PER_Agent] = None
 
         logger.info(
             f"🎰 Dynamic Slots: {'ENABLED' if self.dynamic_slots_enabled else 'DISABLED'} "
@@ -468,65 +474,6 @@ class CustomD3QNStrategy4z(IStrategy):
             f"UpdateInterval={self.config_update_interval}s"
         )
 
-        # --- ИНИЦИАЛИЗАЦИЯ 4 АГЕНТОВ ---
-        logger.info("[AGENTS] Creating agents...")
-        
-        # Long 1
-        if self.enable_long_1:
-            self.long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
-            self._load_weights(self.long_1_agent, self.long_1_model_pth, "LONG_1")
-        else:
-            self.long_1_agent = None
-            
-        # Long 2
-        if self.enable_long_2:
-            self.long_2_agent = self._create_agent_from_config(self.cfg_long_2, mirror_mode=False)
-            self._load_weights(self.long_2_agent, self.long_2_model_pth, "LONG_2")
-        else:
-            self.long_2_agent = None
-            
-        # Short 1
-        if self.enable_short_1:
-            self.short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=self.short_1_is_mirror)
-            self._load_weights(self.short_1_agent, self.short_1_model_pth, "SHORT_1")
-        else:
-            self.short_1_agent = None
-            
-        # Short 2
-        if self.enable_short_2:
-            self.short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=self.short_2_is_mirror)
-            self._load_weights(self.short_2_agent, self.short_2_model_pth, "SHORT_2")
-        else:
-            self.short_2_agent = None
-        
-        # --- ЗАГРУЗКА ВЕСОВ ---
-        # Safety check: Ensure Long and Short models are not pointing to the same file
-        if self.long_1_model_pth == self.short_1_model_pth:
-            logger.error("🚨 CRITICAL: LONG_1 and SHORT_1 model paths are IDENTICAL! Check paths.")
-        if self.long_2_model_pth == self.short_2_model_pth:
-            logger.error("🚨 CRITICAL: LONG_2 and SHORT_2 model paths are IDENTICAL! Check paths.")
-
-        # === ОПТИМИЗАЦИЯ МОДЕЛЕЙ ДЛЯ INFERENCE ===
-        # После загрузки весов, оптимизируем модели
-        logger.info("[INFO] Optimizing models for CPU inference...")
-        
-        # Переводим в eval mode и оптимизируем
-        agents_to_optimize = []
-        if self.enable_long_1: agents_to_optimize.append(("LONG_1", self.long_1_agent))
-        if self.enable_long_2: agents_to_optimize.append(("LONG_2", self.long_2_agent))
-        if self.enable_short_1: agents_to_optimize.append(("SHORT_1", self.short_1_agent))
-        if self.enable_short_2: agents_to_optimize.append(("SHORT_2", self.short_2_agent))
-
-        for agent_name, agent in agents_to_optimize:
-            if agent:
-                agent.policy_net.eval()
-                
-                # Отключаем grad для всех параметров (экономит память и время)
-                for param in agent.policy_net.parameters():
-                    param.requires_grad = False
-        
-        logger.info("[OK] CPU optimizations applied")
-        
         if not self.can_short:
             logger.warning("⚠️ WARNING: can_short is False! Short signals will be ignored.")
 
@@ -539,6 +486,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
         logger.info("=" * 60)
         logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING")
+        logger.info("✅ 2+2 ENSEMBLE READY FOR TRADING (Agents will be loaded on first use)")
         logger.info("=" * 60)
     
     def __getstate__(self):
@@ -548,6 +496,14 @@ class CustomD3QNStrategy4z(IStrategy):
         state.pop('_global_regime_lock', None)
         state.pop('logger', None)
         state.pop('_last_logged_signal', None)
+
+        # --- NEW: Explicitly remove agent instances before pickling ---
+        # These will be lazy-loaded in the worker process.
+        state.pop('_long_1_agent', None)
+        state.pop('_long_2_agent', None)
+        state.pop('_short_1_agent', None)
+        state.pop('_short_2_agent', None)
+
         return state
 
     def __setstate__(self, state):
@@ -557,6 +513,13 @@ class CustomD3QNStrategy4z(IStrategy):
         self.cache_lock = threading.Lock()
         self._global_regime_lock = threading.Lock()
         self._last_logged_signal = {}
+        
+        # --- NEW: Ensure agent attributes are reset to None in the new process ---
+        # This guarantees that the lazy-loading properties will trigger correctly.
+        self._long_1_agent = None
+        self._long_2_agent = None
+        self._short_1_agent = None
+        self._short_2_agent = None
 
     def _find_config_file(self, dir_path: Path):
         for file in dir_path.glob("*.py"):
@@ -623,6 +586,58 @@ class CustomD3QNStrategy4z(IStrategy):
         agent.mirror_mode = mirror_mode
         return agent
     
+    # --- NEW: LAZY LOADING PROPERTIES FOR AGENTS ---
+
+    @property
+    def long_1_agent(self) -> Optional[D3QN_PER_Agent]:
+        if not self.enable_long_1: return None
+        if self._long_1_agent is None:
+            self.logger.info("Lazily loading agent: LONG_1")
+            self._long_1_agent = self._create_agent_from_config(self.cfg_long_1, mirror_mode=False)
+            self._load_weights(self._long_1_agent, self.long_1_model_pth, "LONG_1")
+            self._long_1_agent.policy_net.eval()
+            for param in self._long_1_agent.policy_net.parameters():
+                param.requires_grad = False
+        return self._long_1_agent
+
+    @property
+    def long_2_agent(self) -> Optional[D3QN_PER_Agent]:
+        if not self.enable_long_2: return None
+        if self._long_2_agent is None:
+            self.logger.info("Lazily loading agent: LONG_2")
+            self._long_2_agent = self._create_agent_from_config(self.cfg_long_2, mirror_mode=False)
+            self._load_weights(self._long_2_agent, self.long_2_model_pth, "LONG_2")
+            self._long_2_agent.policy_net.eval()
+            for param in self._long_2_agent.policy_net.parameters():
+                param.requires_grad = False
+        return self._long_2_agent
+
+    @property
+    def short_1_agent(self) -> Optional[D3QN_PER_Agent]:
+        if not self.enable_short_1: return None
+        if self._short_1_agent is None:
+            self.logger.info("Lazily loading agent: SHORT_1")
+            self._short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=self.short_1_is_mirror)
+            self._load_weights(self._short_1_agent, self.short_1_model_pth, "SHORT_1")
+            self._short_1_agent.policy_net.eval()
+            for param in self._short_1_agent.policy_net.parameters():
+                param.requires_grad = False
+        return self._short_1_agent
+
+    @property
+    def short_2_agent(self) -> Optional[D3QN_PER_Agent]:
+        if not self.enable_short_2: return None
+        if self._short_2_agent is None:
+            self.logger.info("Lazily loading agent: SHORT_2")
+            self._short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=self.short_2_is_mirror)
+            self._load_weights(self._short_2_agent, self.short_2_model_pth, "SHORT_2")
+            self._short_2_agent.policy_net.eval()
+            for param in self._short_2_agent.policy_net.parameters():
+                param.requires_grad = False
+        return self._short_2_agent
+
+    # -------------------------------------------------
+
     def _load_weights(self, agent, path, name):
         onnx_path = Path(str(path).replace('.pth', '.onnx'))
         try:
@@ -968,7 +983,7 @@ class CustomD3QNStrategy4z(IStrategy):
             img_flat = last_window.T.flatten()
             add_feats = np.zeros(4, dtype=np.float32)
             full_input = np.concatenate([img_flat, add_feats])
-            return np.expand_dims(full_input, axis=0).astype(np.float32)
+            return np.expand_dims(full_input, axis=0)
         else:
             # BATCH INFERENCE (Full Backtest)
             # Create sliding windows: (N - window + 1, window, 5)
@@ -990,7 +1005,7 @@ class CustomD3QNStrategy4z(IStrategy):
             add_feats = np.zeros((len(windows), 4), dtype=np.float32)
             full_input = np.concatenate([img_batch, add_feats], axis=1)
             
-            return full_input.astype(np.float32)
+            return full_input
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
         """
