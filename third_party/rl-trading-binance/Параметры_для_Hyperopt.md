@@ -49,10 +49,10 @@
   Я использую период 20260105, так как это был самый сложный день.
 
    1 freqtrade hyperopt --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z --timerange 20260105-20260105
-     --spaces buy sell roi trailing --hyperopt-loss SharpeHyperOptLoss --epochs 500 -j 6
+     --spaces buy sell --hyperopt-loss SharpeHyperOptLoss --epochs 500 -j 6
 
 
   Что изменилось в команде:
-   1. --spaces buy sell roi trailing: Включили все пространства поиска (buy/sell включают все наши DecimalParameter).
+   1. **--spaces buy sell**: Включили только пространства `buy` и `sell`. Пространства `roi` и `trailing` убраны, так как стратегия использует полностью кастомную логику выхода (`custom_stoploss`).
    2. --epochs 500: 100 мало, 500 позволит найти оптимум.
    3. -j 6: Используем 6 ядер (у вас cpu_threads: 6 в конфиге, значит мощностей хватит).

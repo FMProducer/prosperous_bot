@@ -133,3 +133,16 @@ third_party/rl-trading-binance/tradesv3.dryrun.sqlite-wal
 third_party/rl-trading-binance/tradesv3.dryrun.sqlite
 third_party/rl-trading-binance/tradesv3.dryrun.sqlite-shm
 third_party/rl-trading-binance/user_data/backtest_results/
+third_party/rl-trading-binance/user_data/hyperopt_results/.last_result.json
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_19-00-18.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_19-03-07.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_19-34-43.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_21-04-59.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-00-15.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-13-57.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-26-51.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-33-53.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-46-47.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-16_22-48-27.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-17_00-46-00.fthypt
+third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStrategy4z_2026-03-17_01-14-56.fthypt
