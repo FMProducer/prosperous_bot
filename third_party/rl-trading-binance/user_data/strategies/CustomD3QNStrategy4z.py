@@ -110,13 +110,13 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.02, 0.10, default=0.076, space='sell', optimize=False, load=False)
-    d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.02, 0.10, default=0.095, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.005, default=0.004, space='sell', optimize=False, load=False)
     hysteresis = DecimalParameter(0.001, 0.005, default=0.003, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.005, 0.03, default=0.016, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.03, default=0.021, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.07, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.9, 1.3, default=0.903, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -135,11 +135,11 @@ class CustomD3QNStrategy4z(IStrategy):
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
 
     # Коэффициент агрессии для Dynamic Epsilon
-    dd_aggression_k = DecimalParameter(0.1, 2.0, default=1.0, space='buy', optimize=False, load=False)
+    dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
-    rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.039, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.677, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.487, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.929, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},

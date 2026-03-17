@@ -71,28 +71,28 @@
     "rl_ensemble": {
         "use_global_regime_filter": false,
         "use_local_regime_filter": true,
-        "enable_dynamic_epsilon": false,
-        "min_epsilon": 0.0,
-        "epsilon_threshold_long": 0.039,
-        "epsilon_threshold_short": 0.677,
-        "dd_aggression_k": 0.0,
+        "enable_dynamic_epsilon": true,
+        "min_epsilon": 0.02,
+        "epsilon_threshold_long": 0.487,
+        "epsilon_threshold_short": 0.929,
+        "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.000142,
-                "q_max": 0.003166
+                "q_min": 4.2e-05,
+                "q_max": 0.003165
             },
             "long_2": {
-                "q_min": 0.000403,
-                "q_max": 0.000446
+                "q_min": 0.00012,
+                "q_max": 0.000422
             },
             "short_1": {
-                "q_min": 5.7e-05,
-                "q_max": 0.000573
+                "q_min": 0.000303,
+                "q_max": 0.000603
             },
             "short_2": {
-                "q_min": 0.00017,
-                "q_max": 0.000697
+                "q_min": 0.00035,
+                "q_max": 0.000706
             }
         }
     },
@@ -158,6 +158,7 @@
             "BLUR/USDT:USDT",
             "BNB/USDT:USDT",
             "BNT/USDT:USDT",
+            "BOME/USDT:USDT",
             "BRETT/USDT:USDT",
             "BSV/USDT:USDT",
             "BTCDOM/USDT:USDT",
@@ -172,6 +173,7 @@
             "CHZ/USDT:USDT",
             "CKB/USDT:USDT",
             "COMP/USDT:USDT",
+            "COS/USDT:USDT",
             "COTI/USDT:USDT",
             "CRV/USDT:USDT",
             "CTSI/USDT:USDT",
@@ -198,6 +200,7 @@
             "FIDA/USDT:USDT",
             "FIL/USDT:USDT",
             "FIO/USDT:USDT",
+            "FLOW/USDT:USDT",
             "FLUX/USDT:USDT",
             "GALA/USDT:USDT",
             "GAS/USDT:USDT",
@@ -268,6 +271,7 @@
             "ORDI/USDT:USDT",
             "OXT/USDT:USDT",
             "PENDLE/USDT:USDT",
+            "PEOPLE/USDT:USDT",
             "PHB/USDT:USDT",
             "PIXEL/USDT:USDT",
             "POL/USDT:USDT",
@@ -341,6 +345,7 @@
             "XVS/USDT:USDT",
             "YFI/USDT:USDT",
             "YGG/USDT:USDT",
+            "ZEC/USDT:USDT",
             "ZEN/USDT:USDT",
             "ZETA/USDT:USDT",
             "ZIL/USDT:USDT",
