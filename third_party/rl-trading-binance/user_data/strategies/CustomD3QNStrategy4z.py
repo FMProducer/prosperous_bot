@@ -696,27 +696,27 @@ class CustomD3QNStrategy4z(IStrategy):
         dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=1440, min_periods=200).mean()
         dataframe['quote_volume_sma'] = dataframe['quote_volume_sma'].fillna(0)
 
-        # --- VOLUME FLOW METRICS (OHLCV Proxy) ---
-        # Расчет давления покупателей/продавцов внутри свечи (Intra-Bar Pressure)
-        high_low_range = dataframe['high'] - dataframe['low']
+        # --- DYNAMIC VOLUME FLOW METRICS ---
+        vol_win = int(self.vol_window.value)
+        cvd_win = int(self.cvd_window.value)
 
-        # Avoid division by zero: if high == low, pressure is 0.5 (neutral)
+        high_low_range = dataframe['high'] - dataframe['low']
         buy_pressure = np.where(high_low_range > 0, (dataframe['close'] - dataframe['low']) / high_low_range, 0.5)
 
         dataframe['buy_vol'] = dataframe['volume'] * buy_pressure
         dataframe['sell_vol'] = dataframe['volume'] * (1.0 - buy_pressure)
 
-        # 1. Accum + Sweep metrics (Используем сырой объем до логарифмирования)
-        v_window = int(self.vol_window.value)
-        dataframe['vol_sma'] = dataframe['volume'].rolling(window=v_window).mean()
-        dataframe['surge_ratio'] = dataframe['volume'] / (dataframe['vol_sma'] + 1e-8)
+        # Применяем динамическое окно для SMA
+        dataframe['vol_sma_dyn'] = dataframe['volume'].rolling(window=vol_win, min_periods=max(1, vol_win//2)).mean()
+        dataframe['surge_ratio'] = dataframe['volume'] / (dataframe['vol_sma_dyn'] + 1e-8)
+
         dataframe['buy_vol_pct'] = (dataframe['buy_vol'] / (dataframe['volume'] + 1e-8)) * 100
         dataframe['sell_vol_pct'] = (dataframe['sell_vol'] / (dataframe['volume'] + 1e-8)) * 100
 
-        # 2. Cumulative Volume Delta (CVD) & Imbalance Gap
-        c_window = int(self.cvd_window.value)
+        # CVD с динамическим окном
         dataframe['cvd'] = (dataframe['buy_vol'] - dataframe['sell_vol']).cumsum()
-        dataframe['cvd_ma'] = dataframe['cvd'].rolling(window=c_window).mean()
+        dataframe['cvd_ma'] = dataframe['cvd'].rolling(window=cvd_win, min_periods=max(1, cvd_win//2)).mean()
+
         dataframe['gap_pct_long'] = dataframe['buy_vol'] / (dataframe['sell_vol'] + 1e-8)
         dataframe['gap_pct_short'] = dataframe['sell_vol'] / (dataframe['buy_vol'] + 1e-8)
 
