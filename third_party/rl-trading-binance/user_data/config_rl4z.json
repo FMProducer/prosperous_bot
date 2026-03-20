@@ -69,6 +69,12 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
+        "model_paths": {
+            "long_1": "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653",
+            "long_2": "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl",
+            "short_1": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217",
+            "short_2": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
+        },
         "use_global_regime_filter": false,
         "use_local_regime_filter": true,
         "enable_dynamic_epsilon": true,
