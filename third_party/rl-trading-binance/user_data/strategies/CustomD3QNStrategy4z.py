@@ -143,15 +143,21 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.487, space='buy', optimize=False, load=False)
     rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.929, space='sell', optimize=False, load=False)
 
-    # --- VOLUME FILTERS HYPEROPT (Gatekeepers) ---
-    vol_f1_surge = DecimalParameter(1.5, 4.0, default=2.0, space='buy', optimize=True, load=False)
-    vol_f1_pct = DecimalParameter(55.0, 80.0, default=60.0, space='buy', optimize=True, load=False)
-    vol_f2_cvd_spike = DecimalParameter(1.0, 3.0, default=1.5, space='buy', optimize=True, load=False)
-    vol_f2_gap = DecimalParameter(1.2, 3.0, default=1.7, space='buy', optimize=True, load=False)
+    # --- DYNAMIC VOLUME WINDOWS ---
+    vol_window = IntParameter(10, 50, default=20, space='buy', optimize=True, load=False)
+    cvd_window = IntParameter(30, 100, default=50, space='buy', optimize=True, load=False)
 
-    # --- VOLUME FILTERS HYPEROPT (Exit Override) ---
-    vol_f3_peak = DecimalParameter(3.0, 8.0, default=5.0, space='sell', optimize=True, load=False)
-    vol_f3_fade = DecimalParameter(0.1, 0.5, default=0.3, space='sell', optimize=True, load=False)
+    # --- EXPANDED VOLUME FILTERS (Wider Ranges for Early Entry) ---
+    # Мы начинаем поиск с 1.1 (чуть выше нормы), чтобы поймать импульс в зародыше
+    vol_f1_surge = DecimalParameter(1.05, 3.0, default=1.5, space='buy', optimize=True, load=False)
+    vol_f1_pct = DecimalParameter(51.0, 75.0, default=60.0, space='buy', optimize=True, load=False)
+
+    vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.3, space='buy', optimize=True, load=False)
+    vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.4, space='buy', optimize=True, load=False)
+
+    # --- EXIT CLIMAX (More aggressive) ---
+    vol_f3_peak = DecimalParameter(2.5, 6.0, default=4.0, space='sell', optimize=True, load=False)
+    vol_f3_fade = DecimalParameter(0.1, 0.6, default=0.3, space='sell', optimize=True, load=False)
 
     plot_config = {
         'main_plot': {},
@@ -701,14 +707,16 @@ class CustomD3QNStrategy4z(IStrategy):
         dataframe['sell_vol'] = dataframe['volume'] * (1.0 - buy_pressure)
 
         # 1. Accum + Sweep metrics (Используем сырой объем до логарифмирования)
-        dataframe['vol_sma_20'] = dataframe['volume'].rolling(window=20).mean()
-        dataframe['surge_ratio'] = dataframe['volume'] / (dataframe['vol_sma_20'] + 1e-8)
+        v_window = int(self.vol_window.value)
+        dataframe['vol_sma'] = dataframe['volume'].rolling(window=v_window).mean()
+        dataframe['surge_ratio'] = dataframe['volume'] / (dataframe['vol_sma'] + 1e-8)
         dataframe['buy_vol_pct'] = (dataframe['buy_vol'] / (dataframe['volume'] + 1e-8)) * 100
         dataframe['sell_vol_pct'] = (dataframe['sell_vol'] / (dataframe['volume'] + 1e-8)) * 100
 
         # 2. Cumulative Volume Delta (CVD) & Imbalance Gap
+        c_window = int(self.cvd_window.value)
         dataframe['cvd'] = (dataframe['buy_vol'] - dataframe['sell_vol']).cumsum()
-        dataframe['cvd_ma'] = dataframe['cvd'].rolling(window=50).mean()
+        dataframe['cvd_ma'] = dataframe['cvd'].rolling(window=c_window).mean()
         dataframe['gap_pct_long'] = dataframe['buy_vol'] / (dataframe['sell_vol'] + 1e-8)
         dataframe['gap_pct_short'] = dataframe['sell_vol'] / (dataframe['buy_vol'] + 1e-8)
 
