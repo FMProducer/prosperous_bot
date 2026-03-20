@@ -143,6 +143,16 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.487, space='buy', optimize=False, load=False)
     rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.929, space='sell', optimize=False, load=False)
 
+    # --- VOLUME FILTERS HYPEROPT (Gatekeepers) ---
+    vol_f1_surge = DecimalParameter(1.5, 4.0, default=2.0, space='buy', optimize=True, load=False)
+    vol_f1_pct = DecimalParameter(55.0, 80.0, default=60.0, space='buy', optimize=True, load=False)
+    vol_f2_cvd_spike = DecimalParameter(1.0, 3.0, default=1.5, space='buy', optimize=True, load=False)
+    vol_f2_gap = DecimalParameter(1.2, 3.0, default=1.7, space='buy', optimize=True, load=False)
+
+    # --- VOLUME FILTERS HYPEROPT (Exit Override) ---
+    vol_f3_peak = DecimalParameter(3.0, 8.0, default=5.0, space='sell', optimize=True, load=False)
+    vol_f3_fade = DecimalParameter(0.1, 0.5, default=0.3, space='sell', optimize=True, load=False)
+
     plot_config = {
         'main_plot': {},
         'subplots': {
@@ -1830,15 +1840,15 @@ class CustomD3QNStrategy4z(IStrategy):
             df_tail = dataframe.iloc[-n_predictions:]
 
             # Filter 1: Accum + Sweep (Surge > 2, Direction Vol > 60%)
-            f1_long = (df_tail['surge_ratio'].values > 2.0) & (df_tail['buy_vol_pct'].values > 60.0)
-            f1_short = (df_tail['surge_ratio'].values > 2.0) & (df_tail['sell_vol_pct'].values > 60.0)
+            f1_long = (df_tail['surge_ratio'].values > self.vol_f1_surge.value) & (df_tail['buy_vol_pct'].values > self.vol_f1_pct.value)
+            f1_short = (df_tail['surge_ratio'].values > self.vol_f1_surge.value) & (df_tail['sell_vol_pct'].values > self.vol_f1_pct.value)
 
             # Filter 2: Imbalance (CVD Spike & Gap Fill)
             cvd_v = df_tail['cvd'].values
             cvd_ma_v = df_tail['cvd_ma'].values
 
-            f2_long = (cvd_v > 1.5 * cvd_ma_v) & (df_tail['gap_pct_long'].values > 1.7)
-            f2_short = (cvd_v < -1.5 * cvd_ma_v) & (df_tail['gap_pct_short'].values > 1.7)
+            f2_long = (cvd_v > self.vol_f2_cvd_spike.value * cvd_ma_v) & (df_tail['gap_pct_long'].values > self.vol_f2_gap.value)
+            f2_short = (cvd_v < -self.vol_f2_cvd_spike.value * cvd_ma_v) & (df_tail['gap_pct_short'].values > self.vol_f2_gap.value)
 
             # Intersection: RL Signal + Filter 1 + Filter 2
             # Если фильтры слишком жесткие для текущей фазы тестов, можно закомментировать f2
@@ -1891,8 +1901,8 @@ class CustomD3QNStrategy4z(IStrategy):
         sell_peak_rolling = dataframe['sell_vol_pct'].rolling(window=10).max()
 
         # Vectorized conditions
-        exit_long_cond = (dataframe['surge_ratio'] > 5.0) & (dataframe['buy_vol_pct'] < (buy_peak_rolling * 0.3))
-        exit_short_cond = (dataframe['surge_ratio'] > 5.0) & (dataframe['sell_vol_pct'] < (sell_peak_rolling * 0.3))
+        exit_long_cond = (dataframe['surge_ratio'] > self.vol_f3_peak.value) & (dataframe['buy_vol_pct'] < (buy_peak_rolling * self.vol_f3_fade.value))
+        exit_short_cond = (dataframe['surge_ratio'] > self.vol_f3_peak.value) & (dataframe['sell_vol_pct'] < (sell_peak_rolling * self.vol_f3_fade.value))
 
         # Merge with existing exits if any (using np.where for safe int8 casting)
         dataframe['exit_long'] = np.where(exit_long_cond, 1, dataframe.get('exit_long', 0))
