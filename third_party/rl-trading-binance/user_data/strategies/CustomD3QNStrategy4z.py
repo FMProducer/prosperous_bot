@@ -1906,9 +1906,12 @@ class CustomD3QNStrategy4z(IStrategy):
         buy_peak_rolling = dataframe['buy_vol_pct'].rolling(window=10).max()
         sell_peak_rolling = dataframe['sell_vol_pct'].rolling(window=10).max()
 
+        f3_peak_val = float(self.vol_f3_peak.value)
+        f3_fade_val = float(self.vol_f3_fade.value)
+
         # Vectorized conditions
-        exit_long_cond = (dataframe['surge_ratio'] > self.vol_f3_peak.value) & (dataframe['buy_vol_pct'] < (buy_peak_rolling * self.vol_f3_fade.value))
-        exit_short_cond = (dataframe['surge_ratio'] > self.vol_f3_peak.value) & (dataframe['sell_vol_pct'] < (sell_peak_rolling * self.vol_f3_fade.value))
+        exit_long_cond = (dataframe['surge_ratio'] > f3_peak_val) & (dataframe['buy_vol_pct'] < (buy_peak_rolling * f3_fade_val))
+        exit_short_cond = (dataframe['surge_ratio'] > f3_peak_val) & (dataframe['sell_vol_pct'] < (sell_peak_rolling * f3_fade_val))
 
         # Merge with existing exits if any (using np.where for safe int8 casting)
         dataframe['exit_long'] = np.where(exit_long_cond, 1, dataframe.get('exit_long', 0))
