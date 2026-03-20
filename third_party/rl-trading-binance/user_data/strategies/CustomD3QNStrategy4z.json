@@ -20,24 +20,24 @@
       "max_open_trades": 100
     },
     "sell": {
-      "d0": 0.076,
-      "d_min": 0.001,
-      "hysteresis": 0.003,
-      "p_target": 0.016,
+      "rl_epsilon_short": 0.8,
       "rl_short_threshold_opt": 2,
-      "tsl_exponent": 1.07,
-      "rl_epsilon_short": 0.677
+      "d0": 0.085,
+      "d_min": 0.001,
+      "hysteresis": 0.005,
+      "p_target": 0.017,
+      "tsl_exponent": 1.284
     },
     "buy": {
-      "dd_aggression_k": 0.0,
+      "dd_aggression_k": 2.0,
       "ema_fast_period": 13,
-      "global_ema_period": 20,
+      "global_ema_period": 42,
       "global_ema_timeframe": "1h",
-      "min_quote_volume_usd": 10000.0,
-      "rl_long_threshold_opt": 2,
-      "rl_epsilon_long": 0.039
+      "min_quote_volume_usd": 5000.0,
+      "rl_epsilon_long": 0.02,
+      "rl_long_threshold_opt": 2
     }
   },
   "ft_stratparam_v": 1,
-  "export_time": "2026-03-17 00:05:09.882258+00:00"
+  "export_time": "2026-03-19 23:21:41.524344+00:00"
 }

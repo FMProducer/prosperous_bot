@@ -110,13 +110,13 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.02, 0.10, default=0.095, space='sell', optimize=False, load=False)
-    d_min = DecimalParameter(0.0005, 0.005, default=0.004, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.005, default=0.003, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.005, 0.03, default=0.021, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.02, 0.13, default=0.085, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.01, default=0.005, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.03, default=0.017, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.9, 1.3, default=0.903, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.284, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -129,7 +129,7 @@ class CustomD3QNStrategy4z(IStrategy):
     ema_fast_period = IntParameter(5, 25, default=13, space='buy', optimize=False, load=False)
 
     # EMA фильтр (для глобального режима BTC, ручной)
-    global_ema_period = IntParameter(5, 60, default=20, space='buy', optimize=False, load=False)
+    global_ema_period = IntParameter(5, 60, default=42, space='buy', optimize=False, load=False)
 
     # Фильтр по объему (Фокус на ликвидности)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
@@ -267,7 +267,7 @@ class CustomD3QNStrategy4z(IStrategy):
         self.feature_cache = OrderedDict()
         self.q_value_cache = OrderedDict()  # Кэш для результатов инференса (Q-values)
         self.cache_lock = threading.Lock()
-        self.cache_max_size = 100  # храним только последние 100 пар свечей
+        self.cache_max_size = 10  # Reduced from 100 to prevent OOM in backtesting/hyperopt
         
         if Path(__file__).parent.name == 'strategies':
             self.project_root = Path(__file__).parent.parent.parent
@@ -876,8 +876,12 @@ class CustomD3QNStrategy4z(IStrategy):
             
             # Add 4 dummy features for each item in batch
             add_feats = np.zeros((len(windows), 4), dtype=np.float32)
-            full_input = np.concatenate([img_batch, add_feats], axis=1)
-            
+            try:
+                full_input = np.concatenate([img_batch, add_feats], axis=1)
+            except Exception as e:
+                self.logger.error(f"OOM in get_model_input for {pair}: {e}")
+                return None
+
             return full_input
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
@@ -1590,6 +1594,8 @@ class CustomD3QNStrategy4z(IStrategy):
             
             # Сохраняем в кэш
             with self.cache_lock:
+                if len(self.q_value_cache) >= self.cache_max_size:
+                    self.q_value_cache.popitem(last=False)
                 self.q_value_cache[q_cache_key] = q_values
         
         # Определяем размер батча из первого доступного результата

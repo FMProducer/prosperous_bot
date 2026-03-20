@@ -13,8 +13,8 @@
     "rl_long_threshold": 2,
     "rl_short_threshold": 2,
     "rl_calibration_mode": false,
-    "rl_enable_veto": true,
-    "min_quote_volume_usd": 10000,
+    "rl_enable_veto": false,
+    "min_quote_volume_usd": 5000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
@@ -73,26 +73,26 @@
         "use_local_regime_filter": true,
         "enable_dynamic_epsilon": true,
         "min_epsilon": 0.02,
-        "epsilon_threshold_long": 0.487,
-        "epsilon_threshold_short": 0.929,
+        "epsilon_threshold_long": 0.02,
+        "epsilon_threshold_short": 0.8,
         "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 4.2e-05,
-                "q_max": 0.003165
+                "q_min": 7.9e-05,
+                "q_max": 0.003157
             },
             "long_2": {
-                "q_min": 0.00012,
-                "q_max": 0.000422
+                "q_min": 0.000233,
+                "q_max": 0.000441
             },
             "short_1": {
-                "q_min": 0.000303,
-                "q_max": 0.000603
+                "q_min": 8.9e-05,
+                "q_max": 0.000577
             },
             "short_2": {
-                "q_min": 0.00035,
-                "q_max": 0.000706
+                "q_min": 0.000162,
+                "q_max": 0.000714
             }
         }
     },
