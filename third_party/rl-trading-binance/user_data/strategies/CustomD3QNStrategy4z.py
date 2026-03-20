@@ -1777,90 +1777,57 @@ class CustomD3QNStrategy4z(IStrategy):
         if is_backtest and self.use_local_regime_filter and 'st_regime_local' in dataframe.columns:
             regime_local_vals = dataframe['st_regime_local'].iloc[-n_predictions:].values
 
-        for i in range(n_predictions):
-            # Собираем действия для текущей свечи (Raw actions: 0 or 1)
-            # НОВЫЙ МЕТОД: Нормируешь → суммируешь → сравниваешь разницу → фильтруешь по ε
-            decision = self._compute_ensemble_decision(
-                q_values, i, has_long, has_short
-            )
+        # --- VECTORIZED ENSEMBLE VOTING ---
+        thresh_long = self.rl_long_threshold_opt.value
+        thresh_short = self.rl_short_threshold_opt.value
 
-            # --- Volume Filter ---
-            # Применяется после генерации сигнала, чтобы можно было залогировать причину
-            if volume_vals is not None:
-                min_volume = self.min_quote_volume_usd.value
-                current_volume = volume_vals[i]  # type: ignore
-                if current_volume < min_volume:
-                    if decision['enter_long'] == 1 or decision['enter_short'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by Volume ({current_volume:.0f} < {min_volume:.0f})"
-                    decision['enter_long'] = 0
-                    decision['enter_short'] = 0
+        # 1. Create Vote Matrices (Boolean Arrays converted to Int)
+        # Using arrays derived from get_action_with_threshold
+        v_l1 = (adv_long_1 > th_l1).astype(np.int8) if self.enable_long_1 else np.zeros(n_predictions, dtype=np.int8)
+        v_l2 = (adv_long_2 > th_l2).astype(np.int8) if self.enable_long_2 else np.zeros(n_predictions, dtype=np.int8)
 
-            # --- Regime Filter (Post-Ensemble) ---
-            if is_backtest:
-                # Backtest: check regimes per candle
-                if decision['enter_long'] == 1:
-                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] <= 0):
-                        decision['reason'] += f" | ⛔ Filtered by EMA (Global Bear/Flat)"
-                        decision['enter_long'] = 0
-                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] <= 0) and decision['enter_long'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by EMA (Local Bear/Flat)"
-                        decision['enter_long'] = 0
-                
-                if decision['enter_short'] == 1:
-                    if self.use_global_regime_filter and (regime_global_vals is None or regime_global_vals[i] >= 0):
-                        decision['reason'] += f" | ⛔ Filtered by EMA (Global Bull/Flat)"
-                        decision['enter_short'] = 0
-                    if self.use_local_regime_filter and (regime_local_vals is None or regime_local_vals[i] >= 0) and decision['enter_short'] == 1:
-                        decision['reason'] += f" | ⛔ Filtered by EMA (Local Bull/Flat)"
-                        decision['enter_short'] = 0
-            else:
-                # Live/Dry-run: use pre-calculated flags as a final check
-                if not allow_long and decision['enter_long'] == 1:
-                    reason_str = "Regime"
-                    if self.use_global_regime_filter and 'st_regime_global' in dataframe.columns and dataframe['st_regime_global'].iloc[-1] <= 0:
-                        reason_str = "Global Bear/Flat"
-                    elif self.use_local_regime_filter and 'st_regime_local' in dataframe.columns and dataframe['st_regime_local'].iloc[-1] <= 0:
-                        reason_str = "Local Bear/Flat"
-                    decision['reason'] += f" | ⛔ Filtered by EMA ({reason_str})"
-                    decision['enter_long'] = 0
+        v_s1 = (adv_short_1 > th_s1).astype(np.int8) if self.enable_short_1 else np.zeros(n_predictions, dtype=np.int8)
+        v_s2 = (adv_short_2 > th_s2).astype(np.int8) if self.enable_short_2 else np.zeros(n_predictions, dtype=np.int8)
 
-                if not allow_short and decision['enter_short'] == 1:
-                    decision['reason'] += f" | ⛔ Filtered by EMA (Regime)"
-                    decision['enter_short'] = 0
+        votes_long = v_l1 + v_l2
+        votes_short = v_s1 + v_s2
 
-            # Сбор статистики
-            if decision['enter_long'] or decision['enter_short']:
-                self.conflict_stats['total_signals'] += 1
-                if 'Conflict' in decision['reason']:
-                    self.conflict_stats['conflicts'] += 1
-                elif decision['enter_long']:
-                    self.conflict_stats['long_entries'] += 1
-                elif decision['enter_short']:
-                    self.conflict_stats['short_entries'] += 1
+        # 2. Veto Logic Arrays
+        long_vetoed = (votes_short > 0) & self.enable_veto
+        short_vetoed = (votes_long > 0) & self.enable_veto
+
+        # 3. Final Signal Arrays
+        raw_enter_long = (votes_long >= thresh_long) & ~long_vetoed & ~has_long & ~has_short
+        raw_enter_short = (votes_short >= thresh_short) & ~short_vetoed & ~has_long & ~has_short & self.can_short
+
+        enter_long_vals = raw_enter_long.astype(np.int8)
+        enter_short_vals = raw_enter_short.astype(np.int8)
+
+        # 4. Apply Volume & Regime Filters Vectorized (for Backtest)
+        if volume_vals is not None:
+            vol_mask = volume_vals >= self.min_quote_volume_usd.value
+            enter_long_vals = enter_long_vals & vol_mask
+            enter_short_vals = enter_short_vals & vol_mask
             
-            # Логирование
-            if decision['enter_long'] or decision['enter_short']:
-                # Умное логирование: только если сигнал изменился или это live
-                sig_key = f"{metadata['pair']}_{decision['enter_long']}_{decision['enter_short']}"
-                is_new_signal = self._last_logged_signal.get(metadata['pair']) != sig_key
-                
-                if self.config.get('runmode') in ['live', 'dry_run']:
-                    if i == n_predictions - 1:
-                        self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
-                else:
-                    # В бэктесте логируем только один раз при появлении сигнала
-                    if is_new_signal:
-                        self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SIGNAL: {decision['reason']}")
-                        self._last_logged_signal[metadata['pair']] = sig_key
-            else:
-                # Сбрасываем память сигнала, если он исчез
-                self._last_logged_signal[metadata['pair']] = None
+        if is_backtest:
+            if self.use_global_regime_filter and regime_global_vals is not None:
+                enter_long_vals &= (regime_global_vals > 0)
+                enter_short_vals &= (regime_global_vals < 0)
+            if self.use_local_regime_filter and regime_local_vals is not None:
+                enter_long_vals &= (regime_local_vals > 0)
+                enter_short_vals &= (regime_local_vals < 0)
+        else:
+            # Live mode strict flags
+            if not allow_long: enter_long_vals.fill(0)
+            if not allow_short: enter_short_vals.fill(0)
             
-            # Записываем в массив (быстро)
-            enter_long_vals[i] = decision['enter_long']
-            enter_short_vals[i] = decision['enter_short']
-        
-        # Mass assignment (один раз для всех строк)
+            # Log only the last signal in live mode if generated
+            if enter_long_vals[-1] == 1:
+                self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY LONG Vectorized logic triggered.")
+            elif enter_short_vals[-1] == 1:
+                self.logger.info(f"[SIGNAL] {metadata['pair']} ENTRY SHORT Vectorized logic triggered.")
+
+        # Assign back to DataFrame
         dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
         dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
 
