@@ -1839,16 +1839,22 @@ class CustomD3QNStrategy4z(IStrategy):
         if is_backtest or n_predictions > 0:
             df_tail = dataframe.iloc[-n_predictions:]
 
-            # Filter 1: Accum + Sweep (Surge > 2, Direction Vol > 60%)
-            f1_long = (df_tail['surge_ratio'].values > self.vol_f1_surge.value) & (df_tail['buy_vol_pct'].values > self.vol_f1_pct.value)
-            f1_short = (df_tail['surge_ratio'].values > self.vol_f1_surge.value) & (df_tail['sell_vol_pct'].values > self.vol_f1_pct.value)
+            # Retrieve hyperopt values
+            f1_surge_val = float(self.vol_f1_surge.value)
+            f1_pct_val = float(self.vol_f1_pct.value)
+            f2_cvd_val = float(self.vol_f2_cvd_spike.value)
+            f2_gap_val = float(self.vol_f2_gap.value)
+
+            # Filter 1: Accum + Sweep
+            f1_long = (df_tail['surge_ratio'].values > f1_surge_val) & (df_tail['buy_vol_pct'].values > f1_pct_val)
+            f1_short = (df_tail['surge_ratio'].values > f1_surge_val) & (df_tail['sell_vol_pct'].values > f1_pct_val)
 
             # Filter 2: Imbalance (CVD Spike & Gap Fill)
             cvd_v = df_tail['cvd'].values
             cvd_ma_v = df_tail['cvd_ma'].values
 
-            f2_long = (cvd_v > self.vol_f2_cvd_spike.value * cvd_ma_v) & (df_tail['gap_pct_long'].values > self.vol_f2_gap.value)
-            f2_short = (cvd_v < -self.vol_f2_cvd_spike.value * cvd_ma_v) & (df_tail['gap_pct_short'].values > self.vol_f2_gap.value)
+            f2_long = (cvd_v > f2_cvd_val * cvd_ma_v) & (df_tail['gap_pct_long'].values > f2_gap_val)
+            f2_short = (cvd_v < -f2_cvd_val * cvd_ma_v) & (df_tail['gap_pct_short'].values > f2_gap_val)
 
             # Intersection: RL Signal + Filter 1 + Filter 2
             # Если фильтры слишком жесткие для текущей фазы тестов, можно закомментировать f2
