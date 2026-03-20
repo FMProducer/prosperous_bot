@@ -313,22 +313,18 @@ class CustomD3QNStrategy4z(IStrategy):
             f"| Total: {self.total_slots}"
         )
 
-        # --- ПУТИ К 4 МОДЕЛЯМ ---
-        # Long Model 1:
-        self.long_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653"
+        # --- ПУТИ К 4 МОДЕЛЯМ (Load from Config) ---
+        model_paths = config.get('rl_ensemble', {}).get('model_paths', {})
+        self.long_1_model_dir = self.project_root / model_paths.get('long_1', 'default_long_1_path')
         self.long_1_model_pth = self.long_1_model_dir / "best.pth"
-        
-        # Long Model 2:
-        self.long_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl"
+
+        self.long_2_model_dir = self.project_root / model_paths.get('long_2', 'default_long_2_path')
         self.long_2_model_pth = self.long_2_model_dir / "best.pth"
-        pth = self.long_2_model_dir / "best.pth"
-        
-        # Short Model 1:
-        self.short_1_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217"
+
+        self.short_1_model_dir = self.project_root / model_paths.get('short_1', 'default_short_1_path')
         self.short_1_model_pth = self.short_1_model_dir / "best.pth"
-        
-        # Short Model 2:
-        self.short_2_model_dir = self.project_root / "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
+
+        self.short_2_model_dir = self.project_root / model_paths.get('short_2', 'default_short_2_path')
         self.short_2_model_pth = self.short_2_model_dir / "best.pth"
         
         # --- ВКЛЮЧЕНИЕ/ОТКЛЮЧЕНИЕ МОДЕЛЕЙ ---
