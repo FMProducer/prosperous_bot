@@ -1879,6 +1879,25 @@ class CustomD3QNStrategy4z(IStrategy):
         return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Фильтр 3: Climax reversal (Vol peak + divergence)
+        Используется исключительно для закрытия позиций при кульминации тренда.
+        """
+        if dataframe.empty or 'surge_ratio' not in dataframe.columns:
+            return dataframe
+
+        # Divergence proxy: peak ratio > 5, but directional volume drops below 30% of recent maximum
+        buy_peak_rolling = dataframe['buy_vol_pct'].rolling(window=10).max()
+        sell_peak_rolling = dataframe['sell_vol_pct'].rolling(window=10).max()
+
+        # Vectorized conditions
+        exit_long_cond = (dataframe['surge_ratio'] > 5.0) & (dataframe['buy_vol_pct'] < (buy_peak_rolling * 0.3))
+        exit_short_cond = (dataframe['surge_ratio'] > 5.0) & (dataframe['sell_vol_pct'] < (sell_peak_rolling * 0.3))
+
+        # Merge with existing exits if any (using np.where for safe int8 casting)
+        dataframe['exit_long'] = np.where(exit_long_cond, 1, dataframe.get('exit_long', 0))
+        dataframe['exit_short'] = np.where(exit_short_cond, 1, dataframe.get('exit_short', 0))
+
         return dataframe
 
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
