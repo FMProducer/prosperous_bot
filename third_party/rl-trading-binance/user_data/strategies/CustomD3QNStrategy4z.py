@@ -70,6 +70,8 @@ except ImportError:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0.0)
     class IntParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0)
+    class CategoricalParameter:
+        def __init__(self, *args, **kwargs): self.value = kwargs.get('default', args[0][0] if args and args[0] else None)
     # Fallback для merge_informative_pair, чтобы не ломать оффлайн-инструменты
     def merge_informative_pair(dataframe, informative, timeframe, informative_timeframe, ffill=True):
         return dataframe
@@ -1818,9 +1820,30 @@ class CustomD3QNStrategy4z(IStrategy):
         long_vetoed = (votes_short > 0) & self.enable_veto
         short_vetoed = (votes_long > 0) & self.enable_veto
 
-        # 3. Final Signal Arrays
-        raw_enter_long = (votes_long >= thresh_long) & ~long_vetoed & ~has_long & ~has_short
-        raw_enter_short = (votes_short >= thresh_short) & ~short_vetoed & ~has_long & ~has_short & self.can_short
+        # 3. Final Signal Arrays (Fixed boolean logic)
+        raw_enter_long = (votes_long >= thresh_long) & (~long_vetoed) & (not has_long) & (not has_short)
+        raw_enter_short = (votes_short >= thresh_short) & (~short_vetoed) & (not has_long) & (not has_short) & self.can_short
+
+        # --- APPLY VOLUME FILTERS (Gatekeepers) ---
+        # Оптимизация: извлекаем только последние n_predictions строк, чтобы совпадала размерность
+        if is_backtest or n_predictions > 0:
+            df_tail = dataframe.iloc[-n_predictions:]
+
+            # Filter 1: Accum + Sweep (Surge > 2, Direction Vol > 60%)
+            f1_long = (df_tail['surge_ratio'].values > 2.0) & (df_tail['buy_vol_pct'].values > 60.0)
+            f1_short = (df_tail['surge_ratio'].values > 2.0) & (df_tail['sell_vol_pct'].values > 60.0)
+
+            # Filter 2: Imbalance (CVD Spike & Gap Fill)
+            cvd_v = df_tail['cvd'].values
+            cvd_ma_v = df_tail['cvd_ma'].values
+
+            f2_long = (cvd_v > 1.5 * cvd_ma_v) & (df_tail['gap_pct_long'].values > 1.7)
+            f2_short = (cvd_v < -1.5 * cvd_ma_v) & (df_tail['gap_pct_short'].values > 1.7)
+
+            # Intersection: RL Signal + Filter 1 + Filter 2
+            # Если фильтры слишком жесткие для текущей фазы тестов, можно закомментировать f2
+            raw_enter_long = raw_enter_long & f1_long & f2_long
+            raw_enter_short = raw_enter_short & f1_short & f2_short
 
         enter_long_vals = raw_enter_long.astype(np.int8)
         enter_short_vals = raw_enter_short.astype(np.int8)
