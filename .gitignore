@@ -164,3 +164,4 @@ third_party/rl-trading-binance/user_data/hyperopt_results/strategy_CustomD3QNStr
 third_party/rl-trading-binance/user_data/logs/freqtrade.log.1
 third_party/rl-trading-binance/user_data/logs/freqtrade.log.2
 third_party/rl-trading-binance/user_data/logs/freqtrade.log.2026-03-17
+third_party/rl-trading-binance/user_data/hyperopt.lock

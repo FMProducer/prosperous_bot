@@ -144,20 +144,19 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.929, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
-    vol_window = IntParameter(10, 50, default=20, space='buy', optimize=True, load=False)
-    cvd_window = IntParameter(30, 100, default=50, space='buy', optimize=True, load=False)
+    vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
+    cvd_window = IntParameter(30, 100, default=83, space='buy', optimize=False, load=False)
 
-    # --- EXPANDED VOLUME FILTERS (Wider Ranges for Early Entry) ---
-    # Мы начинаем поиск с 1.1 (чуть выше нормы), чтобы поймать импульс в зародыше
-    vol_f1_surge = DecimalParameter(1.05, 3.0, default=1.5, space='buy', optimize=True, load=False)
-    vol_f1_pct = DecimalParameter(51.0, 75.0, default=60.0, space='buy', optimize=True, load=False)
+    # --- EXPANDED VOLUME FILTERS (Wider Ranges for Early Entry) --- # Мы начинаем поиск с 1.1 (чуть выше нормы), чтобы поймать импульс в зародыше
+    vol_f1_surge = DecimalParameter(1.05, 3.0, default=2.307, space='buy', optimize=False, load=False)
+    vol_f1_pct = DecimalParameter(51.0, 75.0, default=67.877, space='buy', optimize=False, load=False)
 
-    vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.3, space='buy', optimize=True, load=False)
-    vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.4, space='buy', optimize=True, load=False)
+    vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.024, space='buy', optimize=False, load=False)
+    vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.959, space='buy', optimize=False, load=False)
 
     # --- EXIT CLIMAX (More aggressive) ---
-    vol_f3_peak = DecimalParameter(2.5, 6.0, default=4.0, space='sell', optimize=True, load=False)
-    vol_f3_fade = DecimalParameter(0.1, 0.6, default=0.3, space='sell', optimize=True, load=False)
+    vol_f3_peak = DecimalParameter(2.5, 6.0, default=5.359, space='sell', optimize=False, load=False)
+    vol_f3_fade = DecimalParameter(0.1, 0.6, default=0.254, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
