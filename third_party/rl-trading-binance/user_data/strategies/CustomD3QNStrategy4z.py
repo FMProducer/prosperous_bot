@@ -1841,6 +1841,22 @@ class CustomD3QNStrategy4z(IStrategy):
         raw_enter_long = (votes_long >= thresh_long) & (~long_vetoed) & (not has_long) & (not has_short)
         raw_enter_short = (votes_short >= thresh_short) & (~short_vetoed) & (not has_long) & (not has_short) & self.can_short
 
+        # --- LOGGING RAW SIGNALS FOR SLIPPAGE ANALYTICS ---
+        if not is_backtest:
+            if isinstance(raw_enter_long, pd.Series):
+                 if raw_enter_long.iloc[-1]:
+                     self.logger.info(f"[RAW RL SIGNAL] {metadata['pair']} ENTRY LONG request generated.")
+            elif isinstance(raw_enter_long, np.ndarray):
+                 if raw_enter_long[-1]:
+                     self.logger.info(f"[RAW RL SIGNAL] {metadata['pair']} ENTRY LONG request generated.")
+
+            if isinstance(raw_enter_short, pd.Series):
+                 if raw_enter_short.iloc[-1]:
+                     self.logger.info(f"[RAW RL SIGNAL] {metadata['pair']} ENTRY SHORT request generated.")
+            elif isinstance(raw_enter_short, np.ndarray):
+                 if raw_enter_short[-1]:
+                     self.logger.info(f"[RAW RL SIGNAL] {metadata['pair']} ENTRY SHORT request generated.")
+
         # --- APPLY VOLUME FILTERS (Gatekeepers) ---
         # Оптимизация: извлекаем только последние n_predictions строк, чтобы совпадала размерность
         if is_backtest or n_predictions > 0:
@@ -1867,6 +1883,22 @@ class CustomD3QNStrategy4z(IStrategy):
             # Если фильтры слишком жесткие для текущей фазы тестов, можно закомментировать f2
             raw_enter_long = raw_enter_long & f1_long & f2_long
             raw_enter_short = raw_enter_short & f1_short & f2_short
+
+            # --- LOGGING FILTERED SIGNALS ---
+            if not is_backtest:
+                if isinstance(raw_enter_long, pd.Series):
+                     if raw_enter_long.iloc[-1]:
+                         self.logger.info(f"[FILTERED SIGNAL] {metadata['pair']} ENTRY LONG passed volume filters.")
+                elif isinstance(raw_enter_long, np.ndarray):
+                     if raw_enter_long[-1]:
+                         self.logger.info(f"[FILTERED SIGNAL] {metadata['pair']} ENTRY LONG passed volume filters.")
+
+                if isinstance(raw_enter_short, pd.Series):
+                     if raw_enter_short.iloc[-1]:
+                         self.logger.info(f"[FILTERED SIGNAL] {metadata['pair']} ENTRY SHORT passed volume filters.")
+                elif isinstance(raw_enter_short, np.ndarray):
+                     if raw_enter_short[-1]:
+                         self.logger.info(f"[FILTERED SIGNAL] {metadata['pair']} ENTRY SHORT passed volume filters.")
 
         enter_long_vals = raw_enter_long.astype(np.int8)
         enter_short_vals = raw_enter_short.astype(np.int8)
