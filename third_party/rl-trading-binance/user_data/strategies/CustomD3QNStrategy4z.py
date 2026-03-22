@@ -112,13 +112,13 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.02, 0.13, default=0.085, space='sell', optimize=False, load=False)
-    d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.01, default=0.005, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.005, 0.03, default=0.017, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.02, 0.13, default=0.117, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.005, default=0.003, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.01, default=0.002, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.03, default=0.014, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.284, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.101, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -139,9 +139,9 @@ class CustomD3QNStrategy4z(IStrategy):
     # Коэффициент агрессии для Dynamic Epsilon
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
-    # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
-    rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.55, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.8, space='sell', optimize=False, load=False)
+    # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
+    rl_epsilon_long = DecimalParameter(0.02, 0.75, default=0.209, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.7, 1.0, default=0.743, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
@@ -688,10 +688,13 @@ class CustomD3QNStrategy4z(IStrategy):
         try:
             if onnx_path.exists():
                 try:
-                    # Тонкая настройка потоков для Ryzen 9 5900HX (Предотвращение CPU Thrashing)
+                    # Оптимизация под AMD Ryzen 9 5900HX (8 cores / 16 threads)
+                    # Используем 4 потока на графе для быстрого инференса 1 батча
                     sess_options = ort.SessionOptions()
-                    sess_options.intra_op_num_threads = 1
+                    cpu_threads = self.config.get('cpu_threads', 4)
+                    sess_options.intra_op_num_threads = min(cpu_threads, 4)
                     sess_options.inter_op_num_threads = 1
+                    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
                     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
                     agent.ort_session = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=['CPUExecutionProvider'])
@@ -915,9 +918,13 @@ class CustomD3QNStrategy4z(IStrategy):
 
         if self.config.get('runmode') in ('live', 'dry_run'):
             # SINGLE ROW INFERENCE (Live or optimized backtest)
-            last_window = z_data[-window:]
+            last_window = z_data[-window:].copy() # MUST COPY
             if should_invert:
-                last_window = last_window * -1.0
+                # 1. Invert ONLY prices (Open, High, Low, Close -> indices 0, 1, 2, 3)
+                last_window[:, :4] *= -1.0
+                # 2. Swap High and Low columns (index 1 and 2) to maintain valid candle geometry
+                last_window[:, [1, 2]] = last_window[:, [2, 1]]
+                # Note: Volume (index 4) remains unchanged
             
             # Transpose (90, 5) -> (5, 90) then flatten to (450,)
             img_flat = last_window.T.flatten()
@@ -926,16 +933,17 @@ class CustomD3QNStrategy4z(IStrategy):
             return np.expand_dims(full_input, axis=0)
         else:
             # BATCH INFERENCE (Full Backtest)
-            # Create sliding windows: (N - window + 1, window, 5)
-            # sliding_window_view with (window, 5) on (N, 5) returns (N-window+1, 1, window, 5)
             try:
-                windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1)
+                windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1).copy() # MUST COPY
             except Exception as e:
                 self.logger.error(f"Sliding window failed: {e}")
                 return None
 
             if should_invert:
-                windows = windows * -1.0
+                # Invert prices
+                windows[:, :, :4] *= -1.0
+                # Swap High and Low
+                windows[:, :, [1, 2]] = windows[:, :, [2, 1]]
             
             # Batch Transpose: (Batch, Window, Channels) -> (Batch, Channels, Window)
             # then flatten each to (Batch, 450)
