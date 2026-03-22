@@ -1,0 +1,51 @@
+{
+  "strategy_name": "CustomD3QNStrategy4z",
+  "params": {
+    "roi": {
+      "0": 100
+    },
+    "stoploss": {
+      "stoploss": -0.99
+    },
+    "trailing": {
+      "trailing_stop": false,
+      "trailing_stop_positive": null,
+      "trailing_stop_positive_offset": 0.0,
+      "trailing_only_offset_is_reached": false
+    },
+    "max_open_trades": {
+      "max_open_trades": 100
+    },
+    "buy": {
+      "cvd_window": 83,
+      "dd_aggression_k": 2.0,
+      "ema_fast_period": 12,
+      "global_ema_period": 42,
+      "global_ema_timeframe": "1h",
+      "min_quote_volume_usd": 5000.0,
+      "rl_long_threshold_opt": 2,
+      "vol_f1_enabled": true,
+      "vol_f1_pct": 79.172,
+      "vol_f1_surge": 2.627,
+      "vol_f2_cvd_spike": 1.024,
+      "vol_f2_enabled": false,
+      "vol_f2_gap": 1.959,
+      "vol_window": 31,
+      "rl_epsilon_long": 0.048
+    },
+    "sell": {
+      "d0": 0.117,
+      "d_min": 0.003,
+      "hysteresis": 0.002,
+      "p_target": 0.014,
+      "rl_short_threshold_opt": 2,
+      "tsl_exponent": 1.101,
+      "vol_f3_enabled": false,
+      "vol_f3_fade": 0.254,
+      "vol_f3_peak": 5.359,
+      "rl_epsilon_short": 0.549
+    }
+  },
+  "ft_stratparam_v": 1,
+  "export_time": "2026-03-22 17:01:38.026460+00:00"
+}

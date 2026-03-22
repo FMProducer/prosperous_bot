@@ -140,8 +140,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.02, 0.75, default=0.05, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.7, 1.0, default=0.5, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.04, 0.06, default=0.048, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.4, 0.6, default=0.549, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
