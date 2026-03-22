@@ -27,7 +27,7 @@ freqtrade trade --config user_data/config_rl.json --strategy CustomD3QNStrategy 
 freqtrade trade --config user_data/config_rl4.json --strategy CustomD3QNStrategy4 --userdir user_data
 
 
-
+.\.venv\Scripts\activate
 cd C:\Python\Prosperous_Bot\third_party\rl-trading-binance
 freqtrade trade --config user_data/config_rl4z.json --strategy CustomD3QNStrategy4z --userdir user_data --logfile user_data/logs/freqtrade.log
 
