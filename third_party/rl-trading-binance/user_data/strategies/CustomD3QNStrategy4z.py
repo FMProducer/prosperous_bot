@@ -128,7 +128,7 @@ class CustomD3QNStrategy4z(IStrategy):
     global_ema_timeframe = CategoricalParameter(['1m', '5m', '15m', '30m', '1h', '2h', '4h'], default='1h', space='buy', optimize=False, load=False)
 
     # Быстрый EMA фильтр (для локального режима, оптимизируемый)
-    ema_fast_period = IntParameter(5, 25, default=13, space='buy', optimize=False, load=False)
+    ema_fast_period = IntParameter(10, 15, default=12, space='buy', optimize=False, load=False)
 
     # EMA фильтр (для глобального режима BTC, ручной)
     global_ema_period = IntParameter(5, 60, default=42, space='buy', optimize=False, load=False)
@@ -140,16 +140,21 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ
-    rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.487, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.929, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.01, 1.0, default=0.55, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.01, 1.0, default=0.8, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
     cvd_window = IntParameter(30, 100, default=83, space='buy', optimize=False, load=False)
 
+    # --- TOGGLES FOR VOLUME FILTERS (Enable/Disable individually) ---
+    vol_f1_enabled = CategoricalParameter([True, False], default=False, space='buy', optimize=False, load=False)
+    vol_f2_enabled = CategoricalParameter([True, False], default=False, space='buy', optimize=False, load=False)
+    vol_f3_enabled = CategoricalParameter([True, False], default=False, space='sell', optimize=False, load=False)
+
     # --- EXPANDED VOLUME FILTERS (Wider Ranges for Early Entry) --- # Мы начинаем поиск с 1.1 (чуть выше нормы), чтобы поймать импульс в зародыше
-    vol_f1_surge = DecimalParameter(1.05, 3.0, default=2.307, space='buy', optimize=False, load=False)
-    vol_f1_pct = DecimalParameter(51.0, 75.0, default=67.877, space='buy', optimize=False, load=False)
+    vol_f1_surge = DecimalParameter(1.05, 3.0, default=2.627, space='buy', optimize=False, load=False)
+    vol_f1_pct = DecimalParameter(51.0, 80.0, default=79.172, space='buy', optimize=False, load=False)
 
     vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.024, space='buy', optimize=False, load=False)
     vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.959, space='buy', optimize=False, load=False)
@@ -223,7 +228,32 @@ class CustomD3QNStrategy4z(IStrategy):
             self.rl_epsilon_short.value = float(config['rl_ensemble']['epsilon_threshold_short'])
             logger.info(f"[CONFIG] rl_epsilon_short overridden from config: {self.rl_epsilon_short.value}")
 
-        # --- LOGGING FILTERS ---
+        # --- LOAD VOLUME FILTER SETTINGS FROM CONFIG ---
+        rl_ens = config.get('rl_ensemble', {})
+        if 'vol_f1_enabled' in rl_ens:
+            self.vol_f1_enabled.value = bool(rl_ens['vol_f1_enabled'])
+        if 'vol_f2_enabled' in rl_ens:
+            self.vol_f2_enabled.value = bool(rl_ens['vol_f2_enabled'])
+        if 'vol_f3_enabled' in rl_ens:
+            self.vol_f3_enabled.value = bool(rl_ens['vol_f3_enabled'])
+            
+        if 'vol_window' in rl_ens:
+            self.vol_window.value = int(rl_ens['vol_window'])
+        if 'cvd_window' in rl_ens:
+            self.cvd_window.value = int(rl_ens['cvd_window'])
+            
+        if 'vol_f1_surge' in rl_ens: self.vol_f1_surge.value = float(rl_ens['vol_f1_surge'])
+        if 'vol_f1_pct' in rl_ens: self.vol_f1_pct.value = float(rl_ens['vol_f1_pct'])
+        if 'vol_f2_cvd_spike' in rl_ens: self.vol_f2_cvd_spike.value = float(rl_ens['vol_f2_cvd_spike'])
+        if 'vol_f2_gap' in rl_ens: self.vol_f2_gap.value = float(rl_ens['vol_f2_gap'])
+        if 'vol_f3_peak' in rl_ens: self.vol_f3_peak.value = float(rl_ens['vol_f3_peak'])
+        if 'vol_f3_fade' in rl_ens: self.vol_f3_fade.value = float(rl_ens['vol_f3_fade'])
+
+        # --- LOGGING FILTERS STATUS ---
+        logger.info(f"[CONFIG] Volume Filter F1 (Surge): {'ENABLED' if self.vol_f1_enabled.value else 'DISABLED'}")
+        logger.info(f"[CONFIG] Volume Filter F2 (CVD): {'ENABLED' if self.vol_f2_enabled.value else 'DISABLED'}")
+        logger.info(f"[CONFIG] Volume Filter F3 (Exit): {'ENABLED' if self.vol_f3_enabled.value else 'DISABLED'}")
+
         # Убираем спам о отмене стоплосса
         def filter_stoploss_cancel(record):
             msg = record.getMessage()
@@ -1881,8 +1911,16 @@ class CustomD3QNStrategy4z(IStrategy):
 
             # Intersection: RL Signal + Filter 1 + Filter 2
             # Если фильтры слишком жесткие для текущей фазы тестов, можно закомментировать f2
-            raw_enter_long = raw_enter_long & f1_long & f2_long
-            raw_enter_short = raw_enter_short & f1_short & f2_short
+            
+            # Apply Filter 1 (Surge) if enabled
+            if self.vol_f1_enabled.value:
+                raw_enter_long = raw_enter_long & f1_long
+                raw_enter_short = raw_enter_short & f1_short
+            
+            # Apply Filter 2 (CVD) if enabled
+            if self.vol_f2_enabled.value:
+                raw_enter_long = raw_enter_long & f2_long
+                raw_enter_short = raw_enter_short & f2_short
 
             # --- LOGGING FILTERED SIGNALS ---
             if not is_backtest:
@@ -1938,6 +1976,9 @@ class CustomD3QNStrategy4z(IStrategy):
         Фильтр 3: Climax reversal (Vol peak + divergence)
         Используется исключительно для закрытия позиций при кульминации тренда.
         """
+        if not self.vol_f3_enabled.value:
+            return dataframe
+
         if dataframe.empty or 'surge_ratio' not in dataframe.columns:
             return dataframe
 

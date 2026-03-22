@@ -44,7 +44,7 @@
         "*": 5
     },
     "order_types": {
-        "entry": "market",
+        "entry": "limit",
         "exit": "market",
         "emergency_exit": "market",
         "force_exit": "market",
@@ -54,7 +54,7 @@
         "stoploss_price_type": "mark"
     },
     "entry_pricing": {
-        "price_side": "other",
+        "price_side": "same",
         "use_order_book": true,
         "order_book_top": 1,
         "price_last_balance": 0.0,
@@ -77,28 +77,39 @@
         },
         "use_global_regime_filter": false,
         "use_local_regime_filter": true,
-        "enable_dynamic_epsilon": true,
-        "min_epsilon": 0.02,
-        "epsilon_threshold_long": 0.02,
+        "vol_f1_enabled": true,
+        "vol_f2_enabled": false,
+        "vol_f3_enabled": false,
+        "vol_window": 31,
+        "cvd_window": 83,
+        "vol_f1_surge": 2.627,
+        "vol_f1_pct": 79.172,
+        "vol_f2_cvd_spike": 1.024,
+        "vol_f2_gap": 1.959,
+        "vol_f3_peak": 5.359,
+        "vol_f3_fade": 0.254,
+        "enable_dynamic_epsilon": false,
+        "min_epsilon": 0.55,
+        "epsilon_threshold_long": 0.55,
         "epsilon_threshold_short": 0.8,
         "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 4.7e-05,
-                "q_max": 0.003248
+                "q_min": 8e-05,
+                "q_max": 0.003205
             },
             "long_2": {
-                "q_min": 0.000179,
-                "q_max": 0.000439
+                "q_min": 0.000335,
+                "q_max": 0.000428
             },
             "short_1": {
-                "q_min": 0.000194,
-                "q_max": 0.000592
+                "q_min": 5.3e-05,
+                "q_max": 0.000553
             },
             "short_2": {
-                "q_min": 0.000265,
-                "q_max": 0.0007
+                "q_min": 7.1e-05,
+                "q_max": 0.000701
             }
         }
     },
