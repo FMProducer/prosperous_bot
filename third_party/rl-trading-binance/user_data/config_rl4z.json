@@ -90,8 +90,8 @@
         "vol_f3_fade": 0.254,
         "enable_dynamic_epsilon": false,
         "min_epsilon": 0.209,
-        "epsilon_threshold_long": 0.209,
-        "epsilon_threshold_short": 0.743,
+        "epsilon_threshold_long": 0.05,
+        "epsilon_threshold_short": 0.5,
         "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {

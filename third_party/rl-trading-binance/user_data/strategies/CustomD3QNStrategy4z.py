@@ -140,8 +140,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.02, 0.75, default=0.209, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.7, 1.0, default=0.743, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.02, 0.75, default=0.05, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.7, 1.0, default=0.5, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
@@ -1348,8 +1348,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 self.logger.warning(f"[WARNING] Degenerate Q stats for {name}, excluding zombie model.")
                 return 0, False, 0.0
 
-            if adv <= q_min:
-                return 0, True, 0.0
+            # [FIXED] Redundant "if adv <= q_min:" check removed. The full threshold calculation below now correctly uses epsilon.
 
             # Раздельный epsilon по направлению
             if name.startswith("long_"):
@@ -1681,33 +1680,36 @@ class CustomD3QNStrategy4z(IStrategy):
 
         def get_action_with_threshold(name: str, target_action: Optional[int] = None):
             if q_values is None or name not in q_values:
-                return np.zeros(batch_size, dtype=int), np.zeros(batch_size), 0.0
-            
-            # Берем порог из нормализации, так как глобального больше нет
-            q_min = self.q_normalization.get(name, {}).get('q_min', 0.0)
-            
-            q = q_values[name]  # type: ignore
-            
-            if target_action is not None:
-                # Forced check for specific action (Strict Mode)
-                advantage = q[:, target_action] - q[:, 0]
-                final_actions = np.where(advantage > q_min, target_action, 0)
-            else:
-                # Argmax check (Legacy/Flexible Mode)
-                actions = np.argmax(q, axis=1)
-                # Advantage = Q(Selected) - Q(Hold)
-                advantage = q[np.arange(len(q)), actions] - q[:, 0]
-                final_actions = np.where(advantage > q_min, actions, 0)
-                
-            return final_actions, advantage, q_min
+                return np.zeros(batch_size, dtype=int), np.zeros(batch_size)
 
-        action_long_1, adv_long_1, th_l1 = get_action_with_threshold("long_1", target_action=1)
-        action_long_2, adv_long_2, th_l2 = get_action_with_threshold("long_2", target_action=1)
+            q = q_values[name]
+            advantage = q[:, target_action] - q[:, 0] if target_action is not None else np.zeros(batch_size)
+            
+            # --- CORRECTED LOGIC ---
+            cfg = self.q_normalization.get(name, {})
+            q_min_val = cfg.get('q_min', 0.0)
+            q_max_val = cfg.get('q_max', q_min_val)
+
+            if name.startswith("long_"):
+                eps_eff = self.epsilon_threshold_eff_long
+            else:
+                eps_eff = self.epsilon_threshold_eff_short
+            
+            # Calculate the threshold correctly using epsilon
+            thr = q_min_val + (q_max_val - q_min_val) * eps_eff if q_max_val > q_min_val else q_min_val
+
+            final_actions = np.where(advantage > thr, target_action, 0)
+            # --- END CORRECTED LOGIC ---
+
+            return final_actions, advantage
+
+        action_long_1, adv_long_1 = get_action_with_threshold("long_1", target_action=1)
+        action_long_2, adv_long_2 = get_action_with_threshold("long_2", target_action=1)
         
         # Mirror mode models (and all models in config trained as SHORT) 
         # use index 1 for their primary 'ENTRY' action
-        action_short_1, adv_short_1, th_s1 = get_action_with_threshold("short_1", target_action=1)
-        action_short_2, adv_short_2, th_s2 = get_action_with_threshold("short_2", target_action=1)
+        action_short_1, adv_short_1 = get_action_with_threshold("short_1", target_action=1)
+        action_short_2, adv_short_2 = get_action_with_threshold("short_2", target_action=1)
 
         # --- СБОР СТАТИСТИКИ ДЛЯ АВТОПОДБОРА ---
         if self.config.get('runmode') in ['live', 'dry_run']:
@@ -1862,11 +1864,11 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 1. Create Vote Matrices (Boolean Arrays converted to Int)
         # Using arrays derived from get_action_with_threshold
-        v_l1 = (adv_long_1 > th_l1).astype(np.int8) if self.enable_long_1 else np.zeros(n_predictions, dtype=np.int8)
-        v_l2 = (adv_long_2 > th_l2).astype(np.int8) if self.enable_long_2 else np.zeros(n_predictions, dtype=np.int8)
+        v_l1 = action_long_1.astype(np.int8) if self.enable_long_1 else np.zeros(n_predictions, dtype=np.int8)
+        v_l2 = action_long_2.astype(np.int8) if self.enable_long_2 else np.zeros(n_predictions, dtype=np.int8)
 
-        v_s1 = (adv_short_1 > th_s1).astype(np.int8) if self.enable_short_1 else np.zeros(n_predictions, dtype=np.int8)
-        v_s2 = (adv_short_2 > th_s2).astype(np.int8) if self.enable_short_2 else np.zeros(n_predictions, dtype=np.int8)
+        v_s1 = action_short_1.astype(np.int8) if self.enable_short_1 else np.zeros(n_predictions, dtype=np.int8)
+        v_s2 = action_short_2.astype(np.int8) if self.enable_short_2 else np.zeros(n_predictions, dtype=np.int8)
 
         votes_long = v_l1 + v_l2
         votes_short = v_s1 + v_s2
