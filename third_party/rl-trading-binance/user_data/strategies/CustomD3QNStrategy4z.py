@@ -144,8 +144,8 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_epsilon_short = DecimalParameter(0.4, 0.6, default=0.549, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
-    vol_window = IntParameter(10, 50, default=31, space='buy', optimize=False, load=False)
-    cvd_window = IntParameter(30, 100, default=83, space='buy', optimize=False, load=False)
+    vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
+    cvd_window = IntParameter(75, 90, default=83, space='buy', optimize=False, load=False)
 
     # --- TOGGLES FOR VOLUME FILTERS (Enable/Disable individually) ---
     vol_f1_enabled = CategoricalParameter([True, False], default=False, space='buy', optimize=False, load=False)
@@ -160,8 +160,8 @@ class CustomD3QNStrategy4z(IStrategy):
     vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.959, space='buy', optimize=False, load=False)
 
     # --- EXIT CLIMAX (More aggressive) ---
-    vol_f3_peak = DecimalParameter(2.5, 6.0, default=5.359, space='sell', optimize=False, load=False)
-    vol_f3_fade = DecimalParameter(0.1, 0.6, default=0.254, space='sell', optimize=False, load=False)
+    vol_f3_peak = DecimalParameter(4.5, 6.0, default=5.857, space='sell', optimize=False, load=False)
+    vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
