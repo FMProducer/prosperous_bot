@@ -25,6 +25,11 @@
         "update_interval_sec": 60,
         "aggression_factor": 1.5
     },
+    "telegram": {
+        "enabled": true,
+        "token": "",
+        "chat_id": ""
+    },
     "api_server": {
         "enabled": true,
         "listen_ip_address": "127.0.0.1",
@@ -96,20 +101,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6e-05,
-                "q_max": 0.003151
+                "q_min": 3.7e-05,
+                "q_max": 0.003128
             },
             "long_2": {
-                "q_min": 0.00034,
-                "q_max": 0.000436
+                "q_min": 7.5e-05,
+                "q_max": 0.000415
             },
             "short_1": {
-                "q_min": 6.5e-05,
-                "q_max": 0.00058
+                "q_min": 0.000235,
+                "q_max": 0.00059
             },
             "short_2": {
-                "q_min": 0.000266,
-                "q_max": 0.000719
+                "q_min": 0.000372,
+                "q_max": 0.000727
             }
         }
     },

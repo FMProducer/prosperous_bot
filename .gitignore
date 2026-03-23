@@ -211,3 +211,5 @@ third_party/rl-trading-binance/backends/postgres_ws/schema.sql
 third_party/rl-trading-binance/backends/postgres_ws/start_postgres_ws.bat
 third_party/rl-trading-binance/user_data/secrets.json
 third_party/rl-trading-binance RUN.txt
+third_party/rl-trading-binance/ROADMAP.md
+third_party/rl-trading-binance/progress.md
