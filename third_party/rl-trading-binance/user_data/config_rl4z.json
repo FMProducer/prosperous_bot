@@ -95,26 +95,26 @@
         "vol_f3_fade": 0.276,
         "enable_dynamic_epsilon": false,
         "min_epsilon": 0.209,
-        "epsilon_threshold_long": 0.048,
-        "epsilon_threshold_short": 0.549,
+        "epsilon_threshold_long": 0.042,
+        "epsilon_threshold_short": 0.463,
         "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 3.7e-05,
-                "q_max": 0.003128
+                "q_min": 1.9e-05,
+                "q_max": 0.001598
             },
             "long_2": {
-                "q_min": 7.5e-05,
-                "q_max": 0.000415
+                "q_min": 7.8e-05,
+                "q_max": 0.00042
             },
             "short_1": {
-                "q_min": 0.000235,
-                "q_max": 0.00059
+                "q_min": 0.000271,
+                "q_max": 0.000575
             },
             "short_2": {
-                "q_min": 0.000372,
-                "q_max": 0.000727
+                "q_min": 0.000375,
+                "q_max": 0.000747
             }
         }
     },

@@ -100,6 +100,12 @@ class CustomD3QNStrategy4z(IStrategy):
     informative_timeframe_global = '1m'
     
     minimal_roi = {"0": 100}
+    minimal_roi = {
+        "0": 0.031,
+        "4": 0.022,
+        "8": 0.013,
+        "30": 0
+    }
     stoploss = -0.99  # Заглушка, работает custom_stoploss
     trailing_stop = False
     use_custom_stoploss = True
@@ -112,13 +118,13 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.02, 0.13, default=0.117, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.02, 0.13, default=0.023, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.003, space='sell', optimize=False, load=False)
     hysteresis = DecimalParameter(0.001, 0.01, default=0.002, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.005, 0.03, default=0.014, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.03, default=0.021, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.101, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.103, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -140,8 +146,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.04, 0.06, default=0.048, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.4, 0.6, default=0.549, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.04, 0.06, default=0.042, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.4, 0.6, default=0.463, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
@@ -220,13 +226,13 @@ class CustomD3QNStrategy4z(IStrategy):
             logger.info(f"[CONFIG] dd_aggression_k overridden from config: {self.dd_aggression_k.value}")
             
         # Загрузка Epsilon из конфига (Fix для приоритета конфига над дефолтными значениями 0.48)
-        if 'epsilon_threshold_long' in config.get('rl_ensemble', {}):
-            self.rl_epsilon_long.value = float(config['rl_ensemble']['epsilon_threshold_long'])
-            logger.info(f"[CONFIG] rl_epsilon_long overridden from config: {self.rl_epsilon_long.value}")
+        # if 'epsilon_threshold_long' in config.get('rl_ensemble', {}):
+        #     self.rl_epsilon_long.value = float(config['rl_ensemble']['epsilon_threshold_long'])
+        #     logger.info(f"[CONFIG] rl_epsilon_long overridden from config: {self.rl_epsilon_long.value}")
 
-        if 'epsilon_threshold_short' in config.get('rl_ensemble', {}):
-            self.rl_epsilon_short.value = float(config['rl_ensemble']['epsilon_threshold_short'])
-            logger.info(f"[CONFIG] rl_epsilon_short overridden from config: {self.rl_epsilon_short.value}")
+        # if 'epsilon_threshold_short' in config.get('rl_ensemble', {}):
+        #     self.rl_epsilon_short.value = float(config['rl_ensemble']['epsilon_threshold_short'])
+        #     logger.info(f"[CONFIG] rl_epsilon_short overridden from config: {self.rl_epsilon_short.value}")
 
         # --- LOAD VOLUME FILTER SETTINGS FROM CONFIG ---
         rl_ens = config.get('rl_ensemble', {})
