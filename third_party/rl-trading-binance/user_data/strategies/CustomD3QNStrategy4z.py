@@ -118,26 +118,26 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.02, 0.13, default=0.023, space='sell', optimize=False, load=False)
-    d_min = DecimalParameter(0.0005, 0.005, default=0.003, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.01, default=0.002, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.005, 0.03, default=0.021, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.07, 0.15, default=0.12, space='sell', optimize=False, load=False)
+    d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.005, default=0.003, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.007, 0.015, default=0.012, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.9, 1.3, default=1.103, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.95, 1.2, default=0.989, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
     rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=False, load=False)
 
-    # Оптимизируемый таймфрейм для глобального режима
-    global_ema_timeframe = CategoricalParameter(['1m', '5m', '15m', '30m', '1h', '2h', '4h'], default='1h', space='buy', optimize=False, load=False)
+    # Оптимизируемый таймфрейм для глобального режима (теперь локальный старший ТФ)
+    global_ema_timeframe = CategoricalParameter(['1m', '3m', '5m', '15m', '30m', '1h'], default='1m', space='buy', optimize=False, load=False)
 
     # Быстрый EMA фильтр (для локального режима, оптимизируемый)
     ema_fast_period = IntParameter(10, 15, default=12, space='buy', optimize=False, load=False)
 
-    # EMA фильтр (для глобального режима BTC, ручной)
-    global_ema_period = IntParameter(5, 60, default=42, space='buy', optimize=False, load=False)
+    # EMA фильтр (для глобального режима, теперь на старшем ТФ, ручной)
+    global_ema_period = IntParameter(5, 60, default=90, space='buy', optimize=False, load=False)
 
     # Фильтр по объему (Фокус на ликвидности)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
@@ -146,8 +146,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.04, 0.06, default=0.042, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.4, 0.6, default=0.463, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.02, 0.06, default=0.03, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.3, 0.7, default=0.545, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
@@ -781,7 +781,7 @@ class CustomD3QNStrategy4z(IStrategy):
             dataframe['ema_fast'] = dataframe['close'].ewm(span=ema_period, adjust=False).mean()
             dataframe['st_regime_local'] = np.where(dataframe['close'] > dataframe['ema_fast'], 1, -1)
 
-            # --- GLOBAL REGIME (BTC 1m/15m - для Дашборда) ---
+            # --- GLOBAL REGIME (Current Pair Higher TF) ---
             try:
                 # Используем информативный таймфрейм из параметра
                 inf_tf_global = self.informative_timeframe_global
@@ -789,15 +789,22 @@ class CustomD3QNStrategy4z(IStrategy):
                 # Используем глобальный период EMA
                 global_ema_p = int(self.global_ema_period.value)
 
-                btc_df = self.dp.get_pair_dataframe('BTC/USDT:USDT', inf_tf_global)
-                if btc_df is not None and not btc_df.empty:
-                    # Рассчитываем EMA для Биткоина
-                    btc_df['ema_btc'] = btc_df['close'].ewm(span=global_ema_p, adjust=False).mean()
+                # Теперь используем ТЕКУЩУЮ ПАРУ вместо BTC
+                pair_name = metadata['pair']
+                higher_tf_df = self.dp.get_pair_dataframe(pair_name, inf_tf_global)
+                
+                if higher_tf_df is not None and not higher_tf_df.empty:
+                    # Рассчитываем EMA для текущей пары на старшем таймфрейме
+                    higher_tf_df['ema_higher'] = higher_tf_df['close'].ewm(span=global_ema_p, adjust=False).mean()
                     
                     # Создаем временный DF для мерджа
-                    merge_df = btc_df[['date']].copy()
-                    merge_df['st_regime_global'] = np.where(btc_df['close'] > btc_df['ema_btc'], 1, -1)
+                    merge_df = higher_tf_df[['date']].copy()
+                    merge_df['st_regime_global'] = np.where(higher_tf_df['close'] > higher_tf_df['ema_higher'], 1, -1)
                     
+                    # Debug print (только для первой пары, чтобы не спамить)
+                    if metadata['pair'] == self.dp.current_whitelist()[0]:
+                        print(f"DEBUG: Calculated Global Regime for {metadata['pair']} on {inf_tf_global}. Rows: {len(merge_df)}")
+
                     # Динамическая подстройка TZ
                     main_tz = dataframe['date'].dt.tz
                     if merge_df['date'].dt.tz != main_tz:
@@ -815,20 +822,19 @@ class CustomD3QNStrategy4z(IStrategy):
                         self.timeframe, inf_tf_global, ffill=True
                     )
                     
-                    # Извлекаем из колонки с суффиксом (напр. st_regime_global_1m)
+                    # Извлекаем из колонки с суффиксом (напр. st_regime_global_15m)
                     inf_col = f"st_regime_global_{inf_tf_global}"
                     if inf_col in dataframe.columns:
                         dataframe['st_regime_global'] = dataframe[inf_col].fillna(0).astype(np.int8)
             except Exception as e:
-                self.logger.warning(f"Global regime (BTC EMA) calculation failed: {e}")
+                self.logger.warning(f"Global regime ({metadata['pair']} EMA {inf_tf_global}) calculation failed: {e}")
 
         return dataframe
 
     def informative_pairs(self):
         """
         Информативные пары:
-        1. Все пары из whitelist на таймфрейме 15m (локальный режим)
-        2. BTC/USDT на таймфрейме 1h (глобальный режим)
+        1. Все пары из whitelist на старшем таймфрейме (для "глобального" фильтра)
         """
         pairs: List[Any] = []
         if hasattr(self, 'dp') and getattr(self, 'dp', None) is not None:
@@ -840,13 +846,15 @@ class CustomD3QNStrategy4z(IStrategy):
         if not pairs:
             pairs = self.config.get('exchange', {}).get('pair_whitelist', [])
 
-        # Формируем список: (pair, 15m) для всех
-        info_list = [(pair, self.informative_timeframe) for pair in pairs]
+        # Формируем список: (pair, global_ema_timeframe) для всех пар в whitelist
+        # Это нужно, чтобы в populate_indicators был доступен старший ТФ для каждой пары
+        inf_tf_global = self.informative_timeframe_global
+        info_list = [(pair, inf_tf_global) for pair in pairs]
         
-        # Добавляем принудительно BTC на 15m для глобального режима
-        btc_global = ('BTC/USDT:USDT', self.informative_timeframe_global)
-        if btc_global not in info_list:
-            info_list.append(btc_global)
+        # BTC/USDT всегда полезен, добавляем его если его нет (хотя он обычно в whitelist)
+        btc_pair = 'BTC/USDT:USDT'
+        if not any(p == btc_pair for p, tf in info_list):
+            info_list.append((btc_pair, inf_tf_global))
             
         return info_list
     

@@ -1,7 +1,6 @@
             "FLOW/USDT:USDT",
             "ARKM/USDT:USDT",
             "ONT/USDT:USDT",
-            "CRV/USDT:USDT",
             "W/USDT:USDT",
             "1000SHIB/USDT:USDT",
             "OP/USDT:USDT",
@@ -16,5 +15,14 @@
             "ROSE/USDT:USDT",
             "XTZ/USDT:USDT",
             "JASMY/USDT:USDT",
-            "CELO/USDT:USDT",
-            "DYDX/USDT:USDT"
+            "CELO/USDT:USDT"
+
+
+            "FLOW/USDT:USDT",
+            "1000SHIB/USDT:USDT",
+            "VET/USDT:USDT",
+            "MANA/USDT:USDT",
+            "CAKE/USDT:USDT",
+            "GRT/USDT:USDT",
+            "SEI/USDT:USDT",
+            "CELO/USDT:USDT"

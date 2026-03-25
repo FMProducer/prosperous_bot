@@ -76,8 +76,9 @@
             "short_1": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217",
             "short_2": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
         },
-        "use_global_regime_filter": false,
+        "use_global_regime_filter": true,
         "use_local_regime_filter": true,
+
         "vol_f1_enabled": true,
         "vol_f2_enabled": false,
         "vol_f3_enabled": false,
@@ -131,7 +132,6 @@
             "FLOW/USDT:USDT",
             "ARKM/USDT:USDT",
             "ONT/USDT:USDT",
-            "CRV/USDT:USDT",
             "W/USDT:USDT",
             "1000SHIB/USDT:USDT",
             "OP/USDT:USDT",
@@ -146,8 +146,7 @@
             "ROSE/USDT:USDT",
             "XTZ/USDT:USDT",
             "JASMY/USDT:USDT",
-            "CELO/USDT:USDT",
-            "DYDX/USDT:USDT"
+            "CELO/USDT:USDT"
         ],
         "pair_blacklist": [
             "USDC/USDT:USDT",

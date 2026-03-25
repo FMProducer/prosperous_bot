@@ -1,6 +1,9 @@
 # Progress Report: RL Trading System Optimization
 
 ## Completed Tasks
+- [x] Refactor EMA filters: Global filter is now per-ticker on a higher timeframe (3m, 5m, 15m).
+- [x] Maintain BTC EMA visualization in dashboards by keeping indicator names.
+- [x] Update `informative_pairs` to support multi-timeframe data for all whitelist tickers.
 
 ### 1. Lookahead Bias Fixes (Critical)
 - **Safe Rate Retrieval**: Implemented `calculate_current_price` in `CustomD3QNStrategy4z.py` to ensure that in backtest mode, only data up to the current candle is used for profit calculations.
@@ -84,6 +87,12 @@
     - Реализовано проксирование через `LiteLLM` для подключения бесплатных и мощных моделей с **OpenRouter** (Qwen 2.5 Coder, DeepSeek, Stepfun).
     - Настроено маскирование моделей в `settings.json`, что позволило использовать сторонние LLM внутри официального интерфейса Claude.
     - Исправлены ошибки несовместимости параметров (`reasoning_effort`, `drop_params`) и аутентификации.
+
+### 14. Mobile Monitoring & Remote Access
+- **ZeroTier Virtual Network**: Established a private, encrypted P2P network to bypass ISP-level NAT (Beeline) and dynamic IP issues.
+- **Cross-Platform Connectivity**: Successfully linked Windows (Trading Server) and Android (Mobile Client) with authenticated managed IPs.
+- **FreqDroid Integration**: Configured the FreqDroid mobile app for real-time monitoring and emergency trade management.
+- **Firewall Stabilization**: Applied custom Windows Defender Firewall rules for TCP Port 8080 to ensure seamless API access from the ZeroTier subnet.
 
 ## Part 2: Performance & Stability Refactoring
 
