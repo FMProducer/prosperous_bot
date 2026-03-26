@@ -118,10 +118,10 @@ class CustomD3QNStrategy4z(IStrategy):
     }
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.07, 0.15, default=0.12, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.07, 0.15, default=1.0, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
     hysteresis = DecimalParameter(0.001, 0.005, default=0.003, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.007, 0.015, default=0.012, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.007, 0.015, default=0.09, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
     tsl_exponent = DecimalParameter(0.95, 1.2, default=0.989, space='sell', optimize=False, load=False)
@@ -146,8 +146,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.02, 0.06, default=0.03, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.3, 0.7, default=0.545, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.001, 0.02, default=0.001, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.95, 1.0, default=0.98, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
@@ -187,12 +187,11 @@ class CustomD3QNStrategy4z(IStrategy):
         super().__init__(config)  # type: ignore
         
         # --- STAGE 3: SECURITY (Environment Variables) ---
-        # Load .env file explicitly
         if load_dotenv:
             env_path = project_root / '.env'
             load_dotenv(dotenv_path=env_path)
 
-        # Override sensitive data from environment variables if they exist
+        # Override sensitive data from environment variables
         if os.environ.get('FT_PASSWORD'):
             self.config.get('api_server', {})['password'] = os.environ.get('FT_PASSWORD')
         if os.environ.get('FT_JWT_SECRET'):
@@ -202,51 +201,59 @@ class CustomD3QNStrategy4z(IStrategy):
         if os.environ.get('EXCHANGE_SECRET'):
             self.config.get('exchange', {})['secret'] = os.environ.get('EXCHANGE_SECRET')
 
-        # --- GLOBAL REGIME TIMEFRAME from HYPEROPT / Config ---
+        # --- 1. ПАРАМЕТРЫ ПРАВИЛ ТОРГОВЛИ ---
+        if 'stoploss' in config:
+            self.stoploss = config['stoploss']
+        if 'minimal_roi' in config:
+            self.minimal_roi = config['minimal_roi']
+        if 'trailing_stop' in config:
+            self.trailing_stop = config['trailing_stop']
+        if 'use_custom_stoploss' in config:
+            self.use_custom_stoploss = config['use_custom_stoploss']
+
+        # --- 2. ПАРАМЕТРЫ TSL (ОБНОВЛЕНИЕ ЧЕРЕЗ КОНФИГ) ---
+        rl_tsl = config.get('rl_tsl', {})
+        if 'd0' in rl_tsl: self.d0.value = float(rl_tsl['d0'])
+        if 'd_min' in rl_tsl: self.d_min.value = float(rl_tsl['d_min'])
+        if 'hysteresis' in rl_tsl: self.hysteresis.value = float(rl_tsl['hysteresis'])
+        if 'p_target' in rl_tsl: self.p_target.value = float(rl_tsl['p_target'])
+        if 'tsl_exponent' in rl_tsl: self.tsl_exponent.value = float(rl_tsl['tsl_exponent'])
+
+        # --- 3. ГОЛОСОВАНИЕ И ПОРОГИ (VOTING) ---
+        if 'rl_long_threshold' in config: self.rl_long_threshold_opt.value = int(config['rl_long_threshold'])
+        if 'rl_short_threshold' in config: self.rl_short_threshold_opt.value = int(config['rl_short_threshold'])
+        
+        # Epsilon (Thresholds)
+        rl_ens = config.get('rl_ensemble', {})
+        if 'epsilon_threshold_long' in rl_ens: self.rl_epsilon_long.value = float(rl_ens['epsilon_threshold_long'])
+        if 'epsilon_threshold_short' in rl_ens: self.rl_epsilon_short.value = float(rl_ens['epsilon_threshold_short'])
+
+        # --- 4. РЕЖИМЫ И EMA (REGIME) ---
+        rl_regime = config.get('rl_regime', {})
+        if 'global_ema_timeframe' in rl_regime: self.global_ema_timeframe.value = str(rl_regime['global_ema_timeframe'])
+        if 'ema_fast_period' in rl_regime: self.ema_fast_period.value = int(rl_regime['ema_fast_period'])
+        if 'global_ema_period' in rl_regime: self.global_ema_period.value = int(rl_regime['global_ema_period'])
+
         if hasattr(self, 'global_ema_timeframe'):
             self.informative_timeframe_global = self.global_ema_timeframe.value
             
         # Принудительно включаем шорты
-        self.can_short = True
+        self.can_short = config.get('can_short', True)
         
         # --- PERFORMANCE OPTIMIZATION: GLOBAL REGIME CACHE ---
-        # Кэш для хранения результатов расчета индикаторов на информативных таймфреймах (BTC 1h)
-        # Ключ: (timeframe, last_candle_timestamp), Значение: готовый DataFrame с индикаторами
         self._global_regime_cache = {}
         self._global_regime_lock = threading.Lock()
         
-        # Override min_quote_volume_usd from config if present
+        # --- 5. ФИЛЬТРЫ ОБЪЕМА (VOLUME) ---
         if 'min_quote_volume_usd' in config:
             self.min_quote_volume_usd.value = float(config['min_quote_volume_usd'])
-            logger.info(f"[CONFIG] min_quote_volume_usd overridden from config: {self.min_quote_volume_usd.value}")
         
-        # Загрузка dd_aggression_k из конфига, если он там есть
-        if 'dd_aggression_k' in config.get('rl_ensemble', {}):
-            self.dd_aggression_k.value = float(config['rl_ensemble']['dd_aggression_k'])
-            logger.info(f"[CONFIG] dd_aggression_k overridden from config: {self.dd_aggression_k.value}")
+        if 'vol_f1_enabled' in rl_ens: self.vol_f1_enabled.value = bool(rl_ens['vol_f1_enabled'])
+        if 'vol_f2_enabled' in rl_ens: self.vol_f2_enabled.value = bool(rl_ens['vol_f2_enabled'])
+        if 'vol_f3_enabled' in rl_ens: self.vol_f3_enabled.value = bool(rl_ens['vol_f3_enabled'])
             
-        # Загрузка Epsilon из конфига (Fix для приоритета конфига над дефолтными значениями 0.48)
-        # if 'epsilon_threshold_long' in config.get('rl_ensemble', {}):
-        #     self.rl_epsilon_long.value = float(config['rl_ensemble']['epsilon_threshold_long'])
-        #     logger.info(f"[CONFIG] rl_epsilon_long overridden from config: {self.rl_epsilon_long.value}")
-
-        # if 'epsilon_threshold_short' in config.get('rl_ensemble', {}):
-        #     self.rl_epsilon_short.value = float(config['rl_ensemble']['epsilon_threshold_short'])
-        #     logger.info(f"[CONFIG] rl_epsilon_short overridden from config: {self.rl_epsilon_short.value}")
-
-        # --- LOAD VOLUME FILTER SETTINGS FROM CONFIG ---
-        rl_ens = config.get('rl_ensemble', {})
-        if 'vol_f1_enabled' in rl_ens:
-            self.vol_f1_enabled.value = bool(rl_ens['vol_f1_enabled'])
-        if 'vol_f2_enabled' in rl_ens:
-            self.vol_f2_enabled.value = bool(rl_ens['vol_f2_enabled'])
-        if 'vol_f3_enabled' in rl_ens:
-            self.vol_f3_enabled.value = bool(rl_ens['vol_f3_enabled'])
-            
-        if 'vol_window' in rl_ens:
-            self.vol_window.value = int(rl_ens['vol_window'])
-        if 'cvd_window' in rl_ens:
-            self.cvd_window.value = int(rl_ens['cvd_window'])
+        if 'vol_window' in rl_ens: self.vol_window.value = int(rl_ens['vol_window'])
+        if 'cvd_window' in rl_ens: self.cvd_window.value = int(rl_ens['cvd_window'])
             
         if 'vol_f1_surge' in rl_ens: self.vol_f1_surge.value = float(rl_ens['vol_f1_surge'])
         if 'vol_f1_pct' in rl_ens: self.vol_f1_pct.value = float(rl_ens['vol_f1_pct'])
@@ -255,10 +262,16 @@ class CustomD3QNStrategy4z(IStrategy):
         if 'vol_f3_peak' in rl_ens: self.vol_f3_peak.value = float(rl_ens['vol_f3_peak'])
         if 'vol_f3_fade' in rl_ens: self.vol_f3_fade.value = float(rl_ens['vol_f3_fade'])
 
-        # --- LOGGING FILTERS STATUS ---
+        # Dynamic Epsilon Aggression
+        if 'dd_aggression_k' in rl_ens: self.dd_aggression_k.value = float(rl_ens['dd_aggression_k'])
+
+        # --- LOGGING STATUS ---
         logger.info(f"[CONFIG] Volume Filter F1 (Surge): {'ENABLED' if self.vol_f1_enabled.value else 'DISABLED'}")
         logger.info(f"[CONFIG] Volume Filter F2 (CVD): {'ENABLED' if self.vol_f2_enabled.value else 'DISABLED'}")
         logger.info(f"[CONFIG] Volume Filter F3 (Exit): {'ENABLED' if self.vol_f3_enabled.value else 'DISABLED'}")
+        logger.info(f"[CONFIG] TSL: d0={self.d0.value}, d_min={self.d_min.value}, exp={self.tsl_exponent.value}")
+        logger.info(f"[CONFIG] Voting: L_thresh={self.rl_long_threshold_opt.value}, S_thresh={self.rl_short_threshold_opt.value}")
+        logger.info(f"[CONFIG] Regime: Global TF={self.informative_timeframe_global}, Global Period={self.global_ema_period.value}")
 
         # Убираем спам о отмене стоплосса
         def filter_stoploss_cancel(record):
