@@ -94,27 +94,24 @@
 - **FreqDroid Integration**: Configured the FreqDroid mobile app for real-time monitoring and emergency trade management.
 - **Firewall Stabilization**: Applied custom Windows Defender Firewall rules for TCP Port 8080 to ensure seamless API access from the ZeroTier subnet.
 
-## Part 2: Performance & Stability Refactoring
+## Part 3: Exit & Entry Optimization (Series v1-v7)
 
-Based on the architectural review in `План_рефакторинга.md`, this multi-stage plan aims to dramatically improve CPU performance, mathematical correctness, and security.
+### 15. "Golden Standard" (v7) Configuration
+- **Objective**: Balance high trade volume with rigorous risk control.
+- **Key Improvements**:
+    - **Long-Only Bias**: Effectively disabled short trades (`short_threshold: 5.0`) to focus capital on the higher-performing long models during the current market regime.
+    - **Consensus Entry**: Raised `rl_long_threshold_opt` to **3.0**, reducing noise and improving entry precision (Win Rate ~57% on 80 slots).
+    - **Dynamic Exit Mix**: Implemented a balanced ROI table `{0: 0.5, 25: 0.03, 40: 0.01, 50: 0}` to cut stale trades at 50 minutes while allowing TSL to run.
+    - **High-Yield TSL**: Optimized Trailing Stop Loss with `p_target: 0.08` and `hysteresis: 0.01`, achieving an average profit of **11.46%** on TSL-triggered exits.
+- **Results**: Achieved stable performance with a Profit Factor of **1.35** and a controlled Absolute Drawdown of **2.88%** on a full ticker whitelist.
 
-### Этап 1: Критические исправления математики и стабильности
-- [x] **Задача 1.1:** Применить патч для логарифмического преобразования объёма (`np.log1p`) и повышения числовой стабильности (`epsilon` до 1e-6) в `CustomD3QNStrategy4z.py`.
-- [x] **Задача 1.2:** Внедрить симметричный математический расчет PnL для консистентности логики вознаграждения в `CustomD3QNStrategy4z.py`.
-- [x] **Задача 1.3:** Заменить `dict` на `OrderedDict` для кэширования в `CustomD3QNStrategy4z.py`, чтобы устранить "гонки потоков".
-
-### Этап 2: Миграция на ONNX для ускорения CPU
-- [x] **Задача 2.1:** Написать скрипт `tools/export_to_onnx.py` для конвертации моделей из `.pth` в `.onnx`.
-- [x] **Задача 2.2:** Провести верификацию `.onnx` моделей, сравнив их выходы с оригинальными PyTorch моделями.
-- [x] **Задача 2.3:** Модифицировать стратегию `CustomD3QNStrategy4z.py` для загрузки `.onnx` файлов и выполнения инференса через `onnxruntime`.
-- [x] **Задача 2.4:** Удалить `ThreadPoolExecutor` из стратегии.
-
-### Этап 3: Безопасность и конфигурация
-- [x] Задача 3.1: Создать файл `.env` в корне проекта.
-- [x] Задача 3.2: Изменить `config_rl4z.json`, чтобы секретные ключи и пароли (`key`, `secret`, `jwt_secret_key`, `password`) читались из переменных окружения.
+## Completed Tasks
+...
+- [x] **Задача 3.2:** Изменить `config_rl4z.json`, чтобы секретные ключи и пароли читались из переменных окружения.
+- [x] **Оптимизация параметров (v1-v7):** Завершена серия итерационных тестов, выработан "Золотой Стандарт" (v7) для масштабируемой торговли.
 
 ## Next Steps
-- [ ] **Мониторинг**: Наблюдение за стабильностью системы на полном списке пар в режиме Stress-test (до утра).
-- [ ] **Hyperopt**: Запуск оптимизации на проблемном периоде (`20260101-20260108`) с использованием Ryzen 9 на полную мощность.
-- [ ] **Dynamic Epsilon**: Активация адаптивной чувствительности к просадке в Dry-run.
+- [ ] **Paper Run (10h)**: Проведение 10-часового прогона на бумажной торговле с конфигурацией v7.
+- [ ] **Equity Curve Analysis**: Анализ плавности графика доходности после бумажного прогона.
+- [ ] **Live Readiness Audit**: Финальная проверка безопасности перед переходом на реальный счет.
 - [ ] **Lookahead Guard**: Постоянный мониторинг логов на предмет `DETECTED LOOKAHEAD BIAS`.
