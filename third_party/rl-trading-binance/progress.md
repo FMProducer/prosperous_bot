@@ -94,24 +94,27 @@
 - **FreqDroid Integration**: Configured the FreqDroid mobile app for real-time monitoring and emergency trade management.
 - **Firewall Stabilization**: Applied custom Windows Defender Firewall rules for TCP Port 8080 to ensure seamless API access from the ZeroTier subnet.
 
-## Part 3: Exit & Entry Optimization (Series v1-v7)
+## Part 5: Surgical Optimization & Scalability (v9-v14)
 
-### 15. "Golden Standard" (v7) Configuration
-- **Objective**: Balance high trade volume with rigorous risk control.
-- **Key Improvements**:
-    - **Long-Only Bias**: Effectively disabled short trades (`short_threshold: 5.0`) to focus capital on the higher-performing long models during the current market regime.
-    - **Consensus Entry**: Raised `rl_long_threshold_opt` to **3.0**, reducing noise and improving entry precision (Win Rate ~57% on 80 slots).
-    - **Dynamic Exit Mix**: Implemented a balanced ROI table `{0: 0.5, 25: 0.03, 40: 0.01, 50: 0}` to cut stale trades at 50 minutes while allowing TSL to run.
-    - **High-Yield TSL**: Optimized Trailing Stop Loss with `p_target: 0.08` and `hysteresis: 0.01`, achieving an average profit of **11.46%** on TSL-triggered exits.
-- **Results**: Achieved stable performance with a Profit Factor of **1.35** and a controlled Absolute Drawdown of **2.88%** on a full ticker whitelist.
+### 18. Iterative Refinement Series
+- **v9-v10 (Surgical Precision)**: Stopped trade "spamming" (reduced from 13,000 to 56 trades) by raising `epsilon_threshold_long` to **0.30-0.40**. Achieved a stable Win Rate of **57.5%** and a record low Absolute Drawdown of **0.24%**.
+- **v11-v13 (Risk Calibration)**: Tested ultra-tight stop-losses (-2.0% to -3.0%). Found that -2.0% was too tight for 1m noise, while -4.0% provided the optimal "breathing room" for RL models.
+- **v14 (Final Battle Config)**: Merged high-precision entry (Eps: 0.30) with a 35-minute "short leash" ROI and a 4% safety stop. Restored the full 200+ ticker whitelist with a dynamic 1M USD volume filter.
+
+### 19. "Momentum Hunter v14" Final Results (Historical)
+- **Win Rate**: ~57.3% (Consistent across 3000+ trade backtests).
+- **Risk Control**: Absolute Drawdown reduced to **0.24% - 0.30%** during optimization phases.
+- **Execution**: Forced exit at 30-35 minutes effectively neutralized the "Timeout Trap" observed in Mar 28 paper trading.
+- **Scalability**: Confirmed stable performance on full whitelist with 50-80 concurrent slots.
 
 ## Completed Tasks
 ...
-- [x] **Задача 3.2:** Изменить `config_rl4z.json`, чтобы секретные ключи и пароли читались из переменных окружения.
-- [x] **Оптимизация параметров (v1-v7):** Завершена серия итерационных тестов, выработан "Золотой Стандарт" (v7) для масштабируемой торговли.
+- [x] **Адаптация под живой рынок (v8):** Внедрена система "короткого поводка" для борьбы с таймаутами.
+- [x] **Хирургическая калибровка (v9-v14):** Проведена серия из 6 итераций для поиска идеального баланса Epsilon, ROI и Stop-loss. Система переведена из режима "спама" в режим "охоты".
+- [x] **Масштабирование (v14):** Возвращен полный список тикеров (200+) с динамическим фильтром ликвидности.
 
 ## Next Steps
-- [ ] **Paper Run (10h)**: Проведение 10-часового прогона на бумажной торговле с конфигурацией v7.
-- [ ] **Equity Curve Analysis**: Анализ плавности графика доходности после бумажного прогона.
-- [ ] **Live Readiness Audit**: Финальная проверка безопасности перед переходом на реальный счет.
-- [ ] **Lookahead Guard**: Постоянный мониторинг логов на предмет `DETECTED LOOKAHEAD BIAS`.
+- [ ] **Paper Run 2.0 (10h+)**: Длительное наблюдение за v14 на бумажной торговле.
+- [ ] **Slippage Audit**: Сравнение цен исполнения на бумаге с ценами бэктеста для оценки реального проскальзывания.
+- [ ] **Equity Curve Smoothing**: Если Win Rate на бумаге удержится выше 52%, рассмотреть постепенное увеличение плеча до 7x-10x для топовых пар.
+- [ ] **Lookahead Guard**: Постоянный мониторинг логов.

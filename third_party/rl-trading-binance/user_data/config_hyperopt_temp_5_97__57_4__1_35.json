@@ -2,7 +2,7 @@
     "initial_state": "running",
     "cpu_threads": 6,
     "deep_inference": true,
-    "max_open_trades": 100,
+    "max_open_trades": 80,
     "startup_candle_count": 180,
     "stake_currency": "USDT",
     "stake_amount": 1000,
@@ -11,8 +11,8 @@
     "dry_run_wallet": 100000,
     "mirror_mode": true,
     "can_short": true,
-    "rl_long_threshold": 2,
-    "rl_short_threshold": 2,
+    "rl_long_threshold_opt": 3.0,
+    "rl_short_threshold": 5.0,
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
     "min_quote_volume_usd": 0,
@@ -23,15 +23,17 @@
     "stoploss": -0.99,
     "minimal_roi": {
         "0": 0.5,
-        "59": 0
+        "25": 0.03,
+        "40": 0.01,
+        "50": 0
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
         "d0": 0.99,
         "d_min": 0.001,
-        "hysteresis": 0.005,
-        "p_target": 0.085,
+        "hysteresis": 0.01,
+        "p_target": 0.08,
         "tsl_exponent": 1.003
     },
     "rl_regime": {
@@ -120,20 +122,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6.7e-05,
-                "q_max": 0.001989
+                "q_min": 5.3e-05,
+                "q_max": 0.003213
             },
             "long_2": {
-                "q_min": 0.000218,
-                "q_max": 0.000411
+                "q_min": 0.000212,
+                "q_max": 0.000429
             },
             "short_1": {
-                "q_min": 0.000133,
-                "q_max": 0.000585
+                "q_min": 0.000163,
+                "q_max": 0.000592
             },
             "short_2": {
-                "q_min": 0.000159,
-                "q_max": 0.000745
+                "q_min": 0.000243,
+                "q_max": 0.000723
             }
         }
     },
