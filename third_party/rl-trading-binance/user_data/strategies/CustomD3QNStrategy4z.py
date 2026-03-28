@@ -99,12 +99,10 @@ class CustomD3QNStrategy4z(IStrategy):
     informative_timeframe = '1m'
     informative_timeframe_global = '1m'
     
-    minimal_roi = {"0": 100}
+    # minimal_roi = {"0": 100}
     minimal_roi = {
-        "0": 0.031,
-        "4": 0.022,
-        "8": 0.013,
-        "30": 0
+        "0": 0.5,
+        "59": 0
     }
     stoploss = -0.99  # Заглушка, работает custom_stoploss
     trailing_stop = False
@@ -117,14 +115,14 @@ class CustomD3QNStrategy4z(IStrategy):
         'stoploss_on_exchange': False
     }
     
-    # Параметры TSL (КОНСЕРВАТИВНЫЕ)
-    d0 = DecimalParameter(0.07, 0.15, default=1.0, space='sell', optimize=False, load=False)
+    # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
+    d0 = DecimalParameter(0.01, 1.0, default=0.22, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.005, default=0.003, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.007, 0.015, default=0.09, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.01, default=0.005, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.007, 0.1, default=0.085, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.95, 1.2, default=0.989, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.95, 1.1, default=1.003, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -133,11 +131,11 @@ class CustomD3QNStrategy4z(IStrategy):
     # Оптимизируемый таймфрейм для глобального режима (теперь локальный старший ТФ)
     global_ema_timeframe = CategoricalParameter(['1m', '3m', '5m', '15m', '30m', '1h'], default='1m', space='buy', optimize=False, load=False)
 
-    # Быстрый EMA фильтр (для локального режима, оптимизируемый)
+    # EMA фильтр (быстрый, для локального режима)
     ema_fast_period = IntParameter(10, 15, default=12, space='buy', optimize=False, load=False)
 
-    # EMA фильтр (для глобального режима, теперь на старшем ТФ, ручной)
-    global_ema_period = IntParameter(5, 60, default=90, space='buy', optimize=False, load=False)
+    # EMA фильтр (на старшем ТФ)
+    global_ema_period = IntParameter(5, 60, default=25, space='buy', optimize=False, load=False)
 
     # Фильтр по объему (Фокус на ликвидности)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
@@ -146,8 +144,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.001, 0.02, default=0.001, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.95, 1.0, default=0.98, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.0, 0.01, default=0.0, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.95, 1.0, default=0.99, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
