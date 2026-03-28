@@ -11,11 +11,11 @@
     "dry_run_wallet": 100000,
     "mirror_mode": true,
     "can_short": true,
-    "rl_long_threshold": 2,
+    "rl_long_threshold_opt": 2.8,
     "rl_short_threshold": 2,
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
-    "min_quote_volume_usd": 0,
+    "min_quote_volume_usd": 5000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
@@ -23,7 +23,9 @@
     "stoploss": -0.99,
     "minimal_roi": {
         "0": 0.5,
-        "59": 0
+        "35": 0.02,
+        "45": 0.01,
+        "55": 0
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
