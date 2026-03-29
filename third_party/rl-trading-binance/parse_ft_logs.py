@@ -16,6 +16,10 @@ class TradeExecution:
     def slippage_pct(self) -> float:
         if self.signal_price == 0 or self.fill_price == 0:
             return 0.0
+        # Prevent division by extremely small numbers or scientific notation errors
+        if abs(self.signal_price) < 1e-12:
+            return 0.0
+            
         if self.direction == 'long' or self.direction == 'buy':
             return ((self.signal_price - self.fill_price) / self.signal_price) * 100
         else: # short / sell
@@ -27,6 +31,8 @@ class LogStats:
     model_signals: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     filtered_signals: int = 0
     low_volume_skips: int = 0
+    denied_by_limit: int = 0
+    denied_pairs: List[str] = field(default_factory=list)
     executions: List[TradeExecution] = field(default_factory=list)
 
 def analyze_freqtrade_logs(log_file_path: str | Path) -> None:
@@ -44,11 +50,14 @@ def analyze_freqtrade_logs(log_file_path: str | Path) -> None:
     re_low_volume = re.compile(r'\[LOW_VOLUME\]')
     re_entry_signal = re.compile(r'act=1 \((ENTRY_LONG|ENTRY_SHORT)\)')
     
-    # 1. Сигнал на вход (Freqtrade)
-    re_signal_found = re.compile(r'(Long|Short) signal found: about create a new trade for (.*?) with .*? price: ([\d.]+)', re.IGNORECASE)
+    # 1. Сигнал на вход (Freqtrade) - улучшенный парсинг научной нотации (e-05)
+    re_signal_found = re.compile(r'(Long|Short) signal found: about create a new trade for (.*?) with .*? price: ([\d.e-]+)', re.IGNORECASE)
     
     # 2. Исполнение ордера
-    re_order_fill = re.compile(r'(MARKET_BUY|MARKET_SELL|LIMIT_BUY|LIMIT_SELL) has been fulfilled for Trade\(.*?pair=(.*?), .*?open_rate=([\d.]+).*?\)', re.IGNORECASE)
+    re_order_fill = re.compile(r'(MARKET_BUY|MARKET_SELL|LIMIT_BUY|LIMIT_SELL) has been fulfilled for Trade\(.*?pair=(.*?), .*?open_rate=([\d.e-]+).*?\)', re.IGNORECASE)
+
+    # 3. Отклонение по лимиту (confirm_trade_entry)
+    re_user_denied = re.compile(r'User denied entry for (.*?)\.', re.IGNORECASE)
 
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
         for line in f:
@@ -70,11 +79,23 @@ def analyze_freqtrade_logs(log_file_path: str | Path) -> None:
             sig_match = re_signal_found.search(line)
             if sig_match:
                 direction, pair, rate = sig_match.groups()
-                active_orders[pair.strip()] = TradeExecution(
-                    pair=pair.strip(), 
+                pair = pair.strip()
+                active_orders[pair] = TradeExecution(
+                    pair=pair, 
                     direction=direction.lower(), 
                     signal_price=float(rate)
                 )
+                continue
+
+            # Детект отклонения (Удаляем из активных ожиданий)
+            denied_match = re_user_denied.search(line)
+            if denied_match:
+                pair = denied_match.group(1).strip()
+                if pair in active_orders:
+                    del active_orders[pair]
+                    stats.denied_by_limit += 1
+                    if pair not in stats.denied_pairs:
+                        stats.denied_pairs.append(pair)
                 continue
 
             # Детект исполнения
@@ -102,28 +123,38 @@ def _print_report(stats: LogStats, active_orders: Dict[str, TradeExecution]) -> 
     
     print(f"\nОтфильтровано по объему (LOW_VOLUME): {stats.low_volume_skips}")
     print(f"Сигналов прошли фильтры и консенсус: {stats.filtered_signals}")
+    print(f"Отклонено лимитом портфеля (20/20): {stats.denied_by_limit}")
     
     if stats.executions:
-        print(f"\n{'Пара':<16} | {'Тип':<6} | {'Signal':<10} | {'Fill':<10} | {'Slip %'}")
-        print("-" * 65)
+        print(f"\n{'Пара':<18} | {'Тип':<6} | {'Signal':<10} | {'Fill':<10} | {'Slip %'}")
+        print("-" * 70)
         total_slip = 0.0
+        # Filter out extreme outliers (like parsing errors on very small prices)
+        valid_executions = [ex for ex in stats.executions if abs(ex.slippage_pct) < 50.0]
+        
         for ex in stats.executions:
             slip = ex.slippage_pct
-            total_slip += slip
-            print(f"{ex.pair:<16} | {ex.direction:<6} | {ex.signal_price:<10.5f} | {ex.fill_price:<10.5f} | {slip:+.4f}%")
+            # Highlight extreme slippage which is usually a parsing error
+            warn = " (!)" if abs(slip) > 50.0 else ""
+            print(f"{ex.pair:<18} | {ex.direction:<6} | {ex.signal_price:<10.6f} | {ex.fill_price:<10.6f} | {slip:+.4f}%{warn}")
+            if abs(slip) < 50.0:
+                total_slip += slip
         
-        avg = total_slip / len(stats.executions)
-        print("-" * 65)
-        print(f"Среднее проскальзывание: {avg:+.4f}%")
+        if valid_executions:
+            avg = total_slip / len(valid_executions)
+            print("-" * 70)
+            print(f"Среднее проскальзывание (без ошибок): {avg:+.4f}%")
     else:
         print("\nИсполненные сделки не найдены.")
 
     if active_orders:
         print("\n" + "="*60)
-        print(f"⏳ ОЖИДАЮТ ИСПОЛНЕНИЯ (LIMIT ORDERS): {len(active_orders)}")
+        print(f"⏳ ОЖИДАЮТ ИСПОЛНЕНИЯ (REAL LIMITS): {len(active_orders)}")
         print("="*60)
         for pair, order in active_orders.items():
-            print(f" - {pair:<16} ({order.direction}) @ {order.signal_price}")
+            print(f" - {pair:<18} ({order.direction}) @ {order.signal_price}")
+    else:
+        print("\n[OK] Активных ожидающих ордеров нет.")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
