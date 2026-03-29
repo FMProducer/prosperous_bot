@@ -2,7 +2,7 @@
     "initial_state": "running",
     "cpu_threads": 6,
     "deep_inference": true,
-    "max_open_trades": 100,
+    "max_open_trades": 40,
     "startup_candle_count": 180,
     "stake_currency": "USDT",
     "stake_amount": 1000,
@@ -23,7 +23,8 @@
     "stoploss": -0.99,
     "minimal_roi": {
         "0": 0.5,
-        "59": 0
+        "30": 0.01,
+        "45": 0
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
@@ -31,7 +32,7 @@
         "d0": 0.99,
         "d_min": 0.001,
         "hysteresis": 0.005,
-        "p_target": 0.085,
+        "p_target": 0.04,
         "tsl_exponent": 1.003
     },
     "rl_regime": {
@@ -120,20 +121,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 5.3e-05,
-                "q_max": 0.003213
+                "q_min": 2.9e-05,
+                "q_max": 0.003252
             },
             "long_2": {
-                "q_min": 0.000212,
-                "q_max": 0.000429
+                "q_min": 0.000115,
+                "q_max": 0.000434
             },
             "short_1": {
-                "q_min": 0.000163,
-                "q_max": 0.000592
+                "q_min": 0.000249,
+                "q_max": 0.000585
             },
             "short_2": {
-                "q_min": 0.000243,
-                "q_max": 0.000723
+                "q_min": 0.000315,
+                "q_max": 0.000709
             }
         }
     },
@@ -173,6 +174,7 @@
             "FLOW/USDT:USDT"
         ],
         "pair_blacklist": [
+            "FLOW/USDT:USDT",
             "USDC/USDT:USDT",
             "FDUSD/USDT:USDT",
             "TUSD/USDT:USDT"

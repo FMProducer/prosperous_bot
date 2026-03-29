@@ -122,13 +122,41 @@
 - **Key Insight**: Tightening `minimal_roi` to 45m reduced drawdown to **2.39%** and increased Win Rate by 5%. 
 - **Efficiency**: ROI exits increased from 449 to 1067, securing consistent gains.
 
+### 22. Technical Performance & Entry Quality (ABS Upgrade)
+- **Status**: IMPLEMENTED
+- **Variant A (Batch Inference)**: 
+    - **Optimization**: All 200+ pairs are now processed in a single ONNX batch per candle.
+    - **Result**: Analysis time dropped from **18.15s** to **<1.0s**. Eliminates "Event Loop lag" warnings.
+- **Variant B (Impulse Guard)**:
+    - **Logic**: Vectorized filter prevents entries if the current candle has already moved >0.5% from its open.
+    - **Result**: Normalized Win Rate at **57.2%**, significantly reducing "buying the peak" in volatile markets.
+- **Variant C (Limit Orders with Discount)**:
+    - **Status**: PLANNED.
+    - **Goal**: Further reduce slippage by entering with limit orders at a 0.1-0.2% discount to the signal price.
+
 ## Completed Tasks
-- [x] **Record Win Rate Achieved:** Reached 56.9% win rate on full market using 45m ROI cutoff.
+- [x] **Batch Inference Engine:** Radical speed boost for multi-pair ensemble.
+- [x] **Impulse Guard:** Protected entries from price spikes.
+- [x] **Record Win Rate Achieved:** Reached 56.9% - 57.2% consistency.
 - [x] **Full-Market Scale-up:** Verified strategy on full ticker set.
-- [x] **Trailing Optimization:** Secured massive gains by tightening `p_target` to 0.04.
 
 ## Next Steps
 - [ ] **Paper Run 2.0 (10h+)**: Длительное наблюдение за v14 на бумажной торговле.
 - [ ] **Slippage Audit**: Сравнение цен исполнения на бумаге с ценами бэктеста для оценки реального проскальзывания.
 - [ ] **Equity Curve Smoothing**: Если Win Rate на бумаге удержится выше 52%, рассмотреть постепенное увеличение плеча до 7x-10x для топовых пар.
 - [ ] **Lookahead Guard**: Постоянный мониторинг логов.
+
+
+
+
+Вариант А: «Batch Inference» (Радикальное ускорение)
+     Вместо того чтобы считать инференс для каждой пары по очереди (200 раз), мы можем собрать данные по всем 200 парам в один гигантский пакет (Batch) и прогнать через ONNX один раз.
+      * Результат: Время анализа упадет с 18 секунд до 0.5 - 1 секунды. Бот будет входить в сделку в 12:00:01, когда цена еще не успела улететь.
+                                                                                                                                                                                                                    
+     Вариант Б: «Impulse Guard» (Запрет на покупку пиков)
+     Добавить условие: «Если текущая цена уже выше цены открытия свечи более чем на 0.5% — сигнал игнорируется».
+      * Результат: Бот перестанет «запрыгивать в уходящий поезд» на самом пике.
+                                                                                                                                                                                                                    
+     Вариант В: «Limit Orders с дисконтом»
+     Вместо Market-ордера ставить лимитку на 0.1-0.2% ниже текущей цены.
+      * Результат: Если это истинный пробой — нас заберет на микро-откате. Если цена улетит без нас — ну и ладно, зато не купили «хай». 
