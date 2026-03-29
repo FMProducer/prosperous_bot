@@ -1,0 +1,104 @@
+{
+  "models": [
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b",
+      "name": "NVIDIA Nemotron-3 Super 120B (Бесплатный)",
+      "provider": "openrouter",
+      "description": "Сверхмощная модель от NVIDIA. Лимит: 50 запросов/мин",
+      "context_length": 4096,
+      "max_input_tokens": 4096,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": 0.0,
+        "output": 0.0
+      },
+      "capabilities": ["chat", "completion", "code"],
+      "recommended_for": ["сложнейший код", "архитектура", "математика", "наука"]
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-30b-a3b",
+      "name": "NVIDIA Nemotron-3 Nano 30B (Бесплатный)",
+      "provider": "openrouter",
+      "description": "Компактная модель от NVIDIA. Лимит: 1000 запросов/мин",
+      "context_length": 4096,
+      "max_input_tokens": 4096,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": 0.0,
+        "output": 0.0
+      },
+      "capabilities": ["chat", "completion", "code"],
+      "recommended_for": ["кодинг", "быстрые задачи", "тестирование"]
+    },
+    {
+      "id": "stepfun/step-3.5-flash",
+      "name": "StepFun Step-3.5 Flash (Бесплатный)",
+      "provider": "openrouter",
+      "description": "Мощная модель от StepFun. Лимит: 1000 запросов/мин",
+      "context_length": 16384,
+      "max_input_tokens": 16384,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": 0.0,
+        "output": 0.0
+      },
+      "capabilities": ["chat", "completion", "code"],
+      "recommended_for": ["кодинг", "анализ", "быстрые ответы", "математика"]
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "name": "Z-AI GLM-4.5 Air (Бесплатный)",
+      "provider": "openrouter",
+      "description": "Модель от Z-AI. Лимит: 1000 запросов/мин",
+      "context_length": 8192,
+      "max_input_tokens": 8192,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": 0.0,
+        "output": 0.0
+      },
+      "capabilities": ["chat", "completion", "code"],
+      "recommended_for": ["кодинг", "анализ", "универсальные задачи"]
+    },
+    {
+      "id": "arcee-ai/trinity-large-preview",
+      "name": "Arcee AI Trinity Large Preview (Бесплатный)",
+      "provider": "openrouter",
+      "description": "Премиум модель от Arcee AI. Лимит: 100 запросов/мин",
+      "context_length": 8192,
+      "max_input_tokens": 8192,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": 0.0,
+        "output": 0.0
+      },
+      "capabilities": ["chat", "completion", "code"],
+      "recommended_for": ["сложный код", "архитектура", "анализ"]
+    }
+  ],
+  "default_model": "nvidia/nemotron-3-super-120b-a12b",
+  "rate_limits": {
+    "global_rpm": 1000,
+    "per_model_rpm": {
+      "nvidia/nemotron-3-super-120b-a12b": 50,
+      "nvidia/nemotron-3-nano-30b-a3b": 1000,
+      "stepfun/step-3.5-flash": 1000,
+      "z-ai/glm-4.5-air": 1000,
+      "arcee-ai/trinity-large-preview": 100
+    }
+  },
+  "fallback_models": [
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "stepfun/step-3.5-flash",
+    "z-ai/glm-4.5-air"
+  ],
+  "settings": {
+    "timeout": 60,
+    "retry_attempts": 3,
+    "retry_delay": 1,
+    "stream": false,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_tokens": 4096
+  }
+}

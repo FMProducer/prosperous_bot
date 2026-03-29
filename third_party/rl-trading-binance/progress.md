@@ -107,11 +107,20 @@
 - **Execution**: Forced exit at 30-35 minutes effectively neutralized the "Timeout Trap" observed in Mar 28 paper trading.
 - **Scalability**: Confirmed stable performance on full whitelist with 50-80 concurrent slots.
 
+### 20. Safety-First Re-Calibration (Post-Slippage Audit)
+- **Status**: IMPLEMENTED
+- **Changes**:
+    - `epsilon_threshold_long`: raised to **0.45** (from 0.001) to eliminate noise.
+    - `stoploss`: hardened to **-0.04** (4%) to prevent deep drawdowns.
+    - `minimal_roi`: tightened to **35m** max duration to eliminate "Timeout Trap".
+    - `min_quote_volume_usd`: synchronized to **348,000** for better liquidity filtering.
+- **Expected Outcome**: Reduction in trade frequency by 80-90% with significant increase in Win Rate and Expectancy.
+
 ## Completed Tasks
-...
 - [x] **Адаптация под живой рынок (v8):** Внедрена система "короткого поводка" для борьбы с таймаутами.
 - [x] **Хирургическая калибровка (v9-v14):** Проведена серия из 6 итераций для поиска идеального баланса Epsilon, ROI и Stop-loss. Система переведена из режима "спама" в режим "охоты".
 - [x] **Масштабирование (v14):** Возвращен полный список тикеров (200+) с динамическим фильтром ликвидности.
+- [x] **Safety-First Re-Calibration**: Hardened risk parameters after analyzing failed paper run logs.
 
 ## Next Steps
 - [ ] **Paper Run 2.0 (10h+)**: Длительное наблюдение за v14 на бумажной торговле.

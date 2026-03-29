@@ -2,7 +2,7 @@
     "initial_state": "running",
     "cpu_threads": 6,
     "deep_inference": true,
-    "max_open_trades": 100,
+    "max_open_trades": 80,
     "startup_candle_count": 180,
     "stake_currency": "USDT",
     "stake_amount": 1000,
@@ -12,27 +12,27 @@
     "mirror_mode": true,
     "can_short": true,
     "rl_long_threshold": 2,
-    "rl_short_threshold": 2,
+    "rl_short_threshold": 5,
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
-    "min_quote_volume_usd": 348000,
+    "min_quote_volume_usd": 100000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
-    "stoploss": -0.04,
+    "stoploss": -0.1,
     "minimal_roi": {
-        "0": 0.05,
-        "20": 0.02,
-        "35": 0
+        "0": 0.2,
+        "30": 0.05,
+        "60": 0
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.04,
+        "d0": 0.99,
         "d_min": 0.001,
-        "hysteresis": 0.005,
-        "p_target": 0.03,
+        "hysteresis": 0.01,
+        "p_target": 0.08,
         "tsl_exponent": 1.003
     },
     "rl_regime": {
@@ -64,29 +64,21 @@
     "margin_mode": "isolated",
     "liquidation_buffer": 0.05,
     "leverage": {
-        "1000BONK/USDT:USDT": 5,
-        "1000FLOKI/USDT:USDT": 5,
         "*": 5
     },
     "order_types": {
-        "entry": "market",
+        "entry": "limit",
         "exit": "market",
         "emergency_exit": "market",
         "force_exit": "market",
         "stoploss": "market",
         "stoploss_on_exchange": false,
-        "stoploss_on_exchange_interval": 30,
         "stoploss_price_type": "mark"
     },
     "entry_pricing": {
-        "price_side": "other",
+        "price_side": "same",
         "use_order_book": true,
-        "order_book_top": 1,
-        "price_last_balance": 0.0,
-        "check_depth_of_market": {
-            "enabled": false,
-            "bids_to_ask_delta": 1
-        }
+        "order_book_top": 1
     },
     "exit_pricing": {
         "price_side": "other",
@@ -94,63 +86,35 @@
         "order_book_top": 1
     },
     "rl_ensemble": {
+        "epsilon_threshold_long": 0.02,
+        "epsilon_threshold_short": 0.98,
         "model_paths": {
             "long_1": "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260125_time_033653",
             "long_2": "output/alpha_seed_404_ohlcv_z_LONG_ONLY/saved_models/rl_binance_futures_trading_date_20260201_time_131607_no tsl",
             "short_1": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260213_time_004217",
             "short_2": "output/alpha_seed_404_ohlcv_z_SHORT_ONLY/saved_models/rl_binance_futures_trading_date_20260212_time_020927"
         },
-        "use_global_regime_filter": true,
-        "use_local_regime_filter": true,
-        "vol_f1_enabled": false,
-        "vol_f2_enabled": true,
-        "vol_f3_enabled": false,
-        "vol_window": 31,
-        "cvd_window": 83,
-        "vol_f1_surge": 2.627,
-        "vol_f1_pct": 79.172,
-        "vol_f2_cvd_spike": 1.024,
-        "vol_f2_gap": 1.959,
-        "vol_f3_peak": 5.857,
-        "vol_f3_fade": 0.276,
-        "enable_dynamic_epsilon": false,
-        "min_epsilon": 0.209,
-        "epsilon_threshold_long": 0.45,
-        "epsilon_threshold_short": 0.98,
-        "dd_aggression_k": 2.0,
-        "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6e-05,
-                "q_max": 0.003212
+                "q_min": 5.5e-05,
+                "q_max": 0.000881
             },
             "long_2": {
-                "q_min": 0.000245,
-                "q_max": 0.000446
+                "q_min": 0.0002,
+                "q_max": 0.000417
             },
             "short_1": {
-                "q_min": 6.4e-05,
-                "q_max": 0.00057
+                "q_min": 0.000109,
+                "q_max": 0.000534
             },
             "short_2": {
-                "q_min": 0.000132,
-                "q_max": 0.000661
+                "q_min": 0.000191,
+                "q_max": 0.000692
             }
         }
     },
     "exchange": {
         "name": "binance",
-        "key": "",
-        "secret": "",
-        "ccxt_config": {
-            "enableRateLimit": true,
-            "timeout": 60000
-        },
-        "ccxt_async_config": {
-            "enableRateLimit": true,
-            "rateLimit": 50,
-            "timeout": 60000
-        },
         "pair_whitelist": [
             "1000BONK/USDT:USDT",
             "1000FLOKI/USDT:USDT",
@@ -394,11 +358,6 @@
             "ZK/USDT:USDT",
             "ZRO/USDT:USDT",
             "ZRX/USDT:USDT"
-        ],
-        "pair_blacklist": [
-            "USDC/USDT:USDT",
-            "FDUSD/USDT:USDT",
-            "TUSD/USDT:USDT"
         ]
     },
     "pairlists": [
