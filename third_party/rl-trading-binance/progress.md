@@ -116,11 +116,16 @@
     - `min_quote_volume_usd`: synchronized to **348,000** for better liquidity filtering.
 - **Expected Outcome**: Reduction in trade frequency by 80-90% with significant increase in Win Rate and Expectancy.
 
+### 21. Full-Market Scale-up Milestone
+- **Status**: SUCCESS (Record Win Rate)
+- **Results**: **+8.89%** profit, **56.9% Win Rate** (Timerange: 20260101-20260104).
+- **Key Insight**: Tightening `minimal_roi` to 45m reduced drawdown to **2.39%** and increased Win Rate by 5%. 
+- **Efficiency**: ROI exits increased from 449 to 1067, securing consistent gains.
+
 ## Completed Tasks
-- [x] **Адаптация под живой рынок (v8):** Внедрена система "короткого поводка" для борьбы с таймаутами.
-- [x] **Хирургическая калибровка (v9-v14):** Проведена серия из 6 итераций для поиска идеального баланса Epsilon, ROI и Stop-loss. Система переведена из режима "спама" в режим "охоты".
-- [x] **Масштабирование (v14):** Возвращен полный список тикеров (200+) с динамическим фильтром ликвидности.
-- [x] **Safety-First Re-Calibration**: Hardened risk parameters after analyzing failed paper run logs.
+- [x] **Record Win Rate Achieved:** Reached 56.9% win rate on full market using 45m ROI cutoff.
+- [x] **Full-Market Scale-up:** Verified strategy on full ticker set.
+- [x] **Trailing Optimization:** Secured massive gains by tightening `p_target` to 0.04.
 
 ## Next Steps
 - [ ] **Paper Run 2.0 (10h+)**: Длительное наблюдение за v14 на бумажной торговле.

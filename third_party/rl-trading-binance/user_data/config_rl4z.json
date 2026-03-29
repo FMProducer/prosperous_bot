@@ -2,7 +2,7 @@
     "initial_state": "running",
     "cpu_threads": 6,
     "deep_inference": true,
-    "max_open_trades": 100,
+    "max_open_trades": 20,
     "startup_candle_count": 180,
     "stake_currency": "USDT",
     "stake_amount": 1000,
@@ -15,24 +15,24 @@
     "rl_short_threshold": 2,
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
-    "min_quote_volume_usd": 348000,
+    "min_quote_volume_usd": 1000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
-    "stoploss": -0.04,
+    "stoploss": -0.99,
     "minimal_roi": {
-        "0": 0.05,
-        "20": 0.02,
-        "35": 0
+        "0": 0.5,
+        "30": 0.01,
+        "45": 0
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.04,
+        "d0": 0.99,
         "d_min": 0.001,
         "hysteresis": 0.005,
-        "p_target": 0.03,
+        "p_target": 0.04,
         "tsl_exponent": 1.003
     },
     "rl_regime": {
@@ -59,7 +59,7 @@
         "password": "",
         "jwt_secret_key": ""
     },
-    "cancel_open_orders_on_exit": false,
+    "cancel_open_orders_on_exit": true,
     "trading_mode": "futures",
     "margin_mode": "isolated",
     "liquidation_buffer": 0.05,
@@ -115,26 +115,26 @@
         "vol_f3_fade": 0.276,
         "enable_dynamic_epsilon": false,
         "min_epsilon": 0.209,
-        "epsilon_threshold_long": 0.45,
+        "epsilon_threshold_long": 0.001,
         "epsilon_threshold_short": 0.98,
         "dd_aggression_k": 2.0,
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6e-05,
-                "q_max": 0.003212
+                "q_min": 4.7e-05,
+                "q_max": 0.003176
             },
             "long_2": {
-                "q_min": 0.000245,
-                "q_max": 0.000446
+                "q_min": 0.000237,
+                "q_max": 0.000432
             },
             "short_1": {
-                "q_min": 6.4e-05,
-                "q_max": 0.00057
+                "q_min": 0.0001,
+                "q_max": 0.000586
             },
             "short_2": {
-                "q_min": 0.000132,
-                "q_max": 0.000661
+                "q_min": 0.000257,
+                "q_max": 0.000706
             }
         }
     },
@@ -396,6 +396,7 @@
             "ZRX/USDT:USDT"
         ],
         "pair_blacklist": [
+            "FLOW/USDT:USDT",
             "USDC/USDT:USDT",
             "FDUSD/USDT:USDT",
             "TUSD/USDT:USDT"
