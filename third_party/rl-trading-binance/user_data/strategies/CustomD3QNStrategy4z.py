@@ -109,7 +109,7 @@ class CustomD3QNStrategy4z(IStrategy):
     use_custom_stoploss = True
     
     order_types = {
-        'entry': 'limit',
+        'entry': 'market',
         'exit': 'market',
         'stoploss': 'market',
         'stoploss_on_exchange': False
@@ -1641,10 +1641,9 @@ class CustomD3QNStrategy4z(IStrategy):
         asset_name = metadata['pair'].split(':')[0].replace('/', '')
         
         # --- Q-VALUE CACHING FOR HYPEROPT ---
-        # Ключ кэша: пара + время последней свечи.
-        # Это гарантирует, что мы не пересчитываем нейросеть, если данные не изменились.
         last_date = dataframe.iloc[-1]['date']
-        q_cache_key = (metadata['pair'], str(last_date))
+        # Оптимизация: используем числовое значение даты вместо медленной строки для ключа кэша
+        q_cache_key = (metadata['pair'], last_date.value if hasattr(last_date, 'value') else str(last_date))
         
         q_values = None
         with self.cache_lock:
@@ -1652,6 +1651,7 @@ class CustomD3QNStrategy4z(IStrategy):
                 q_values = self.q_value_cache[q_cache_key]
         
         if q_values is None:
+            # (Inference logic follows...)
             # Если в кэше нет - считаем (Тяжелая операция)
             tensor_long_1 = self.get_model_input_cached(
                 df_input, metadata['pair'], side="LONG", model_num=1, asset_name=asset_name
@@ -1979,9 +1979,11 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # 4. Apply Volume & Regime Filters Vectorized (for Backtest)
         if volume_vals is not None:
+            # Возвращаемся к значению из конфига, не душим модель
             vol_mask = volume_vals >= self.min_quote_volume_usd.value
-            enter_long_vals = enter_long_vals & vol_mask
-            enter_short_vals = enter_short_vals & vol_mask
+            
+            enter_long_vals &= vol_mask
+            enter_short_vals &= vol_mask
             
         if is_backtest:
             if self.use_global_regime_filter and regime_global_vals is not None:
