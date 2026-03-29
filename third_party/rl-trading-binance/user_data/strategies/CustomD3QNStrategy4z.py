@@ -153,6 +153,11 @@ class CustomD3QNStrategy4z(IStrategy):
         self.tsl_memory = {}
         self.q_normalization = config.get('rl_ensemble', {}).get('q_normalization', {})
 
+        # --- AUTO-CALIBRATION MEMORY ---
+        self.adv_history = {}
+        self.last_config_update = datetime.now(timezone.utc)
+        self.config_update_interval = config.get('rl_ensemble', {}).get('q_update_interval', 14400) # 4 часа по умолчанию
+
     @property
     def long_1_agent(self):
         if not self.enable_long_1: return None
@@ -227,6 +232,54 @@ class CustomD3QNStrategy4z(IStrategy):
             agent.ort_session = ort.InferenceSession(str(onnx_path), sess_options=so, providers=['CPUExecutionProvider'])
             self.logger.info(f"[OK] {name} ONNX Loaded")
 
+    def _collect_adv_stats(self, name: str, adv_array: np.ndarray):
+        if name not in self.adv_history:
+            self.adv_history[name] = deque(maxlen=500) # Храним последние 500 батчей рынка
+        if adv_array is None or len(adv_array) == 0:
+            return
+        # Берем только положительные advantage (сигналы выше нуля)
+        pos_arr = adv_array[adv_array > 0.0]
+        if pos_arr.size > 0:
+            self.adv_history[name].extend(pos_arr.tolist())
+
+    def update_normalization_config(self):
+        try:
+            config_path = self.project_root / "user_data/config_rl4z.json"
+            if not config_path.exists():
+                self.logger.warning(f"⚠️ Config update skipped: {config_path} not found")
+                return
+
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            updated = False
+            norm_cfg = data.get('rl_ensemble', {}).get('q_normalization', {})
+
+            for name, history in self.adv_history.items():
+                if len(history) < 200:
+                    continue # Мало данных для репрезентативной выборки
+
+                arr = np.array(history)
+                # Считаем перцентили: q_min (отсекаем 15% шума) и q_max (99% пик)
+                new_min = float(round(np.percentile(arr, 15), 6))
+                new_max = float(round(np.percentile(arr, 99), 6))
+
+                if name not in norm_cfg: norm_cfg[name] = {}
+                norm_cfg[name]['q_min'] = new_min
+                norm_cfg[name]['q_max'] = new_max
+                updated = True
+                self.logger.info(f"⚖️ Auto-tuned {name}: q_min={new_min}, q_max={new_max}")
+
+            if updated:
+                if 'rl_ensemble' not in data: data['rl_ensemble'] = {}
+                data['rl_ensemble']['q_normalization'] = norm_cfg
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4)
+                self.q_normalization = norm_cfg
+                self.logger.info(f"💾 Q-Normalization config auto-saved to {config_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to auto-tune config: {e}")
+
     def _run_global_batch_inference(self, current_time: datetime):
         if self._is_batch_processing: return
         self._is_batch_processing = True
@@ -272,9 +325,23 @@ class CustomD3QNStrategy4z(IStrategy):
                 agent = getattr(self, f"{m_name}_agent")
                 if agent and agent.ort_session:
                     res = agent.ort_session.run(None, {agent.ort_session.get_inputs()[0].name: batch_input})[0]
+
+                    # --- AUTO-CALIBRATION: Collect Batch Advantage ---
+                    if self.config.get('runmode') in ['live', 'dry_run'] and res.shape[1] > 1:
+                        adv_array = res[:, 1] - res[:, 0]
+                        self._collect_adv_stats(m_name, adv_array)
+
                     for i, pair in enumerate(pairs_in_batch[m_name]):
                         if pair not in self._batch_cache: self._batch_cache[pair] = {}
                         self._batch_cache[pair][m_name] = res[i:i+1, :]
+
+            # --- AUTO-CALIBRATION: Periodic JSON Update ---
+            if self.config.get('runmode') in ['live', 'dry_run'] and self.config_update_interval > 0:
+                time_now = datetime.now(timezone.utc)
+                if (time_now - self.last_config_update).total_seconds() > self.config_update_interval:
+                    self.update_normalization_config()
+                    self.last_config_update = time_now
+
             self.logger.info(f"[BATCH] INFERENCE COMPLETE: {len(whitelist)} pairs")
         finally:
             self._is_batch_processing = False
