@@ -706,11 +706,12 @@ class CustomD3QNStrategy4z(IStrategy):
             if onnx_path.exists():
                 try:
                     # Оптимизация под AMD Ryzen 9 5900HX (8 cores / 16 threads)
-                    # Используем 4 потока на графе для быстрого инференса 1 батча
+                    # Так как инференс строго последовательный, отдаем графу максимум логических ядер
                     sess_options = ort.SessionOptions()
-                    cpu_threads = self.config.get('cpu_threads', 4)
-                    sess_options.intra_op_num_threads = min(cpu_threads, 4)
-                    sess_options.inter_op_num_threads = 1
+                    # Используем (Threads - 2) оставляя ресурсы для ОС и Freqtrade event loop
+                    cpu_threads = self.config.get('cpu_threads', 12) 
+                    sess_options.intra_op_num_threads = max(1, cpu_threads)
+                    sess_options.inter_op_num_threads = 1 
                     sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
                     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
