@@ -44,21 +44,15 @@ except ImportError:
 
 from datetime import datetime, timezone, timedelta
 
-# --- 1. НАСТРОЙКА ПУТЕЙ ---
+# --- 1. ПУТИ ---
 strategy_file = Path(__file__).resolve()
-if strategy_file.parent.name == 'strategies':
-    project_root = strategy_file.parent.parent.parent
-else:
-    project_root = strategy_file.parent.parent.parent
-
+project_root = strategy_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-# Freqtrade imports
 try:
     from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter, CategoricalParameter, merge_informative_pair  # type: ignore
 except ImportError:
-    logging.getLogger(__name__).error("Could not import freqtrade.strategy")
     class IStrategy:
         dp: Any = None
         config: Dict[str, Any]
@@ -72,19 +66,14 @@ except ImportError:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', 0)
     class CategoricalParameter:
         def __init__(self, *args, **kwargs): self.value = kwargs.get('default', args[0][0] if args and args[0] else None)
-    # Fallback для merge_informative_pair, чтобы не ломать оффлайн-инструменты
     def merge_informative_pair(dataframe, informative, timeframe, informative_timeframe, ffill=True):
         return dataframe
-
-logger = logging.getLogger(__name__)
 
 # Agent imports
 try:
     from agent import D3QN_PER_Agent  # type: ignore
 except ImportError as e:
-    logger.error(f"CRITICAL: Could not import D3QN Agent! Check path: {project_root}")
     raise e
-
 
 class CustomD3QNStrategy4z(IStrategy):
     config: Dict[str, Any]
@@ -92,27 +81,19 @@ class CustomD3QNStrategy4z(IStrategy):
     INTERFACE_VERSION = 3
     timeframe = '1m'
     can_long = True
-    can_short: bool = True  # Это критично для Futures режима
+    can_short: bool = True 
     startup_candle_count: int = 180
 
-    # Информативный таймфрейм для режима рынка
     informative_timeframe = '1m'
     informative_timeframe_global = '1m'
     
-    minimal_roi = {
-        "0": 0.5,
-        "30": 0.01,
-        "45": 0
-    }
+    minimal_roi = {"0": 0.5, "30": 0.01, "45": 0}
     stoploss = -0.99 
     trailing_stop = False
     use_custom_stoploss = True
     
     order_types = {
-        'entry': 'market',
-        'exit': 'market',
-        'stoploss': 'market',
-        'stoploss_on_exchange': False
+        'entry': 'market', 'exit': 'market', 'stoploss': 'market', 'stoploss_on_exchange': False
     }
     
     d0 = DecimalParameter(0.01, 1.0, default=0.99, space='sell', optimize=False, load=False)
@@ -149,21 +130,16 @@ class CustomD3QNStrategy4z(IStrategy):
     def __init__(self, config: dict) -> None:
         super().__init__(config)
         self.logger = logging.getLogger(__name__)
-        self.project_root = project_root # Используем глобально определенный корень
+        self.project_root = project_root 
         
         self._batch_cache = {}
-        self._last_batch_time = None
+        self._last_batch_ts = 0.0
         self._batch_lock = threading.Lock()
         self._is_batch_processing = False
         
         if load_dotenv:
             load_dotenv(dotenv_path=project_root / '.env')
 
-        # --- RE-SYNC CONFIG PARAMS ---
-        rl_tsl = config.get('rl_tsl', {})
-        if 'd0' in rl_tsl: self.d0.value = float(rl_tsl['d0'])
-        if 'p_target' in rl_tsl: self.p_target.value = float(rl_tsl['p_target'])
-        
         self.enable_long_1 = config.get('rl_enable_long_1', True)
         self.enable_long_2 = config.get('rl_enable_long_2', True)
         self.enable_short_1 = config.get('rl_enable_short_1', True)
@@ -174,30 +150,15 @@ class CustomD3QNStrategy4z(IStrategy):
         self._short_1_agent = None
         self._short_2_agent = None
         
-        self.feature_cache = OrderedDict()
-        self.q_value_cache = OrderedDict()
-        self.cache_lock = threading.Lock()
-        self.cache_max_size = 10
         self.tsl_memory = {}
-        self.adv_history = {}
-        self.last_config_update = datetime.now()
-        
-        self.ensemble_cfg = config.get('rl_ensemble', {})
-        self.q_normalization = self.ensemble_cfg.get('q_normalization', {})
-        self.epsilon_threshold_eff_long = self.rl_epsilon_long.value
-        self.epsilon_threshold_eff_short = self.rl_epsilon_short.value
-        self.equity_max_long = 0.0
-        self.equity_max_short = 0.0
-        self._batch_lock = threading.Lock()
+        self.q_normalization = config.get('rl_ensemble', {}).get('q_normalization', {})
 
     @property
     def long_1_agent(self):
         if not self.enable_long_1: return None
         if self._long_1_agent is None:
-            model_paths = self.config.get('rl_ensemble', {}).get('model_paths', {})
-            path = project_root / model_paths.get('long_1', '')
-            cfg_file = next(path.glob("*.py"))
-            self.cfg_long_1 = self._load_py_config(cfg_file)
+            path = project_root / self.config.get('rl_ensemble', {}).get('model_paths', {}).get('long_1', '')
+            self.cfg_long_1 = self._load_py_config(next(path.glob("*.py")))
             self._long_1_agent = self._create_agent_from_config(self.cfg_long_1)
             self._load_weights(self._long_1_agent, path / "best.onnx", "L1")
         return self._long_1_agent
@@ -206,10 +167,8 @@ class CustomD3QNStrategy4z(IStrategy):
     def long_2_agent(self):
         if not self.enable_long_2: return None
         if self._long_2_agent is None:
-            model_paths = self.config.get('rl_ensemble', {}).get('model_paths', {})
-            path = project_root / model_paths.get('long_2', '')
-            cfg_file = next(path.glob("*.py"))
-            self.cfg_long_2 = self._load_py_config(cfg_file)
+            path = project_root / self.config.get('rl_ensemble', {}).get('model_paths', {}).get('long_2', '')
+            self.cfg_long_2 = self._load_py_config(next(path.glob("*.py")))
             self._long_2_agent = self._create_agent_from_config(self.cfg_long_2)
             self._load_weights(self._long_2_agent, path / "best.onnx", "L2")
         return self._long_2_agent
@@ -218,10 +177,8 @@ class CustomD3QNStrategy4z(IStrategy):
     def short_1_agent(self):
         if not self.enable_short_1: return None
         if self._short_1_agent is None:
-            model_paths = self.config.get('rl_ensemble', {}).get('model_paths', {})
-            path = project_root / model_paths.get('short_1', '')
-            cfg_file = next(path.glob("*.py"))
-            self.cfg_short_1 = self._load_py_config(cfg_file)
+            path = project_root / self.config.get('rl_ensemble', {}).get('model_paths', {}).get('short_1', '')
+            self.cfg_short_1 = self._load_py_config(next(path.glob("*.py")))
             mirror = getattr(self.cfg_short_1.market, 'mirror_mode', False)
             self._short_1_agent = self._create_agent_from_config(self.cfg_short_1, mirror_mode=mirror)
             self._load_weights(self._short_1_agent, path / "best.onnx", "S1")
@@ -231,10 +188,8 @@ class CustomD3QNStrategy4z(IStrategy):
     def short_2_agent(self):
         if not self.enable_short_2: return None
         if self._short_2_agent is None:
-            model_paths = self.config.get('rl_ensemble', {}).get('model_paths', {})
-            path = project_root / model_paths.get('short_2', '')
-            cfg_file = next(path.glob("*.py"))
-            self.cfg_short_2 = self._load_py_config(cfg_file)
+            path = project_root / self.config.get('rl_ensemble', {}).get('model_paths', {}).get('short_2', '')
+            self.cfg_short_2 = self._load_py_config(next(path.glob("*.py")))
             mirror = getattr(self.cfg_short_2.market, 'mirror_mode', False)
             self._short_2_agent = self._create_agent_from_config(self.cfg_short_2, mirror_mode=mirror)
             self._load_weights(self._short_2_agent, path / "best.onnx", "S2")
@@ -248,31 +203,19 @@ class CustomD3QNStrategy4z(IStrategy):
 
     def _create_agent_from_config(self, cfg, mirror_mode=False):
         agent = D3QN_PER_Agent(
-            state_shape=cfg.seq.state_shape,
-            action_dim=cfg.market.num_actions,
-            cnn_maps=cfg.model.cnn_maps,
-            cnn_kernels=cfg.model.cnn_kernels,
-            cnn_strides=cfg.model.cnn_strides,
-            cnn_dilations=getattr(cfg.model, 'cnn_dilations', [1] * len(cfg.model.cnn_maps)),
-            dense_val=cfg.model.dense_val,
-            dense_adv=cfg.model.dense_adv,
-            additional_feats=cfg.model.additional_feats,
-            dropout_model=cfg.model.dropout_p,
-            device=torch.device("cpu"),
-            gamma=cfg.rl.gamma,
-            learning_rate=cfg.rl.lr,
-            batch_size=cfg.rl.batch_size,
-            buffer_size=cfg.per.buffer_size,
-            target_update_freq=cfg.rl.target_update_freq,
-            train_start=cfg.rl.train_start,
-            per_alpha=cfg.per.per_alpha,
-            per_beta_start=cfg.per.per_beta_start,
-            per_beta_frames=cfg.per.per_beta_frames,
-            eps_start=cfg.eps.eps_start,
-            eps_end=cfg.eps.eps_end,
-            eps_frames=cfg.eps.eps_decay_frames,
-            epsilon=0.0,
-            max_gradient_norm=cfg.rl.max_gradient_norm
+            state_shape=cfg.seq.state_shape, action_dim=cfg.market.num_actions,
+            cnn_maps=cfg.model.cnn_maps, cnn_kernels=cfg.model.cnn_kernels,
+            cnn_strides=cfg.model.cnn_strides, 
+            cnn_dilations=getattr(cfg.model, 'cnn_dilations', [1]*len(cfg.model.cnn_maps)),
+            dense_val=cfg.model.dense_val, dense_adv=cfg.model.dense_adv,
+            additional_feats=cfg.model.additional_feats, dropout_model=cfg.model.dropout_p,
+            device=torch.device("cpu"), gamma=cfg.rl.gamma, learning_rate=cfg.rl.lr,
+            batch_size=cfg.rl.batch_size, buffer_size=cfg.per.buffer_size,
+            target_update_freq=cfg.rl.target_update_freq, train_start=cfg.rl.train_start,
+            per_alpha=cfg.per.per_alpha, per_beta_start=cfg.per.per_beta_start,
+            per_beta_frames=cfg.per.per_beta_frames, eps_start=cfg.eps.eps_start,
+            eps_end=cfg.eps.eps_end, eps_frames=cfg.eps.eps_decay_frames,
+            epsilon=0.0, max_gradient_norm=cfg.rl.max_gradient_norm
         )
         agent.mirror_mode = mirror_mode
         return agent
@@ -282,7 +225,7 @@ class CustomD3QNStrategy4z(IStrategy):
             so = ort.SessionOptions()
             so.intra_op_num_threads = self.config.get('cpu_threads', 12)
             agent.ort_session = ort.InferenceSession(str(onnx_path), sess_options=so, providers=['CPUExecutionProvider'])
-            self.logger.info(f"🚀 {name} ONNX Loaded")
+            self.logger.info(f"[OK] {name} ONNX Loaded")
 
     def _run_global_batch_inference(self, current_time: datetime):
         if self._is_batch_processing: return
@@ -296,11 +239,9 @@ class CustomD3QNStrategy4z(IStrategy):
             for pair in whitelist:
                 df = self.dp.get_pair_dataframe(pair, self.timeframe)
                 if df is None or len(df) < 180: continue
-                
                 raw_cols = ['open', 'high', 'low', 'close', 'volume']
                 z_slice = df[raw_cols].iloc[-180:].copy()
                 z_slice['volume'] = np.log1p(z_slice['volume'])
-                
                 mean, std = z_slice.mean().values, z_slice.std().values + 1e-6
                 normalized = (z_slice.iloc[-90:].values - mean) / std
                 
@@ -310,7 +251,7 @@ class CustomD3QNStrategy4z(IStrategy):
                         d[:, :4] *= -1.0
                         d[:, [1, 2]] = d[:, [2, 1]]
                     img = d.T.flatten()
-                    return np.expand_dims(np.concatenate([img, np.zeros(4, dtype=np.float32)]), axis=0)
+                    return np.expand_dims(np.concatenate([img, np.zeros(4, dtype=np.float32)]), axis=0).astype(np.float32)
 
                 if self.enable_long_1: 
                     tasks["long_1"].append(prep_input(normalized))
@@ -327,21 +268,20 @@ class CustomD3QNStrategy4z(IStrategy):
 
             for m_name, model_tasks in tasks.items():
                 if not model_tasks: continue
-                batch_input = np.vstack(model_tasks)
+                batch_input = np.vstack(model_tasks).astype(np.float32)
                 agent = getattr(self, f"{m_name}_agent")
                 if agent and agent.ort_session:
                     res = agent.ort_session.run(None, {agent.ort_session.get_inputs()[0].name: batch_input})[0]
                     for i, pair in enumerate(pairs_in_batch[m_name]):
                         if pair not in self._batch_cache: self._batch_cache[pair] = {}
                         self._batch_cache[pair][m_name] = res[i:i+1, :]
-            self.logger.info(f"⚡ BATCH INFERENCE COMPLETE: {len(whitelist)} pairs")
+            self.logger.info(f"[BATCH] INFERENCE COMPLETE: {len(whitelist)} pairs")
         finally:
             self._is_batch_processing = False
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe['quote_volume'] = dataframe['volume'] * dataframe['close']
         is_live = self.config.get('runmode') in ['live', 'dry_run']
-        
         vol_sma_window = 1440 if not is_live else 200 
         dataframe['quote_volume_sma'] = dataframe['quote_volume'].rolling(window=vol_sma_window, min_periods=100).mean().fillna(0)
 
@@ -365,7 +305,7 @@ class CustomD3QNStrategy4z(IStrategy):
             ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
             for col in ohlcv_cols:
                 rolling = dataframe[col].rolling(window=90, min_periods=90)
-                dataframe[f'{col}_z'] = (dataframe[col] - rolling.mean()) / (rolling.std(ddof=0) + 1e-6)
+                dataframe[f'{col}_z'] = ((dataframe[col] - rolling.mean()) / (rolling.std(ddof=0) + 1e-6)).astype(np.float32)
             dataframe.fillna(0.0, inplace=True)
 
         ema_period = int(self.ema_fast_period.value)
@@ -377,50 +317,45 @@ class CustomD3QNStrategy4z(IStrategy):
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
         window = 90
         should_invert = (side == "SHORT") and ((model_num == 1 and self.short_1_agent.mirror_mode) or (model_num == 2 and self.short_2_agent.mirror_mode))
-        
         if self.config.get('runmode') in ('live', 'dry_run'):
             if 'open_z' in dataframe.columns:
-                last_window = dataframe[['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']].iloc[-window:].values.copy()
+                last_window = dataframe[['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']].iloc[-window:].values.copy().astype(np.float32)
             else:
                 raw_cols = ['open', 'high', 'low', 'close', 'volume']
                 df_slice = dataframe[raw_cols].iloc[-180:].copy()
                 df_slice['volume'] = np.log1p(df_slice['volume'])
                 mean, std = df_slice.mean().values, df_slice.std().values + 1e-6
-                last_window = (df_slice.iloc[-window:].values - mean) / std
-            
+                last_window = ((df_slice.iloc[-window:].values - mean) / std).astype(np.float32)
             if should_invert:
                 last_window[:, :4] *= -1.0
                 last_window[:, [1, 2]] = last_window[:, [2, 1]]
-            
             img = last_window.T.flatten()
-            return np.expand_dims(np.concatenate([img, np.zeros(4, dtype=np.float32)]), axis=0)
+            return np.expand_dims(np.concatenate([img, np.zeros(4, dtype=np.float32)]), axis=0).astype(np.float32)
         else:
             if 'open_z' not in dataframe.columns: return None
             z_data = dataframe[['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']].values.astype(np.float32)
             windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1).copy()
             if should_invert:
-                windows[:, :, :4] *= -1.0
-                windows[:, :, [1, 2]] = windows[:, :, [2, 1]]
+                windows[:, :4] *= -1.0
+                windows[:, [1, 2]] = windows[:, [2, 1]]
             img_batch = windows.transpose(0, 2, 1).reshape(len(windows), -1)
-            return np.concatenate([img_batch, np.zeros((len(windows), 4), dtype=np.float32)], axis=1)
+            return np.concatenate([img_batch, np.zeros((len(windows), 4), dtype=np.float32)], axis=1).astype(np.float32)
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         if dataframe.empty: return dataframe
         dataframe['impulse_long_ok'] = (dataframe['close'] / dataframe['open']) < 1.005
         dataframe['impulse_short_ok'] = (dataframe['close'] / dataframe['open']) > 0.995
         
-        current_time = dataframe.iloc[-1]['date']
-        time_anchor = current_time.replace(second=0, microsecond=0)
+        # Ускоряем: Привязка к системному времени (строго 1 раз в минуту для всего вайтлиста)
+        time_now_ts = datetime.now(timezone.utc).replace(second=0, microsecond=0).timestamp()
         with self._batch_lock:
-            if self._last_batch_time != time_anchor and self.config.get('runmode') in ['live', 'dry_run']:
-                self._run_global_batch_inference(current_time)
-                self._last_batch_time = time_anchor
+            if self._last_batch_ts != time_now_ts and self.config.get('runmode') in ['live', 'dry_run']:
+                self._run_global_batch_inference(datetime.now(timezone.utc))
+                self._last_batch_ts = time_now_ts
 
         if len(dataframe) < self.startup_candle_count: return dataframe
-        
         q_values = self._batch_cache.get(metadata['pair'], {})
         if not q_values and self.config.get('runmode') not in ['live', 'dry_run']:
-            # Fallback for backtest (non-batch)
             asset_name = metadata['pair'].split(':')[0].replace('/', '')
             for m in ['long_1', 'long_2', 'short_1', 'short_2']:
                 side, num = m.split('_')
@@ -448,11 +383,9 @@ class CustomD3QNStrategy4z(IStrategy):
 
         l_vote = sig_l1 + sig_l2
         s_vote = sig_s1 + sig_s2
-        
         l_final = (l_vote >= self.rl_long_threshold_opt.value) & (s_vote == 0)
         s_final = (s_vote >= self.rl_short_threshold_opt.value) & (l_vote == 0)
         
-        # Apply filters
         l_final &= dataframe['impulse_long_ok'].iloc[-len(l_final):].values
         s_final &= dataframe['impulse_short_ok'].iloc[-len(s_final):].values
         
@@ -464,6 +397,18 @@ class CustomD3QNStrategy4z(IStrategy):
         dataframe.loc[target_idx, 'enter_long'] = l_final.astype(np.int8)
         dataframe.loc[target_idx, 'enter_short'] = s_final.astype(np.int8)
         return dataframe
+
+    def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
+                            time_in_force: str, current_time: datetime, entry_tag: Optional[str],
+                            side: str, **kwargs) -> bool:
+        # ЖЕСТКИЙ ЛИМИТ 20/20 (только для Live/Dry-run)
+        open_trades = Trade.get_open_trades()
+        if side == 'long':
+            long_count = len([t for t in open_trades if not t.is_short])
+            return long_count < 20
+        else:
+            short_count = len([t for t in open_trades if t.is_short])
+            return short_count < 20
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         return dataframe
