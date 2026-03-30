@@ -293,11 +293,20 @@ class CustomD3QNStrategy4z(IStrategy):
                 df = self.dp.get_pair_dataframe(pair, self.timeframe)
                 if df is None or len(df) < 180: continue
                 raw_cols = ['open', 'high', 'low', 'close', 'volume']
-                z_slice = df[raw_cols].iloc[-180:].copy()
-                z_slice['volume'] = np.log1p(z_slice['volume'])
-                mean, std = z_slice.mean().values, z_slice.std().values + 1e-6
-                normalized = (z_slice.iloc[-90:].values - mean) / std
-                
+
+                # Извлекаем сырой numpy массив для скорости
+                arr = df[raw_cols].iloc[-180:].values.astype(np.float32)
+
+                # In-place логарифмирование объема (5-я колонка, индекс 4)
+                arr[:, 4] = np.log1p(arr[:, 4])
+
+                # Математически точный расчет mean и std (строго ddof=0, как при обучении)
+                mean = arr.mean(axis=0)
+                std = arr.std(axis=0, ddof=0) + 1e-6
+
+                # Окно наблюдения
+                normalized = (arr[-90:] - mean) / std
+
                 def prep_input(data, invert=False):
                     d = data.copy()
                     if invert:
@@ -389,10 +398,12 @@ class CustomD3QNStrategy4z(IStrategy):
                 last_window = dataframe[['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']].iloc[-window:].values.copy().astype(np.float32)
             else:
                 raw_cols = ['open', 'high', 'low', 'close', 'volume']
-                df_slice = dataframe[raw_cols].iloc[-180:].copy()
-                df_slice['volume'] = np.log1p(df_slice['volume'])
-                mean, std = df_slice.mean().values, df_slice.std().values + 1e-6
-                last_window = ((df_slice.iloc[-window:].values - mean) / std).astype(np.float32)
+                arr = dataframe[raw_cols].iloc[-180:].values.astype(np.float32)
+                arr[:, 4] = np.log1p(arr[:, 4])
+
+                mean = arr.mean(axis=0)
+                std = arr.std(axis=0, ddof=0) + 1e-6
+                last_window = ((arr[-window:] - mean) / std).astype(np.float32)
             if should_invert:
                 last_window[:, :4] *= -1.0
                 last_window[:, [1, 2]] = last_window[:, [2, 1]]
