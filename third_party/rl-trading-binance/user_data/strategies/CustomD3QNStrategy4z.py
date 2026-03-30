@@ -110,8 +110,8 @@ class CustomD3QNStrategy4z(IStrategy):
     global_ema_period = IntParameter(5, 60, default=25, space='buy', optimize=False, load=False)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=1000, space='buy', optimize=False, load=False)
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
-    rl_epsilon_long = DecimalParameter(0.0, 0.01, default=0.001, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.95, 1.0, default=0.98, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.0005, 1.0, default=0.001, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.0005, 0.985, default=0.98, space='sell', optimize=True, load=False)
 
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
     cvd_window = IntParameter(75, 90, default=83, space='buy', optimize=False, load=False)
@@ -140,6 +140,22 @@ class CustomD3QNStrategy4z(IStrategy):
         if load_dotenv:
             load_dotenv(dotenv_path=project_root / '.env')
 
+        # --- КОНФИГУРАЦИЯ ИЗ ФАЙЛА ---
+        self.rl_enable_veto = config.get('rl_enable_veto', False)
+        rl_ensemble_cfg = config.get('rl_ensemble', {})
+        
+        # Загружаем эпсилоны (пороги уверенности)
+        if 'epsilon_threshold_long' in rl_ensemble_cfg:
+            self.rl_epsilon_long.value = rl_ensemble_cfg['epsilon_threshold_long']
+        if 'epsilon_threshold_short' in rl_ensemble_cfg:
+            self.rl_epsilon_short.value = rl_ensemble_cfg['epsilon_threshold_short']
+
+        # Загружаем пороги голосования
+        if 'rl_long_threshold' in config:
+            self.rl_long_threshold_opt.value = config['rl_long_threshold']
+        if 'rl_short_threshold' in config:
+            self.rl_short_threshold_opt.value = config['rl_short_threshold']
+
         self.enable_long_1 = config.get('rl_enable_long_1', True)
         self.enable_long_2 = config.get('rl_enable_long_2', True)
         self.enable_short_1 = config.get('rl_enable_short_1', True)
@@ -157,6 +173,30 @@ class CustomD3QNStrategy4z(IStrategy):
         self.adv_history = {}
         self.last_config_update = datetime.now(timezone.utc)
         self.config_update_interval = config.get('rl_ensemble', {}).get('q_update_interval', 14400) # 4 часа по умолчанию
+
+    def __getstate__(self):
+        """Гарантирует сериализуемость стратегии для Hyperopt (отсекаем ONNX и Lock)."""
+        state = self.__dict__.copy()
+        # Список ключей, которые ТОЧНО нельзя пиклить
+        unpicklable = [
+            '_batch_lock', '_is_batch_processing',
+            '_long_1_agent', '_long_2_agent', '_short_1_agent', '_short_2_agent',
+            'long_1_agent', 'long_2_agent', 'short_1_agent', 'short_2_agent'
+        ]
+        for key in unpicklable:
+            state.pop(key, None)
+        return state
+
+    def __setstate__(self, state):
+        """Восстанавливает чистую стратегию в новом процессе."""
+        self.__dict__.update(state)
+        self._batch_lock = threading.Lock()
+        self._is_batch_processing = False
+        # Обнуляем агентов для ленивой инициализации в воркере
+        self._long_1_agent = None
+        self._long_2_agent = None
+        self._short_1_agent = None
+        self._short_2_agent = None
 
     @property
     def long_1_agent(self):
@@ -445,8 +485,13 @@ class CustomD3QNStrategy4z(IStrategy):
 
         if not q_values: return dataframe
 
+        # Определяем длину предсказаний (количество окон)
+        any_q = next(iter(q_values.values()))
+        pred_len = len(any_q)
+
         def get_sig(name, idx, side_eps):
-            if name not in q_values: return 0
+            if name not in q_values: 
+                return np.zeros(pred_len, dtype=np.int8)
             q = q_values[name]
             adv = q[:, idx] - q[:, 0]
             norm_cfg = self.q_normalization.get(name, {})
@@ -461,8 +506,13 @@ class CustomD3QNStrategy4z(IStrategy):
 
         l_vote = sig_l1 + sig_l2
         s_vote = sig_s1 + sig_s2
-        l_final = (l_vote >= self.rl_long_threshold_opt.value) & (s_vote == 0)
-        s_final = (s_vote >= self.rl_short_threshold_opt.value) & (l_vote == 0)
+        
+        if self.rl_enable_veto:
+            l_final = (l_vote >= self.rl_long_threshold_opt.value) & (s_vote == 0)
+            s_final = (s_vote >= self.rl_short_threshold_opt.value) & (l_vote == 0)
+        else:
+            l_final = (l_vote >= self.rl_long_threshold_opt.value)
+            s_final = (s_vote >= self.rl_short_threshold_opt.value)
         
         l_final &= dataframe['impulse_long_ok'].iloc[-len(l_final):].values
         s_final &= dataframe['impulse_short_ok'].iloc[-len(s_final):].values
