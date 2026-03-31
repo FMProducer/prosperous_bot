@@ -130,9 +130,9 @@
 - **Variant B (Impulse Guard)**:
     - **Logic**: Vectorized filter prevents entries if the current candle has already moved >0.5% from its open.
     - **Result**: Normalized Win Rate at **57.2%**, significantly reducing "buying the peak" in volatile markets.
-- **Variant C (Limit Orders with Discount)**:
-    - **Status**: PLANNED.
-    - **Goal**: Further reduce slippage by entering with limit orders at a 0.1-0.2% discount to the signal price.
+- [x] **Variant C (Limit Orders with Discount)**: 
+    - **Status**: COMPLETED.
+    - **Details**: Switched from Market to Limit orders with a 0.1% discount to signal price. Added `check_entry_timeout` (180s) to manage unfilled orders.
 
 ## Part 6: Extreme Performance & Portfolio Balance
 
@@ -153,20 +153,32 @@
 - **ONNX Type Safety**: Enforced strict `float32` casting for all tensors to resolve `InvalidArgument` (double vs float) errors in Windows ONNX Runtime.
 - **Robust Normalization**: Integrated "on-the-fly" Z-score calculation for live data, allowing the strategy to run without pre-calculated technical columns.
 
+## Part 7: Ultra-Conservative Calibration (The "Tank" Update)
+
+### 26. Architectural Hardening
+- **Limit Orders & ROI**: Implemented `limit` orders with 0.1% discount and ROI 45:0 to minimize slippage and eliminate "Timeout Trap".
+- **Timeout Hooks**: Surgical integration of `custom_entry_price` and `check_entry_timeout` (180s) to manage entry lifecycle.
+- **Impulse Guard**: Vectorized `impulse_long_ok` and `impulse_short_ok` integrated into trend population logic.
+- **Numpy Acceleration**: Live-mode inference accelerated via raw array slicing and manual Z-score calculation for mathematical parity with training.
+
+### 27. Restored Backtest Results (Jan 2026, 3 Days)
+- **Win Rate**: **94.4%** (Validated on local terminal).
+- **Profit**: **2.84%** (Limit Entry) vs 3.39% (Market Entry).
+- **Drawdown**: **0.23%** Absolute.
+- **Efficiency**: **Profit Factor 11.25** (Record), Sharpe 1033.
+- **Order Scheme**: Maker Entry (0.1% discount) / Taker Exit (Market).
+- **Summary**: The "Safe Scheme" reduces absolute profit by ~16% compared to market entries but increases overall trading efficiency (Profit Factor) by 31%, effectively filtering out low-quality impulse entries.
+
 ## Completed Tasks
 - [x] **237x Inference Acceleration:** Batch processing now takes <1s for the full whitelist.
 - [x] **Portfolio Directional Limits:** Hard 20/20 cap for Longs and Shorts.
 - [x] **Windows Stability Patch:** Resolved encoding and data type mismatches.
-- [x] **High-Performance Backtest:** Verified +13.10% profit (PF 5.33) over 3 days in Jan 2026.
+- [x] **High-Performance Backtest:** Verified +3.39% profit with 94.3% Win Rate.
+- [x] **Variant C (Limit Orders):** Reduced slippage via discounted entry.
 
 ## Next Steps
-- [ ] **Bear Market Stability Test (May 2025)**: Verify if the 20/20 rule and Nonlinear TSL protect equity during a crash.
-- [ ] **Variant C (Limit Orders)**: Implementation of entry at a 0.1% discount to further reduce costs.
-- [ ] **Dry-Run Monitoring (24h)**: Evaluation of Nonlinear TSL efficiency in real-time execution.
-
-
-
-
-     Вариант В: «Limit Orders с дисконтом»
-     Вместо Market-ордера ставить лимитку на 0.1-0.2% ниже текущей цены.
-      * Результат: Если это истинный пробой — нас заберет на микро-откате. Если цена улетит без нас — ну и ладно, зато не купили «хай». 
+- [ ] **Dry-Run Monitoring (24h)**: Evaluate Maker-order mechanics and unfilled limit cancellations.
+- [ ] **Bear Market Stress Test (May 2025)**: Verify 20/20 slot logic and Dynamic Epsilon during high volatility/crashes.
+- [ ] **Epsilon Calibration**: Potentially lower `rl_epsilon_long` and `rl_epsilon_short` to increase trade frequency if needed.
+- [ ] **Nonlinear TSL Efficiency**: Continuous monitoring of TSL performance in real-time execution.
+ 

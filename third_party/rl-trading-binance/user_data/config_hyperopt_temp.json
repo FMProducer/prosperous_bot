@@ -45,12 +45,12 @@
         "aggression_factor": 1.5
     },
     "telegram": {
-        "enabled": true,
+        "enabled": false,
         "token": "",
         "chat_id": ""
     },
     "api_server": {
-        "enabled": true,
+        "enabled": false,
         "listen_ip_address": "0.0.0.0",
         "listen_port": 8080,
         "username": "freqtrader",
@@ -67,7 +67,7 @@
         "*": 5
     },
     "order_types": {
-        "entry": "market",
+        "entry": "limit",
         "exit": "market",
         "emergency_exit": "market",
         "force_exit": "market",
@@ -77,7 +77,7 @@
         "stoploss_price_type": "mark"
     },
     "entry_pricing": {
-        "price_side": "other",
+        "price_side": "same",
         "use_order_book": true,
         "order_book_top": 1,
         "price_last_balance": 0.0,

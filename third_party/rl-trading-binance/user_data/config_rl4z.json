@@ -67,7 +67,7 @@
         "*": 5
     },
     "order_types": {
-        "entry": "market",
+        "entry": "limit",
         "exit": "market",
         "emergency_exit": "market",
         "force_exit": "market",
@@ -77,7 +77,7 @@
         "stoploss_price_type": "mark"
     },
     "entry_pricing": {
-        "price_side": "other",
+        "price_side": "same",
         "use_order_book": true,
         "order_book_top": 1,
         "price_last_balance": 0.0,
@@ -120,19 +120,19 @@
         "q_normalization": {
             "long_1": {
                 "q_min": 3.6e-05,
-                "q_max": 0.001506
+                "q_max": 0.000647
             },
             "long_2": {
-                "q_min": 0.000192,
-                "q_max": 0.000419
+                "q_min": 0.000156,
+                "q_max": 0.000369
             },
             "short_1": {
-                "q_min": 9.7e-05,
-                "q_max": 0.000555
+                "q_min": 0.000434,
+                "q_max": 0.000603
             },
             "short_2": {
-                "q_min": 0.000239,
-                "q_max": 0.000688
+                "q_min": 0.000502,
+                "q_max": 0.000704
             }
         }
     },
