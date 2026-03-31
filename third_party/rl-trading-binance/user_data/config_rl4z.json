@@ -45,7 +45,7 @@
         "aggression_factor": 1.5
     },
     "telegram": {
-        "enabled": true,
+        "enabled": false,
         "token": "",
         "chat_id": ""
     },
@@ -119,20 +119,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 2.9e-05,
-                "q_max": 0.003252
+                "q_min": 3.6e-05,
+                "q_max": 0.001506
             },
             "long_2": {
-                "q_min": 0.000115,
-                "q_max": 0.000434
+                "q_min": 0.000192,
+                "q_max": 0.000419
             },
             "short_1": {
-                "q_min": 0.000249,
-                "q_max": 0.000585
+                "q_min": 9.7e-05,
+                "q_max": 0.000555
             },
             "short_2": {
-                "q_min": 0.000315,
-                "q_max": 0.000709
+                "q_min": 0.000239,
+                "q_max": 0.000688
             }
         }
     },
