@@ -962,13 +962,12 @@ class CustomD3QNStrategy4z(IStrategy):
                 last_window = ((arr[-window:] - mean) / std).astype(np.float32)
 
             if should_invert:
-                # 1. Invert ONLY prices (Open, High, Low, Close -> indices 0, 1, 2, 3)
+                # 1. Инвертируем ТОЛЬКО цены (Open, High, Low, Close -> индексы 0, 1, 2, 3)
                 last_window[:, :4] *= -1.0
-                # 2. Swap High and Low columns (index 1 and 2) to maintain valid candle geometry
+                # 2. Свопаем колонки High и Low (индексы 1 и 2), т.к. после инверсии они поменялись ролями
                 last_window[:, [1, 2]] = last_window[:, [2, 1]]
-                # Note: Volume (index 4) remains unchanged
+                # Объем (индекс 4) остается без изменений
             
-            # Transpose (90, 5) -> (5, 90) then flatten to (450,)
             img_flat = last_window.T.flatten()
             add_feats = np.zeros(4, dtype=np.float32)
             full_input = np.concatenate([img_flat, add_feats])
@@ -978,29 +977,20 @@ class CustomD3QNStrategy4z(IStrategy):
             cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
             z_data = dataframe[cols].values.astype(np.float32)
             try:
-                windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1).copy() # MUST COPY
+                windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1).copy()
             except Exception as e:
                 self.logger.error(f"Sliding window failed: {e}")
                 return None
 
             if should_invert:
-                # Invert prices
+                # 1. Инвертируем цены в батче
                 windows[:, :, :4] *= -1.0
-                # Swap High and Low
+                # 2. Свопаем High и Low в батче
                 windows[:, :, [1, 2]] = windows[:, :, [2, 1]]
             
-            # Batch Transpose: (Batch, Window, Channels) -> (Batch, Channels, Window)
-            # then flatten each to (Batch, 450)
             img_batch = windows.transpose(0, 2, 1).reshape(len(windows), -1)
-            
-            # Add 4 dummy features for each item in batch
             add_feats = np.zeros((len(windows), 4), dtype=np.float32)
-            try:
-                full_input = np.concatenate([img_batch, add_feats], axis=1)
-            except Exception as e:
-                self.logger.error(f"OOM in get_model_input for {pair}: {e}")
-                return None
-
+            full_input = np.concatenate([img_batch, add_feats], axis=1)
             return full_input
 
     def get_model_input_cached(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str):
