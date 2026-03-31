@@ -102,18 +102,22 @@ class CustomD3QNStrategy4z(IStrategy):
     # minimal_roi = {"0": 100}
     minimal_roi = {
         "0": 0.5,
-        "59": 0
+        "30": 0.01,
+        "45": 0
     }
-    stoploss = -0.99  # Заглушка, работает custom_stoploss
+    stoploss = -0.99
     trailing_stop = False
     use_custom_stoploss = True
-    
+
     order_types = {
-        'entry': 'market',
+        'entry': 'limit',
         'exit': 'market',
         'stoploss': 'market',
         'stoploss_on_exchange': False
     }
+
+    # Дисконт для Maker-ордеров (0.1% от цены сигнала)
+    entry_discount_pct = 0.001
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
     d0 = DecimalParameter(0.01, 1.0, default=0.22, space='sell', optimize=False, load=False)
@@ -870,14 +874,21 @@ class CustomD3QNStrategy4z(IStrategy):
             
         return info_list
     
-    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
-                   current_profit: float, **kwargs):
-        trade_open_date = getattr(trade, 'open_date_utc', None)
-        if trade_open_date is not None:
-            duration_min = (current_time - trade_open_date).total_seconds() / 60
-            if duration_min >= 60:
-                return "timeout_60m"
-        return None
+    def custom_entry_price(self, pair: str, current_time: datetime, proposed_rate: float,
+                           entry_tag: Optional[str], side: str, **kwargs) -> float:
+        """Вход лимитками для сбора спреда и снижения комиссии (Maker fee)."""
+        if side == 'long':
+            return proposed_rate * (1.0 - self.entry_discount_pct)
+        else:
+            return proposed_rate * (1.0 + self.entry_discount_pct)
+
+    def check_entry_timeout(self, pair: str, trade: Trade, order: dict,
+                            current_time: datetime, **kwargs) -> bool:
+        """Отмена ордера, если он не исполнился за 3 свечи (180 секунд), чтобы не морозить слот."""
+        if trade.open_date_utc and (current_time - trade.open_date_utc).total_seconds() > 180:
+            self.logger.info(f"[TIMEOUT] Canceling unfilled limit entry for {pair}")
+            return True
+        return False
     
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                        current_rate: float, current_profit: float, **kwargs) -> float:
@@ -932,10 +943,7 @@ class CustomD3QNStrategy4z(IStrategy):
 
         if len(dataframe) < window:
             return None
-            
-        cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
-        z_data = dataframe[cols].values.astype(np.float32)
-        
+
         # Inversion logic (Mirror Mode)
         should_invert = False
         if side == "SHORT":
@@ -943,8 +951,16 @@ class CustomD3QNStrategy4z(IStrategy):
                 should_invert = True
 
         if self.config.get('runmode') in ('live', 'dry_run'):
-            # SINGLE ROW INFERENCE (Live or optimized backtest)
-            last_window = z_data[-window:].copy() # MUST COPY
+            if 'open_z' in dataframe.columns:
+                last_window = dataframe[['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']].iloc[-window:].values.copy().astype(np.float32)
+            else:
+                raw_cols = ['open', 'high', 'low', 'close', 'volume']
+                arr = dataframe[raw_cols].iloc[-180:].values.astype(np.float32)
+                arr[:, 4] = np.log1p(arr[:, 4])
+                mean = arr.mean(axis=0)
+                std = arr.std(axis=0, ddof=0) + 1e-6
+                last_window = ((arr[-window:] - mean) / std).astype(np.float32)
+
             if should_invert:
                 # 1. Invert ONLY prices (Open, High, Low, Close -> indices 0, 1, 2, 3)
                 last_window[:, :4] *= -1.0
@@ -959,6 +975,8 @@ class CustomD3QNStrategy4z(IStrategy):
             return np.expand_dims(full_input, axis=0)
         else:
             # BATCH INFERENCE (Full Backtest)
+            cols = ['open_z', 'high_z', 'low_z', 'close_z', 'volume_z']
+            z_data = dataframe[cols].values.astype(np.float32)
             try:
                 windows = sliding_window_view(z_data, window_shape=(window, 5)).squeeze(1).copy() # MUST COPY
             except Exception as e:
@@ -1542,6 +1560,10 @@ class CustomD3QNStrategy4z(IStrategy):
         if dataframe.empty:
             return dataframe
 
+        # IMPULSE GUARD: Запрет на покупку вытянутых свечей (защита от хаев)
+        dataframe['impulse_long_ok'] = (dataframe['close'] / dataframe['open']) < 1.005
+        dataframe['impulse_short_ok'] = (dataframe['close'] / dataframe['open']) > 0.995
+
         # СИНХРОНИЗАЦИЯ: Обновляем базовые значения из параметров Hyperopt
         self.epsilon_threshold_long = float(self.rl_epsilon_long.value)
         self.epsilon_threshold_short = float(self.rl_epsilon_short.value)
@@ -1906,6 +1928,10 @@ class CustomD3QNStrategy4z(IStrategy):
         # 3. Final Signal Arrays (Fixed boolean logic)
         raw_enter_long = (votes_long >= thresh_long) & (~long_vetoed) & (not has_long) & (not has_short)
         raw_enter_short = (votes_short >= thresh_short) & (~short_vetoed) & (not has_long) & (not has_short) & self.can_short
+
+        if is_backtest or n_predictions > 0:
+            raw_enter_long &= dataframe['impulse_long_ok'].iloc[-n_predictions:].values
+            raw_enter_short &= dataframe['impulse_short_ok'].iloc[-n_predictions:].values
 
         # --- LOGGING RAW SIGNALS FOR SLIPPAGE ANALYTICS ---
         if not is_backtest:
