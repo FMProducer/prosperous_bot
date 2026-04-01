@@ -116,8 +116,8 @@ class CustomD3QNStrategy4z(IStrategy):
         'stoploss_on_exchange': False
     }
 
-    # Дисконт для Maker-ордеров (0.1% от цены сигнала)
-    entry_discount_pct = 0.001
+    # Дисконт для Maker-ордеров (0.1% от цены сигнала 0.001)
+    entry_discount_pct = 0.0004
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
     d0 = DecimalParameter(0.01, 1.0, default=0.22, space='sell', optimize=False, load=False)
