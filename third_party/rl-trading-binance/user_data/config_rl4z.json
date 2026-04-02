@@ -119,19 +119,19 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 9.6e-05,
-                "q_max": 0.003337
+                "q_min": 7.2e-05,
+                "q_max": 0.003221
             },
             "long_2": {
-                "q_min": 0.00024,
-                "q_max": 0.000444
+                "q_min": 0.000215,
+                "q_max": 0.00044
             },
             "short_1": {
-                "q_min": 6.5e-05,
-                "q_max": 0.00059
+                "q_min": 9.7e-05,
+                "q_max": 0.000596
             },
             "short_2": {
-                "q_min": 0.000235,
+                "q_min": 0.000153,
                 "q_max": 0.000689
             }
         }

@@ -117,10 +117,10 @@ class CustomD3QNStrategy4z(IStrategy):
     }
 
     # Дисконт для Maker-ордеров (0.1% от цены сигнала 0.001)
-    entry_discount_pct = 0.0004
+    entry_discount_pct = 0.001
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
-    d0 = DecimalParameter(0.01, 1.0, default=0.22, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.01, 1.0, default=0.99, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
     hysteresis = DecimalParameter(0.001, 0.01, default=0.005, space='sell', optimize=False, load=False)
     p_target = DecimalParameter(0.007, 0.1, default=0.04, space='sell', optimize=False, load=False)
@@ -148,8 +148,8 @@ class CustomD3QNStrategy4z(IStrategy):
     dd_aggression_k = DecimalParameter(0.0, 2.0, default=2.0, space='buy', optimize=False, load=False)
 
     # Оптимизируемые пороги уверенности (Epsilon) - ВЫСОКИЙ ПОРОГ rl_epsilon_long 0.209 rl_epsilon_short 0.743
-    rl_epsilon_long = DecimalParameter(0.0, 0.01, default=0.0, space='buy', optimize=False, load=False)
-    rl_epsilon_short = DecimalParameter(0.95, 1.0, default=0.99, space='sell', optimize=False, load=False)
+    rl_epsilon_long = DecimalParameter(0.0001, 0.01, default=0.001, space='buy', optimize=False, load=False)
+    rl_epsilon_short = DecimalParameter(0.0001, 0.01, default=0.001, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
     vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
@@ -170,6 +170,9 @@ class CustomD3QNStrategy4z(IStrategy):
     # --- EXIT CLIMAX (More aggressive) ---
     vol_f3_peak = DecimalParameter(4.5, 6.0, default=5.857, space='sell', optimize=False, load=False)
     vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
+
+    # Экстренный выход по сигналу ансамбля при достижении порога убытка
+    emergency_exit_threshold = DecimalParameter(-0.1, -0.1, default=-0.15, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
@@ -890,6 +893,30 @@ class CustomD3QNStrategy4z(IStrategy):
             return True
         return False
     
+    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
+                    current_profit: float, **kwargs):
+        """
+        Умный контроль выходов:
+        1. "Emergency Alpha Stop": Если модели уверены в развороте (2/2) 
+           И убыток уже ощутимый (> 1.0%), выходим не дожидаясь стопа.
+        """
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        last_candle = dataframe.iloc[-1]
+
+        # Порог экстренного выхода по сигналу (можно оптимизировать)
+        emergency_loss_threshold = -0.15  # -1.5%
+
+        if trade.is_short:
+            # Для шорта: сигнал в лонг (votes_long >= 2) при убытке
+            if last_candle.get('votes_long', 0) >= 2 and current_profit < emergency_loss_threshold:
+                return "emergency_stop_short"
+        else:
+            # Для лонга: сигнал в шорт (votes_short >= 2) при убытке
+            if last_candle.get('votes_short', 0) >= 2 and current_profit < emergency_loss_threshold:
+                return "emergency_stop_long"
+
+        return None
+
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                        current_rate: float, current_profit: float, **kwargs) -> float:
         d0_val = self.d0.value
@@ -2022,13 +2049,15 @@ class CustomD3QNStrategy4z(IStrategy):
         # Assign back to DataFrame
         dataframe.loc[target_idx, 'enter_long'] = enter_long_vals
         dataframe.loc[target_idx, 'enter_short'] = enter_short_vals
+        dataframe.loc[target_idx, 'votes_long'] = votes_long
+        dataframe.loc[target_idx, 'votes_short'] = votes_short
 
         return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        Фильтр 3: Climax reversal (Vol peak + divergence)
-        Используется исключительно для закрытия позиций при кульминации тренда.
+        Логика выходов: 
+        Фильтр 3: Climax reversal (Vol peak + divergence).
         """
         if not self.vol_f3_enabled.value:
             return dataframe

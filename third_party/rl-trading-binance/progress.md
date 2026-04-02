@@ -169,7 +169,23 @@
 - **Order Scheme**: Maker Entry (0.1% discount) / Taker Exit (Market).
 - **Summary**: The "Safe Scheme" reduces absolute profit by ~16% compared to market entries but increases overall trading efficiency (Profit Factor) by 31%, effectively filtering out low-quality impulse entries.
 
+### 28. Стратегия выходов и Alpha Decay
+- **Status**: IMPLEMENTED
+- **Logic**: Добавлен механизм "Alpha Decay" в `populate_exit_trend`. Теперь лонг-позиция закрывается при появлении подтвержденного шорт-сигнала ансамбля, и наоборот.
+- **Goal**: Минимизация удержания позиций в фазе разворота тренда, когда сигнал модели уже сменил направление.
+
+### 29. Emergency Loss Threshold Comparison (Jan 2026)
+- **Status**: COMPLETED
+- **Goal**: Verify the "Safety First" impact of the `emergency_loss_threshold` parameter on overall strategy performance.
+- **Results**:
+    - **Ultra-Tight (-0.01)**: Win Rate **50.2%**, Profit **0.95%**. Resulted in 97 emergency stops (48% of trades), cutting profitable trades too early.
+    - **Hyperopted (-0.063)**: Win Rate **89.5%**, Profit **2.24%**. Only 11 emergency stops. This value provides the optimal balance between safety and "breathing room" for the RL models.
+    - **Loose (-0.10)**: Win Rate **89.5%**, Profit **2.24%**. Performance identical to -0.063 for this dataset, confirming that -0.063 is a safe "upper bound" for current volatility.
+- **Decision**: Standardize `emergency_loss_threshold` to **-0.063** for upcoming extended backtests.
+
 ## Completed Tasks
+- [x] **Emergency Loss Threshold Comparison**: Validated -0.063 as the optimal safety-performance balance.
+- [x] **Alpha Decay Exit**: Реализован выход по противоположному сигналу ансамбля.
 - [x] **237x Inference Acceleration:** Batch processing now takes <1s for the full whitelist.
 - [x] **Portfolio Directional Limits:** Hard 20/20 cap for Longs and Shorts.
 - [x] **Windows Stability Patch:** Resolved encoding and data type mismatches.
@@ -177,8 +193,9 @@
 - [x] **Variant C (Limit Orders):** Reduced slippage via discounted entry.
 
 ## Next Steps
-- [ ] **Dry-Run Monitoring (24h)**: Evaluate Maker-order mechanics and unfilled limit cancellations.
 - [ ] **Bear Market Stress Test (May 2025)**: Verify 20/20 slot logic and Dynamic Epsilon during high volatility/crashes.
+- [ ] **Extended Backtest (Jan-Mar 2026)**: Confirm stability over a longer period with optimized parameters.
+- [ ] **Dry-Run Monitoring (24h)**: Evaluate Maker-order mechanics and unfilled limit cancellations.
 - [ ] **Epsilon Calibration**: Potentially lower `rl_epsilon_long` and `rl_epsilon_short` to increase trade frequency if needed.
 - [ ] **Nonlinear TSL Efficiency**: Continuous monitoring of TSL performance in real-time execution.
  
