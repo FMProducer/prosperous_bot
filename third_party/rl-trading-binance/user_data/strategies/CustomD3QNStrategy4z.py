@@ -101,11 +101,9 @@ class CustomD3QNStrategy4z(IStrategy):
     
     # minimal_roi = {"0": 100}
     minimal_roi = {
-        "0": 0.5,
-        "30": 0.01,
-        "45": 0
+        "59": 0.001
     }
-    stoploss = -0.99
+    stoploss = -0.21
     trailing_stop = False
     use_custom_stoploss = True
 
@@ -116,17 +114,17 @@ class CustomD3QNStrategy4z(IStrategy):
         'stoploss_on_exchange': False
     }
 
-    # Дисконт для Maker-ордеров (0.1% от цены сигнала 0.001)
-    entry_discount_pct = 0.001
+    # Дисконт для Maker-ордеров (от 0% до 1%)
+    entry_discount_pct = DecimalParameter(0.0, 0.01, default=0.005, space='buy', optimize=False, load=False)
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
-    d0 = DecimalParameter(0.01, 1.0, default=0.99, space='sell', optimize=False, load=False)
+    d0 = DecimalParameter(0.01, 1.0, default=0.547, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.01, default=0.005, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.007, 0.1, default=0.04, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.01, default=0.002, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.002, 0.1, default=0.015, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.95, 1.1, default=1.003, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.95, 1.1, default=0.953, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
@@ -172,7 +170,7 @@ class CustomD3QNStrategy4z(IStrategy):
     vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
 
     # Экстренный выход по сигналу ансамбля при достижении порога убытка
-    emergency_exit_threshold = DecimalParameter(-0.1, -0.1, default=-0.15, space='sell', optimize=False, load=False)
+    emergency_exit_threshold = DecimalParameter(-0.01, -0.2, default=-0.15, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
@@ -270,6 +268,10 @@ class CustomD3QNStrategy4z(IStrategy):
         # Dynamic Epsilon Aggression
         if 'dd_aggression_k' in rl_ens: self.dd_aggression_k.value = float(rl_ens['dd_aggression_k'])
 
+        # --- 6. ENTRY DISCOUNT ---
+        if 'entry_discount_pct' in config:
+            self.entry_discount_pct.value = float(config['entry_discount_pct'])
+
         # --- LOGGING STATUS ---
         logger.info(f"[CONFIG] Volume Filter F1 (Surge): {'ENABLED' if self.vol_f1_enabled.value else 'DISABLED'}")
         logger.info(f"[CONFIG] Volume Filter F2 (CVD): {'ENABLED' if self.vol_f2_enabled.value else 'DISABLED'}")
@@ -277,6 +279,7 @@ class CustomD3QNStrategy4z(IStrategy):
         logger.info(f"[CONFIG] TSL: d0={self.d0.value}, d_min={self.d_min.value}, exp={self.tsl_exponent.value}")
         logger.info(f"[CONFIG] Voting: L_thresh={self.rl_long_threshold_opt.value}, S_thresh={self.rl_short_threshold_opt.value}")
         logger.info(f"[CONFIG] Regime: Global TF={self.informative_timeframe_global}, Global Period={self.global_ema_period.value}")
+        logger.info(f"[CONFIG] Entry Discount: {self.entry_discount_pct.value:.4%}")
 
         # Убираем спам о отмене стоплосса
         def filter_stoploss_cancel(record):
@@ -881,9 +884,9 @@ class CustomD3QNStrategy4z(IStrategy):
                            entry_tag: Optional[str], side: str, **kwargs) -> float:
         """Вход лимитками для сбора спреда и снижения комиссии (Maker fee)."""
         if side == 'long':
-            return proposed_rate * (1.0 - self.entry_discount_pct)
+            return proposed_rate * (1.0 - self.entry_discount_pct.value)
         else:
-            return proposed_rate * (1.0 + self.entry_discount_pct)
+            return proposed_rate * (1.0 + self.entry_discount_pct.value)
 
     def check_entry_timeout(self, pair: str, trade: Trade, order: dict,
                             current_time: datetime, **kwargs) -> bool:

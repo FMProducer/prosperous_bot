@@ -20,18 +20,18 @@
     "rl_enable_long_2": true,
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
-    "stoploss": -0.99,
+    "stoploss": -0.2,
     "minimal_roi": {
-        "59": 0.01
+        "59": 0.001
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.99,
+        "d0": 0.547,
         "d_min": 0.001,
-        "hysteresis": 0.005,
-        "p_target": 0.04,
-        "tsl_exponent": 1.003
+        "hysteresis": 0.002,
+        "p_target": 0.015,
+        "tsl_exponent": 0.953
     },
     "rl_regime": {
         "global_ema_timeframe": "1m",
@@ -45,7 +45,7 @@
         "aggression_factor": 1.5
     },
     "telegram": {
-        "enabled": false,
+        "enabled": true,
         "token": "",
         "chat_id": ""
     },
@@ -119,20 +119,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 7.2e-05,
-                "q_max": 0.003221
+                "q_min": 3.8e-05,
+                "q_max": 0.003004
             },
             "long_2": {
-                "q_min": 0.000215,
-                "q_max": 0.00044
+                "q_min": 0.000115,
+                "q_max": 0.000429
             },
             "short_1": {
-                "q_min": 9.7e-05,
-                "q_max": 0.000596
+                "q_min": 0.000241,
+                "q_max": 0.000599
             },
             "short_2": {
-                "q_min": 0.000153,
-                "q_max": 0.000689
+                "q_min": 0.000342,
+                "q_max": 0.00072
             }
         }
     },

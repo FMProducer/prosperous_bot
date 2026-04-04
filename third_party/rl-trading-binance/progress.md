@@ -1,6 +1,7 @@
 # Progress Report: RL Trading System Optimization
 
 ## Completed Tasks
+- [x] Make `entry_discount_pct` hyperoptable in `CustomD3QNStrategy4z.py`.
 - [x] Refactor EMA filters: Global filter is now per-ticker on a higher timeframe (3m, 5m, 15m).
 - [x] Maintain BTC EMA visualization in dashboards by keeping indicator names.
 - [x] Update `informative_pairs` to support multi-timeframe data for all whitelist tickers.
