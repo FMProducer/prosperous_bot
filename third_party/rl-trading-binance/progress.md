@@ -204,8 +204,11 @@
 - [x] **High-Performance Backtest:** Verified +3.39% profit with 94.3% Win Rate.
 - [x] **Variant C (Limit Orders):** Reduced slippage via discounted entry.
 
-## Next Steps
-- [ ] **Bear Market Stress Test (May 2025)**: Verify 20/20 slot logic and Dynamic Epsilon during high volatility/crashes.
+### 31. Калибровка Alpha Stop для Paper Trading
+- **Status**: TESTING (Dry-run)
+- **Parameter**: `emergency_exit_threshold` установлен на **-0.0575**.
+- **Observation**: Выявлено, что порог начинает активно влиять на результаты начиная с -0.0574.
+- **Expected Behavior**: Стратегия игнорирует встречные сигналы в зоне прибыли и малых убытков, активируя экстренный выход по сигналу только при просадке глубже 5.75%.
 - [ ] **Extended Backtest (Jan-Mar 2026)**: Confirm stability over a longer period with optimized parameters.
 - [ ] **Dry-Run Monitoring (24h)**: Evaluate Maker-order mechanics and unfilled limit cancellations.
 - [ ] **Epsilon Calibration**: Potentially lower `rl_epsilon_long` and `rl_epsilon_short` to increase trade frequency if needed.
