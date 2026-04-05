@@ -905,21 +905,31 @@ class CustomD3QNStrategy4z(IStrategy):
         return False
     
     def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
-                    current_profit: float, **kwargs):
+                    current_profit: float, **kwargs) -> Optional[str]:
         """
         Умный контроль выходов:
-        1. "Emergency Alpha Stop": Если модели уверены в развороте (согласно rl_exit_threshold) 
+        1. Soft Time-Stop: Освобождение слота от мертвых сделок.
+        2. "Emergency Alpha Stop": Если модели уверены в развороте (согласно rl_exit_threshold)
            И убыток уже ощутимый (> emergency_exit_threshold), выходим не дожидаясь стопа.
         """
+        # --- 1. Soft Time-Stop ---
+        trade_open_date = getattr(trade, 'open_date_utc', None)
+        if trade_open_date is not None:
+            duration_min = (current_time - trade_open_date).total_seconds() / 60.0
+            # Если сидим дольше 120 минут и профит ниже 0.5% (около нуля или убыток)
+            if duration_min >= 120 and current_profit < 0.005:
+                return "time_opportunity_cost"
+
+        # --- 2. Emergency Alpha Stop ---
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         if dataframe.empty:
             return None
-            
+
         last_candle = dataframe.iloc[-1]
 
         # Используем параметры стратегии для экстренного выхода
         emergency_loss = self.emergency_exit_threshold.value
-        
+
         # Порог голосов для выхода (Alpha Decay)
         exit_long_thresh = self.rl_exit_long_threshold.value
         exit_short_thresh = self.rl_exit_short_threshold.value
