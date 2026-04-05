@@ -27,7 +27,7 @@
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.547,
+        "d0": 0.191,
         "d_min": 0.001,
         "hysteresis": 0.002,
         "p_target": 0.015,

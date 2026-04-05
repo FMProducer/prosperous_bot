@@ -117,14 +117,14 @@ class CustomD3QNStrategy4z(IStrategy):
     # Дисконт для Maker-ордеров (от 0% до 1%)
     entry_discount_pct = DecimalParameter(0.0, 0.01, default=0.005, space='buy', optimize=False, load=False)
     
-    # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.22, p_target 0.037,
+    # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.547, d_min 0.001, hysteresis 0.002, p_target 0.015, tsl_exponent 0.953
     d0 = DecimalParameter(0.01, 1.0, default=0.547, space='sell', optimize=False, load=False)
     d_min = DecimalParameter(0.0005, 0.005, default=0.001, space='sell', optimize=False, load=False)
-    hysteresis = DecimalParameter(0.001, 0.01, default=0.002, space='sell', optimize=False, load=False)
-    p_target = DecimalParameter(0.002, 0.1, default=0.015, space='sell', optimize=False, load=False)
+    hysteresis = DecimalParameter(0.001, 0.005, default=0.002, space='sell', optimize=False, load=False)
+    p_target = DecimalParameter(0.005, 0.05, default=0.015, space='sell', optimize=False, load=False)
     
     # Степень нелинейности TSL (1.0 - Линейно для предсказуемости)
-    tsl_exponent = DecimalParameter(0.95, 1.1, default=0.953, space='sell', optimize=False, load=False)
+    tsl_exponent = DecimalParameter(0.9, 1.05, default=0.953, space='sell', optimize=False, load=False)
 
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
