@@ -788,6 +788,13 @@ class CustomD3QNStrategy4z(IStrategy):
         dataframe['gap_pct_long'] = dataframe['buy_vol'] / (dataframe['sell_vol'] + 1e-8)
         dataframe['gap_pct_short'] = dataframe['sell_vol'] / (dataframe['buy_vol'] + 1e-8)
 
+        # ATR для динамического стоп-лосса (Native pandas, safe for CPU inference)
+        high_low = dataframe['high'] - dataframe['low']
+        high_close = (dataframe['high'] - dataframe['close'].shift()).abs()
+        low_close = (dataframe['low'] - dataframe['close'].shift()).abs()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        dataframe['atr'] = tr.rolling(14).mean().fillna(0.0)
+
         # Log-transform volume to match training distribution
         dataframe['volume'] = np.log1p(dataframe['volume'])
         
@@ -994,6 +1001,19 @@ class CustomD3QNStrategy4z(IStrategy):
             d_eff = d0_val - (d0_val - d_min_val) * (p_norm**exponent)
             d_eff = max(d_min_val, d_eff)
         
+        # --- ATR DYNAMIC FLOOR ---
+        try:
+            # Извлекаем ATR из актуального фрейма
+            dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+            if not dataframe.empty and 'atr' in dataframe.columns:
+                atr_val = dataframe['atr'].iloc[-1]
+                # Стоп на расстоянии 3 ATR
+                dynamic_floor = -(atr_val * 3) / current_rate
+                # Не позволяем стопу быть шире изначального d0_val (наш хард-стоп)
+                return max(-d_eff, dynamic_floor, -self.d0.value)
+        except Exception:
+            pass
+
         return -d_eff
 
     def get_model_input(self, dataframe: DataFrame, pair: str, side: str, model_num: int, asset_name: str) -> Optional[torch.Tensor]:
