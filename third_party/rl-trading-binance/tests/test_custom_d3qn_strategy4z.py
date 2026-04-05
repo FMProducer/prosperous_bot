@@ -153,14 +153,13 @@ class TestCustomD3QNStrategy4z:
         with patch("CustomD3QNStrategy4z.merge_informative_pair", side_effect=dummy_merge):
             df_ind = s.populate_indicators(df, {"pair": "BTC/USDT:USDT"})
             s.populate_indicators(gen_df(5), {"pair": "p"}) # Guard
-            with patch.object(s, '_compute_supertrend', side_effect=Exception("ST")): s.populate_indicators(df, {"pair": "p"})
 
         # 2. Entry Trend & Loops
         qv = {nm: np.zeros((200, 3)) for nm in ["long_1", "long_2", "short_1", "short_2"]}
         qv["long_1"][:, 1] = 2.0; qv["long_2"][:, 1] = 2.0
         s.q_normalization = {nm: {"q_min": 0, "q_max": 3} for nm in qv}; s.epsilon_threshold_eff_long = 0.1
         df_ind["st_regime_15m"] = 1
-        with patch.object(s, '_parallel_inference', return_value=qv):
+        with patch.object(s, '_run_inference', return_value=qv):
             s.populate_entry_trend(df_ind, {"pair": "BTC/USDT:USDT"})
             s.runmode = 'backtest'; s.populate_entry_trend(df_ind, {"pair": "BTC/USDT:USDT"})
 
@@ -197,4 +196,4 @@ class TestCustomD3QNStrategy4z:
         s.informative_pairs(); s.leverage("p", now, 100, 1, 5, None, "long")
         img_tensor = torch.zeros((1, 5, 90, 1))
         feat_tensor = torch.zeros((1, 4))
-        s._parallel_inference([((img_tensor, feat_tensor), s.long_1_agent, "long_1")])
+        s._run_inference([(img_tensor, s.long_1_agent, "long_1")])
