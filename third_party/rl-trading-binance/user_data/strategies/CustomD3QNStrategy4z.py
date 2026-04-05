@@ -2060,8 +2060,14 @@ class CustomD3QNStrategy4z(IStrategy):
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
         Логика выходов: 
-        Фильтр 3: Climax reversal (Vol peak + divergence).
+        1. Противоположный сигнал ансамбля (Alpha Decay).
+        2. Фильтр 3: Climax reversal (Vol peak + divergence).
         """
+        # Выход по противоположному сигналу ансамбля (переворот)
+        if 'enter_short' in dataframe.columns and 'enter_long' in dataframe.columns:
+            dataframe['exit_long'] = np.where(dataframe['enter_short'] == 1, 1, dataframe.get('exit_long', 0))
+            dataframe['exit_short'] = np.where(dataframe['enter_long'] == 1, 1, dataframe.get('exit_short', 0))
+
         if not self.vol_f3_enabled.value:
             return dataframe
 
