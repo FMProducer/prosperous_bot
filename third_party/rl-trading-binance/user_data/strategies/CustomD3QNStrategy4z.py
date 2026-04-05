@@ -916,8 +916,8 @@ class CustomD3QNStrategy4z(IStrategy):
         trade_open_date = getattr(trade, 'open_date_utc', None)
         if trade_open_date is not None:
             duration_min = (current_time - trade_open_date).total_seconds() / 60.0
-            # Если сидим дольше 120 минут и профит ниже 0.5% (около нуля или убыток)
-            if duration_min >= 120 and current_profit < 0.005:
+            # Если сидим дольше 60 минут и профит ниже 0.5% (около нуля или убыток)
+            if duration_min >= 60 and current_profit < 0.005:
                 return "time_opportunity_cost"
 
         # --- 2. Emergency Alpha Stop ---
