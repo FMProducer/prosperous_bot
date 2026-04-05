@@ -174,7 +174,12 @@ class CustomD3QNStrategy4z(IStrategy):
     vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
 
     # Экстренный выход по сигналу ансамбля при достижении порога убытка (Alpha Stop) (Для проверки в Live поставьте -0.001)
-    emergency_exit_threshold = DecimalParameter(-0.5, 0.0, default=-0.0575, space='sell', optimize=False, load=False)
+    emergency_exit_threshold = DecimalParameter(-0.3, 0.0, default=-0.001, space='sell', optimize=False, load=False)
+
+    # --- ATR DYNAMIC FLOOR PARAMETERS ---
+    atr_multiplier = DecimalParameter(1.5, 5.0, default=1.572, space='sell', optimize=False, load=False)
+    atr_period = IntParameter(10, 40, default=24, space='sell', optimize=False, load=False)
+
 
     plot_config = {
         'main_plot': {},
@@ -789,11 +794,12 @@ class CustomD3QNStrategy4z(IStrategy):
         dataframe['gap_pct_short'] = dataframe['sell_vol'] / (dataframe['buy_vol'] + 1e-8)
 
         # ATR для динамического стоп-лосса (Native pandas, safe for CPU inference)
+        atr_win = int(self.atr_period.value)
         high_low = dataframe['high'] - dataframe['low']
         high_close = (dataframe['high'] - dataframe['close'].shift()).abs()
         low_close = (dataframe['low'] - dataframe['close'].shift()).abs()
         tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        dataframe['atr'] = tr.rolling(14).mean().fillna(0.0)
+        dataframe['atr'] = tr.rolling(atr_win).mean().fillna(0.0)
 
         # Log-transform volume to match training distribution
         dataframe['volume'] = np.log1p(dataframe['volume'])
@@ -1001,17 +1007,33 @@ class CustomD3QNStrategy4z(IStrategy):
             d_eff = d0_val - (d0_val - d_min_val) * (p_norm**exponent)
             d_eff = max(d_min_val, d_eff)
         
-        # --- ATR DYNAMIC FLOOR ---
+        # --- ATR DYNAMIC FLOOR (CORRECTED) ---
         try:
             # Извлекаем ATR из актуального фрейма
             dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
             if not dataframe.empty and 'atr' in dataframe.columns:
                 atr_val = dataframe['atr'].iloc[-1]
-                # Стоп на расстоянии 3 ATR
-                dynamic_floor = -(atr_val * 3) / current_rate
-                # Не позволяем стопу быть шире изначального d0_val (наш хард-стоп)
-                return max(-d_eff, dynamic_floor, -self.d0.value)
-        except Exception:
+                
+                # Коэффициенты из параметров
+                multiplier = float(self.atr_multiplier.value)
+                hard_stop = float(self.d0.value)
+                
+                # Рассчитываем динамическую дистанцию (положительное число)
+                # Это "пол" (floor), ниже которого стоп не должен опускаться при высокой волатильности
+                atr_dist = (atr_val * multiplier) / current_rate
+                
+                # Логика: Выбираем МАКСИМАЛЬНУЮ дистанцию (самый широкий стоп) между TSL и ATR,
+                # чтобы дать алгоритму дышать, НО ограничиваем её хард-стопом d0.
+                
+                # 1. Выбираем более широкий стоп (max от положительных дистанций)
+                target_dist = max(d_eff, atr_dist)
+                
+                # 2. Ограничиваем хард-стопом (не шире d0)
+                final_dist = min(target_dist, hard_stop)
+                
+                return -final_dist
+        except Exception as e:
+            self.logger.error(f"Error in ATR Dynamic Floor: {e}")
             pass
 
         return -d_eff

@@ -6,211 +6,62 @@
 - [x] Maintain BTC EMA visualization in dashboards by keeping indicator names.
 - [x] Update `informative_pairs` to support multi-timeframe data for all whitelist tickers.
 
-### 1. Lookahead Bias Fixes (Critical)
-- **Safe Rate Retrieval**: Implemented `calculate_current_price` in `CustomD3QNStrategy4z.py` to ensure that in backtest mode, only data up to the current candle is used for profit calculations.
-- **PnL Calculation Update**: Modified `_get_pnl_from_freqtrade` to use the safe price retrieval mechanism, preventing future data leakage during backtesting.
-- **Lookahead Validation**: Added a strict check in `populate_entry_trend` that raises a `ValueError` if future data is detected in the dataframe during a backtest.
-- **Time Synchronization**: Replaced `datetime.now()` calls with `current_time` (the timestamp of the current candle) in all dynamic logic (slots and epsilon) to ensure consistency in backtests.
-
-### 2. Overtrading Prevention & Noise Reduction
-- **Regime Filters**: Enabled Supertrend-based filters (Global BTC 15m + Local Asset 15m) to ensure trading only in confirmed trends.
-- **Liquidity Filtering**: Introduced `min_quote_volume_usd` threshold to filter out low-volume noise (reduced trades from 5900+ to ~200 per day).
-- **Logging Cleanup**: Implemented custom filters to suppress data loading spam and added "Smart Logging" for signals (log once per new signal).
-- **Initial Optimization**: Achieved Profit Factor 2.02 on a high-confidence 1-day backtest.
-
-### 3. Hyperopt Integration & Multiprocessing
-- **Parameter Exposure**: Converted Epsilon thresholds and Voting Thresholds into optimizeable `DecimalParameters`.
-- **Multiprocessing Fix**: Resolved `PicklingError` by implementing `__getstate__`/`__setstate__` to exclude thread locks during serialization.
-- **RAM Management**: Identified and documented optimal worker counts (`-j 2`) for 24GB RAM systems to prevent disk swapping.
-
-### 4. Risk Management & Non-Linear Trailing
-- **Non-Linear TSL**: Implemented `tsl_exponent` parameter to control the curvature of the trailing stop-loss (power function optimization).
-- **TSL Guardrails**: Tightened optimization ranges for trailing stops (max 5% initial distance) to prevent "profit evaporation."
-- **Config Priority Fix**: Removed hardcoded config overrides in `__init__`, allowing Hyperopt and strategy defaults to take precedence for consistent testing.
-
-### 5. "Safety First" Re-Calibration
-- **Overfitting Resolution**: Identified that Hyperopt overfitted to high-volatility days (Jan 2nd), leading to failures in subsequent "choppy" periods.
-- **Conservative Lockdown**: Manually applied strict "Safety First" parameters:
-    - Raised entry confidence (`Epsilon`) to **0.48**.
-    - Mandated **2/2 model agreement** for all entries.
-    - Reduced initial stop-loss to **2%** to minimize risk per trade.
-    - Set linear TSL (`exponent: 1.0`) for predictable exit behavior during re-testing.
-
-### 6. System Recovery & Environment Stabilization
-- **Windows Environment Restoration**: Successfully rebuilt the Python 3.11 environment after Linux/WSL migration attempts caused dependency corruption.
-- **Dependency Locking**: Enforced strict version matching using `requirements-lock.txt` from trained models, restoring `PyTorch 2.7.1+cu118` and `Freqtrade` (dev-5a42724).
-- **Network/DNS Fix**: Resolved `aiodns` conflict causing `ExchangeNotAvailable` on Windows by removing the library and forcing standard IPv4 DNS resolution.
-- **Dry-Run Validation**: Confirmed full system functionality:
-    - Strategy loaded (`CustomD3QNStrategy4z`).
-    - All 4 RL Agents initialized with QAT support.
-    - Binance API connectivity restored.
-
-### 7. Windows Optimization & Linux Cleanup
-- **WSL Removal**: Fully uninstalled Windows Subsystem for Linux (Ubuntu), removed `wsl.exe` components, and cleaned registry keys (`Lxss`) to eliminate "hybrid environment" conflicts.
-- **Disk Cleanup**: Reclaimed ~10GB of space by removing old Anaconda/Miniconda installations (`.conda`, `miniconda3`) and leftover Linux file systems.
-- **UI Patching**: Fixed `FileNotFoundError` in Freqtrade API Server by creating fallback UI assets (`fallback_file.html`, `favicon.ico`) in the virtual environment path, stabilizing the web server.
-
-### 8. Доработка стратегии и подготовка к оптимизации
-- **Устранение проблемы с порогом голосования (2/2 Консенсус)**
-    - Выявлено, что файл `CustomD3QNStrategy4z.json` (результат предыдущего Hyperopt) переопределял порог голосования шорт-моделей на 1, игнорируя настройки стратегии.
-    - Файл `CustomD3QNStrategy4z.json` исправлен для принудительного порога `rl_short_threshold_opt = 2`.
-    - В коде стратегии (`CustomD3QNStrategy4z.py`) параметры `rl_long_threshold_opt` и `rl_short_threshold_opt` установлены со строгим диапазоном `[2, 2]` для обеспечения консенсуса 2/2.
-    - Добавлен импорт `CategoricalParameter` в файл стратегии для устранения ошибки `Pylance`.
-
-### 9. Hyperopt Parameter Integration (Trial 30/100)
-- **Configuration Update**: Applied best-performing parameters from Hyperopt trial `30/100` (Objective: 94.66) to both `user_data/strategies/CustomD3QNStrategy4z.json` and `user_data/config_rl4z.json`.
-- **Key Changes**:
-    - Enabled `trailing_stop` with `trailing_stop_positive = 0.181`.
-    - Updated `stoploss` to **-7.3%**.
-    - Adjusted `minimal_roi` table for faster profit-taking.
-    - Synchronized `rl_epsilon_long` (0.492), `rl_epsilon_short` (0.251), `dd_aggression_k` (0.247), and `min_quote_volume_usd` (348k).
-
-### 10. Безопасность и интеграция окружения
-- **Миграция секретов**: Все чувствительные данные успешно вынесены из основного конфига. Для работы используется гибридная схема: базовые секреты в `.env` и динамические секреты API в `user_data/secrets.json`.
-- **Контроль доступа**: Реализован раздельный запуск через флаги `-c config_rl4z.json -c secrets.json`, что позволяет безопасно делиться основным конфигом без риска утечки ключей.
-- **Оптимизация инференса**: Подтверждена стабильная работа последовательного инференса ONNX без использования `ThreadPoolExecutor`, что исключило риск конфликтов потоков (CPU Thrashing) на Ryzen 9.
-
-### 11. New Hardware Migration & Windows Finalization (Ryzen 9)
-- **Устранение сетевых конфликтов**: Удалены `aiodns` и `pycares`, мешавшие работе `ccxt` на Windows. Система переведена на стандартный системный DNS-резолвер.
-- **WebSocket Stability Patch**: Обновлены библиотеки `websockets` (до 16.0) и `uvicorn` (до 0.42.0). Это устранило ошибку `AttributeError: transfer_data_task`, которая возникала при закрытии сессий в браузере и «спамила» в логи.
-- **Локальный UI Fix**: Созданы файлы-заглушки для интерфейса (`favicon.ico`, `fallback_file.html`) по путям поиска внутри `.venv`, что убрало критические ошибки 500 при доступе к API серверу.
-
-### 12. Результаты стресс-теста (Ryzen 9 + 253 пары)
-- **Пропускная способность**: Система успешно обрабатывает **311 прогнозов в минуту** (~5/сек). За 2 часа работы сгенерировано 37 399 сырых Q-прогнозов без задержек.
-- **Стабильность**: Подтверждена работа 2+2 Ensemble (Long1, Long2, Short1, Short2) в реальном времени.
-- **Эффективность фильтров**: Объемный фильтр успешно отсеивает ~21% неликвидного шума (7946 сигналов), предотвращая входы с высоким проскальзыванием.
-- **Торговая активность**: Зафиксировано ~17.5 исполненных сделок в час при лимите 100 открытых позиций. Среднее проскальзывание в Dry-run: 0.0000% (норма).
-
-### 13. Инструментарий мониторинга и анализа
-- **Telegram Bot**: Интегрирован и протестирован удаленный пульт управления. Время отклика мгновенное.
-- **Ensemble Log Parser**: Обновлен скрипт `parse_ft_logs.py` для детального анализа воронки сигналов (Raw -> Filtered -> Executed) по каждой модели в ансамбле.
-- **Claude CLI Integration**: Настроена локальная среда для работы с Claude Code CLI v2.x.
-    - Реализовано проксирование через `LiteLLM` для подключения бесплатных и мощных моделей с **OpenRouter** (Qwen 2.5 Coder, DeepSeek, Stepfun).
-    - Настроено маскирование моделей в `settings.json`, что позволило использовать сторонние LLM внутри официального интерфейса Claude.
-    - Исправлены ошибки несовместимости параметров (`reasoning_effort`, `drop_params`) и аутентификации.
-
-### 14. Mobile Monitoring & Remote Access
-- **ZeroTier Virtual Network**: Established a private, encrypted P2P network to bypass ISP-level NAT (Beeline) and dynamic IP issues.
-- **Cross-Platform Connectivity**: Successfully linked Windows (Trading Server) and Android (Mobile Client) with authenticated managed IPs.
-- **FreqDroid Integration**: Configured the FreqDroid mobile app for real-time monitoring and emergency trade management.
-- **Firewall Stabilization**: Applied custom Windows Defender Firewall rules for TCP Port 8080 to ensure seamless API access from the ZeroTier subnet.
-
-## Part 5: Surgical Optimization & Scalability (v9-v14)
-
-### 18. Iterative Refinement Series
-- **v9-v10 (Surgical Precision)**: Stopped trade "spamming" (reduced from 13,000 to 56 trades) by raising `epsilon_threshold_long` to **0.30-0.40**. Achieved a stable Win Rate of **57.5%** and a record low Absolute Drawdown of **0.24%**.
-- **v11-v13 (Risk Calibration)**: Tested ultra-tight stop-losses (-2.0% to -3.0%). Found that -2.0% was too tight for 1m noise, while -4.0% provided the optimal "breathing room" for RL models.
-- **v14 (Final Battle Config)**: Merged high-precision entry (Eps: 0.30) with a 35-minute "short leash" ROI and a 4% safety stop. Restored the full 200+ ticker whitelist with a dynamic 1M USD volume filter.
-
-### 19. "Momentum Hunter v14" Final Results (Historical)
-- **Win Rate**: ~57.3% (Consistent across 3000+ trade backtests).
-- **Risk Control**: Absolute Drawdown reduced to **0.24% - 0.30%** during optimization phases.
-- **Execution**: Forced exit at 30-35 minutes effectively neutralized the "Timeout Trap" observed in Mar 28 paper trading.
-- **Scalability**: Confirmed stable performance on full whitelist with 50-80 concurrent slots.
-
-### 20. Safety-First Re-Calibration (Post-Slippage Audit)
-- **Status**: IMPLEMENTED
-- **Changes**:
-    - `epsilon_threshold_long`: raised to **0.45** (from 0.001) to eliminate noise.
-    - `stoploss`: hardened to **-0.04** (4%) to prevent deep drawdowns.
-    - `minimal_roi`: tightened to **35m** max duration to eliminate "Timeout Trap".
-    - `min_quote_volume_usd`: synchronized to **348,000** for better liquidity filtering.
-- **Expected Outcome**: Reduction in trade frequency by 80-90% with significant increase in Win Rate and Expectancy.
-
-### 21. Full-Market Scale-up Milestone
-- **Status**: SUCCESS (Record Win Rate)
-- **Results**: **+8.89%** profit, **56.9% Win Rate** (Timerange: 20260101-20260104).
-- **Key Insight**: Tightening `minimal_roi` to 45m reduced drawdown to **2.39%** and increased Win Rate by 5%. 
-- **Efficiency**: ROI exits increased from 449 to 1067, securing consistent gains.
-
-### 22. Technical Performance & Entry Quality (ABS Upgrade)
-- **Status**: IMPLEMENTED
-- **Variant A (Batch Inference)**: 
-    - **Optimization**: All 200+ pairs are now processed in a single ONNX batch per candle.
-    - **Result**: Analysis time dropped from **18.15s** to **<1.0s**. Eliminates "Event Loop lag" warnings.
-- **Variant B (Impulse Guard)**:
-    - **Logic**: Vectorized filter prevents entries if the current candle has already moved >0.5% from its open.
-    - **Result**: Normalized Win Rate at **57.2%**, significantly reducing "buying the peak" in volatile markets.
-- [x] **Variant C (Limit Orders with Discount)**: 
-    - **Status**: COMPLETED.
-    - **Details**: Switched from Market to Limit orders with a 0.1% discount to signal price. Added `check_entry_timeout` (180s) to manage unfilled orders.
-
-## Part 6: Extreme Performance & Portfolio Balance
-
-### 23. Radical Speed Optimization (The "1-Second" Milestone)
-- **Status**: SUCCESS
-- **Optimization**: Switched from per-pair inference to **System-Anchored Batch Inference**.
-- **Result**: Analysis time for 237 pairs dropped from **~70-90s** to **0.4s - 1.0s**. 
-- **Impact**: Orders are now created within the first second of a new candle, virtually eliminating "execution lag" and slippage.
-
-### 24. Portfolio Balancing (20/20 Slot Limit)
-- **Status**: IMPLEMENTED
-- **Problem**: In bull markets, the bot would fill all 40 slots with longs, leaving no room for short signals.
-- **Solution**: Implemented `confirm_trade_entry` logic that checks the database for open positions by direction.
-- **Result**: The bot now strictly maintains a maximum of **20 Longs** and **20 Shorts**, ensuring a balanced market-neutral capability.
-
-### 25. Windows Environment Hardening
-- **Unicode Fix**: Completely removed emojis and special characters from logging to prevent `UnicodeEncodeError` on Windows CP1251 consoles.
-- **ONNX Type Safety**: Enforced strict `float32` casting for all tensors to resolve `InvalidArgument` (double vs float) errors in Windows ONNX Runtime.
-- **Robust Normalization**: Integrated "on-the-fly" Z-score calculation for live data, allowing the strategy to run without pre-calculated technical columns.
-
-## Part 7: Ultra-Conservative Calibration (The "Tank" Update)
-
-### 26. Architectural Hardening
-- **Limit Orders & ROI**: Implemented `limit` orders with 0.1% discount and ROI 45:0 to minimize slippage and eliminate "Timeout Trap".
-- **Timeout Hooks**: Surgical integration of `custom_entry_price` and `check_entry_timeout` (180s) to manage entry lifecycle.
-- **Impulse Guard**: Vectorized `impulse_long_ok` and `impulse_short_ok` integrated into trend population logic.
-- **Numpy Acceleration**: Live-mode inference accelerated via raw array slicing and manual Z-score calculation for mathematical parity with training.
-
-### 27. Restored Backtest Results (Jan 2026, 3 Days)
-- **Win Rate**: **94.4%** (Validated on local terminal).
-- **Profit**: **2.84%** (Limit Entry) vs 3.39% (Market Entry).
-- **Drawdown**: **0.23%** Absolute.
-- **Efficiency**: **Profit Factor 11.25** (Record), Sharpe 1033.
-- **Order Scheme**: Maker Entry (0.1% discount) / Taker Exit (Market).
-- **Summary**: The "Safe Scheme" reduces absolute profit by ~16% compared to market entries but increases overall trading efficiency (Profit Factor) by 31%, effectively filtering out low-quality impulse entries.
-
-### 28. Стратегия выходов и Alpha Decay
-- **Status**: IMPLEMENTED
-- **Logic**: Добавлен механизм "Alpha Decay" в `populate_exit_trend`. Теперь лонг-позиция закрывается при появлении подтвержденного шорт-сигнала ансамбля, и наоборот.
-- **Goal**: Минимизация удержания позиций в фазе разворота тренда, когда сигнал модели уже сменил направление.
-
-### 29. Emergency Loss Threshold Comparison (Jan 2026)
-- **Status**: COMPLETED
-- **Goal**: Verify the "Safety First" impact of the `emergency_loss_threshold` parameter on overall strategy performance.
-- **Results**:
-    - **Ultra-Tight (-0.01)**: Win Rate **50.2%**, Profit **0.95%**. Resulted in 97 emergency stops (48% of trades), cutting profitable trades too early.
-    - **Hyperopted (-0.063)**: Win Rate **89.5%**, Profit **2.24%**. Only 11 emergency stops. This value provides the optimal balance between safety and "breathing room" for the RL models.
-    - **Loose (-0.10)**: Win Rate **89.5%**, Profit **2.24%**. Performance identical to -0.063 for this dataset, confirming that -0.063 is a safe "upper bound" for current volatility.
-- **Decision**: Standardize `emergency_loss_threshold` to **-0.063** for upcoming extended backtests.
-
 ### 30. Гибкий Alpha Decay и устранение логической блокировки
 - **Status**: IMPLEMENTED
 - **Logic**: 
-    - **Разблокировка сигналов**: Из `populate_entry_trend` удалена проверка на наличие открытой позиции. Теперь `votes_long` и `votes_short` рассчитываются на каждой свече.
+    - **Разблокировка сигналов**: Из `populate_entry_trend` удалена проверка на наличие открытой позиции. Теперь `votes_long` and `votes_short` рассчитываются на каждой свече.
     - **Conditional Alpha Decay**: Логика выхода по сигналу полностью перенесена в `custom_exit`. Теперь выход по развороту тренда срабатывает **только при убытках** хуже `emergency_exit_threshold`.
     - **Прибыльные сделки**: Если сделка в плюсе, сигналы ансамбля игнорируются, и управление полностью передается кастомному TSL.
 - **Result**: Достигнут идеальный баланс между защитой капитала при ошибке входа и максимизацией прибыли при верном прогнозе.
-
-## Completed Tasks
-- [x] **Alpha Decay Loop Fix**: Разблокирован расчет встречных сигналов при открытой позиции.
-- [x] **Alpha Stop Persistence**: Внедрено сохранение `votes_long/short` в DataFrame для доступности в `custom_exit`. Исправлена ошибка доступа к параметрам TSL.
-- [x] **Flexible Exit Thresholds**: Внедрены параметры `rl_exit_long/short_threshold` для управления чувствительностью выхода (1 или 2 голоса).
-- [x] **Emergency Loss Threshold Comparison**: Validated -0.063 as the optimal safety-performance balance.
-- [x] **Alpha Decay Exit**: Реализован выход по противоположному сигналу ансамбля.
-- [x] **237x Inference Acceleration:** Batch processing now takes <1s for the full whitelist.
-- [x] **Portfolio Directional Limits:** Hard 20/20 cap for Longs and Shorts.
-- [x] **Windows Stability Patch:** Resolved encoding and data type mismatches.
-- [x] **High-Performance Backtest:** Verified +3.39% profit with 94.3% Win Rate.
-- [x] **Variant C (Limit Orders):** Reduced slippage via discounted entry.
 
 ### 31. Калибровка Alpha Stop для Paper Trading
 - **Status**: TESTING (Dry-run)
 - **Parameter**: `emergency_exit_threshold` установлен на **-0.0575**.
 - **Observation**: Выявлено, что порог начинает активно влиять на результаты начиная с -0.0574.
 - **Expected Behavior**: Стратегия игнорирует встречные сигналы в зоне прибыли и малых убытков, активируя экстренный выход по сигналу только при просадке глубже 5.75%.
+
+### 32. Исправление ATR Dynamic Floor (Institutional Stop)
+- **Status**: IMPLEMENTED & FIXED
+- **Fix**: Математика изменена с выбора самого узкого стопа на выбор более широкой дистанции между TSL и ATR (с ограничением по d0).
+- **Parameters**: Добавлены `atr_multiplier` (текущий: **1.572**) и `atr_period` (24) для точной настройки под волатильность крипторынка.
+- **Result**: Стоп-лосс теперь адаптивно расширяется во время рыночного шума, предотвращая преждевременное выбивание сделок.
+
+### 🏆 Benchmark: Golden Backtest (Jan 2026)
+- **Profit Factor**: 5.95
+- **Win Rate**: 85.9% (55 Win / 9 Loss)
+- **Drawdown**: 0.06% (Absolute)
+- **Avg Duration**: 7 minutes
+- **Alpha Stop Efficiency**: 5 trades saved with avg loss -1.88% (instead of hard stop).
+- **Setup**: ROI Table + TSL + Alpha Stop (-0.0575) + ATR Floor (1.572).
+
+
+## 🛠 Hyperopt Strategy (30+ Parameters)
+
+Для предотвращения переобучения (overfitting) и "проклятия размерности", принята тактика **поэтапной групповой оптимизации**:
+
+### Этап 1: Двигатель (Входы / Entry)
+- **Space**: `--spaces buy`
+- **Параметры**: `rl_epsilon_long/short`, `rl_long/short_threshold`, `min_quote_volume_usd`, `vol_f1/f2_...`
+- **Цель**: Максимальный Profit Factor и Win Rate. Фиксируем стоп на -4% и отключаем TSL.
+
+### Этап 2: Тормоза (Выходы / Exit & Alpha Stop)
+- **Space**: `--spaces sell`
+- **Параметры**: `stoploss`, `minimal_roi`, `emergency_exit_threshold`, `rl_exit_long/short_threshold`.
+- **Цель**: Минимизация просадки (Drawdown). Поиск точки "испарения альфы".
+
+### Этап 3: Турбо (Трейлинг / TSL)
+- **Space**: `--spaces sell`
+- **Параметры**: `d0`, `d_min`, `hysteresis`, `p_target`, `tsl_exponent`.
+- **Цель**: Увеличение средней прибыли на сделку. Проводится при замороженных параметрах Этапа 1.
+
+### Этап 4: Адаптация (Волатильность / ATR Floor)
+- **Space**: `--spaces sell`
+- **Параметры**: `atr_multiplier`, `atr_period`.
+- **Цель**: Финальная доводка защиты от шума. `atr_period` рекомендуется держать в диапазоне 24-30 для 1m таймфрейма.
+
+## Next Steps
+- [ ] **Paper Trading Monitoring**: Оценка поведения ATR Floor с множителем 1.572.
 - [ ] **Extended Backtest (Jan-Mar 2026)**: Confirm stability over a longer period with optimized parameters.
 - [ ] **Dry-Run Monitoring (24h)**: Evaluate Maker-order mechanics and unfilled limit cancellations.
 - [ ] **Epsilon Calibration**: Potentially lower `rl_epsilon_long` and `rl_epsilon_short` to increase trade frequency if needed.
 - [ ] **Nonlinear TSL Efficiency**: Continuous monitoring of TSL performance in real-time execution.
- 

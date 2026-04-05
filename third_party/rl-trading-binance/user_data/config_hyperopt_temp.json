@@ -22,6 +22,10 @@
     "rl_enable_short_2": true,
     "stoploss": -0.21,
     "minimal_roi": {
+        "0": 0.05,
+        "15": 0.02,
+        "30": 0.01,
+        "45": 0.001,        
         "59": 0.001
     },
     "trailing_stop": false,

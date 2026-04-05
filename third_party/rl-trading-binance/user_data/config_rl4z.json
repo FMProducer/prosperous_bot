@@ -22,6 +22,10 @@
     "rl_enable_short_2": true,
     "stoploss": -0.21,
     "minimal_roi": {
+        "0": 0.05,
+        "15": 0.02,
+        "30": 0.01,
+        "45": 0.001,        
         "59": 0.001
     },
     "trailing_stop": false,
@@ -119,20 +123,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 6e-05,
-                "q_max": 0.003209
+                "q_min": 2.9e-05,
+                "q_max": 0.003252
             },
             "long_2": {
-                "q_min": 0.000237,
-                "q_max": 0.000451
+                "q_min": 0.000115,
+                "q_max": 0.000434
             },
             "short_1": {
-                "q_min": 8.9e-05,
-                "q_max": 0.000579
+                "q_min": 0.000249,
+                "q_max": 0.000585
             },
             "short_2": {
-                "q_min": 0.00032,
-                "q_max": 0.00072
+                "q_min": 0.000315,
+                "q_max": 0.000709
             }
         }
     },
