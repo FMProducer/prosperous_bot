@@ -115,7 +115,7 @@ class CustomD3QNStrategy4z(IStrategy):
     }
 
     # Дисконт для Maker-ордеров (от 0% до 1%)
-    entry_discount_pct = DecimalParameter(0.0, 0.01, default=0.005, space='buy', optimize=False, load=False)
+    entry_discount_pct = DecimalParameter(0.0, 0.01, default=0.004, space='buy', optimize=False, load=False)
     
     # Параметры TSL (КОНСЕРВАТИВНЫЕ) d0 0.547, d_min 0.001, hysteresis 0.002, p_target 0.015, tsl_exponent 0.953
     d0 = DecimalParameter(0.01, 1.0, default=0.547, space='sell', optimize=False, load=False)
@@ -129,6 +129,10 @@ class CustomD3QNStrategy4z(IStrategy):
     # Hyperoptable Voting Thresholds (СТРОГО 2 из 2)
     rl_long_threshold_opt = IntParameter(2, 2, default=2, space='buy', optimize=False, load=False)
     rl_short_threshold_opt = IntParameter(2, 2, default=2, space='sell', optimize=False, load=False)
+
+    # Пороги для ВЫХОДА (Alpha Decay) - 1 (любая модель) или 2 (консенсус)
+    rl_exit_long_threshold = IntParameter(1, 2, default=2, space='sell', optimize=False, load=False)
+    rl_exit_short_threshold = IntParameter(1, 2, default=2, space='sell', optimize=False, load=False)
 
     # Оптимизируемый таймфрейм для глобального режима (теперь локальный старший ТФ)
     global_ema_timeframe = CategoricalParameter(['1m', '3m', '5m', '15m', '30m', '1h'], default='1m', space='buy', optimize=False, load=False)
@@ -169,8 +173,8 @@ class CustomD3QNStrategy4z(IStrategy):
     vol_f3_peak = DecimalParameter(4.5, 6.0, default=5.857, space='sell', optimize=False, load=False)
     vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
 
-    # Экстренный выход по сигналу ансамбля при достижении порога убытка
-    emergency_exit_threshold = DecimalParameter(-0.01, -0.2, default=-0.15, space='sell', optimize=False, load=False)
+    # Экстренный выход по сигналу ансамбля при достижении порога убытка (Alpha Stop) (Для проверки в Live поставьте -0.001)
+    emergency_exit_threshold = DecimalParameter(-0.5, 0.0, default=-0.0575, space='sell', optimize=False, load=False)
 
     plot_config = {
         'main_plot': {},
@@ -267,6 +271,10 @@ class CustomD3QNStrategy4z(IStrategy):
 
         # Dynamic Epsilon Aggression
         if 'dd_aggression_k' in rl_ens: self.dd_aggression_k.value = float(rl_ens['dd_aggression_k'])
+
+        # Экстренный выход (Alpha Stop) из конфига
+        if 'emergency_exit_threshold' in config:
+            self.emergency_exit_threshold.value = float(config['emergency_exit_threshold'])
 
         # --- 6. ENTRY DISCOUNT ---
         if 'entry_discount_pct' in config:
@@ -900,23 +908,44 @@ class CustomD3QNStrategy4z(IStrategy):
                     current_profit: float, **kwargs):
         """
         Умный контроль выходов:
-        1. "Emergency Alpha Stop": Если модели уверены в развороте (2/2) 
-           И убыток уже ощутимый (> 1.0%), выходим не дожидаясь стопа.
+        1. "Emergency Alpha Stop": Если модели уверены в развороте (согласно rl_exit_threshold) 
+           И убыток уже ощутимый (> emergency_exit_threshold), выходим не дожидаясь стопа.
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if dataframe.empty:
+            return None
+            
         last_candle = dataframe.iloc[-1]
 
-        # Порог экстренного выхода по сигналу (можно оптимизировать)
-        emergency_loss_threshold = -0.15  # -1.5%
+        # Используем параметры стратегии для экстренного выхода
+        emergency_loss = self.emergency_exit_threshold.value
+        
+        # Порог голосов для выхода (Alpha Decay)
+        exit_long_thresh = self.rl_exit_long_threshold.value
+        exit_short_thresh = self.rl_exit_short_threshold.value
 
         if trade.is_short:
-            # Для шорта: сигнал в лонг (votes_long >= 2) при убытке
-            if last_candle.get('votes_long', 0) >= 2 and current_profit < emergency_loss_threshold:
-                return "emergency_stop_short"
+            # Для шорта: выход при появлении голосов в Лонг
+            votes_long = last_candle.get('votes_long', 0)
+            if votes_long >= exit_long_thresh:
+                if current_profit < emergency_loss:
+                    self.logger.info(f"🚨 [ALPHA STOP] {pair} SHORT: Profit {current_profit:.2%} < {emergency_loss:.2%} with {votes_long} Long votes. EXITING.")
+                    return "emergency_alpha_exit_short"
+                else:
+                    # Логируем, что сигнал есть, но убыток еще не достиг порога
+                    if self.config.get('runmode') in ('live', 'dry_run'):
+                        self.logger.info(f"⏳ [ALPHA STOP] {pair} SHORT: Reversal signal exists ({votes_long} Long votes) but profit {current_profit:.2%} > threshold {emergency_loss:.2%}. Waiting.")
         else:
-            # Для лонга: сигнал в шорт (votes_short >= 2) при убытке
-            if last_candle.get('votes_short', 0) >= 2 and current_profit < emergency_loss_threshold:
-                return "emergency_stop_long"
+            # Для лонга: выход при появлении голосов в Шорт
+            votes_short = last_candle.get('votes_short', 0)
+            if votes_short >= exit_short_thresh:
+                if current_profit < emergency_loss:
+                    self.logger.info(f"🚨 [ALPHA STOP] {pair} LONG: Profit {current_profit:.2%} < {emergency_loss:.2%} with {votes_short} Short votes. EXITING.")
+                    return "emergency_alpha_exit_long"
+                else:
+                    # Логируем, что сигнал есть, но убыток еще не достиг порога
+                    if self.config.get('runmode') in ('live', 'dry_run'):
+                        self.logger.info(f"⏳ [ALPHA STOP] {pair} LONG: Reversal signal exists ({votes_short} Short votes) but profit {current_profit:.2%} > threshold {emergency_loss:.2%}. Waiting.")
 
         return None
 
@@ -1941,17 +1970,33 @@ class CustomD3QNStrategy4z(IStrategy):
         votes_long = v_l1 + v_l2
         votes_short = v_s1 + v_s2
 
+        # Сохраняем голоса в датафрейм, чтобы они были доступны в custom_exit и других методах
+        if is_backtest or n_predictions > 0:
+            # Создаем пустые колонки, если их нет
+            if 'votes_long' not in dataframe.columns:
+                dataframe['votes_long'] = 0
+            if 'votes_short' not in dataframe.columns:
+                dataframe['votes_short'] = 0
+            
+            # Заполняем последние n_predictions строк (те, что предсказали модели)
+            dataframe.iloc[-n_predictions:, dataframe.columns.get_loc('votes_long')] = votes_long
+            dataframe.iloc[-n_predictions:, dataframe.columns.get_loc('votes_short')] = votes_short
+
         # 2. Veto Logic Arrays
         long_vetoed = (votes_short > 0) & self.enable_veto
         short_vetoed = (votes_long > 0) & self.enable_veto
 
         # 3. Final Signal Arrays (Fixed boolean logic)
-        raw_enter_long = (votes_long >= thresh_long) & (~long_vetoed) & (not has_long) & (not has_short)
-        raw_enter_short = (votes_short >= thresh_short) & (~short_vetoed) & (not has_long) & (not has_short) & self.can_short
+        # Мы НЕ ограничиваем расчет сигналов текущей позицией, чтобы они были доступны для выхода (Alpha Decay)
+        raw_enter_long = (votes_long >= thresh_long) & (~long_vetoed)
+        raw_enter_short = (votes_short >= thresh_short) & (~short_vetoed) & self.can_short
 
         if is_backtest or n_predictions > 0:
             raw_enter_long &= dataframe['impulse_long_ok'].iloc[-n_predictions:].values
             raw_enter_short &= dataframe['impulse_short_ok'].iloc[-n_predictions:].values
+
+        # Фильтр входов: для реального совершения сделки Freqtrade всё равно проверит наличие позиции,
+        # но колонки enter_long/short теперь будут содержать сигналы всегда для работы логики выхода.
 
         # --- LOGGING RAW SIGNALS FOR SLIPPAGE ANALYTICS ---
         if not is_backtest:
@@ -2060,14 +2105,9 @@ class CustomD3QNStrategy4z(IStrategy):
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
         Логика выходов: 
-        1. Противоположный сигнал ансамбля (Alpha Decay).
-        2. Фильтр 3: Climax reversal (Vol peak + divergence).
+        1. Фильтр 3: Climax reversal (Vol peak + divergence).
+        (Alpha Decay перенесен в custom_exit, чтобы работать только при убытках)
         """
-        # Выход по противоположному сигналу ансамбля (переворот)
-        if 'enter_short' in dataframe.columns and 'enter_long' in dataframe.columns:
-            dataframe['exit_long'] = np.where(dataframe['enter_short'] == 1, 1, dataframe.get('exit_long', 0))
-            dataframe['exit_short'] = np.where(dataframe['enter_long'] == 1, 1, dataframe.get('exit_short', 0))
-
         if not self.vol_f3_enabled.value:
             return dataframe
 

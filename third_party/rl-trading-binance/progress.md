@@ -184,7 +184,18 @@
     - **Loose (-0.10)**: Win Rate **89.5%**, Profit **2.24%**. Performance identical to -0.063 for this dataset, confirming that -0.063 is a safe "upper bound" for current volatility.
 - **Decision**: Standardize `emergency_loss_threshold` to **-0.063** for upcoming extended backtests.
 
+### 30. Гибкий Alpha Decay и устранение логической блокировки
+- **Status**: IMPLEMENTED
+- **Logic**: 
+    - **Разблокировка сигналов**: Из `populate_entry_trend` удалена проверка на наличие открытой позиции. Теперь `votes_long` и `votes_short` рассчитываются на каждой свече.
+    - **Conditional Alpha Decay**: Логика выхода по сигналу полностью перенесена в `custom_exit`. Теперь выход по развороту тренда срабатывает **только при убытках** хуже `emergency_exit_threshold`.
+    - **Прибыльные сделки**: Если сделка в плюсе, сигналы ансамбля игнорируются, и управление полностью передается кастомному TSL.
+- **Result**: Достигнут идеальный баланс между защитой капитала при ошибке входа и максимизацией прибыли при верном прогнозе.
+
 ## Completed Tasks
+- [x] **Alpha Decay Loop Fix**: Разблокирован расчет встречных сигналов при открытой позиции.
+- [x] **Alpha Stop Persistence**: Внедрено сохранение `votes_long/short` в DataFrame для доступности в `custom_exit`. Исправлена ошибка доступа к параметрам TSL.
+- [x] **Flexible Exit Thresholds**: Внедрены параметры `rl_exit_long/short_threshold` для управления чувствительностью выхода (1 или 2 голоса).
 - [x] **Emergency Loss Threshold Comparison**: Validated -0.063 as the optimal safety-performance balance.
 - [x] **Alpha Decay Exit**: Реализован выход по противоположному сигналу ансамбля.
 - [x] **237x Inference Acceleration:** Batch processing now takes <1s for the full whitelist.
