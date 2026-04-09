@@ -138,10 +138,10 @@ class CustomD3QNStrategy4z(IStrategy):
     global_ema_timeframe = CategoricalParameter(['1m', '3m', '5m', '15m', '30m', '1h'], default='1m', space='buy', optimize=False, load=False)
 
     # EMA фильтр (быстрый, для локального режима)
-    ema_fast_period = IntParameter(10, 15, default=12, space='buy', optimize=False, load=False)
+    ema_fast_period = IntParameter(10, 15, default=12, space='buy', optimize=True, load=False)
 
     # EMA фильтр (на старшем ТФ)
-    global_ema_period = IntParameter(5, 60, default=25, space='buy', optimize=False, load=False)
+    global_ema_period = IntParameter(5, 60, default=25, space='buy', optimize=True, load=False)
 
     # Фильтр по объему (Фокус на ликвидности)
     min_quote_volume_usd = DecimalParameter(0, 500000, default=100000, space='buy', optimize=False, load=False)
@@ -154,8 +154,8 @@ class CustomD3QNStrategy4z(IStrategy):
     rl_epsilon_short = DecimalParameter(0.0001, 0.01, default=0.001, space='sell', optimize=False, load=False)
 
     # --- DYNAMIC VOLUME WINDOWS ---
-    vol_window = IntParameter(28, 34, default=31, space='buy', optimize=False, load=False)
-    cvd_window = IntParameter(75, 90, default=83, space='buy', optimize=False, load=False)
+    vol_window = IntParameter(28, 34, default=31, space='buy', optimize=True, load=False)
+    cvd_window = IntParameter(75, 90, default=83, space='buy', optimize=True, load=False)
 
     # --- TOGGLES FOR VOLUME FILTERS (Enable/Disable individually) ---
     vol_f1_enabled = CategoricalParameter([True, False], default=False, space='buy', optimize=False, load=False)
@@ -166,15 +166,15 @@ class CustomD3QNStrategy4z(IStrategy):
     vol_f1_surge = DecimalParameter(1.05, 3.0, default=2.627, space='buy', optimize=False, load=False)
     vol_f1_pct = DecimalParameter(51.0, 80.0, default=79.172, space='buy', optimize=False, load=False)
 
-    vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.024, space='buy', optimize=False, load=False)
-    vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.959, space='buy', optimize=False, load=False)
+    vol_f2_cvd_spike = DecimalParameter(1.0, 2.5, default=1.024, space='buy', optimize=True, load=False)
+    vol_f2_gap = DecimalParameter(1.1, 2.5, default=1.959, space='buy', optimize=True, load=False)
 
     # --- EXIT CLIMAX (More aggressive) ---
     vol_f3_peak = DecimalParameter(4.5, 6.0, default=5.857, space='sell', optimize=False, load=False)
     vol_f3_fade = DecimalParameter(0.2, 0.3, default=0.276, space='sell', optimize=False, load=False)
 
     # Экстренный выход по сигналу ансамбля при достижении порога убытка (Alpha Stop) (Для проверки в Live поставьте -0.001)
-    emergency_exit_threshold = DecimalParameter(-0.3, 0.0, default=-0.001, space='sell', optimize=False, load=False)
+    emergency_exit_threshold = DecimalParameter(-0.3, 0.0, default=-0.99, space='sell', optimize=True, load=False)
 
     # --- ATR DYNAMIC FLOOR PARAMETERS ---
     atr_multiplier = DecimalParameter(1.5, 5.0, default=1.572, space='sell', optimize=False, load=False)

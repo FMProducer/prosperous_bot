@@ -14,33 +14,30 @@
     "rl_long_threshold": 2,
     "rl_short_threshold": 2,
     "rl_calibration_mode": false,
-    "rl_enable_veto": true,
+    "rl_enable_veto": false,
     "min_quote_volume_usd": 1000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
-    "rl_enable_short_1": true,
-    "rl_enable_short_2": true,
-    "stoploss": -0.21,
+    "rl_enable_short_1": false,
+    "rl_enable_short_2": false,
+    "stoploss": -0.25,
     "minimal_roi": {
-        "0": 0.05,
-        "15": 0.02,
-        "30": 0.01,
-        "45": 0.001,        
-        "59": 0.001
+        "0": 0.012,
+        "59": 0.001        
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.191,
+        "d0": 0.25,
         "d_min": 0.001,
         "hysteresis": 0.002,
-        "p_target": 0.015,
+        "p_target": 0.008,
         "tsl_exponent": 0.953
     },
     "rl_regime": {
         "global_ema_timeframe": "1m",
-        "ema_fast_period": 12,
-        "global_ema_period": 25
+        "ema_fast_period": 10,
+        "global_ema_period": 14
     },
     "dynamic_slots": {
         "enabled": false,
@@ -49,13 +46,13 @@
         "aggression_factor": 1.5
     },
     "telegram": {
-        "enabled": false,
+        "enabled": true,
         "token": "",
         "chat_id": ""
     },
     "api_server": {
         "enabled": true,
-        "listen_ip_address": "0.0.0.0",
+        "listen_ip_address": "127.0.0.1",
         "listen_port": 8080,
         "username": "freqtrader",
         "password": "",
@@ -66,9 +63,9 @@
     "margin_mode": "isolated",
     "liquidation_buffer": 0.05,
     "leverage": {
-        "1000BONK/USDT:USDT": 5,
-        "1000FLOKI/USDT:USDT": 5,
-        "*": 5
+        "1000BONK/USDT:USDT": 4,
+        "1000FLOKI/USDT:USDT": 4,
+        "*": 4
     },
     "order_types": {
         "entry": "limit",
@@ -107,12 +104,12 @@
         "vol_f1_enabled": false,
         "vol_f2_enabled": true,
         "vol_f3_enabled": false,
-        "vol_window": 31,
-        "cvd_window": 83,
+        "vol_window": 34,
+        "cvd_window": 84,
         "vol_f1_surge": 2.627,
         "vol_f1_pct": 79.172,
-        "vol_f2_cvd_spike": 1.024,
-        "vol_f2_gap": 1.959,
+        "vol_f2_cvd_spike": 1.097,
+        "vol_f2_gap": 2.429,
         "vol_f3_peak": 5.857,
         "vol_f3_fade": 0.276,
         "enable_dynamic_epsilon": false,
@@ -123,20 +120,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 2.9e-05,
-                "q_max": 0.003252
+                "q_min": 0.000135,
+                "q_max": 0.003137
             },
             "long_2": {
-                "q_min": 0.000115,
-                "q_max": 0.000434
+                "q_min": 0.000232,
+                "q_max": 0.000436
             },
             "short_1": {
-                "q_min": 0.000249,
-                "q_max": 0.000585
+                "q_min": 6.5e-05,
+                "q_max": 0.000565
             },
             "short_2": {
-                "q_min": 0.000315,
-                "q_max": 0.000709
+                "q_min": 0.000105,
+                "q_max": 0.000672
             }
         }
     },
@@ -154,26 +151,26 @@
             "timeout": 60000
         },
         "pair_whitelist": [
-            "ACE/USDT:USDT",
-            "CHR/USDT:USDT",
-            "COTI/USDT:USDT",
-            "DYM/USDT:USDT",
-            "BEAMX/USDT:USDT",
-            "MINA/USDT:USDT",
-            "HOT/USDT:USDT",
-            "API3/USDT:USDT",
-            "MANTA/USDT:USDT",
-            "CKB/USDT:USDT",
-            "NOT/USDT:USDT",
-            "1MBABYDOGE/USDT:USDT",
-            "FIL/USDT:USDT",
-            "DUSK/USDT:USDT",
+            "LINK/USDT:USDT",
+            "FIDA/USDT:USDT",
             "C98/USDT:USDT",
-            "1000PEPE/USDT:USDT",
-            "MEW/USDT:USDT",
-            "1000FLOKI/USDT:USDT",
-            "BRETT/USDT:USDT",
-            "FLOW/USDT:USDT"
+            "ACH/USDT:USDT",
+            "MEME/USDT:USDT",
+            "APE/USDT:USDT",
+            "CFX/USDT:USDT",
+            "SOL/USDT:USDT",
+            "BB/USDT:USDT",
+            "BTCDOM/USDT:USDT",
+            "APT/USDT:USDT",
+            "PEOPLE/USDT:USDT",
+            "DYDX/USDT:USDT",
+            "ACE/USDT:USDT",
+            "ETH/USDT:USDT",
+            "XRP/USDT:USDT",
+            "AEVO/USDT:USDT",
+            "1000SATS/USDT:USDT",
+            "PIXEL/USDT:USDT",
+            "1000PEPE/USDT:USDT"
         ],
         "pair_blacklist": [
             "FLOW/USDT:USDT",
