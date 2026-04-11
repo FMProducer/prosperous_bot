@@ -11,8 +11,8 @@
     "dry_run_wallet": 100000,
     "mirror_mode": true,
     "can_short": true,
-    "rl_long_threshold": 2,
-    "rl_short_threshold": 2,
+    "rl_long_threshold": 1,
+    "rl_short_threshold": 1,
     "rl_calibration_mode": false,
     "rl_enable_veto": false,
     "min_quote_volume_usd": 1000,
@@ -23,7 +23,8 @@
     "stoploss": -0.06,
     "emergency_exit_threshold": -0.02,
     "minimal_roi": {
-        "0": 100
+        "0": 0.012,
+        "59": 0.001
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
@@ -35,7 +36,7 @@
         "tsl_exponent": 0.85
     },
     "rl_regime": {
-        "global_ema_timeframe": "5m",
+        "global_ema_timeframe": "1m",
         "ema_fast_period": 10,
         "global_ema_period": 14
     },
@@ -181,6 +182,7 @@
             "RARE/USDT:USDT"
         ],
         "pair_blacklist": [
+            "CELO/USDT:USDT",
             "FLOW/USDT:USDT",
             "USDC/USDT:USDT",
             "FDUSD/USDT:USDT",
