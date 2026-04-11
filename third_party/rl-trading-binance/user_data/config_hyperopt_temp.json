@@ -21,18 +21,17 @@
     "rl_enable_short_1": true,
     "rl_enable_short_2": true,
     "stoploss": -0.06,
-    "emergency_exit_threshold": -0.02,
+    "emergency_exit_threshold": -0.055,
     "minimal_roi": {
-        "0": 0.012,
         "59": 0.001
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.06,
+        "d0": 0.99,
         "d_min": 0.001,
         "hysteresis": 0.002,
-        "p_target": 0.008,
+        "p_target": 0.001,
         "tsl_exponent": 0.85
     },
     "rl_regime": {
@@ -121,20 +120,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 3.9e-05,
-                "q_max": 0.003233
+                "q_min": 4.6e-05,
+                "q_max": 0.002951
             },
             "long_2": {
-                "q_min": 0.000192,
-                "q_max": 0.00043
+                "q_min": 0.000125,
+                "q_max": 0.00042
             },
             "short_1": {
-                "q_min": 8.7e-05,
-                "q_max": 0.00059
+                "q_min": 0.000266,
+                "q_max": 0.000595
             },
             "short_2": {
-                "q_min": 0.000211,
-                "q_max": 0.000706
+                "q_min": 0.000404,
+                "q_max": 0.00073
             }
         }
     },
