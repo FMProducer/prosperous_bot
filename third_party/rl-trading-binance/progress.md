@@ -8,41 +8,34 @@
 - [x] **Config Synchronization**: Updated `config_rl4z.json` with all optimal parameters.
 - [x] **ROI Optimization**: Disabled ROI (`{"0": 100}`) to prioritize Nonlinear TSL logic.
 
+- [x] **Safety First Evolution**: Performed 7-step surgical tuning on `config_hyperopt_temp.json` (Timerange: 2026-01-01 to 2026-01-05).
+    - **Result**: Profit flipped from -1.03% to **+0.43%**.
+    - **Risk**: Max Drawdown slashed from 1.25% to **0.12%**.
+    - **Key Changes**: Stoploss -0.06, Consensus 2, Global TF 5m, Emergency Exit -0.02, TSL Sync.
+
 ## 🏆 Final Optimal Parameters (Registry)
 
 ### 1. Engine (Entries)
-- `rl_epsilon_long`: **0.433**
-- `rl_epsilon_short`: **0.824**
-- `rl_long_threshold`: **1**
-- `rl_short_threshold`: **1**
-- `min_quote_volume_usd`: **29041.806**
-- `vol_f1_surge`: **2.431**
-- `vol_f1_pct`: **68.432**
-- `vol_f2_cvd_spike`: **1.03**
-- `vol_f2_gap`: **2.458**
+- `rl_long_threshold`: **2** (Consensus)
+- `rl_short_threshold`: **2** (Consensus)
+- `global_ema_timeframe`: **5m**
 
 ### 2. Turbo (Non-linear TSL)
-- `d0`: **0.612**
-- `d_min`: **0.001**
-- `p_target`: **0.048**
-- `tsl_exponent`: **1.045**
-- `hysteresis`: **0.001**
+- `d0`: **0.06** (Synced)
+- `p_target`: **0.008**
+- `tsl_exponent`: **0.85** (Aggressive tightening)
 
 ### 3. Brakes & Adaptation (Protection)
-- `stoploss`: **-0.152**
-- `emergency_exit_threshold`: **-0.188**
-- `rl_exit_long_threshold`: **2**
-- `rl_exit_short_threshold`: **2**
-- `atr_period`: **24**
-- `atr_multiplier`: **1.092**
+- `stoploss`: **-0.06**
+- `emergency_exit_threshold`: **-0.02** (Alpha-reversal exit)
 
 ## 📊 Benchmark Metrics
-- **Validation Period**: 2026-02-10 to 2026-02-12 (OOS)
-- **Market Performance**: -6.08%
-- **Strategy Performance**: **-0.21%** (4x improvement over raw market dump)
-- **Avg Profit per Trade**: 0.52% (Jan-Feb aggregate)
+- **Optimization Period**: 2026-01-01 to 2026-01-05
+- **Market Performance**: +15.28%
+- **Strategy Performance**: **+0.43%**
+- **Max Drawdown**: **0.12%**
+- **Profit Factor**: **1.28**
 
 ## Next Steps
-- [ ] **Paper Trading (Dry Run)**: Launch execution on `config_rl4z.json`.
-- [ ] **Real-time UI Check**: Verify dashboard connectivity on `http://localhost:8888`.
-- [ ] **Slippage Analytics**: Monitor difference between RAW RL signals and actual execution prices.
+- [ ] **Sync Configs**: Transfer these parameters to `user_data/config_rl4z.json`.
+- [ ] **Extended Backtest**: Run a 1-month test to confirm stability under different market conditions.

@@ -18,24 +18,24 @@
     "min_quote_volume_usd": 1000,
     "rl_enable_long_1": true,
     "rl_enable_long_2": true,
-    "rl_enable_short_1": false,
-    "rl_enable_short_2": false,
-    "stoploss": -0.25,
+    "rl_enable_short_1": true,
+    "rl_enable_short_2": true,
+    "stoploss": -0.06,
+    "emergency_exit_threshold": -0.02,
     "minimal_roi": {
-        "0": 0.012,
-        "59": 0.001        
+        "0": 100
     },
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.25,
+        "d0": 0.06,
         "d_min": 0.001,
         "hysteresis": 0.002,
         "p_target": 0.008,
-        "tsl_exponent": 0.953
+        "tsl_exponent": 0.85
     },
     "rl_regime": {
-        "global_ema_timeframe": "1m",
+        "global_ema_timeframe": "5m",
         "ema_fast_period": 10,
         "global_ema_period": 14
     },
@@ -120,20 +120,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 0.000135,
-                "q_max": 0.003137
+                "q_min": 3.9e-05,
+                "q_max": 0.003233
             },
             "long_2": {
-                "q_min": 0.000232,
-                "q_max": 0.000436
+                "q_min": 0.000192,
+                "q_max": 0.00043
             },
             "short_1": {
-                "q_min": 6.5e-05,
-                "q_max": 0.000565
+                "q_min": 8.7e-05,
+                "q_max": 0.00059
             },
             "short_2": {
-                "q_min": 0.000105,
-                "q_max": 0.000672
+                "q_min": 0.000211,
+                "q_max": 0.000706
             }
         }
     },
@@ -151,26 +151,34 @@
             "timeout": 60000
         },
         "pair_whitelist": [
-            "LINK/USDT:USDT",
-            "FIDA/USDT:USDT",
-            "C98/USDT:USDT",
-            "ACH/USDT:USDT",
-            "MEME/USDT:USDT",
-            "APE/USDT:USDT",
+            "CELR/USDT:USDT",
+            "EGLD/USDT:USDT",
+            "ID/USDT:USDT",
+            "1MBABYDOGE/USDT:USDT",
+            "CKB/USDT:USDT",
+            "ADA/USDT:USDT",
             "CFX/USDT:USDT",
-            "SOL/USDT:USDT",
-            "BB/USDT:USDT",
-            "BTCDOM/USDT:USDT",
-            "APT/USDT:USDT",
-            "PEOPLE/USDT:USDT",
-            "DYDX/USDT:USDT",
-            "ACE/USDT:USDT",
-            "ETH/USDT:USDT",
-            "XRP/USDT:USDT",
+            "FIL/USDT:USDT",
+            "BEAMX/USDT:USDT",
+            "JASMY/USDT:USDT",
+            "YGG/USDT:USDT",
+            "MANA/USDT:USDT",
+            "BCH/USDT:USDT",
+            "KAS/USDT:USDT",
+            "ARKM/USDT:USDT",
+            "FIDA/USDT:USDT",
+            "ASTR/USDT:USDT",
+            "XAI/USDT:USDT",
+            "SAND/USDT:USDT",
+            "ENJ/USDT:USDT",
+            "AVAX/USDT:USDT",
+            "SAGA/USDT:USDT",
             "AEVO/USDT:USDT",
-            "1000SATS/USDT:USDT",
-            "PIXEL/USDT:USDT",
-            "1000PEPE/USDT:USDT"
+            "1000BONK/USDT:USDT",
+            "PEOPLE/USDT:USDT",
+            "TIA/USDT:USDT",
+            "LUNA2/USDT:USDT",
+            "RARE/USDT:USDT"
         ],
         "pair_blacklist": [
             "FLOW/USDT:USDT",
