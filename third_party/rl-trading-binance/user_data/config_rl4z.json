@@ -28,7 +28,7 @@
     "trailing_stop": false,
     "use_custom_stoploss": true,
     "rl_tsl": {
-        "d0": 0.99,
+        "d0": 0.06,
         "d_min": 0.001,
         "hysteresis": 0.002,
         "p_target": 0.001,
@@ -120,20 +120,20 @@
         "q_update_interval": 60,
         "q_normalization": {
             "long_1": {
-                "q_min": 5.7e-05,
-                "q_max": 0.003207
+                "q_min": 0.000119,
+                "q_max": 0.003391
             },
             "long_2": {
-                "q_min": 0.000179,
-                "q_max": 0.000438
+                "q_min": 0.000224,
+                "q_max": 0.000435
             },
             "short_1": {
-                "q_min": 6.3e-05,
-                "q_max": 0.000591
+                "q_min": 0.000112,
+                "q_max": 0.000568
             },
             "short_2": {
-                "q_min": 0.000124,
-                "q_max": 0.000697
+                "q_min": 0.000171,
+                "q_max": 0.000674
             }
         }
     },
