@@ -128,6 +128,13 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="config.json")
     args = parser.parse_args()
 
-    # В бумажном режиме ключи могут быть любыми, если API позволяет публичные запросы без подписи
-    connector = BinanceConnector("PAPER_KEY", "PAPER_SECRET", testnet=True)
+    with open(args.config, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+    
+    # Используем ключи из конфига
+    connector = BinanceConnector(
+        api_key=cfg.get("api_key", ""),
+        secret_key=cfg.get("secret_key", ""),
+        testnet=cfg.get("testnet", True)
+    )
     asyncio.run(rebalance_loop(connector, args.config))
