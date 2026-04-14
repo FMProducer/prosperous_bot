@@ -32,13 +32,20 @@ async def run_backtest(config_path: str, data_dir: str):
     current_equity = real_balance
     
     tpv = real_balance
-    # Long - положительное количество, Short - отрицательное
     long_qty = (tpv * targets["BTCUSDT_LONG"]["share"] * targets["BTCUSDT_LONG"]["leverage"]) / virt_basis_price
     short_qty = -(tpv * targets["BTCUSDT_SHORT"]["share"] * targets["BTCUSDT_SHORT"]["leverage"]) / virt_basis_price
     
     positions = {"BTCUSDT_LONG": long_qty, "BTCUSDT_SHORT": short_qty}
     
-    logger.info(f"START Price: {virt_basis_price:.2f} | Initial TPV: {tpv:.2f}")
+    # Статистика
+    stats = {
+        "rebalance_cycles": 0,
+        "long_buys": 0, "long_sells": 0,
+        "short_buys": 0, "short_sells": 0,
+        "total_volume_usdt": 0.0,
+        "max_tpv": real_balance,
+        "min_tpv": real_balance
+    }
 
     history = []
 
@@ -54,7 +61,7 @@ async def run_backtest(config_path: str, data_dir: str):
         current_equity += pnl
         
         if current_equity <= 0:
-            logger.error(f"LIQUIDATED at step {i}! BTC Price: {curr_price:.2f}")
+            logger.error(f"LIQUIDATED at step {i}!")
             break
 
         # Считаем TPV и отклонения
@@ -62,35 +69,59 @@ async def run_backtest(config_path: str, data_dir: str):
         deviations = calc.calculate_deviations(targets, threshold)
         
         if deviations:
+            stats["rebalance_cycles"] += 1
             for dev in deviations:
                 key = dev["symbol"]
                 order_qty = dev["diff_usdt"] / curr_price
+                volume = abs(dev["diff_usdt"])
+                stats["total_volume_usdt"] += volume
                 
-                # КОРРЕКТНАЯ ЛОГИКА ОБНОВЛЕНИЯ:
                 if "LONG" in key:
                     positions[key] += order_qty
-                else: # SHORT (хранится как отрицательное)
-                    positions[key] -= order_qty # Если нужно больше шорта (diff > 0), вычитаем из qty
+                    if order_qty > 0: stats["long_buys"] += 1
+                    else: stats["long_sells"] += 1
+                else:
+                    positions[key] -= order_qty
+                    if order_qty > 0: stats["short_sells"] += 1 # Увеличение шорта
+                    else: stats["short_buys"] += 1 # Уменьшение шорта
             
-            # Обновляем виртуальный базис
             virt_basis_price = curr_price
             virt_allocated_usdt = calc.tpv * targets["BTC_VIRTUAL"]["share"]
 
-        if i % 5000 == 0:
-            logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | Equity={current_equity:8.2f} | BTC={curr_price:8.2f}")
+        stats["max_tpv"] = max(stats["max_tpv"], calc.tpv)
+        stats["min_tpv"] = min(stats["min_tpv"], calc.tpv)
+        
+        if i % 10000 == 0:
+            logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | BTC={curr_price:8.2f}")
         
         history.append({"tpv": calc.tpv, "equity": current_equity})
 
-    # 4. Итоги
+    # 4. Итоговый отчет
     final = history[-1]
-    logger.info("=" * 50)
-    logger.info(f"FULL BACKTEST FINISHED")
-    logger.info(f"Start BTC: {df.iloc[0]['close']:.2f} | End BTC: {df.iloc[-1]['close']:.2f} ({((df.iloc[-1]['close']/df.iloc[0]['close'])-1)*100:+.2f}%)")
-    logger.info(f"Initial TPV: 10000.00 USDT")
-    logger.info(f"Final TPV:   {final['tpv']:.4f} USDT")
-    logger.info(f"Profit:      {((final['tpv']/10000)-1)*100:.4f}%")
-    logger.info(f"Max Drawdown: { (1 - min(h['tpv'] for h in history)/10000)*100:.4f}%")
-    logger.info("=" * 50)
+    btc_start = df.iloc[0]['close']
+    btc_end = df.iloc[-1]['close']
+    btc_change = ((btc_end / btc_start) - 1) * 100
+    tpv_change = ((final['tpv'] / 10000) - 1) * 100
+
+    logger.info("\n" + "="*60)
+    logger.info("                 MARKET NEUTRAL BACKTEST REPORT")
+    logger.info("="*60)
+    logger.info(f"Period:            {len(df)} minutes ({len(df)/1440:.1f} days)")
+    logger.info(f"BTC Price:         {btc_start:.2f} -> {btc_end:.2f} ({btc_change:+.2f}%)")
+    logger.info("-"*60)
+    logger.info(f"Initial Capital:   10000.00 USDT")
+    logger.info(f"Final TPV:         {final['tpv']:.2f} USDT")
+    logger.info(f"Final Real Equity: {final['equity']:.2f} USDT")
+    logger.info(f"Total Profit:      {tpv_change:+.4f}%")
+    logger.info(f"Max Drawdown:      {(1 - stats['min_tpv']/10000)*100:.4f}%")
+    logger.info(f"Max Run-up:       {(stats['max_tpv']/10000 - 1)*100:.4f}%")
+    logger.info("-"*60)
+    logger.info(f"Rebalance Cycles:  {stats['rebalance_cycles']}")
+    logger.info(f"LONG Orders:       {stats['long_buys']} Buy / {stats['long_sells']} Sell")
+    logger.info(f"SHORT Orders:      {stats['short_sells']} Sell (Inc) / {stats['short_buys']} Buy (Dec)")
+    logger.info(f"Total Turnover:    {stats['total_volume_usdt']:.2f} USDT")
+    logger.info(f"Avg Order Size:    {stats['total_volume_usdt']/(stats['long_buys']+stats['long_sells']+stats['short_buys']+stats['short_sells']):.2f} USDT")
+    logger.info("="*60)
 
 if __name__ == "__main__":
     DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"

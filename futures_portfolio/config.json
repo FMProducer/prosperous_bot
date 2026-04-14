@@ -2,6 +2,7 @@
   "api_key": "YOUR_API_KEY",
   "secret_key": "YOUR_SECRET_KEY",
   "testnet": true,
+  "paper_mode": true,
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
