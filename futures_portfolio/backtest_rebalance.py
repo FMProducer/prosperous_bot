@@ -19,30 +19,26 @@ async def run_backtest(config_path: str, data_dir: str):
     targets = portfolio_cfg["targets"]
     threshold = portfolio_cfg["rebalance_threshold"]
     
-    # 1. Загрузка 1-минутных данных (BTC_USDT_USDT-1m-futures.feather)
+    # 1. Загрузка 1-минутных данных
     file_path = os.path.join(data_dir, "BTC_USDT_USDT-1m-futures.feather")
     df = pd.read_feather(file_path)
-    
-    # Берем последние 43200 минут (30 суток)
-    df = df.tail(43200).copy().reset_index(drop=True)
-    logger.info(f"Loaded {len(df)} minutes (30 days) of BTC data.")
+    df = df.copy().reset_index(drop=True)
+    logger.info(f"Loaded {len(df)} minutes (FULL PERIOD) of BTC data.")
 
     # 2. Инициализация
     real_balance = 10000.0
     virt_basis_price = df.iloc[0]['close']
     virt_allocated_usdt = real_balance * targets["BTC_VIRTUAL"]["share"]
-    
     current_equity = real_balance
     
-    # Начальные позиции (Notional = Share * Leverage * Equity)
     tpv = real_balance
+    # Long - положительное количество, Short - отрицательное
     long_qty = (tpv * targets["BTCUSDT_LONG"]["share"] * targets["BTCUSDT_LONG"]["leverage"]) / virt_basis_price
     short_qty = -(tpv * targets["BTCUSDT_SHORT"]["share"] * targets["BTCUSDT_SHORT"]["leverage"]) / virt_basis_price
     
     positions = {"BTCUSDT_LONG": long_qty, "BTCUSDT_SHORT": short_qty}
     
-    logger.info(f"START BTC Price: {virt_basis_price:.2f}")
-    logger.info(f"Initial TPV: {tpv:.2f} | Long Notional: {long_qty*virt_basis_price:.2f} | Short Notional: {abs(short_qty*virt_basis_price):.2f}")
+    logger.info(f"START Price: {virt_basis_price:.2f} | Initial TPV: {tpv:.2f}")
 
     history = []
 
@@ -52,41 +48,48 @@ async def run_backtest(config_path: str, data_dir: str):
         curr_price = df.iloc[i]['close']
         price_change_pct = (curr_price / prev_price) - 1
         
-        # Обновляем Equity на фьючерсах (PnL)
-        long_notional = positions["BTCUSDT_LONG"] * prev_price
-        short_notional = positions["BTCUSDT_SHORT"] * prev_price
-        current_equity += (long_notional * price_change_pct) + (short_notional * price_change_pct)
+        # Обновляем Equity (PnL)
+        pnl = (positions["BTCUSDT_LONG"] * prev_price * price_change_pct) + \
+              (positions["BTCUSDT_SHORT"] * prev_price * price_change_pct)
+        current_equity += pnl
         
-        # Считаем TPV и отклонения через Calculator
+        if current_equity <= 0:
+            logger.error(f"LIQUIDATED at step {i}! BTC Price: {curr_price:.2f}")
+            break
+
+        # Считаем TPV и отклонения
         calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt)
         deviations = calc.calculate_deviations(targets, threshold)
         
         if deviations:
-            logger.info(f"[{df.iloc[i]['date']}] REBALANCE Triggered! BTC Price: {curr_price:.2f}")
             for dev in deviations:
                 key = dev["symbol"]
                 order_qty = dev["diff_usdt"] / curr_price
-                positions[key] += order_qty
+                
+                # КОРРЕКТНАЯ ЛОГИКА ОБНОВЛЕНИЯ:
+                if "LONG" in key:
+                    positions[key] += order_qty
+                else: # SHORT (хранится как отрицательное)
+                    positions[key] -= order_qty # Если нужно больше шорта (diff > 0), вычитаем из qty
             
-            # Обновляем базис виртуальной части
+            # Обновляем виртуальный базис
             virt_basis_price = curr_price
             virt_allocated_usdt = calc.tpv * targets["BTC_VIRTUAL"]["share"]
 
-        if i % 100 == 0:
-            logger.info(f"Step {i:4d}: TPV={calc.tpv:8.2f} | Equity={current_equity:8.2f} | BTC={curr_price:8.2f}")
+        if i % 5000 == 0:
+            logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | Equity={current_equity:8.2f} | BTC={curr_price:8.2f}")
         
-        history.append({"tpv": calc.tpv, "equity": current_equity, "price": curr_price})
+        history.append({"tpv": calc.tpv, "equity": current_equity})
 
     # 4. Итоги
     final = history[-1]
     logger.info("=" * 50)
-    logger.info(f"BACKTEST FINISHED (1 DAY, 1m candles)")
+    logger.info(f"FULL BACKTEST FINISHED")
     logger.info(f"Start BTC: {df.iloc[0]['close']:.2f} | End BTC: {df.iloc[-1]['close']:.2f} ({((df.iloc[-1]['close']/df.iloc[0]['close'])-1)*100:+.2f}%)")
     logger.info(f"Initial TPV: 10000.00 USDT")
     logger.info(f"Final TPV:   {final['tpv']:.4f} USDT")
-    logger.info(f"Final Equity (on Exchange): {final['equity']:.2f} USDT")
-    logger.info(f"Total Portfolio Change: {((final['tpv']/10000)-1)*10000:.6f} pips (very stable)")
-    logger.info(f"Max TPV Drawdown: { (1 - min(h['tpv'] for h in history)/10000)*100:.6f}%")
+    logger.info(f"Profit:      {((final['tpv']/10000)-1)*100:.4f}%")
+    logger.info(f"Max Drawdown: { (1 - min(h['tpv'] for h in history)/10000)*100:.4f}%")
     logger.info("=" * 50)
 
 if __name__ == "__main__":
