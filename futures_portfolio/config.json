@@ -1,0 +1,19 @@
+{
+  "api_key": "YOUR_API_KEY",
+  "secret_key": "YOUR_SECRET_KEY",
+  "testnet": true,
+  "portfolios": [
+    {
+      "name": "main",
+      "targets": {
+        "BTCUSDT": 0.4,
+        "ETHUSDT": 0.4,
+        "SOLUSDT": 0.2
+      },
+      "rebalance_threshold": 0.02,
+      "check_interval_sec": 60,
+      "reduce_only": false
+    }
+  ],
+  "tickers": ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+}
