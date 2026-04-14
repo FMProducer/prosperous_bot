@@ -4,16 +4,15 @@
   "testnet": true,
   "portfolios": [
     {
-      "name": "main",
+      "name": "SyntheticMarketNeutral",
       "targets": {
-        "BTCUSDT": 0.4,
-        "ETHUSDT": 0.4,
-        "SOLUSDT": 0.2
+        "BTCUSDT_LONG": {"share": 0.29, "leverage": 5},
+        "BTCUSDT_SHORT": {"share": 0.36, "leverage": 5},
+        "BTC_VIRTUAL": {"share": 0.35, "leverage": 1}
       },
-      "rebalance_threshold": 0.02,
-      "check_interval_sec": 60,
-      "reduce_only": false
+      "rebalance_threshold": 0.005,
+      "check_interval_sec": 30
     }
   ],
-  "tickers": ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  "tickers": ["BTCUSDT"]
 }
