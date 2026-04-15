@@ -56,6 +56,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
 
+    # Для Paper Trading сохраняем цену входа, чтобы считать PNL
+    if paper_mode:
+        if "last_price" not in paper_state:
+            paper_state["last_price"] = 0.0
+
     while True:
         try:
             # 1. Получение цен (всегда живые)
@@ -63,8 +68,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
             btc_price = prices.get("BTCUSDT")
             if not btc_price: raise Exception("Could not fetch BTC price")
 
-            # 2. Получение баланса и позиций
+            # 2. Имитация изменения Equity за счет PNL в Paper Mode
+            if paper_mode and paper_state["last_price"] > 0:
+                price_diff = btc_price - paper_state["last_price"]
+                # PNL = Qty * (Price - EntryPrice)
+                long_pnl = paper_state["positions"]["BTCUSDT_LONG"] * price_diff
+                short_pnl = paper_state["positions"]["BTCUSDT_SHORT"] * (-price_diff) # Для шорта инверсия
+                paper_state["balance"] += (long_pnl + short_pnl)
+            
             if paper_mode:
+                paper_state["last_price"] = btc_price
                 real_equity = paper_state["balance"]
                 positions = paper_state["positions"]
             else:
@@ -79,10 +92,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
 
             # 3. Расчёт TPV и отклонений
             calc = PortfolioCalculator(positions, btc_price, real_equity, virt_basis_price, virt_allocated_usdt)
-            deviations = calc.calculate_deviations(targets, threshold)
+            # Если это первый запуск и позиций нет - форсируем ребалансировку
+            current_threshold = -1.0 if sum(abs(v) for v in positions.values()) == 0 else threshold
+            deviations = calc.calculate_deviations(targets, current_threshold)
 
             if deviations:
-                logger.info(f"Rebalance needed. TPV: {calc.tpv:.2f}")
+                logger.info(f"Rebalance needed. TPV (USDT): {calc.tpv:.2f} | Shares (%) | Long: {calc.share_long_pct} | Short: {calc.share_short_pct} | Virtual: {calc.share_virt_pct}")
+                
+                # Сортировка: сначала уменьшение позиций (diff_usdt < 0)
+                deviations.sort(key=lambda x: x["diff_usdt"])
+
                 for dev in deviations:
                     key = dev["symbol"]
                     symbol = key.split('_')[0]
@@ -90,14 +109,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                     
                     order_qty = dev["diff_usdt"] / btc_price
                     side = "BUY" if (pos_side == "LONG" and dev["diff_usdt"] > 0) or (pos_side == "SHORT" and dev["diff_usdt"] < 0) else "SELL"
-                    # Корректная логика side для шорта: если diff > 0 (нужно больше шорта) -> SELL
                     if pos_side == "SHORT":
                         side = "SELL" if dev["diff_usdt"] > 0 else "BUY"
 
                     step_size = step_sizes.get(symbol, 0.0)
                     
                     if paper_mode:
-                        # Имитация исполнения
                         qty_rounded = PortfolioExecutor(None).round_quantity(abs(order_qty), step_size)
                         if qty_rounded > 0:
                             if pos_side == "LONG":
@@ -110,15 +127,21 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                         executor = PortfolioExecutor(connector)
                         await executor.execute_market_order(symbol, abs(order_qty), side, step_size, False, pos_side)
                 
-                # Обновляем базис
+                # Обновляем базис и пересчитываем доли для финального лога
                 virt_basis_price = btc_price
                 virt_allocated_usdt = calc.tpv * targets["BTC_VIRTUAL"]["share"]
                 save_json(STATE_FILE, {"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
 
-            logger.info(f"Cycle complete. TPV: {calc.tpv:.2f} | Equity: {real_equity:.2f} | BTC: {btc_price:.2f}")
+                final_calc = PortfolioCalculator(
+                    paper_state["positions"] if paper_mode else await connector.get_positions(),
+                    btc_price, real_equity, virt_basis_price, virt_allocated_usdt
+                )
+                logger.info(f"Cycle complete. TPV (USDT): {final_calc.tpv:.2f} | Shares (%) | Long: {final_calc.share_long_pct} | Short: {final_calc.share_short_pct} | Virtual: {final_calc.share_virt_pct}")
             
         except Exception as e:
             logger.error(f"Error in cycle: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
         await asyncio.sleep(check_interval)
 

@@ -6,21 +6,32 @@ logger = logging.getLogger(__name__)
 
 class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
-                 virt_basis_price: float, virt_allocated_usdt: float):
+                 virt_basis_price: float, virt_allocated_usdt: float, 
+                 long_entry_price: float = 0.0, short_entry_price: float = 0.0):
         self.positions = positions
         self.price = spot_price
-        self.real_equity = real_equity
         
+        # Виртуальная доля
         if virt_basis_price <= 0: virt_basis_price = spot_price
         price_change = spot_price / virt_basis_price
         self.virt_current_value = virt_allocated_usdt * price_change
         
-        # TPV
+        # Расчет нереализованной прибыли (PNL) фьючерсов для Paper Trading
+        # В реальном аккаунте Equity уже включает PNL, но для калькулятора мы работаем с Equity.
         self.tpv = real_equity + (self.virt_current_value - virt_allocated_usdt)
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
             self.tpv = real_equity if real_equity > 0 else 1e-9
+
+        # Текущие доли (Share %)
+        long_notional = abs(self.positions.get("BTCUSDT_LONG", 0.0)) * self.price
+        short_notional = abs(self.positions.get("BTCUSDT_SHORT", 0.0)) * self.price
+        
+        # Сохраняем для логирования (в целых числах процентов для красоты)
+        self.share_long_pct = round((long_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
+        self.share_short_pct = round((short_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
+        self.share_virt_pct = round(self.virt_current_value / self.tpv * 100) if self.tpv > 0 else 0
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float) -> List[Dict]:
         deviations = []

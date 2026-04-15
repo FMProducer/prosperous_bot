@@ -51,25 +51,19 @@ async def run_backtest(config_path: str, data_dir: str):
 
     # 3. Цикл бэктеста
     for i in range(1, len(df)):
-        prev_price = df.iloc[i-1]['close']
         curr_price = df.iloc[i]['close']
-        price_change_pct = (curr_price / prev_price) - 1
         
-        # Обновляем Equity (PnL)
-        pnl = (positions["BTCUSDT_LONG"] * prev_price * price_change_pct) + \
-              (positions["BTCUSDT_SHORT"] * prev_price * price_change_pct)
-        current_equity += pnl
-        
-        if current_equity <= 0:
-            logger.error(f"LIQUIDATED at step {i}!")
-            break
-
-        # Считаем TPV и отклонения
+        # 3.1. Расчёт TPV и отклонений (в бэктесте Equity обновляется автоматически PnL)
         calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt)
-        deviations = calc.calculate_deviations(targets, threshold)
+        # На первом шаге форсируем ребалансировку для входа в рынок
+        current_threshold = -1.0 if i == 1 else threshold
+        deviations = calc.calculate_deviations(targets, current_threshold)
         
         if deviations:
             stats["rebalance_cycles"] += 1
+            # Сортировка: сначала уменьшение (diff < 0)
+            deviations.sort(key=lambda x: x["diff_usdt"])
+
             for dev in deviations:
                 key = dev["symbol"]
                 order_qty = dev["diff_usdt"] / curr_price
@@ -81,19 +75,33 @@ async def run_backtest(config_path: str, data_dir: str):
                     if order_qty > 0: stats["long_buys"] += 1
                     else: stats["long_sells"] += 1
                 else:
-                    positions[key] -= order_qty
-                    if order_qty > 0: stats["short_sells"] += 1 # Увеличение шорта
-                    else: stats["short_buys"] += 1 # Уменьшение шорта
+                    # Для шорта: diff_usdt > 0 значит нужно больше шорта (SELL), diff_usdt < 0 значит нужно меньше (BUY)
+                    # Но в positions["SHORT"] у нас отрицательное число (notional), поэтому:
+                    # Если diff_usdt > 0 (надо добавить шорта) -> positions["SHORT"] - (qty)
+                    # Если diff_usdt < 0 (надо убрать шорта) -> positions["SHORT"] + (qty)
+                    positions[key] -= order_qty # Универсально: при diff > 0 (увеличение шорта) qty > 0, вычитаем из позиции
+                    if order_qty > 0: stats["short_sells"] += 1 
+                    else: stats["short_buys"] += 1 
             
+            # Обновляем базис
             virt_basis_price = curr_price
             virt_allocated_usdt = calc.tpv * targets["BTC_VIRTUAL"]["share"]
+            
+            # Пересчитываем для лога (по желанию)
+            calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt)
 
         stats["max_tpv"] = max(stats["max_tpv"], calc.tpv)
         stats["min_tpv"] = min(stats["min_tpv"], calc.tpv)
         
         if i % 10000 == 0:
-            logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | BTC={curr_price:8.2f}")
+            logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | Shares (%) L:{calc.share_long_pct} S:{calc.share_short_pct} V:{calc.share_virt_pct} | BTC={curr_price:8.2f}")
         
+        # В бэктесте PnL начисляется в конце шага для следующего
+        price_change_pct = (df.iloc[min(i+1, len(df)-1)]['close'] / curr_price) - 1
+        pnl = (positions["BTCUSDT_LONG"] * curr_price * price_change_pct) + \
+              (positions["BTCUSDT_SHORT"] * curr_price * price_change_pct)
+        current_equity += pnl
+
         history.append({"tpv": calc.tpv, "equity": current_equity})
 
     # 4. Итоговый отчет
