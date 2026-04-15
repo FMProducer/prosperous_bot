@@ -16,7 +16,12 @@ def mock_connector():
     return connector
 
 
-def test_calculate_order_size_positive(mock_connector):
+@pytest.fixture
+def base_ticker_config():
+    return "BTCUSDT"
+
+
+def test_calculate_order_size_positive(mock_connector, base_ticker_config):
     """Тест расчёта ордера на открытие (BUY)."""
     executor = PortfolioExecutor(mock_connector)
     order_qty = executor.calculate_order_size(
@@ -31,7 +36,7 @@ def test_calculate_order_size_positive(mock_connector):
     assert pytest.approx(order_qty, 0.001) == 0.1667
 
 
-def test_calculate_order_size_negative(mock_connector):
+def test_calculate_order_size_negative(mock_connector, base_ticker_config):
     """Тест расчёта ордера на закрытие (SELL)."""
     executor = PortfolioExecutor(mock_connector)
     order_qty = executor.calculate_order_size(
@@ -46,9 +51,8 @@ def test_calculate_order_size_negative(mock_connector):
     assert pytest.approx(order_qty, 0.0001) == -0.4
 
 
-def test_round_quantity():
+def test_round_quantity(executor):
     """Тест округления количества."""
-    executor = PortfolioExecutor(None)
     # BTCUSDT обычно имеет шаг 0.001
     assert executor.round_quantity(0.123456, 0.001) == 0.123
     # ETHUSDT обычно имеет шаг 0.01
@@ -96,11 +100,11 @@ async def test_execute_market_order_sell(mock_connector):
     mock_result = {"orderId": 67890, "status": "FILLED"}
     mock_connector.futures_client.futures_create_order.return_value = mock_result
 
-    result = await executor.execute_market_order("ETHUSDT", 0.05, "SELL")
+    result = await executor.execute_market_order("BTCUSDT", 0.05, "SELL")
     assert result["status"] == "SUCCESS"
     mock_connector.futures_client.futures_create_order.assert_called_once()
     args, kwargs = mock_connector.futures_client.futures_create_order.call_args
-    assert kwargs["symbol"] == "ETHUSDT"
+    assert kwargs["symbol"] == "BTCUSDT"
     assert kwargs["side"] == "SELL"
     assert kwargs["quantity"] == 0.05
     assert kwargs["reduceOnly"] is False
@@ -110,7 +114,7 @@ async def test_execute_market_order_sell(mock_connector):
 async def test_execute_market_order_zero_quantity(mock_connector):
     """Тест, когда размер ордера равен нулю."""
     executor = PortfolioExecutor(mock_connector)
-    result = await executor.execute_market_order("SOLUSDT", 0.0, "BUY")
+    result = await executor.execute_market_order("BTCUSDT", 0.0, "BUY")
     assert result["status"] == "NO_ORDER"
     mock_connector.futures_client.futures_create_order.assert_not_called()
 

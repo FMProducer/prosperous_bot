@@ -7,9 +7,11 @@ logger = logging.getLogger(__name__)
 class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_basis_price: float, virt_allocated_usdt: float, 
-                 long_entry_price: float = 0.0, short_entry_price: float = 0.0):
+                 long_entry_price: float = 0.0, short_entry_price: float = 0.0,
+                 base_ticker: str = "BTCUSDT"):
         self.positions = positions
         self.price = spot_price
+        self.base_ticker = base_ticker
         
         # Виртуальная доля
         if virt_basis_price <= 0: virt_basis_price = spot_price
@@ -25,50 +27,54 @@ class PortfolioCalculator:
             self.tpv = real_equity if real_equity > 0 else 1e-9
 
         # Текущие доли (Share %)
-        long_notional = abs(self.positions.get("BTCUSDT_LONG", 0.0)) * self.price
-        short_notional = abs(self.positions.get("BTCUSDT_SHORT", 0.0)) * self.price
+        long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
+        short_notional = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0)) * self.price
         
         # Сохраняем для логирования (в целых числах процентов для красоты)
         self.share_long_pct = round((long_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
         self.share_short_pct = round((short_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
         self.share_virt_pct = round(self.virt_current_value / self.tpv * 100) if self.tpv > 0 else 0
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold: float) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         deviations = []
-        
+
         # Проверка Long
-        long_notional = abs(self.positions.get("BTCUSDT_LONG", 0.0)) * self.price
-        share_long = (long_notional / targets["BTCUSDT_LONG"]["leverage"]) / self.tpv if self.tpv > 0 else 0
-        
+        long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
+        share_long = (long_notional / targets["BASE_LONG"]["leverage"]) / self.tpv if self.tpv > 0 else 0
+
         # Проверка Short
-        short_notional = abs(self.positions.get("BTCUSDT_SHORT", 0.0)) * self.price
-        share_short = (short_notional / targets["BTCUSDT_SHORT"]["leverage"]) / self.tpv if self.tpv > 0 else 0
-        
+        short_notional = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0)) * self.price
+        share_short = (short_notional / targets["BASE_SHORT"]["leverage"]) / self.tpv if self.tpv > 0 else 0
+
         # Проверка Virtual
         share_virt = self.virt_current_value / self.tpv if self.tpv > 0 else 0
-        
+
         # Максимальное отклонение
-        max_dev = max(abs(share_long - targets["BTCUSDT_LONG"]["share"]),
-                      abs(share_short - targets["BTCUSDT_SHORT"]["share"]),
-                      abs(share_virt - targets["BTC_VIRTUAL"]["share"]))
-        
+        max_dev = max(abs(share_long - targets["BASE_LONG"]["share"]),
+                      abs(share_short - targets["BASE_SHORT"]["share"]),
+                      abs(share_virt - targets["VIRTUAL"]["share"]))
+
         if max_dev > threshold:
-            for key in ["BTCUSDT_LONG", "BTCUSDT_SHORT"]:
+            for key in ["BASE_LONG", "BASE_SHORT"]:
                 cfg = targets[key]
                 target_notional = self.tpv * cfg["share"] * cfg["leverage"]
-                current_notional = abs(self.positions.get(key, 0.0)) * self.price
+
+                # Сопоставление ключей конфига с позициями
+                pos_key = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
+                current_notional = abs(self.positions.get(pos_key, 0.0)) * self.price
                 diff_usdt = target_notional - current_notional
                 
-                # Ограничение: не меняем более чем на 50% от TPV за один раз (защита от прыжков)
-                max_change = self.tpv * 0.5 * cfg["leverage"]
-                if abs(diff_usdt) > max_change:
-                    diff_usdt = math.copysign(max_change, diff_usdt)
+                # Ограничение: не меняем более чем на 50% от TPV за один раз (пропускаем, если ignore_limits=True)
+                if not ignore_limits:
+                    max_change = self.tpv * 0.5 * cfg["leverage"]
+                    if abs(diff_usdt) > max_change:
+                        diff_usdt = math.copysign(max_change, diff_usdt)
 
                 deviations.append({
-                    "symbol": key,
-                    "current_share": share_long if "LONG" in key else share_short,
+                    "symbol": pos_key,
+                    "current_share": share_long if "LONG" in pos_key else share_short,
                     "target_share": cfg["share"],
                     "diff_usdt": diff_usdt
                 })
-        
+
         return deviations

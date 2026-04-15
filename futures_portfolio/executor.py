@@ -6,8 +6,9 @@ logger = logging.getLogger(__name__)
 
 
 class PortfolioExecutor:
-    def __init__(self, connector):
+    def __init__(self, connector, base_ticker: str = "BTCUSDT"):
         self.connector = connector
+        self.base_ticker = base_ticker
 
     def calculate_order_size(self, target_share: float, current_value: float, total_value: float, spot_price: float) -> float:
         """Расчёт размера ордера в контрактах."""

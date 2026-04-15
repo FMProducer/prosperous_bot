@@ -7,13 +7,14 @@
     {
       "name": "SyntheticMarketNeutral",
       "targets": {
-        "BTCUSDT_LONG": {"share": 0.29, "leverage": 5},
-        "BTCUSDT_SHORT": {"share": 0.36, "leverage": 5},
-        "BTC_VIRTUAL": {"share": 0.35, "leverage": 1}
+        "BASE_LONG": {"share": 0.29, "leverage": 5},
+        "BASE_SHORT": {"share": 0.36, "leverage": 5},
+        "VIRTUAL": {"share": 0.35, "leverage": 1}
       },
-      "rebalance_threshold": 0.001,
+      "rebalance_threshold": 0.005,
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["BTCUSDT"]
+  "tickers": ["SOLUSDT"],
+  "base_ticker": "SOLUSDT"
 }
