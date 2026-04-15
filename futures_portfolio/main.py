@@ -108,9 +108,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                     pos_side = key.split('_')[1]
                     
                     order_qty = dev["diff_usdt"] / btc_price
-                    side = "BUY" if (pos_side == "LONG" and dev["diff_usdt"] > 0) or (pos_side == "SHORT" and dev["diff_usdt"] < 0) else "SELL"
-                    if pos_side == "SHORT":
-                        side = "SELL" if dev["diff_usdt"] > 0 else "BUY"
+                    reduce_only = dev["diff_usdt"] < 0
+                    side = "BUY" if not reduce_only else "SELL"
 
                     step_size = step_sizes.get(symbol, 0.0)
                     
@@ -125,7 +124,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                         save_json(PAPER_STATE_FILE, paper_state)
                     else:
                         executor = PortfolioExecutor(connector)
-                        await executor.execute_market_order(symbol, abs(order_qty), side, step_size, False, pos_side)
+                        await executor.execute_market_order(symbol, abs(order_qty), side, step_size, reduce_only, pos_side)
                 
                 # Обновляем базис и пересчитываем доли для финального лога
                 virt_basis_price = btc_price

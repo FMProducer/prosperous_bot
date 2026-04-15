@@ -11,7 +11,7 @@
         "BTCUSDT_SHORT": {"share": 0.36, "leverage": 5},
         "BTC_VIRTUAL": {"share": 0.35, "leverage": 1}
       },
-      "rebalance_threshold": 0.005,
+      "rebalance_threshold": 0.001,
       "check_interval_sec": 30
     }
   ],
