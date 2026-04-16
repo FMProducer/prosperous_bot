@@ -118,17 +118,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 positions = await connector.get_positions()
 
             # Инициализация синтетического базиса и начального TPV
-            if virt_basis_price == 0:
-                virt_basis_price = price
-                virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
-                initial_tpv = real_equity # База для отсчета прибыли
-                save_json(STATE_FILE, {
+            if virt_basis_price == 0 or initial_tpv == 0:
+                if virt_basis_price == 0:
+                    virt_basis_price = price
+                    virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
+                
+                if initial_tpv == 0:
+                    # Если сейф только внедрен, берем текущий TPV как базу
+                    temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+                                                 base_ticker=base_ticker, siphoning_reserve=0.0)
+                    initial_tpv = temp_calc.tpv
+                    logger.info(f"Initialized initial_tpv to {initial_tpv:.2f}")
+
+                state.update({
                     "virt_basis_price": virt_basis_price, 
                     "virt_allocated_usdt": virt_allocated_usdt, 
                     "base_ticker": base_ticker,
                     "siphoning_reserve": siphoning_reserve,
                     "initial_tpv": initial_tpv
                 })
+                save_json(STATE_FILE, state)
 
             # 3. Расчёт TPV и отклонений
             calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
