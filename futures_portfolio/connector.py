@@ -53,6 +53,20 @@ class BinanceConnector:
         return result
 
     @retry_on_network_error(retries=5, delay=3.0)
+    async def get_futures_prices(self, tickers: List[str] = None) -> Dict[str, float]:
+        """Получение фьючерсных цен для заданных тикеров."""
+        # Для фьючерсов используем ticker_price, чтобы иметь живую цену последней сделки
+        prices = await asyncio.to_thread(self.futures_client.futures_symbol_ticker)
+        if isinstance(prices, dict): # Если вернулся один словарь
+            prices = [prices]
+        
+        # Создаем мапу всех цен
+        price_map = {t["symbol"]: float(t["price"]) for t in prices}
+        if tickers is None:
+            return price_map
+        return {sym: price_map.get(sym) for sym in tickers}
+
+    @retry_on_network_error(retries=5, delay=3.0)
     async def get_spot_prices(self, tickers: List[str] = None) -> Dict[str, float]:
         """Получение спот-цены для заданного тикера или всех тикеров."""
         if tickers is None:

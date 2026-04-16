@@ -99,10 +99,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     i = 0
     while True:
         try:
-            # 1. Получение цен (всегда живые)
-            prices = await connector.get_spot_prices([base_ticker])
+            # 1. Получение цен (всегда живые, фьючерсные)
+            prices = await connector.get_futures_prices([base_ticker])
             price = prices.get(base_ticker)
-            if not price: raise Exception(f"Could not fetch {base_ticker} price")
+            if not price: raise Exception(f"Could not fetch {base_ticker} price from Futures market")
             
             # 2. Имитация изменения Equity за счет PNL в Paper Mode
             if paper_mode and paper_state["last_price"] > 0:

@@ -1,7 +1,7 @@
 {
-  "virt_basis_price": 0.07473,
+  "virt_basis_price": 0.17088,
   "virt_allocated_usdt": 3500.0,
-  "base_ticker": "ENJUSDT",
+  "base_ticker": "BASEDUSDT",
   "siphoning_reserve": 0.0,
   "initial_tpv": 10000.0
 }

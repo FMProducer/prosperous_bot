@@ -1,7 +1,7 @@
 {
   "api_key": "VD417ujKKUCUGQmKWU7siM1k2bTcsey8llkwsjAK46dTO4cJaAlmqNVzi0OEZ7My",
   "secret_key": "YOUR_SECRET_KEY",
-  "testnet": true,
+  "testnet": false,
   "paper_mode": true,
   "portfolios": [
     {
@@ -17,6 +17,6 @@
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["ENJUSDT"],
-  "base_ticker": "ENJUSDT"
+  "tickers": ["BASEDUSDT"],
+  "base_ticker": "BASEDUSDT"
 }
