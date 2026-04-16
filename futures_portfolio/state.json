@@ -2,6 +2,6 @@
   "virt_basis_price": 0.17088,
   "virt_allocated_usdt": 3500.0,
   "base_ticker": "BASEDUSDT",
-  "siphoning_reserve": 0.0,
-  "initial_tpv": 10000.0
+  "siphoning_reserve": 48.888600588132974,
+  "initial_tpv": 10002.573084241481
 }
