@@ -11,11 +11,12 @@
         "BASE_SHORT": {"share": 0.36, "leverage": 5},
         "VIRTUAL": {"share": 0.35, "leverage": 1}
       },
-      "rebalance_threshold": 0.005,
-      "siphoning_threshold_pct": 2.0,
+      "rebalance_threshold": 0.008,
+      "siphoning_threshold_pct": 0.5,
+      "reinvestment_ratio": 0.05,
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["ENJUSDT"],
-  "base_ticker": "ENJUSDT"
+  "tickers": ["ORDIUSDT"],
+  "base_ticker": "ORDIUSDT"
 }

@@ -42,6 +42,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     # Получаем базовый тикер из конфигурации
     base_ticker = config.get("base_ticker", "BTCUSDT")
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
+    reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
     
     # Состояние синтетической доли и сейфа
     state = load_json(STATE_FILE, {
@@ -148,8 +149,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 # Если активный TPV вырос выше порога от начального
                 if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
                     profit = calc.tpv - initial_tpv
-                    siphoning_reserve += profit
-                    logger.info(f"!!! [SAFE] Profit of {profit:.2f} USDT moved to reserve. Total reserve: {siphoning_reserve:.2f} USDT")
+                    to_reinvest = profit * reinvestment_ratio
+                    to_reserve = profit - to_reinvest
+                    
+                    siphoning_reserve += to_reserve
+                    initial_tpv += to_reinvest
+                    
+                    reinvest_str = f" ({to_reinvest:.2f} reinvested)" if to_reinvest > 0 else ""
+                    logger.info(f"!!! [SAFE] Profit of {profit:.2f} USDT processed: {to_reserve:.2f} to reserve{reinvest_str}. Total reserve: {siphoning_reserve:.2f} USDT")
                     
                     # Пересчитываем калькулятор с новым резервом
                     calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
