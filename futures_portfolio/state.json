@@ -1,7 +1,7 @@
 {
-  "virt_basis_price": 7.757,
-  "virt_allocated_usdt": 3339.355660680509,
-  "base_ticker": "ORDIUSDT",
-  "siphoning_reserve": 862.0684038724903,
+  "virt_basis_price": 0.07473,
+  "virt_allocated_usdt": 3500.0,
+  "base_ticker": "ENJUSDT",
+  "siphoning_reserve": 0.0,
   "initial_tpv": 10000.0
 }

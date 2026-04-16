@@ -53,12 +53,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
         "initial_tpv": 0.0
     })
     
-    # Если тикер сменился, сбрасываем базис виртуальной части (резерв оставляем!)
+    # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
     if state.get("base_ticker") != base_ticker:
-        logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting virtual basis.")
+        logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting basis and initial TPV.")
         state["virt_basis_price"] = 0.0
         state["virt_allocated_usdt"] = 0.0
+        state["initial_tpv"] = 0.0 # Сброс для нового актива
         state["base_ticker"] = base_ticker
+        save_json(STATE_FILE, state)
         
     virt_basis_price = state["virt_basis_price"]
     virt_allocated_usdt = state["virt_allocated_usdt"]
