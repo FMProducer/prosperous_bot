@@ -1,5 +1,5 @@
 {
-  "api_key": "YOUR_API_KEY",
+  "api_key": "VD417ujKKUCUGQmKWU7siM1k2bTcsey8llkwsjAK46dTO4cJaAlmqNVzi0OEZ7My",
   "secret_key": "YOUR_SECRET_KEY",
   "testnet": true,
   "paper_mode": true,
@@ -12,9 +12,10 @@
         "VIRTUAL": {"share": 0.35, "leverage": 1}
       },
       "rebalance_threshold": 0.005,
+      "siphoning_threshold_pct": 2.0,
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["SOLUSDT"],
-  "base_ticker": "SOLUSDT"
+  "tickers": ["ENJUSDT"],
+  "base_ticker": "ENJUSDT"
 }

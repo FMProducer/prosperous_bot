@@ -50,12 +50,17 @@ async def run_backtest(config_path: str, data_dir: str):
         logger.info(f"Loaded {len(df)} minutes of data.")
 
         # 2. Инициализация
-        real_balance = 10000.0
+        initial_capital = 10000.0
+        real_balance = initial_capital
         virt_basis_price = df.iloc[0]['close']
         virt_allocated_usdt = real_balance * targets["VIRTUAL"]["share"]
         current_equity = real_balance
         
-        tpv = real_balance
+        # Механизм "Сейфа"
+        siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
+        siphoning_reserve = 0.0
+        initial_tpv = initial_capital
+        
         # Начальные позиции
         positions = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
         
@@ -65,8 +70,9 @@ async def run_backtest(config_path: str, data_dir: str):
             "long_buys": 0, "long_sells": 0,
             "short_buys": 0, "short_sells": 0,
             "total_volume_usdt": 0.0,
-            "max_tpv": real_balance,
-            "min_tpv": real_balance
+            "max_tpv": initial_capital,
+            "min_tpv": initial_capital,
+            "max_reserve": 0.0
         }
 
         history = []
@@ -76,8 +82,19 @@ async def run_backtest(config_path: str, data_dir: str):
             curr_price = df.iloc[i]['close']
             
             # 3.1. Расчёт TPV и отклонений
-            calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, base_ticker=base_ticker)
+            calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
+                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
             
+            # Проверка Механизма "Сейфа"
+            if siphoning_threshold_pct > 0:
+                if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
+                    profit = calc.tpv - initial_tpv
+                    siphoning_reserve += profit
+                    stats["max_reserve"] = siphoning_reserve
+                    # Пересчитываем калькулятор с новым резервом
+                    calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
+                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+
             # Первый шаг или превышение порога
             current_threshold = -1.0 if i == 0 else threshold
             deviations = calc.calculate_deviations(targets, current_threshold)
@@ -109,13 +126,15 @@ async def run_backtest(config_path: str, data_dir: str):
                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
                 
                 # Пересчитываем для лога
-                calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, base_ticker=base_ticker)
+                calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
+                                         base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
 
-            stats["max_tpv"] = max(stats["max_tpv"], calc.tpv)
-            stats["min_tpv"] = min(stats["min_tpv"], calc.tpv)
+            stats["max_tpv"] = max(stats["max_tpv"], calc.total_tpv)
+            stats["min_tpv"] = min(stats["min_tpv"], calc.total_tpv)
             
             if i % 10000 == 0:
-                logger.info(f"Step {i:6d}: TPV={calc.tpv:8.2f} | Shares (%) L:{calc.share_long_pct} S:{calc.share_short_pct} V:{calc.share_virt_pct} | {base_ticker}={curr_price:8.2f}")
+                res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""
+                logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f}{res_str} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}% | {base_ticker}={curr_price:8.4f}")
             
             # Начисление PnL для следующего шага
             if i < len(df) - 1:
@@ -125,29 +144,31 @@ async def run_backtest(config_path: str, data_dir: str):
                       (positions[f"{base_ticker}_SHORT"] * (-price_diff))
                 current_equity += pnl
 
-            history.append({"tpv": calc.tpv, "equity": current_equity})
+            history.append({"tpv": calc.total_tpv, "equity": current_equity, "reserve": siphoning_reserve})
 
         # 4. Итоговый отчет
         final_tpv = history[-1]["tpv"]
         final_equity = history[-1]["equity"]
+        final_reserve = history[-1]["reserve"]
         asset_start = df.iloc[0]['close']
         asset_end = df.iloc[-1]['close']
         asset_change = ((asset_end / asset_start) - 1) * 100
-        tpv_change = ((final_tpv / 10000) - 1) * 100
+        tpv_change = ((final_tpv / initial_capital) - 1) * 100
 
         logger.info("\n" + "="*60)
         logger.info("                 MARKET NEUTRAL BACKTEST REPORT")
         logger.info("="*60)
         logger.info(f"Period:            {len(df)} minutes ({len(df)/1440:.1f} days)")
-        logger.info(f"{base_ticker} Price:      {asset_start:.2f} -> {asset_end:.2f} ({asset_change:+.2f}%)")
+        logger.info(f"{base_ticker} Price:      {asset_start:.4f} -> {asset_end:.4f} ({asset_change:+.2f}%)")
 
         logger.info("-"*60)
-        logger.info(f"Initial Capital:   10000.00 USDT")
+        logger.info(f"Initial Capital:   {initial_capital:.2f} USDT")
         logger.info(f"Final TPV:         {final_tpv:.2f} USDT")
         logger.info(f"Final Real Equity: {final_equity:.2f} USDT")
+        logger.info(f"Profit in SAFE:    {final_reserve:.2f} USDT")
         logger.info(f"Total Profit:      {tpv_change:+.4f}%")
-        logger.info(f"Max Drawdown:      {(1 - stats['min_tpv']/10000)*100:.4f}%")
-        logger.info(f"Max Run-up:       {(stats['max_tpv']/10000 - 1)*100:.4f}%")
+        logger.info(f"Max Drawdown:      {(1 - stats['min_tpv']/initial_capital)*100:.4f}%")
+        logger.info(f"Max Run-up:       {(stats['max_tpv']/initial_capital - 1)*100:.4f}%")
         logger.info("-"*60)
         logger.info(f"Rebalance Cycles:  {stats['rebalance_cycles']}")
         logger.info(f"LONG Orders:       {stats['long_buys']} Buy / {stats['long_sells']} Sell")

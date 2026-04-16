@@ -41,16 +41,28 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     
     # Получаем базовый тикер из конфигурации
     base_ticker = config.get("base_ticker", "BTCUSDT")
+    siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     
-    # Состояние синтетической доли
-    state = load_json(STATE_FILE, {"virt_basis_price": 0.0, "virt_allocated_usdt": 0.0, "base_ticker": base_ticker})
-    # Если тикер сменился, сбрасываем базис виртуальной части
+    # Состояние синтетической доли и сейфа
+    state = load_json(STATE_FILE, {
+        "virt_basis_price": 0.0, 
+        "virt_allocated_usdt": 0.0, 
+        "base_ticker": base_ticker,
+        "siphoning_reserve": 0.0,
+        "initial_tpv": 0.0
+    })
+    
+    # Если тикер сменился, сбрасываем базис виртуальной части (резерв оставляем!)
     if state.get("base_ticker") != base_ticker:
         logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting virtual basis.")
-        state = {"virt_basis_price": 0.0, "virt_allocated_usdt": 0.0, "base_ticker": base_ticker}
+        state["virt_basis_price"] = 0.0
+        state["virt_allocated_usdt"] = 0.0
+        state["base_ticker"] = base_ticker
         
     virt_basis_price = state["virt_basis_price"]
     virt_allocated_usdt = state["virt_allocated_usdt"]
+    siphoning_reserve = state.get("siphoning_reserve", 0.0)
+    initial_tpv = state.get("initial_tpv", 0.0)
 
     # Инфо о бирже
     exchange_info = await connector.get_exchange_info()
@@ -105,28 +117,58 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 real_equity = await connector.get_free_balance()
                 positions = await connector.get_positions()
 
-            # Инициализация синтетического базиса
+            # Инициализация синтетического базиса и начального TPV
             if virt_basis_price == 0:
                 virt_basis_price = price
                 virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
-                save_json(STATE_FILE, {"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt, "base_ticker": base_ticker})
+                initial_tpv = real_equity # База для отсчета прибыли
+                save_json(STATE_FILE, {
+                    "virt_basis_price": virt_basis_price, 
+                    "virt_allocated_usdt": virt_allocated_usdt, 
+                    "base_ticker": base_ticker,
+                    "siphoning_reserve": siphoning_reserve,
+                    "initial_tpv": initial_tpv
+                })
 
             # 3. Расчёт TPV и отклонений
-            calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, base_ticker=base_ticker)
+            calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
             
+            # Проверка Механизма "Сейфа"
+            if siphoning_threshold_pct > 0:
+                # Если активный TPV вырос выше порога от начального
+                if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
+                    profit = calc.tpv - initial_tpv
+                    siphoning_reserve += profit
+                    logger.info(f"!!! [SAFE] Profit of {profit:.2f} USDT moved to reserve. Total reserve: {siphoning_reserve:.2f} USDT")
+                    
+                    # Пересчитываем калькулятор с новым резервом
+                    calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+                    
+                    # Сохраняем состояние сейфа
+                    state.update({
+                        "siphoning_reserve": siphoning_reserve,
+                        "initial_tpv": initial_tpv,
+                        "virt_basis_price": virt_basis_price,
+                        "virt_allocated_usdt": virt_allocated_usdt
+                    })
+                    save_json(STATE_FILE, state)
+
             # Если это первый запуск (для текущего тикера), позиций нет или они аномально большие - форсируем ребалансировку
             current_pos_sum = abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0))
             is_first_run = current_pos_sum == 0
             is_extreme = calc.share_long_pct > 100 or calc.share_short_pct > 100
             
-            if i % 10 == 0: # Лог раз в 5 минут (при интервале 30с) или при каждом ребалансе
-                 logger.info(f"Heartbeat: TPV={calc.tpv:.2f} | {base_ticker}={price:.2f} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
+            if i % 10 == 0:
+                 res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
+                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.2f} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
 
             if deviations:
-                logger.info(f"Rebalance needed. TPV (USDT): {calc.tpv:.2f} | Shares (%) | Long: {calc.share_long_pct} | Short: {calc.share_short_pct} | Virtual: {calc.share_virt_pct}")
+                logger.info(f"Rebalance needed. TPV_Active: {calc.tpv:.2f} | Reserve: {siphoning_reserve:.2f} | Shares (%) | L:{calc.share_long_pct} S:{calc.share_short_pct} V:{calc.share_virt_pct}")
                 
                 # Сортировка: сначала уменьшение позиций (diff_usdt < 0)
                 deviations.sort(key=lambda x: x["diff_usdt"])
@@ -170,14 +212,21 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 # Обновляем базис и пересчитываем доли для финального лога
                 virt_basis_price = price
                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                save_json(STATE_FILE, {"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt, "base_ticker": base_ticker})
+                state.update({
+                    "virt_basis_price": virt_basis_price, 
+                    "virt_allocated_usdt": virt_allocated_usdt, 
+                    "base_ticker": base_ticker,
+                    "siphoning_reserve": siphoning_reserve,
+                    "initial_tpv": initial_tpv
+                })
+                save_json(STATE_FILE, state)
 
                 final_calc = PortfolioCalculator(
                     paper_state["positions"] if paper_mode else await connector.get_positions(),
                     price, real_equity, virt_basis_price, virt_allocated_usdt,
-                    base_ticker=base_ticker
+                    base_ticker=base_ticker, siphoning_reserve=siphoning_reserve
                 )
-                logger.info(f"Cycle complete. TPV (USDT): {final_calc.tpv:.2f} | Shares (%) | Long: {final_calc.share_long_pct} | Short: {final_calc.share_short_pct} | Virtual: {final_calc.share_virt_pct}")
+                logger.info(f"Cycle complete. TPV (USDT): {final_calc.total_tpv:.2f} | Active: {final_calc.tpv:.2f} | Shares (%) | L:{final_calc.share_long_pct} S:{final_calc.share_short_pct} V:{final_calc.share_virt_pct}")
             
         except Exception as e:
             logger.error(f"Error in cycle: {e}")

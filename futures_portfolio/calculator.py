@@ -8,23 +8,26 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_basis_price: float, virt_allocated_usdt: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
-                 base_ticker: str = "BTCUSDT"):
+                 base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0):
         self.positions = positions
         self.price = spot_price
         self.base_ticker = base_ticker
+        self.siphoning_reserve = siphoning_reserve
         
         # Виртуальная доля
         if virt_basis_price <= 0: virt_basis_price = spot_price
         price_change = spot_price / virt_basis_price
         self.virt_current_value = virt_allocated_usdt * price_change
         
-        # Расчет нереализованной прибыли (PNL) фьючерсов для Paper Trading
-        # В реальном аккаунте Equity уже включает PNL, но для калькулятора мы работаем с Equity.
-        self.tpv = real_equity + (self.virt_current_value - virt_allocated_usdt)
+        # Общий TPV (включая накопленный резерв)
+        self.total_tpv = real_equity + (self.virt_current_value - virt_allocated_usdt)
+        
+        # Активный TPV для расчетов (без резерва)
+        self.tpv = self.total_tpv - self.siphoning_reserve
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
-            self.tpv = real_equity if real_equity > 0 else 1e-9
+            self.tpv = 1e-9
 
         # Текущие доли (Share %)
         long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
