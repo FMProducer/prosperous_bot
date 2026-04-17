@@ -135,7 +135,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                     # Порог = ATR% * 1.5 (настраиваемый коэффициент)
                     dynamic_threshold = round(atr_pct * 1.5, 5)
                     # Ограничиваем: минимум 0.2%, максимум 2.0%
-                    threshold = max(0.002, min(0.02, dynamic_threshold))
+                    threshold = max(0.004, min(0.006, dynamic_threshold))
                     
                     if i % 10 == 0:
                         logger.info(f"Dynamic Threshold: {threshold:.5f} (ATR%: {atr_pct*100:.3f}%)")
