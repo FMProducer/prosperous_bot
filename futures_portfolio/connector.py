@@ -80,6 +80,11 @@ class BinanceConnector:
     async def get_exchange_info(self) -> Dict:
         return await asyncio.to_thread(self.futures_client.futures_exchange_info)
 
+    @retry_on_network_error(retries=5, delay=3.0)
+    async def get_futures_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List]:
+        """Получение свечей фьючерсов."""
+        return await asyncio.to_thread(self.futures_client.futures_klines, symbol=symbol, interval=interval, limit=limit)
+
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_free_balance(self) -> float:
         if not self.client.api_key or self.client.api_key == "YOUR_API_KEY":

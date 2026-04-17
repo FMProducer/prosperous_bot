@@ -4,8 +4,11 @@
 - Added PnL simulation in `main.py` for `paper_mode` to reflect equity changes dynamically and enable reinvestment.
 - Updated `calculator.py` to store and return share percentages for logging.
 - Implemented initial distribution logic in `main.py` if positions are empty upon startup.
+- Implemented **Dynamic Threshold (ATR-based)** in `main.py` to automatically adjust rebalance threshold based on volatility.
+- Updated `Rebalancer.md` with a detailed roadmap for future improvements (Limit Orders, Funding Arbitrage, Panic Mode).
 
 ## Next Steps
-- Monitor bot performance with the updated logic.
-- Consider adding more sophisticated error handling or recovery mechanisms.
-- Investigate potential optimizations for order execution or rebalancing frequency.
+- Implement **Limit Orders (Post-Only)** in `executor.py` to reduce trading fees and slippage.
+- Automate **Ticker Rotation** based on Funding Rate and Saw Factor from `rank_tickers.py`.
+- Develop a **Volatility-based "Panic Mode"** to pause rebalancing during extreme spikes.
+- Create a visualization tool for TPV and Reserve growth (HTML/CSV reporting).

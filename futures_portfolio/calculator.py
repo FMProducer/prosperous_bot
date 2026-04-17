@@ -38,6 +38,28 @@ class PortfolioCalculator:
         self.share_short_pct = round((short_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
         self.share_virt_pct = round(self.virt_current_value / self.tpv * 100) if self.tpv > 0 else 0
 
+    @staticmethod
+    def calculate_atr(klines: List[List], period: int = 14) -> float:
+        """Расчет ATR (Average True Range)."""
+        if not klines or len(klines) < period + 1:
+            return 0.0
+            
+        tr_list = []
+        for i in range(1, len(klines)):
+            # [time, open, high, low, close, vol, ...]
+            high = float(klines[i][2])
+            low = float(klines[i][3])
+            prev_close = float(klines[i-1][4])
+            
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            tr_list.append(tr)
+            
+        if not tr_list:
+            return 0.0
+            
+        # Упрощенное ATR (простое скользящее среднее от TR)
+        return sum(tr_list[-period:]) / period
+
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         deviations = []
 
