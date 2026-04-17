@@ -1,9 +1,9 @@
 {
-  "balance": 10000.0,
+  "balance": 10262.904865563178,
   "positions": {
-    "ENJUSDT_LONG": 0.0,
-    "ENJUSDT_SHORT": 0.0
+    "MOVRUSDT_LONG": 4675.134687051094,
+    "MOVRUSDT_SHORT": 5803.6154735806695
   },
-  "last_price": 0.0,
-  "base_ticker": "ENJUSDT"
+  "last_price": 3.089,
+  "base_ticker": "MOVRUSDT"
 }

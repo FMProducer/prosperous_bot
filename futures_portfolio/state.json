@@ -1,7 +1,8 @@
 {
-  "virt_basis_price": 0.0,
-  "virt_allocated_usdt": 0.0,
-  "base_ticker": "ENJUSDT",
-  "siphoning_reserve": 0.0,
-  "initial_tpv": 10000.0
+  "virt_basis_price": 3.089,
+  "virt_allocated_usdt": 3485.8771495898554,
+  "base_ticker": "MOVRUSDT",
+  "siphoning_reserve": 182.78997420270133,
+  "initial_tpv": 10009.620524958036,
+  "tpv_ath": 10192.410499160738
 }
