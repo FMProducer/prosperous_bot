@@ -1,9 +1,9 @@
 {
   "balance": 10000.0,
   "positions": {
-    "MOVRUSDT_LONG": 4752.540150770239,
-    "MOVRUSDT_SHORT": 5899.705014749262
+    "BASEDUSDT_LONG": 117219.07841552142,
+    "BASEDUSDT_SHORT": 145513.33872271623
   },
-  "last_price": 3.051,
-  "base_ticker": "MOVRUSDT"
+  "last_price": 0.1237,
+  "base_ticker": "BASEDUSDT"
 }
