@@ -56,8 +56,10 @@ async def run_backtest(config_path: str, data_dir: str):
         
         siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
         reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
+        equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
         siphoning_reserve = 0.0
         initial_tpv = initial_capital
+        tpv_ath = initial_capital
         
         positions = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
         
@@ -70,7 +72,9 @@ async def run_backtest(config_path: str, data_dir: str):
             "current_drawdown_duration": 0,
             "daily_returns": [],
             "gross_profit": 0.0,
-            "gross_loss": 0.0
+            "gross_loss": 0.0,
+            "trailing_stop_triggered": False,
+            "trailing_stop_step": 0
         }
 
         history = []
@@ -84,6 +88,18 @@ async def run_backtest(config_path: str, data_dir: str):
             calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
                                      base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
             
+            # Equity Trailing Stop Tracking
+            if calc.total_tpv > tpv_ath:
+                tpv_ath = calc.total_tpv
+            
+            if equity_trailing_stop_pct > 0 and tpv_ath > 0 and siphoning_reserve > 0:
+                drawdown_from_ath = (1 - calc.total_tpv / tpv_ath) * 100
+                if drawdown_from_ath >= equity_trailing_stop_pct:
+                    stats["trailing_stop_triggered"] = True
+                    stats["trailing_stop_step"] = i
+                    logger.warning(f"!!! [STOP] Step {i}: Equity Trailing Stop triggered at {calc.total_tpv:.2f} (ATH: {tpv_ath:.2f}, Drop: {drawdown_from_ath:.2f}%)")
+                    break
+
             # PnL Tracking
             tpv_change = calc.total_tpv - prev_tpv
             if tpv_change > 0: stats["gross_profit"] += tpv_change
@@ -190,6 +206,11 @@ async def run_backtest(config_path: str, data_dir: str):
         logger.info(f"Max DD Duration:    {stats['max_drawdown_duration']/1440:.2f} days")
         logger.info(f"Max Run-up:         {(stats['max_tpv']/initial_capital - 1)*100:.4f}%")
         logger.info(f"Recovery Factor:    {recovery_factor:.2f}")
+        
+        if stats["trailing_stop_triggered"]:
+            logger.warning(f"Trailing Stop:      TRIGGERED at step {stats['trailing_stop_step']}")
+        else:
+            logger.info(f"Trailing Stop:      Not triggered (Threshold: {equity_trailing_stop_pct}%)")
         
         logger.info("-" * 70)
         logger.info(f"Sharpe Ratio:       {sharpe:.2f}")

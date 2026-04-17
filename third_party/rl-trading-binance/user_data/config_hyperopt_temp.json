@@ -178,7 +178,22 @@
             "PEOPLE/USDT:USDT",
             "TIA/USDT:USDT",
             "LUNA2/USDT:USDT",
-            "RARE/USDT:USDT"
+            "RARE/USDT:USDT",
+            "SIREN/USDT:USDT",
+            "PORT3/USDT:USDT",
+            "BASED/USDT:USDT",
+            "LEVER/USDT:USDT",
+            "BSW/USDT:USDT",
+            "AMB/USDT:USDT",
+            "ALPHA/USDT:USDT",
+            "NEIROETH/USDT:USDT",
+            "ALPACA/USDT:USDT",
+            "SOON/USDT:USDT",
+            "PRL/USDT:USDT",
+            "YALA/USDT:USDT",
+            "VIDT/USDT:USDT",
+            "MOVR/USDT:USDT",
+            "A2Z/USDT:USDT"
         ],
         "pair_blacklist": [
             "CELO/USDT:USDT",

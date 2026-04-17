@@ -1,11 +1,9 @@
 {
-  "balance": 10051.461684829614,
+  "balance": 10000.0,
   "positions": {
     "ENJUSDT_LONG": 0.0,
-    "ENJUSDT_SHORT": 0.0,
-    "BASEDUSDT_LONG": 84854.86891385767,
-    "BASEDUSDT_SHORT": 105337.07865168538
+    "ENJUSDT_SHORT": 0.0
   },
-  "last_price": 0.17088,
-  "base_ticker": "BASEDUSDT"
+  "last_price": 0.0,
+  "base_ticker": "ENJUSDT"
 }

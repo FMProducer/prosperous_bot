@@ -50,15 +50,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
         "virt_allocated_usdt": 0.0, 
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
-        "initial_tpv": 0.0
+        "initial_tpv": 0.0,
+        "tpv_ath": 0.0
     })
     
     # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
     if state.get("base_ticker") != base_ticker:
-        logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting basis and initial TPV.")
+        logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting basis, initial TPV and ATH.")
         state["virt_basis_price"] = 0.0
         state["virt_allocated_usdt"] = 0.0
         state["initial_tpv"] = 0.0 # Сброс для нового актива
+        state["tpv_ath"] = 0.0
         state["base_ticker"] = base_ticker
         save_json(STATE_FILE, state)
         
@@ -66,10 +68,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     virt_allocated_usdt = state["virt_allocated_usdt"]
     siphoning_reserve = state.get("siphoning_reserve", 0.0)
     initial_tpv = state.get("initial_tpv", 0.0)
+    tpv_ath = state.get("tpv_ath", 0.0)
 
     # Инфо о бирже
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
+    
+    # Получаем порог трейлинг стопа
+    equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
 
     # Для Paper Trading сохраняем цену входа, чтобы считать PNL
     if paper_mode:
@@ -146,6 +152,43 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
             calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                                      base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
             
+            # Обновление ATH (All-Time High) для TPV
+            if tpv_ath == 0 or calc.total_tpv > tpv_ath:
+                tpv_ath = calc.total_tpv
+                state["tpv_ath"] = tpv_ath
+                save_json(STATE_FILE, state)
+
+            # Проверка Equity Trailing Stop
+            if equity_trailing_stop_pct > 0 and tpv_ath > 0 and siphoning_reserve > 0:
+                drawdown_pct = (1 - calc.total_tpv / tpv_ath) * 100
+                if drawdown_pct >= equity_trailing_stop_pct:
+                    logger.warning(f"!!! [STOP] Equity Trailing Stop triggered! TPV: {calc.total_tpv:.2f} | ATH: {tpv_ath:.2f} | Drop: {drawdown_pct:.2f}%")
+                    
+                    # Закрытие всех позиций
+                    logger.info("Closing all positions and stopping the bot...")
+                    for pos_key, qty in positions.items():
+                        if qty == 0 or base_ticker not in pos_key: continue
+                        
+                        pos_side = pos_key.split('_')[1] if '_' in pos_key else "BOTH"
+                        side = "SELL" if qty > 0 else "BUY"
+                        step_size = step_sizes.get(pos_key, 0.0)
+                        
+                        if paper_mode:
+                            paper_state["positions"][pos_key] = 0.0
+                            logger.info(f"[PAPER] Position closed: {pos_key}")
+                        else:
+                            executor = PortfolioExecutor(connector)
+                            await executor.execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_side)
+                    
+                    if paper_mode: save_json(PAPER_STATE_FILE, paper_state)
+                    
+                    # Сброс состояния для предотвращения немедленного перезапуска при ручном запуске (опционально)
+                    # state["tpv_ath"] = 0 
+                    # save_json(STATE_FILE, state)
+                    
+                    logger.info("All positions closed. Bot stopped.")
+                    break # Выход из цикла
+
             # Проверка Механизма "Сейфа"
             if siphoning_threshold_pct > 0:
                 # Если активный TPV вырос выше порога от начального
