@@ -18,6 +18,6 @@
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["MOVRUSDT"],
-  "base_ticker": "MOVRUSDT"
+  "tickers": ["ZECUSDT"],
+  "base_ticker": "ZECUSDT"
 }

@@ -1,9 +1,9 @@
 {
   "balance": 10000.0,
   "positions": {
-    "MOVRUSDT_LONG": 0.0,
-    "MOVRUSDT_SHORT": 0.0
+    "ZECUSDT_LONG": 44.699281728783255,
+    "ZECUSDT_SHORT": 55.48876352538611
   },
-  "last_price": 0.0,
-  "base_ticker": "MOVRUSDT"
+  "last_price": 324.39,
+  "base_ticker": "ZECUSDT"
 }

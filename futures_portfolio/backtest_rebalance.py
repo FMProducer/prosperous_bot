@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import asyncio
 import aiohttp
+import time
 import json
 import os
 import logging
@@ -16,32 +17,49 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("Backtest")
 
 async def download_live_data(symbol: str, data_dir: str):
-    """Загружает последние 1500 минут (24ч+) напрямую с Binance Futures"""
+    """Загружает последние 48 часов (2880 минут) напрямую с Binance Futures двумя порциями"""
     endpoint = f"https://fapi.binance.com/fapi/v1/klines"
-    params = {"symbol": symbol, "interval": "1m", "limit": 1500}
     
-    logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last 24h)...")
+    logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last 48h)...")
+    
+    all_data = []
+    now = int(time.time() * 1000)
+    # 2880 минут = 48 часов. Лимит запроса 1500. Качаем двумя кусками по 1440.
+    
     async with aiohttp.ClientSession() as session:
-        async with session.get(endpoint, params=params) as resp:
-            if resp.status != 200:
-                raise Exception(f"Binance API Error: {resp.status}")
-            data = await resp.json()
+        for i in range(2):
+            # Сначала качаем более старый кусок, потом новый
+            end_time = now - (1 - i) * 1440 * 60 * 1000
+            params = {
+                "symbol": symbol, 
+                "interval": "1m", 
+                "limit": 1440,
+                "endTime": end_time
+            }
+            async with session.get(endpoint, params=params) as resp:
+                if resp.status != 200:
+                    raise Exception(f"Binance API Error: {resp.status}")
+                chunk = await resp.json()
+                all_data.extend(chunk)
             
-    # Формируем DataFrame в стиле Freqtrade/нашего бэктестера
-    df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'vol', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
+    # Формируем DataFrame
+    df = pd.DataFrame(all_data, columns=['time', 'open', 'high', 'low', 'close', 'vol', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
     df['close'] = df['close'].astype(float)
     df['high'] = df['high'].astype(float)
     df['low'] = df['low'].astype(float)
     
+    # Удаляем дубликаты по времени (если есть на стыке) и сортируем
+    df = df.drop_duplicates(subset=['time']).sort_values('time')
+    
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
         
-    file_path = os.path.join(data_dir, f"{symbol}_live_24h.feather")
+    file_path = os.path.join(data_dir, f"{symbol}_live_48h.feather")
     df.to_feather(file_path)
-    logger.info(f"Success. Saved live data to {file_path}")
+    logger.info(f"Success. Saved 48h live data ({len(df)} candles) to {file_path}")
     return file_path
 
-async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None):
+async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None, limit_min: int = 0):
     try:
         if not os.path.exists(config_path):
             logger.error(f"Config file not found: {config_path}")
@@ -59,12 +77,21 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         if live_mode:
             file_path = await download_live_data(base_ticker, data_dir)
         else:
-            ticker_part = base_ticker.replace("USDT", "_USDT")
-            file_name = f"{ticker_part}_USDT-1m-futures.feather"
-            file_path = os.path.join(data_dir, file_name)
+            # Ищем файл в папке данных
+            file_path = None
+            possible_names = [
+                f"{base_ticker.replace('USDT', '_USDT')}_USDT-1m-futures.feather",
+                f"{base_ticker}_live_24h.feather"
+            ]
             
-            if not os.path.exists(file_path):
-                # Пробуем найти любой подходящий файл для этого тикера
+            for name in possible_names:
+                p = os.path.join(data_dir, name)
+                if os.path.exists(p):
+                    file_path = p
+                    break
+            
+            if not file_path:
+                # Попытка найти любой файл, содержащий имя тикера
                 files = [f for f in os.listdir(data_dir) if base_ticker in f and f.endswith('.feather')]
                 if files:
                     file_path = os.path.join(data_dir, files[0])
@@ -76,10 +103,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         df = pd.read_feather(file_path)
         df = df.copy().reset_index(drop=True)
         
-        # Если это исторический файл, но мы хотим только последние 24ч
-        if not live_mode and len(df) > 1440:
-             logger.info(f"Truncating historical data to last 1440 minutes...")
-             df = df.tail(1440).reset_index(drop=True)
+        # Обрезка данных только если указан лимит
+        if limit_min > 0 and len(df) > limit_min:
+             logger.info(f"Truncating data to last {limit_min} minutes...")
+             df = df.tail(limit_min).reset_index(drop=True)
 
         logger.info(f"Processing {len(df)} minutes of data.")
 
