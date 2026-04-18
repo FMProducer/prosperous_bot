@@ -1,8 +1,8 @@
 {
-  "virt_basis_price": 2.304,
-  "virt_allocated_usdt": 3500.0,
+  "virt_basis_price": 0.0,
+  "virt_allocated_usdt": 0.0,
   "base_ticker": "MOVRUSDT",
   "siphoning_reserve": 0.0,
   "initial_tpv": 10000.0,
-  "tpv_ath": 10000.000000000002
+  "tpv_ath": 10000.0
 }

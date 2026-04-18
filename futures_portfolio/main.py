@@ -126,25 +126,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 real_equity = await connector.get_free_balance()
                 positions = await connector.get_positions()
 
-            # 2.5 Расчет динамического порога (ATR-based)
-            try:
-                klines = await connector.get_futures_klines(base_ticker, "1m", limit=15)
-                atr = PortfolioCalculator.calculate_atr(klines, period=3)
-                if atr > 0:
-                    atr_pct = atr / price
-                    # Порог = ATR% * 1.5 (настраиваемый коэффициент)
-                    dynamic_threshold = round(atr_pct * 1.01, 3)
-                    # Ограничиваем: минимум 0.2%, максимум 2.0%
-                    threshold = max(0.004, min(0.006, dynamic_threshold))
-                    
-                    if i % 10 == 0:
-                        logger.info(f"Dynamic Threshold: {threshold:.5f} (ATR%: {atr_pct*100:.3f}%)")
-                else:
-                    threshold = portfolio_cfg["rebalance_threshold"]
-            except Exception as atr_err:
-                logger.warning(f"Failed to calculate dynamic threshold: {atr_err}. Using config value.")
-                threshold = portfolio_cfg["rebalance_threshold"]
-
             # Инициализация синтетического базиса и начального TPV
             if virt_basis_price == 0 or initial_tpv == 0:
                 if virt_basis_price == 0:
