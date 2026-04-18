@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
 import asyncio
+import aiohttp
 import json
 import os
 import logging
 import traceback
+import argparse
 from typing import Dict, List
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
@@ -13,9 +15,34 @@ from executor import PortfolioExecutor
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("Backtest")
 
-async def run_backtest(config_path: str, data_dir: str):
+async def download_live_data(symbol: str, data_dir: str):
+    """Загружает последние 1500 минут (24ч+) напрямую с Binance Futures"""
+    endpoint = f"https://fapi.binance.com/fapi/v1/klines"
+    params = {"symbol": symbol, "interval": "1m", "limit": 1500}
+    
+    logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last 24h)...")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(endpoint, params=params) as resp:
+            if resp.status != 200:
+                raise Exception(f"Binance API Error: {resp.status}")
+            data = await resp.json()
+            
+    # Формируем DataFrame в стиле Freqtrade/нашего бэктестера
+    df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'vol', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
+    df['close'] = df['close'].astype(float)
+    df['high'] = df['high'].astype(float)
+    df['low'] = df['low'].astype(float)
+    
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+        
+    file_path = os.path.join(data_dir, f"{symbol}_live_24h.feather")
+    df.to_feather(file_path)
+    logger.info(f"Success. Saved live data to {file_path}")
+    return file_path
+
+async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None):
     try:
-        logger.info(f"Starting backtest with config: {config_path}")
         if not os.path.exists(config_path):
             logger.error(f"Config file not found: {config_path}")
             return
@@ -26,26 +53,35 @@ async def run_backtest(config_path: str, data_dir: str):
         portfolio_cfg = config["portfolios"][0]
         targets = portfolio_cfg["targets"]
         threshold = portfolio_cfg["rebalance_threshold"]
-        base_ticker = config.get("base_ticker", "BTCUSDT")
+        base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
         
         # 1. Загрузка данных
-        ticker_part = base_ticker.replace("USDT", "_USDT")
-        file_name = f"{ticker_part}_USDT-1m-futures.feather"
-        file_path = os.path.join(data_dir, file_name)
-        
-        if not os.path.exists(file_path):
-            logger.error(f"Data file not found: {file_path}")
-            files = [f for f in os.listdir(data_dir) if f.endswith('.feather')]
-            if files:
-                file_path = os.path.join(data_dir, files[0])
-                logger.info(f"Using alternative file: {file_path}")
-            else:
-                return
+        if live_mode:
+            file_path = await download_live_data(base_ticker, data_dir)
+        else:
+            ticker_part = base_ticker.replace("USDT", "_USDT")
+            file_name = f"{ticker_part}_USDT-1m-futures.feather"
+            file_path = os.path.join(data_dir, file_name)
+            
+            if not os.path.exists(file_path):
+                # Пробуем найти любой подходящий файл для этого тикера
+                files = [f for f in os.listdir(data_dir) if base_ticker in f and f.endswith('.feather')]
+                if files:
+                    file_path = os.path.join(data_dir, files[0])
+                else:
+                    logger.error(f"Data file not found for {base_ticker} in {data_dir}")
+                    return
 
-        logger.info(f"Loading data from {file_path}...")
+        logger.info(f"Starting backtest for {base_ticker} using {file_path}...")
         df = pd.read_feather(file_path)
         df = df.copy().reset_index(drop=True)
-        logger.info(f"Loaded {len(df)} minutes of data.")
+        
+        # Если это исторический файл, но мы хотим только последние 24ч
+        if not live_mode and len(df) > 1440:
+             logger.info(f"Truncating historical data to last 1440 minutes...")
+             df = df.tail(1440).reset_index(drop=True)
+
+        logger.info(f"Processing {len(df)} minutes of data.")
 
         # 2. Инициализация
         initial_capital = 10000.0
@@ -138,7 +174,7 @@ async def run_backtest(config_path: str, data_dir: str):
             # Rebalancing
             current_threshold = -1.0 if i == 0 else threshold
             
-            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке, чтобы снизить комиссии
+            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке
             if i > 0 and calc.tpv < initial_tpv:
                 current_threshold *= 2.0
                 
@@ -157,7 +193,10 @@ async def run_backtest(config_path: str, data_dir: str):
                 calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
                                          base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
 
-            if i % 10000 == 0:
+            if i % 1000 == 0 and live_mode:
+                res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""
+                logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f}{res_str} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}% | {base_ticker}={curr_price:8.4f}")
+            elif i % 10000 == 0:
                 res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""
                 logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f}{res_str} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}% | {base_ticker}={curr_price:8.4f}")
             
@@ -229,5 +268,11 @@ async def run_backtest(config_path: str, data_dir: str):
         logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
-    DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
-    asyncio.run(run_backtest("config.json", DATA_DIR))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--data_dir", default=r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures")
+    parser.add_argument("--live", action="store_true", help="Download last 24h data and test it")
+    parser.add_argument("--ticker", default=None, help="Override ticker for backtest (e.g. MOVRUSDT)")
+    args = parser.parse_args()
+    
+    asyncio.run(run_backtest(args.config, args.data_dir, args.live, args.ticker))

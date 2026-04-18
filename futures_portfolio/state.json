@@ -4,5 +4,5 @@
   "base_ticker": "MOVRUSDT",
   "siphoning_reserve": 0.0,
   "initial_tpv": 10000.0,
-  "tpv_ath": 10000.0
+  "tpv_ath": 10000.000000000002
 }
