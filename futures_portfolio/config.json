@@ -1,6 +1,5 @@
 {
-  "api_key": "VD417ujKKUCUGQmKWU7siM1k2bTcsey8llkwsjAK46dTO4cJaAlmqNVzi0OEZ7My",
-  "secret_key": "YOUR_SECRET_KEY",
+  "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
   "paper_mode": true,
   "portfolios": [
@@ -15,6 +14,8 @@
       "siphoning_threshold_pct": 0.5,
       "reinvestment_ratio": 0.05,
       "equity_trailing_stop_pct": 10.0,
+      "margin_ratio_warning": 5.0,
+      "margin_ratio_critical": 2.0,
       "check_interval_sec": 30
     }
   ],

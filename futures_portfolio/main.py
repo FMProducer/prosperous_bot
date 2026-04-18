@@ -3,6 +3,10 @@ import json
 import logging
 import os
 from typing import Dict, List
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 from connector import BinanceConnector
 from calculator import PortfolioCalculator
@@ -46,28 +50,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     
     # Состояние синтетической доли и сейфа
     state = load_json(STATE_FILE, {
-        "virt_basis_price": 0.0, 
-        "virt_allocated_usdt": 0.0, 
+        "virt_basis_price": 0.0,
+        "virt_allocated_usdt": 0.0,
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
         "initial_tpv": 0.0,
+        "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
         "tpv_ath": 0.0
     })
-    
+
     # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
     if state.get("base_ticker") != base_ticker:
         logger.info(f"Ticker in state.json changed from {state.get('base_ticker')} to {base_ticker}. Resetting basis, initial TPV and ATH.")
         state["virt_basis_price"] = 0.0
         state["virt_allocated_usdt"] = 0.0
         state["initial_tpv"] = 0.0 # Сброс для нового актива
+        state["reference_tpv"] = 0.0
         state["tpv_ath"] = 0.0
         state["base_ticker"] = base_ticker
         save_json(STATE_FILE, state)
-        
+
     virt_basis_price = state["virt_basis_price"]
     virt_allocated_usdt = state["virt_allocated_usdt"]
     siphoning_reserve = state.get("siphoning_reserve", 0.0)
     initial_tpv = state.get("initial_tpv", 0.0)
+    reference_tpv = state.get("reference_tpv", 0.0)  # Не меняется при сейфе
     tpv_ath = state.get("tpv_ath", 0.0)
 
     # Инфо о бирже
@@ -76,6 +83,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
     
     # Получаем порог трейлинг стопа
     equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
+
+    # Пороги для мониторинга маржи (коэффициент запаса: больше = безопаснее)
+    margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
+    margin_critical = portfolio_cfg.get("margin_ratio_critical", 2.0)
 
     # Для Paper Trading сохраняем цену входа, чтобы считать PNL
     if paper_mode:
@@ -131,20 +142,22 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                 if virt_basis_price == 0:
                     virt_basis_price = price
                     virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
-                
+
                 if initial_tpv == 0:
                     # Если сейф только внедрен, берем текущий TPV как базу
-                    temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+                    temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                  base_ticker=base_ticker, siphoning_reserve=0.0)
                     initial_tpv = temp_calc.tpv
-                    logger.info(f"Initialized initial_tpv to {initial_tpv:.2f}")
+                    reference_tpv = initial_tpv  # Фиксируем базу для гистерезиса
+                    logger.info(f"Initialized initial_tpv and reference_tpv to {initial_tpv:.2f}")
 
                 state.update({
-                    "virt_basis_price": virt_basis_price, 
-                    "virt_allocated_usdt": virt_allocated_usdt, 
+                    "virt_basis_price": virt_basis_price,
+                    "virt_allocated_usdt": virt_allocated_usdt,
                     "base_ticker": base_ticker,
                     "siphoning_reserve": siphoning_reserve,
-                    "initial_tpv": initial_tpv
+                    "initial_tpv": initial_tpv,
+                    "reference_tpv": reference_tpv
                 })
                 save_json(STATE_FILE, state)
 
@@ -171,7 +184,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                         
                         pos_side = pos_key.split('_')[1] if '_' in pos_key else "BOTH"
                         side = "SELL" if qty > 0 else "BUY"
-                        step_size = step_sizes.get(pos_key, 0.0)
+                        step_size = step_sizes.get(base_ticker, 0.0)
                         
                         if paper_mode:
                             paper_state["positions"][pos_key] = 0.0
@@ -188,6 +201,39 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                     
                     logger.info("All positions closed. Bot stopped.")
                     break # Выход из цикла
+
+            # Проверка Margin Ratio (защита от ликвидации)
+            if not paper_mode and (margin_warning > 0 or margin_critical > 0):
+                try:
+                    margin_info = await connector.get_margin_ratio()
+                    margin_ratio = margin_info.get("margin_ratio", float('inf'))
+                    maint_margin = margin_info.get("total_maint_margin", 0)
+
+                    if margin_ratio != float('inf') and maint_margin > 0:
+                        # Критический уровень - экстренное закрытие
+                        if margin_critical > 0 and margin_ratio < margin_critical:
+                            logger.error(f"!!! [CRITICAL] Margin ratio {margin_ratio:.2f} below critical threshold {margin_critical:.2f}!")
+                            logger.error("Emergency position closure initiated...")
+
+                            for pos_key, qty in positions.items():
+                                if qty == 0 or base_ticker not in pos_key: continue
+                                pos_side = pos_key.split('_')[1] if '_' in pos_key else "BOTH"
+                                side = "SELL" if qty > 0 else "BUY"
+                                step_size = step_sizes.get(base_ticker, 0.0)
+
+                                executor = PortfolioExecutor(connector)
+                                await executor.execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_side)
+
+                            logger.error("All positions closed due to CRITICAL margin level. Bot stopped.")
+                            break
+
+                        # Предупреждающий уровень
+                        elif margin_warning > 0 and margin_ratio < margin_warning:
+                            logger.warning(f"!!! [WARNING] Low margin ratio: {margin_ratio:.2f} (threshold: {margin_warning:.2f})")
+                            logger.warning(f"Maint Margin: {maint_margin:.2f} USDT | Available: {margin_info.get('available_balance', 0):.2f} USDT")
+
+                except Exception as e:
+                    logger.error(f"Failed to check margin ratio: {e}")
 
             # Проверка Механизма "Сейфа"
             if siphoning_threshold_pct > 0:
@@ -227,12 +273,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             
-            # МЯГКИЙ ГИСТЕРЕЗИС: если мы в просадке (TPV < initial_tpv), удваиваем порог.
+            # МЯГКИЙ ГИСТЕРЕЗИС: если мы в просадке (TPV < reference_tpv), удваиваем порог.
             # Это снижает количество сделок на "пиле", но сохраняет защиту при сильных движениях.
-            if not (is_first_run or is_extreme) and calc.tpv < initial_tpv:
+            if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
                 if i % 20 == 0:
-                    logger.info(f"Hysteresis Active: threshold increased to {current_threshold:.4f} (TPV in recovery)")
+                    logger.info(f"Hysteresis Active: threshold increased to {current_threshold:.4f} (TPV {calc.tpv:.2f} < reference {reference_tpv:.2f})")
 
             deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
 
@@ -257,7 +303,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                     # Для реального исполнения: если мы уменьшаем позицию, ставим reduce_only
                     reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
 
-                    step_size = step_sizes.get(key, 0.0)
+                    step_size = step_sizes.get(key.split('_')[0], 0.0)
                     
                     if paper_mode:
                         qty_rounded = PortfolioExecutor(None).round_quantity(abs(order_qty), step_size)
@@ -313,11 +359,21 @@ if __name__ == "__main__":
 
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
-    
-    # Используем ключи из конфига
+
+    # API keys from environment variables (secure)
+    api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
+    secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))
+
+    if not api_key or api_key == "YOUR_API_KEY":
+        logger.error("BINANCE_API_KEY not set. Please set environment variable or update config.json")
+        exit(1)
+    if not secret_key or secret_key == "YOUR_SECRET_KEY":
+        logger.error("BINANCE_SECRET_KEY not set. Please set environment variable or update config.json")
+        exit(1)
+
     connector = BinanceConnector(
-        api_key=cfg.get("api_key", ""),
-        secret_key=cfg.get("secret_key", ""),
+        api_key=api_key,
+        secret_key=secret_key,
         testnet=cfg.get("testnet", True)
     )
     asyncio.run(rebalance_loop(connector, args.config))

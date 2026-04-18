@@ -122,6 +122,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
         siphoning_reserve = 0.0
         initial_tpv = initial_capital
+        reference_tpv = initial_capital  # Фиксированная база для гистерезиса (не меняется при сейфе)
         tpv_ath = initial_capital
         
         positions = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
@@ -200,9 +201,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
             # Rebalancing
             current_threshold = -1.0 if i == 0 else threshold
-            
-            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке
-            if i > 0 and calc.tpv < initial_tpv:
+
+            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке от reference_tpv
+            if i > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
                 
             deviations = calc.calculate_deviations(targets, current_threshold)

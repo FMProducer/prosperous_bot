@@ -86,6 +86,21 @@ class BinanceConnector:
         return await asyncio.to_thread(self.futures_client.futures_klines, symbol=symbol, interval=interval, limit=limit)
 
     @retry_on_network_error(retries=3, delay=2.0)
+    async def get_margin_ratio(self) -> Dict[str, float]:
+        """
+        Получение информации о марже и уровне риска.
+        Возвращает словарь с marginRatio, availableBalance, totalMaintMargin
+        """
+        account_info = await asyncio.to_thread(self.futures_client.futures_account)
+        return {
+            "margin_ratio": float(account_info.get("totalMarginBalance", 0)) / float(account_info.get("totalMaintMargin", 1)) if float(account_info.get("totalMaintMargin", 0)) > 0 else float('inf'),
+            "available_balance": float(account_info.get("availableBalance", 0)),
+            "total_maint_margin": float(account_info.get("totalMaintMargin", 0)),
+            "total_margin_balance": float(account_info.get("totalMarginBalance", 0)),
+            "liquidation_price": float(account_info.get("liquidationPrice", 0)) if account_info.get("liquidationPrice") else None
+        }
+
+    @retry_on_network_error(retries=3, delay=2.0)
     async def get_free_balance(self) -> float:
         if not self.client.api_key or self.client.api_key == "YOUR_API_KEY":
             return 10000.0
