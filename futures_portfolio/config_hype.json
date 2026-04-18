@@ -1,0 +1,24 @@
+{
+  "_comment": "Configuration for HYPEUSDT - testing stability with high activity",
+  "testnet": false,
+  "paper_mode": true,
+  "portfolios": [
+    {
+      "name": "HypeActiveNeutral",
+      "targets": {
+        "BASE_LONG": {"share": 0.29, "leverage": 5},
+        "BASE_SHORT": {"share": 0.36, "leverage": 5},
+        "VIRTUAL": {"share": 0.35, "leverage": 1}
+      },
+      "rebalance_threshold": 0.004,
+      "siphoning_threshold_pct": 0.3,
+      "reinvestment_ratio": 0.1,
+      "equity_trailing_stop_pct": 10.0,
+      "margin_ratio_warning": 5.0,
+      "margin_ratio_critical": 2.0,
+      "check_interval_sec": 15
+    }
+  ],
+  "tickers": ["HYPEUSDT"],
+  "base_ticker": "HYPEUSDT"
+}

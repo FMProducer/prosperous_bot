@@ -2,11 +2,23 @@ import os
 import asyncio
 import logging
 from typing import Dict, List, Callable, Any
+
+# ЖЕСТКОЕ ОТКЛЮЧЕНИЕ ПРОКСИ (должно быть до импорта Client)
+os.environ['HTTP_PROXY'] = ''
+os.environ['HTTPS_PROXY'] = ''
+os.environ['http_proxy'] = ''
+os.environ['https_proxy'] = ''
+os.environ['NO_PROXY'] = '*'
+
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import requests.exceptions
 
 logger = logging.getLogger(__name__)
+
+# Подмена URL на уровне класса для обхода блокировок в РФ (до инициализации)
+Client.API_URL = 'https://api1.binance.com/api'
+Client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
 def retry_on_network_error(retries: int = 3, delay: float = 2.0):
     """Декоратор для повторных попыток при сетевых ошибках."""
@@ -34,8 +46,25 @@ class BinanceConnector:
     def __init__(self, api_key: str, secret_key: str, testnet: bool = True, base_ticker: str = "BTCUSDT"):
         self.testnet = testnet
         self.base_ticker = base_ticker
-        self.client = Client(api_key, secret_key, testnet=testnet)
+        
+        # Настройка сессии: отключаем доверие к системному окружению (прокси)
+        requests_params = {
+            'proxies': {'http': None, 'https': None},
+            'timeout': 15
+        }
+        
+        if testnet:
+            # Для тестнета зеркала обычно не нужны или не работают, но прокси отключаем
+            self.client = Client(api_key, secret_key, testnet=True, requests_params=requests_params)
+        else:
+            self.client = Client(api_key, secret_key, testnet=False, requests_params=requests_params)
+            # Дополнительная проверка, что URL подменились
+            self.client.API_URL = 'https://api1.binance.com/api'
+            self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+            
         self.futures_client = self.client
+        # Отключаем использование системных переменных в сессии requests
+        self.client.session.trust_env = False
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, float]:
@@ -55,12 +84,10 @@ class BinanceConnector:
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_futures_prices(self, tickers: List[str] = None) -> Dict[str, float]:
         """Получение фьючерсных цен для заданных тикеров."""
-        # Для фьючерсов используем ticker_price, чтобы иметь живую цену последней сделки
         prices = await asyncio.to_thread(self.futures_client.futures_symbol_ticker)
-        if isinstance(prices, dict): # Если вернулся один словарь
+        if isinstance(prices, dict):
             prices = [prices]
         
-        # Создаем мапу всех цен
         price_map = {t["symbol"]: float(t["price"]) for t in prices}
         if tickers is None:
             return price_map
@@ -82,15 +109,10 @@ class BinanceConnector:
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_futures_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List]:
-        """Получение свечей фьючерсов."""
         return await asyncio.to_thread(self.futures_client.futures_klines, symbol=symbol, interval=interval, limit=limit)
 
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_margin_ratio(self) -> Dict[str, float]:
-        """
-        Получение информации о марже и уровне риска.
-        Возвращает словарь с marginRatio, availableBalance, totalMaintMargin
-        """
         account_info = await asyncio.to_thread(self.futures_client.futures_account)
         return {
             "margin_ratio": float(account_info.get("totalMarginBalance", 0)) / float(account_info.get("totalMaintMargin", 1)) if float(account_info.get("totalMaintMargin", 0)) > 0 else float('inf'),

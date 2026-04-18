@@ -2,45 +2,97 @@ import asyncio
 import aiohttp
 import logging
 import time
-from typing import List, Dict
+import json
+import os
+
+# ЖЕСТКОЕ ОТКЛЮЧЕНИЕ ПРОКСИ
+os.environ['HTTP_PROXY'] = ''
+os.environ['HTTPS_PROXY'] = ''
+os.environ['http_proxy'] = ''
+os.environ['https_proxy'] = ''
+os.environ['NO_PROXY'] = '*'
+
+from typing import List, Dict, Optional, Callable, Any
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения для API ключей (если нужны для лимитов)
+load_dotenv()
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("Scanner")
 
+CACHE_FILE = "scan_cache.json"
+
+def retry_on_network_error(retries: int = 3, delay: float = 1.0):
+    def decorator(func: Callable):
+        async def wrapper(*args, **kwargs):
+            for attempt in range(retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt < retries - 1:
+                        await asyncio.sleep(delay * (attempt + 1))
+                    else:
+                        logger.error(f"Max retries reached for {func.__name__}: {e}")
+            return None
+        return wrapper
+    return decorator
+
 class TickerScanner:
-    def __init__(self):
+    def __init__(self, concurrent_requests: int = 10):
+        # Используем основной домен, так как он заработал в main.py
         self.base_url = "https://fapi.binance.com"
-        # 1.5% изменения цены примерно соответствуют 0.5% отклонения доли при x5 плече
         self.rebalance_threshold = 0.015 
+        self.semaphore = asyncio.Semaphore(concurrent_requests)
         
-    async def fetch(self, endpoint: str, params: dict = None):
-        async with aiohttp.ClientSession() as session:
+    @retry_on_network_error(retries=3)
+    async def fetch(self, session: aiohttp.ClientSession, endpoint: str, params: dict = None):
+        async with self.semaphore:
+            # Принудительно отключаем прокси и игнорируем системные настройки
             try:
-                async with session.get(f"{self.base_url}{endpoint}", params=params) as response:
+                async with session.get(f"{self.base_url}{endpoint}", params=params, timeout=20, proxy=None) as response:
+                    if response.status == 429:
+                        retry_after = int(response.headers.get("Retry-After", 5))
+                        logger.warning(f"Rate limited (429). Sleeping for {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        return await self.fetch(session, endpoint, params)
                     if response.status != 200:
+                        logger.debug(f"Error {response.status} for {endpoint}")
                         return None
                     return await response.json()
             except Exception as e:
-                logger.debug(f"Fetch error: {e}")
+                logger.debug(f"Fetch error for {endpoint}: {e}")
                 return None
 
-    async def estimate_cycles_and_trend(self, symbol: str) -> Dict:
-        """
-        Глубокий анализ за 48 часов (2880 минут) с реалистичными порогами.
-        """
-        all_data = []
-        now = int(time.time() * 1000)
-        
+    async def analyze_ticker(self, session: aiohttp.ClientSession, symbol: str, funding_rate: float) -> Optional[Dict]:
+        """Параллельный анализ одного тикера."""
+        now_ms = int(time.time() * 1000)
+        one_month_ms = 30 * 24 * 60 * 60 * 1000
+
+        # 1. Проверка возраста тикера
+        age_check = await self.fetch(session, "/fapi/v1/klines", {
+            "symbol": symbol, "interval": "1M", "startTime": now_ms - one_month_ms, "limit": 1
+        })
+        if not age_check or len(age_check) == 0:
+            return None
+
+        # 2. Получение данных за 48 часов (2880 минут) двумя чанками
+        tasks = []
         for i in range(2):
-            end_time = now - (1 - i) * 1440 * 60 * 1000
+            end_time = now_ms - (1 - i) * 1440 * 60 * 1000
             params = {"symbol": symbol, "interval": "1m", "limit": 1440, "endTime": end_time}
-            chunk = await self.fetch("/fapi/v1/klines", params)
-            if chunk: all_data.extend(chunk)
-            
-        if not all_data or len(all_data) < 500:
-            return {"cycles": 0, "trend_ratio": 1.0, "vola_48h": 0, "net_change_pct": 0, "max_hourly_spurt": 0}
+            tasks.append(self.fetch(session, "/fapi/v1/klines", params))
         
+        chunks = await asyncio.gather(*tasks)
+        all_data = []
+        for c in chunks:
+            if c: all_data.extend(c)
+
+        if not all_data or len(all_data) < 2000: # Ожидаем ~2880
+            return None
+
+        # Обработка данных
         seen_times = set()
         unique_klines = []
         for k in all_data:
@@ -53,16 +105,16 @@ class TickerScanner:
         highs = [float(k[2]) for k in unique_klines]
         lows = [float(k[3]) for k in unique_klines]
         
-        # 1. Честные Циклы (с учетом плеча)
+        # --- Улучшенный подсчет циклов (Z-logic) ---
         cycles = 0
         basis = closes[0]
         for price in closes:
-            diff = abs(price - basis) / basis
-            if diff >= self.rebalance_threshold:
+            diff_pct = abs(price - basis) / basis
+            if diff_pct >= self.rebalance_threshold:
                 cycles += 1
                 basis = price
-                
-        # 2. Детектор критических всплесков
+
+        # --- Детектор всплесков (Spike Trap) ---
         max_hourly_spurt = 0.0
         for h in range(0, len(unique_klines), 60):
             window = unique_klines[h:h+60]
@@ -73,107 +125,116 @@ class TickerScanner:
             spurt = (w_high - w_low) / w_open * 100
             max_hourly_spurt = max(max_hourly_spurt, spurt)
 
-        # 3. Прямолинейность (Trend Efficiency)
+        # --- Trend Efficiency (Прямолинейность) ---
         total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
         net_move = abs(closes[-1] - closes[0])
-        trend_ratio = net_move / total_path if total_path > 0 else 1.0
+        trend_ratio = (net_move / total_path) if total_path > 0 else 0
+        trend_ratio_pct = trend_ratio * 100 # 1.0 -> 100%
+
+        # --- СКОРИНГ 3.1 ---
+        score = cycles * 15 # Увеличили вес циклов
+        net_change_pct = (closes[-1] / closes[0] - 1) * 100
+        abs_net_change = abs(net_change_pct)
         
+        # Дисквалификации
+        if abs_net_change > 15.0:
+            tier = "Tier-X (NET_TRAP)"
+            score = 0
+        elif max_hourly_spurt > 10.0:
+            tier = "Tier-X (SPIKE_TRAP)"
+            score = 0
+        elif cycles < 12: # Снизили порог для реалистичности
+            tier = "Tier-3 (LOW_ENERGY)"
+            score = 0
+        elif trend_ratio_pct > 7.0: # Слишком прямолинейно
+            tier = "Tier-3 (TRENDING)"
+            score *= 0.2
+        else:
+            # БОНУСЫ
+            if abs_net_change < 5.0: score *= 1.3 # Флэт - хорошо
+            
+            # Funding: Если < 0, то за шорт платят нам (хорошо для нейтральной стратегии)
+            if funding_rate < 0:
+                score *= (1 + abs(funding_rate) * 50) # funding_rate обычно 0.01% = 0.0001
+            
+            # Распределение по тирам
+            if score >= 250:
+                tier = "Tier-1 (GOLD)"
+            elif score >= 150:
+                tier = "Tier-2 (GOOD)"
+            else:
+                tier = "Tier-3 (OK)"
+
         return {
+            "symbol": symbol,
             "cycles": cycles,
-            "trend_ratio": trend_ratio,
-            "vola_48h": (max(highs) - min(lows)) / closes[0] * 100,
-            "net_change_pct": (closes[-1] / closes[0] - 1) * 100,
-            "max_hourly_spurt": max_hourly_spurt
+            "trend": trend_ratio_pct,
+            "net_change": net_change_pct,
+            "max_spurt": max_hourly_spurt,
+            "score": score,
+            "tier": tier,
+            "funding": funding_rate * 100
         }
 
     async def get_top_tickers(self, min_volume: float = 200_000_000):
-        """Получает топ тикеров, отфильтрованных по 'профпригодности'"""
         logger.info(f"Step 1: Market Scan (Min Vol: {min_volume/1e6:.0f}M)...")
         
-        tickers_24h = await self.fetch("/fapi/v1/ticker/24hr")
-        funding_rates = await self.fetch("/fapi/v1/premiumIndex")
-        
-        if not tickers_24h or not funding_rates:
-            logger.error("Failed to fetch data from Binance")
-            return []
+        # Отключаем trust_env, чтобы aiohttp не лез в системные настройки прокси
+        async with aiohttp.ClientSession(trust_env=False) as session:
+            tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
+            premium_info = await self.fetch(session, "/fapi/v1/premiumIndex")
+            
+            if not tickers_24h or not premium_info:
+                logger.error("Failed to fetch initial market data. Check your connection.")
+                return []
 
-        funding_map = {item['symbol']: float(item['lastFundingRate']) for item in funding_rates}
-        now_ms = int(time.time() * 1000)
-        one_month_ms = 30 * 24 * 60 * 60 * 1000
-        
-        candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume]
-        candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-        candidates = candidates[:50]
-        
-        ranked_list = []
-        logger.info(f"Step 2: Micro-backtesting {len(candidates)} candidates (48h history)...")
-        
-        for t in candidates:
-            symbol = t['symbol']
+            funding_map = {item['symbol']: float(item['lastFundingRate']) for item in premium_info}
             
-            # Проверка возраста (листинг > 1 месяца)
-            old_klines = await self.fetch("/fapi/v1/klines", {"symbol": symbol, "interval": "1M", "startTime": now_ms - one_month_ms, "limit": 1})
-            if not old_klines: continue
+            candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume]
+            candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
+            candidates = candidates[:60] # Берем чуть больше для запаса
             
-            analysis = await self.estimate_cycles_and_trend(symbol)
-            cycles = analysis['cycles']
-            trend_ratio_pct = analysis['trend_ratio'] * 100
-            abs_net_change = abs(analysis['net_change_pct'])
-            max_spurt = analysis['max_hourly_spurt']
-            funding = funding_map.get(symbol, 0.0) * 100
+            logger.info(f"Step 2: Parallel Analysis of {len(candidates)} candidates...")
             
-            # --- СКОРИНГ 3.0: "REALISTIC" ---
-            score = cycles * 10 # Умножаем для наглядности
+            tasks = [self.analyze_ticker(session, c['symbol'], funding_map.get(c['symbol'], 0.0)) for c in candidates]
+            results = await asyncio.gather(*tasks)
             
-            # 1. ЖЕСТКАЯ ДИСКВАЛИФИКАЦИЯ
-            if abs_net_change > 15.0: # Порог обвала/пампа за 48ч
-                tier = "Tier-X (NET_TRAP)"
-                score = 0
-            elif max_spurt > 10.0: # Порог импульса за 1 час
-                tier = "Tier-X (SPIKE_TRAP)"
-                score = 0
-            elif cycles < 15: # Минимум 15 реальных сделок за 48ч
-                tier = "Tier-3 (LOW_ENERGY)"
-                score = 0
-            elif trend_ratio_pct > 7.0:
-                tier = "Tier-3 (TRENDING)"
-                score *= 0.1
-            else:
-                # 2. БОНУСЫ
-                if abs_net_change < 5.0: score *= 1.5 
-                if funding > 0: score *= (1 + funding * 5)
+            ranked_list = [r for r in results if r is not None]
+            ranked_list.sort(key=lambda x: x['score'], reverse=True)
+            
+            # Сохранение в кэш
+            try:
+                with open(CACHE_FILE, "w") as f:
+                    json.dump({
+                        "timestamp": time.time(),
+                        "results": ranked_list
+                    }, f, indent=2)
+            except Exception as e:
+                logger.error(f"Failed to save cache: {e}")
                 
-                tier = "Tier-1 (GOLD)" if score > 300 else "Tier-2 (GOOD)"
-
-            ranked_list.append({
-                "symbol": symbol,
-                "cycles": cycles,
-                "trend": trend_ratio_pct,
-                "net_change": analysis['net_change_pct'],
-                "max_spurt": max_spurt,
-                "score": score,
-                "tier": tier
-            })
-            
-        ranked_list.sort(key=lambda x: x['score'], reverse=True)
-        return ranked_list
+            return ranked_list
 
 async def main():
-    scanner = TickerScanner()
+    scanner = TickerScanner(concurrent_requests=15)
+    start_time = time.time()
     top_tickers = await scanner.get_top_tickers()
+    duration = time.time() - start_time
     
-    print("\n" + "="*130)
-    print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'NET MOVE%':<10} | {'MAX SPURT%':<10} | {'TREND EFF%':<10} | {'SCORE':<8} | {'RECOMMENDATION'}")
-    print("-" * 130)
+    print("\n" + "="*145)
+    print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'NET MOVE%':<10} | {'MAX SPURT%':<10} | {'TREND EFF%':<10} | {'FUNDING%':<10} | {'SCORE':<8} | {'RECOMMENDATION'}")
+    print("-" * 145)
     
-    for t in top_tickers[:25]:
-        print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['net_change']:<10.2f} | {t['max_spurt']:<10.2f} | {t['trend']:<10.2f} | {t['score']:<8.2f} | {t['tier']}")
+    for t in top_tickers[:30]:
+        print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['net_change']:<10.2f} | {t['max_spurt']:<10.2f} | {t['trend']:<10.2f} | {t['funding']:<10.4f} | {t['score']:<8.2f} | {t['tier']}")
     
-    print("="*130)
-    print("REALISTIC SCORING RULES (48h Basis):")
-    print("1. REAL CYCLES: Estimated price moves > 1.5% (approx. triggers for x5 leverage)")
-    print("2. SPIKE LIMIT: 1-hour move < 10.0% (Protects against flash crashes)")
-    print("3. NET LIMIT: 48-hour total move < 15.0% (Maintains Neutrality)")
+    print("="*145)
+    print(f"Scan completed in {duration:.1f} seconds.")
+    print("SCORING RULES (48h Basis):")
+    print("1. REAL CYCLES: Moves > 1.5%. Score = Cycles * 15.")
+    print("2. SPIKE TRAP: 1h spurt > 10% -> DQ.")
+    print("3. NET TRAP: 48h net move > 15% -> DQ.")
+    print("4. TREND EFF: If > 7.0%, score reduced by 80% (Too linear).")
+    print("5. FUNDING: Bonus for negative rates (we get paid for short).")
 
 if __name__ == "__main__":
     asyncio.run(main())

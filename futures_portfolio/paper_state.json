@@ -1,9 +1,0 @@
-{
-  "balance": 10000.0,
-  "positions": {
-    "ZECUSDT_LONG": 45.021,
-    "ZECUSDT_SHORT": 55.888
-  },
-  "last_price": 322.07,
-  "base_ticker": "ZECUSDT"
-}

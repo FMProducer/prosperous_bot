@@ -1,0 +1,9 @@
+{
+  "balance": 10000.0,
+  "positions": {
+    "HYPEUSDT_LONG": 328.75,
+    "HYPEUSDT_SHORT": 408.1
+  },
+  "last_price": 44.107,
+  "base_ticker": "HYPEUSDT"
+}
