@@ -137,6 +137,11 @@ async def run_backtest(config_path: str, data_dir: str):
 
             # Rebalancing
             current_threshold = -1.0 if i == 0 else threshold
+            
+            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке, чтобы снизить комиссии
+            if i > 0 and calc.tpv < initial_tpv:
+                current_threshold *= 2.0
+                
             deviations = calc.calculate_deviations(targets, current_threshold)
             
             if deviations:

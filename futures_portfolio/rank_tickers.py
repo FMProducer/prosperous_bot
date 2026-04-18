@@ -2,7 +2,6 @@ import asyncio
 import aiohttp
 import logging
 import time
-import math
 from typing import List, Dict
 
 # Настройка логирования
@@ -12,7 +11,7 @@ logger = logging.getLogger("Scanner")
 class TickerScanner:
     def __init__(self):
         self.base_url = "https://fapi.binance.com"
-        self.rebalance_threshold = 0.005 # 0.5% - как в нашем конфиге
+        self.rebalance_threshold = 0.005 # 0.5% - базис для оценки циклов
         
     async def fetch(self, endpoint: str, params: dict = None):
         async with aiohttp.ClientSession() as session:
@@ -28,16 +27,16 @@ class TickerScanner:
     async def estimate_cycles_and_trend(self, symbol: str) -> Dict:
         """
         Микро-бэктест за 24 часа на 1-минутных свечах.
-        Считает реальное кол-во пересечений порога и силу тренда.
         """
-        # 1440 минут = 1 день
         klines = await self.fetch("/fapi/v1/klines", {"symbol": symbol, "interval": "1m", "limit": 1440})
         if not klines or len(klines) < 100:
-            return {"cycles": 0, "trend_penalty": 1.0, "net_change": 0}
+            return {"cycles": 0, "trend_ratio": 1.0, "vola_24h": 0}
         
         closes = [float(k[4]) for k in klines]
+        highs = [float(k[2]) for k in klines]
+        lows = [float(k[3]) for k in klines]
         
-        # 1. Считаем циклы (имитация ребалансировки)
+        # 1. Циклы (Saw Factor)
         cycles = 0
         basis = closes[0]
         for price in closes:
@@ -46,29 +45,24 @@ class TickerScanner:
                 cycles += 1
                 basis = price
                 
-        # 2. Считаем силу тренда (Trend Efficiency)
-        # Отношение чистого движения к общему пройденному пути
+        # 2. Trend Efficiency (Насколько цена идет по прямой)
         total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
         net_move = abs(closes[-1] - closes[0])
-        
-        # Чем выше trend_ratio, тем более "прямолинейно" движется цена (плохо для нас)
         trend_ratio = net_move / total_path if total_path > 0 else 1.0
         
-        # Штраф за тренд: если цена идет палкой, циклы обесцениваются
-        # Идеальный тренд-фактор для нас - когда много шума (total_path) при малом net_move
-        # Мы хотим, чтобы trend_ratio был низким (например < 0.1)
-        trend_penalty = max(0.1, 1.0 - (trend_ratio * 2))
+        # 3. Волатильность (Размах за 24ч)
+        vola_24h = (max(highs) - min(lows)) / closes[0] * 100
         
         return {
             "cycles": cycles,
             "trend_ratio": trend_ratio,
-            "trend_penalty": trend_penalty,
+            "vola_24h": vola_24h,
             "net_change_pct": (closes[-1] / closes[0] - 1) * 100
         }
 
-    async def get_top_tickers(self, min_volume: float = 150_000_000):
-        """Получает топ тикеров на основе микро-бэктеста и качества волатильности"""
-        logger.info("Step 1: Fetching market overview...")
+    async def get_top_tickers(self, min_volume: float = 200_000_000):
+        """Получает топ тикеров на основе 'Золотых правил' Market Neutral"""
+        logger.info(f"Step 1: Fetching market overview (Min Volume: {min_volume/1e6:.0f}M)...")
         
         tickers_24h = await self.fetch("/fapi/v1/ticker/24hr")
         funding_rates = await self.fetch("/fapi/v1/premiumIndex")
@@ -79,13 +73,12 @@ class TickerScanner:
 
         funding_map = {item['symbol']: float(item['lastFundingRate']) for item in funding_rates}
         now_ms = int(time.time() * 1000)
-        one_year_ms = 365 * 24 * 60 * 60 * 1000
+        one_month_ms = 30 * 24 * 60 * 60 * 1000
         
         # Фильтруем по объему и USDT
         candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume]
-        # Сортируем по объему и берем топ-40 для детального анализа
         candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-        candidates = candidates[:40]
+        candidates = candidates[:50]
         
         ranked_list = []
         logger.info(f"Step 2: Micro-backtesting {len(candidates)} candidates (24h history)...")
@@ -93,43 +86,54 @@ class TickerScanner:
         for t in candidates:
             symbol = t['symbol']
             
-            # Проверка возраста (листинг > 1 года)
-            old_klines = await self.fetch("/fapi/v1/klines", {"symbol": symbol, "interval": "1M", "startTime": now_ms - one_year_ms, "limit": 1})
+            # Проверка возраста (листинг > 1 месяца, чтобы избежать первичного листинг-пампа)
+            old_klines = await self.fetch("/fapi/v1/klines", {"symbol": symbol, "interval": "1M", "startTime": now_ms - one_month_ms, "limit": 1})
             if not old_klines: continue
             
-            # Анализ циклов и тренда
             analysis = await self.estimate_cycles_and_trend(symbol)
-            
             cycles = analysis['cycles']
-            if cycles < 20: continue # Слишком низкая активность
-            
+            trend_pct = analysis['trend_ratio'] * 100
+            vola = analysis['vola_24h']
             funding = funding_map.get(symbol, 0.0) * 100
             
-            # --- ИТОГОВЫЙ SCORE (Реалистичный) ---
-            # База = Количество циклов * Штраф за тренд
-            # Бонус за фандинг (т.к. мы Net-Short)
+            # --- СКОРИНГ ПО "ЗОЛОТЫМ ПРАВИЛАМ" ---
             
-            score = (cycles * analysis['trend_penalty'])
+            # 1. База - циклы
+            score = cycles
             
-            # Если фандинг положительный - это чистый плюс к доходности шорт-позиции (которая у нас больше)
+            # 2. Множитель Тренда (Идеально < 3%)
+            if trend_pct < 3.0: trend_factor = 1.5
+            elif trend_pct < 7.0: trend_factor = 1.0
+            elif trend_pct < 15.0: trend_factor = 0.5
+            else: trend_factor = 0.1 # Смерть для нейтральности
+            score *= trend_factor
+            
+            # 3. Множитель Волатильности (Нужна энергия > 30%)
+            if vola > 35.0: vola_factor = 1.3
+            elif vola > 15.0: vola_factor = 1.0
+            else: vola_factor = 0.4 # Слишком вялый актив
+            score *= vola_factor
+            
+            # 4. Множитель Фандинга (Т.к. мы Net-Short)
             if funding > 0:
-                score *= (1 + funding * 5) # Небольшой буст за пассивный доход
+                funding_factor = 1.0 + (funding * 10) # Бонус за прибыль шорта
             else:
-                score *= (1 + funding * 2) # Штраф за отрицательный фандинг
+                funding_factor = 1.0 / (1.0 + abs(funding) * 5) # Штраф за расходы шорта
+            score *= funding_factor
                 
-            # Штраф за экстремальную волатильность (риск вылета по стопу)
-            vola_24h = (float(t['highPrice']) - float(t['lowPrice'])) / float(t['lastPrice']) * 100
-            if vola_24h > 100:
-                score *= 0.5 # Режем вдвое за риск "бешеной монеты"
+            # Итоговый вердикт
+            if score > 500 and trend_pct < 5: tier = "Tier-1 (GOLD)"
+            elif score > 250: tier = "Tier-2 (GOOD)"
+            else: tier = "Tier-3 (AVOID)"
                 
             ranked_list.append({
                 "symbol": symbol,
                 "cycles": cycles,
-                "trend_ratio": analysis['trend_ratio'],
-                "vola": vola_24h,
+                "trend": trend_pct,
+                "vola": vola,
                 "funding": funding,
                 "score": score,
-                "net_change": analysis['net_change_pct']
+                "tier": tier
             })
             
         ranked_list.sort(key=lambda x: x['score'], reverse=True)
@@ -139,18 +143,19 @@ async def main():
     scanner = TickerScanner()
     top_tickers = await scanner.get_top_tickers()
     
-    print("\n" + "="*95)
-    print(f"{'SYMBOL':<12} | {'CYCLES(24h)':<12} | {'TREND %':<10} | {'VOLA %':<8} | {'FUND %':<8} | {'SCORE':<8}")
-    print("-" * 95)
+    print("\n" + "="*110)
+    print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'TREND %':<8} | {'VOLA %':<8} | {'FUND %':<8} | {'SCORE':<8} | {'RECOMMENDATION'}")
+    print("-" * 110)
     
-    for t in top_tickers[:15]:
-        # TREND % - это насколько прямолинейно шла цена (100% - палка, 5% - пила)
-        trend_display = t['trend_ratio'] * 100
-        print(f"{t['symbol']:<12} | {t['cycles']:<12} | {trend_display:<10.2f} | {t['vola']:<8.2f} | {t['funding']:<8.4f} | {t['score']:<8.2f}")
+    for t in top_tickers[:20]:
+        print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['trend']:<8.2f} | {t['vola']:<8.2f} | {t['funding']:<8.4f} | {t['score']:<8.2f} | {t['tier']}")
     
-    print("="*95)
-    print("ANALYSIS: CYCLES > 100 with TREND < 10% is the 'Sweet Spot' for Market Neutral.")
-    print("SCORING: Cycles * (1 - Trend_Penalty) + Funding_Bias.")
+    print("="*110)
+    print("GOLDEN RULES APPLIED:")
+    print("1. Trend Efficiency < 3.0% (The 'Saw' Effect)")
+    print("2. 24h Volatility > 35.0% (The 'Fuel')")
+    print("3. Positive Funding (The 'Passive Rent' for Shorts)")
+    print("4. Daily Volume > 200M USDT (The 'Liquidity')")
 
 if __name__ == "__main__":
     asyncio.run(main())

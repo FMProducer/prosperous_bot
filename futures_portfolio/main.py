@@ -245,6 +245,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str):
                  logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.2f} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
+            
+            # МЯГКИЙ ГИСТЕРЕЗИС: если мы в просадке (TPV < initial_tpv), удваиваем порог.
+            # Это снижает количество сделок на "пиле", но сохраняет защиту при сильных движениях.
+            if not (is_first_run or is_extreme) and calc.tpv < initial_tpv:
+                current_threshold *= 2.0
+                if i % 20 == 0:
+                    logger.info(f"Hysteresis Active: threshold increased to {current_threshold:.4f} (TPV in recovery)")
+
             deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
 
             if deviations:

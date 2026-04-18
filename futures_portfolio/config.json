@@ -18,6 +18,6 @@
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["BASEDUSDT"],
-  "base_ticker": "BASEDUSDT"
+  "tickers": ["MOVRUSDT"],
+  "base_ticker": "MOVRUSDT"
 }
