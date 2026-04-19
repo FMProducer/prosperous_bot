@@ -1,0 +1,9 @@
+{
+  "virt_basis_price": 4.307,
+  "virt_allocated_usdt": 350.0,
+  "base_ticker": "ORDIUSDT",
+  "siphoning_reserve": 0.0,
+  "initial_tpv": 1000.0,
+  "reference_tpv": 1000.0,
+  "tpv_ath": 1000.0010089621546
+}

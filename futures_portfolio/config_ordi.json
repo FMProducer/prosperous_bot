@@ -1,24 +1,25 @@
 {
-  "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
+  "_comment": "Configuration for ORDIUSDT",
   "testnet": false,
   "paper_mode": true,
   "portfolios": [
     {
-      "name": "SyntheticMarketNeutral",
+      "name": "OrdiNeutral",
       "targets": {
         "BASE_LONG": {"share": 0.29, "leverage": 5},
         "BASE_SHORT": {"share": 0.36, "leverage": 5},
         "VIRTUAL": {"share": 0.35, "leverage": 1}
       },
-      "rebalance_threshold": 0.005,
-      "siphoning_threshold_pct": 0.5,
-      "reinvestment_ratio": 0.05,
+      "rebalance_threshold": 0.002,
+      "siphoning_threshold_pct": 0.2,
+      "max_capital_usdt": 1000.0,
+      "reinvestment_ratio": 0.1,
       "equity_trailing_stop_pct": 10.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
-      "check_interval_sec": 30
+      "check_interval_sec": 15
     }
   ],
-  "tickers": ["RAVEUSDT"],
-  "base_ticker": "RAVEUSDT"
+  "tickers": ["ORDIUSDT"],
+  "base_ticker": "ORDIUSDT"
 }

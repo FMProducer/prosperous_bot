@@ -1,0 +1,9 @@
+{
+  "balance": 1014.6048900000002,
+  "positions": {
+    "RAVEUSDT_LONG": 2086.0,
+    "RAVEUSDT_SHORT": 2589.0
+  },
+  "last_price": 0.69556,
+  "base_ticker": "RAVEUSDT"
+}

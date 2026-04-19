@@ -1,0 +1,9 @@
+{
+  "balance": 1000.0,
+  "positions": {
+    "ORDIUSDT_LONG": 336.7,
+    "ORDIUSDT_SHORT": 417.9
+  },
+  "last_price": 4.307,
+  "base_ticker": "ORDIUSDT"
+}
