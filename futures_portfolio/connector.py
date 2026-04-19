@@ -3,13 +3,6 @@ import asyncio
 import logging
 from typing import Dict, List, Callable, Any
 
-# ЖЕСТКОЕ ОТКЛЮЧЕНИЕ ПРОКСИ (должно быть до импорта Client)
-os.environ['HTTP_PROXY'] = ''
-os.environ['HTTPS_PROXY'] = ''
-os.environ['http_proxy'] = ''
-os.environ['https_proxy'] = ''
-os.environ['NO_PROXY'] = '*'
-
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import requests.exceptions

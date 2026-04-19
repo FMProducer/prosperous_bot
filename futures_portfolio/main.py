@@ -11,6 +11,7 @@ load_dotenv()
 from connector import BinanceConnector
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
+from notifier import TelegramNotifier
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -65,6 +66,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     reference_tpv = state.get("reference_tpv", 0.0)
     tpv_ath = state.get("tpv_ath", 0.0)
 
+    # Параметры капитала и защиты
+    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", 0.0)
+    
     # Инфо о бирже
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
@@ -75,7 +79,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     if paper_mode:
         default_paper_state = {
-            "balance": 10000.0, 
+            "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0, 
             "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
             "last_price": 0.0,
             "base_ticker": base_ticker
@@ -92,6 +96,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
     else:
         paper_state = None
+
+    # Инициализация уведомлений
+    notifier = TelegramNotifier()
+    config_base = os.path.splitext(os.path.basename(config_path))[0]
+    await notifier.send_message(f"🚀 <b>Bot Started</b>: <code>{config_base}</code> ({base_ticker})\nMode: {'PAPER' if paper_mode else 'REAL'}")
 
     i = 0
     while True:
@@ -113,6 +122,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             else:
                 real_equity = await connector.get_free_balance()
                 positions = await connector.get_positions()
+            
+            # Ограничение капитала, если задано
+            if max_capital_usdt > 0:
+                real_equity = min(real_equity, max_capital_usdt)
 
             if virt_basis_price == 0 or initial_tpv == 0:
                 if virt_basis_price == 0:
@@ -143,7 +156,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if equity_trailing_stop_pct > 0 and tpv_ath > 0 and siphoning_reserve > 0:
                 drawdown_pct = (1 - calc.total_tpv / tpv_ath) * 100
                 if drawdown_pct >= equity_trailing_stop_pct:
-                    logger.warning(f"!!! [STOP] Trailing Stop: {drawdown_pct:.2f}% drop from ATH")
+                    msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH. Closing all positions for {base_ticker}."
+                    logger.warning(f"!!! [STOP] {msg}")
+                    await notifier.send_alert("STOP LOSS", msg)
                     for pos_key, qty in positions.items():
                         if qty == 0 or base_ticker not in pos_key: continue
                         side = "SELL" if qty > 0 else "BUY"
@@ -160,11 +175,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 margin_info = await connector.get_margin_ratio()
                 margin_ratio = margin_info.get("margin_ratio", float('inf'))
                 if margin_critical > 0 and margin_ratio < margin_critical:
-                    logger.error(f"!!! [CRITICAL] Margin ratio {margin_ratio:.2f} < {margin_critical:.2f}")
-                    # Emergency close logic here...
+                    msg = f"Margin ratio {margin_ratio:.2f} < {margin_critical:.2f}. Emergency stop!"
+                    logger.error(f"!!! [CRITICAL] {msg}")
+                    await notifier.send_alert("CRITICAL MARGIN", msg)
                     break
                 elif margin_warning > 0 and margin_ratio < margin_warning:
-                    logger.warning(f"!!! [WARNING] Low margin ratio: {margin_ratio:.2f}")
+                    msg = f"Low margin ratio: {margin_ratio:.2f}"
+                    logger.warning(f"!!! [WARNING] {msg}")
+                    await notifier.send_message(f"⚠️ <b>WARNING</b>: {msg} ({base_ticker})")
 
             if siphoning_threshold_pct > 0:
                 if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
@@ -173,7 +191,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     to_reserve = profit - to_reinvest
                     siphoning_reserve += to_reserve
                     initial_tpv += to_reinvest
-                    logger.info(f"!!! [SAFE] Reserve updated: +{to_reserve:.2f} USDT")
+                    msg = f"Reserve updated: +{to_reserve:.2f} USDT"
+                    logger.info(f"!!! [SAFE] {msg}")
+                    await notifier.send_message(f"💰 <b>SAFE</b>: {msg} ({base_ticker})")
                     calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                                              base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
                     state.update({"siphoning_reserve": siphoning_reserve, "initial_tpv": initial_tpv})
@@ -183,9 +203,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             is_first_run = current_pos_sum == 0
             is_extreme = calc.share_long_pct > 100 or calc.share_short_pct > 100
             
-            if i % 10 == 0:
+            if i % 5 == 0:
                  res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.2f} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
+                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
@@ -218,10 +238,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
                 save_json(state_file_path, state)
             
+            if i % 100 == 0 and i > 0:
+                await notifier.send_status(config_base, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), i)
+
         except Exception as e:
-            logger.error(f"Error in cycle: {e}")
+            err_msg = f"Error in cycle: {e}"
+            logger.error(err_msg)
             import traceback
             logger.error(traceback.format_exc())
+            if i % 10 == 0: # Не спамим ошибками связи каждую секунду
+                await notifier.send_message(f"❌ <b>Error</b>: {err_msg} ({base_ticker})")
 
         await asyncio.sleep(check_interval)
         i += 1

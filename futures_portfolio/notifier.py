@@ -11,6 +11,8 @@ class TelegramNotifier:
     def __init__(self):
         self.token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        # По умолчанию используем официальный API, но позволяем сменить на зеркало через .env
+        self.api_base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org")
         self.enabled = all([self.token, self.chat_id])
         
         if not self.enabled:
@@ -20,7 +22,7 @@ class TelegramNotifier:
         if not self.enabled:
             return
 
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        url = f"{self.api_base}/bot{self.token}/sendMessage"
         payload = {
             "chat_id": self.chat_id,
             "text": text,
@@ -28,13 +30,17 @@ class TelegramNotifier:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
+            # Разрешаем использовать системный прокси/VPN (trust_env=True)
+            async with aiohttp.ClientSession(trust_env=True) as session:
                 async with session.post(url, json=payload, timeout=10) as response:
                     if response.status != 200:
                         err_text = await response.text()
-                        logger.error(f"Telegram API Error: {err_text}")
+                        logger.error(f"Telegram API Error ({response.status}): {err_text}")
+                    else:
+                        return True
         except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+            logger.error(f"Failed to send Telegram message via {self.api_base}: {e}")
+        return False
 
     async def send_alert(self, title: str, message: str):
         """Отправка важного уведомления (например, срабатывание стопа)."""

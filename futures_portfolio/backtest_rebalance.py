@@ -16,24 +16,28 @@ from executor import PortfolioExecutor
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("Backtest")
 
-async def download_live_data(symbol: str, data_dir: str):
-    """Загружает последние 48 часов (2880 минут) напрямую с Binance Futures двумя порциями"""
+async def download_live_data(symbol: str, data_dir: str, days: int = 2):
+    """Загружает данные напрямую с Binance Futures за указанное количество дней"""
     endpoint = f"https://fapi.binance.com/fapi/v1/klines"
     
-    logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last 48h)...")
+    logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last {days} days)...")
     
     all_data = []
     now = int(time.time() * 1000)
-    # 2880 минут = 48 часов. Лимит запроса 1500. Качаем двумя кусками по 1440.
+    total_minutes = days * 1440
+    
+    # Binance позволяет скачивать по 1500 свечей за раз
+    chunk_size = 1440
+    num_chunks = int(np.ceil(total_minutes / chunk_size))
     
     async with aiohttp.ClientSession() as session:
-        for i in range(2):
-            # Сначала качаем более старый кусок, потом новый
-            end_time = now - (1 - i) * 1440 * 60 * 1000
+        for i in range(num_chunks):
+            # Качаем куски от новых к старым
+            end_time = now - i * chunk_size * 60 * 1000
             params = {
                 "symbol": symbol, 
                 "interval": "1m", 
-                "limit": 1440,
+                "limit": chunk_size,
                 "endTime": end_time
             }
             async with session.get(endpoint, params=params) as resp:
@@ -48,18 +52,21 @@ async def download_live_data(symbol: str, data_dir: str):
     df['high'] = df['high'].astype(float)
     df['low'] = df['low'].astype(float)
     
-    # Удаляем дубликаты по времени (если есть на стыке) и сортируем
+    # Удаляем дубликаты и сортируем
     df = df.drop_duplicates(subset=['time']).sort_values('time')
+    
+    # Ограничиваем точным количеством минут
+    df = df.tail(total_minutes)
     
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
         
-    file_path = os.path.join(data_dir, f"{symbol}_live_48h.feather")
+    file_path = os.path.join(data_dir, f"{symbol}_live_{days}d.feather")
     df.to_feather(file_path)
-    logger.info(f"Success. Saved 48h live data ({len(df)} candles) to {file_path}")
+    logger.info(f"Success. Saved {days}d live data ({len(df)} candles) to {file_path}")
     return file_path
 
-async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None, limit_min: int = 0):
+async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None, days: int = 2, commission: float = 0.0004):
     try:
         if not os.path.exists(config_path):
             logger.error(f"Config file not found: {config_path}")
@@ -75,13 +82,14 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         
         # 1. Загрузка данных
         if live_mode:
-            file_path = await download_live_data(base_ticker, data_dir)
+            file_path = await download_live_data(base_ticker, data_dir, days)
         else:
             # Ищем файл в папке данных
             file_path = None
             possible_names = [
                 f"{base_ticker.replace('USDT', '_USDT')}_USDT-1m-futures.feather",
-                f"{base_ticker}_live_24h.feather"
+                f"{base_ticker}_live_{days}d.feather",
+                f"{base_ticker}_live_48h.feather"
             ]
             
             for name in possible_names:
@@ -103,15 +111,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         df = pd.read_feather(file_path)
         df = df.copy().reset_index(drop=True)
         
-        # Обрезка данных только если указан лимит
-        if limit_min > 0 and len(df) > limit_min:
-             logger.info(f"Truncating data to last {limit_min} minutes...")
-             df = df.tail(limit_min).reset_index(drop=True)
-
-        logger.info(f"Processing {len(df)} minutes of data.")
-
         # 2. Инициализация
-        initial_capital = 10000.0
+        initial_capital = portfolio_cfg.get("max_capital_usdt", 10000.0)
         real_balance = initial_capital
         virt_basis_price = df.iloc[0]['close']
         virt_allocated_usdt = real_balance * targets["VIRTUAL"]["share"]
@@ -122,7 +123,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
         siphoning_reserve = 0.0
         initial_tpv = initial_capital
-        reference_tpv = initial_capital  # Фиксированная база для гистерезиса (не меняется при сейфе)
+        reference_tpv = initial_capital
         tpv_ath = initial_capital
         
         positions = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
@@ -143,7 +144,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
         history = []
         prev_tpv = initial_capital
-        fee_rate = 0.0004 # 0.04%
+        fee_rate = commission
 
         # 3. Цикл бэктеста
         for i in range(0, len(df)):
@@ -202,7 +203,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             # Rebalancing
             current_threshold = -1.0 if i == 0 else threshold
 
-            # Мягкий гистерезис: увеличиваем порог в 2 раза при просадке от reference_tpv
             if i > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
                 
@@ -221,10 +221,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt, 
                                          base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
 
-            if i % 1000 == 0 and live_mode:
-                res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""
-                logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f}{res_str} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}% | {base_ticker}={curr_price:8.4f}")
-            elif i % 10000 == 0:
+            if i % 1000 == 0:
                 res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""
                 logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f}{res_str} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}% | {base_ticker}={curr_price:8.4f}")
             
@@ -299,8 +296,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--data_dir", default=r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures")
-    parser.add_argument("--live", action="store_true", help="Download last 24h data and test it")
-    parser.add_argument("--ticker", default=None, help="Override ticker for backtest (e.g. MOVRUSDT)")
+    parser.add_argument("--live", action="store_true", help="Download fresh data and test it")
+    parser.add_argument("--ticker", default=None, help="Override ticker for backtest")
+    parser.add_argument("--days", type=int, default=2, help="Number of days for backtest (default: 2)")
+    parser.add_argument("--commission", type=float, default=0.0004, help="Commission rate (default: 0.0004)")
     args = parser.parse_args()
     
-    asyncio.run(run_backtest(args.config, args.data_dir, args.live, args.ticker))
+    asyncio.run(run_backtest(args.config, args.data_dir, args.live, args.ticker, args.days, args.commission))

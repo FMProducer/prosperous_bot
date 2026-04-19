@@ -1,55 +1,55 @@
 {
-  "timestamp": 1776547707.5608108,
+  "timestamp": 1776595402.3419485,
   "results": [
     {
-      "symbol": "1000PEPEUSDT",
-      "cycles": 19,
-      "trend": 1.5985481784659434,
-      "net_change": -4.176650104668478,
-      "max_spurt": 3.3279096964458166,
-      "score": 370.5,
+      "symbol": "ZECUSDT",
+      "cycles": 17,
+      "trend": 0.5173826524640072,
+      "net_change": -1.340450051555775,
+      "max_spurt": 4.316009557945039,
+      "score": 331.5,
       "tier": "Tier-1 (GOLD)",
-      "funding": 0.007129
+      "funding": 0.008679
     },
     {
-      "symbol": "ZECUSDT",
-      "cycles": 22,
-      "trend": 2.240448760210522,
-      "net_change": -5.8682354318494445,
-      "max_spurt": 4.85154162538654,
-      "score": 330,
-      "tier": "Tier-1 (GOLD)",
-      "funding": 0.002262
+      "symbol": "1000PEPEUSDT",
+      "cycles": 12,
+      "trend": 1.6205598297593777,
+      "net_change": -3.841974542067683,
+      "max_spurt": 3.059401518535055,
+      "score": 234.50239799999997,
+      "tier": "Tier-2 (GOOD)",
+      "funding": -0.004294
     },
     {
       "symbol": "BTCUSDT",
-      "cycles": 5,
-      "trend": 0.8974136723193445,
-      "net_change": 1.0092108179708514,
-      "max_spurt": 2.18529630350424,
+      "cycles": 4,
+      "trend": 0.13208618014710935,
+      "net_change": -0.1372050623478005,
+      "max_spurt": 1.841814079998745,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": -0.0076879999999999995
+      "funding": -0.008676
     },
     {
       "symbol": "ETHUSDT",
-      "cycles": 6,
-      "trend": 0.30883745619272923,
-      "net_change": 0.4377190732666403,
-      "max_spurt": 3.1009725546107205,
+      "cycles": 7,
+      "trend": 0.8067423272465161,
+      "net_change": -1.1104789689142858,
+      "max_spurt": 3.083571282888035,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": -0.013381999999999998
+      "funding": -0.016465
     },
     {
       "symbol": "RAVEUSDT",
-      "cycles": 537,
-      "trend": 4.161173982700468,
-      "net_change": -81.38589737828838,
-      "max_spurt": 69.74979476398467,
+      "cycles": 749,
+      "trend": 6.133012982364747,
+      "net_change": -93.86982697835874,
+      "max_spurt": 57.24909021759591,
       "score": 0,
       "tier": "Tier-X (NET_TRAP)",
-      "funding": -0.032207
+      "funding": 0.041735999999999995
     },
     {
       "symbol": "ALPACAUSDT",
@@ -62,54 +62,34 @@
       "funding": 0.0
     },
     {
-      "symbol": "HIGHUSDT",
-      "cycles": 458,
-      "trend": 3.527062636049691,
-      "net_change": 193.4470377019749,
-      "max_spurt": 57.95081967213116,
-      "score": 0,
-      "tier": "Tier-X (NET_TRAP)",
-      "funding": -1.2753860000000001
-    },
-    {
       "symbol": "SOLUSDT",
-      "cycles": 8,
-      "trend": 2.0426420158043723,
-      "net_change": -3.0828082808280755,
-      "max_spurt": 2.7591688429658303,
+      "cycles": 6,
+      "trend": 2.212567382733918,
+      "net_change": -3.1468131365144703,
+      "max_spurt": 2.7011689933038356,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": -0.006743
+      "funding": -0.011215000000000001
     },
     {
-      "symbol": "\u5e01\u5b89\u4eba\u751fUSDT",
-      "cycles": 246,
-      "trend": 2.3355020509798265,
-      "net_change": 36.80309972631386,
-      "max_spurt": 25.007072135785002,
+      "symbol": "HIGHUSDT",
+      "cycles": 645,
+      "trend": 2.2329146366526844,
+      "net_change": 158.4048027444254,
+      "max_spurt": 67.30330672748005,
       "score": 0,
       "tier": "Tier-X (NET_TRAP)",
-      "funding": 0.003316
+      "funding": -1.197638
     },
     {
       "symbol": "XRPUSDT",
       "cycles": 7,
-      "trend": 0.7206040992448713,
-      "net_change": -1.1534742367730333,
-      "max_spurt": 2.295671414742091,
+      "trend": 0.5047821466524901,
+      "net_change": -0.7949236454919406,
+      "max_spurt": 2.886012872863163,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": 0.004978
-    },
-    {
-      "symbol": "DOGEUSDT",
-      "cycles": 8,
-      "trend": 1.9670086729777245,
-      "net_change": -3.5214126243150012,
-      "max_spurt": 2.5666936135812453,
-      "score": 0,
-      "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": -0.006496999999999999
+      "funding": -0.00010300000000000001
     },
     {
       "symbol": "BNXUSDT",
@@ -122,14 +102,34 @@
       "funding": 0.0
     },
     {
-      "symbol": "ORDIUSDT",
-      "cycles": 290,
-      "trend": 2.1070375052675936,
-      "net_change": -28.188865398167728,
-      "max_spurt": 26.17152961980548,
+      "symbol": "\u5e01\u5b89\u4eba\u751fUSDT",
+      "cycles": 278,
+      "trend": 0.3899769748524044,
+      "net_change": 6.547785678293505,
+      "max_spurt": 30.269948813796905,
+      "score": 0,
+      "tier": "Tier-X (SPIKE_TRAP)",
+      "funding": 0.005
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "cycles": 6,
+      "trend": 2.559497081275261,
+      "net_change": -4.083930399181157,
+      "max_spurt": 2.4230186774356377,
+      "score": 0,
+      "tier": "Tier-3 (LOW_ENERGY)",
+      "funding": -0.004182
+    },
+    {
+      "symbol": "AAVEUSDT",
+      "cycles": 37,
+      "trend": 5.8016963390510305,
+      "net_change": -18.734686734336712,
+      "max_spurt": 11.99607563325008,
       "score": 0,
       "tier": "Tier-X (NET_TRAP)",
-      "funding": 0.005
+      "funding": -0.003819
     },
     {
       "symbol": "ALPHAUSDT",
@@ -142,64 +142,54 @@
       "funding": 0.0
     },
     {
+      "symbol": "ORDIUSDT",
+      "cycles": 195,
+      "trend": 4.477019291221336,
+      "net_change": -38.22033898305085,
+      "max_spurt": 25.042301184433164,
+      "score": 0,
+      "tier": "Tier-X (NET_TRAP)",
+      "funding": 0.005
+    },
+    {
+      "symbol": "CLUSDT",
+      "cycles": 10,
+      "trend": 2.336368321594228,
+      "net_change": -3.0888030888030826,
+      "max_spurt": 7.337550316273732,
+      "score": 0,
+      "tier": "Tier-3 (LOW_ENERGY)",
+      "funding": 0.5
+    },
+    {
       "symbol": "BNBUSDT",
-      "cycles": 2,
-      "trend": 0.4685418788685874,
-      "net_change": -0.471474975558972,
-      "max_spurt": 1.389766266582431,
+      "cycles": 3,
+      "trend": 1.4925853768496267,
+      "net_change": -1.472690877895333,
+      "max_spurt": 1.4542689078238744,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
       "funding": 0.0
     },
     {
-      "symbol": "CLUSDT",
-      "cycles": 11,
-      "trend": 4.133024222559764,
-      "net_change": -5.768801606784201,
-      "max_spurt": 7.529737845016757,
+      "symbol": "PROMUSDT",
+      "cycles": 273,
+      "trend": 2.4487613616111226,
+      "net_change": 44.20849420849422,
+      "max_spurt": 32.90408525754886,
       "score": 0,
-      "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": 0.268867
+      "tier": "Tier-X (NET_TRAP)",
+      "funding": -0.127695
     },
     {
       "symbol": "HYPEUSDT",
-      "cycles": 11,
-      "trend": 0.9962810482717454,
-      "net_change": 1.849670938690684,
-      "max_spurt": 2.6788173721421393,
+      "cycles": 8,
+      "trend": 0.3499207108501572,
+      "net_change": -0.6169416331623379,
+      "max_spurt": 2.3048956165824497,
       "score": 0,
       "tier": "Tier-3 (LOW_ENERGY)",
-      "funding": 0.002776
-    },
-    {
-      "symbol": "AAVEUSDT",
-      "cycles": 27,
-      "trend": 2.8997565560383403,
-      "net_change": -8.251490705015796,
-      "max_spurt": 11.473646468268193,
-      "score": 0,
-      "tier": "Tier-X (SPIKE_TRAP)",
-      "funding": 0.000777
-    },
-    {
-      "symbol": "SIRENUSDT",
-      "cycles": 486,
-      "trend": 3.689350223648718,
-      "net_change": -52.43236685672692,
-      "max_spurt": 79.1977795684484,
-      "score": 0,
-      "tier": "Tier-X (NET_TRAP)",
-      "funding": 0.030007
-    },
-    {
-      "symbol": "ALICEUSDT",
-      "cycles": 251,
-      "trend": 2.937671425367969,
-      "net_change": 50.71851225697379,
-      "max_spurt": 51.16550116550116,
-      "score": 0,
-      "tier": "Tier-X (NET_TRAP)",
-      "funding": -0.10051199999999999
+      "funding": 0.00196
     },
     {
       "symbol": "PORT3USDT",
