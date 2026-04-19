@@ -13,12 +13,12 @@
       "rebalance_threshold": 0.005,
       "siphoning_threshold_pct": 0.5,
       "reinvestment_ratio": 0.05,
-      "equity_trailing_stop_pct": 20.0,
+      "equity_trailing_stop_pct": 10.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["ZECUSDT"],
-  "base_ticker": "ZECUSDT"
+  "tickers": ["1000PEPEUSDT"],
+  "base_ticker": "1000PEPEUSDT"
 }

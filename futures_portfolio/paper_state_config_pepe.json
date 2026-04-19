@@ -1,9 +1,9 @@
 {
-  "balance": 1000.0,
+  "balance": 999.2627674000017,
   "positions": {
-    "1000PEPEUSDT_LONG": 388272.0,
-    "1000PEPEUSDT_SHORT": 481992.0
+    "1000PEPEUSDT_LONG": 387935.0,
+    "1000PEPEUSDT_SHORT": 481575.0
   },
-  "last_price": 0.0037345,
+  "last_price": 0.00374,
   "base_ticker": "1000PEPEUSDT"
 }

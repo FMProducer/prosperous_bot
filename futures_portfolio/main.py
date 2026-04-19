@@ -100,6 +100,24 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # Инициализация уведомлений
     notifier = TelegramNotifier()
     config_base = os.path.splitext(os.path.basename(config_path))[0]
+    
+    # Hedge Mode Guard
+    if not paper_mode:
+        try:
+            is_hedge = await connector.get_hedge_mode()
+            if not is_hedge:
+                msg = f"CRITICAL: Hedge Mode is DISABLED on Binance for {base_ticker}. Please enable it to start the bot."
+                logger.error(msg)
+                await notifier.send_alert("STARTUP ERROR", msg)
+                return
+            logger.info("Hedge Mode verified.")
+        except Exception as e:
+            logger.error(f"Failed to verify Hedge Mode: {e}")
+            # В случае ошибки сети или API лучше перестраховаться и не запускаться на реале, 
+            # либо попробовать позже. Но для старта - лучше упасть.
+            await notifier.send_alert("STARTUP ERROR", f"Could not verify Hedge Mode: {e}")
+            return
+
     await notifier.send_message(f"🚀 <b>Bot Started</b>: <code>{config_base}</code> ({base_ticker})\nMode: {'PAPER' if paper_mode else 'REAL'}")
 
     i = 0
@@ -238,8 +256,25 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
                 save_json(state_file_path, state)
             
-            if i % 100 == 0 and i > 0:
-                await notifier.send_status(config_base, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), i)
+            if i % 100 == 0:
+                total_balance = None
+                bnb_balance = None
+                try:
+                    # Пытаемся получить реальный баланс аккаунта даже в бумажном режиме
+                    m_info = await connector.get_margin_ratio()
+                    total_balance = m_info.get("total_margin_balance")
+                    bnb_balance = await connector.get_bnb_balance()
+                except Exception as e:
+                    logger.warning(f"Failed to fetch account info for status: {e}")
+                
+                await notifier.send_status(
+                    config_base, 
+                    calc.total_tpv, 
+                    calc.total_tpv - state.get("initial_tpv", calc.total_tpv), 
+                    i,
+                    total_balance,
+                    bnb_balance
+                )
 
         except Exception as e:
             err_msg = f"Error in cycle: {e}"

@@ -39,6 +39,7 @@ class BinanceConnector:
     def __init__(self, api_key: str, secret_key: str, testnet: bool = True, base_ticker: str = "BTCUSDT"):
         self.testnet = testnet
         self.base_ticker = base_ticker
+        self.api_key = api_key
         
         # Настройка сессии: отключаем доверие к системному окружению (прокси)
         requests_params = {
@@ -116,9 +117,24 @@ class BinanceConnector:
         }
 
     @retry_on_network_error(retries=3, delay=2.0)
+    async def get_hedge_mode(self) -> bool:
+        """Проверка, включен ли Hedge Mode (True - включен, False - One-Way)."""
+        mode_info = await asyncio.to_thread(self.futures_client.futures_get_position_mode)
+        return mode_info.get("dualSidePosition", False)
+
+    @retry_on_network_error(retries=3, delay=2.0)
     async def get_free_balance(self) -> float:
-        if not self.client.api_key or self.client.api_key == "YOUR_API_KEY":
+        if not self.api_key or self.api_key == "YOUR_API_KEY":
             return 10000.0
         balances = await asyncio.to_thread(self.futures_client.futures_account_balance)
         usdt_balance = next((b["balance"] for b in balances if b["asset"] == "USDT"), 0.0)
         return float(usdt_balance)
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def get_bnb_balance(self) -> float:
+        """Получение баланса BNB на фьючерсном аккаунте."""
+        if not self.api_key or self.api_key == "YOUR_API_KEY":
+            return 0.0
+        balances = await asyncio.to_thread(self.futures_client.futures_account_balance)
+        bnb_balance = next((b["balance"] for b in balances if b["asset"] == "BNB"), 0.0)
+        return float(bnb_balance)

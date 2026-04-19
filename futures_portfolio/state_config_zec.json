@@ -1,9 +1,9 @@
 {
-  "virt_basis_price": 331.0,
-  "virt_allocated_usdt": 350.0,
+  "virt_basis_price": 304.8,
+  "virt_allocated_usdt": 350.21400878713433,
   "base_ticker": "ZECUSDT",
-  "siphoning_reserve": 0.0,
-  "initial_tpv": 1000.0,
+  "siphoning_reserve": 3.9311038889761507,
+  "initial_tpv": 1000.2069002046829,
   "reference_tpv": 1000.0,
-  "tpv_ath": 1000.0002651963746
+  "tpv_ath": 1004.5425575665029
 }
