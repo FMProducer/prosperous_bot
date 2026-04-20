@@ -2,6 +2,9 @@
   "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
   "paper_mode": true,
+  "limit_order_enabled": true,
+  "limit_offset_pct": 0.2,
+  "limit_timeout_sec": 30,
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
@@ -19,6 +22,6 @@
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["RAVEUSDT"],
-  "base_ticker": "RAVEUSDT"
+  "tickers": ["ZECUSDT"],
+  "base_ticker": "ZECUSDT"
 }

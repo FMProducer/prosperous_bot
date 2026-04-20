@@ -220,7 +220,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             current_pos_sum = abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0))
             is_first_run = current_pos_sum == 0
             is_extreme = calc.share_long_pct > 100 or calc.share_short_pct > 100
-            
+
             if i % 5 == 0:
                  res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
                  logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
@@ -233,6 +233,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if deviations:
                 logger.info(f"Rebalance needed. Shares: L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
                 deviations.sort(key=lambda x: x["diff_usdt"])
+
+                # Извлекаем параметры лимитных ордеров из конфига
+                limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
+
+                # Статистика для сбора данных
+                limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
+
                 for dev in deviations:
                     key = dev["symbol"]
                     pos_side = key.split('_')[1]
@@ -240,7 +247,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     side = ("BUY" if dev["diff_usdt"] > 0 else "SELL") if pos_side == "LONG" else ("SELL" if dev["diff_usdt"] > 0 else "BUY")
                     reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
                     step_size = step_sizes.get(key.split('_')[0], 0.0)
-                    
+
                     if paper_mode:
                         qty_rounded = PortfolioExecutor(None).round_quantity(abs(order_qty), step_size)
                         if qty_rounded > 0:
@@ -249,7 +256,43 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key}")
                             save_json(paper_state_file_path, paper_state)
                     else:
-                        await PortfolioExecutor(connector).execute_market_order(key, abs(order_qty), side, step_size, reduce_only, pos_side)
+                        # Используем Limit + Fallback если включено в конфиге
+                        if limit_enabled:
+                            limit_stats["attempted"] += 1
+                            result = await PortfolioExecutor(connector).execute_limit_with_fallback(
+                                symbol=key.split('_')[0],
+                                qty=abs(order_qty),
+                                side=side,
+                                step_size=step_size,
+                                reduce_only=reduce_only,
+                                position_side=pos_side,
+                                offset_pct=limit_offset,
+                                timeout_sec=limit_timeout
+                            )
+                            # Логирование результата со статистикой
+                            if result["status"] == "SUCCESS_LIMIT":
+                                limit_stats["filled"] += 1
+                                limit_stats["total_profit_usdt"] += result.get("profit_usdt", 0)
+                                limit_stats["total_improvement_pct"] += result.get("price_improvement_pct", 0)
+                                logger.info(f"✅ Limit FILLED: {result['filled_qty']} @ {result['avg_price']:.6f} | gain={result['price_improvement_pct']:+.3f}% ({result['profit_usdt']:+.2f} USDT)")
+                            elif result["status"] == "SUCCESS_FALLBACK":
+                                limit_stats["fallback"] += 1
+                                if result.get("limit_filled_qty", 0) > 0:
+                                    limit_stats["filled"] += 1
+                                    limit_stats["total_improvement_pct"] += result.get("limit_price_improvement_pct", 0)
+                                    logger.info(f"⚡ Limit+Fallback: {result['limit_filled_qty']} @ {result['limit_avg_price']:.6f} (gain={result.get('limit_price_improvement_pct', 0):+.3f}%) + market")
+                                else:
+                                    logger.info(f"⚡ Fallback (market only): timeout")
+                            elif result["status"] in ("ERROR_FALLBACK", "ERROR"):
+                                logger.warning(f"❌ Order with issues: {result.get('error', result.get('message', 'unknown'))}")
+                        else:
+                            # Старая логика — только market
+                            await PortfolioExecutor(connector).execute_market_order(key, abs(order_qty), side, step_size, reduce_only, pos_side)
+
+                # Итоговая статистика по ребалансировке
+                if limit_enabled and limit_stats["attempted"] > 0:
+                    avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
+                    logger.info(f"📊 Limit Stats: attempted={limit_stats['attempted']}, filled={limit_stats['filled']}, fallback={limit_stats['fallback']}, avg_gain={avg_improvement:+.3f}%, total_profit={limit_stats['total_profit_usdt']:+.2f} USDT")
                 
                 virt_basis_price = price
                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]

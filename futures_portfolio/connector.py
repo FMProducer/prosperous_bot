@@ -138,3 +138,70 @@ class BinanceConnector:
         balances = await asyncio.to_thread(self.futures_client.futures_account_balance)
         bnb_balance = next((b["balance"] for b in balances if b["asset"] == "BNB"), 0.0)
         return float(bnb_balance)
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def get_order_book(self, symbol: str, limit: int = 20) -> Dict:
+        """Получение стакана ордеров (глубина 5-1000 уровней)."""
+        return await asyncio.to_thread(
+            self.futures_client.futures_depth,
+            symbol=symbol,
+            limit=limit
+        )
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def place_limit_order(self, symbol: str, side: str, qty: float, price: float,
+                                position_side: str = "BOTH", reduce_only: bool = False,
+                                time_in_force: str = "GTC") -> Dict:
+        """
+        Выставление лимитного ордера (Hedge Mode).
+        time_in_force: GTC (Good Till Cancel), IOC (Immediate Or Cancel), FOK (Fill Or Kill)
+        """
+        result = await asyncio.to_thread(
+            self.futures_client.futures_create_order,
+            symbol=symbol,
+            side=side,
+            type="LIMIT",
+            timeInForce=time_in_force,
+            quantity=abs(qty),
+            price=price,
+            reduceOnly=reduce_only,
+            positionSide=position_side
+        )
+        return result
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def get_order_status(self, symbol: str, order_id: int) -> Dict:
+        """Проверка статуса ордера."""
+        return await asyncio.to_thread(
+            self.futures_client.futures_get_order,
+            symbol=symbol,
+            orderId=order_id
+        )
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def cancel_order(self, symbol: str, order_id: int) -> Dict:
+        """Отмена ордера."""
+        return await asyncio.to_thread(
+            self.futures_client.futures_cancel_order,
+            symbol=symbol,
+            orderId=order_id
+        )
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def place_limit_maker_order(self, symbol: str, side: str, qty: float, price: float,
+                                       position_side: str = "BOTH", reduce_only: bool = False) -> Dict:
+        """
+        Выставление POST-ONLY лимитного ордера (гарантия maker-комиссии).
+        Если ордер не может быть maker — будет отклонён биржей.
+        """
+        result = await asyncio.to_thread(
+            self.futures_client.futures_create_order,
+            symbol=symbol,
+            side=side,
+            type="LIMIT_MAKER",
+            quantity=abs(qty),
+            price=price,
+            reduceOnly=reduce_only,
+            positionSide=position_side
+        )
+        return result
