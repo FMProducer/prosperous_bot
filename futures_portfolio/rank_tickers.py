@@ -127,38 +127,39 @@ class TickerScanner:
 
         # --- Trend Efficiency (Прямолинейность) ---
         total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
-        net_move = abs(closes[-1] - closes[0])
-        trend_ratio = (net_move / total_path) if total_path > 0 else 0
+        net_move_abs = abs(closes[-1] - closes[0])
+        trend_ratio = (net_move_abs / total_path) if total_path > 0 else 0
         trend_ratio_pct = trend_ratio * 100 # 1.0 -> 100%
 
-        # --- СКОРИНГ 3.1 ---
-        score = cycles * 15 # Увеличили вес циклов
+        # --- СКОРИНГ 4.0 (ZEC DNA) ---
         net_change_pct = (closes[-1] / closes[0] - 1) * 100
         abs_net_change = abs(net_change_pct)
         
-        # Дисквалификации
-        if abs_net_change > 15.0:
+        # Базовый скор: отношение циклов к "пройденному полезному пути"
+        # Если цена гуляла много (cycles), но в итоге никуда не ушла (abs_net_change) - это ИДЕАЛЬНО.
+        score = (cycles * 50) / (1 + abs_net_change * trend_ratio_pct)
+
+        # Дисквалификации (DQ) - Жесткие правила безопасности
+        if abs_net_change > 10.0:
             tier = "Tier-X (NET_TRAP)"
             score = 0
-        elif max_hourly_spurt > 10.0:
+        elif trend_ratio_pct > 3.0: # Снизили с 7.0 до 3.0 (у ZEC было 0.22, у AAVE 3.72)
+            tier = "Tier-X (TREND_TRAP)"
+            score = 0
+        elif max_hourly_spurt > 7.0: # Снизили с 10.0 до 7.0
             tier = "Tier-X (SPIKE_TRAP)"
             score = 0
-        elif cycles < 12: # Снизили порог для реалистичности
+        elif cycles < 8:
             tier = "Tier-3 (LOW_ENERGY)"
             score = 0
-        elif trend_ratio_pct > 7.0: # Слишком прямолинейно
-            tier = "Tier-3 (TRENDING)"
-            score *= 0.2
         else:
             # БОНУСЫ
-            if abs_net_change < 5.0: score *= 1.3 # Флэт - хорошо
-            
             # Funding: Если < 0, то за шорт платят нам (хорошо для нейтральной стратегии)
             if funding_rate < 0:
-                score *= (1 + abs(funding_rate) * 50) # funding_rate обычно 0.01% = 0.0001
+                score *= (1 + abs(funding_rate) * 100)
             
             # Распределение по тирам
-            if score >= 250:
+            if score >= 400:
                 tier = "Tier-1 (GOLD)"
             elif score >= 150:
                 tier = "Tier-2 (GOOD)"
@@ -211,6 +212,30 @@ class TickerScanner:
                     }, f, indent=2)
             except Exception as e:
                 logger.error(f"Failed to save cache: {e}")
+            
+            # --- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ CONFIG.JSON ---
+            try:
+                config_path = "config.json"
+                if os.path.exists(config_path):
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    
+                    max_bots = config.get("max_bots", 5)
+                    # Берем только тикеры с положительным SCORE (Tier 1-3)
+                    top_n = [r['symbol'] for r in ranked_list if r['score'] > 0][:max_bots]
+                    
+                    if top_n:
+                        config["tickers"] = top_n
+                        # Устанавливаем первый в списке как base_ticker по умолчанию
+                        config["base_ticker"] = top_n[0]
+                        
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config, f, indent=2)
+                        logger.info(f"Updated {config_path} with top {len(top_n)} tickers: {top_n}")
+                    else:
+                        logger.warning("No suitable tickers found to update config.")
+            except Exception as e:
+                logger.error(f"Failed to update config.json: {e}")
                 
             return ranked_list
 

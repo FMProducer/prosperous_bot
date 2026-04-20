@@ -3,15 +3,26 @@
   "testnet": false,
   "paper_mode": true,
   "limit_order_enabled": true,
-  "limit_offset_pct": 0.2,
+  "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
+  "min_notional_usdt": 6.0,
+  "max_bots": 5,
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
       "targets": {
-        "BASE_LONG": {"share": 0.29, "leverage": 5},
-        "BASE_SHORT": {"share": 0.36, "leverage": 5},
-        "VIRTUAL": {"share": 0.35, "leverage": 1}
+        "BASE_LONG": {
+          "share": 0.29,
+          "leverage": 5
+        },
+        "BASE_SHORT": {
+          "share": 0.36,
+          "leverage": 5
+        },
+        "VIRTUAL": {
+          "share": 0.35,
+          "leverage": 1
+        }
       },
       "rebalance_threshold": 0.005,
       "siphoning_threshold_pct": 0.5,
@@ -22,6 +33,11 @@
       "check_interval_sec": 30
     }
   ],
-  "tickers": ["ZECUSDT"],
-  "base_ticker": "ZECUSDT"
+  "tickers": [
+    "1000PEPEUSDT",
+    "ZECUSDT",
+    "BZUSDT",
+    "CLUSDT"
+  ],
+  "base_ticker": "1000PEPEUSDT"
 }

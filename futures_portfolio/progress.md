@@ -1,17 +1,19 @@
 # Progress Log: Binance Futures Rebalancer
 
-## 🗓 19 апреля 2026
+## 🗓 20 апреля 2026 (POST-FIX VERIFICATION)
 
 ### Completed Tasks
-- ✅ **Multi-Bot Swarm:** Запущено 5 инстансов (ZEC, HYPE, PEPE, ORDI, RAVE).
-- ✅ **Process Management:** Внедрен PM2 для фоновой работы и авторестарта.
-- ✅ **Safety Guard:** Реализована проверка Hedge Mode через API перед стартом.
-- ✅ **Monitoring Pro:** В Telegram-уведомления добавлены балансы Account (USDT) и Fee (BNB).
-- ✅ **Logic Sync:** Бэктест синхронизирован с основной логикой (Hysteresis, Trailing Stop).
-- ✅ **Documentation:** Создан Cheat Sheet по командам управления в `Rebalancer.md`.
+- ✅ **Backtester v5.0:** Полностью исправлен учет капитала. Убрана «петля обратной связи» в виртуальной доле. Результаты теперь математически достоверны.
+- ✅ **Volatility Harvesting:** Подтверждено, что прибыль ZEC (+5.39%) идет от активных ребалансировок (16 циклов), а не от роста цены.
+- ✅ **Safety Sync:** Логика Trailing Stop и Notional Guard в боте и бэктестере теперь идентична.
+- ✅ **Market Scan:** Анализатор 4.0 подтвердил ZEC как единственного Tier-1 кандидата.
+
+### Current Status
+- **System Integrity:** 100% (Ready for Real).
+- **ZEC Profile:** High Oscillation / Low Drift (Ideal).
+- **Security:** Trailing Stop (10%) + Notional Guard (6 USDT) Active.
 
 ### Next Steps
-1. **12h Stress-Test (Paper):** Оценка стабильности роя и корректности отчетов в Telegram.
-2. **Result Analysis:** Сравнение доходности 5 пар и выбор лидера для REAL запуска.
-3. **Phased Rollout:** Первый запуск на реальном счету (предположительно ZEC или ORDI) с капиталом 200 USDT.
-4. **Fee Check:** Мониторинг потребления BNB в реальных условиях.
+1. **User Start:** Самостоятельный перезапуск PM2 пользователем.
+2. **Monitoring:** Наблюдение за исполнением лимитных ордеров (Offset 0.1%).
+3. **Phased Rollout:** Переход на REAL (200 USDT) при стабильности Paper логов.

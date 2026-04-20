@@ -164,14 +164,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 save_json(state_file_path, state)
 
             calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
-                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
             
             if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
                 state["tpv_ath"] = tpv_ath
                 save_json(state_file_path, state)
 
-            if equity_trailing_stop_pct > 0 and tpv_ath > 0 and siphoning_reserve > 0:
+            if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                 drawdown_pct = (1 - calc.total_tpv / tpv_ath) * 100
                 if drawdown_pct >= equity_trailing_stop_pct:
                     msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH. Closing all positions for {base_ticker}."
@@ -231,8 +231,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
             deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
             if deviations:
+                # Внедряем Notional Value Guard (проверка минимальной стоимости ордера)
+                min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
+                filtered_deviations = [d for d in deviations if abs(d["diff_usdt"]) >= min_notional]
+                
+                if not filtered_deviations:
+                    if i % 10 == 0:
+                        logger.info(f"Rebalance needed, but all orders are too small (< {min_notional} USDT). Skipping.")
+                    continue
+
                 logger.info(f"Rebalance needed. Shares: L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
-                deviations.sort(key=lambda x: x["diff_usdt"])
+                filtered_deviations.sort(key=lambda x: x["diff_usdt"])
 
                 # Извлекаем параметры лимитных ордеров из конфига
                 limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
@@ -240,7 +249,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Статистика для сбора данных
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
-                for dev in deviations:
+                for dev in filtered_deviations:
                     key = dev["symbol"]
                     pos_side = key.split('_')[1]
                     order_qty = dev["diff_usdt"] / price
@@ -334,14 +343,21 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
+    parser.add_argument("--ticker", default=None, help="Override base_ticker from config")
     args = parser.parse_args()
 
     config_base = os.path.splitext(os.path.basename(args.config))[0]
     
-    # Индивидуальные логи
+    with open(args.config, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    # Приоритет: аргумент командной строки > конфиг
+    base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
+    
+    # Индивидуальные логи для каждого тикера
     log_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"rebalance_{config_base}.log")
+    log_file = os.path.join(log_dir, f"rebalance_{base_ticker}.log")
 
     logging.basicConfig(
         level=logging.INFO,

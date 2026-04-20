@@ -271,7 +271,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             if calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
 
-            if equity_trailing_stop_pct > 0 and tpv_ath > 0 and siphoning_reserve > 0:
+            if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                 drawdown_from_ath = (1 - calc.total_tpv / tpv_ath) * 100
                 if drawdown_from_ath >= equity_trailing_stop_pct:
                     stats["trailing_stop_triggered"] = True
@@ -279,85 +279,63 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     logger.warning(f"!!! [STOP] Step {i}: Equity Trailing Stop triggered at {calc.total_tpv:.2f} (ATH: {tpv_ath:.2f}, Drop: {drawdown_from_ath:.2f}%)")
                     break
 
-            # PnL Tracking
-            tpv_change = calc.total_tpv - prev_tpv
-            if tpv_change > 0: stats["gross_profit"] += tpv_change
-            else: stats["gross_loss"] += abs(tpv_change)
-            prev_tpv = calc.total_tpv
-
-            # Drawdown & Peak Tracking
-            if calc.total_tpv > stats["max_tpv"]:
-                stats["max_tpv"] = calc.total_tpv
-                stats["max_drawdown_duration"] = max(stats["max_drawdown_duration"], stats["current_drawdown_duration"])
-                stats["current_drawdown_duration"] = 0
-            else:
-                stats["current_drawdown_duration"] += 1
-
-            drawdown = (stats["max_tpv"] - calc.total_tpv) / stats["max_tpv"]
-            if drawdown > stats["max_drawdown_pct"]:
-                stats["max_drawdown_pct"] = drawdown
-
-            # Daily Returns for Sharpe
-            if i % 1440 == 0 and i > 0:
-                day_start_tpv = history[i-1440]["tpv"] if len(history) >= 1440 else initial_capital
-                day_return = (calc.total_tpv / day_start_tpv) - 1
-                stats["daily_returns"].append(day_return)
-
-            # Profit Siphoning
+            # Profit Siphoning (Синхронизирован с Equity)
             if siphoning_threshold_pct > 0:
                 if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
                     profit = calc.tpv - initial_tpv
                     to_reinvest = profit * reinvestment_ratio
                     to_reserve = profit - to_reinvest
+                    
+                    # Физически забираем прибыль из рабочего капитала
+                    current_equity -= to_reserve
                     siphoning_reserve += to_reserve
                     initial_tpv += to_reinvest
+                    
+                    # Пересчитываем калькулятор с учетом нового Equity и Резерва
                     calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
-                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
 
             # Rebalancing
             current_threshold = -1.0 if i == 0 else threshold
-
             if i > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
 
             deviations = calc.calculate_deviations(targets, current_threshold)
-
             if deviations:
-                stats["rebalance_cycles"] += 1
-                for dev in deviations:
-                    key = dev["symbol"]
-                    base_order_qty = dev["diff_usdt"] / curr_price
-                    stats["total_volume_usdt"] += abs(dev["diff_usdt"])
+                # Фильтруем отклонения по минимальной стоимости (Notional Guard)
+                min_notional = config.get("min_notional_usdt", 6.0)
+                filtered_deviations = [d for d in deviations if abs(d["diff_usdt"]) >= min_notional]
+                
+                if filtered_deviations:
+                    stats["rebalance_cycles"] += 1
+                    for dev in filtered_deviations:
+                        key = dev["symbol"]
+                        base_order_qty = dev["diff_usdt"] / curr_price
+                        stats["total_volume_usdt"] += abs(dev["diff_usdt"])
 
-                    # Логика исполнения с лимитными ордерами
-                    if use_limit_orders and limit_simulator:
-                        pos_side = key.split('_')[1]
-                        side = ("BUY" if dev["diff_usdt"] > 0 else "SELL") if pos_side == "LONG" else ("SELL" if dev["diff_usdt"] > 0 else "BUY")
+                        # Логика исполнения
+                        if use_limit_orders and limit_simulator:
+                            pos_side = key.split('_')[1]
+                            side = ("BUY" if dev["diff_usdt"] > 0 else "SELL") if pos_side == "LONG" else ("SELL" if dev["diff_usdt"] > 0 else "BUY")
+                            filled, fill_qty, fill_price, exec_type = limit_simulator.simulate_limit_execution(
+                                side=side, qty=abs(base_order_qty), mid_price=curr_price,
+                                candle_high=curr_high, candle_low=curr_low
+                            )
+                            positions[key] += (fill_qty if side == "BUY" else -fill_qty)
+                        else:
+                            positions[key] += base_order_qty
 
-                        # Симулируем исполнение через лимитку
-                        filled, fill_qty, fill_price, exec_type = limit_simulator.simulate_limit_execution(
-                            side=side,
-                            qty=abs(base_order_qty),
-                            mid_price=curr_price,
-                            candle_high=curr_high,
-                            candle_low=curr_low
-                        )
-
-                        # Обновляем позицию по цене исполнения
-                        positions[key] += (fill_qty if side == "BUY" else -fill_qty)
-
-                        # Логирование для отладки
-                        if i % 100 == 0 or exec_type == "LIMIT_FILLED":
-                            improvement = (fill_price - curr_price) / curr_price * 100 if side == "SELL" else (curr_price - fill_price) / curr_price * 100
-                            logger.debug(f"  [{exec_type}] {side} {fill_qty:.4f} @ {fill_price:.6f} (improvement={improvement:+.3f}%)")
-                    else:
-                        # Старая логика — исполнение по close
-                        positions[key] += base_order_qty
-
-                virt_basis_price = curr_price
-                virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
-                                         base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+                    # СИНХРОНИЗАЦИЯ: Фиксируем виртуальный профит в Equity и сбрасываем базис
+                    virt_profit = calc.virt_current_value - virt_allocated_usdt
+                    current_equity += virt_profit
+                    
+                    virt_basis_price = curr_price
+                    # КРИТИЧЕСКАЯ ПРАВКА: База виртуальной части берется от ВСЕГО TPV, а не от Equity
+                    virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
+                    
+                    # Финальный пересчет после всех правок
+                    calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
+                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
 
             if i % 1000 == 0:
                 res_str = f" SAFE:{siphoning_reserve:7.2f}" if siphoning_reserve > 0 else ""

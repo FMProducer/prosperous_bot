@@ -28,12 +28,9 @@ class PortfolioExecutor:
             precision = len(s.split('.')[1])
         return round(qty, precision)
 
-    async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH") -> Dict:
+    async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH", min_notional: float = 6.0) -> Dict:
         """
         Отправка рыночного ордера на Binance Futures.
-        qty - количество контрактов
-        side - "BUY" или "SELL"
-        position_side - "LONG" или "SHORT" (для Hedge Mode)
         """
         if qty == 0:
             return {"status": "NO_ORDER", "message": "Размер ордера равен нулю"}
@@ -42,6 +39,18 @@ class PortfolioExecutor:
             qty = self.round_quantity(qty, step_size)
             if qty == 0:
                 return {"status": "NO_ORDER", "message": f"Округлилось до нуля"}
+
+        # Проверка минимальной стоимости (Notional Value)
+        try:
+            # Получаем текущую цену для проверки стоимости
+            prices = await self.connector.get_futures_prices([symbol])
+            price = prices.get(symbol)
+            if price and (qty * price) < min_notional:
+                msg = f"Order too small: {qty * price:.2f} USDT < {min_notional} USDT. Skipping."
+                logger.info(msg)
+                return {"status": "SKIPPED", "message": msg}
+        except Exception as e:
+            logger.warning(f"Could not verify notional value: {e}")
 
         try:
             # Обязательно передаем positionSide для Hedge Mode
@@ -64,14 +73,10 @@ class PortfolioExecutor:
                                            step_size: float = 0.0, reduce_only: bool = False,
                                            position_side: str = "BOTH",
                                            offset_pct: float = 0.2,
-                                           timeout_sec: int = 30) -> Dict:
+                                           timeout_sec: int = 30,
+                                           min_notional: float = 6.0) -> Dict:
         """
-        Limit + Fallback: выставляет лимитный ордер с выгодной ценой,
-        если не исполнился за timeout_sec — отменяет и бьёт market.
-
-        Параметры:
-        - offset_pct: насколько выгоднее mid-price (0.2 = 0.2% profit)
-        - timeout_sec: время ожидания исполнения лимитки
+        Limit + Fallback с проверкой минимальной стоимости.
         """
         if qty == 0:
             return {"status": "NO_ORDER", "message": "Размер ордера равен нулю"}
@@ -82,25 +87,24 @@ class PortfolioExecutor:
                 return {"status": "NO_ORDER", "message": f"Округлилось до нуля"}
 
         try:
-            # 1. Получаем mid-price из стакана
+            # 1. Получаем mid-price и проверяем стоимость
             order_book = await self.connector.get_order_book(symbol, limit=5)
             best_bid = float(order_book["bids"][0][0])
             best_ask = float(order_book["asks"][0][0])
             mid_price = (best_bid + best_ask) / 2
 
+            if (qty * mid_price) < min_notional:
+                msg = f"Limit order too small: {qty * mid_price:.2f} USDT < {min_notional} USDT. Skipping."
+                logger.info(msg)
+                return {"status": "SKIPPED", "message": msg}
+
             # 2. Рассчитываем цену лимитки (выгоднее mid-price)
             if side == "SELL":
-                # Продаём дороже mid
                 limit_price = mid_price * (1 + offset_pct / 100)
-                # Проверка: цена не должна быть выше best_ask (иначе не исполнится)
-                if limit_price > best_ask:
-                    limit_price = best_ask
+                if limit_price > best_ask: limit_price = best_ask
             else:
-                # Покупаем дешевле mid
                 limit_price = mid_price * (1 - offset_pct / 100)
-                # Проверка: цена не должна быть ниже best_bid
-                if limit_price < best_bid:
-                    limit_price = best_bid
+                if limit_price < best_bid: limit_price = best_bid
 
             # Логирование для статистики
             expected_improvement_pct = abs(limit_price - mid_price) / mid_price * 100

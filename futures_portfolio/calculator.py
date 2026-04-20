@@ -8,7 +8,8 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_basis_price: float, virt_allocated_usdt: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
-                 base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0):
+                 base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
+                 targets: Dict[str, Dict] = None):
         self.positions = positions
         self.price = spot_price
         self.base_ticker = base_ticker
@@ -33,9 +34,13 @@ class PortfolioCalculator:
         long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
         short_notional = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0)) * self.price
         
+        # Динамическое получение плеча для логирования
+        l_lev = targets["BASE_LONG"]["leverage"] if targets and "BASE_LONG" in targets else 5.0
+        s_lev = targets["BASE_SHORT"]["leverage"] if targets and "BASE_SHORT" in targets else 5.0
+
         # Сохраняем для логирования (в целых числах процентов для красоты)
-        self.share_long_pct = round((long_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
-        self.share_short_pct = round((short_notional / 5.0) / self.tpv * 100) if self.tpv > 0 else 0
+        self.share_long_pct = round((long_notional / l_lev) / self.tpv * 100) if self.tpv > 0 else 0
+        self.share_short_pct = round((short_notional / s_lev) / self.tpv * 100) if self.tpv > 0 else 0
         self.share_virt_pct = round(self.virt_current_value / self.tpv * 100) if self.tpv > 0 else 0
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
