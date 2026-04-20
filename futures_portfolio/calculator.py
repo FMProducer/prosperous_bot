@@ -38,10 +38,10 @@ class PortfolioCalculator:
         l_lev = targets["BASE_LONG"]["leverage"] if targets and "BASE_LONG" in targets else 5.0
         s_lev = targets["BASE_SHORT"]["leverage"] if targets and "BASE_SHORT" in targets else 5.0
 
-        # Сохраняем для логирования (в целых числах процентов для красоты)
-        self.share_long_pct = round((long_notional / l_lev) / self.tpv * 100) if self.tpv > 0 else 0
-        self.share_short_pct = round((short_notional / s_lev) / self.tpv * 100) if self.tpv > 0 else 0
-        self.share_virt_pct = round(self.virt_current_value / self.tpv * 100) if self.tpv > 0 else 0
+        # Сохраняем для логирования (с точностью до 0.1% для отслеживания динамики)
+        self.share_long_pct = round((long_notional / l_lev) / self.tpv * 100, 1) if self.tpv > 0 else 0
+        self.share_short_pct = round((short_notional / s_lev) / self.tpv * 100, 1) if self.tpv > 0 else 0
+        self.share_virt_pct = round(self.virt_current_value / self.tpv * 100, 1) if self.tpv > 0 else 0
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         deviations = []

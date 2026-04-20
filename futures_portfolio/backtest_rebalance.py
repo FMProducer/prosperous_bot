@@ -271,6 +271,30 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             if calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
 
+            # --- АНАЛИТИКА: PnL Tracking ---
+            tpv_change = calc.total_tpv - prev_tpv
+            if tpv_change > 0: stats["gross_profit"] += tpv_change
+            else: stats["gross_loss"] += abs(tpv_change)
+            prev_tpv = calc.total_tpv
+
+            # --- АНАЛИТИКА: Drawdown & Peak Tracking ---
+            if calc.total_tpv > stats["max_tpv"]:
+                stats["max_tpv"] = calc.total_tpv
+                stats["max_drawdown_duration"] = max(stats["max_drawdown_duration"], stats["current_drawdown_duration"])
+                stats["current_drawdown_duration"] = 0
+            else:
+                stats["current_drawdown_duration"] += 1
+
+            drawdown = (stats["max_tpv"] - calc.total_tpv) / stats["max_tpv"] if stats["max_tpv"] > 0 else 0
+            if drawdown > stats["max_drawdown_pct"]:
+                stats["max_drawdown_pct"] = drawdown
+
+            # Daily Returns for Sharpe
+            if i % 1440 == 0 and i > 0:
+                day_start_tpv = history[i-1440]["tpv"] if len(history) >= 1440 else initial_capital
+                day_return = (calc.total_tpv / day_start_tpv) - 1
+                stats["daily_returns"].append(day_return)
+
             if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                 drawdown_from_ath = (1 - calc.total_tpv / tpv_ath) * 100
                 if drawdown_from_ath >= equity_trailing_stop_pct:

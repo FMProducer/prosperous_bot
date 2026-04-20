@@ -24,7 +24,7 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.005,
+      "rebalance_threshold": 0.004,
       "siphoning_threshold_pct": 0.5,
       "reinvestment_ratio": 0.05,
       "equity_trailing_stop_pct": 10.0,

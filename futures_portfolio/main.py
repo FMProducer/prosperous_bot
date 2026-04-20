@@ -23,7 +23,7 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger):
+async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
     config = load_json(config_path, {})
     paper_mode = config.get("paper_mode", False)
     
@@ -32,8 +32,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     threshold = portfolio_cfg["rebalance_threshold"]
     check_interval = portfolio_cfg["check_interval_sec"]
     
-    # Получаем базовый тикер из конфигурации
-    base_ticker = config.get("base_ticker", "BTCUSDT")
+    # Приоритет тикера: override > config > default
+    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
     
@@ -113,8 +113,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             logger.info("Hedge Mode verified.")
         except Exception as e:
             logger.error(f"Failed to verify Hedge Mode: {e}")
-            # В случае ошибки сети или API лучше перестраховаться и не запускаться на реале, 
-            # либо попробовать позже. Но для старта - лучше упасть.
             await notifier.send_alert("STARTUP ERROR", f"Could not verify Hedge Mode: {e}")
             return
 
@@ -151,7 +149,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
                 if initial_tpv == 0:
                     temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                                                 base_ticker=base_ticker, siphoning_reserve=0.0)
+                                                 base_ticker=base_ticker, siphoning_reserve=0.0, targets=targets)
                     initial_tpv = temp_calc.tpv
                     reference_tpv = initial_tpv
                     logger.info(f"Initialized TPV base: {initial_tpv:.2f}")
@@ -213,7 +211,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.info(f"!!! [SAFE] {msg}")
                     await notifier.send_message(f"💰 <b>SAFE</b>: {msg} ({base_ticker})")
                     calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
-                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve)
+                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
                     state.update({"siphoning_reserve": siphoning_reserve, "initial_tpv": initial_tpv})
                     save_json(state_file_path, state)
 
@@ -223,7 +221,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
             if i % 5 == 0:
                  res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
+                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.4f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
@@ -231,7 +229,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
             deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
             if deviations:
-                # Внедряем Notional Value Guard (проверка минимальной стоимости ордера)
                 min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
                 filtered_deviations = [d for d in deviations if abs(d["diff_usdt"]) >= min_notional]
                 
@@ -240,13 +237,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         logger.info(f"Rebalance needed, but all orders are too small (< {min_notional} USDT). Skipping.")
                     continue
 
-                logger.info(f"Rebalance needed. Shares: L:{calc.share_long_pct}% S:{calc.share_short_pct}% V:{calc.share_virt_pct}%")
+                logger.info(f"Rebalance needed. Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
                 filtered_deviations.sort(key=lambda x: x["diff_usdt"])
 
-                # Извлекаем параметры лимитных ордеров из конфига
                 limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
-
-                # Статистика для сбора данных
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 for dev in filtered_deviations:
@@ -260,25 +254,21 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     if paper_mode:
                         qty_rounded = PortfolioExecutor(None).round_quantity(abs(order_qty), step_size)
                         if qty_rounded > 0:
+                            order_value = qty_rounded * price
+                            commission = order_value * 0.0004
+                            paper_state["balance"] -= commission
                             paper_state["positions"][f"{base_ticker}_{pos_side}"] += (qty_rounded if side == ("BUY" if pos_side == "LONG" else "SELL") else -qty_rounded)
                             paper_state["positions"][f"{base_ticker}_{pos_side}"] = max(0, paper_state["positions"][f"{base_ticker}_{pos_side}"])
-                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key}")
+                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} (Fee: {commission:.4f} USDT)")
                             save_json(paper_state_file_path, paper_state)
                     else:
-                        # Используем Limit + Fallback если включено в конфиге
                         if limit_enabled:
                             limit_stats["attempted"] += 1
                             result = await PortfolioExecutor(connector).execute_limit_with_fallback(
-                                symbol=key.split('_')[0],
-                                qty=abs(order_qty),
-                                side=side,
-                                step_size=step_size,
-                                reduce_only=reduce_only,
-                                position_side=pos_side,
-                                offset_pct=limit_offset,
-                                timeout_sec=limit_timeout
+                                symbol=key.split('_')[0], qty=abs(order_qty), side=side, step_size=step_size,
+                                reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
+                                timeout_sec=limit_timeout, min_notional=min_notional
                             )
-                            # Логирование результата со статистикой
                             if result["status"] == "SUCCESS_LIMIT":
                                 limit_stats["filled"] += 1
                                 limit_stats["total_profit_usdt"] += result.get("profit_usdt", 0)
@@ -295,10 +285,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             elif result["status"] in ("ERROR_FALLBACK", "ERROR"):
                                 logger.warning(f"❌ Order with issues: {result.get('error', result.get('message', 'unknown'))}")
                         else:
-                            # Старая логика — только market
                             await PortfolioExecutor(connector).execute_market_order(key, abs(order_qty), side, step_size, reduce_only, pos_side)
 
-                # Итоговая статистика по ребалансировке
                 if limit_enabled and limit_stats["attempted"] > 0:
                     avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
                     logger.info(f"📊 Limit Stats: attempted={limit_stats['attempted']}, filled={limit_stats['filled']}, fallback={limit_stats['fallback']}, avg_gain={avg_improvement:+.3f}%, total_profit={limit_stats['total_profit_usdt']:+.2f} USDT")
@@ -309,33 +297,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 save_json(state_file_path, state)
             
             if i % 100 == 0:
-                total_balance = None
-                bnb_balance = None
+                total_balance = bnb_balance = None
                 try:
-                    # Пытаемся получить реальный баланс аккаунта даже в бумажном режиме
                     m_info = await connector.get_margin_ratio()
                     total_balance = m_info.get("total_margin_balance")
                     bnb_balance = await connector.get_bnb_balance()
-                except Exception as e:
-                    logger.warning(f"Failed to fetch account info for status: {e}")
-                
-                await notifier.send_status(
-                    config_base, 
-                    calc.total_tpv, 
-                    calc.total_tpv - state.get("initial_tpv", calc.total_tpv), 
-                    i,
-                    total_balance,
-                    bnb_balance
-                )
+                except: pass
+                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), i, total_balance, bnb_balance)
 
         except Exception as e:
-            err_msg = f"Error in cycle: {e}"
-            logger.error(err_msg)
-            import traceback
-            logger.error(traceback.format_exc())
-            if i % 10 == 0: # Не спамим ошибками связи каждую секунду
-                await notifier.send_message(f"❌ <b>Error</b>: {err_msg} ({base_ticker})")
-
+            logger.error(f"Error in cycle: {e}")
+            await asyncio.sleep(10)
         await asyncio.sleep(check_interval)
         i += 1
 
@@ -343,38 +315,19 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
-    parser.add_argument("--ticker", default=None, help="Override base_ticker from config")
+    parser.add_argument("--ticker", default=None)
     args = parser.parse_args()
-
     config_base = os.path.splitext(os.path.basename(args.config))[0]
-    
-    with open(args.config, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-
-    # Приоритет: аргумент командной строки > конфиг
+    with open(args.config, "r", encoding="utf-8") as f: cfg = json.load(f)
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
-    
-    # Индивидуальные логи для каждого тикера
     log_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"rebalance_{base_ticker}.log")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()],
-    )
-    logger = logging.getLogger(config_base)
-
-    # Индивидуальные файлы состояния
-    instance_state_file = os.path.join(os.path.dirname(__file__), f"state_{config_base}.json")
-    instance_paper_state_file = os.path.join(os.path.dirname(__file__), f"paper_state_{config_base}.json")
-
-    with open(args.config, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
+    logger = logging.getLogger(base_ticker)
+    instance_state_file = os.path.join(os.path.dirname(__file__), f"state_{base_ticker}.json")
+    instance_paper_state_file = os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json")
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))
-
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
-    asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger))
+    asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
