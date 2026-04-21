@@ -1,0 +1,11 @@
+{
+  "balance": 9987.001379199999,
+  "positions": {
+    "AAVEUSDT_LONG": 155.8,
+    "AAVEUSDT_SHORT": 193.4
+  },
+  "last_price": 93.06,
+  "base_ticker": "AAVEUSDT",
+  "long_entry_price": 93.06,
+  "short_entry_price": 93.06
+}

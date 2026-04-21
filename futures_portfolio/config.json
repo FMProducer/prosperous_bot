@@ -34,10 +34,11 @@
     }
   ],
   "tickers": [
+    "AAVEUSDT",
     "1000PEPEUSDT",
     "ZECUSDT",
-    "AAVEUSDT",
-    "CLUSDT"
+    "CLUSDT",
+    "HYPEUSDT"
   ],
-  "base_ticker": "1000PEPEUSDT"
+  "base_ticker": "AAVEUSDT"
 }

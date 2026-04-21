@@ -58,7 +58,7 @@ class PortfolioCalculator:
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """
-        Ребалансировка всего портфеля на основе отклонения ДОЛЕЙ СТОИМОСТИ.
+        Ребалансировка только тех ног портфеля, которые превысили порог отклонения.
         """
         actions = []
         shares = {
@@ -67,46 +67,46 @@ class PortfolioCalculator:
             "VIRTUAL": self.share_virt_pct / 100
         }
 
-        # 1. Проверяем глобальный триггер (превышен ли порог хоть по одной ноге)
-        max_dev = max(abs(shares[k] - targets[k]["share"]) for k in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"])
-        
-        if max_dev > threshold:
-            # 2. Если триггер сработал, выравниваем ВЕСЬ портфель
-            for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-                target_share = targets[key]["share"]
-                current_share = shares[key]
-                diff_share = current_share - target_share # Положительно при ИЗБЫТКЕ
-                
-                if key == "VIRTUAL":
-                    actions.append({
-                        "type": "VIRTUAL_RESET",
-                        "symbol": "VIRTUAL",
-                        "diff_usdt": diff_share * self.tpv,
-                        "priority": 1 if diff_share > 0 else 3
-                    })
-                else:
-                    cfg = targets[key]
-                    pos_key = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
-                    
-                    # ПОРТФЕЛЬНАЯ ФОРМУЛА:
-                    # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
-                    # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
-                    diff_usdt = -diff_share * self.tpv * cfg["leverage"]
-                    
-                    if not ignore_limits:
-                        max_change = self.tpv * 0.5 * cfg["leverage"]
-                        if abs(diff_usdt) > max_change:
-                            diff_usdt = math.copysign(max_change, diff_usdt)
+        # Ребалансируем только ноги, превысившие порог
+        for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
+            target_share = targets[key]["share"]
+            current_share = shares[key]
+            diff_share = current_share - target_share # Положительно при ИЗБЫТКЕ
 
-                    # Reduction (продажа излишка) если diff_usdt < 0
-                    is_reduction = diff_usdt < 0
-                    
-                    actions.append({
-                        "type": "ORDER",
-                        "symbol": pos_key,
-                        "diff_usdt": diff_usdt,
-                        "priority": 0 if is_reduction else 2
-                    })
+            # Пропускаем, если отклонение не превышает порог
+            if abs(diff_share) <= threshold:
+                continue
+
+            if key == "VIRTUAL":
+                actions.append({
+                    "type": "VIRTUAL_RESET",
+                    "symbol": "VIRTUAL",
+                    "diff_usdt": diff_share * self.tpv,
+                    "priority": 1 if diff_share > 0 else 3
+                })
+            else:
+                cfg = targets[key]
+                pos_key = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
+
+                # ПОРТФЕЛЬНАЯ ФОРМУЛА:
+                # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
+                # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
+                diff_usdt = -diff_share * self.tpv * cfg["leverage"]
+
+                if not ignore_limits:
+                    max_change = self.tpv * 0.5 * cfg["leverage"]
+                    if abs(diff_usdt) > max_change:
+                        diff_usdt = math.copysign(max_change, diff_usdt)
+
+                # Reduction (продажа излишка) если diff_usdt < 0
+                is_reduction = diff_usdt < 0
+
+                actions.append({
+                    "type": "ORDER",
+                    "symbol": pos_key,
+                    "diff_usdt": diff_usdt,
+                    "priority": 0 if is_reduction else 2
+                })
 
         actions.sort(key=lambda x: x["priority"])
         return actions
