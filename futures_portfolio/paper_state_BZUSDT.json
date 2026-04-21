@@ -1,9 +1,0 @@
-{
-  "balance": 10000.0,
-  "positions": {
-    "BZUSDT_LONG": 161.79,
-    "BZUSDT_SHORT": 200.85
-  },
-  "last_price": 89.62,
-  "base_ticker": "BZUSDT"
-}

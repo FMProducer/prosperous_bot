@@ -24,7 +24,7 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.004,
+      "rebalance_threshold": 0.04,
       "siphoning_threshold_pct": 0.5,
       "reinvestment_ratio": 0.05,
       "equity_trailing_stop_pct": 10.0,
@@ -36,7 +36,7 @@
   "tickers": [
     "1000PEPEUSDT",
     "ZECUSDT",
-    "BZUSDT",
+    "AAVEUSDT",
     "CLUSDT"
   ],
   "base_ticker": "1000PEPEUSDT"

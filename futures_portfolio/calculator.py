@@ -30,59 +30,83 @@ class PortfolioCalculator:
         if math.isnan(self.tpv) or self.tpv <= 0:
             self.tpv = 1e-9
 
-        # Текущие доли (Share %)
-        long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
-        short_notional = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0)) * self.price
+        # Расчет стоимости позиций (Allocated Capital + PnL)
+        # Для Long: Value = (Initial_Notional / Lev) + (Current_Notional - Initial_Notional)
+        # Для Short: Value = (Initial_Notional / Lev) + (Initial_Notional - Current_Notional)
         
-        # Динамическое получение плеча для логирования
+        long_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0))
+        short_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0))
+        
+        # Используем цену входа для расчета базы, если она есть, иначе текущую
+        l_entry = long_entry_price if long_entry_price > 0 else spot_price
+        s_entry = short_entry_price if short_entry_price > 0 else spot_price
+        
         l_lev = targets["BASE_LONG"]["leverage"] if targets and "BASE_LONG" in targets else 5.0
         s_lev = targets["BASE_SHORT"]["leverage"] if targets and "BASE_SHORT" in targets else 5.0
 
-        # Сохраняем для логирования (с точностью до 0.1% для отслеживания динамики)
-        self.share_long_pct = round((long_notional / l_lev) / self.tpv * 100, 1) if self.tpv > 0 else 0
-        self.share_short_pct = round((short_notional / s_lev) / self.tpv * 100, 1) if self.tpv > 0 else 0
-        self.share_virt_pct = round(self.virt_current_value / self.tpv * 100, 1) if self.tpv > 0 else 0
+        # Актуальная стоимость Long (Доля капитала + PnL)
+        val_long = (long_qty * l_entry / l_lev) + (long_qty * (spot_price - l_entry))
+        # Актуальная стоимость Short (Доля капитала + PnL)
+        val_short = (short_qty * s_entry / s_lev) + (short_qty * (s_entry - spot_price))
+        # Стоимость Виртуальной части
+        val_virt = self.virt_current_value
+
+        # Сохраняем для логирования (теперь сумма будет ~100%, и Short будет расти при падении цены)
+        self.share_long_pct = round(val_long / self.tpv * 100, 1) if self.tpv > 0 else 0
+        self.share_short_pct = round(val_short / self.tpv * 100, 1) if self.tpv > 0 else 0
+        self.share_virt_pct = round(val_virt / self.tpv * 100, 1) if self.tpv > 0 else 0
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
-        deviations = []
+        """
+        Ребалансировка всего портфеля на основе отклонения ДОЛЕЙ СТОИМОСТИ.
+        """
+        actions = []
+        shares = {
+            "BASE_LONG": self.share_long_pct / 100,
+            "BASE_SHORT": self.share_short_pct / 100,
+            "VIRTUAL": self.share_virt_pct / 100
+        }
 
-        # Проверка Long
-        long_notional = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0)) * self.price
-        share_long = (long_notional / targets["BASE_LONG"]["leverage"]) / self.tpv if self.tpv > 0 else 0
-
-        # Проверка Short
-        short_notional = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0)) * self.price
-        share_short = (short_notional / targets["BASE_SHORT"]["leverage"]) / self.tpv if self.tpv > 0 else 0
-
-        # Проверка Virtual
-        share_virt = self.virt_current_value / self.tpv if self.tpv > 0 else 0
-
-        # Максимальное отклонение
-        max_dev = max(abs(share_long - targets["BASE_LONG"]["share"]),
-                      abs(share_short - targets["BASE_SHORT"]["share"]),
-                      abs(share_virt - targets["VIRTUAL"]["share"]))
-
+        # 1. Проверяем глобальный триггер (превышен ли порог хоть по одной ноге)
+        max_dev = max(abs(shares[k] - targets[k]["share"]) for k in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"])
+        
         if max_dev > threshold:
-            for key in ["BASE_LONG", "BASE_SHORT"]:
-                cfg = targets[key]
-                target_notional = self.tpv * cfg["share"] * cfg["leverage"]
-
-                # Сопоставление ключей конфига с позициями
-                pos_key = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
-                current_notional = abs(self.positions.get(pos_key, 0.0)) * self.price
-                diff_usdt = target_notional - current_notional
+            # 2. Если триггер сработал, выравниваем ВЕСЬ портфель
+            for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
+                target_share = targets[key]["share"]
+                current_share = shares[key]
+                diff_share = current_share - target_share # Положительно при ИЗБЫТКЕ
                 
-                # Ограничение: не меняем более чем на 50% от TPV за один раз (пропускаем, если ignore_limits=True)
-                if not ignore_limits:
-                    max_change = self.tpv * 0.5 * cfg["leverage"]
-                    if abs(diff_usdt) > max_change:
-                        diff_usdt = math.copysign(max_change, diff_usdt)
+                if key == "VIRTUAL":
+                    actions.append({
+                        "type": "VIRTUAL_RESET",
+                        "symbol": "VIRTUAL",
+                        "diff_usdt": diff_share * self.tpv,
+                        "priority": 1 if diff_share > 0 else 3
+                    })
+                else:
+                    cfg = targets[key]
+                    pos_key = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
+                    
+                    # ПОРТФЕЛЬНАЯ ФОРМУЛА:
+                    # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
+                    # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
+                    diff_usdt = -diff_share * self.tpv * cfg["leverage"]
+                    
+                    if not ignore_limits:
+                        max_change = self.tpv * 0.5 * cfg["leverage"]
+                        if abs(diff_usdt) > max_change:
+                            diff_usdt = math.copysign(max_change, diff_usdt)
 
-                deviations.append({
-                    "symbol": pos_key,
-                    "current_share": share_long if "LONG" in pos_key else share_short,
-                    "target_share": cfg["share"],
-                    "diff_usdt": diff_usdt
-                })
+                    # Reduction (продажа излишка) если diff_usdt < 0
+                    is_reduction = diff_usdt < 0
+                    
+                    actions.append({
+                        "type": "ORDER",
+                        "symbol": pos_key,
+                        "diff_usdt": diff_usdt,
+                        "priority": 0 if is_reduction else 2
+                    })
 
-        return deviations
+        actions.sort(key=lambda x: x["priority"])
+        return actions

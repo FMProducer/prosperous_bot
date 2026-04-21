@@ -1,9 +1,0 @@
-{
-  "virt_basis_price": 89.62,
-  "virt_allocated_usdt": 3500.0,
-  "base_ticker": "BZUSDT",
-  "siphoning_reserve": 0.0,
-  "initial_tpv": 10000.0,
-  "reference_tpv": 10000.0,
-  "tpv_ath": 10000.005098237001
-}

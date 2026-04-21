@@ -61,18 +61,22 @@ class BinanceConnector:
         self.client.session.trust_env = False
 
     @retry_on_network_error(retries=5, delay=3.0)
-    async def get_positions(self) -> Dict[str, float]:
-        """Получение фьючерсных позиций с разделением на LONG и SHORT."""
+    async def get_positions(self) -> Dict[str, Dict]:
+        """Получение фьючерсных позиций с разделением на LONG и SHORT, включая цену входа."""
         positions = await asyncio.to_thread(self.futures_client.futures_position_information)
         result = {}
         for pos in positions:
             qty = float(pos["positionAmt"])
+            entry_price = float(pos.get("entryPrice", 0.0))
             side = pos["positionSide"] # LONG, SHORT or BOTH
             symbol = pos["symbol"]
             
             if qty != 0:
                 key = f"{symbol}_{side}" if side != "BOTH" else symbol
-                result[key] = qty
+                result[key] = {
+                    "qty": qty,
+                    "entry_price": entry_price
+                }
         return result
 
     @retry_on_network_error(retries=5, delay=3.0)

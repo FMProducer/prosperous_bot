@@ -134,10 +134,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if paper_mode:
                 paper_state["last_price"] = price
                 real_equity = paper_state["balance"]
-                positions = paper_state["positions"]
+                # Для Paper Mode имитируем структуру с ценами входа
+                raw_positions = paper_state.get("positions", {})
+                positions = {k: v for k, v in raw_positions.items()}
+                l_entry = paper_state.get("long_entry_price", price)
+                s_entry = paper_state.get("short_entry_price", price)
             else:
                 real_equity = await connector.get_free_balance()
-                positions = await connector.get_positions()
+                raw_positions = await connector.get_positions()
+                # Извлекаем только QTY для калькулятора, цены входа передаем отдельно
+                positions = {k: v["qty"] for k, v in raw_positions.items()}
+                l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
+                s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
             
             # Ограничение капитала, если задано
             if max_capital_usdt > 0:
@@ -149,7 +157,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
                 if initial_tpv == 0:
                     temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                                                 base_ticker=base_ticker, siphoning_reserve=0.0, targets=targets)
+                                                 base_ticker=base_ticker, siphoning_reserve=0.0, targets=targets,
+                                                 long_entry_price=l_entry, short_entry_price=s_entry)
                     initial_tpv = temp_calc.tpv
                     reference_tpv = initial_tpv
                     logger.info(f"Initialized TPV base: {initial_tpv:.2f}")
@@ -162,7 +171,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 save_json(state_file_path, state)
 
             calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
-                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
+                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
+                                     long_entry_price=l_entry, short_entry_price=s_entry)
             
             if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
@@ -227,27 +237,39 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
 
-            deviations = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
-            if deviations:
+            actions = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
+            if actions:
+                # Внедряем Notional Value Guard для физических ордеров
                 min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
-                filtered_deviations = [d for d in deviations if abs(d["diff_usdt"]) >= min_notional]
                 
-                if not filtered_deviations:
+                # Фильтруем: оставляем VIRTUAL_RESET и физические ордера >= min_notional
+                valid_actions = [a for a in actions if a["type"] == "VIRTUAL_RESET" or abs(a.get("diff_usdt", 0)) >= min_notional]
+                
+                if not valid_actions:
                     if i % 10 == 0:
-                        logger.info(f"Rebalance needed, but all orders are too small (< {min_notional} USDT). Skipping.")
+                        logger.info(f"Rebalance actions identified, but they are too small (< {min_notional} USDT). Skipping.")
                     continue
 
-                logger.info(f"Rebalance needed. Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
-                filtered_deviations.sort(key=lambda x: x["diff_usdt"])
+                logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
 
                 limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
-                for dev in filtered_deviations:
-                    key = dev["symbol"]
+                for action in valid_actions:
+                    if action["type"] == "VIRTUAL_RESET":
+                        # Ребалансировка виртуальной части - просто сброс базиса
+                        virt_basis_price = price
+                        virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
+                        state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
+                        save_json(state_file_path, state)
+                        logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
+                        continue
+
+                    key = action["symbol"]
                     pos_side = key.split('_')[1]
-                    order_qty = dev["diff_usdt"] / price
-                    side = ("BUY" if dev["diff_usdt"] > 0 else "SELL") if pos_side == "LONG" else ("SELL" if dev["diff_usdt"] > 0 else "BUY")
+                    diff_usdt = action["diff_usdt"]
+                    order_qty = diff_usdt / price
+                    side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
                     reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
                     step_size = step_sizes.get(key.split('_')[0], 0.0)
 

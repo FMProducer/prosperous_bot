@@ -1,9 +1,0 @@
-{
-  "balance": 10000.0,
-  "positions": {
-    "CLUSDT_LONG": 167.92,
-    "CLUSDT_SHORT": 208.45
-  },
-  "last_price": 86.35,
-  "base_ticker": "CLUSDT"
-}
