@@ -1,0 +1,11 @@
+{
+  "balance": 9987.00000546,
+  "positions": {
+    "LINKUSDT_LONG": 1551.3,
+    "LINKUSDT_SHORT": 1925.75
+  },
+  "last_price": 9.347,
+  "base_ticker": "LINKUSDT",
+  "long_entry_price": 9.347,
+  "short_entry_price": 9.347
+}

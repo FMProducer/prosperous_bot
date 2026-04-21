@@ -89,8 +89,11 @@ async def download_live_data(symbol: str, data_dir: str, days: int = 2):
 
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None,
                         days: int = 2, commission: float = 0.0004, use_limit_orders: bool = False,
-                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30):
+                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False):
     try:
+        if quiet:
+            logger.setLevel(logging.WARNING)
+        
         with open(config_path, "r", encoding="utf-8") as f: config = json.load(f)
         
         # Настройки лимитов из конфига
@@ -100,7 +103,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         portfolio_cfg = config["portfolios"][0]
         targets = portfolio_cfg["targets"]
         threshold = portfolio_cfg["rebalance_threshold"]
+        
+        # Ticker-specific threshold override
         base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+        ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
+        threshold = ticker_thresholds.get(base_ticker, threshold)
 
         if live_mode: file_path = await download_live_data(base_ticker, data_dir, days)
         else:
@@ -171,17 +178,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     stats["trailing_stop_step"] = i
                     break
 
-            # Siphoning
-            if portfolio_cfg.get("siphoning_threshold_pct", 0) > 0:
-                if calc.tpv > initial_tpv * (1 + portfolio_cfg["siphoning_threshold_pct"] / 100):
-                    profit = calc.tpv - initial_tpv
-                    to_reserve = profit * (1 - portfolio_cfg.get("reinvestment_ratio", 0.05))
-                    current_equity -= to_reserve
-                    siphoning_reserve += to_reserve
-                    initial_tpv += (profit - to_reserve)
-                    calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
-                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                             long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
+            # Siphoning (simplified for backtest: uses trade-based logic estimate)
+            # In backtest we can't perfectly replicate per-trade siphoning without detailed fill data,
+            # but we use a reasonable approximation.
 
             # Rebalancing
             actions = calc.calculate_deviations(targets, threshold)
@@ -191,7 +190,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 
                 if valid_actions:
                     stats["rebalance_cycles"] += 1
-                    logger.info(f"Step {i:6d}: Rebalance! Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
                     
                     for action in valid_actions:
                         if action["type"] == "VIRTUAL_RESET":
@@ -199,7 +197,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             current_equity += virt_profit
                             virt_basis_price = curr_price
                             virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                            logger.info(f"  [RESET] Virtual PnL: {virt_profit:+.4f} USDT")
                         else:
                             key, diff_usdt = action["symbol"], action["diff_usdt"]
                             pos_side = key.split('_')[1]
@@ -222,16 +219,29 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                                     entry_prices[pos_side] = (positions[key] * entry_prices[pos_side] + change_qty * f_price) / (positions[key] + change_qty)
                                 else: entry_prices[pos_side] = f_price
                                 positions[key] += change_qty
-                            else: positions[key] = max(0, positions[key] - change_qty)
-                            
-                            logger.info(f"  [ORDER] {action_name} {exec_type} {side} {abs(change_qty):.4f} {key} @ {f_price:.6f}")
+                            else: 
+                                # 💰 Simulation of siphoning during reduction
+                                is_reduction = True
+                                if is_reduction:
+                                    old_entry = entry_prices[pos_side]
+                                    if pos_side == "LONG":
+                                        trade_pnl = (f_price - old_entry) * change_qty
+                                    else:
+                                        trade_pnl = (old_entry - f_price) * change_qty
+                                    
+                                    # Commission for the trade
+                                    comm = abs(diff_usdt) * 0.0004
+                                    trade_pnl -= comm
+                                    
+                                    if trade_pnl > 0:
+                                        siphoning_reserve += trade_pnl
+                                        current_equity -= trade_pnl
+
+                                positions[key] = max(0, positions[key] - change_qty)
 
                     calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
                                              base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
                                              long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
-
-            if i % 1000 == 0:
-                logger.info(f"Step {i:6d}: TPV={calc.total_tpv:8.2f} | L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}% | {base_ticker}={curr_price:.4f}")
 
             if i < len(df) - 1:
                 p_diff = df.iloc[i+1]['close'] - curr_price
@@ -243,18 +253,28 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         asset_chg = ((asset_end / asset_start) - 1) * 100
         strat_chg = ((calc.total_tpv / initial_capital) - 1) * 100
 
-        logger.info("\n" + "="*70 + "\n                 LEG-SPECIFIC NEUTRAL ANALYTICS\n" + "="*70)
-        logger.info(f"Asset Perf: {base_ticker} {asset_chg:+.2f}% | Strategy: {strat_chg:+.2f}%")
-        logger.info(f"Alpha:      {strat_chg - asset_chg:+.2f}% vs HODL")
-        logger.info(f"Final TPV:  {calc.total_tpv:.2f} (SAFE: {siphoning_reserve:.2f})")
-        logger.info(f"Max DD:     {stats['max_drawdown_pct']*100:.2f}% | Rebalances: {stats['rebalance_cycles']}")
-        if limit_simulator:
-            l_stats = limit_simulator.get_summary()
-            logger.info(f"Limit Fill: {l_stats['fill_rate']*100:.1f}% | Price Imp: +{l_stats['total_improvement_usdt']:.2f} USDT")
-        logger.info("="*70)
+        if not quiet:
+            logger.info("\n" + "="*70 + "\n                 LEG-SPECIFIC NEUTRAL ANALYTICS\n" + "="*70)
+            logger.info(f"Asset Perf: {base_ticker} {asset_chg:+.2f}% | Strategy: {strat_chg:+.2f}%")
+            logger.info(f"Alpha:      {strat_chg - asset_chg:+.2f}% vs HODL")
+            logger.info(f"Final TPV:  {calc.total_tpv:.2f} (SAFE: {siphoning_reserve:.2f})")
+            logger.info(f"Max DD:     {stats['max_drawdown_pct']*100:.2f}% | Rebalances: {stats['rebalance_cycles']}")
+            if limit_simulator:
+                l_stats = limit_simulator.get_summary()
+                logger.info(f"Limit Fill: {l_stats['fill_rate']*100:.1f}% | Price Imp: +{l_stats['total_improvement_usdt']:.2f} USDT")
+            logger.info("="*70)
+
+        return {
+            "profit_pct": strat_chg,
+            "max_dd_pct": stats["max_drawdown_pct"] * 100,
+            "cycles": stats["rebalance_cycles"],
+            "asset_chg_pct": asset_chg,
+            "siphoning_reserve": siphoning_reserve
+        }
 
     except Exception as e:
         logger.error(f"Failed: {e}\n{traceback.format_exc()}")
+        return None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

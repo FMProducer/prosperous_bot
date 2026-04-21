@@ -1,0 +1,11 @@
+{
+  "virt_basis_price": 2315.39,
+  "virt_allocated_usdt": 3502.5182416992693,
+  "base_ticker": "ETHUSDT",
+  "siphoning_reserve": 0.0,
+  "initial_tpv": 10000.0,
+  "reference_tpv": 10000.0,
+  "tpv_ath": 10007.194976283627,
+  "rebalance_cycles": 3,
+  "supervisor_last_cycles": 2
+}

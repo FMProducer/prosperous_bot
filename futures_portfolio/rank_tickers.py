@@ -43,7 +43,7 @@ class TickerScanner:
     def __init__(self, concurrent_requests: int = 10):
         # Используем основной домен, так как он заработал в main.py
         self.base_url = "https://fapi.binance.com"
-        self.rebalance_threshold = 0.015 
+        self.rebalance_threshold = 0.008 
         self.semaphore = asyncio.Semaphore(concurrent_requests)
         
     @retry_on_network_error(retries=3)
@@ -136,13 +136,13 @@ class TickerScanner:
         if abs_net_change > 10.0:
             tier = "Tier-X (NET_TRAP)"
             score = 0
-        elif trend_ratio_pct > 3.0: # Снизили с 7.0 до 3.0 (у ZEC было 0.22, у AAVE 3.72)
+        elif trend_ratio_pct > 6.0: # Снизили с 7.0 до 3.0, теперь подняли до 6.0
             tier = "Tier-X (TREND_TRAP)"
             score = 0
-        elif max_hourly_spurt > 7.0: # Снизили с 10.0 до 7.0
+        elif max_hourly_spurt > 10.0: # Снизили с 10.0 до 7.0, теперь вернули 10.0
             tier = "Tier-X (SPIKE_TRAP)"
             score = 0
-        elif cycles < 8:
+        elif cycles < 5: # Снизили с 8 до 5
             tier = "Tier-3 (LOW_ENERGY)"
             score = 0
         else:
@@ -206,53 +206,26 @@ class TickerScanner:
             except Exception as e:
                 logger.error(f"Failed to save cache: {e}")
             
-            # --- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ CONFIG.JSON ---
-            try:
-                config_path = "config.json"
-                if os.path.exists(config_path):
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        config = json.load(f)
-                    
-                    max_bots = config.get("max_bots", 5)
-                    # Берем только тикеры с положительным SCORE (Tier 1-3)
-                    top_n = [r['symbol'] for r in ranked_list if r['score'] > 0][:max_bots]
-                    
-                    if top_n:
-                        config["tickers"] = top_n
-                        # Устанавливаем первый в списке как base_ticker по умолчанию
-                        config["base_ticker"] = top_n[0]
-                        
-                        with open(config_path, "w", encoding="utf-8") as f:
-                            json.dump(config, f, indent=2)
-                        logger.info(f"Updated {config_path} with top {len(top_n)} tickers: {top_n}")
-                    else:
-                        logger.warning("No suitable tickers found to update config.")
-            except Exception as e:
-                logger.error(f"Failed to update config.json: {e}")
-                
             return ranked_list
 
-async def main():
+async def main(quiet=False, min_volume=200_000_000):
     scanner = TickerScanner(concurrent_requests=15)
     start_time = time.time()
-    top_tickers = await scanner.get_top_tickers()
+    top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
     duration = time.time() - start_time
     
-    print("\n" + "="*145)
-    print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'NET MOVE%':<10} | {'MAX SPURT%':<10} | {'TREND EFF%':<10} | {'FUNDING%':<10} | {'SCORE':<8} | {'RECOMMENDATION'}")
-    print("-" * 145)
+    if not quiet:
+        print("\n" + "="*145)
+        print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'NET MOVE%':<10} | {'MAX SPURT%':<10} | {'TREND EFF%':<10} | {'FUNDING%':<10} | {'SCORE':<8} | {'RECOMMENDATION'}")
+        print("-" * 145)
+        
+        for t in top_tickers[:30]:
+            print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['net_change']:<10.2f} | {t['max_spurt']:<10.2f} | {t['trend']:<10.2f} | {t['funding']:<10.4f} | {t['score']:<8.2f} | {t['tier']}")
+        
+        print("="*145)
+        print(f"Scan completed in {duration:.1f} seconds.")
     
-    for t in top_tickers[:30]:
-        print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['net_change']:<10.2f} | {t['max_spurt']:<10.2f} | {t['trend']:<10.2f} | {t['funding']:<10.4f} | {t['score']:<8.2f} | {t['tier']}")
-    
-    print("="*145)
-    print(f"Scan completed in {duration:.1f} seconds.")
-    print("SCORING RULES (24h Basis):")
-    print("1. REAL CYCLES: Moves > 1.5%. Score = Cycles * 50.")
-    print("2. SPIKE TRAP: 1h spurt > 7% -> DQ.")
-    print("3. NET TRAP: 24h net move > 10% -> DQ.")
-    print("4. TREND EFF: If > 3.0%, score reduced (Too linear).")
-    print("5. FUNDING: Bonus for negative rates (we get paid for short).")
+    return top_tickers
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -25,6 +25,13 @@
         }
       },
       "rebalance_threshold": 0.008,
+      "ticker_thresholds": {
+        "1000PEPEUSDT": 0.005,
+        "AAVEUSDT": 0.008,
+        "ZECUSDT": 0.008,
+        "BZUSDT": 0.01,
+        "RIVERUSDT": 0.008
+      },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
       "equity_trailing_stop_pct": 10.0,
@@ -34,11 +41,9 @@
     }
   ],
   "tickers": [
-    "ZECUSDT",
-    "CLUSDT",
-    "HYPEUSDT",
-    "1000PEPEUSDT",
-    "AAVEUSDT"
+    "ETHUSDT",
+    "LINKUSDT",
+    "1000PEPEUSDT"
   ],
-  "base_ticker": "ZECUSDT"
+  "base_ticker": "ETHUSDT"
 }

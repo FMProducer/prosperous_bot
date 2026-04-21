@@ -1,0 +1,10 @@
+{
+  "virt_basis_price": 5.624,
+  "virt_allocated_usdt": 3500.0,
+  "base_ticker": "RIVERUSDT",
+  "siphoning_reserve": 0.0,
+  "initial_tpv": 10000.0,
+  "reference_tpv": 10000.0,
+  "tpv_ath": 10000.0,
+  "rebalance_cycles": 2
+}

@@ -1,10 +1,10 @@
 {
-  "virt_basis_price": 39.86,
-  "virt_allocated_usdt": 3506.7887797376306,
+  "virt_basis_price": 39.329,
+  "virt_allocated_usdt": 3483.4546268212644,
   "base_ticker": "HYPEUSDT",
-  "siphoning_reserve": 58.79322084645236,
+  "siphoning_reserve": 142.17980286458976,
   "initial_tpv": 10002.5208077558,
   "reference_tpv": 10000.0,
-  "tpv_ath": 10101.790844600515,
-  "rebalance_cycles": 62
+  "tpv_ath": 10117.302681582934,
+  "rebalance_cycles": 75
 }

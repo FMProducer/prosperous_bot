@@ -29,11 +29,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     
     portfolio_cfg = config["portfolios"][0]
     targets = portfolio_cfg["targets"]
-    threshold = portfolio_cfg["rebalance_threshold"]
+    global_threshold = portfolio_cfg["rebalance_threshold"]
     check_interval = portfolio_cfg["check_interval_sec"]
     
     # Приоритет тикера: override > config > default
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+    
+    # Ticker-specific threshold override
+    ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
+    threshold = ticker_thresholds.get(base_ticker, global_threshold)
+    
+    logger.info(f"Using rebalance threshold: {threshold*100:.2f}% for {base_ticker}")
+    
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
     
@@ -269,6 +276,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 for action in valid_actions:
+                    trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия
+                    
                     if action["type"] == "VIRTUAL_RESET":
                         # Ребалансировка виртуальной части - просто сброс базиса
                         virt_basis_price = price
@@ -292,7 +301,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             order_value = qty_rounded * price
                             commission = order_value * 0.0004
                             paper_state["balance"] -= commission
-
+                            
+                            trade_pnl = 0.0 # Инициализация для логгера
+                            
                             # Расчет новой средневзвешенной цены входа
                             pos_key = f"{base_ticker}_{pos_side}"
                             old_qty = paper_state["positions"].get(pos_key, 0.0)
