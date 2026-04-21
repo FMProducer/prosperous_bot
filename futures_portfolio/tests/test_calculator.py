@@ -1,102 +1,99 @@
 import pytest
-from unittest.mock import Mock
-
 from futures_portfolio.calculator import PortfolioCalculator
 
+@pytest.fixture
+def targets():
+    return {
+        "BASE_LONG": {"share": 0.4, "leverage": 5.0},
+        "BASE_SHORT": {"share": 0.4, "leverage": 5.0},
+        "VIRTUAL": {"share": 0.2}
+    }
 
 @pytest.fixture
-def sample_data():
-    # Позиции: 0.5 BTC, 0.2 ETH
-    positions = {
-        "BTCUSDT": 0.5,
-        "ETHUSDT": 0.2,
-        "SOLUSDT": 0.0,
+def sample_params(targets):
+    return {
+        "positions": {"BTCUSDT_LONG": 0.5, "BTCUSDT_SHORT": 0.0},
+        "spot_price": 60000.0,
+        "real_equity": 10000.0,
+        "virt_basis_price": 60000.0,
+        "virt_allocated_usdt": 2000.0,
+        "long_entry_price": 60000.0,
+        "short_entry_price": 0.0,
+        "base_ticker": "BTCUSDT",
+        "siphoning_reserve": 0.0,
+        "targets": targets
     }
-    # Спот-цены
-    spot_prices = {
-        "BTCUSDT": 60000.0,
-        "ETHUSDT": 3000.0,
-        "SOLUSDT": 150.0,
-    }
-    # Свободный баланс USDT
-    free_balance = 1000.0
-    return positions, spot_prices, free_balance
 
+def test_calculator_initialization(sample_params):
+    calc = PortfolioCalculator(**sample_params)
+    assert calc.tpv == 10000.0
+    assert calc.total_tpv == 10000.0
+    assert calc.share_long_pct == 60.0
+    assert calc.share_short_pct == 0.0
+    assert calc.share_virt_pct == 20.0
 
-@pytest.fixture
-def base_ticker_config():
-    return "BTCUSDT"
+def test_calculate_deviations(sample_params, targets):
+    calc = PortfolioCalculator(**sample_params)
+    threshold = 0.05
+    actions = calc.calculate_deviations(targets, threshold)
+    assert len(actions) == 2
+    assert actions[0]["symbol"] == "BTCUSDT_LONG"
+    assert actions[0]["diff_usdt"] == pytest.approx(-10000.0)
+    assert actions[1]["symbol"] == "BTCUSDT_SHORT"
+    assert actions[1]["diff_usdt"] == pytest.approx(20000.0)
 
+def test_siphoning_reserve_impact(sample_params):
+    params = sample_params.copy()
+    params["siphoning_reserve"] = 1000.0
+    calc = PortfolioCalculator(**params)
+    assert calc.total_tpv == 10000.0
+    assert calc.tpv == 9000.0
+    assert calc.share_long_pct == 66.7
 
-def test_calculate_position_value(sample_data, base_ticker_config):
-    positions, spot_prices, free_balance = sample_data
-    calc = PortfolioCalculator(positions, spot_prices, free_balance, base_ticker=base_ticker_config)
+def test_price_change_impact(sample_params):
+    params = sample_params.copy()
+    params["spot_price"] = 66000.0
+    calc = PortfolioCalculator(**params)
+    assert calc.total_tpv == 10200.0
+    assert calc.tpv == 10200.0
+    assert calc.share_long_pct == 88.2
+    assert calc.share_virt_pct == 21.6
 
-    # Проверяем стоимость позиции
-    value = calc.calculate_position_value(f"{base_ticker_config}USDT")
-    assert value == pytest.approx(0.5 * 60000.0)  # 30000.0
+def test_short_pnl_logic(sample_params):
+    params = sample_params.copy()
+    params["positions"] = {"BTCUSDT_SHORT": -1.0}
+    params["short_entry_price"] = 60000.0
+    params["spot_price"] = 54000.0
+    calc = PortfolioCalculator(**params)
+    assert calc.total_tpv == 9800.0
+    assert calc.share_short_pct == round(18000 / 9800 * 100, 1)
 
+def test_negative_tpv_protection():
+    calc = PortfolioCalculator(
+        positions={},
+        spot_price=60000.0,
+        real_equity=-1000.0,
+        virt_basis_price=60000.0,
+        virt_allocated_usdt=2000.0
+    )
+    assert calc.tpv == 1e-9
 
-def test_total_portfolio_value(sample_data, base_ticker_config):
-    positions, spot_prices, free_balance = sample_data
-    calc = PortfolioCalculator(positions, spot_prices, free_balance, base_ticker=base_ticker_config)
+def test_ignore_limits_deviation(sample_params, targets):
+    params = sample_params.copy()
+    params["real_equity"] = 100000.0
+    params["virt_allocated_usdt"] = 20000.0
+    params["positions"] = {"BTCUSDT_LONG": 10.0}
+    calc = PortfolioCalculator(**params)
+    actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=True)
+    long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
+    assert long_action["diff_usdt"] == pytest.approx(-400000.0)
 
-    total = calc.total_portfolio_value()
-    # Позиции: 0.5*60000 + 0.2*3000 = 30000 + 600 = 30600
-    # + free_balance 1000 = 31600
-    assert total == pytest.approx(31600.0)
-
-
-def test_current_shares(sample_data, base_ticker_config):
-    positions, spot_prices, free_balance = sample_data
-    calc = PortfolioCalculator(positions, spot_prices, free_balance, base_ticker=base_ticker_config)
-
-    shares = calc.current_shares()
-    # Общая стоимость 31600, доля BTC = 30000/31600, ETH = 600/31600
-    assert pytest.approx(shares[f"{base_ticker_config}USDT"], 0.0001) == 30000.0 / 31600.0
-    assert pytest.approx(shares["ETHUSDT"], 0.0001) == 600.0 / 31600.0
-    # SOL отсутствует в позициях, доля должна быть 0
-    assert shares.get("SOLUSDT", 0.0) == 0.0
-
-
-def test_calculate_deviations(sample_data, base_ticker_config):
-    positions, spot_prices, free_balance = sample_data
-    calc = PortfolioCalculator(positions, spot_prices, free_balance, base_ticker=base_ticker_config)
-
-    # Целевые доли
-    targets = {
-        f"{base_ticker_config}_LONG": 0.4,
-        f"{base_ticker_config}_SHORT": 0.4,
-        "VIRTUAL": 0.2
-    }
-    threshold = 0.02
-
-    deviations = calc.calculate_deviations(targets, threshold)
-
-    # Проверяем, что возвращается список и есть нужные поля
-    assert isinstance(deviations, list)
-    for dev in deviations:
-        assert "symbol" in dev
-        assert "deviation" in dev
-        assert "direction" in dev
-        assert "current_value" in dev
-        assert "target_value" in dev
-        assert "current_share" in dev
-        assert "target_share" in dev
-
-    # Должны быть отклонения для BTC и ETH (предположим, что текущие доли отличаются от целей более чем на 2%)
-    # В этом простом примере проверяем, что для BTC и ETH есть записи
-    symbols = [dev["symbol"] for dev in deviations]
-    assert f"{base_ticker_config}_LONG" in symbols
-    assert f"{base_ticker_config}_SHORT" in symbols
-
-
-def test_calculate_position_value_eth(sample_data, base_ticker_config):
-    """Тест для проверки расчета с ETH как базовым тикером."""
-    positions, spot_prices, free_balance = sample_data
-    # Используем ETH как базовый тикер
-    eth_calc = PortfolioCalculator(positions, spot_prices, free_balance, base_ticker="ETHUSDT")
-    
-    # Проверяем стоимость ETH позиции
-    value = eth_calc.calculate_position_value("ETHUSDT")
-    assert value == pytest.approx(0.2 * 3000.0)  # 600.0
+def test_limits_deviation(sample_params, targets):
+    params = sample_params.copy()
+    params["real_equity"] = 100000.0
+    params["virt_allocated_usdt"] = 20000.0
+    params["positions"] = {"BTCUSDT_LONG": 10.0}
+    calc = PortfolioCalculator(**params)
+    actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=False)
+    long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
+    assert long_action["diff_usdt"] == pytest.approx(-250000.0)
