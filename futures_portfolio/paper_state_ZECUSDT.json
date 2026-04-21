@@ -1,11 +1,11 @@
 {
-  "balance": 9986.999941544,
+  "balance": 10016.022796211995,
   "positions": {
-    "ZECUSDT_LONG": 46.042,
-    "ZECUSDT_SHORT": 57.156
+    "ZECUSDT_LONG": 46.84400000000001,
+    "ZECUSDT_SHORT": 53.45399999999999
   },
-  "last_price": 314.93,
+  "last_price": 316.16,
   "base_ticker": "ZECUSDT",
-  "long_entry_price": 314.93,
-  "short_entry_price": 314.93
+  "long_entry_price": 318.2103534362665,
+  "short_entry_price": 319.34381779149896
 }

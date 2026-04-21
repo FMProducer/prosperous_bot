@@ -24,21 +24,21 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.006,
-      "siphoning_threshold_pct": 0.5,
-      "reinvestment_ratio": 0.05,
+      "rebalance_threshold": 0.008,
+      "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
+      "reinvestment_ratio": 0.0,
       "equity_trailing_stop_pct": 10.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
-      "check_interval_sec": 30
+      "check_interval_sec": 15
     }
   ],
   "tickers": [
-    "AAVEUSDT",
-    "1000PEPEUSDT",
     "ZECUSDT",
     "CLUSDT",
-    "HYPEUSDT"
+    "HYPEUSDT",
+    "1000PEPEUSDT",
+    "AAVEUSDT"
   ],
-  "base_ticker": "AAVEUSDT"
+  "base_ticker": "ZECUSDT"
 }

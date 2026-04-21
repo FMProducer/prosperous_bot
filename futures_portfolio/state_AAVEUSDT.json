@@ -1,10 +1,10 @@
 {
-  "virt_basis_price": 93.06,
-  "virt_allocated_usdt": 3500.0,
+  "virt_basis_price": 91.37,
+  "virt_allocated_usdt": 3491.458128667638,
   "base_ticker": "AAVEUSDT",
-  "siphoning_reserve": 0.0,
-  "initial_tpv": 10000.0,
+  "siphoning_reserve": 122.70767274745653,
+  "initial_tpv": 10005.826892530778,
   "reference_tpv": 10000.0,
-  "tpv_ath": 10000.0,
-  "rebalance_cycles": 1
+  "tpv_ath": 10119.021544146988,
+  "rebalance_cycles": 77
 }

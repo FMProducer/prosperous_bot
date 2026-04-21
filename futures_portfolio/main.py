@@ -215,19 +215,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.warning(f"!!! [WARNING] {msg}")
                     await notifier.send_message(f"⚠️ <b>WARNING</b>: {msg} ({base_ticker})")
 
-            if siphoning_threshold_pct > 0:
-                if calc.tpv > initial_tpv * (1 + siphoning_threshold_pct / 100):
-                    profit = calc.tpv - initial_tpv
-                    to_reinvest = profit * reinvestment_ratio
-                    to_reserve = profit - to_reinvest
-                    siphoning_reserve += to_reserve
+            # Реинвестирование из свободной маржи (если reinvestment_ratio > 0)
+            if reinvestment_ratio > 0:
+                free_margin = real_equity - (calc.total_tpv - calc.virt_current_value)  # Свободная маржа
+                if free_margin > 100:  # Минимум 100 USDT для реинвестирования
+                    to_reinvest = free_margin * reinvestment_ratio
                     initial_tpv += to_reinvest
-                    msg = f"Reserve updated: +{to_reserve:.2f} USDT"
-                    logger.info(f"!!! [SAFE] {msg}")
-                    await notifier.send_message(f"💰 <b>SAFE</b>: {msg} ({base_ticker})")
-                    calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
-                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets)
-                    state.update({"siphoning_reserve": siphoning_reserve, "initial_tpv": initial_tpv})
+                    logger.info(f"💰 Reinvest from free margin: +{to_reinvest:.2f} USDT (ratio: {reinvestment_ratio})")
+                    state.update({"initial_tpv": initial_tpv})
                     save_json(state_file_path, state)
 
             current_pos_sum = abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0))
@@ -315,12 +310,27 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 paper_state[entry_key] = new_entry
                             else:
                                 # Продажа (уменьшение позиции) - цена входа не меняется
+                                # 💰 СИФОНИНГ: Прибыль от каждой сделки -> в сейф
+                                trade_pnl = 0.0
+                                if pos_side == "LONG":
+                                    # Long: прибыль = (цена_продажи - цена_входа) * количество
+                                    trade_pnl = (price - old_entry) * qty_rounded - commission
+                                else:
+                                    # Short: прибыль = (цена_входа - цена_покупки) * количество
+                                    trade_pnl = (old_entry - price) * qty_rounded - commission
+
+                                if trade_pnl > 0:
+                                    siphoning_reserve += trade_pnl
+                                    logger.info(f"💰 [SAFE] P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                    state.update({"siphoning_reserve": siphoning_reserve})
+                                    save_json(state_file_path, state)
+
                                 paper_state["positions"][pos_key] -= qty_rounded
                                 paper_state["positions"][pos_key] = max(0, paper_state["positions"][pos_key])
                                 if paper_state["positions"][pos_key] == 0:
                                     paper_state[entry_key] = 0.0
 
-                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} @ {price:.6f} (Fee: {commission:.4f} USDT, Entry: {paper_state.get(entry_key, price):.6f})")
+                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} @ {price:.6f} (Fee: {commission:.4f} USDT, Entry: {old_entry:.6f}, PnL: {trade_pnl:+.4f})")
                             save_json(paper_state_file_path, paper_state)
 
                             # Уведомление о сделке
@@ -344,28 +354,103 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 limit_stats["total_profit_usdt"] += result.get("profit_usdt", 0)
                                 limit_stats["total_improvement_pct"] += result.get("price_improvement_pct", 0)
                                 logger.info(f"✅ Limit FILLED: {result['filled_qty']} @ {result['avg_price']:.6f} | gain={result['price_improvement_pct']:+.3f}% ({result['profit_usdt']:+.2f} USDT)")
+
+                                # 💰 СИФОНИНГ: Прибыль от каждой сделки (reduce_only) -> в сейф
+                                if reduce_only:
+                                    exec_price = result.get("avg_price", price)
+                                    filled_qty = result.get("filled_qty", 0)
+                                    commission = result.get("commission", filled_qty * exec_price * 0.0004)
+
+                                    trade_pnl = 0.0
+                                    if pos_side == "LONG":
+                                        trade_pnl = (exec_price - l_entry) * filled_qty - commission
+                                    else:
+                                        trade_pnl = (s_entry - exec_price) * filled_qty - commission
+
+                                    if trade_pnl > 0:
+                                        siphoning_reserve += trade_pnl
+                                        logger.info(f"💰 [SAFE] Real P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                        state.update({"siphoning_reserve": siphoning_reserve})
+                                        save_json(state_file_path, state)
+                                        await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} {side}")
+
                             elif result["status"] == "SUCCESS_FALLBACK":
                                 limit_stats["fallback"] += 1
                                 if result.get("limit_filled_qty", 0) > 0:
                                     limit_stats["filled"] += 1
                                     limit_stats["total_improvement_pct"] += result.get("limit_price_improvement_pct", 0)
                                     logger.info(f"⚡ Limit+Fallback: {result['limit_filled_qty']} @ {result['limit_avg_price']:.6f} (gain={result.get('limit_price_improvement_pct', 0):+.3f}%) + market")
+
+                                    # 💰 СИФОНИНГ: Прибыль от limit части (reduce_only) -> в сейф
+                                    if reduce_only:
+                                        exec_price = result.get("limit_avg_price", price)
+                                        filled_qty = result.get("limit_filled_qty", 0)
+                                        commission = filled_qty * exec_price * 0.0004
+
+                                        trade_pnl = 0.0
+                                        if pos_side == "LONG":
+                                            trade_pnl = (exec_price - l_entry) * filled_qty - commission
+                                        else:
+                                            trade_pnl = (s_entry - exec_price) * filled_qty - commission
+
+                                        if trade_pnl > 0:
+                                            siphoning_reserve += trade_pnl
+                                            logger.info(f"💰 [SAFE] Fallback P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                            state.update({"siphoning_reserve": siphoning_reserve})
+                                            save_json(state_file_path, state)
+                                            await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} {side}")
                                 else:
                                     logger.info(f"⚡ Fallback (market only): timeout")
                             elif result["status"] in ("ERROR_FALLBACK", "ERROR"):
                                 logger.warning(f"❌ Order with issues: {result.get('error', result.get('message', 'unknown'))}")
                         else:
+                            # Market order execution
                             await PortfolioExecutor(connector).execute_market_order(key, abs(order_qty), side, step_size, reduce_only, pos_side)
+
+                            # 💰 СИФОНИНГ: Для market ордеров (reduce_only) -> в сейф (оценочно)
+                            if reduce_only:
+                                exec_price = price  # Используем текущую цену как оценку
+                                filled_qty = abs(order_qty)
+                                commission = filled_qty * exec_price * 0.0004
+
+                                trade_pnl = 0.0
+                                if pos_side == "LONG":
+                                    trade_pnl = (exec_price - l_entry) * filled_qty - commission
+                                else:
+                                    trade_pnl = (s_entry - exec_price) * filled_qty - commission
+
+                                if trade_pnl > 0:
+                                    siphoning_reserve += trade_pnl
+                                    logger.info(f"💰 [SAFE] Market P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                    state.update({"siphoning_reserve": siphoning_reserve})
+                                    save_json(state_file_path, state)
+                                    await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} MARKET")
 
                 if limit_enabled and limit_stats["attempted"] > 0:
                     avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
                     logger.info(f"📊 Limit Stats: attempted={limit_stats['attempted']}, filled={limit_stats['filled']}, fallback={limit_stats['fallback']}, avg_gain={avg_improvement:+.3f}%, total_profit={limit_stats['total_profit_usdt']:+.2f} USDT")
 
+                # Пересчитываем позиции и доли после выполнения сделок
+                if paper_mode:
+                    raw_positions = paper_state.get("positions", {})
+                    positions = {k: v for k, v in raw_positions.items()}
+                    l_entry = paper_state.get("long_entry_price", price)
+                    s_entry = paper_state.get("short_entry_price", price)
+                else:
+                    raw_positions = await connector.get_positions()
+                    positions = {k: v["qty"] for k, v in raw_positions.items()}
+                    l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
+                    s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+
+                new_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
+                                                 base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
+                                                 long_entry_price=l_entry, short_entry_price=s_entry)
+
                 # Сводное уведомление после ребаланса
                 summary_msg = (
                     f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
-                    f"New Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%\n"
-                    f"TPV: <code>{calc.total_tpv:.2f} USDT</code>"
+                    f"New Shares: L:{new_calc.share_long_pct:.1f}% S:{new_calc.share_short_pct:.1f}% V:{new_calc.share_virt_pct:.1f}%\n"
+                    f"TPV: <code>{new_calc.total_tpv:.2f} USDT</code>"
                 )
                 if paper_mode:
                     summary_msg += f"\nBalance: <code>{paper_state['balance']:.2f}</code> USDT"
@@ -384,7 +469,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     bnb_balance = await connector.get_bnb_balance()
                 except: pass
                 cycles = state.get("rebalance_cycles", 0)
-                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), cycles, total_balance, bnb_balance)
+                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), cycles, siphoning_reserve, total_balance, bnb_balance)
 
         except Exception as e:
             logger.error(f"Error in cycle: {e}")

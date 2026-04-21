@@ -47,7 +47,7 @@ class TelegramNotifier:
         formatted_text = f"<b>⚠️ {title}</b>\n\n{message}"
         await self.send_message(formatted_text)
 
-    async def send_status(self, bot_name: str, tpv: float, profit: float, cycles: int, total_balance: float = None, bnb_balance: float = None):
+    async def send_status(self, bot_name: str, tpv: float, profit: float, cycles: int, safe_reserve: float, total_balance: float = None, bnb_balance: float = None):
         """Отправка регулярного статуса."""
         balance_str = f"🏦 Account: <code>{total_balance:.2f} USDT</code>\n" if total_balance is not None else ""
         bnb_str = f"🪙 BNB Fee: <code>{bnb_balance:.4f} BNB</code>\n" if bnb_balance is not None else ""
@@ -57,6 +57,7 @@ class TelegramNotifier:
             f"💰 TPV: <code>{tpv:.2f} USDT</code>\n"
             f"📈 Net Profit: <code>{profit:+.2f} USDT</code>\n"
             f"🔄 Cycles: <code>{cycles}</code>\n"
+            f"🛡️ SAFE: <code>{safe_reserve:.2f} USDT</code>\n"
             f"{balance_str}"
             f"{bnb_str}"
             f"━━━━━━━━━━━━━━━━━━"

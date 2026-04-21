@@ -1,10 +1,10 @@
 {
-  "virt_basis_price": 86.53,
-  "virt_allocated_usdt": 3500.0,
+  "virt_basis_price": 89.88,
+  "virt_allocated_usdt": 3433.4477570039817,
   "base_ticker": "CLUSDT",
   "siphoning_reserve": 0.0,
   "initial_tpv": 10000.0,
   "reference_tpv": 10000.0,
-  "tpv_ath": 10000.0,
-  "rebalance_cycles": 1
+  "tpv_ath": 10019.079732600008,
+  "rebalance_cycles": 36
 }

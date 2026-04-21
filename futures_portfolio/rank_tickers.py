@@ -77,20 +77,13 @@ class TickerScanner:
         if not age_check or len(age_check) == 0:
             return None
 
-        # 2. Получение данных за 48 часов (2880 минут) двумя чанками
-        tasks = []
-        for i in range(2):
-            end_time = now_ms - (1 - i) * 1440 * 60 * 1000
-            params = {"symbol": symbol, "interval": "1m", "limit": 1440, "endTime": end_time}
-            tasks.append(self.fetch(session, "/fapi/v1/klines", params))
-        
-        chunks = await asyncio.gather(*tasks)
-        all_data = []
-        for c in chunks:
-            if c: all_data.extend(c)
+        # 2. Получение данных за 24 часа (1440 минут) - оптимально для минутной торговли
+        params = {"symbol": symbol, "interval": "1m", "limit": 1440, "endTime": now_ms}
+        klines = await self.fetch(session, "/fapi/v1/klines", params)
 
-        if not all_data or len(all_data) < 2000: # Ожидаем ~2880
+        if not klines or len(klines) < 1200:  # Ожидаем ~1440, минимум 1200
             return None
+        all_data = klines
 
         # Обработка данных
         seen_times = set()
@@ -254,11 +247,11 @@ async def main():
     
     print("="*145)
     print(f"Scan completed in {duration:.1f} seconds.")
-    print("SCORING RULES (48h Basis):")
-    print("1. REAL CYCLES: Moves > 1.5%. Score = Cycles * 15.")
-    print("2. SPIKE TRAP: 1h spurt > 10% -> DQ.")
-    print("3. NET TRAP: 48h net move > 15% -> DQ.")
-    print("4. TREND EFF: If > 7.0%, score reduced by 80% (Too linear).")
+    print("SCORING RULES (24h Basis):")
+    print("1. REAL CYCLES: Moves > 1.5%. Score = Cycles * 50.")
+    print("2. SPIKE TRAP: 1h spurt > 7% -> DQ.")
+    print("3. NET TRAP: 24h net move > 10% -> DQ.")
+    print("4. TREND EFF: If > 3.0%, score reduced (Too linear).")
     print("5. FUNDING: Bonus for negative rates (we get paid for short).")
 
 if __name__ == "__main__":

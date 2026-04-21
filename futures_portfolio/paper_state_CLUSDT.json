@@ -1,11 +1,11 @@
 {
-  "balance": 9987.00007892,
+  "balance": 9796.825630040013,
   "positions": {
-    "CLUSDT_LONG": 167.57,
-    "CLUSDT_SHORT": 208.02
+    "CLUSDT_LONG": 136.52000000000004,
+    "CLUSDT_SHORT": 241.58000000000004
   },
-  "last_price": 86.53,
+  "last_price": 89.88,
   "base_ticker": "CLUSDT",
-  "long_entry_price": 86.53,
-  "short_entry_price": 86.53
+  "long_entry_price": 86.54585950382904,
+  "short_entry_price": 86.87630860417165
 }
