@@ -45,7 +45,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "siphoning_reserve": 0.0,
         "initial_tpv": 0.0,
         "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
-        "tpv_ath": 0.0
+        "tpv_ath": 0.0,
+        "rebalance_cycles": 0
     })
 
     # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
@@ -79,21 +80,25 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     if paper_mode:
         default_paper_state = {
-            "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0, 
+            "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
             "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
             "last_price": 0.0,
-            "base_ticker": base_ticker
+            "base_ticker": base_ticker,
+            "long_entry_price": 0.0,
+            "short_entry_price": 0.0
         }
         paper_state = load_json(paper_state_file_path, default_paper_state)
-        
+
         if paper_state.get("base_ticker") != base_ticker:
             logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
             paper_state["last_price"] = 0.0
             paper_state["base_ticker"] = base_ticker
-            
+
         if "positions" not in paper_state: paper_state["positions"] = {}
         if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
         if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
+        if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
+        if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
     else:
         paper_state = None
 
@@ -252,6 +257,19 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
 
+                # Увеличиваем счетчик циклов и сохраняем
+                cycles = state.get("rebalance_cycles", 0) + 1
+                state["rebalance_cycles"] = cycles
+                save_json(state_file_path, state)
+
+                # Отправляем уведомление о начале ребаланса
+                rebalance_msg = (
+                    f"<b>🔄 Rebalance #{cycles}</b>: <code>{base_ticker}</code>\n"
+                    f"Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%\n"
+                    f"TPV: <code>{calc.total_tpv:.2f} USDT</code>"
+                )
+                await notifier.send_message(rebalance_msg)
+
                 limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
@@ -279,10 +297,40 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             order_value = qty_rounded * price
                             commission = order_value * 0.0004
                             paper_state["balance"] -= commission
-                            paper_state["positions"][f"{base_ticker}_{pos_side}"] += (qty_rounded if side == ("BUY" if pos_side == "LONG" else "SELL") else -qty_rounded)
-                            paper_state["positions"][f"{base_ticker}_{pos_side}"] = max(0, paper_state["positions"][f"{base_ticker}_{pos_side}"])
-                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} (Fee: {commission:.4f} USDT)")
+
+                            # Расчет новой средневзвешенной цены входа
+                            pos_key = f"{base_ticker}_{pos_side}"
+                            old_qty = paper_state["positions"].get(pos_key, 0.0)
+                            entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                            old_entry = paper_state.get(entry_key, price)
+
+                            is_buy = side == ("BUY" if pos_side == "LONG" else "SELL")
+                            if is_buy:
+                                # Докупка - пересчитываем среднюю цену входа
+                                if old_qty > 0:
+                                    new_entry = (old_qty * old_entry + qty_rounded * price) / (old_qty + qty_rounded)
+                                else:
+                                    new_entry = price
+                                paper_state["positions"][pos_key] += qty_rounded
+                                paper_state[entry_key] = new_entry
+                            else:
+                                # Продажа (уменьшение позиции) - цена входа не меняется
+                                paper_state["positions"][pos_key] -= qty_rounded
+                                paper_state["positions"][pos_key] = max(0, paper_state["positions"][pos_key])
+                                if paper_state["positions"][pos_key] == 0:
+                                    paper_state[entry_key] = 0.0
+
+                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} @ {price:.6f} (Fee: {commission:.4f} USDT, Entry: {paper_state.get(entry_key, price):.6f})")
                             save_json(paper_state_file_path, paper_state)
+
+                            # Уведомление о сделке
+                            trade_msg = (
+                                f"<b>📊 {base_ticker} Trade</b>\n"
+                                f"Side: <code>{side}</code> {pos_side}\n"
+                                f"Qty: <code>{qty_rounded:.6f}</code> @ {price:.6f}\n"
+                                f"Fee: <code>{commission:.4f}</code> USDT"
+                            )
+                            await notifier.send_message(trade_msg)
                     else:
                         if limit_enabled:
                             limit_stats["attempted"] += 1
@@ -312,7 +360,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if limit_enabled and limit_stats["attempted"] > 0:
                     avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
                     logger.info(f"📊 Limit Stats: attempted={limit_stats['attempted']}, filled={limit_stats['filled']}, fallback={limit_stats['fallback']}, avg_gain={avg_improvement:+.3f}%, total_profit={limit_stats['total_profit_usdt']:+.2f} USDT")
-                
+
+                # Сводное уведомление после ребаланса
+                summary_msg = (
+                    f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
+                    f"New Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%\n"
+                    f"TPV: <code>{calc.total_tpv:.2f} USDT</code>"
+                )
+                if paper_mode:
+                    summary_msg += f"\nBalance: <code>{paper_state['balance']:.2f}</code> USDT"
+                await notifier.send_message(summary_msg)
+
                 virt_basis_price = price
                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
                 state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
@@ -325,7 +383,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     total_balance = m_info.get("total_margin_balance")
                     bnb_balance = await connector.get_bnb_balance()
                 except: pass
-                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), i, total_balance, bnb_balance)
+                cycles = state.get("rebalance_cycles", 0)
+                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), cycles, total_balance, bnb_balance)
 
         except Exception as e:
             logger.error(f"Error in cycle: {e}")
