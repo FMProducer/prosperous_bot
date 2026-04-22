@@ -24,13 +24,13 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.008,
+      "rebalance_threshold": 0.04,
       "ticker_thresholds": {
-        "1000PEPEUSDT": 0.005,
-        "AAVEUSDT": 0.008,
-        "ZECUSDT": 0.008,
-        "BZUSDT": 0.01,
-        "RIVERUSDT": 0.008
+        "1000PEPEUSDT": 0.025,
+        "AAVEUSDT": 0.04,
+        "ZECUSDT": 0.04,
+        "BZUSDT": 0.05,
+        "RIVERUSDT": 0.04
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,

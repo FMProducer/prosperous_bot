@@ -141,11 +141,17 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         curr_price = first_row['close']
 
         # Устанавливаем начальные физические позиции для дельта-нейтральности
+        long_vol = (initial_capital * targets["BASE_LONG"]["share"] * targets["BASE_LONG"]["leverage"])
+        short_vol = (initial_capital * targets["BASE_SHORT"]["share"] * targets["BASE_SHORT"]["leverage"])
+
         positions = {
-            f"{base_ticker}_LONG": (initial_capital * targets["BASE_LONG"]["share"] * targets["BASE_LONG"]["leverage"]) / curr_price,
-            f"{base_ticker}_SHORT": (initial_capital * targets["BASE_SHORT"]["share"] * targets["BASE_SHORT"]["leverage"]) / curr_price
+            f"{base_ticker}_LONG": long_vol / curr_price,
+            f"{base_ticker}_SHORT": short_vol / curr_price
         }
         entry_prices = {"LONG": curr_price, "SHORT": curr_price}
+
+        # Deduct initial setup commission
+        current_equity -= (long_vol + short_vol) * commission
 
         stats = {
             "rebalance_cycles": 0, "total_volume_usdt": 0.0, "max_tpv": initial_capital,
@@ -202,8 +208,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     
                     for action in valid_actions:
                         if action["type"] == "VIRTUAL_RESET":
-                            virt_profit = calc.virt_current_value - virt_allocated_usdt
-                            current_equity += virt_profit
                             virt_basis_price = curr_price
                             virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
                         else:
@@ -234,6 +238,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             change_qty = abs(diff_usdt) / f_price
                             action_name = "DEFICIT" if diff_usdt > 0 else "EXCESS"
 
+                            current_equity -= (abs(diff_usdt) * commission)
+
                             if (pos_side == "LONG" and side == "BUY") or (pos_side == "SHORT" and side == "SELL"):
                                 if positions[key] > 0:
                                     entry_prices[pos_side] = (positions[key] * entry_prices[pos_side] + change_qty * f_price) / (positions[key] + change_qty)
@@ -248,10 +254,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                                         trade_pnl = (f_price - old_entry) * change_qty
                                     else:
                                         trade_pnl = (old_entry - f_price) * change_qty
-                                    
-                                    # Commission for the trade
-                                    comm = abs(diff_usdt) * 0.0004
-                                    trade_pnl -= comm
                                     
                                     if trade_pnl > 0:
                                         siphoning_reserve += trade_pnl
