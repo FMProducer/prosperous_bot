@@ -8,7 +8,7 @@ import os
 import logging
 import traceback
 import argparse
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 
@@ -87,9 +87,9 @@ async def download_live_data(symbol: str, data_dir: str, days: int = 2):
     logger.info(f"Success. Saved {days}d live data ({len(df)} candles) to {file_path}")
     return file_path
 
-async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: str = None,
+async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
                         days: int = 2, commission: float = 0.0004, use_limit_orders: bool = False,
-                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False):
+                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False) -> Optional[Dict[str, Any]]:
     try:
         if quiet:
             logger.setLevel(logging.WARNING)
@@ -136,8 +136,16 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         tpv_ath = initial_capital
         prev_tpv = initial_capital
         
-        positions = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
-        entry_prices = {"LONG": 0.0, "SHORT": 0.0}
+        # Инициализация нулевой свечи
+        first_row = df.iloc[0]
+        curr_price = first_row['close']
+
+        # Устанавливаем начальные физические позиции для дельта-нейтральности
+        positions = {
+            f"{base_ticker}_LONG": (initial_capital * targets["BASE_LONG"]["share"] * targets["BASE_LONG"]["leverage"]) / curr_price,
+            f"{base_ticker}_SHORT": (initial_capital * targets["BASE_SHORT"]["share"] * targets["BASE_SHORT"]["leverage"]) / curr_price
+        }
+        entry_prices = {"LONG": curr_price, "SHORT": curr_price}
 
         stats = {
             "rebalance_cycles": 0, "total_volume_usdt": 0.0, "max_tpv": initial_capital,
@@ -149,8 +157,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         limit_simulator = LimitOrderSimulator(offset_pct=limit_offset) if limit_enabled else None
         history = []
 
-        for i in range(len(df)):
-            curr_price = df.iloc[i]['close']
+        # Переход на itertuples для скорости
+        for i, row in enumerate(df.itertuples()):
+            curr_price = row.close
             calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
                                      base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
                                      long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
@@ -206,7 +215,18 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             stats["total_volume_usdt"] += abs(diff_usdt)
 
                             if limit_simulator:
-                                _, _, f_price, exec_type = limit_simulator.simulate_limit_execution(side, abs(diff_usdt)/curr_price, curr_price, df.iloc[i]['high'], df.iloc[i]['low'])
+                                # Look-ahead bias fix: use NEXT candle high/low for limit execution simulation
+                                if i < len(df) - 1:
+                                    next_high = df['high'].values[i+1]
+                                    next_low = df['low'].values[i+1]
+                                    _, _, f_price, exec_type = limit_simulator.simulate_limit_execution(
+                                        side, abs(diff_usdt)/curr_price, curr_price,
+                                        float(next_high), float(next_low)
+                                    )
+                                else:
+                                    # Last candle: fallback to market at current close
+                                    f_price = curr_price
+                                    exec_type = "MARKET"
                             else: 
                                 f_price = curr_price
                                 exec_type = "MARKET"
@@ -244,7 +264,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                                              long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
 
             if i < len(df) - 1:
-                p_diff = df.iloc[i+1]['close'] - curr_price
+                next_close = df['close'].values[i+1]
+                p_diff = float(next_close) - curr_price
                 current_equity += (positions[f"{base_ticker}_LONG"] * p_diff) + (positions[f"{base_ticker}_SHORT"] * (-p_diff))
             history.append(calc.total_tpv)
 
