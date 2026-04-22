@@ -70,11 +70,13 @@ class PortfolioCalculator:
         }
 
         # Проверяем, превышен ли порог хотя бы одной ногой
-        any_exceeded: bool = False
-        for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-            if not math.isclose(shares[key], targets[key]["share"], abs_tol=threshold):
-                any_exceeded = True
-                break
+        any_exceeded: bool = threshold < 0.0
+
+        if not any_exceeded:
+            for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
+                if not math.isclose(shares[key], targets[key]["share"], abs_tol=threshold):
+                    any_exceeded = True
+                    break
 
         if not any_exceeded:
             return []
