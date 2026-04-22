@@ -168,7 +168,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             curr_price = row.close
             calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
                                      base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                     long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
+                                     long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"],
+                                     initial_capital=initial_capital)
 
             if calc.total_tpv > tpv_ath: tpv_ath = calc.total_tpv
             
@@ -255,15 +256,17 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                                     else:
                                         trade_pnl = (old_entry - f_price) * change_qty
                                     
-                                    if trade_pnl > 0:
-                                        siphoning_reserve += trade_pnl
-                                        current_equity -= trade_pnl
+                                    if trade_pnl > 0 and calc.total_tpv > initial_capital:
+                                        siphon_amount = min(trade_pnl, calc.total_tpv - initial_capital)
+                                        siphoning_reserve += siphon_amount
+                                        current_equity -= siphon_amount
 
                                 positions[key] = max(0, positions[key] - change_qty)
 
                     calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
                                              base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                             long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"])
+                                             long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"],
+                                             initial_capital=initial_capital)
 
             if i < len(df) - 1:
                 next_close = df['close'].values[i+1]
@@ -274,13 +277,14 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         # Final Report
         asset_start, asset_end = df.iloc[0]['close'], df.iloc[-1]['close']
         asset_chg = ((asset_end / asset_start) - 1) * 100
-        strat_chg = ((calc.total_tpv / initial_capital) - 1) * 100
+        total_final_value = calc.total_tpv
+        strat_chg = ((total_final_value / initial_capital) - 1) * 100
 
         if not quiet:
             logger.info("\n" + "="*70 + "\n                 LEG-SPECIFIC NEUTRAL ANALYTICS\n" + "="*70)
             logger.info(f"Asset Perf: {base_ticker} {asset_chg:+.2f}% | Strategy: {strat_chg:+.2f}%")
             logger.info(f"Alpha:      {strat_chg - asset_chg:+.2f}% vs HODL")
-            logger.info(f"Final TPV:  {calc.total_tpv:.2f} (SAFE: {siphoning_reserve:.2f})")
+            logger.info(f"Final Total TPV: {total_final_value:.2f} (Active: {calc.tpv:.2f}, SAFE: {siphoning_reserve:.2f})")
             logger.info(f"Max DD:     {stats['max_drawdown_pct']*100:.2f}% | Rebalances: {stats['rebalance_cycles']}")
             if limit_simulator:
                 l_stats = limit_simulator.get_summary()

@@ -9,11 +9,12 @@ class PortfolioCalculator:
                  virt_basis_price: float, virt_allocated_usdt: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
-                 targets: Dict[str, Dict] = None):
+                 targets: Dict[str, Dict] = None, initial_capital: float = 10000.0):
         self.positions = positions
         self.price = spot_price
         self.base_ticker = base_ticker
         self.siphoning_reserve = siphoning_reserve
+        self.initial_capital = initial_capital
         
         # Виртуальная доля
         if virt_basis_price <= 0: virt_basis_price = spot_price
@@ -21,10 +22,13 @@ class PortfolioCalculator:
         self.virt_current_value = virt_allocated_usdt * price_change
         
         # Общий TPV (включая накопленный резерв)
-        self.total_tpv = real_equity + (self.virt_current_value - virt_allocated_usdt)
+        self.total_tpv = real_equity + (self.virt_current_value - virt_allocated_usdt) + self.siphoning_reserve
         
-        # Активный TPV для расчетов (без резерва)
-        self.tpv = self.total_tpv - self.siphoning_reserve
+        # Активный TPV для расчетов: если мы в просадке, используем SAFE для маржи
+        if self.total_tpv < self.initial_capital:
+            self.tpv = self.total_tpv # Recovery mode: используем всё
+        else:
+            self.tpv = self.total_tpv - self.siphoning_reserve
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
@@ -58,7 +62,7 @@ class PortfolioCalculator:
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """
-        Ребалансировка только тех ног портфеля, которые превысили порог отклонения.
+        Ребалансировка портфеля. Если хоть одна нога превысила порог, пересчитываем всё.
         """
         actions = []
         shares = {
@@ -67,15 +71,21 @@ class PortfolioCalculator:
             "VIRTUAL": self.share_virt_pct / 100
         }
 
-        # Ребалансируем только ноги, превысившие порог
+        # Проверяем, превышен ли порог хотя бы одной ногой
+        any_exceeded = False
+        for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
+            if abs(shares[key] - targets[key]["share"]) > threshold:
+                any_exceeded = True
+                break
+
+        if not any_exceeded:
+            return []
+
+        # Ребалансируем ВСЕ ноги
         for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
             target_share = targets[key]["share"]
             current_share = shares[key]
             diff_share = current_share - target_share # Положительно при ИЗБЫТКЕ
-
-            # Пропускаем, если отклонение не превышает порог
-            if abs(diff_share) <= threshold:
-                continue
 
             if key == "VIRTUAL":
                 actions.append({

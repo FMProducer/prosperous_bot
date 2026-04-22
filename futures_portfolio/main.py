@@ -154,7 +154,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 l_entry = paper_state.get("long_entry_price", price)
                 s_entry = paper_state.get("short_entry_price", price)
             else:
-                real_equity = await connector.get_free_balance()
+                # В реальном режиме считаем активным капиталом всё, что за вычетом сейфа
+                total_free = await connector.get_free_balance()
+                real_equity = total_free - siphoning_reserve
                 raw_positions = await connector.get_positions()
                 # Извлекаем только QTY для калькулятора, цены входа передаем отдельно
                 positions = {k: v["qty"] for k, v in raw_positions.items()}
@@ -172,7 +174,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if initial_tpv == 0:
                     temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                  base_ticker=base_ticker, siphoning_reserve=0.0, targets=targets,
-                                                 long_entry_price=l_entry, short_entry_price=s_entry)
+                                                 long_entry_price=l_entry, short_entry_price=s_entry,
+                                                 initial_capital=real_equity)
                     initial_tpv = temp_calc.tpv
                     reference_tpv = initial_tpv
                     logger.info(f"Initialized TPV base: {initial_tpv:.2f}")
@@ -186,7 +189,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
             calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                                      base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                     long_entry_price=l_entry, short_entry_price=s_entry)
+                                     long_entry_price=l_entry, short_entry_price=s_entry,
+                                     initial_capital=initial_tpv)
             
             if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
@@ -277,6 +281,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_enabled, limit_offset, limit_timeout = PortfolioExecutor(connector).get_limit_order_params(portfolio_cfg)
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
+                # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
+                excess_to_siphon = max(0, calc.tpv - initial_tpv)
+
                 for action in valid_actions:
                     trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия
                     
@@ -332,9 +339,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     # Short: прибыль = (цена_входа - цена_покупки) * количество
                                     trade_pnl = (old_entry - price) * qty_rounded - commission
 
-                                if trade_pnl > 0:
-                                    siphoning_reserve += trade_pnl
-                                    logger.info(f"💰 [SAFE] P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                if trade_pnl > 0 and excess_to_siphon > 0:
+                                    siphon_amount = min(trade_pnl, excess_to_siphon)
+                                    siphoning_reserve += siphon_amount
+                                    excess_to_siphon -= siphon_amount
+                                    paper_state["balance"] -= siphon_amount
+                                    logger.info(f"💰 [SAFE] P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
                                     state.update({"siphoning_reserve": siphoning_reserve})
                                     save_json(state_file_path, state)
 
@@ -380,12 +390,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     else:
                                         trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
-                                    if trade_pnl > 0:
-                                        siphoning_reserve += trade_pnl
-                                        logger.info(f"💰 [SAFE] Real P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                    if trade_pnl > 0 and excess_to_siphon > 0:
+                                        siphon_amount = min(trade_pnl, excess_to_siphon)
+                                        siphoning_reserve += siphon_amount
+                                        excess_to_siphon -= siphon_amount
+                                        logger.info(f"💰 [SAFE] Real P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
                                         state.update({"siphoning_reserve": siphoning_reserve})
                                         save_json(state_file_path, state)
-                                        await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} {side}")
+                                        await notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}")
 
                             elif result["status"] == "SUCCESS_FALLBACK":
                                 limit_stats["fallback"] += 1
@@ -406,12 +418,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         else:
                                             trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
-                                        if trade_pnl > 0:
-                                            siphoning_reserve += trade_pnl
-                                            logger.info(f"💰 [SAFE] Fallback P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                        if trade_pnl > 0 and excess_to_siphon > 0:
+                                            siphon_amount = min(trade_pnl, excess_to_siphon)
+                                            siphoning_reserve += siphon_amount
+                                            excess_to_siphon -= siphon_amount
+                                            logger.info(f"💰 [SAFE] Fallback P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
                                             state.update({"siphoning_reserve": siphoning_reserve})
                                             save_json(state_file_path, state)
-                                            await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} {side}")
+                                            await notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}")
                                 else:
                                     logger.info(f"⚡ Fallback (market only): timeout")
                             elif result["status"] in ("ERROR_FALLBACK", "ERROR"):
@@ -432,12 +446,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 else:
                                     trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
-                                if trade_pnl > 0:
-                                    siphoning_reserve += trade_pnl
-                                    logger.info(f"💰 [SAFE] Market P&L siphoned: +{trade_pnl:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
+                                if trade_pnl > 0 and excess_to_siphon > 0:
+                                    siphon_amount = min(trade_pnl, excess_to_siphon)
+                                    siphoning_reserve += siphon_amount
+                                    excess_to_siphon -= siphon_amount
+                                    logger.info(f"💰 [SAFE] Market P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
                                     state.update({"siphoning_reserve": siphoning_reserve})
                                     save_json(state_file_path, state)
-                                    await notifier.send_message(f"💰 <b>SAFE</b>: +{trade_pnl:.4f} USDT from {pos_side} MARKET")
+                                    await notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} MARKET")
 
                 if limit_enabled and limit_stats["attempted"] > 0:
                     avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
@@ -457,7 +473,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 new_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                  base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                                 long_entry_price=l_entry, short_entry_price=s_entry)
+                                                 long_entry_price=l_entry, short_entry_price=s_entry,
+                                                 initial_capital=initial_tpv)
 
                 # Сводное уведомление после ребаланса
                 summary_msg = (
