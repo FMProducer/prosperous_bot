@@ -36,19 +36,27 @@ def test_calculate_deviations(sample_params, targets):
     calc = PortfolioCalculator(**sample_params)
     threshold = 0.05
     actions = calc.calculate_deviations(targets, threshold)
-    assert len(actions) == 2
-    assert actions[0]["symbol"] == "BTCUSDT_LONG"
-    assert actions[0]["diff_usdt"] == pytest.approx(-10000.0)
-    assert actions[1]["symbol"] == "BTCUSDT_SHORT"
-    assert actions[1]["diff_usdt"] == pytest.approx(20000.0)
+    # Now it should return all 3 legs if any exceeded
+    assert len(actions) == 3
+    assert any(a["symbol"] == "BTCUSDT_LONG" for a in actions)
+    assert any(a["symbol"] == "BTCUSDT_SHORT" for a in actions)
+    assert any(a["symbol"] == "VIRTUAL" for a in actions)
+
+    long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
+    assert long_action["diff_usdt"] == pytest.approx(-10000.0)
+    short_action = next(a for a in actions if a["symbol"] == "BTCUSDT_SHORT")
+    assert short_action["diff_usdt"] == pytest.approx(20000.0)
 
 def test_siphoning_reserve_impact(sample_params):
     params = sample_params.copy()
     params["siphoning_reserve"] = 1000.0
+    # initial_capital is 10000 by default. real_equity is 10000.
+    # total_tpv = 10000 (equity) + 0 (virt_pnl) + 1000 (safe) = 11000.
+    # Not in recovery mode. tpv = 11000 - 1000 = 10000.
     calc = PortfolioCalculator(**params)
-    assert calc.total_tpv == 10000.0
-    assert calc.tpv == 9000.0
-    assert calc.share_long_pct == 66.7
+    assert calc.total_tpv == 11000.0
+    assert calc.tpv == 10000.0
+    assert calc.share_long_pct == 60.0
 
 def test_price_change_impact(sample_params):
     params = sample_params.copy()
