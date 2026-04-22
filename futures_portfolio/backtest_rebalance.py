@@ -257,7 +257,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                                         trade_pnl = (old_entry - f_price) * change_qty
                                     
                                     if trade_pnl > 0 and calc.total_tpv > initial_capital:
-                                        siphon_amount = min(trade_pnl, calc.total_tpv - initial_capital)
+                                        siphon_amount: float = min(trade_pnl, calc.total_tpv - initial_capital)
                                         siphoning_reserve += siphon_amount
                                         current_equity -= siphon_amount
 
@@ -276,9 +276,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
         # Final Report
         asset_start, asset_end = df.iloc[0]['close'], df.iloc[-1]['close']
-        asset_chg = ((asset_end / asset_start) - 1) * 100
-        total_final_value = calc.total_tpv
-        strat_chg = ((total_final_value / initial_capital) - 1) * 100
+        asset_chg: float = ((asset_end / asset_start) - 1) * 100
+        total_final_value: float = calc.total_tpv
+        strat_chg: float = ((total_final_value / initial_capital) - 1) * 100
 
         if not quiet:
             logger.info("\n" + "="*70 + "\n                 LEG-SPECIFIC NEUTRAL ANALYTICS\n" + "="*70)

@@ -250,7 +250,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
                 current_threshold *= 2.0
 
-            actions = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
+            actions: List[Dict] = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
             if actions:
                 # Внедряем Notional Value Guard для физических ордеров
                 min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
@@ -282,7 +282,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
-                excess_to_siphon = max(0, calc.tpv - initial_tpv)
+                excess_to_siphon: float = max(0, calc.total_tpv - initial_tpv)
 
                 for action in valid_actions:
                     trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия
@@ -340,7 +340,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     trade_pnl = (old_entry - price) * qty_rounded - commission
 
                                 if trade_pnl > 0 and excess_to_siphon > 0:
-                                    siphon_amount = min(trade_pnl, excess_to_siphon)
+                                    siphon_amount: float = min(trade_pnl, excess_to_siphon)
                                     siphoning_reserve += siphon_amount
                                     excess_to_siphon -= siphon_amount
                                     paper_state["balance"] -= siphon_amount
@@ -391,7 +391,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
                                     if trade_pnl > 0 and excess_to_siphon > 0:
-                                        siphon_amount = min(trade_pnl, excess_to_siphon)
+                                        siphon_amount: float = min(trade_pnl, excess_to_siphon)
                                         siphoning_reserve += siphon_amount
                                         excess_to_siphon -= siphon_amount
                                         logger.info(f"💰 [SAFE] Real P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
@@ -419,7 +419,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                             trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
                                         if trade_pnl > 0 and excess_to_siphon > 0:
-                                            siphon_amount = min(trade_pnl, excess_to_siphon)
+                                            siphon_amount: float = min(trade_pnl, excess_to_siphon)
                                             siphoning_reserve += siphon_amount
                                             excess_to_siphon -= siphon_amount
                                             logger.info(f"💰 [SAFE] Fallback P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
@@ -447,7 +447,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     trade_pnl = (s_entry - exec_price) * filled_qty - commission
 
                                 if trade_pnl > 0 and excess_to_siphon > 0:
-                                    siphon_amount = min(trade_pnl, excess_to_siphon)
+                                    siphon_amount: float = min(trade_pnl, excess_to_siphon)
                                     siphoning_reserve += siphon_amount
                                     excess_to_siphon -= siphon_amount
                                     logger.info(f"💰 [SAFE] Market P&L siphoned: +{siphon_amount:.4f} USDT (Total reserve: {siphoning_reserve:.2f})")
