@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import time
 from rank_tickers import main as run_scanner
 from backtest_rebalance import run_backtest
@@ -23,19 +22,37 @@ logger = logging.getLogger("Supervisor")
 CONFIG_PATH = "config.json"
 DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
 
+async def safe_load_json(path: str, default: dict, retries: int = 5) -> dict:
+    for i in range(retries):
+        try:
+            if not os.path.exists(path): return default
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (PermissionError, json.JSONDecodeError):
+            if i == retries - 1: return default
+            await asyncio.sleep(0.5)
+    return default
+
+async def safe_save_json(path: str, data: dict, retries: int = 5):
+    for i in range(retries):
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            if os.path.exists(path): os.remove(path)
+            os.rename(tmp, path)
+            return
+        except PermissionError:
+            if i == retries - 1: break
+            await asyncio.sleep(0.5)
+
 async def manage_swarm():
     logger.info("--- Starting Supervisor Cycle ---")
     
     # 1. Загрузка текущего конфига
-    if not os.path.exists(CONFIG_PATH):
-        logger.error(f"Config {CONFIG_PATH} not found!")
-        return
-    
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to parse config.json: {e}")
+    config = await safe_load_json(CONFIG_PATH, {})
+    if not config:
+        logger.error(f"Config {CONFIG_PATH} not found or empty!")
         return
     
     current_tickers = config.get("tickers", [])
@@ -63,8 +80,8 @@ async def manage_swarm():
         stagnated = False
         if os.path.exists(state_path):
             try:
-                with open(state_path, "r") as f:
-                    state = json.load(f)
+                state = await safe_load_json(state_path, {})
+                if not state: raise Exception("Empty state")
                 
                 last_cycles = state.get("rebalance_cycles", 0)
                 last_check_cycles = state.get("supervisor_last_cycles", 0)
@@ -80,8 +97,7 @@ async def manage_swarm():
                 # Обновляем метки для следующей проверки
                 state["supervisor_last_cycles"] = last_cycles
                 state["supervisor_last_check_time"] = now
-                with open(state_path, "w") as f:
-                    json.dump(state, f, indent=2)
+                await safe_save_json(state_path, state)
             except: pass
 
         # Критерии удержания:
@@ -133,16 +149,18 @@ async def manage_swarm():
         if "AAVEUSDT" in new_ticker_list: config["base_ticker"] = "AAVEUSDT"
         else: config["base_ticker"] = new_ticker_list[0]
         
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        await safe_save_json(CONFIG_PATH, config)
             
         # 6. Перезапуск
         logger.info("Step 4: PM2 Sync (Targeted delete)...")
         try:
             # Удаляем только торговых ботов, не трогаем supervisor-service
-            subprocess.run(["pm2", "delete", "/bot-.*/"], check=True, shell=True)
-            subprocess.run(["pm2", "start", "ecosystem.config.js"], check=True, shell=True)
-            subprocess.run(["pm2", "save"], check=True, shell=True)
+            p1 = await asyncio.create_subprocess_shell("pm2 delete /bot-.*/")
+            await p1.wait()
+            p2 = await asyncio.create_subprocess_shell("pm2 start ecosystem.config.js")
+            await p2.wait()
+            p3 = await asyncio.create_subprocess_shell("pm2 save")
+            await p3.wait()
             logger.info("🚀 Swarm updated and saved.")
         except Exception as e:
             logger.error(f"PM2 Error: {e}")
