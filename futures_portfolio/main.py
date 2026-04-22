@@ -13,15 +13,17 @@ from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 from notifier import TelegramNotifier
 
-def load_json(path, default):
+def load_json(path: str, default: dict) -> dict:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     return default
 
-def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+def save_json(path: str, data: dict) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
     config = load_json(config_path, {})
