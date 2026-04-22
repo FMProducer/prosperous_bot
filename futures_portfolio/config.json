@@ -24,13 +24,13 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.04,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
-        "1000PEPEUSDT": 0.025,
-        "AAVEUSDT": 0.04,
-        "ZECUSDT": 0.04,
-        "BZUSDT": 0.05,
-        "RIVERUSDT": 0.04
+        "1000PEPEUSDT": 0.02,
+        "HYPEUSDT": 0.02,
+        "ZECUSDT": 0.02,
+        "BZUSDT": 0.02,
+        "CLUSDT": 0.02
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -41,8 +41,10 @@
     }
   ],
   "tickers": [
-    "ETHUSDT",
-    "LINKUSDT",
+    "ZECUSDT",
+    "HYPEUSDT",
+    "BZUSDT",
+    "CLUSDT",
     "1000PEPEUSDT"
   ],
   "base_ticker": "ETHUSDT"
