@@ -208,7 +208,7 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=200_000_000):
+async def main(quiet=False, min_volume=100_000_000):
     scanner = TickerScanner(concurrent_requests=15)
     start_time = time.time()
     top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
