@@ -36,16 +36,16 @@
     }
   ],
   "tickers": [
-    "ZECUSDT",
+    "DOGEUSDT",
     "HYPEUSDT",
-    "BZUSDT",
-    "CLUSDT",
+    "PENGUUSDT",
+    "TAOUSDT",
     "MOVRUSDT",
     "CHIPUSDT",
-    "SPKUSDT",
     "RAVEUSDT",
+    "SPKUSDT",
     "UBUSDT", 
     "1000PEPEUSDT"
   ],
-  "base_ticker": "ZECUSDT"
+  "base_ticker": "DOGEUSDT"
 }
