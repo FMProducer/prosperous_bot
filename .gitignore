@@ -223,3 +223,6 @@ futures_portfolio/CLAUDE.md
 futures_portfolio/.claude/settings.local.json
 futures_portfolio/scan_cache.json
 .claude/settings.local.json
+futures_portfolio/paper_state_*.json
+futures_portfolio/state_*.json
+futures_portfolio/log.*

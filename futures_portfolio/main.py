@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Dict, List
 from dotenv import load_dotenv
 
@@ -24,15 +25,21 @@ async def load_json(path: str, default: dict) -> dict:
         return default
     return await asyncio.to_thread(_read)
 
-async def save_json(path: str, data: dict) -> None:
+async def save_json(path: str, data: dict, retries: int = 5) -> None:
     def _write():
-        tmp_path = path + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        try:
-            os.replace(tmp_path, path)
-        except PermissionError:
-            pass # Windows lock contention, skip save this tick
+        for i in range(retries):
+            try:
+                tmp_path = path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                if os.path.exists(path):
+                    os.remove(path)
+                os.rename(tmp_path, path)
+                return
+            except PermissionError:
+                if i == retries - 1:
+                    break
+                time.sleep(0.5)
     await asyncio.to_thread(_write)
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
@@ -222,7 +229,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         else:
                             await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
                     if paper_mode: await save_json(paper_state_file_path, paper_state)
-                    logger.info("Positions closed. Bot stopped.")
+                    
+                    # Сбрасываем ATH и начальные значения, чтобы при перезапуске бот не попал в цикл стоп-лоссов
+                    state["tpv_ath"] = 0.0
+                    state["initial_tpv"] = 0.0
+                    state["reference_tpv"] = 0.0
+                    state["virt_basis_price"] = 0.0
+                    await save_json(state_file_path, state)
+                    
+                    logger.info("Positions closed and state reset. Bot stopped.")
                     break
 
             if not paper_mode and (margin_warning > 0 or margin_critical > 0):

@@ -6,7 +6,7 @@
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.0,
-  "max_bots": 5,
+  "max_bots": 10,
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
@@ -24,13 +24,8 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.02,
+      "rebalance_threshold": 0.01,
       "ticker_thresholds": {
-        "1000PEPEUSDT": 0.02,
-        "HYPEUSDT": 0.02,
-        "ZECUSDT": 0.02,
-        "BZUSDT": 0.02,
-        "CLUSDT": 0.02
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -45,7 +40,12 @@
     "HYPEUSDT",
     "BZUSDT",
     "CLUSDT",
+    "MOVRUSDT",
+    "CHIPUSDT",
+    "SPKUSDT",
+    "RAVEUSDT",
+    "UBUSDT", 
     "1000PEPEUSDT"
   ],
-  "base_ticker": "ETHUSDT"
+  "base_ticker": "ZECUSDT"
 }
