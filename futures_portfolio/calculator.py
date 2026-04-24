@@ -24,11 +24,17 @@ class PortfolioCalculator:
         # Общий TPV (включая накопленный резерв)
         self.total_tpv: float = real_equity + (self.virt_current_value - virt_allocated_usdt) + self.siphoning_reserve
         
-        # Активный TPV для расчетов: если мы в просадке, используем SAFE для маржи
-        if self.total_tpv < self.initial_capital:
-            self.tpv: float = self.total_tpv # Recovery mode: используем всё
+        # Логика TPV Cap (Siphoning) + Recovery Mode
+        # ПРАВИЛО: Активный TPV не может превышать initial_capital.
+        # Если total_tpv > initial_capital, излишек уходит в reserve.
+        # Если total_tpv < initial_capital, reserve используется для поддержания маржи (Recovery Mode).
+
+        if self.total_tpv > self.initial_capital:
+            self.tpv = self.initial_capital
+            self.siphoning_reserve = self.total_tpv - self.initial_capital
         else:
-            self.tpv: float = self.total_tpv - self.siphoning_reserve
+            self.tpv = self.total_tpv
+            self.siphoning_reserve = 0.0 # Все ушло на поддержку маржи
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
@@ -69,12 +75,12 @@ class PortfolioCalculator:
             "VIRTUAL": self.share_virt_pct / 100
         }
 
-        # Проверяем, превышен ли порог хотя бы одной ногой
+        # Проверяем порог. Если threshold < 0 (force), сразу any_exceeded = True
         any_exceeded: bool = threshold < 0.0
 
         if not any_exceeded:
             for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-                if not math.isclose(shares[key], targets[key]["share"], abs_tol=threshold):
+                if not math.isclose(shares[key], targets[key]["share"], abs_tol=max(0.0, threshold)):
                     any_exceeded = True
                     break
 

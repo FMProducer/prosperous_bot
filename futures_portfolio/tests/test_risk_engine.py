@@ -20,7 +20,7 @@ class TestRiskEngine(unittest.TestCase):
         self.assertEqual(calc.tpv, 9000.0)
 
     def test_tpv_calculation_with_profit(self):
-        """Проверка: если мы в профите, SAFE должен быть исключен из TPV"""
+        """Проверка: если мы в профите, SAFE должен быть исключен из TPV, но TPV Cap ограничит его до initial_capital"""
         calc = PortfolioCalculator(
             positions={"ZECUSDT_LONG": 100, "ZECUSDT_SHORT": -100},
             spot_price=40.0,
@@ -30,8 +30,11 @@ class TestRiskEngine(unittest.TestCase):
             siphoning_reserve=2000.0,
             initial_capital=self.initial
         )
-        # Ожидаем, что tpv = 11000 (без учета 2000 резерва)
-        self.assertEqual(calc.tpv, 11000.0)
+        # total_tpv = 11000 + (3500 - 3500) + 2000 = 13000
+        # raw_active_tpv = 13000 - 2000 = 11000
+        # 11000 > 10000 -> tpv = 10000, reserve = 2000 + 1000 = 3000
+        self.assertEqual(calc.tpv, 10000.0)
+        self.assertEqual(calc.siphoning_reserve, 3000.0)
 
 if __name__ == '__main__':
     unittest.main()

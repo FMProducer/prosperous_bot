@@ -44,15 +44,22 @@ async def save_json(path: str, data: dict, retries: int = 5) -> None:
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
     config = await load_json(config_path, {})
-    paper_mode = config.get("paper_mode", False)
+
+    # Приоритет тикера: override > config > default
+    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+
+    # Swarm Rotation: определяем режим на основе live_swarm
+    live_swarm = config.get("live_swarm", [])
+    if live_swarm:
+        paper_mode = base_ticker not in live_swarm
+        logger.info(f"Swarm Mode: {'LIVE' if not paper_mode else 'PAPER'} (Live list: {live_swarm})")
+    else:
+        paper_mode = config.get("paper_mode", False)
     
     portfolio_cfg = config["portfolios"][0]
     targets = portfolio_cfg["targets"]
     global_threshold = portfolio_cfg["rebalance_threshold"]
     check_interval = portfolio_cfg["check_interval_sec"]
-    
-    # Приоритет тикера: override > config > default
-    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     
     # Ticker-specific threshold override
     ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
@@ -107,6 +114,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     if paper_mode:
         default_paper_state = {
             "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
+            "total_profit": 0.0,
             "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
             "last_price": 0.0,
             "base_ticker": base_ticker,
@@ -114,6 +122,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             "short_entry_price": 0.0
         }
         paper_state = await load_json(paper_state_file_path, default_paper_state)
+
+        if "total_profit" not in paper_state: paper_state["total_profit"] = 0.0
 
         if paper_state.get("base_ticker") != base_ticker:
             logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
@@ -160,7 +170,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 price_diff = price - paper_state["last_price"]
                 long_pnl = paper_state["positions"].get(f"{base_ticker}_LONG", 0.0) * price_diff
                 short_pnl = paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0) * (-price_diff)
-                paper_state["balance"] += (long_pnl + short_pnl)
+                pnl = long_pnl + short_pnl
+                paper_state["balance"] += pnl
+                paper_state["total_profit"] += pnl
             
             if paper_mode:
                 paper_state["last_price"] = price
@@ -209,6 +221,23 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                      long_entry_price=l_entry, short_entry_price=s_entry,
                                      initial_capital=initial_tpv)
             
+            # Синхронизируем резерв, если PortfolioCalculator изменил его (TPV Cap или Recovery Mode)
+            if not math.isclose(calc.siphoning_reserve, siphoning_reserve, abs_tol=1e-6):
+                siphon_diff = calc.siphoning_reserve - siphoning_reserve
+                siphoning_reserve = calc.siphoning_reserve
+                state["siphoning_reserve"] = siphoning_reserve
+                await save_json(state_file_path, state)
+
+                if paper_mode:
+                    # Корректируем баланс в paper mode: если резерв вырос, вычитаем из баланса, и наоборот
+                    paper_state["balance"] -= siphon_diff
+                    await save_json(paper_state_file_path, paper_state)
+
+                if siphon_diff > 0:
+                    logger.info(f"💰 [SAFE] TPV Cap siphoned: +{siphon_diff:.4f} (Total: {siphoning_reserve:.2f})")
+                else:
+                    logger.info(f"🛡️ [RECOVERY] Reserve injected: {abs(siphon_diff):.4f} (Total: {siphoning_reserve:.2f})")
+
             if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                 tpv_ath = calc.total_tpv
                 state["tpv_ath"] = tpv_ath
@@ -335,6 +364,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             order_value = qty_rounded * price
                             commission = order_value * 0.0004
                             paper_state["balance"] -= commission
+                            paper_state["total_profit"] -= commission
                             
                             trade_pnl = 0.0 # Инициализация для логгера
                             
