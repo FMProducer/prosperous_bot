@@ -60,6 +60,8 @@ class PortfolioCalculator:
         val_virt: float = self.virt_current_value
 
         # Сохраняем для логирования
+        self.long_entry_price = long_entry_price
+        self.short_entry_price = short_entry_price
         self.share_long_pct: float = round(val_long / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_short_pct: float = round(val_short / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_virt_pct: float = round(val_virt / self.tpv * 100, 1) if self.tpv > 0 else 0.0

@@ -21,7 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Supervisor")
 
-CONFIG_PATH = "config.json"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(CURRENT_DIR, "config.json")
 DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
 
 async def safe_load_json(path: str, default: dict, retries: int = 5) -> dict:
@@ -205,7 +206,8 @@ async def manage_swarm():
             # 2. Запускаем новых и перезапускаем сменивших режим
             for t in (to_start | to_restart):
                 short_name = t.replace('USDT', '').lower()
-                cmd = f"pm2 start main.py --name bot-{short_name} --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
+                # Добавляем --cwd и --update-env для стабильности в Windows
+                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
                 proc = await asyncio.create_subprocess_shell(cmd)
                 await proc.wait()
                 logger.info(f"Starting bot-{short_name}")
