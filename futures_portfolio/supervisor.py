@@ -207,7 +207,8 @@ async def manage_swarm():
             for t in (to_start | to_restart):
                 short_name = t.replace('USDT', '').lower()
                 # Добавляем --cwd и --update-env для стабильности в Windows
-                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
+                # Используем sys.executable для обеспечения того же интерпретатора
+                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter {sys.executable} -- --config {CONFIG_PATH} --ticker {t}"
                 proc = await asyncio.create_subprocess_shell(cmd)
                 await proc.wait()
                 logger.info(f"Starting bot-{short_name}")

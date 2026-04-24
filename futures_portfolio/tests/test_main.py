@@ -87,7 +87,7 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
             with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
                 with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                     try:
-                        await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
+                        await rebalance_loop(mock_connector, MagicMock(), "config.json", "state.json", "paper_state.json", MagicMock())
                     except Exception as e:
                         if str(e) != "StopLoop": raise e
     # Note: siphoning might not trigger if no profitable sell occurs in this setup.
@@ -129,7 +129,7 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                 with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
                     try:
-                        await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
+                            await rebalance_loop(mock_connector, MagicMock(), "config.json", "state.json", "paper_state.json", MagicMock())
                     except Exception as e:
                         if str(e) != "StopLoop": raise e
     last_paper_state = next(s[1] for s in reversed(saves) if "positions" in s[1])
@@ -153,7 +153,7 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
             with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
                 with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                     try:
-                        await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
+                        await rebalance_loop(mock_connector, MagicMock(), "c.json", "s.json", "p.json", MagicMock())
                     except Exception as e:
                         if str(e) != "StopLoop": raise e
     mock_notifier.send_message.assert_any_call("⚠️ <b>WARNING</b>: Low margin ratio: 3.00 (BTCUSDT)")
@@ -175,7 +175,7 @@ async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_
             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                 with patch("asyncio.sleep", side_effect=Exception("StopLoop")):
                     try:
-                        await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
+                        await rebalance_loop(mock_connector, MagicMock(), "c.json", "s.json", "p.json", MagicMock())
                     except Exception as e:
                         if str(e) != "StopLoop": raise e
     mock_notifier.send_alert.assert_called_with("CRITICAL MARGIN", "Margin ratio 1.50 < 2.00. Emergency stop!")
