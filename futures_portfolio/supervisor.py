@@ -205,7 +205,8 @@ async def manage_swarm():
             # 2. Запускаем новых и перезапускаем сменивших режим
             for t in (to_start | to_restart):
                 short_name = t.replace('USDT', '').lower()
-                cmd = f"pm2 start main.py --name bot-{short_name} --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
+                # Используем --update-env для проброса текущих переменных окружения
+                cmd = f"pm2 start main.py --name bot-{short_name} --update-env --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
                 proc = await asyncio.create_subprocess_shell(cmd)
                 await proc.wait()
                 logger.info(f"Starting bot-{short_name}")

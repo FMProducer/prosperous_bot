@@ -184,9 +184,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 l_entry = paper_state.get("long_entry_price", price)
                 s_entry = paper_state.get("short_entry_price", price)
             else:
-                # В реальном режиме считаем активным капиталом всё, что за вычетом сейфа
-                total_free = await connector.get_free_balance()
-                real_equity = total_free - siphoning_reserve
+                # В реальном режиме считаем активным капиталом Margin Balance (Wallet + PnL)
+                margin_info = await connector.get_margin_ratio()
+                total_margin_balance = margin_info.get("total_margin_balance", 0.0)
+                real_equity = total_margin_balance - siphoning_reserve
                 raw_positions = await connector.get_positions()
                 # Извлекаем только QTY для калькулятора, цены входа передаем отдельно
                 positions = {k: v["qty"] for k, v in raw_positions.items()}
@@ -375,7 +376,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             pos_key = f"{base_ticker}_{pos_side}"
                             old_qty = paper_state["positions"].get(pos_key, 0.0)
                             entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                            old_entry = paper_state.get(entry_key, price)
+                            # Fix zero entry price bug: use current price if old_entry is 0
+                            old_entry = paper_state.get(entry_key, 0.0)
+                            if old_entry <= 0:
+                                old_entry = price
 
                             is_buy = side == ("BUY" if pos_side == "LONG" else "SELL")
                             if is_buy:
@@ -411,7 +415,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if paper_state["positions"][pos_key] == 0:
                                     paper_state[entry_key] = 0.0
 
-                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} @ {price:.6f} (Fee: {commission:.4f} USDT, Entry: {old_entry:.6f}, PnL: {trade_pnl:+.4f})")
+                            # Берем актуальный entry из обновленного стейта для лога
+                            current_entry = paper_state.get(entry_key, 0.0)
+                            logger.info(f"[PAPER] Order: {side} {qty_rounded:.6f} {key} @ {price:.6f} (Fee: {commission:.4f} USDT, Entry: {current_entry:.6f}, PnL: {trade_pnl:+.4f})")
                             await save_json(paper_state_file_path, paper_state)
 
                             # Уведомление о сделке
@@ -523,11 +529,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     positions = {k: v for k, v in raw_positions.items()}
                     l_entry = paper_state.get("long_entry_price", price)
                     s_entry = paper_state.get("short_entry_price", price)
+                    real_equity = paper_state["balance"]
                 else:
                     raw_positions = await connector.get_positions()
                     positions = {k: v["qty"] for k, v in raw_positions.items()}
                     l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
                     s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+                    # Обновляем real_equity для реального режима (Margin Balance)
+                    margin_info = await connector.get_margin_ratio()
+                    total_margin_balance = margin_info.get("total_margin_balance", 0.0)
+                    real_equity = total_margin_balance - siphoning_reserve
 
                 new_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                  base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
