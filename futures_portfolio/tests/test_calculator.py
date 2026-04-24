@@ -61,6 +61,7 @@ def test_siphoning_reserve_impact(sample_params):
 def test_price_change_impact(sample_params):
     params = sample_params.copy()
     params["spot_price"] = 66000.0
+    params["initial_capital"] = 20000.0
     calc = PortfolioCalculator(**params)
     assert calc.total_tpv == 10200.0
     assert calc.tpv == 10200.0
@@ -91,6 +92,7 @@ def test_ignore_limits_deviation(sample_params, targets):
     params["real_equity"] = 100000.0
     params["virt_allocated_usdt"] = 20000.0
     params["positions"] = {"BTCUSDT_LONG": 10.0}
+    params["initial_capital"] = 150000.0
     calc = PortfolioCalculator(**params)
     actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=True)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
@@ -101,7 +103,9 @@ def test_limits_deviation(sample_params, targets):
     params["real_equity"] = 100000.0
     params["virt_allocated_usdt"] = 20000.0
     params["positions"] = {"BTCUSDT_LONG": 10.0}
+    params["initial_capital"] = 150000.0
     calc = PortfolioCalculator(**params)
     actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=False)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
+    # TPV is 100,000. max_change = 100,000 * 0.5 * 5 = 250,000.
     assert long_action["diff_usdt"] == pytest.approx(-250000.0)

@@ -209,3 +209,59 @@ class PortfolioExecutor:
         offset_pct = config.get("limit_offset_pct", 0.2)
         timeout_sec = config.get("limit_timeout_sec", 30)
         return enabled, offset_pct, timeout_sec
+
+    async def execute_actions(self, actions: list, price: float, ticker: str, paper_mode: bool = True, portfolio_cfg: dict = None, step_sizes: dict = None) -> list:
+        """
+        Пакетное выполнение действий по ребалансировке.
+        """
+        results = []
+        for action in actions:
+            await asyncio.sleep(0.01) # Профилактика зависания
+
+            if action["type"] == "VIRTUAL_RESET":
+                results.append({"type": "VIRTUAL_RESET"})
+                continue
+
+            symbol = action["symbol"]
+            pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
+            diff_usdt = action["diff_usdt"]
+            side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
+            order_qty = abs(diff_usdt / price)
+            reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
+            step_size = step_sizes.get(symbol.split('_')[0], 0.0) if step_sizes else 0.0
+
+            min_notional = portfolio_cfg.get("min_notional_usdt", 6.0) if portfolio_cfg else 6.0
+
+            if paper_mode:
+                results.append({
+                    "type": pos_side,
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": order_qty,
+                    "price": price,
+                    "status": "SUCCESS"
+                })
+            else:
+                # Real mode
+                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg)
+                if limit_enabled:
+                    res = await self.execute_limit_with_fallback(
+                        symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                        reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
+                        timeout_sec=limit_timeout, min_notional=min_notional
+                    )
+                else:
+                    res = await self.execute_market_order(
+                        symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional
+                    )
+                results.append({
+                    "type": pos_side,
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": order_qty,
+                    "price": price,
+                    "status": res["status"],
+                    "exec_res": res
+                })
+        return results
