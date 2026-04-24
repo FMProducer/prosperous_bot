@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import math
+import sys
 from typing import Dict, List
 from dotenv import load_dotenv
 
@@ -14,6 +15,27 @@ from connector import BinanceConnector
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 from notifier import TelegramNotifier
+
+# Integration test support: Mock Binance if requested
+if os.environ.get("MOCK_MODE") == "1":
+    class BinanceConnectorMock:
+        def __init__(self, **kwargs):
+            self.api_key = kwargs.get("api_key")
+            self.futures_client = self
+        async def get_futures_prices(self, tickers): return {t: 50000.0 for t in tickers}
+        async def get_exchange_info(self):
+            return {"symbols": [{"symbol": "BTCUSDT", "filters": [{"filterType": "LOT_SIZE", "stepSize": "0.0001"}]}]}
+        async def get_hedge_mode(self): return True
+        async def get_positions(self): return {}
+        async def get_margin_ratio(self): return {"total_margin_balance": 10000.0, "margin_ratio": 10.0}
+        async def get_free_balance(self): return 10000.0
+        async def get_bnb_balance(self): return 1.0
+        def futures_create_order(self, **kwargs): return {"orderId": 123, "status": "FILLED", "executedQty": kwargs.get("quantity"), "avgPrice": 50000.0}
+        async def get_order_book(self, symbol, limit=5): return {"bids": [[50000, 1]], "asks": [[50001, 1]]}
+        async def place_limit_maker_order(self, **kwargs): return {"orderId": 124}
+        async def get_order_status(self, symbol, order_id): return {"status": "FILLED", "executedQty": 1.0, "avgPrice": 50000.0}
+        async def cancel_order(self, symbol, order_id): return {}
+    BinanceConnector = BinanceConnectorMock
 
 async def load_json(path: str, default: dict) -> dict:
     def _read():
@@ -119,8 +141,10 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
             "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
             "last_price": 0.0,
             "base_ticker": base_ticker,
-            "long_entry_price": 0.0,
-            "short_entry_price": 0.0
+            f"{base_ticker}_LONG_entry": 0.0,
+            f"{base_ticker}_SHORT_entry": 0.0,
+            "v_basis": 0.0,
+            "v_alloc": 0.0
         }
         paper_state = await load_json(paper_state_file_path, default_paper_state)
 
@@ -134,8 +158,17 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
         if "positions" not in paper_state: paper_state["positions"] = {}
         if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
         if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
-        if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
-        if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
+
+        # Миграция старых ключей
+        if "long_entry_price" in paper_state:
+            paper_state[f"{base_ticker}_LONG_entry"] = paper_state.pop("long_entry_price")
+        if "short_entry_price" in paper_state:
+            paper_state[f"{base_ticker}_SHORT_entry"] = paper_state.pop("short_entry_price")
+
+        if f"{base_ticker}_LONG_entry" not in paper_state: paper_state[f"{base_ticker}_LONG_entry"] = 0.0
+        if f"{base_ticker}_SHORT_entry" not in paper_state: paper_state[f"{base_ticker}_SHORT_entry"] = 0.0
+        if "v_basis" not in paper_state: paper_state["v_basis"] = 0.0
+        if "v_alloc" not in paper_state: paper_state["v_alloc"] = 0.0
     else:
         paper_state = None
 
@@ -181,8 +214,8 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
                 # Для Paper Mode имитируем структуру с ценами входа
                 raw_positions = paper_state.get("positions", {})
                 positions = {k: v for k, v in raw_positions.items()}
-                l_entry = paper_state.get("long_entry_price", price)
-                s_entry = paper_state.get("short_entry_price", price)
+                l_entry = paper_state.get(f"{base_ticker}_LONG_entry", price)
+                s_entry = paper_state.get(f"{base_ticker}_SHORT_entry", price)
             else:
                 # В реальном режиме считаем активным капиталом Margin Balance (Wallet + PnL)
                 margin_info = await connector.get_margin_ratio()
@@ -348,142 +381,161 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
                     paper_mode=paper_mode, portfolio_cfg=portfolio_cfg, step_sizes=step_sizes
                 )
 
-                for res in execution_results:
-                    if res["type"] == "VIRTUAL_RESET":
-                        virt_basis_price = price
-                        virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                        state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
-                        await save_json(state_file_path, state)
-                        logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
-                        continue
+                if execution_results:
+                    for res in execution_results:
+                        if res["type"] == "VIRTUAL_RESET":
+                            virt_basis_price = price
+                            virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
+                            state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
+                            if paper_mode:
+                                paper_state["v_basis"] = virt_basis_price
+                                paper_state["v_alloc"] = virt_allocated_usdt
+                            await save_json(state_file_path, state)
+                            logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
+                            # Add fields for VIRTUAL_RESET to avoid KeyError below if it's processed in the logging loop
+                            res["status"] = "SUCCESS"
+                            res["symbol"] = "VIRTUAL"
+                            res["price"] = price
+                            continue
 
-                    # Обработка физических сделок (Long/Short)
-                    pos_side = res["type"]
-                    symbol = res["symbol"]
-                    side = res["side"]
-                    qty_rounded = executor.round_quantity(res["qty"], step_sizes.get(symbol.split('_')[0], 0.0))
+                        # Обработка физических сделок (Long/Short)
+                        pos_side = res["type"]
+                        symbol = res["symbol"]
+                        side = res["side"]
+                        qty_rounded = executor.round_quantity(res["qty"], step_sizes.get(symbol.split('_')[0], 0.0))
 
-                    if paper_mode and res["status"] == "SUCCESS":
-                        order_value = qty_rounded * price
-                        commission = order_value * 0.0004
-                        paper_state["balance"] -= commission
-                        paper_state["total_profit"] -= commission
+                        if paper_mode and res["status"] == "SUCCESS":
+                            order_value = qty_rounded * price
+                            commission = order_value * 0.0004
+                            paper_state["balance"] -= commission
+                            paper_state["total_profit"] -= commission
 
-                        trade_pnl = 0.0
-                        pos_key = f"{base_ticker}_{pos_side}"
-                        old_qty = paper_state["positions"].get(pos_key, 0.0)
-                        entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                        old_entry = paper_state.get(entry_key, price)
+                            trade_pnl = 0.0
+                            pos_key = f"{base_ticker}_{pos_side}"
+                            old_qty = paper_state["positions"].get(pos_key, 0.0)
+                            entry_key = f"{base_ticker}_{pos_side}_entry"
+                            old_entry = paper_state.get(entry_key, price)
 
-                        # Update balance
-                        if side == "BUY":
-                            paper_state["balance"] -= (qty_rounded * price)
-                        else: # SELL
-                            paper_state["balance"] += (qty_rounded * price)
+                            # Update balance
+                            if side == "BUY":
+                                paper_state["balance"] -= (qty_rounded * price)
+                            else: # SELL
+                                paper_state["balance"] += (qty_rounded * price)
 
-                        is_increase = side == ("BUY" if pos_side == "LONG" else "SELL")
-                        if is_increase:
-                            if old_qty > 0:
-                                new_entry = (old_qty * old_entry + qty_rounded * price) / (old_qty + qty_rounded)
-                            else:
-                                new_entry = price
-                            paper_state["positions"][pos_key] += qty_rounded
-                            paper_state[entry_key] = new_entry
-                        else:
-                            # Продажа/Short Cover
-                            if pos_side == "LONG":
-                                trade_pnl = (price - old_entry) * qty_rounded - commission
-                            else:
-                                trade_pnl = (old_entry - price) * qty_rounded - commission
-
-                            if trade_pnl > 0 and excess_to_siphon > 0:
-                                siphon_amount = min(trade_pnl, excess_to_siphon)
-                                siphoning_reserve += siphon_amount
-                                excess_to_siphon -= siphon_amount
-                                paper_state["balance"] -= siphon_amount
-                                state.update({"siphoning_reserve": siphoning_reserve})
-                                await save_json(state_file_path, state)
-                                logger.info(f"💰 [SAFE] P&L siphoned: +{siphon_amount:.4f} (Total: {siphoning_reserve:.2f})")
-
-                            paper_state["positions"][pos_key] = max(0, paper_state["positions"][pos_key] - qty_rounded)
-                            if paper_state["positions"][pos_key] == 0:
-                                paper_state[entry_key] = 0.0
-
-                        await save_json(paper_state_file_path, paper_state)
-                        # Лог и уведомление перенесены в конец цикла ребаланса или после обновления данных
-
-                    elif not paper_mode:
-                        exec_res = res.get("exec_res", {})
-                        if res["status"] in ("SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"):
-                            is_limit = res["status"] in ("SUCCESS_LIMIT", "SUCCESS_FALLBACK")
-                            reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-
-                            if reduce_only:
-                                filled_qty = exec_res.get("filled_qty", exec_res.get("limit_filled_qty", res["qty"]))
-                                exec_price = exec_res.get("avg_price", exec_res.get("limit_avg_price", price))
-                                commission = exec_res.get("commission", filled_qty * exec_price * 0.0004)
-
-                                trade_pnl = 0.0
-                                if pos_side == "LONG":
-                                    trade_pnl = (exec_price - l_entry) * filled_qty - commission
+                            is_increase = side == ("BUY" if pos_side == "LONG" else "SELL")
+                            if is_increase:
+                                if old_qty > 0:
+                                    new_entry = (old_qty * old_entry + qty_rounded * price) / (old_qty + qty_rounded)
                                 else:
-                                    trade_pnl = (s_entry - exec_price) * filled_qty - commission
+                                    new_entry = price
+                                paper_state["positions"][pos_key] += qty_rounded
+                                paper_state[entry_key] = new_entry
+                            else:
+                                # Продажа/Short Cover
+                                if pos_side == "LONG":
+                                    trade_pnl = (price - old_entry) * qty_rounded - commission
+                                else:
+                                    trade_pnl = (old_entry - price) * qty_rounded - commission
 
                                 if trade_pnl > 0 and excess_to_siphon > 0:
                                     siphon_amount = min(trade_pnl, excess_to_siphon)
                                     siphoning_reserve += siphon_amount
                                     excess_to_siphon -= siphon_amount
+                                    paper_state["balance"] -= siphon_amount
                                     state.update({"siphoning_reserve": siphoning_reserve})
                                     await save_json(state_file_path, state)
-                                    logger.info(f"💰 [SAFE] Real P&L siphoned: +{siphon_amount:.4f} (Total: {siphoning_reserve:.2f})")
-                                    await notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side}")
+                                    logger.info(f"💰 [SAFE] P&L siphoned: +{siphon_amount:.4f} (Total: {siphoning_reserve:.2f})")
 
-                    # Логирование каждой сделки
-                    if res["status"] in ("SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"):
-                        logger.info(f"Order Executed: {res.get('side', '???')} {res['symbol']} @ {res['price']:.6f}")
+                                paper_state["positions"][pos_key] = max(0, paper_state["positions"][pos_key] - qty_rounded)
+                                if paper_state["positions"][pos_key] == 0:
+                                    paper_state[entry_key] = 0.0
+
+                        elif not paper_mode:
+                            exec_res = res.get("exec_res", {})
+                            if res["status"] in ("SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"):
+                                is_limit = res["status"] in ("SUCCESS_LIMIT", "SUCCESS_FALLBACK")
+                                reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
+
+                                if reduce_only:
+                                    filled_qty = exec_res.get("filled_qty", exec_res.get("limit_filled_qty", res["qty"]))
+                                    exec_price = exec_res.get("avg_price", exec_res.get("limit_avg_price", price))
+                                    commission = exec_res.get("commission", filled_qty * exec_price * 0.0004)
+
+                                    trade_pnl = 0.0
+                                    if pos_side == "LONG":
+                                        trade_pnl = (exec_price - l_entry) * filled_qty - commission
+                                    else:
+                                        trade_pnl = (s_entry - exec_price) * filled_qty - commission
+
+                                    if trade_pnl > 0 and excess_to_siphon > 0:
+                                        siphon_amount = min(trade_pnl, excess_to_siphon)
+                                        siphoning_reserve += siphon_amount
+                                        excess_to_siphon -= siphon_amount
+                                        state.update({"siphoning_reserve": siphoning_reserve})
+                                        await save_json(state_file_path, state)
+                                        logger.info(f"💰 [SAFE] Real P&L siphoned: +{siphon_amount:.4f} (Total: {siphoning_reserve:.2f})")
+                                        await notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side}")
+
+                        # Логирование каждой сделки
+                        if res["status"] in ("SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"):
+                            logger.info(f"Order Executed: {res.get('side', '???')} {res['symbol']} @ {res['price']:.6f}")
 
                 if limit_enabled and limit_stats["attempted"] > 0:
                     avg_improvement = limit_stats["total_improvement_pct"] / limit_stats["filled"] if limit_stats["filled"] > 0 else 0
                     logger.info(f"📊 Limit Stats: attempted={limit_stats['attempted']}, filled={limit_stats['filled']}, fallback={limit_stats['fallback']}, avg_gain={avg_improvement:+.3f}%, total_profit={limit_stats['total_profit_usdt']:+.2f} USDT")
 
-                # Пересчитываем позиции и доли после выполнения сделок
                 if paper_mode:
-                    raw_positions = paper_state.get("positions", {})
-                    positions = {k: v for k, v in raw_positions.items()}
-                    l_entry = paper_state.get("long_entry_price", price)
-                    s_entry = paper_state.get("short_entry_price", price)
-                    real_equity = paper_state["balance"]
-                else:
-                    raw_positions = await connector.get_positions()
-                    positions = {k: v["qty"] for k, v in raw_positions.items()}
-                    l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
-                    s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
-                    # В реальном режиме переполучаем баланс
-                    total_free = await connector.get_free_balance()
-                    real_equity = total_free - siphoning_reserve
+                    await save_json(paper_state_file_path, paper_state)
 
-                new_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                                                 base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                                 long_entry_price=l_entry, short_entry_price=s_entry,
-                                                 initial_capital=initial_tpv)
+                if execution_results:
+                    # 3. ОБНОВЛЯЕМ КАЛЬКУЛЯТОР ДЛЯ КОРРЕКТНОГО ЛОГА
+                    if paper_mode:
+                        calc = PortfolioCalculator(
+                            positions=paper_state["positions"],
+                            spot_price=price,
+                            real_equity=paper_state.get("balance", 10000.0),
+                            virt_basis_price=paper_state.get("v_basis", price),
+                            virt_allocated_usdt=paper_state.get("v_alloc", 3500.0),
+                            long_entry_price=paper_state.get(f"{base_ticker}_LONG_entry", 0.0),
+                            short_entry_price=paper_state.get(f"{base_ticker}_SHORT_entry", 0.0),
+                            base_ticker=base_ticker,
+                            targets=targets,
+                            initial_capital=initial_tpv,
+                            siphoning_reserve=siphoning_reserve
+                        )
+                    else:
+                        raw_positions = await connector.get_positions()
+                        positions = {k: v["qty"] for k, v in raw_positions.items()}
+                        l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
+                        s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+                        margin_info = await connector.get_margin_ratio()
+                        total_margin_balance = margin_info.get("total_margin_balance", 0.0)
+                        real_equity = total_margin_balance - siphoning_reserve
 
-                # Дополнительный лог с актуальными ценами входа после выполнения всех сделок
-                logger.info(f"Rebalance Complete. New Entries: L:{new_calc.long_entry_price:.6f} S:{new_calc.short_entry_price:.6f}")
+                        calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
+                                                        base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
+                                                        long_entry_price=l_entry, short_entry_price=s_entry,
+                                                        initial_capital=initial_tpv)
 
-                # Сводное уведомление после ребаланса
-                summary_msg = (
-                    f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
-                    f"New Shares: L:{new_calc.share_long_pct:.1f}% S:{new_calc.share_short_pct:.1f}% V:{new_calc.share_virt_pct:.1f}%\n"
-                    f"TPV: <code>{new_calc.total_tpv:.2f} USDT</code>"
-                )
-                if paper_mode:
-                    summary_msg += f"\nBalance: <code>{paper_state['balance']:.2f}</code> USDT"
-                await notifier.send_message(summary_msg)
+                    logger.info(f"✅ Rebalance Complete. New Entries: L:{calc.long_entry_price:.6f} | Pos: {calc.positions.get(f'{base_ticker}_LONG', 0)}")
 
-                virt_basis_price = price
-                virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
-                await save_json(state_file_path, state)
+                    # Сводное уведомление после ребаланса
+                    summary_msg = (
+                        f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
+                        f"New Shares: L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%\n"
+                        f"TPV: <code>{calc.total_tpv:.2f} USDT</code>"
+                    )
+                    if paper_mode:
+                        summary_msg += f"\nBalance: <code>{paper_state['balance']:.2f}</code> USDT"
+                    await notifier.send_message(summary_msg)
+
+                    virt_basis_price = price
+                    virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
+                    state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
+                    if paper_mode:
+                        paper_state["v_basis"] = virt_basis_price
+                        paper_state["v_alloc"] = virt_allocated_usdt
+                    await save_json(state_file_path, state)
             
             if i % 100 == 0:
                 total_balance = bnb_balance = None
@@ -496,7 +548,7 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
                 await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), cycles, siphoning_reserve, total_balance, bnb_balance)
 
         except Exception as e:
-            logger.error(f"Error in cycle: {e}")
+            logger.error(f"Error in cycle: {e}", exc_info=True)
             await asyncio.sleep(10)
         await asyncio.sleep(check_interval)
         i += 1
