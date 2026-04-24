@@ -153,9 +153,9 @@ async def manage_swarm():
     # 7. Swarm Promotion: Ранжируем ботов по прибыли
     bot_stats = []
     for t in new_ticker_list:
-        p_state_path = f"paper_state_{t}.json"
-        p_state = await safe_load_json(p_state_path, {"total_profit": -999999})
-        bot_stats.append({"ticker": t, "profit": p_state.get("total_profit", 0)})
+        state_path = f"state_{t}.json"
+        state = await safe_load_json(state_path, {"current_profit": -999999})
+        bot_stats.append({"ticker": t, "profit": state.get("current_profit", 0)})
 
     # Сортируем: лучшие сверху
     bot_stats.sort(key=lambda x: x['profit'], reverse=True)
@@ -198,17 +198,20 @@ async def manage_swarm():
             # 1. Останавливаем выбывших и тех, кого надо перезапустить
             for t in (to_stop | to_restart):
                 short_name = t.replace('USDT', '').lower()
-                await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+                proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+                await proc.wait()
                 logger.info(f"Stopping/Deleting bot-{short_name}")
             
             # 2. Запускаем новых и перезапускаем сменивших режим
             for t in (to_start | to_restart):
                 short_name = t.replace('USDT', '').lower()
                 cmd = f"pm2 start main.py --name bot-{short_name} --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
-                await asyncio.create_subprocess_shell(cmd)
+                proc = await asyncio.create_subprocess_shell(cmd)
+                await proc.wait()
                 logger.info(f"Starting bot-{short_name}")
             
-            await asyncio.create_subprocess_shell("pm2 save")
+            proc = await asyncio.create_subprocess_shell("pm2 save")
+            await proc.wait()
             logger.info("🚀 Swarm surgical update complete.")
             if to_start or to_stop or to_restart:
                 await notifier.send_message(f"🚀 <b>Swarm Updated</b>\nStarted: {len(to_start)} | Stopped: {len(to_stop)} | Restarted: {len(to_restart)}")

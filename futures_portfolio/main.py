@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import math
 from typing import Dict, List
 from dotenv import load_dotenv
 
@@ -299,6 +300,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             if i % 5 == 0:
                  res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
                  logger.info(f"Heartbeat: TPV={calc.total_tpv:.4f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
+                 state["current_profit"] = calc.total_tpv - initial_tpv
+                 await save_json(state_file_path, state)
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
