@@ -161,9 +161,14 @@ async def manage_swarm():
     # Сортируем: лучшие сверху
     bot_stats.sort(key=lambda x: x['profit'], reverse=True)
 
-    # Топ 7 - Real, остальные - Paper
-    live_tickers = [b['ticker'] for b in bot_stats[:7]]
-    logger.info(f"Swarm Promotion: Live={live_tickers}")
+    # Топ 7 - Real, остальные - Paper (только если глобальный paper_mode выключен)
+    global_paper_mode = config.get("paper_mode", False)
+    if global_paper_mode:
+        live_tickers = []
+        logger.info("Swarm Promotion: Global PAPER MODE active. All bots remain in paper mode.")
+    else:
+        live_tickers = [b['ticker'] for b in bot_stats[:7]]
+        logger.info(f"Swarm Promotion: Live={live_tickers}")
 
     old_live_tickers = config.get("live_swarm", [])
     config["live_swarm"] = live_tickers
@@ -208,7 +213,7 @@ async def manage_swarm():
                 short_name = t.replace('USDT', '').lower()
                 # Добавляем --cwd и --update-env для стабильности в Windows
                 # Используем sys.executable для обеспечения того же интерпретатора
-                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter {sys.executable} -- --config {CONFIG_PATH} --ticker {t}"
+                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --force --update-env --interpreter {sys.executable} -- --config {CONFIG_PATH} --ticker {t}"
                 proc = await asyncio.create_subprocess_shell(cmd)
                 await proc.wait()
                 logger.info(f"Starting bot-{short_name}")

@@ -35,8 +35,15 @@
     }
   ],
   "tickers": [
-    "BTCUSDT"
+    "PENGUUSDT",
+    "AAVEUSDT",
+    "BZUSDT",
+    "TAOUSDT",
+    "XAGUSDT",
+    "1000PEPEUSDT",
+    "ADAUSDT",
+    "CLUSDT"
   ],
   "live_swarm": [],
-  "base_ticker": "BTCUSDT"
+  "base_ticker": "PENGUUSDT"
 }

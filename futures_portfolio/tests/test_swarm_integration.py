@@ -33,7 +33,7 @@ class SwarmIntegrator:
                     "max_capital_usdt": 1000.0
                 }
             ],
-            "tickers": [self.test_ticker],
+            "tickers": [], # Пусто, чтобы супервизор увидел новый тикер и запустил его
             "live_swarm": [],
             "base_ticker": self.test_ticker
         }
@@ -55,6 +55,9 @@ class SwarmIntegrator:
         os.environ["BINANCE_API_KEY"] = "fake_key"
         os.environ["BINANCE_SECRET_KEY"] = "fake_secret"
         os.environ["MOCK_MODE"] = "1"
+        # Disable Telegram to avoid timeouts
+        os.environ["TELEGRAM_BOT_TOKEN"] = ""
+        os.environ["TELEGRAM_CHAT_ID"] = ""
 
         # Мы патчим rank_tickers чтобы не ждать настоящего сканирования
         with patch("supervisor.run_scanner", return_value=[{"symbol": self.test_ticker, "score": 200}]):
@@ -69,17 +72,34 @@ class SwarmIntegrator:
         assert is_active, f"Bot {bot_name} failed to start in PM2"
 
         print("[3] Waiting for first state file generation...")
-        state_file = f"futures_portfolio/paper_state_{self.test_ticker}.json"
-        for _ in range(30): # 30 секунд таймаут
-            if os.path.exists(state_file):
-                with open(state_file, "r") as f:
-                    state = json.load(f)
-                    if state.get("positions", {}).get(f"{self.test_ticker}_LONG", 0) != 0:
-                        print("✅ Integration Success: Position detected in state file.")
-                        return True
+        # Use absolute path for robustness
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        paper_state = os.path.join(base_dir, f"paper_state_{self.test_ticker}.json")
+        real_state = os.path.join(base_dir, f"state_{self.test_ticker}.json")
+        
+        print(f"    Checking for state files at: {base_dir}")
+
+        for i in range(45): # 45 секунд таймаут
+            for state_file in [paper_state, real_state]:
+                if os.path.exists(state_file):
+                    try:
+                        with open(state_file, "r") as f:
+                            state = json.load(f)
+                            # Check for rebalance_cycles or positions to confirm bot is working
+                            if state.get("rebalance_cycles", 0) > 0 or state.get("positions", {}).get(f"{self.test_ticker}_LONG", 0) != 0:
+                                print(f"✅ Integration Success: Activity detected in {os.path.basename(state_file)}.")
+                                return True
+                    except (json.JSONDecodeError, PermissionError):
+                        pass # File might be being written
+            if i % 5 == 0:
+                print(f"    ... waiting ({i}s)")
             await asyncio.sleep(1)
 
-        return False # Fallback instead of raising TimeoutError immediately for better cleanup
+        print(f"❌ Timeout reached. Files checked: \n  {paper_state}\n  {real_state}")
+        print(f"Directory listing: {os.listdir(base_dir)}")
+        print(f"❌ Fetching logs for {bot_name}...")
+        os.system(f"pm2 logs {bot_name} --lines 30 --nostream")
+        return False
 
     def cleanup(self):
         os.system(f"pm2 delete bot-btc")

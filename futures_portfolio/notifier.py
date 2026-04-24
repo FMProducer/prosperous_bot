@@ -1,7 +1,6 @@
 import os
 import asyncio
-import urllib.request
-import json
+import aiohttp
 import logging
 from dotenv import load_dotenv
 
@@ -13,10 +12,9 @@ class TelegramNotifier:
     def __init__(self):
         self.token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-        # По умолчанию используем официальный API, но позволяем сменить на зеркало через .env
         self.api_base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org")
         self.enabled = all([self.token, self.chat_id])
-        
+
         if not self.enabled:
             logger.warning("Telegram Notifier disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not found in .env")
 
@@ -31,20 +29,21 @@ class TelegramNotifier:
             "parse_mode": "HTML"
         }
 
-        def _send():
-            try:
-                headers = {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'ProsperousBot/1.0'
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    return response.getcode() == 200
-            except Exception as e:
-                logger.error(f"Telegram API Error: {e}")
-                return False
-
-        return await asyncio.to_thread(_send)
+        try:
+            # Увеличиваем таймаут до 30 секунд для работы через медленные прокси/VPN
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(trust_env=True, timeout=timeout) as session:
+                async with session.post(url, json=payload) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        err_text = await response.text()
+                        logger.error(f"Telegram API Error ({response.status}): {err_text}")
+                        return False
+        except Exception as e:
+            # Используем repr(e) для вывода типа ошибки, если str(e) пустой
+            logger.error(f"Failed to send Telegram message via {self.api_base}: {repr(e)}")
+        return False
 
     async def send_alert(self, title: str, message: str):
         """Отправка важного уведомления (например, срабатывание стопа)."""

@@ -41,7 +41,8 @@ class TestSiphoningLogic(unittest.TestCase):
 
     def test_normal_siphoning_mode(self):
         # Кейс: Депо выросло до 11000, в SAFE лежит 500. Начальный капитал 10000.
-        # Бот должен исключить 500 из активного капитала для ребаланса.
+        # Согласно ПРАВИЛУ TPV Cap: Активный TPV не может превышать initial_capital.
+        # Излишек (11500 - 10000 = 1500) должен уйти в reserve.
 
         calc = PortfolioCalculator(
             positions={"ZECUSDT_LONG": 0.0, "ZECUSDT_SHORT": 0.0},
@@ -62,10 +63,12 @@ class TestSiphoningLogic(unittest.TestCase):
         # total_tpv = 11000 + 0 + 500 = 11500
         self.assertEqual(calc.total_tpv, 11500.0)
 
-        # Так как 11500 >= 10000, siphoning активен
-        # tpv = total_tpv - siphoning_reserve = 11500 - 500 = 11000
-        self.assertEqual(calc.tpv, 11000.0)
-        print("✅ Normal mode test passed: Siphoning active when above initial capital.")
+        # Так как 11500 >= 10000, siphoning активен и ограничивает TPV
+        # tpv = initial_capital = 10000
+        self.assertEqual(calc.tpv, 10000.0)
+        # reserve = total_tpv - initial_capital = 1500
+        self.assertEqual(calc.siphoning_reserve, 1500.0)
+        print("✅ Normal mode test passed: TPV capped at initial_capital, excess siphoned.")
 
 if __name__ == '__main__':
     unittest.main()
