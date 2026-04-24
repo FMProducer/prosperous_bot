@@ -184,9 +184,10 @@ async def rebalance_loop(connector: BinanceConnector, executor: PortfolioExecuto
                 l_entry = paper_state.get("long_entry_price", price)
                 s_entry = paper_state.get("short_entry_price", price)
             else:
-                # В реальном режиме считаем активным капиталом всё, что за вычетом сейфа
-                total_free = await connector.get_free_balance()
-                real_equity = total_free - siphoning_reserve
+                # В реальном режиме считаем активным капиталом Margin Balance (Wallet + PnL)
+                margin_info = await connector.get_margin_ratio()
+                total_margin_balance = margin_info.get("total_margin_balance", 0.0)
+                real_equity = total_margin_balance - siphoning_reserve
                 raw_positions = await connector.get_positions()
                 # Извлекаем только QTY для калькулятора, цены входа передаем отдельно
                 positions = {k: v["qty"] for k, v in raw_positions.items()}

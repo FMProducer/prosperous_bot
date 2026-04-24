@@ -33,12 +33,15 @@ class TelegramNotifier:
 
         def _send():
             try:
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
+                headers = {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'ProsperousBot/1.0'
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
                 with urllib.request.urlopen(req, timeout=10) as response:
                     return response.getcode() == 200
             except Exception as e:
-                # Downgraded to debug to avoid log spamming during network blips
-                logger.debug(f"Telegram API blip: {e}")
+                logger.error(f"Telegram API Error: {e}")
                 return False
 
         return await asyncio.to_thread(_send)
