@@ -2,6 +2,7 @@ import os
 import aiohttp
 import logging
 from dotenv import load_dotenv
+import ssl
 
 load_dotenv()
 
@@ -30,8 +31,8 @@ class TelegramNotifier:
         }
 
         try:
-            # Разрешаем использовать системный прокси/VPN (trust_env=True)
-            async with aiohttp.ClientSession(trust_env=True) as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(trust_env=False, connector=connector) as session:
                 async with session.post(url, json=payload, timeout=10) as response:
                     if response.status != 200:
                         err_text = await response.text()
