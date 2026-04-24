@@ -147,46 +147,71 @@ async def manage_swarm():
         # Обновляем список реально выбывших
         candidates_to_drop = [c for c in candidates_to_drop if c['symbol'] not in [r['symbol'] for r in to_rescue]]
 
-    # 6. Сборка нового списка и Хирургический PM2 Sync
+    # 6. Сборка нового списка
     new_ticker_list = tickers_to_keep + validated_new_tickers
     
-    if set(new_ticker_list) != set(current_tickers):
+    # 7. Swarm Promotion: Ранжируем ботов по прибыли
+    bot_stats = []
+    for t in new_ticker_list:
+        p_state_path = f"paper_state_{t}.json"
+        p_state = await safe_load_json(p_state_path, {"total_profit": -999999})
+        bot_stats.append({"ticker": t, "profit": p_state.get("total_profit", 0)})
+
+    # Сортируем: лучшие сверху
+    bot_stats.sort(key=lambda x: x['profit'], reverse=True)
+
+    # Топ 7 - Real, остальные - Paper
+    live_tickers = [b['ticker'] for b in bot_stats[:7]]
+    logger.info(f"Swarm Promotion: Live={live_tickers}")
+
+    old_live_tickers = config.get("live_swarm", [])
+    config["live_swarm"] = live_tickers
+
+    # 8. Хирургический PM2 Sync
+    # Условия перезапуска: либо тикер новый, либо сменился его статус (Live/Paper)
+    if set(new_ticker_list) != set(current_tickers) or set(live_tickers) != set(old_live_tickers):
         to_stop = set(current_tickers) - set(new_ticker_list)
         to_start = set(new_ticker_list) - set(current_tickers)
         
+        # Те, кто остался, но сменил режим
+        to_restart = (set(new_ticker_list) & set(current_tickers)) & (set(live_tickers) ^ set(old_live_tickers))
+
         msg = (
-            f"🔄 <b>Swarm Rotation</b>\n"
+            f"🔄 <b>Swarm Rotation & Promotion</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"✅ Keep: {len(tickers_to_keep)} bots\n"
             f"➕ Add: {', '.join(to_start) if to_start else 'None'}\n"
+            f"🔄 Promo/Demo: {', '.join(to_restart) if to_restart else 'None'}\n"
             f"❌ Drop: {', '.join([c['symbol'] for c in candidates_to_drop]) if candidates_to_drop else 'None'}\n"
+            f"🏆 Live Swarm: {', '.join(live_tickers)}\n"
             f"━━━━━━━━━━━━━━━━━━"
         )
-        logger.info(f"Rotating swarm. New: {new_ticker_list}")
+        logger.info(f"Rotating swarm. New: {new_ticker_list}, Live: {live_tickers}")
         await notifier.send_message(msg)
         
         config["tickers"] = new_ticker_list
-        config["base_ticker"] = new_ticker_list[0]
+        if new_ticker_list:
+            config["base_ticker"] = new_ticker_list[0]
         await safe_save_json(CONFIG_PATH, config)
             
         try:
-            # 1. Останавливаем только тех, кто выбыл
-            for t in to_stop:
-                short_name = t.replace('USDT', '').toLowerCase()
+            # 1. Останавливаем выбывших и тех, кого надо перезапустить
+            for t in (to_stop | to_restart):
+                short_name = t.replace('USDT', '').lower()
                 await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
-                logger.info(f"Stopping bot-{short_name}")
+                logger.info(f"Stopping/Deleting bot-{short_name}")
             
-            # 2. Запускаем только новых
-            for t in to_start:
-                short_name = t.replace('USDT', '').toLowerCase()
+            # 2. Запускаем новых и перезапускаем сменивших режим
+            for t in (to_start | to_restart):
+                short_name = t.replace('USDT', '').lower()
                 cmd = f"pm2 start main.py --name bot-{short_name} --interpreter python -- --config {CONFIG_PATH} --ticker {t}"
                 await asyncio.create_subprocess_shell(cmd)
                 logger.info(f"Starting bot-{short_name}")
             
             await asyncio.create_subprocess_shell("pm2 save")
             logger.info("🚀 Swarm surgical update complete.")
-            if to_start or to_stop:
-                await notifier.send_message(f"🚀 <b>Swarm Surgically Updated</b>\nStarted: {len(to_start)} | Stopped: {len(to_stop)}")
+            if to_start or to_stop or to_restart:
+                await notifier.send_message(f"🚀 <b>Swarm Updated</b>\nStarted: {len(to_start)} | Stopped: {len(to_stop)} | Restarted: {len(to_restart)}")
         except Exception as e:
             err_msg = f"❌ PM2 Surgical Error: {e}"
             logger.error(err_msg)
