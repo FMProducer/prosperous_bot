@@ -25,16 +25,16 @@ class PortfolioCalculator:
         self.total_tpv: float = real_equity + (self.virt_current_value - virt_allocated_usdt) + self.siphoning_reserve
         
         # Логика TPV Cap (Siphoning) + Recovery Mode
-        # ПРАВИЛО: Активный TPV не может превышать initial_capital.
-        # Если total_tpv > initial_capital, излишек уходит в reserve.
-        # Если total_tpv < initial_capital, reserve используется для поддержания маржи (Recovery Mode).
-
         if self.total_tpv > self.initial_capital:
-            self.tpv = self.initial_capital
+            # ПРАВИЛО: Активный TPV не может превышать initial_capital.
+            # Излишек считается резервом (даже если он еще не переведен в SAFE физически)
+            self.tpv: float = self.initial_capital
             self.siphoning_reserve = self.total_tpv - self.initial_capital
         else:
-            self.tpv = self.total_tpv
-            self.siphoning_reserve = 0.0 # Все ушло на поддержку маржи
+            # Если мы в просадке, используем SAFE для маржи (Recovery Mode)
+            # tpv будет расти до initial_capital по мере возврата средств из резерва
+            self.tpv: float = self.total_tpv
+            self.siphoning_reserve = 0.0 # Весь резерв "впитан" для поддержания маржи
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
@@ -60,8 +60,6 @@ class PortfolioCalculator:
         val_virt: float = self.virt_current_value
 
         # Сохраняем для логирования
-        self.long_entry_price = long_entry_price
-        self.short_entry_price = short_entry_price
         self.share_long_pct: float = round(val_long / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_short_pct: float = round(val_short / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_virt_pct: float = round(val_virt / self.tpv * 100, 1) if self.tpv > 0 else 0.0
@@ -77,12 +75,12 @@ class PortfolioCalculator:
             "VIRTUAL": self.share_virt_pct / 100
         }
 
-        # Проверяем порог. Если threshold < 0 (force), сразу any_exceeded = True
+        # Проверяем, превышен ли порог хотя бы одной ногой
         any_exceeded: bool = threshold < 0.0
 
         if not any_exceeded:
             for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-                if not math.isclose(shares[key], targets[key]["share"], abs_tol=max(0.0, threshold)):
+                if not math.isclose(shares[key], targets[key]["share"], abs_tol=threshold):
                     any_exceeded = True
                     break
 
