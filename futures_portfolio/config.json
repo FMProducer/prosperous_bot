@@ -25,18 +25,21 @@
         }
       },
       "rebalance_threshold": 0.02,
-      "ticker_thresholds": {},
+      "ticker_thresholds": {
+        "BSBUSDT": 0.03,
+        "ZECUSDT": 0.02,
+        "CHIPUSDT": 0.02,
+        "SOONUSDT": 0.02
+      },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
-      "equity_trailing_stop_pct": 15.0,
+      "equity_trailing_stop_pct": 100.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
       "check_interval_sec": 15
     }
   ],
   "tickers": [
-    "GALAUSDT",
-    "ZECUSDT",
     "RAVEUSDT",
     "BSBUSDT",
     "KATUSDT",
@@ -44,8 +47,10 @@
     "CHIPUSDT",
     "HYPERUSDT",
     "TRADOORUSDT",
-    "API3USDT"
+    "API3USDT",
+    "AXSUSDT",
+    "SOONUSDT"
   ],
-  "base_ticker": "GALAUSDT",
+  "base_ticker": "RAVEUSDT",
   "live_swarm": []
 }
