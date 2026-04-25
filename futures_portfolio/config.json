@@ -24,28 +24,33 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.01,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
+        "BSBUSDT": 0.03,
+        "ZECUSDT": 0.02,
+        "CHIPUSDT": 0.02,
+        "SOONUSDT": 0.02
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
-      "equity_trailing_stop_pct": 10.0,
+      "equity_trailing_stop_pct": 100.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
       "check_interval_sec": 15
     }
   ],
   "tickers": [
-    "DOGEUSDT",
-    "HYPEUSDT",
-    "PENGUUSDT",
-    "TAOUSDT",
-    "MOVRUSDT",
-    "CHIPUSDT",
     "RAVEUSDT",
-    "SPKUSDT",
-    "UBUSDT", 
-    "1000PEPEUSDT"
+    "BSBUSDT",
+    "KATUSDT",
+    "APEUSDT",
+    "CHIPUSDT",
+    "HYPERUSDT",
+    "TRADOORUSDT",
+    "API3USDT",
+    "AXSUSDT",
+    "SOONUSDT"
   ],
-  "base_ticker": "DOGEUSDT"
+  "base_ticker": "RAVEUSDT",
+  "live_swarm": []
 }
