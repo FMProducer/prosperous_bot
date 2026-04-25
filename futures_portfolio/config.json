@@ -25,8 +25,7 @@
         }
       },
       "rebalance_threshold": 0.02,
-      "ticker_thresholds": {
-      },
+      "ticker_thresholds": {},
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
       "equity_trailing_stop_pct": 15.0,
@@ -36,16 +35,17 @@
     }
   ],
   "tickers": [
+    "RAVEUSDT",
     "RIVERUSDT",
     "KATUSDT",
     "APEUSDT",
     "CHIPUSDT",
     "BSBUSDT",
     "TRADOORUSDT",
-    "RAVEUSDT",
     "LABUSDT",
-    "ENJUSDT", 
-    "MOVRUSDT"
+    "ZECUSDT",
+    "DOGEUSDT"
   ],
-  "base_ticker": "RIVERUSDT"
+  "base_ticker": "RAVEUSDT",
+  "live_swarm": []
 }
