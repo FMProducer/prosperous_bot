@@ -34,16 +34,7 @@
       "check_interval_sec": 15
     }
   ],
-  "tickers": [
-    "PENGUUSDT",
-    "AAVEUSDT",
-    "BZUSDT",
-    "TAOUSDT",
-    "XAGUSDT",
-    "1000PEPEUSDT",
-    "ADAUSDT",
-    "CLUSDT"
-  ],
+  "tickers": [],
   "live_swarm": [],
-  "base_ticker": "PENGUUSDT"
+  "base_ticker": "BTCUSDT"
 }
