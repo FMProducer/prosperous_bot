@@ -546,8 +546,10 @@ if __name__ == "__main__":
     log_file = os.path.join(log_dir, f"rebalance_{base_ticker}.log")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
     logger = logging.getLogger(base_ticker)
-    instance_state_file = os.path.join(os.path.dirname(__file__), f"state_{base_ticker}.json")
-    instance_paper_state_file = os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json")
+    instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"state_{base_ticker}.json"))
+    instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
+    logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file}")
+    
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))

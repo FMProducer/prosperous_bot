@@ -24,15 +24,13 @@ def test_notifier_disabled():
 @pytest.mark.asyncio
 async def test_send_message_success(env_setup):
     notifier = TelegramNotifier()
-    mock_response = MagicMock()
+    
+    # Мокаем aiohttp.ClientSession.post
+    mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-    mock_response.__aexit__ = AsyncMock()
-    mock_session = MagicMock()
-    mock_session.post.return_value = mock_response
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock()
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    mock_response.__aenter__.return_value = mock_response
+
+    with patch("aiohttp.ClientSession.post", return_value=mock_response):
         result = await notifier.send_message("Hello")
         assert result is True
 
