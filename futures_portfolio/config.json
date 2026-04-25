@@ -35,17 +35,17 @@
     }
   ],
   "tickers": [
+    "GALAUSDT",
+    "ZECUSDT",
     "RAVEUSDT",
-    "RIVERUSDT",
+    "BSBUSDT",
     "KATUSDT",
     "APEUSDT",
     "CHIPUSDT",
-    "BSBUSDT",
+    "HYPERUSDT",
     "TRADOORUSDT",
-    "LABUSDT",
-    "ZECUSDT",
-    "DOGEUSDT"
+    "API3USDT"
   ],
-  "base_ticker": "RAVEUSDT",
+  "base_ticker": "GALAUSDT",
   "live_swarm": []
 }

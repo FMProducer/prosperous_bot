@@ -38,7 +38,7 @@ class TelegramNotifier:
                     'User-Agent': 'ProsperousBot/1.0'
                 }
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, timeout=10) as response:
+                with urllib.request.urlopen(req, timeout=30) as response:
                     return response.getcode() == 200
             except Exception as e:
                 logger.error(f"Telegram API Error: {e}")
