@@ -10,6 +10,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
+      "initial_capital": 10000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,

@@ -189,13 +189,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     virt_basis_price = price
                     virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
                 if initial_tpv == 0:
+                    config_initial_cap = portfolio_cfg.get("initial_capital", real_equity)
                     temp_calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                  base_ticker=base_ticker, siphoning_reserve=0.0, targets=targets,
                                                  long_entry_price=l_entry, short_entry_price=s_entry,
-                                                 initial_capital=real_equity)
+                                                 initial_capital=config_initial_cap)
                     initial_tpv = temp_calc.tpv
                     reference_tpv = initial_tpv
-                    logger.info(f"Initialized TPV base: {initial_tpv:.2f}")
+                    logger.info(f"Initialized TPV base: {initial_tpv:.2f} (from {'config' if 'initial_capital' in portfolio_cfg else 'current equity'})")
 
                 state.update({
                     "virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt,
@@ -307,8 +308,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
-                # ПРАВИЛО: Сифоним только если реальный баланс (без PnL) выше начального
-                excess_to_siphon: float = max(0, real_equity - initial_tpv)
+                # ПРАВИЛО: Сифоним только если общая стоимость портфеля (Total TPV) выше начального капитала
+                excess_to_siphon: float = max(0, calc.total_tpv - initial_tpv)
 
                 for action in valid_actions:
                     trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия
@@ -525,7 +526,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     bnb_balance = await connector.get_bnb_balance()
                 except: pass
                 cycles = state.get("rebalance_cycles", 0)
-                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - state.get("initial_tpv", calc.total_tpv), cycles, siphoning_reserve, total_balance, bnb_balance)
+                # Для отчета в Telegram используем начальный капитал из конфига как приоритет
+                report_initial_cap = portfolio_cfg.get("initial_capital", state.get("initial_tpv", calc.total_tpv))
+                await notifier.send_status(base_ticker, calc.total_tpv, calc.total_tpv - report_initial_cap, cycles, siphoning_reserve, total_balance, bnb_balance)
 
         except Exception as e:
             logger.error(f"Error in cycle: {e}")

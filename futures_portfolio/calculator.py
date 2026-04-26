@@ -24,18 +24,16 @@ class PortfolioCalculator:
         
         # Общий TPV (включая накопленный резерв)
         self.total_tpv: float = real_equity + (self.virt_current_value - virt_allocated_usdt) + self.siphoning_reserve
-        
+
         # Логика TPV Cap (Siphoning) + Recovery Mode
         if self.total_tpv > self.initial_capital:
             # ПРАВИЛО: Активный TPV не может превышать initial_capital.
-            # Излишек считается резервом (даже если он еще не переведен в SAFE физически)
+            # Излишек считается потенциальным резервом для сифонинга в main.py
             self.tpv: float = self.initial_capital
-            self.siphoning_reserve = self.total_tpv - self.initial_capital
         else:
-            # Если мы в просадке, используем SAFE для маржи (Recovery Mode)
-            # tpv будет расти до initial_capital по мере возврата средств из резерва
+            # Если мы в просадке, используем SAFE для поддержания маржи (Recovery Mode)
             self.tpv: float = self.total_tpv
-            self.siphoning_reserve = 0.0 # Весь резерв "впитан" для поддержания маржи
+
         
         # Защита от NaN
         if math.isnan(self.tpv) or self.tpv <= 0:
