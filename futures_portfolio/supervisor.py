@@ -4,9 +4,13 @@ import logging
 import os
 import time
 import sys
+from dotenv import load_dotenv
+
+# Загрузка окружения
+load_dotenv()
+
 from rank_tickers import main as run_scanner
 from backtest_rebalance import run_backtest
-from notifier import TelegramNotifier
 
 # Настройка логирования
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
@@ -22,6 +26,9 @@ logging.basicConfig(
 logger = logging.getLogger("Supervisor")
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Принудительная загрузка .env из текущей директории для надежности
+load_dotenv(os.path.join(CURRENT_DIR, ".env"))
+
 CONFIG_PATH = os.path.join(CURRENT_DIR, "config.json")
 DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
 
@@ -51,7 +58,6 @@ async def safe_save_json(path: str, data: dict, retries: int = 5):
 
 async def manage_swarm():
     logger.info("--- Starting Supervisor Cycle ---")
-    notifier = TelegramNotifier()
     
     # 1. Загрузка текущего конфига
     config = await safe_load_json(CONFIG_PATH, {})
@@ -67,9 +73,7 @@ async def manage_swarm():
     try:
         ranked_list = await run_scanner(quiet=True, min_volume=100_000_000)
     except Exception as e:
-        msg = f"❌ Supervisor: Scanner failed: {e}"
-        logger.error(msg)
-        await notifier.send_message(msg)
+        logger.error(f"Scanner failed: {e}")
         return
     
     scores = {r['symbol']: r for r in ranked_list}
@@ -173,16 +177,7 @@ async def manage_swarm():
             
             await asyncio.create_subprocess_shell("pm2 save")
             
-            msg = (
-                f"🔄 <b>Swarm Updated</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✅ Total: {len(new_ticker_list)} bots\n"
-                f"➕ Started: {len(to_start)}\n"
-                f"❌ Stopped: {len(to_stop)}\n"
-                f"🔄 Switched: {len(to_restart)}\n"
-                f"━━━━━━━━━━━━━━━━━━"
-            )
-            await notifier.send_message(msg)
+            logger.info(f"Swarm Updated: Total={len(new_ticker_list)}, Started={len(to_start)}, Stopped={len(to_stop)}, Restored={len(to_restart)}")
         except Exception as e:
             logger.error(f"PM2 Sync Error: {e}")
     else:

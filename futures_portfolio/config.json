@@ -44,12 +44,12 @@
     "BSBUSDT",
     "LABUSDT",
     "KATUSDT",
-    "ZBTUSDT",
     "HYPERUSDT",
+    "ZBTUSDT",
     "APEUSDT",
     "AXSUSDT",
     "RAVEUSDT",
-    "API3USDT"
+    "GALAUSDT"
   ],
   "base_ticker": "TRADOORUSDT",
   "live_swarm": []

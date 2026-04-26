@@ -2,11 +2,18 @@ import subprocess
 import time
 import sys
 import os
+from dotenv import load_dotenv
+
+# Загрузка окружения
+load_dotenv()
 
 def main():
     # Путь к интерпретатору python и скрипту супервизора
     python_exe = sys.executable
     script_path = os.path.join(os.path.dirname(__file__), "supervisor.py")
+    
+    # Принудительная загрузка .env для дочерних процессов
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
     
     print(f"Supervisor Service started. Cycle: 4 hours.")
     
