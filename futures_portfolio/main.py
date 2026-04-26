@@ -94,7 +94,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     tpv_ath = state.get("tpv_ath", 0.0)
 
     # Параметры капитала и защиты
-    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", 0.0)
+    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
     
     # Инфо о бирже
     exchange_info = await connector.get_exchange_info()

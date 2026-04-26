@@ -38,21 +38,8 @@ def reset_system():
         except Exception as e:
             print(f"Could not remove state file {f}: {e}")
 
-    # 4. Обнуляем конфиг (ставим пустые тикеры)
-    print("Resetting config.json...")
-    config_path = "config.json"
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            
-            config["tickers"] = []
-            config["base_ticker"] = "BTCUSDT"
-            
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-        except Exception as e:
-            print(f"Error resetting config: {e}")
+    # 4. Пропускаем обнуление конфига (пользователь уже настроил его)
+    print("Skipping config.json reset to preserve your settings...")
 
     # 5. Удаляем историю графиков
     print("Removing equity history...")
