@@ -308,8 +308,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
-                # ПРАВИЛО: Сифоним только если общая стоимость портфеля (Total TPV) выше начального капитала
-                excess_to_siphon: float = max(0, calc.total_tpv - initial_tpv)
+                # ПРАВИЛО: Сифоним только если активная стоимость портфеля (без учета уже отложенного SAFE) выше начальной
+                current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
+                excess_to_siphon: float = max(0, (calc.total_tpv - siphoning_reserve) - current_initial_cap)
 
                 for action in valid_actions:
                     trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия
