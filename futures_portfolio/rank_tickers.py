@@ -23,6 +23,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger("Scanner")
 
 CACHE_FILE = "scan_cache.json"
+CONFIG_FILE = "config.json"
+
+def update_config(top_tickers: List[Dict]):
+    """Автоматическое обновление списка тикеров в config.json"""
+    if not top_tickers:
+        return
+        
+    new_tickers = [t['symbol'] for t in top_tickers[:10]]
+    
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            config['tickers'] = new_tickers
+            
+            # Также обновляем base_ticker на самый топовый
+            if new_tickers:
+                config['base_ticker'] = new_tickers[0]
+                
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Successfully updated {CONFIG_FILE} with {len(new_tickers)} tickers.")
+        else:
+            logger.warning(f"Config file {CONFIG_FILE} not found. Skipping update.")
+    except Exception as e:
+        logger.error(f"Failed to update config: {e}")
 
 def retry_on_network_error(retries: int = 3, delay: float = 1.0):
     def decorator(func: Callable):
@@ -193,8 +221,8 @@ class TickerScanner:
             tasks = [self.analyze_ticker(session, c['symbol'], funding_map.get(c['symbol'], 0.0)) for c in candidates]
             results = await asyncio.gather(*tasks)
             
-            ranked_list = [r for r in results if r is not None]
-            ranked_list.sort(key=lambda x: x['score'], reverse=True)
+            ranked_list = [r for r in results if r is not None and r['cycles'] > 100]
+            ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
             # Сохранение в кэш
             try:
@@ -213,6 +241,9 @@ async def main(quiet=False, min_volume=100_000_000):
     start_time = time.time()
     top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
     duration = time.time() - start_time
+    
+    # Автоматическое обновление конфига
+    update_config(top_tickers)
     
     if not quiet:
         print("\n" + "="*145)

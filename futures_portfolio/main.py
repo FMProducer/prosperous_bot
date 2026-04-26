@@ -269,7 +269,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
             if i % 5 == 0:
                  res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                 logger.info(f"Heartbeat: TPV={calc.total_tpv:.4f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
+                 logger.info(f"Heartbeat: Balance={real_equity:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc.share_long_pct:.1f}% S:{calc.share_short_pct:.1f}% V:{calc.share_virt_pct:.1f}%")
 
             current_threshold = -1.0 if (is_first_run or is_extreme) else threshold
             if not (is_first_run or is_extreme) and reference_tpv > 0 and calc.tpv < reference_tpv:
@@ -307,7 +307,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 limit_stats = {"attempted": 0, "filled": 0, "fallback": 0, "total_profit_usdt": 0.0, "total_improvement_pct": 0.0}
 
                 # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
-                excess_to_siphon: float = max(0, calc.total_tpv - initial_tpv)
+                # ПРАВИЛО: Сифоним только если реальный баланс (без PnL) выше начального
+                excess_to_siphon: float = max(0, real_equity - initial_tpv)
 
                 for action in valid_actions:
                     trade_pnl = 0.0 # Всегда инициализируем в начале обработки действия

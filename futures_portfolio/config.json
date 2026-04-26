@@ -40,17 +40,17 @@
     }
   ],
   "tickers": [
-    "RAVEUSDT",
-    "BSBUSDT",
-    "KATUSDT",
-    "APEUSDT",
-    "CHIPUSDT",
-    "HYPERUSDT",
     "TRADOORUSDT",
-    "API3USDT",
+    "BSBUSDT",
+    "LABUSDT",
+    "KATUSDT",
+    "ZBTUSDT",
+    "HYPERUSDT",
+    "APEUSDT",
     "AXSUSDT",
-    "SOONUSDT"
+    "RAVEUSDT",
+    "API3USDT"
   ],
-  "base_ticker": "RAVEUSDT",
+  "base_ticker": "TRADOORUSDT",
   "live_swarm": []
 }

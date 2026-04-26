@@ -15,6 +15,7 @@ class PortfolioCalculator:
         self.base_ticker: str = base_ticker
         self.siphoning_reserve: float = siphoning_reserve
         self.initial_capital: float = initial_capital
+        self.real_equity: float = real_equity
         
         # Виртуальная доля
         if virt_basis_price <= 0: virt_basis_price = spot_price
