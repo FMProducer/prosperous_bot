@@ -109,11 +109,17 @@ async def manage_swarm():
             try:
                 # Быстрый бэктест на 1 день
                 results = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=1, quiet=True)
-                if results and results.get("profit_pct", -1) > -0.5:
+                
+                # НОВОЕ УСЛОВИЕ: Профит > -0.5% И Альфа против HODL должна быть положительной
+                profit_ok = results and results.get("profit_pct", -1) > -0.5
+                alpha_ok = results and results.get("alpha_vs_hodl", -1) > 0
+                
+                if profit_ok and alpha_ok:
                     validated_new_tickers.append(symbol)
-                    logger.info(f"✅ {symbol} PASSED Backtest.")
+                    logger.info(f"✅ {symbol} PASSED Backtest (Profit: {results.get('profit_pct'):.2f}%, Alpha: {results.get('alpha_vs_hodl'):.2f}%).")
                 else:
-                    logger.info(f"❌ {symbol} REJECTED (Bad results).")
+                    reason = "Low Profit" if not profit_ok else "Negative Alpha"
+                    logger.info(f"❌ {symbol} REJECTED ({reason}).")
             except: pass
 
     # 5. Гарантия размера роя
