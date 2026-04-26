@@ -226,3 +226,5 @@ futures_portfolio/scan_cache.json
 futures_portfolio/paper_state_*.json
 futures_portfolio/state_*.json
 futures_portfolio/log.*
+futures_portfolio/TEMP/state_*.json
+futures_portfolio/TEMP/paper_state_*.json

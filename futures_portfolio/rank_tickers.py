@@ -212,7 +212,7 @@ class TickerScanner:
 
             funding_map = {item['symbol']: float(item['lastFundingRate']) for item in premium_info}
             
-            candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume]
+            candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume and all(ord(c) < 128 for c in t['symbol'])]
             candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
             candidates = candidates[:60] # Берем чуть больше для запаса
             
@@ -222,6 +222,13 @@ class TickerScanner:
             results = await asyncio.gather(*tasks)
             
             ranked_list = [r for r in results if r is not None and r['cycles'] > 100]
+            
+            # Исключаем 1 самый бешеный тикер по MAX SPURT% (защита от аномальной волатильности)
+            if ranked_list:
+                mad_ticker = max(ranked_list, key=lambda x: x['max_spurt'])
+                logger.info(f"Excluding the 'mad' ticker: {mad_ticker['symbol']} with MAX SPURT: {mad_ticker['max_spurt']:.2f}%")
+                ranked_list = [t for t in ranked_list if t['symbol'] != mad_ticker['symbol']]
+
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
             # Сохранение в кэш

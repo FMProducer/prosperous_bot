@@ -33,24 +33,24 @@
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
-      "equity_trailing_stop_pct": 100.0,
+      "equity_trailing_stop_pct": 20.0,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
       "check_interval_sec": 15
     }
   ],
   "tickers": [
-    "TRADOORUSDT",
-    "BSBUSDT",
     "LABUSDT",
-    "KATUSDT",
-    "HYPERUSDT",
     "ZBTUSDT",
-    "APEUSDT",
-    "AXSUSDT",
+    "TRADOORUSDT",
+    "ORCAUSDT",
+    "HYPERUSDT",
     "RAVEUSDT",
-    "GALAUSDT"
+    "KATUSDT",
+    "ENSOUSDT",
+    "AXSUSDT",
+    "APEUSDT"
   ],
-  "base_ticker": "TRADOORUSDT",
+  "base_ticker": "LABUSDT",
   "live_swarm": []
 }
