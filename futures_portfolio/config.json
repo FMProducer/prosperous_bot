@@ -25,10 +25,10 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.025,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
-        "ZBTUSDT": 0.025,
-        "HYPERUSDT": 0.025
+        "ZBTUSDT": 0.02,
+        "HYPERUSDT": 0.02
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -40,15 +40,15 @@
   ],
   "tickers": [
     "ZBTUSDT",
-    "NAORISUSDT",
-    "TRADOORUSDT",
     "HYPERUSDT",
-    "LABUSDT",
+    "TRADOORUSDT",
+    "NAORISUSDT",
     "BASEDUSDT",
-    "CHIPUSDT",
     "0GUSDT",
+    "SIRENUSDT",
+    "KATUSDT",
     "AXSUSDT",
-    "SIRENUSDT"
+    "RAVEUSDT"
   ],
   "base_ticker": "ZBTUSDT",
   "live_swarm": []

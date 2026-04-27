@@ -4,14 +4,6 @@ import logging
 import time
 import json
 import os
-
-# ЖЕСТКОЕ ОТКЛЮЧЕНИЕ ПРОКСИ
-os.environ['HTTP_PROXY'] = ''
-os.environ['HTTPS_PROXY'] = ''
-os.environ['http_proxy'] = ''
-os.environ['https_proxy'] = ''
-os.environ['NO_PROXY'] = '*'
-
 from typing import List, Dict, Optional, Callable, Any
 from dotenv import load_dotenv
 
@@ -49,6 +41,7 @@ class TickerScanner:
     async def fetch(self, session: aiohttp.ClientSession, endpoint: str, params: dict = None):
         async with self.semaphore:
             try:
+                # Отключаем прокси только для этого конкретного запроса к Binance
                 async with session.get(f"{self.base_url}{endpoint}", params=params, timeout=20, proxy=None) as response:
                     if response.status == 429:
                         retry_after = int(response.headers.get("Retry-After", 5))
@@ -72,7 +65,6 @@ class TickerScanner:
         highs = [float(k[2]) for k in klines]
         lows = [float(k[3]) for k in klines]
         
-        # --- Упрощенный подсчет циклов (Z-logic) ---
         cycles = 0
         basis = closes[0]
         for price in closes:
@@ -81,7 +73,6 @@ class TickerScanner:
                 cycles += 1
                 basis = price
 
-        # --- Детектор всплесков (Spike Trap) ---
         max_hourly_spurt = 0.0
         for h in range(0, len(klines), 60):
             window = klines[h:h+60]
@@ -92,11 +83,9 @@ class TickerScanner:
             spurt = (w_high - w_low) / w_open * 100
             max_hourly_spurt = max(max_hourly_spurt, spurt)
 
-        # --- Trend Efficiency (Прямолинейность) ---
         total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
         net_move_abs = abs(closes[-1] - closes[0])
         trend_ratio_pct = (net_move_abs / total_path * 100) if total_path > 0 else 0
-
         net_change_pct = (closes[-1] / closes[0] - 1) * 100
         
         return {
@@ -111,7 +100,8 @@ class TickerScanner:
     async def get_top_tickers(self, min_volume: float = 50_000_000):
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
-        async with aiohttp.ClientSession(trust_env=False) as session:
+        # trust_env=True позволяет aiohttp использовать системные прокси (важно для Telegram)
+        async with aiohttp.ClientSession(trust_env=True) as session:
             tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
             premium_info = await self.fetch(session, "/fapi/v1/premiumIndex")
             if not tickers_24h or not premium_info:
@@ -126,7 +116,6 @@ class TickerScanner:
             tasks = [self.analyze_ticker(session, c['symbol'], funding_map.get(c['symbol'], 0.0)) for c in candidates]
             results = await asyncio.gather(*tasks)
             
-            # Фильтр CYCLES < 10
             ranked_list = [r for r in results if r is not None and r['cycles'] >= 10]
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
