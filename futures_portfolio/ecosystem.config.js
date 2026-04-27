@@ -10,13 +10,12 @@ try {
     config = JSON.parse(data);
 } catch (e) {
     console.error("Could not read config.json, using defaults");
-    config = { tickers: ["ZECUSDT"] };
+    config = { tickers: ["BTCUSDT"] };
 }
 
-const tickers = config.tickers || [config.base_ticker || "BTCUSDT"];
+const tickers = config.tickers || [];
 
-module.exports = {
-  apps: tickers.map(ticker => {
+const apps = tickers.map(ticker => {
     const shortName = ticker.replace('USDT', '').toLowerCase();
     return {
       name: `bot-${shortName}`,
@@ -29,9 +28,25 @@ module.exports = {
       out_file: `./logs/out_${ticker}.log`,
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       env: { 
-        NODE_ENV: "production",
         PYTHONUNBUFFERED: "1" 
       }
     };
-  })
+});
+
+// Добавляем Супервайзер-сервис в общий список
+apps.push({
+  name: "supervisor-service",
+  script: "supervisor_service.py",
+  interpreter: "python",
+  restart_delay: 30000,
+  error_file: "./logs/err_supervisor_service.log",
+  out_file: "./logs/out_supervisor_service.log",
+  log_date_format: "YYYY-MM-DD HH:mm:ss",
+  env: {
+    PYTHONUNBUFFERED: "1"
+  }
+});
+
+module.exports = {
+  apps: apps
 };

@@ -15,42 +15,14 @@ os.environ['NO_PROXY'] = '*'
 from typing import List, Dict, Optional, Callable, Any
 from dotenv import load_dotenv
 
-# Загрузка переменных окружения для API ключей (если нужны для лимитов)
+# Загрузка переменных окружения
 load_dotenv()
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("Scanner")
 
 CACHE_FILE = "scan_cache.json"
 CONFIG_FILE = "config.json"
-
-def update_config(top_tickers: List[Dict]):
-    """Автоматическое обновление списка тикеров в config.json"""
-    if not top_tickers:
-        return
-        
-    new_tickers = [t['symbol'] for t in top_tickers[:10]]
-    
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            config['tickers'] = new_tickers
-            
-            # Также обновляем base_ticker на самый топовый
-            if new_tickers:
-                config['base_ticker'] = new_tickers[0]
-                
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Successfully updated {CONFIG_FILE} with {len(new_tickers)} tickers.")
-        else:
-            logger.warning(f"Config file {CONFIG_FILE} not found. Skipping update.")
-    except Exception as e:
-        logger.error(f"Failed to update config: {e}")
 
 def retry_on_network_error(retries: int = 3, delay: float = 1.0):
     def decorator(func: Callable):
@@ -68,65 +40,39 @@ def retry_on_network_error(retries: int = 3, delay: float = 1.0):
     return decorator
 
 class TickerScanner:
-    def __init__(self, concurrent_requests: int = 10):
-        # Используем основной домен, так как он заработал в main.py
+    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.02):
         self.base_url = "https://fapi.binance.com"
-        self.rebalance_threshold = 0.008 
+        self.rebalance_threshold = rebalance_threshold
         self.semaphore = asyncio.Semaphore(concurrent_requests)
         
     @retry_on_network_error(retries=3)
     async def fetch(self, session: aiohttp.ClientSession, endpoint: str, params: dict = None):
         async with self.semaphore:
-            # Принудительно отключаем прокси и игнорируем системные настройки
             try:
                 async with session.get(f"{self.base_url}{endpoint}", params=params, timeout=20, proxy=None) as response:
                     if response.status == 429:
                         retry_after = int(response.headers.get("Retry-After", 5))
-                        logger.warning(f"Rate limited (429). Sleeping for {retry_after}s")
                         await asyncio.sleep(retry_after)
                         return await self.fetch(session, endpoint, params)
                     if response.status != 200:
-                        logger.debug(f"Error {response.status} for {endpoint}")
                         return None
                     return await response.json()
             except Exception as e:
-                logger.debug(f"Fetch error for {endpoint}: {e}")
                 return None
 
     async def analyze_ticker(self, session: aiohttp.ClientSession, symbol: str, funding_rate: float) -> Optional[Dict]:
-        """Параллельный анализ одного тикера."""
         now_ms = int(time.time() * 1000)
-        one_month_ms = 30 * 24 * 60 * 60 * 1000
-
-        # 1. Проверка возраста тикера
-        age_check = await self.fetch(session, "/fapi/v1/klines", {
-            "symbol": symbol, "interval": "1M", "startTime": now_ms - one_month_ms, "limit": 1
-        })
-        if not age_check or len(age_check) == 0:
-            return None
-
-        # 2. Получение данных за 24 часа (1440 минут) - оптимально для минутной торговли
         params = {"symbol": symbol, "interval": "1m", "limit": 1440, "endTime": now_ms}
         klines = await self.fetch(session, "/fapi/v1/klines", params)
 
-        if not klines or len(klines) < 1200:  # Ожидаем ~1440, минимум 1200
+        if not klines or len(klines) < 100:
             return None
-        all_data = klines
-
-        # Обработка данных
-        seen_times = set()
-        unique_klines = []
-        for k in all_data:
-            if k[0] not in seen_times:
-                unique_klines.append(k)
-                seen_times.add(k[0])
-        unique_klines.sort(key=lambda x: x[0])
         
-        closes = [float(k[4]) for k in unique_klines]
-        highs = [float(k[2]) for k in unique_klines]
-        lows = [float(k[3]) for k in unique_klines]
+        closes = [float(k[4]) for k in klines]
+        highs = [float(k[2]) for k in klines]
+        lows = [float(k[3]) for k in klines]
         
-        # --- Улучшенный подсчет циклов (Z-logic) ---
+        # --- Упрощенный подсчет циклов (Z-logic) ---
         cycles = 0
         basis = closes[0]
         for price in closes:
@@ -137,8 +83,8 @@ class TickerScanner:
 
         # --- Детектор всплесков (Spike Trap) ---
         max_hourly_spurt = 0.0
-        for h in range(0, len(unique_klines), 60):
-            window = unique_klines[h:h+60]
+        for h in range(0, len(klines), 60):
+            window = klines[h:h+60]
             if not window: continue
             w_high = max(float(k[2]) for k in window)
             w_low = min(float(k[3]) for k in window)
@@ -149,119 +95,68 @@ class TickerScanner:
         # --- Trend Efficiency (Прямолинейность) ---
         total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
         net_move_abs = abs(closes[-1] - closes[0])
-        trend_ratio = (net_move_abs / total_path) if total_path > 0 else 0
-        trend_ratio_pct = trend_ratio * 100 # 1.0 -> 100%
+        trend_ratio_pct = (net_move_abs / total_path * 100) if total_path > 0 else 0
 
-        # --- СКОРИНГ 4.0 (ZEC DNA) ---
         net_change_pct = (closes[-1] / closes[0] - 1) * 100
-        abs_net_change = abs(net_change_pct)
         
-        # Базовый скор: отношение циклов к "пройденному полезному пути"
-        # Если цена гуляла много (cycles), но в итоге никуда не ушла (abs_net_change) - это ИДЕАЛЬНО.
-        score = (cycles * 50) / (1 + abs_net_change * trend_ratio_pct)
-
-        # Дисквалификации (DQ) - Жесткие правила безопасности
-        if abs_net_change > 10.0:
-            tier = "Tier-X (NET_TRAP)"
-            score = 0
-        elif trend_ratio_pct > 6.0: # Снизили с 7.0 до 3.0, теперь подняли до 6.0
-            tier = "Tier-X (TREND_TRAP)"
-            score = 0
-        elif max_hourly_spurt > 10.0: # Снизили с 10.0 до 7.0, теперь вернули 10.0
-            tier = "Tier-X (SPIKE_TRAP)"
-            score = 0
-        elif cycles < 5: # Снизили с 8 до 5
-            tier = "Tier-3 (LOW_ENERGY)"
-            score = 0
-        else:
-            # БОНУСЫ
-            # Funding: Если < 0, то за шорт платят нам (хорошо для нейтральной стратегии)
-            if funding_rate < 0:
-                score *= (1 + abs(funding_rate) * 100)
-            
-            # Распределение по тирам
-            if score >= 400:
-                tier = "Tier-1 (GOLD)"
-            elif score >= 150:
-                tier = "Tier-2 (GOOD)"
-            else:
-                tier = "Tier-3 (OK)"
-
         return {
             "symbol": symbol,
             "cycles": cycles,
-            "trend": trend_ratio_pct,
             "net_change": net_change_pct,
             "max_spurt": max_hourly_spurt,
-            "score": score,
-            "tier": tier,
+            "trend": trend_ratio_pct,
             "funding": funding_rate * 100
         }
 
-    async def get_top_tickers(self, min_volume: float = 200_000_000):
-        logger.info(f"Step 1: Market Scan (Min Vol: {min_volume/1e6:.0f}M)...")
+    async def get_top_tickers(self, min_volume: float = 50_000_000):
+        logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
-        # Отключаем trust_env, чтобы aiohttp не лез в системные настройки прокси
         async with aiohttp.ClientSession(trust_env=False) as session:
             tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
             premium_info = await self.fetch(session, "/fapi/v1/premiumIndex")
-            
             if not tickers_24h or not premium_info:
-                logger.error("Failed to fetch initial market data. Check your connection.")
+                logger.error("Failed to fetch initial market data.")
                 return []
 
             funding_map = {item['symbol']: float(item['lastFundingRate']) for item in premium_info}
-            
             candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume and all(ord(c) < 128 for c in t['symbol'])]
             candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-            candidates = candidates[:60] # Берем чуть больше для запаса
-            
-            logger.info(f"Step 2: Parallel Analysis of {len(candidates)} candidates...")
+            candidates = candidates[:80]
             
             tasks = [self.analyze_ticker(session, c['symbol'], funding_map.get(c['symbol'], 0.0)) for c in candidates]
             results = await asyncio.gather(*tasks)
             
-            ranked_list = [r for r in results if r is not None and r['cycles'] > 100]
-            
-            # Исключаем 1 самый бешеный тикер по MAX SPURT% (защита от аномальной волатильности)
-            if ranked_list:
-                mad_ticker = max(ranked_list, key=lambda x: x['max_spurt'])
-                logger.info(f"Excluding the 'mad' ticker: {mad_ticker['symbol']} with MAX SPURT: {mad_ticker['max_spurt']:.2f}%")
-                ranked_list = [t for t in ranked_list if t['symbol'] != mad_ticker['symbol']]
-
+            # Фильтр CYCLES < 10
+            ranked_list = [r for r in results if r is not None and r['cycles'] >= 10]
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
-            # Сохранение в кэш
             try:
                 with open(CACHE_FILE, "w") as f:
-                    json.dump({
-                        "timestamp": time.time(),
-                        "results": ranked_list
-                    }, f, indent=2)
+                    json.dump({"timestamp": time.time(), "results": ranked_list}, f, indent=2)
             except Exception as e:
                 logger.error(f"Failed to save cache: {e}")
             
             return ranked_list
 
-async def main(quiet=False, min_volume=100_000_000):
-    scanner = TickerScanner(concurrent_requests=15)
-    start_time = time.time()
+async def main(quiet=False, min_volume=50_000_000):
+    threshold = 0.02
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                threshold = cfg["portfolios"][0].get("rebalance_threshold", 0.02)
+    except: pass
+
+    scanner = TickerScanner(concurrent_requests=20, rebalance_threshold=threshold)
     top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
-    duration = time.time() - start_time
-    
-    # Автоматическое обновление конфига
-    update_config(top_tickers)
     
     if not quiet:
-        print("\n" + "="*145)
-        print(f"{'SYMBOL':<12} | {'CYCLES':<8} | {'NET MOVE%':<10} | {'MAX SPURT%':<10} | {'TREND EFF%':<10} | {'FUNDING%':<10} | {'SCORE':<8} | {'RECOMMENDATION'}")
-        print("-" * 145)
-        
-        for t in top_tickers[:30]:
-            print(f"{t['symbol']:<12} | {t['cycles']:<8} | {t['net_change']:<10.2f} | {t['max_spurt']:<10.2f} | {t['trend']:<10.2f} | {t['funding']:<10.4f} | {t['score']:<8.2f} | {t['tier']}")
-        
-        print("="*145)
-        print(f"Scan completed in {duration:.1f} seconds.")
+        print("\n" + "="*125)
+        print(f"{'SYMBOL':<15} | {'CYCLES':<8} | {'NET MOVE%':<12} | {'MAX SPURT%':<12} | {'TREND EFF%':<12} | {'FUNDING%'}")
+        print("-" * 125)
+        for t in top_tickers[:40]:
+            print(f"{t['symbol']:<15} | {t['cycles']:<8} | {t['net_change']:<12.2f} | {t['max_spurt']:<12.2f} | {t['trend']:<12.2f} | {t['funding']:.4f}")
+        print("="*125)
     
     return top_tickers
 

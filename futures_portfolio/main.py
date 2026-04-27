@@ -537,25 +537,74 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         await asyncio.sleep(check_interval)
         i += 1
 
+async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
+    config = await load_json(config_path, {})
+    paper_mode = config.get("paper_mode", False)
+    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+    
+    logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode})")
+    
+    exchange_info = await connector.get_exchange_info()
+    step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
+    
+    if paper_mode:
+        paper_state = await load_json(paper_state_file_path, {})
+        if paper_state and "positions" in paper_state:
+            for pos_key, qty in paper_state["positions"].items():
+                if qty != 0:
+                    logger.info(f"Closing PAPER position {pos_key}: {qty}")
+            paper_state["positions"] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+            paper_state["long_entry_price"] = 0.0
+            paper_state["short_entry_price"] = 0.0
+            await save_json(paper_state_file_path, paper_state)
+    else:
+        raw_positions = await connector.get_positions()
+        for pos_key, data in raw_positions.items():
+            if base_ticker in pos_key:
+                qty = data["qty"]
+                if qty != 0:
+                    side = "SELL" if qty > 0 else "BUY"
+                    step_size = step_sizes.get(base_ticker, 0.0)
+                    logger.info(f"Closing REAL position {pos_key}: {qty}")
+                    await PortfolioExecutor(connector).execute_market_order(base_ticker, abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
+
+    # Сброс состояния
+    state = await load_json(state_file_path, {})
+    state["virt_basis_price"] = 0.0
+    state["virt_allocated_usdt"] = 0.0
+    state["initial_tpv"] = 0.0 
+    state["reference_tpv"] = 0.0
+    state["tpv_ath"] = 0.0
+    await save_json(state_file_path, state)
+    logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--ticker", default=None)
+    parser.add_argument("--stop", action="store_true", help="Close all positions and stop")
     args = parser.parse_args()
+    
     config_base = os.path.splitext(os.path.basename(args.config))[0]
     with open(args.config, "r", encoding="utf-8") as f: cfg = json.load(f)
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
+    
     log_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"rebalance_{base_ticker}.log")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
     logger = logging.getLogger(base_ticker)
+    
     instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"state_{base_ticker}.json"))
     instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
-    logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file}")
     
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
-    asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
+
+    if args.stop:
+        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
+    else:
+        logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file}")
+        asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))

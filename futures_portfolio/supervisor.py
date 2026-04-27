@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-import sys
+from typing import Dict, List, Set
 from dotenv import load_dotenv
 
 # Загрузка окружения
@@ -26,168 +26,117 @@ logging.basicConfig(
 logger = logging.getLogger("Supervisor")
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Принудительная загрузка .env из текущей директории для надежности
-load_dotenv(os.path.join(CURRENT_DIR, ".env"))
-
 CONFIG_PATH = os.path.join(CURRENT_DIR, "config.json")
+ECOSYSTEM_PATH = os.path.join(CURRENT_DIR, "ecosystem.config.js")
 DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
 
-async def safe_load_json(path: str, default: dict, retries: int = 5) -> dict:
-    for i in range(retries):
-        try:
-            if not os.path.exists(path): return default
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (PermissionError, json.JSONDecodeError):
-            if i == retries - 1: return default
-            await asyncio.sleep(0.5)
-    return default
+async def safe_load_json(path: str, default: dict) -> dict:
+    try:
+        if not os.path.exists(path): return default
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return default
 
-async def safe_save_json(path: str, data: dict, retries: int = 5):
-    for i in range(retries):
-        try:
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            if os.path.exists(path): os.remove(path)
-            os.rename(tmp, path)
-            return
-        except PermissionError:
-            if i == retries - 1: break
-            await asyncio.sleep(0.5)
+async def safe_save_json(path: str, data: dict):
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        if os.path.exists(path): os.remove(path)
+        os.rename(tmp, path)
+    except Exception as e:
+        logger.error(f"Save failed: {e}")
+
+async def close_bot_positions(ticker: str):
+    """Остановка бота и закрытие его позиций"""
+    logger.info(f"🛑 Terminating and closing positions for {ticker}...")
+    try:
+        short_name = ticker.replace('USDT', '').lower()
+        # 1. Закрываем позиции (main.py --stop)
+        cmd = f"python main.py --config config.json --ticker {ticker} --stop"
+        proc = await asyncio.create_subprocess_shell(cmd)
+        await proc.wait()
+        
+        # 2. Удаляем из PM2
+        proc_del = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        await proc_del.wait()
+    except Exception as e:
+        logger.error(f"Failed to close {ticker}: {e}")
 
 async def manage_swarm():
-    logger.info("--- Starting Supervisor Cycle ---")
+    logger.info("--- Starting Strategy-Based Supervisor Cycle (1-Day Window) ---")
     
-    # 1. Загрузка текущего конфига
     config = await safe_load_json(CONFIG_PATH, {})
     if not config:
-        logger.error(f"Config {CONFIG_PATH} not found or empty!")
+        logger.error("Config not found!")
         return
     
     current_tickers = config.get("tickers", [])
     max_bots = config.get("max_bots", 10)
     
-    # 2. Запуск сканера
-    logger.info("Step 1: Running Market Scanner (Min Vol: 100M)...")
+    # 1. Сканирование рынка (Discovery)
     try:
-        ranked_list = await run_scanner(quiet=True, min_volume=100_000_000)
+        scanner_results = await run_scanner(quiet=True, min_volume=50_000_000)
+        scanner_tickers = [r['symbol'] for r in scanner_results]
     except Exception as e:
         logger.error(f"Scanner failed: {e}")
-        return
+        scanner_tickers = []
     
-    scores = {r['symbol']: r for r in ranked_list}
+    # 2. Формируем пул (Current + New)
+    pool = list(set(current_tickers) | set(scanner_tickers))
+    logger.info(f"Evaluating {len(pool)} unique tickers.")
     
-    # 3. Анализ текущих тикеров
-    tickers_to_keep = []
-    candidates_to_drop = []
-    
-    now = time.time()
-    for t in current_tickers:
-        r = scores.get(t)
-        # Гистерезис: порог удержания (80) ниже порога входа (150)
-        current_score = r['score'] if r else 0
-        if r and current_score >= 80:
-            tickers_to_keep.append(t)
-        else:
-            reason = "low score" if not r or current_score < 80 else "rotation"
-            logger.info(f"Ticker {t} candidate for replacement ({reason}).")
-            candidates_to_drop.append({"symbol": t, "score": current_score})
-            
-    # 4. Поиск и валидация новых кандидатов
-    available_slots = max_bots - len(tickers_to_keep)
-    validated_new_tickers = []
-    
-    if available_slots > 0:
-        potential_new = [r for r in ranked_list if r['symbol'] not in current_tickers and r['score'] >= 150]
-        potential_new.sort(key=lambda x: x['score'], reverse=True)
-        
-        logger.info(f"Step 2: Validating candidates for {available_slots} slots...")
-        for c in potential_new:
-            if len(validated_new_tickers) >= available_slots: break
-            symbol = c['symbol']
-            try:
-                # Быстрый бэктест на 1 день
-                results = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=1, quiet=True)
-                
-                # НОВОЕ УСЛОВИЕ: Профит > -0.5% И Альфа против HODL должна быть положительной
-                profit_ok = results and results.get("profit_pct", -1) > -0.5
-                alpha_ok = results and results.get("alpha_vs_hodl", -1) > 0
-                
-                if profit_ok and alpha_ok:
-                    validated_new_tickers.append(symbol)
-                    logger.info(f"✅ {symbol} PASSED Backtest (Profit: {results.get('profit_pct'):.2f}%, Alpha: {results.get('alpha_vs_hodl'):.2f}%).")
-                else:
-                    reason = "Low Profit" if not profit_ok else "Negative Alpha"
-                    logger.info(f"❌ {symbol} REJECTED ({reason}).")
-            except: pass
+    # 3. Бэктест за 1 день
+    ticker_performance = []
+    for symbol in pool:
+        try:
+            res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=1, quiet=True)
+            if res:
+                # РАНЖИРОВАНИЕ ПО STRATEGY (%)
+                strat_profit = res.get("profit_pct", 0)
+                ticker_performance.append({
+                    "symbol": symbol,
+                    "strategy_profit": strat_profit
+                })
+                logger.info(f"   > {symbol}: Strategy Profit={strat_profit:+.2f}%")
+        except: pass
 
-    # 5. Гарантия размера роя
-    total_slots_filled = len(tickers_to_keep) + len(validated_new_tickers)
-    if total_slots_filled < max_bots and candidates_to_drop:
-        deficit = max_bots - total_slots_filled
-        candidates_to_drop.sort(key=lambda x: x['score'], reverse=True)
-        for r in candidates_to_drop[:deficit]:
-            tickers_to_keep.append(r['symbol'])
-            logger.info(f"🛡️ Rescuing {r['symbol']} to maintain swarm size.")
-
-    # 6. Сборка нового списка
-    new_ticker_list = tickers_to_keep + validated_new_tickers
+    # 4. Отбор Топ-10 по Strategy Profit
+    ticker_performance.sort(key=lambda x: x['strategy_profit'], reverse=True)
+    top_performers = ticker_performance[:max_bots]
+    new_ticker_list = [t['symbol'] for t in top_performers]
     
-    # 7. Swarm Promotion (Respect global paper_mode)
-    bot_stats = []
-    for t in new_ticker_list:
-        state_path = os.path.join(CURRENT_DIR, f"state_{t}.json")
-        state = await safe_load_json(state_path, {"current_profit": 0.0})
-        bot_stats.append({"ticker": t, "profit": state.get("current_profit", 0)})
+    logger.info(f"Selected Top 10 by Strategy: {new_ticker_list}")
 
-    bot_stats.sort(key=lambda x: x['profit'], reverse=True)
-    
-    global_paper_mode = config.get("paper_mode", False)
-    if global_paper_mode:
-        live_tickers = []
-        logger.info("Global PAPER MODE active. All bots forced to paper.")
-    else:
-        live_tickers = [b['ticker'] for b in bot_stats[:7]] # Топ-7 в Real
-
-    old_live_tickers = config.get("live_swarm", [])
-    config["live_swarm"] = live_tickers
-    config["tickers"] = new_ticker_list
-    if new_ticker_list:
-        config["base_ticker"] = new_ticker_list[0]
-    
-    await safe_save_json(CONFIG_PATH, config)
-
-    # 8. Хирургический PM2 Sync
-    if set(new_ticker_list) != set(current_tickers) or set(live_tickers) != set(old_live_tickers):
+    # 5. Ротация (только если список изменился)
+    if set(new_ticker_list) != set(current_tickers):
         to_stop = set(current_tickers) - set(new_ticker_list)
         to_start = set(new_ticker_list) - set(current_tickers)
-        to_restart = (set(new_ticker_list) & set(current_tickers)) & (set(live_tickers) ^ set(old_live_tickers))
-
-        logger.info(f"Syncing PM2: Start={to_start}, Stop={to_stop}, Restart={to_restart}")
         
-        try:
-            # Останавливаем
-            for t in (to_stop | to_restart):
-                short_name = t.replace('USDT', '').lower()
-                proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
-                await proc.wait()
+        config["tickers"] = new_ticker_list
+        config["base_ticker"] = new_ticker_list[0]
+        if not config.get("paper_mode", False):
+            config["live_swarm"] = new_ticker_list[:7]
+        
+        await safe_save_json(CONFIG_PATH, config)
+        
+        # Остановка только тех, кто вылетел
+        for t in to_stop:
+            await close_bot_positions(t)
             
-            # Запускаем
-            for t in (to_start | to_restart):
-                short_name = t.replace('USDT', '').lower()
-                # Используем 'python' в качестве интерпретатора, так как это стандарт для текущей среды
-                cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config config.json --ticker {t}"
-                proc = await asyncio.create_subprocess_shell(cmd)
-                await proc.wait()
-            
-            await asyncio.create_subprocess_shell("pm2 save")
-            
-            logger.info(f"Swarm Updated: Total={len(new_ticker_list)}, Started={len(to_start)}, Stopped={len(to_stop)}, Restored={len(to_restart)}")
-        except Exception as e:
-            logger.error(f"PM2 Sync Error: {e}")
+        # Запуск только новичков (surgical start)
+        for t in to_start:
+            short_name = t.replace('USDT', '').lower()
+            logger.info(f"🚀 Launching new bot: {t}")
+            cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config config.json --ticker {t}"
+            proc = await asyncio.create_subprocess_shell(cmd)
+            await proc.wait()
+        
+        await asyncio.create_subprocess_shell("pm2 save")
+        logger.info("Swarm rotation complete. Existing bots were NOT restarted.")
     else:
-        logger.info("Swarm remains stable.")
+        logger.info("Swarm remains stable. No restarts triggered.")
 
 if __name__ == "__main__":
     asyncio.run(manage_swarm())

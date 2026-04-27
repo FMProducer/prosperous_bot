@@ -127,7 +127,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         df = pd.read_feather(file_path).copy().reset_index(drop=True)
         if len(df) > days * 1440: df = df.tail(days * 1440).reset_index(drop=True)
 
-        initial_capital = portfolio_cfg.get("max_capital_usdt", 10000.0)
+        initial_capital = portfolio_cfg.get("initial_capital", 39.0)
         current_equity = initial_capital
         virt_basis_price = df.iloc[0]['close']
         virt_allocated_usdt = initial_capital * targets["VIRTUAL"]["share"]
