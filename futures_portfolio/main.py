@@ -42,9 +42,10 @@ async def save_json(path: str, data: dict, retries: int = 5) -> None:
                 time.sleep(0.5)
     await asyncio.to_thread(_write)
 
-async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
+async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
     config = await load_json(config_path, {})
-    paper_mode = config.get("paper_mode", False)
+    # Paper mode: override > config
+    paper_mode = paper_mode_override if paper_mode_override is not None else config.get("paper_mode", False)
     
     portfolio_cfg = config["portfolios"][0]
     targets = portfolio_cfg["targets"]
@@ -72,7 +73,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "initial_tpv": 0.0,
         "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
         "tpv_ath": 0.0,
-        "rebalance_cycles": 0
+        "rebalance_cycles": 0,
+        "started_at": time.time()
     })
 
     # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
@@ -84,6 +86,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         state["reference_tpv"] = 0.0
         state["tpv_ath"] = 0.0
         state["base_ticker"] = base_ticker
+        state["started_at"] = time.time()
         await save_json(state_file_path, state)
 
     virt_basis_price = state["virt_basis_price"]
@@ -584,11 +587,15 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--ticker", default=None)
     parser.add_argument("--stop", action="store_true", help="Close all positions and stop")
+    parser.add_argument("--paper", action="store_true", help="Force paper mode for this instance")
     args = parser.parse_args()
     
     config_base = os.path.splitext(os.path.basename(args.config))[0]
     with open(args.config, "r", encoding="utf-8") as f: cfg = json.load(f)
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
+    
+    # Paper mode logic: flag --paper OR global config paper_mode
+    is_paper_instance = args.paper or cfg.get("paper_mode", False)
     
     log_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(log_dir, exist_ok=True)
@@ -606,5 +613,7 @@ if __name__ == "__main__":
     if args.stop:
         asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
     else:
-        logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file}")
-        asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
+        logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file} | Mode: {'PAPER' if is_paper_instance else 'REAL'}")
+        # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 
+        # но rebalance_loop читает конфиг из файла. Лучше пропатчить rebalance_loop чтобы он принимал paper_mode_override.
+        asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode_override=is_paper_instance))

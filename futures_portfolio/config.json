@@ -7,6 +7,8 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.0,
   "max_bots": 10,
+  "paper_mode_bots": 9,
+  "probation_period_hours": 2,
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
@@ -28,7 +30,7 @@
       "rebalance_threshold": 0.02,
       "ticker_thresholds": {
         "ZBTUSDT": 0.02,
-        "HYPERUSDT": 0.02
+        "NAORISUSDT": 0.02
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -42,13 +44,13 @@
     "NAORISUSDT",
     "AGTUSDT",
     "ZBTUSDT",
-    "ORCAUSDT",
-    "SIRENUSDT",
-    "TURTLEUSDT",
     "1000LUNCUSDT",
+    "SIRENUSDT",
     "GWEIUSDT",
-    "MUSDT",
-    "BASEDUSDT"
+    "TURTLEUSDT",
+    "BASEDUSDT",
+    "KATUSDT",
+    "RAVEUSDT"
   ],
   "base_ticker": "NAORISUSDT",
   "live_swarm": []
