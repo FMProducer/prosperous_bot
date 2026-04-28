@@ -1,7 +1,7 @@
 {
   "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -9,6 +9,7 @@
   "max_bots": 10,
   "paper_mode_bots": 9,
   "probation_period_hours": 2,
+
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
