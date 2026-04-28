@@ -77,7 +77,7 @@ async def manage_swarm():
     
     # 1. Сканирование рынка (Discovery)
     try:
-        scanner_results = await run_scanner(quiet=True, min_volume=50_000_000)
+        scanner_results = await run_scanner(quiet=True, min_volume=10_000_000)
         scanner_tickers = [r['symbol'] for r in scanner_results]
     except Exception as e:
         logger.error(f"Scanner failed: {e}")
@@ -93,13 +93,21 @@ async def manage_swarm():
         try:
             res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=1, quiet=True)
             if res:
-                # РАНЖИРОВАНИЕ ПО STRATEGY (%)
                 strat_profit = res.get("profit_pct", 0)
-                ticker_performance.append({
-                    "symbol": symbol,
-                    "strategy_profit": strat_profit
-                })
-                logger.info(f"   > {symbol}: Strategy Profit={strat_profit:+.2f}%")
+                asset_perf_raw = res.get("asset_chg_pct", 0)
+                max_dd = res.get("max_dd_pct", 0)
+                alpha = strat_profit - asset_perf_raw
+                
+                # ФИЛЬТРЫ: Positive Alpha + Max Drawdown < 15%
+                if alpha > 0 and max_dd <= 15.0:
+                    ticker_performance.append({
+                        "symbol": symbol,
+                        "strategy_profit": strat_profit
+                    })
+                    logger.info(f"   > {symbol}: Alpha={alpha:+.2f}%, MaxDD={max_dd:.1f}% - ACCEPTED")
+                else:
+                    reason = "Negative Alpha" if alpha <= 0 else f"High Drawdown ({max_dd:.1f}%)"
+                    logger.info(f"   > {symbol}: Alpha={alpha:+.2f}%, MaxDD={max_dd:.1f}% - REJECTED ({reason})")
         except: pass
 
     # 4. Отбор Топ-10 по Strategy Profit

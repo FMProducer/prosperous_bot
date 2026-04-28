@@ -97,7 +97,7 @@ class TickerScanner:
             "funding": funding_rate * 100
         }
 
-    async def get_top_tickers(self, min_volume: float = 50_000_000):
+    async def get_top_tickers(self, min_volume: float = 10_000_000):
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
         # trust_env=True позволяет aiohttp использовать системные прокси (важно для Telegram)
@@ -127,7 +127,7 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=50_000_000):
+async def main(quiet=False, min_volume=10_000_000):
     threshold = 0.02
     try:
         if os.path.exists(CONFIG_FILE):
