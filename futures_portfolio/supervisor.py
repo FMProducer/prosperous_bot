@@ -108,6 +108,7 @@ async def manage_swarm():
     max_bots = config.get("max_bots", 10)
     paper_mode_bots = config.get("paper_mode_bots", 2)
     probation_hours = config.get("probation_period_hours", 1)
+    max_dd_limit = config.get("max_drawdown_limit", 15.0)
     live_swarm = set(config.get("live_swarm", []))
     current_tickers_list = config.get("tickers", []) # Из конфига
     
@@ -156,8 +157,8 @@ async def manage_swarm():
                 max_dd = res.get("max_dd_pct", 0)
                 alpha = strat_profit - asset_perf_raw
                 
-                # ФИЛЬТРЫ: Positive Alpha + Max Drawdown < 15%
-                if alpha > 0 and max_dd <= 15.0:
+                # ФИЛЬТРЫ: Positive Alpha + Max Drawdown < limit
+                if alpha > 0 and max_dd <= max_dd_limit:
                     ticker_performance.append({
                         "symbol": symbol,
                         "strategy_profit": strat_profit
