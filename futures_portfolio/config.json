@@ -1,19 +1,20 @@
 {
   "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.0,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_hours": 1,
+  "probation_period_hours": 2,
   "max_drawdown_limit": 20.0,
+  "black_list": [],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 39.0,
+      "initial_capital": 39000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
@@ -28,10 +29,10 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.02,
+      "rebalance_threshold": 0.006,
       "ticker_thresholds": {
-        "ZBTUSDT": 0.02,
-        "NAORISUSDT": 0.02
+        "BTCUSDT": 0.01,
+        "ETHUSDT": 0.01
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -42,17 +43,24 @@
     }
   ],
   "tickers": [
-    "AGTUSDT",
-    "ZBTUSDT",
-    "NAORISUSDT",
-    "1000LUNCUSDT",
-    "SIRENUSDT",
-    "LABUSDT",
     "DEXEUSDT",
-    "BASEDUSDT",
+    "CRVUSDT",
+    "ORCAUSDT",
     "PENGUUSDT",
-    "TURTLEUSDT"
+    "SIRENUSDT",
+    "PIPPINUSDT",
+    "HYPERUSDT",
+    "PIXELUSDT",
+    "GALAUSDT",
+    "ORDIUSDT"
   ],
-  "base_ticker": "AGTUSDT",
-  "live_swarm": []
+  "base_ticker": "DEXEUSDT",
+  "live_swarm": [
+    "1000LUNCUSDT",
+    "DAMUSDT",
+    "ORCAUSDT",
+    "PRLUSDT",
+    "ZBTUSDT",
+    "ZKJUSDT"
+  ]
 }

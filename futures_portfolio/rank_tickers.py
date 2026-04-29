@@ -100,6 +100,25 @@ class TickerScanner:
     async def get_top_tickers(self, min_volume: float = 10_000_000):
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
+        # Load White List
+        white_list = set()
+        if os.path.exists("tickers.txt"):
+            try:
+                with open("tickers.txt", "r", encoding="utf-8") as f:
+                    white_list = {line.strip() for line in f if line.strip()}
+            except Exception as e:
+                logger.error(f"Failed to load tickers.txt: {e}")
+
+        # Load Black List from config
+        black_list = set()
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    black_list = set(cfg.get("black_list", []))
+            except Exception as e:
+                logger.error(f"Failed to load black_list from config: {e}")
+
         # trust_env=True позволяет aiohttp использовать системные прокси (важно для Telegram)
         async with aiohttp.ClientSession(trust_env=True) as session:
             tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
@@ -109,7 +128,20 @@ class TickerScanner:
                 return []
 
             funding_map = {item['symbol']: float(item['lastFundingRate']) for item in premium_info}
-            candidates = [t for t in tickers_24h if t['symbol'].endswith("USDT") and float(t['quoteVolume']) >= min_volume and all(ord(c) < 128 for c in t['symbol'])]
+            
+            candidates = []
+            for t in tickers_24h:
+                symbol = t['symbol']
+                if not symbol.endswith("USDT"): continue
+                if float(t['quoteVolume']) < min_volume: continue
+                if not all(ord(c) < 128 for c in symbol): continue
+                
+                # Apply Filtering
+                if white_list and symbol not in white_list: continue
+                if symbol in black_list: continue
+                
+                candidates.append(t)
+
             candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
             candidates = candidates[:80]
             

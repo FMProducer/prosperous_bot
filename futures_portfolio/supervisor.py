@@ -110,20 +110,37 @@ async def manage_swarm():
     probation_hours = config.get("probation_period_hours", 1)
     max_dd_limit = config.get("max_drawdown_limit", 15.0)
     live_swarm = set(config.get("live_swarm", []))
+    black_list = set(config.get("black_list", []))
     current_tickers_list = config.get("tickers", []) # Из конфига
     
     # 1. Синхронизация с реальностью (PM2)
     running_bots = await get_running_bots()
     logger.info(f"Currently running bots: {running_bots}")
     
-    # 2. Проверка инкубатора (Promotion)
+    # 2. Проверка инкубатора (Promotion) и Стоп-лоссов
     new_live_swarm = live_swarm.copy()
+    new_black_list = black_list.copy()
+    
+    actual_running = set()
     for ticker in running_bots:
+        state_path = os.path.join(CURRENT_DIR, f"state_{ticker}.json")
+        state = await safe_load_json(state_path, {})
+        
+        # ПРОВЕРКА СТОП-ЛОССА
+        if state.get("trailing_stop_triggered"):
+            logger.warning(f"⚠️ Bot {ticker} hit TRAILING STOP! Adding to BLACK LIST and stopping.")
+            await stop_bot(ticker)
+            new_black_list.add(ticker)
+            if ticker in new_live_swarm: new_live_swarm.remove(ticker)
+            # Очищаем флаг в файле состояния, чтобы после перезапуска (если случится) не стопился сразу
+            state["trailing_stop_triggered"] = False
+            await safe_save_json(state_path, state)
+            continue
+            
+        actual_running.add(ticker)
+        
         if ticker not in live_swarm:
             # Бот в инкубаторе (paper mode)
-            state_path = os.path.join(CURRENT_DIR, f"state_{ticker}.json")
-            state = await safe_load_json(state_path, {})
-            
             siphoning_reserve = state.get("siphoning_reserve", 0.0)
             started_at = state.get("started_at", 0)
             elapsed_hours = (time.time() - started_at) / 3600 if started_at > 0 else 0
@@ -136,16 +153,19 @@ async def manage_swarm():
                 await start_bot(ticker, paper=False) # Запускаем реального
                 new_live_swarm.add(ticker)
     
+    running_bots = actual_running
+
     # 3. Сканирование и поиск кандидатов
     try:
+        # Scanner already respects black_list because we updated rank_tickers.py
         scanner_results = await run_scanner(quiet=True, min_volume=10_000_000)
         scanner_tickers = [r['symbol'] for r in scanner_results]
     except Exception as e:
         logger.error(f"Scanner failed: {e}")
         scanner_tickers = []
     
-    # Пул для оценки (Текущие + Новые из сканера)
-    eval_pool = list(set(running_bots) | set(scanner_tickers))
+    # Пул для оценки (Текущие + Новые из сканера) - фильтруем по черному списку на всякий случай
+    eval_pool = [t for t in list(set(running_bots) | set(scanner_tickers)) if t not in new_black_list]
     
     ticker_performance = []
     for symbol in eval_pool:
@@ -157,8 +177,8 @@ async def manage_swarm():
                 max_dd = res.get("max_dd_pct", 0)
                 alpha = strat_profit - asset_perf_raw
                 
-                # ФИЛЬТРЫ: Positive Alpha + Max Drawdown < limit
-                if alpha > 0 and max_dd <= max_dd_limit:
+                # ФИЛЬТРЫ: Strategy Profit > 0 + Positive Alpha + Max Drawdown < limit
+                if strat_profit > 0 and alpha > 0 and max_dd <= max_dd_limit:
                     ticker_performance.append({
                         "symbol": symbol,
                         "strategy_profit": strat_profit
@@ -220,6 +240,7 @@ async def manage_swarm():
     
     config["tickers"] = final_tickers
     config["live_swarm"] = sorted(list(new_live_swarm))
+    config["black_list"] = sorted(list(new_black_list))
     config["base_ticker"] = final_tickers[0] if final_tickers else "BTCUSDT"
     
     await safe_save_json(CONFIG_PATH, config)

@@ -239,6 +239,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     state["initial_tpv"] = 0.0
                     state["reference_tpv"] = 0.0
                     state["virt_basis_price"] = 0.0
+                    state["trailing_stop_triggered"] = True
                     await save_json(state_file_path, state)
                     
                     logger.info("Positions closed and state reset. Bot stopped.")

@@ -1,3 +1,15 @@
+## 🗓 29 апреля 2026: Внедрение Белых и Черных Списков Тикеров
+
+### ✅ Ключевые достижения:
+1.  **White List Enforcement:** В `rank_tickers.py` интегрирован фильтр по файлу `tickers.txt`. Теперь сканер анализирует только разрешенные тикеры.
+2.  **Dynamic Blacklisting:** В `config.json` добавлено поле `black_list`. Реализована логика автоматического занесения тикера в черный список при срабатывании Trailing Stop Loss.
+3.  **Supervisor Integration:** `supervisor.py` теперь отслеживает флаг `trailing_stop_triggered` в файлах состояний ботов. При обнаружении стоп-лосса бот останавливается, а тикер блокируется.
+4.  **System-Wide Consistency:** Изменения внедрены также в `main.py` (фиксация стоп-лосса) и `backtest_rebalance.py` (пропуск заблокированных тикеров).
+5.  **Profitability Filter:** В `supervisor.py` добавлен жесткий фильтр: тикер проходит оценку только при `Strategy Profit > 0%` по результатам суточного бэктеста.
+6.  **Probation Update:** Увеличено время испытательного срока (`probation_period_hours`) до 2 часов.
+
+---
+
 ## 🗓 29 апреля 2026: Оптимизация Сети и Стабилизация Уведомлений
 
 ### ✅ Ключевые достижения:
@@ -19,6 +31,9 @@
 ---
 
 ## Completed Tasks
+- [x] **White List Implementation:** Фильтрация тикеров через `tickers.txt`.
+- [x] **Black List Logic:** Автоматическая блокировка тикеров после стоп-лосса.
+- [x] **Profitability Filter:** Жесткое условие `Strategy Profit > 0%` для выбора тикеров.
 - [x] **Incubator Implementation:** Запуск новых ботов в режиме `--paper`.
 - [x] **Promotion Logic:** SAFE > 0 + Time Threshold -> REAL mode.
 - [x] **Tired Bot Detection:** Автоматическая замена неэффективных ботов.
@@ -27,6 +42,5 @@
 
 ## Next Steps
 - [ ] **Real Mode Validation:** Наблюдение за первым циклом «выпуска» бота из инкубатора в реальную торговлю.
-- [ ] **Drawdown-Based Termination:** Добавление условия удаления из инкубатора при достижении Max Drawdown во время испытательного срока.
+- [x] **Drawdown-Based Termination:** Реализовано через систему стоп-лоссов и черных списков.
 - [ ] **Siphoning Validation:** Проверка корректности вывода в SAFE на реальных сделках (в процессе).
-

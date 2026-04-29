@@ -96,6 +96,13 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         
         with open(config_path, "r", encoding="utf-8") as f: config = json.load(f)
         
+        # Check Black List
+        base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+        black_list = config.get("black_list", [])
+        if base_ticker in black_list:
+            if not quiet: logger.info(f"Ticker {base_ticker} is in BLACK LIST. Skipping backtest.")
+            return None
+
         # Настройки лимитов из конфига
         limit_enabled = config.get("limit_order_enabled", False)
         limit_offset = config.get("limit_offset_pct", 0.1)
