@@ -9,14 +9,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_sleep_interval():
-    """Читает probation_period_hours из config.json и переводит в секунды"""
+    """Читает supervisor_interval_days из config.json и переводит в секунды"""
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-        hours = config.get("probation_period_hours", 1)
+        days = config.get("supervisor_interval_days", 0.125)
         # Возвращаем интервал в секундах
-        return max(300, int(hours * 3600)) # Минимум 5 минут, чтобы не спамить
+        return max(300, int(days * 86400)) # Минимум 5 минут, чтобы не спамить
     except Exception as e:
         print(f"Error reading config for interval: {e}")
         return 3600

@@ -8,7 +8,10 @@
   "min_notional_usdt": 6.0,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_hours": 2,
+  "probation_period_days": 0.125,
+  "backtest_period_days": 0.125,
+  "supervisor_interval_days": 0.125,
+  "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
   "black_list": [],
   "portfolios": [
@@ -29,10 +32,10 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.006,
+      "rebalance_threshold": 0.013,
       "ticker_thresholds": {
-        "BTCUSDT": 0.01,
-        "ETHUSDT": 0.01
+        "BTCUSDT": 0.013,
+        "ETHUSDT": 0.013
       },
       "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
       "reinvestment_ratio": 0.0,
@@ -43,24 +46,11 @@
     }
   ],
   "tickers": [
-    "DEXEUSDT",
-    "CRVUSDT",
-    "ORCAUSDT",
-    "PENGUUSDT",
-    "SIRENUSDT",
-    "PIPPINUSDT",
-    "HYPERUSDT",
-    "PIXELUSDT",
-    "GALAUSDT",
-    "ORDIUSDT"
+    "AIOTUSDT",
+    "LUMIAUSDT",
+    "API3USDT",
+    "ENJUSDT"
   ],
-  "base_ticker": "DEXEUSDT",
-  "live_swarm": [
-    "1000LUNCUSDT",
-    "DAMUSDT",
-    "ORCAUSDT",
-    "PRLUSDT",
-    "ZBTUSDT",
-    "ZKJUSDT"
-  ]
+  "base_ticker": "AIOTUSDT",
+  "live_swarm": []
 }

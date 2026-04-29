@@ -107,7 +107,9 @@ async def manage_swarm():
     
     max_bots = config.get("max_bots", 10)
     paper_mode_bots = config.get("paper_mode_bots", 2)
-    probation_hours = config.get("probation_period_hours", 1)
+    probation_days = config.get("probation_period_days", 0.125)
+    probation_hours = probation_days * 24
+    backtest_days = config.get("backtest_period_days", 1.0)
     max_dd_limit = config.get("max_drawdown_limit", 15.0)
     live_swarm = set(config.get("live_swarm", []))
     black_list = set(config.get("black_list", []))
@@ -170,7 +172,7 @@ async def manage_swarm():
     ticker_performance = []
     for symbol in eval_pool:
         try:
-            res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=1, quiet=True)
+            res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True)
             if res:
                 strat_profit = res.get("profit_pct", 0)
                 asset_perf_raw = res.get("asset_chg_pct", 0)

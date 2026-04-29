@@ -62,12 +62,12 @@ class LimitOrderSimulator:
         avg_improvement_pct = self.stats["total_improvement_pct"] / self.stats["filled"] if self.stats["filled"] > 0 else 0
         return {**self.stats, "fill_rate": fill_rate, "avg_improvement_pct": avg_improvement_pct}
 
-async def download_live_data(symbol: str, data_dir: str, days: int = 2):
+async def download_live_data(symbol: str, data_dir: str, days: float = 2.0):
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
     logger.info(f"Step 0: Downloading LIVE data for {symbol} (Last {days} days)...")
     all_data = []
     now = int(time.time() * 1000)
-    total_minutes = days * 1440
+    total_minutes = int(days * 1440)
     chunk_size = 1440
     num_chunks = int(np.ceil(total_minutes / chunk_size))
     async with aiohttp.ClientSession() as session:
@@ -88,7 +88,7 @@ async def download_live_data(symbol: str, data_dir: str, days: int = 2):
     return file_path
 
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
-                        days: int = 2, commission: float = 0.0004, use_limit_orders: bool = False,
+                        days: float = 2.0, commission: float = 0.0004, use_limit_orders: bool = False,
                         limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False) -> Optional[Dict[str, Any]]:
     try:
         if quiet:
@@ -132,9 +132,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         logger.info(f"Strategy Mode: {'LIMIT' if limit_enabled else 'MARKET'} (Threshold: {threshold*100}%, Offset: {limit_offset}%)")
         
         df = pd.read_feather(file_path).copy().reset_index(drop=True)
-        if len(df) > days * 1440: df = df.tail(days * 1440).reset_index(drop=True)
+        if len(df) > int(days * 1440): df = df.tail(int(days * 1440)).reset_index(drop=True)
 
         initial_capital = portfolio_cfg.get("initial_capital", 39.0)
+
         current_equity = initial_capital
         virt_basis_price = df.iloc[0]['close']
         virt_allocated_usdt = initial_capital * targets["VIRTUAL"]["share"]
@@ -314,7 +315,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--ticker", default=None)
-    parser.add_argument("--days", type=int, default=1)
+    parser.add_argument("--days", type=float, default=1.0)
     parser.add_argument("--live", action="store_true")
     args = parser.parse_args()
     asyncio.run(run_backtest(args.config, r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures", args.live, args.ticker, args.days))

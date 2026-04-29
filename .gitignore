@@ -229,3 +229,4 @@ futures_portfolio/log.*
 futures_portfolio/TEMP/state_*.json
 futures_portfolio/TEMP/paper_state_*.json
 futures_portfolio/У меня VPN настроен на уровне системы Wi.md
+futures_portfolio/Описание_логики_Супервайзера.md

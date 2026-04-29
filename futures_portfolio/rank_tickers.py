@@ -32,9 +32,10 @@ def retry_on_network_error(retries: int = 3, delay: float = 1.0):
     return decorator
 
 class TickerScanner:
-    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.02):
+    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.02, scanner_period_days: float = 1.0):
         self.base_url = "https://fapi.binance.com"
         self.rebalance_threshold = rebalance_threshold
+        self.scanner_period_days = scanner_period_days
         self.semaphore = asyncio.Semaphore(concurrent_requests)
         
     @retry_on_network_error(retries=3)
@@ -55,10 +56,12 @@ class TickerScanner:
 
     async def analyze_ticker(self, session: aiohttp.ClientSession, symbol: str, funding_rate: float) -> Optional[Dict]:
         now_ms = int(time.time() * 1000)
-        params = {"symbol": symbol, "interval": "1m", "limit": 1440, "endTime": now_ms}
+        # 1440 minutes in a day
+        limit = max(1, int(self.scanner_period_days * 1440))
+        params = {"symbol": symbol, "interval": "1m", "limit": limit, "endTime": now_ms}
         klines = await self.fetch(session, "/fapi/v1/klines", params)
 
-        if not klines or len(klines) < 100:
+        if not klines or len(klines) < min(100, limit):
             return None
         
         closes = [float(k[4]) for k in klines]
@@ -161,14 +164,16 @@ class TickerScanner:
 
 async def main(quiet=False, min_volume=10_000_000):
     threshold = 0.02
+    scanner_period_days = 1.0
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
                 threshold = cfg["portfolios"][0].get("rebalance_threshold", 0.02)
+                scanner_period_days = cfg.get("scanner_period_days", 1.0)
     except: pass
 
-    scanner = TickerScanner(concurrent_requests=20, rebalance_threshold=threshold)
+    scanner = TickerScanner(concurrent_requests=20, rebalance_threshold=threshold, scanner_period_days=scanner_period_days)
     top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
     
     if not quiet:
