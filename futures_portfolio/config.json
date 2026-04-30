@@ -46,11 +46,20 @@
     }
   ],
   "tickers": [
-    "AIOTUSDT",
+    "AVAAIUSDT",
+    "BIOUSDT",
+    "SWARMSUSDT",
     "LUMIAUSDT",
-    "API3USDT",
-    "ENJUSDT"
+    "DEXEUSDT",
+    "KAITOUSDT",
+    "ORCAUSDT",
+    "STOUSDT",
+    "APEUSDT",
+    "HIGHUSDT"
   ],
-  "base_ticker": "AIOTUSDT",
-  "live_swarm": []
+  "base_ticker": "AVAAIUSDT",
+  "live_swarm": [
+    "BIOUSDT",
+    "LUMIAUSDT"
+  ]
 }
