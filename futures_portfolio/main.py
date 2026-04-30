@@ -3,7 +3,8 @@ import json
 import logging
 import os
 import time
-from typing import Dict, List
+import random
+from typing import Dict, List, Any
 from dotenv import load_dotenv
 
 # Load .env file
@@ -14,36 +15,60 @@ from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 from notifier import TelegramNotifier
 
-async def load_json(path: str, default: dict) -> dict:
-    def _read():
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, PermissionError):
-                pass
-        return default
-    return await asyncio.to_thread(_read)
+import aiofiles
+from filelock import FileLock, Timeout
+from pathlib import Path
 
-async def save_json(path: str, data: dict, retries: int = 5) -> None:
-    def _write():
-        for i in range(retries):
-            try:
-                tmp_path = path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                if os.path.exists(path):
-                    os.remove(path)
-                os.rename(tmp_path, path)
-                return
-            except PermissionError:
-                if i == retries - 1:
-                    break
-                time.sleep(0.5)
-    await asyncio.to_thread(_write)
+def read_shared_config(path: str) -> Dict[str, Any]:
+    """Чтение общего конфига без использования блокировок для исключения конкуренции."""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Critical: Shared config read failed: {e}")
+        return {}
+
+def emit_signal(signal_type: str, ticker: str) -> None:
+    """Создает пустой файл-флаг для супервайзера."""
+    sig_path = Path("signals") / f"{signal_type}_{ticker}.flag"
+    try:
+        sig_path.touch(exist_ok=True)
+    except Exception as e:
+        logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
+
+async def load_json(path: str, default: Dict[str, Any]) -> Dict[str, Any]:
+    """Lock-free read. Полагаемся на атомарность файловой системы."""
+    try:
+        if not os.path.exists(path):
+            return default
+        async with aiofiles.open(path, "r", encoding="utf-8") as f:
+            content = await f.read()
+            return json.loads(content)
+    except (json.JSONDecodeError, FileNotFoundError, PermissionError):
+        return _STATE_CACHE.get(path, default)
+
+# Глобальный кэш для защиты состояния
+_STATE_CACHE: Dict[str, Dict[str, Any]] = {}
+
+async def save_json(path: str, data: Dict[str, Any]) -> None:
+    """Атомарная запись без блокировок. os.replace гарантирует консистентность на Windows."""
+    _STATE_CACHE[path] = data
+    try:
+        tmp_path = f"{path}.tmp"
+        async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(data, indent=2))
+        os.replace(tmp_path, path)
+        if path in _STATE_CACHE: del _STATE_CACHE[path]
+    except Exception as e:
+        logging.warning(f"Failed to save {path}, cached in memory: {e}")
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
-    config = await load_json(config_path, {})
+    # Используем новое безопасное чтение конфига
+    config = read_shared_config(config_path)
+    if not config or "portfolios" not in config:
+        logger.error(f"Aborting cycle: Invalid or missing config structure from {config_path}")
+        return
+
     # Paper mode: override > config
     paper_mode = paper_mode_override if paper_mode_override is not None else config.get("paper_mode", False)
     
@@ -233,6 +258,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         else:
                             await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
                     if paper_mode: await save_json(paper_state_file_path, paper_state)
+                    
+                    # Эмитируем сигнал остановки для супервайзера
+                    emit_signal("stop", base_ticker)
                     
                     # Сбрасываем ATH и начальные значения, чтобы при перезапуске бот не попал в цикл стоп-лоссов
                     state["tpv_ath"] = 0.0

@@ -5,6 +5,7 @@ import aiohttp
 import time
 import json
 import os
+import math
 import logging
 import traceback
 import argparse
@@ -171,128 +172,159 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         limit_simulator = LimitOrderSimulator(offset_pct=limit_offset) if limit_enabled else None
         history = []
 
-        # Переход на itertuples для скорости
-        for i, row in enumerate(df.itertuples()):
-            curr_price = row.close
-            calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
-                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                     long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"],
-                                     initial_capital=initial_capital)
+        # Переход на NumPy для максимальной скорости
+        close_prices = df['close'].values
+        high_prices = df['high'].values
+        low_prices = df['low'].values
+        
+        l_lev = targets["BASE_LONG"]["leverage"] if "BASE_LONG" in targets else 5.0
+        s_lev = targets["BASE_SHORT"]["leverage"] if "BASE_SHORT" in targets else 5.0
+        l_target = targets["BASE_LONG"]["share"]
+        s_target = targets["BASE_SHORT"]["share"]
+        v_target = targets["VIRTUAL"]["share"]
 
-            if calc.total_tpv > tpv_ath: tpv_ath = calc.total_tpv
+        for i in range(len(df)):
+            curr_price = close_prices[i]
+            
+            # Внутренняя логика PortfolioCalculator (упрощенно для скорости)
+            price_change_virt = curr_price / virt_basis_price
+            virt_current_value = virt_allocated_usdt * price_change_virt
+            
+            total_tpv = current_equity + (virt_current_value - virt_allocated_usdt) + siphoning_reserve
+            tpv = min(total_tpv, initial_capital) if total_tpv > initial_capital else total_tpv
+            if tpv <= 0: tpv = 1e-9
+
+            if total_tpv > tpv_ath: tpv_ath = total_tpv
             
             # Analytics Tracking
-            tpv_change = calc.total_tpv - prev_tpv
+            tpv_change = total_tpv - prev_tpv
             if tpv_change > 0: stats["gross_profit"] += tpv_change
             else: stats["gross_loss"] += abs(tpv_change)
-            prev_tpv = calc.total_tpv
+            prev_tpv = total_tpv
 
-            if calc.total_tpv > stats["max_tpv"]:
-                stats["max_tpv"] = calc.total_tpv
+            if total_tpv > stats["max_tpv"]:
+                stats["max_tpv"] = total_tpv
                 stats["current_drawdown_duration"] = 0
             else: stats["current_drawdown_duration"] += 1
             
-            dd = (stats["max_tpv"] - calc.total_tpv) / stats["max_tpv"] if stats["max_tpv"] > 0 else 0
+            dd = (stats["max_tpv"] - total_tpv) / stats["max_tpv"] if stats["max_tpv"] > 0 else 0
             if dd > stats["max_drawdown_pct"]: stats["max_drawdown_pct"] = dd
 
             # Trailing Stop
             if portfolio_cfg.get("equity_trailing_stop_pct", 0) > 0:
-                if (1 - calc.total_tpv / tpv_ath) * 100 >= portfolio_cfg["equity_trailing_stop_pct"]:
+                if (1 - total_tpv / tpv_ath) * 100 >= portfolio_cfg["equity_trailing_stop_pct"]:
                     stats["trailing_stop_triggered"] = True
                     stats["trailing_stop_step"] = i
                     break
 
-            # Siphoning (simplified for backtest: uses trade-based logic estimate)
-            # In backtest we can't perfectly replicate per-trade siphoning without detailed fill data,
-            # but we use a reasonable approximation.
+            # Ребалансировка (логика из calculator.py)
+            l_qty = abs(positions[f"{base_ticker}_LONG"])
+            s_qty = abs(positions[f"{base_ticker}_SHORT"])
+            
+            le = entry_prices["LONG"] if entry_prices["LONG"] > 0 else curr_price
+            se = entry_prices["SHORT"] if entry_prices["SHORT"] > 0 else curr_price
+            
+            val_long = (l_qty * le / l_lev) + (l_qty * (curr_price - le))
+            val_short = (s_qty * se / s_lev) + (s_qty * (se - curr_price))
+            
+            share_long = val_long / tpv
+            share_short = val_short / tpv
+            share_virt = virt_current_value / tpv
 
-            # Rebalancing
-            actions = calc.calculate_deviations(targets, threshold)
-            if actions:
+            # Проверка отклонений
+            any_exceeded = False
+            if not math.isclose(share_long, l_target, abs_tol=threshold): any_exceeded = True
+            elif not math.isclose(share_short, s_target, abs_tol=threshold): any_exceeded = True
+            elif not math.isclose(share_virt, v_target, abs_tol=threshold): any_exceeded = True
+
+            if any_exceeded:
+                stats["rebalance_cycles"] += 1
                 min_notional = config.get("min_notional_usdt", 6.0)
-                valid_actions = [a for a in actions if a["type"] == "VIRTUAL_RESET" or abs(a.get("diff_usdt", 0)) >= min_notional]
                 
-                if valid_actions:
-                    stats["rebalance_cycles"] += 1
+                # Ребаланс Виртуальной части
+                virt_basis_price = curr_price
+                virt_allocated_usdt = tpv * v_target
+                
+                # Ребаланс Long
+                target_val_long = tpv * l_target
+                diff_share_l = share_long - l_target
+                diff_usdt_l = -diff_share_l * tpv * l_lev
+                
+                if abs(diff_usdt_l) >= min_notional:
+                    side = "BUY" if diff_usdt_l > 0 else "SELL"
+                    stats["total_volume_usdt"] += abs(diff_usdt_l)
                     
-                    for action in valid_actions:
-                        if action["type"] == "VIRTUAL_RESET":
-                            virt_basis_price = curr_price
-                            virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                        else:
-                            key, diff_usdt = action["symbol"], action["diff_usdt"]
-                            pos_side = key.split('_')[1]
-                            if pos_side == "LONG": side = "BUY" if diff_usdt > 0 else "SELL"
-                            else: side = "SELL" if diff_usdt > 0 else "BUY"
-                            
-                            stats["total_volume_usdt"] += abs(diff_usdt)
+                    f_price = curr_price
+                    if limit_simulator and i < len(df) - 1:
+                        _, _, f_price, _ = limit_simulator.simulate_limit_execution(
+                            side, abs(diff_usdt_l)/curr_price, curr_price, high_prices[i+1], low_prices[i+1]
+                        )
+                    
+                    change_qty = abs(diff_usdt_l) / f_price
+                    current_equity -= (abs(diff_usdt_l) * commission)
+                    
+                    if side == "BUY":
+                        if positions[f"{base_ticker}_LONG"] > 0:
+                            entry_prices["LONG"] = (positions[f"{base_ticker}_LONG"] * entry_prices["LONG"] + change_qty * f_price) / (positions[f"{base_ticker}_LONG"] + change_qty)
+                        else: entry_prices["LONG"] = f_price
+                        positions[f"{base_ticker}_LONG"] += change_qty
+                    else:
+                        # Siphoning check during reduction
+                        trade_pnl = (f_price - entry_prices["LONG"]) * change_qty
+                        if trade_pnl > 0 and total_tpv > initial_capital:
+                            siphon_amount = min(trade_pnl, total_tpv - initial_capital)
+                            siphoning_reserve += siphon_amount
+                            current_equity -= siphon_amount
+                        positions[f"{base_ticker}_LONG"] = max(0, positions[f"{base_ticker}_LONG"] - change_qty)
 
-                            if limit_simulator:
-                                # Look-ahead bias fix: use NEXT candle high/low for limit execution simulation
-                                if i < len(df) - 1:
-                                    next_high = df['high'].values[i+1]
-                                    next_low = df['low'].values[i+1]
-                                    _, _, f_price, exec_type = limit_simulator.simulate_limit_execution(
-                                        side, abs(diff_usdt)/curr_price, curr_price,
-                                        float(next_high), float(next_low)
-                                    )
-                                else:
-                                    # Last candle: fallback to market at current close
-                                    f_price = curr_price
-                                    exec_type = "MARKET"
-                            else: 
-                                f_price = curr_price
-                                exec_type = "MARKET"
-                            
-                            change_qty = abs(diff_usdt) / f_price
-                            action_name = "DEFICIT" if diff_usdt > 0 else "EXCESS"
+                # Ребаланс Short
+                target_val_short = tpv * s_target
+                diff_share_s = share_short - s_target
+                diff_usdt_s = -diff_share_s * tpv * s_lev
 
-                            current_equity -= (abs(diff_usdt) * commission)
-
-                            if (pos_side == "LONG" and side == "BUY") or (pos_side == "SHORT" and side == "SELL"):
-                                if positions[key] > 0:
-                                    entry_prices[pos_side] = (positions[key] * entry_prices[pos_side] + change_qty * f_price) / (positions[key] + change_qty)
-                                else: entry_prices[pos_side] = f_price
-                                positions[key] += change_qty
-                            else: 
-                                # 💰 Simulation of siphoning during reduction
-                                is_reduction = True
-                                if is_reduction:
-                                    old_entry = entry_prices[pos_side]
-                                    if pos_side == "LONG":
-                                        trade_pnl = (f_price - old_entry) * change_qty
-                                    else:
-                                        trade_pnl = (old_entry - f_price) * change_qty
-                                    
-                                    if trade_pnl > 0 and calc.total_tpv > initial_capital:
-                                        siphon_amount: float = min(trade_pnl, calc.total_tpv - initial_capital)
-                                        siphoning_reserve += siphon_amount
-                                        current_equity -= siphon_amount
-
-                                positions[key] = max(0, positions[key] - change_qty)
-
-                    calc = PortfolioCalculator(positions, curr_price, current_equity, virt_basis_price, virt_allocated_usdt,
-                                             base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                             long_entry_price=entry_prices["LONG"], short_entry_price=entry_prices["SHORT"],
-                                             initial_capital=initial_capital)
+                if abs(diff_usdt_s) >= min_notional:
+                    side = "SELL" if diff_usdt_s > 0 else "BUY"
+                    stats["total_volume_usdt"] += abs(diff_usdt_s)
+                    
+                    f_price = curr_price
+                    if limit_simulator and i < len(df) - 1:
+                        _, _, f_price, _ = limit_simulator.simulate_limit_execution(
+                            side, abs(diff_usdt_s)/curr_price, curr_price, high_prices[i+1], low_prices[i+1]
+                        )
+                    
+                    change_qty = abs(diff_usdt_s) / f_price
+                    current_equity -= (abs(diff_usdt_s) * commission)
+                    
+                    if side == "SELL":
+                        if positions[f"{base_ticker}_SHORT"] > 0:
+                            entry_prices["SHORT"] = (positions[f"{base_ticker}_SHORT"] * entry_prices["SHORT"] + change_qty * f_price) / (positions[f"{base_ticker}_SHORT"] + change_qty)
+                        else: entry_prices["SHORT"] = f_price
+                        positions[f"{base_ticker}_SHORT"] += change_qty
+                    else:
+                        # Siphoning check during reduction
+                        trade_pnl = (entry_prices["SHORT"] - f_price) * change_qty
+                        if trade_pnl > 0 and total_tpv > initial_capital:
+                            siphon_amount = min(trade_pnl, total_tpv - initial_capital)
+                            siphoning_reserve += siphon_amount
+                            current_equity -= siphon_amount
+                        positions[f"{base_ticker}_SHORT"] = max(0, positions[f"{base_ticker}_SHORT"] - change_qty)
 
             if i < len(df) - 1:
-                next_close = df['close'].values[i+1]
-                p_diff = float(next_close) - curr_price
+                p_diff = close_prices[i+1] - curr_price
                 current_equity += (positions[f"{base_ticker}_LONG"] * p_diff) + (positions[f"{base_ticker}_SHORT"] * (-p_diff))
-            history.append(calc.total_tpv)
+            history.append(total_tpv)
 
         # Final Report
-        asset_start, asset_end = df.iloc[0]['close'], df.iloc[-1]['close']
+        asset_start, asset_end = close_prices[0], close_prices[-1]
         asset_chg: float = ((asset_end / asset_start) - 1) * 100
-        total_final_value: float = calc.total_tpv
+        total_final_value: float = total_tpv
         strat_chg: float = ((total_final_value / initial_capital) - 1) * 100
 
         if not quiet:
             logger.info("\n" + "="*70 + "\n                 LEG-SPECIFIC NEUTRAL ANALYTICS\n" + "="*70)
             logger.info(f"Asset Perf: {base_ticker} {asset_chg:+.2f}% | Strategy: {strat_chg:+.2f}%")
             logger.info(f"Alpha:      {strat_chg - asset_chg:+.2f}% vs HODL")
-            logger.info(f"Final Total TPV: {total_final_value:.2f} (Active: {calc.tpv:.2f}, SAFE: {siphoning_reserve:.2f})")
+            logger.info(f"Final Total TPV: {total_final_value:.2f} (SAFE: {siphoning_reserve:.2f})")
             logger.info(f"Max DD:     {stats['max_drawdown_pct']*100:.2f}% | Rebalances: {stats['rebalance_cycles']}")
             if limit_simulator:
                 l_stats = limit_simulator.get_summary()

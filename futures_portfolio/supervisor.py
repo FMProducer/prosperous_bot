@@ -3,9 +3,13 @@ import json
 import logging
 import os
 import time
-import subprocess
-from typing import Dict, List, Set
+import random
+import sys
+import aiofiles
+from filelock import FileLock, Timeout
+from typing import Dict, List, Set, Any
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Загрузка окружения
 load_dotenv()
@@ -30,23 +34,64 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(CURRENT_DIR, "config.json")
 DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
 
-async def safe_load_json(path: str, default: dict) -> dict:
+def read_shared_config(path: str) -> Dict[str, Any]:
+    """Чтение общего конфига без использования блокировок."""
     try:
-        if not os.path.exists(path): return default
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except:
-        return default
-
-async def safe_save_json(path: str, data: dict):
-    try:
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        if os.path.exists(path): os.remove(path)
-        os.rename(tmp, path)
     except Exception as e:
-        logger.error(f"Save failed: {e}")
+        logger.error(f"Critical: Shared config read failed: {e}")
+        return {}
+
+async def safe_load_json(path: str, default: Dict[str, Any], retries: int = 15) -> Dict[str, Any]:
+    """Симметричное чтение стейтов с Zombie Lock очисткой."""
+    lock_path = f"{path}.lock"
+    
+    # Zombie Lock Cleanup: если лок старше 60 секунд, удаляем его
+    if os.path.exists(lock_path):
+        if time.time() - os.path.getmtime(lock_path) > 60:
+            try: os.remove(lock_path)
+            except: pass
+
+    lock = FileLock(lock_path, timeout=30)
+    for attempt in range(retries):
+        try:
+            if not os.path.exists(path): return default
+            await asyncio.to_thread(lock.acquire)
+            try:
+                async with aiofiles.open(path, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    return json.loads(content)
+            finally:
+                await asyncio.to_thread(lock.release)
+        except (Timeout, PermissionError, json.JSONDecodeError) as e:
+            if attempt == retries - 1:
+                logger.error(f"Load failed for {path} after {retries} retries: {type(e).__name__}")
+            await asyncio.sleep(1.0 + random.random() * 2.0)
+    return default
+
+async def safe_save_json(path: str, data: Dict[str, Any], retries: int = 15):
+    """Атомарная запись через временный файл с улучшенным бэк-оффом."""
+    lock_path = f"{path}.lock"
+    # Увеличиваем таймаут до 10с
+    lock = FileLock(lock_path, timeout=10)
+    
+    for attempt in range(retries):
+        try:
+            await asyncio.to_thread(lock.acquire)
+            try:
+                tmp_path = f"{path}.tmp"
+                async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(data, indent=2))
+                os.replace(tmp_path, path)
+                return
+            finally:
+                await asyncio.to_thread(lock.release)
+        except (Timeout, PermissionError) as e:
+            if attempt == retries - 1:
+                logger.error(f"Failed to save {path}: {e}")
+            # Агрессивный джиттер
+            await asyncio.sleep(0.5 + random.random() * 1.5)
 
 async def get_running_bots_info() -> Dict[str, dict]:
     """Получает детальную информацию о запущенных ботах из PM2"""
@@ -78,13 +123,15 @@ async def stop_bot(ticker: str):
     logger.info(f"🛑 Stopping bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
     try:
-        cmd_stop = f"python main.py --config config.json --ticker {ticker} --stop"
-        proc = await asyncio.create_subprocess_shell(cmd_stop)
+        cmd = f'"{sys.executable}" main.py --config config.json --ticker {ticker} --stop'
+        proc = await asyncio.create_subprocess_shell(cmd)
         await asyncio.wait_for(proc.wait(), timeout=30)
-    except: pass
+    except Exception as e:
+        logger.warning(f"Stop command failed for {ticker}: {e}")
     
     try:
-        await (await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")).wait()
+        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        await proc.wait()
     except: pass
 
 async def start_bot(ticker: str, paper: bool = False):
@@ -92,9 +139,15 @@ async def start_bot(ticker: str, paper: bool = False):
     logger.info(f"🚀 Launching {mode_str} bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
     paper_flag = "--paper" if paper else ""
-    await (await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")).wait()
     
-    cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config config.json --ticker {ticker} {paper_flag}"
+    # Удаляем старый если есть
+    try:
+        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        await proc.wait()
+    except: pass
+    
+    # Формируем команду запуска
+    cmd = f'pm2 start main.py --name bot-{short_name} --cwd "{CURRENT_DIR}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
@@ -110,22 +163,27 @@ async def manage_swarm():
     
     probation_hours = config.get("probation_period_days", 0.125) * 24
     backtest_days = config.get("backtest_period_days", 1.0)
-    max_dd_limit = config.get("max_drawdown_limit", 15.0)
     
     # 1. Сбор реальности
     running_info = await get_running_bots_info()
-    actual_running_tickers = set(running_info.keys())
     
-    # 2. Проверка стоп-лоссов
+    # 2. Обработка сигналов от ботов (пассивный мониторинг)
+    signal_dir = Path("signals")
+    if not signal_dir.exists(): signal_dir.mkdir(parents=True)
+    
     new_black_list = set(config.get("black_list", []))
-    for ticker in actual_running_tickers:
-        state = await safe_load_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), {})
-        if state.get("trailing_stop_triggered"):
-            logger.warning(f"⚠️ {ticker} HIT STOP-LOSS!")
-            await stop_bot(ticker)
-            new_black_list.add(ticker)
-            state["trailing_stop_triggered"] = False
-            await safe_save_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), state)
+    for sig_file in signal_dir.glob("*.flag"):
+        try:
+            parts = sig_file.stem.split("_")
+            if len(parts) >= 2:
+                sig_type, ticker = parts[0], parts[1]
+                if sig_type == "stop":
+                    logger.warning(f"⚠️ {ticker} sent emergency STOP signal.")
+                    await stop_bot(ticker)
+                    new_black_list.add(ticker)
+            sig_file.unlink(missing_ok=True)
+        except Exception as e:
+            logger.error(f"Error processing signal {sig_file}: {e}")
 
     # 3. Анализ и Рейтинг
     try:
@@ -133,7 +191,7 @@ async def manage_swarm():
         scanner_tickers = [r['symbol'] for r in scanner_results]
     except: scanner_tickers = []
     
-    eval_pool = [t for t in list(actual_running_tickers | set(scanner_tickers)) if t not in new_black_list]
+    eval_pool = [t for t in list(set(running_info.keys()) | set(scanner_tickers)) if t not in new_black_list]
     
     perf_dict = {}
     for symbol in eval_pool:
@@ -146,7 +204,7 @@ async def manage_swarm():
     all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x], reverse=True)
     top_10 = all_sorted[:max_bots]
     
-    # 4. Выбор Чемпионов для REAL (Поддержка нескольких слотов)
+    # 4. Выбор Чемпионов для REAL
     ready_for_real = []
     for ticker in all_sorted:
         state = await safe_load_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), {})
@@ -159,45 +217,41 @@ async def manage_swarm():
         if is_already_real or (has_profit and elapsed >= probation_hours):
             ready_for_real.append(ticker)
 
-    # Выбираем N лучших чемпионов согласно лимиту слотов
     target_real_bots = ready_for_real[:max_real_slots]
     logger.info(f"🎯 Target REAL bots ({len(target_real_bots)}/{max_real_slots}): {target_real_bots}")
     
     # 5. ИСПОЛНЕНИЕ
-    # Шаг А: Останавливаем всех реальных ботов, которые НЕ входят в новый список чемпионов
     for ticker, info in running_info.items():
         if not info['paper'] and ticker not in target_real_bots:
             logger.info(f"🚫 Removing OLD REAL bot: {ticker}")
             await stop_bot(ticker)
 
-    # Шаг Б: Запускаем новых чемпионов в REAL
     for ticker in target_real_bots:
-        is_running_real = ticker in running_info and not running_info[ticker]['paper']
-        if not is_running_real:
+        if ticker not in running_info or running_info[ticker]['paper']:
             logger.info(f"🏆 Promoting to REAL: {ticker}")
-            await stop_bot(ticker) # Гасим бумагу если была
+            await stop_bot(ticker)
             await start_bot(ticker, paper=False)
 
-    # Шаг В: Управление Бумажным роем (остальные из ТОП-10)
     current_pm2 = await get_running_bots_info()
-    # Останавливаем лишних (кто не в ТОП-10 и не в REAL)
     for ticker in (set(current_pm2.keys()) - set(top_10)):
         if ticker not in target_real_bots:
             await stop_bot(ticker)
 
-    # Запускаем бумажных из ТОП-10
     for ticker in top_10:
         if ticker in target_real_bots: continue
         if ticker not in current_pm2 or not current_pm2[ticker]['paper']:
             await start_bot(ticker, paper=True)
 
-    # 6. Финализация конфига
+    # 6. Финализация конфига (принудительное обновление)
     config["tickers"] = top_10
     config["live_swarm"] = sorted(target_real_bots)
     config["base_ticker"] = all_sorted[0] if all_sorted else "BTCUSDT"
     config["black_list"] = sorted(list(new_black_list))
     
+    logger.info(f"Writing to config: tickers={len(config['tickers'])}, swarm={config['live_swarm']}")
     await safe_save_json(CONFIG_PATH, config)
+    
+    # Релоад PM2
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
     logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")
 

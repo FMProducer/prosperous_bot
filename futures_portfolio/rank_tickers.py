@@ -4,6 +4,7 @@ import logging
 import time
 import json
 import os
+import numpy as np
 from typing import List, Dict, Optional, Callable, Any
 from dotenv import load_dotenv
 
@@ -64,32 +65,30 @@ class TickerScanner:
         if not klines or len(klines) < min(100, limit):
             return None
         
-        closes = [float(k[4]) for k in klines]
-        highs = [float(k[2]) for k in klines]
-        lows = [float(k[3]) for k in klines]
+        arr = np.array(klines, dtype=np.float32)
+        closes = arr[:, 4]
         
         cycles = 0
         basis = closes[0]
-        for price in closes:
-            diff_pct = abs(price - basis) / basis
-            if diff_pct >= self.rebalance_threshold:
+        # Cycles detection can remain iterative due to path dependency, or use Numba. 
+        # Kept iterative for structural safety unless Numba is injected.
+        for price in closes.tolist():
+            if abs(price - basis) / basis >= self.rebalance_threshold:
                 cycles += 1
                 basis = price
 
         max_hourly_spurt = 0.0
-        for h in range(0, len(klines), 60):
-            window = klines[h:h+60]
-            if not window: continue
-            w_high = max(float(k[2]) for k in window)
-            w_low = min(float(k[3]) for k in window)
-            w_open = float(window[0][1])
-            spurt = (w_high - w_low) / w_open * 100
-            max_hourly_spurt = max(max_hourly_spurt, spurt)
+        n_windows = len(arr) // 60
+        if n_windows > 0:
+            windows = arr[:n_windows*60].reshape((n_windows, 60, -1))
+            # index 2: high, index 3: low, index 1: open
+            spurts = (np.max(windows[:, :, 2], axis=1) - np.min(windows[:, :, 3], axis=1)) / windows[:, 0, 1] * 100
+            max_hourly_spurt = float(np.max(spurts))
 
-        total_path = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes)))
-        net_move_abs = abs(closes[-1] - closes[0])
-        trend_ratio_pct = (net_move_abs / total_path * 100) if total_path > 0 else 0
-        net_change_pct = (closes[-1] / closes[0] - 1) * 100
+        total_path = float(np.sum(np.abs(np.diff(closes))))
+        net_move_abs = float(np.abs(closes[-1] - closes[0]))
+        trend_ratio_pct = float((net_move_abs / total_path * 100)) if total_path > 0 else 0.0
+        net_change_pct = float((closes[-1] / closes[0] - 1) * 100)
         
         return {
             "symbol": symbol,
@@ -97,7 +96,7 @@ class TickerScanner:
             "net_change": net_change_pct,
             "max_spurt": max_hourly_spurt,
             "trend": trend_ratio_pct,
-            "funding": funding_rate * 100
+            "funding": float(funding_rate * 100)
         }
 
     async def get_top_tickers(self, min_volume: float = 10_000_000):

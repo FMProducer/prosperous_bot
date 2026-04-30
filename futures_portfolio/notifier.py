@@ -1,6 +1,6 @@
 import os
 import asyncio
-import urllib.request
+import aiohttp
 import json
 import logging
 from dotenv import load_dotenv
@@ -31,20 +31,19 @@ class TelegramNotifier:
             "parse_mode": "HTML"
         }
 
-        def _send():
-            try:
-                headers = {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'ProsperousBot/1.0'
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    return response.getcode() == 200
-            except Exception as e:
-                logger.error(f"Telegram API Error: {e}")
-                return False
-
-        return await asyncio.to_thread(_send)
+        try:
+            # trust_env=True позволяет использовать системные прокси (важно для VPN на Windows)
+            async with aiohttp.ClientSession(trust_env=True) as session:
+                headers = {'User-Agent': 'ProsperousBot/1.0'}
+                async with session.post(url, json=payload, headers=headers, timeout=15) as response:
+                    if response.status != 200:
+                        err_text = await response.text()
+                        logger.error(f"Telegram API Error (Status {response.status}): {err_text}")
+                        return False
+                    return True
+        except Exception as e:
+            logger.error(f"Telegram Connection Error: {type(e).__name__}: {e}")
+            return False
 
     async def send_alert(self, title: str, message: str):
         """Отправка важного уведомления (например, срабатывание стопа)."""

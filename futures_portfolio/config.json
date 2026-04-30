@@ -46,19 +46,17 @@
     }
   ],
   "tickers": [
-    "SWARMSUSDT",
-    "LUMIAUSDT",
-    "FLOWUSDT",
-    "DEXEUSDT",
-    "SIRENUSDT",
-    "ARCUSDT",
-    "SOLVUSDT",
-    "NFPUSDT",
-    "VVVUSDT",
-    "APTUSDT"
+    "BRUSDT",
+    "DRIFTUSDT",
+    "ZEREBROUSDT",
+    "BIOUSDT",
+    "USTCUSDT",
+    "HIGHUSDT",
+    "LUNA2USDT",
+    "APEUSDT",
+    "API3USDT",
+    "1000LUNCUSDT"
   ],
-  "base_ticker": "SWARMSUSDT",
-  "live_swarm": [
-    "SWARMSUSDT"
-  ]
+  "base_ticker": "BRUSDT",
+  "live_swarm": []
 }
