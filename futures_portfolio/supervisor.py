@@ -48,8 +48,8 @@ async def safe_save_json(path: str, data: dict):
     except Exception as e:
         logger.error(f"Save failed: {e}")
 
-async def get_running_bots() -> Set[str]:
-    """Получает список тикеров запущенных ботов из PM2"""
+async def get_running_bots_info() -> Dict[str, dict]:
+    """Получает детальную информацию о запущенных ботах из PM2"""
     try:
         proc = await asyncio.create_subprocess_shell(
             "pm2 jlist",
@@ -58,196 +58,148 @@ async def get_running_bots() -> Set[str]:
         )
         stdout, _ = await proc.communicate()
         data = json.loads(stdout.decode())
-        bots = set()
+        bots = {}
         for app in data:
             if app['name'].startswith('bot-'):
-                # Пытаемся найти тикер в аргументах или восстановить из имени
-                # В нашем случае имя это bot-shortname
-                # Но лучше смотреть аргументы
                 args = app.get('pm2_env', {}).get('args', [])
+                ticker = None
+                is_paper = "--paper" in args
                 for i, arg in enumerate(args):
                     if arg == '--ticker' and i + 1 < len(args):
-                        bots.add(args[i+1])
+                        ticker = args[i+1]
+                if ticker:
+                    bots[ticker] = {"name": app['name'], "paper": is_paper, "status": app['pm2_env']['status']}
         return bots
     except Exception as e:
         logger.error(f"Failed to get PM2 list: {e}")
-        return set()
+        return {}
 
 async def stop_bot(ticker: str):
     logger.info(f"🛑 Stopping bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
     try:
-        # 1. Закрываем позиции
         cmd_stop = f"python main.py --config config.json --ticker {ticker} --stop"
         proc = await asyncio.create_subprocess_shell(cmd_stop)
-        await proc.wait()
-        
-        # 2. Удаляем из PM2
-        proc_del = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
-        await proc_del.wait()
-    except Exception as e:
-        logger.error(f"Failed to stop {ticker}: {e}")
+        await asyncio.wait_for(proc.wait(), timeout=30)
+    except: pass
+    
+    try:
+        await (await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")).wait()
+    except: pass
 
 async def start_bot(ticker: str, paper: bool = False):
     mode_str = "PAPER" if paper else "REAL"
     logger.info(f"🚀 Launching {mode_str} bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
     paper_flag = "--paper" if paper else ""
+    await (await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")).wait()
+    
     cmd = f"pm2 start main.py --name bot-{short_name} --cwd {CURRENT_DIR} --update-env --interpreter python -- --config config.json --ticker {ticker} {paper_flag}"
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
 async def manage_swarm():
-    logger.info("--- Starting Incubator-Based Supervisor Cycle ---")
+    logger.info("--- Starting Multi-Slot Supervisor Cycle ---")
     
     config = await safe_load_json(CONFIG_PATH, {})
-    if not config:
-        logger.error("Config not found!")
-        return
+    if not config: return
     
     max_bots = config.get("max_bots", 10)
-    paper_mode_bots = config.get("paper_mode_bots", 2)
-    probation_days = config.get("probation_period_days", 0.125)
-    probation_hours = probation_days * 24
+    paper_mode_bots = config.get("paper_mode_bots", 9)
+    max_real_slots = max(0, max_bots - paper_mode_bots)
+    
+    probation_hours = config.get("probation_period_days", 0.125) * 24
     backtest_days = config.get("backtest_period_days", 1.0)
     max_dd_limit = config.get("max_drawdown_limit", 15.0)
-    live_swarm = set(config.get("live_swarm", []))
-    black_list = set(config.get("black_list", []))
-    current_tickers_list = config.get("tickers", []) # Из конфига
     
-    # 1. Синхронизация с реальностью (PM2)
-    running_bots = await get_running_bots()
-    logger.info(f"Currently running bots: {running_bots}")
+    # 1. Сбор реальности
+    running_info = await get_running_bots_info()
+    actual_running_tickers = set(running_info.keys())
     
-    # 2. Проверка инкубатора (Promotion) и Стоп-лоссов
-    new_live_swarm = live_swarm.copy()
-    new_black_list = black_list.copy()
-    
-    actual_running = set()
-    for ticker in running_bots:
-        state_path = os.path.join(CURRENT_DIR, f"state_{ticker}.json")
-        state = await safe_load_json(state_path, {})
-        
-        # ПРОВЕРКА СТОП-ЛОССА
+    # 2. Проверка стоп-лоссов
+    new_black_list = set(config.get("black_list", []))
+    for ticker in actual_running_tickers:
+        state = await safe_load_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), {})
         if state.get("trailing_stop_triggered"):
-            logger.warning(f"⚠️ Bot {ticker} hit TRAILING STOP! Adding to BLACK LIST and stopping.")
+            logger.warning(f"⚠️ {ticker} HIT STOP-LOSS!")
             await stop_bot(ticker)
             new_black_list.add(ticker)
-            if ticker in new_live_swarm: new_live_swarm.remove(ticker)
-            # Очищаем флаг в файле состояния, чтобы после перезапуска (если случится) не стопился сразу
             state["trailing_stop_triggered"] = False
-            await safe_save_json(state_path, state)
-            continue
-            
-        actual_running.add(ticker)
-        
-        if ticker not in live_swarm:
-            # Бот в инкубаторе (paper mode)
-            siphoning_reserve = state.get("siphoning_reserve", 0.0)
-            started_at = state.get("started_at", 0)
-            elapsed_hours = (time.time() - started_at) / 3600 if started_at > 0 else 0
-            
-            logger.info(f"   > Incubator {ticker}: SAFE={siphoning_reserve:.2f}, Elapsed={elapsed_hours:.2f}h")
-            
-            if siphoning_reserve > 0 and elapsed_hours >= probation_hours:
-                logger.info(f"🎓 PROMOTING {ticker} to REAL mode!")
-                await stop_bot(ticker) # Останавливаем бумажного
-                await start_bot(ticker, paper=False) # Запускаем реального
-                new_live_swarm.add(ticker)
-    
-    running_bots = actual_running
+            await safe_save_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), state)
 
-    # 3. Сканирование и поиск кандидатов
+    # 3. Анализ и Рейтинг
     try:
-        # Scanner already respects black_list because we updated rank_tickers.py
         scanner_results = await run_scanner(quiet=True, min_volume=10_000_000)
         scanner_tickers = [r['symbol'] for r in scanner_results]
-    except Exception as e:
-        logger.error(f"Scanner failed: {e}")
-        scanner_tickers = []
+    except: scanner_tickers = []
     
-    # Пул для оценки (Текущие + Новые из сканера) - фильтруем по черному списку на всякий случай
-    eval_pool = [t for t in list(set(running_bots) | set(scanner_tickers)) if t not in new_black_list]
+    eval_pool = [t for t in list(actual_running_tickers | set(scanner_tickers)) if t not in new_black_list]
     
-    ticker_performance = []
+    perf_dict = {}
     for symbol in eval_pool:
         try:
             res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True)
-            if res:
-                strat_profit = res.get("profit_pct", 0)
-                asset_perf_raw = res.get("asset_chg_pct", 0)
-                max_dd = res.get("max_dd_pct", 0)
-                alpha = strat_profit - asset_perf_raw
-                
-                # ФИЛЬТРЫ: Strategy Profit > 0 + Positive Alpha + Max Drawdown < limit
-                if strat_profit > 0 and alpha > 0 and max_dd <= max_dd_limit:
-                    ticker_performance.append({
-                        "symbol": symbol,
-                        "strategy_profit": strat_profit
-                    })
+            if res and res.get("profit_pct", 0) > 0:
+                perf_dict[symbol] = res.get("profit_pct", 0)
         except: pass
 
-    ticker_performance.sort(key=lambda x: x['strategy_profit'], reverse=True)
-    top_performers_data = ticker_performance[:max_bots]
-    top_performers_symbols = [t['symbol'] for t in top_performers_data]
+    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x], reverse=True)
+    top_10 = all_sorted[:max_bots]
     
-    # Создаем словарь для быстрого доступа к профиту
-    perf_dict = {t['symbol']: t['strategy_profit'] for t in top_performers_data}
-    
-    logger.info(f"Top performers by Strategy Profit: {top_performers_symbols}")
-
-    # 4. Ротация (Уставшие боты)
-    to_stop = running_bots - set(top_performers_symbols)
-    for t in to_stop:
-        logger.info(f"🥀 Bot {t} is TIRED (Dropped from Top). Removing from swarm.")
-        await stop_bot(t)
-        if t in new_live_swarm: new_live_swarm.remove(t)
-    
-    # 5. Запуск новых и Проверка лимитов реальной торговли
-    remaining_running = running_bots - to_stop
-    
-    # Лимит реальных мест
-    max_real_slots = max_bots - paper_mode_bots
-    
-    # Проверяем кандидатов на повышение из тех, кто уже запущен в бумаге
-    for t in list(remaining_running - new_live_swarm):
-        state_path = os.path.join(CURRENT_DIR, f"state_{t}.json")
-        state = await safe_load_json(state_path, {})
+    # 4. Выбор Чемпионов для REAL (Поддержка нескольких слотов)
+    ready_for_real = []
+    for ticker in all_sorted:
+        state = await safe_load_json(os.path.join(CURRENT_DIR, f"state_{ticker}.json"), {})
+        is_already_real = ticker in running_info and not running_info[ticker]['paper']
         
-        siphoning_reserve = state.get("siphoning_reserve", 0.0)
         started_at = state.get("started_at", 0)
-        elapsed_hours = (time.time() - started_at) / 3600 if started_at > 0 else 0
+        elapsed = (time.time() - started_at) / 3600 if started_at > 0 else 0
+        has_profit = state.get("siphoning_reserve", 0.0) > 0
         
-        if siphoning_reserve > 0 and elapsed_hours >= probation_hours:
-            if len(new_live_swarm) < max_real_slots:
-                logger.info(f"🎓 PROMOTING {t} to REAL mode (Slot available)!")
-                await stop_bot(t)
-                await start_bot(t, paper=False)
-                new_live_swarm.add(t)
-            else:
-                logger.info(f"⏳ {t} is ready for promotion, but REAL slots are full ({max_real_slots}). Waiting.")
+        if is_already_real or (has_profit and elapsed >= probation_hours):
+            ready_for_real.append(ticker)
 
-    # Запуск абсолютно новых ботов (в инкубатор)
-    to_start = [t for t in top_performers_symbols if t not in remaining_running]
-    for t in to_start:
-        if len(remaining_running) < max_bots:
-            await start_bot(t, paper=True)
-            remaining_running.add(t)
-        else:
-            logger.info(f"Swarm full. Skipping {t}.")
-
-    # 6. Обновление конфига (Сортировка по профиту!)
-    # Сортируем итоговый список тикеров по их производительности из бэктеста
-    final_tickers = sorted(list(remaining_running), key=lambda x: perf_dict.get(x, -999), reverse=True)
+    # Выбираем N лучших чемпионов согласно лимиту слотов
+    target_real_bots = ready_for_real[:max_real_slots]
+    logger.info(f"🎯 Target REAL bots ({len(target_real_bots)}/{max_real_slots}): {target_real_bots}")
     
-    config["tickers"] = final_tickers
-    config["live_swarm"] = sorted(list(new_live_swarm))
+    # 5. ИСПОЛНЕНИЕ
+    # Шаг А: Останавливаем всех реальных ботов, которые НЕ входят в новый список чемпионов
+    for ticker, info in running_info.items():
+        if not info['paper'] and ticker not in target_real_bots:
+            logger.info(f"🚫 Removing OLD REAL bot: {ticker}")
+            await stop_bot(ticker)
+
+    # Шаг Б: Запускаем новых чемпионов в REAL
+    for ticker in target_real_bots:
+        is_running_real = ticker in running_info and not running_info[ticker]['paper']
+        if not is_running_real:
+            logger.info(f"🏆 Promoting to REAL: {ticker}")
+            await stop_bot(ticker) # Гасим бумагу если была
+            await start_bot(ticker, paper=False)
+
+    # Шаг В: Управление Бумажным роем (остальные из ТОП-10)
+    current_pm2 = await get_running_bots_info()
+    # Останавливаем лишних (кто не в ТОП-10 и не в REAL)
+    for ticker in (set(current_pm2.keys()) - set(top_10)):
+        if ticker not in target_real_bots:
+            await stop_bot(ticker)
+
+    # Запускаем бумажных из ТОП-10
+    for ticker in top_10:
+        if ticker in target_real_bots: continue
+        if ticker not in current_pm2 or not current_pm2[ticker]['paper']:
+            await start_bot(ticker, paper=True)
+
+    # 6. Финализация конфига
+    config["tickers"] = top_10
+    config["live_swarm"] = sorted(target_real_bots)
+    config["base_ticker"] = all_sorted[0] if all_sorted else "BTCUSDT"
     config["black_list"] = sorted(list(new_black_list))
-    config["base_ticker"] = final_tickers[0] if final_tickers else "BTCUSDT"
     
     await safe_save_json(CONFIG_PATH, config)
-    await asyncio.create_subprocess_shell("pm2 save")
-    logger.info("Swarm cycle complete.")
+    await (await asyncio.create_subprocess_shell("pm2 save")).wait()
+    logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")
 
 if __name__ == "__main__":
     asyncio.run(manage_swarm())

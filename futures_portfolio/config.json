@@ -17,7 +17,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 39000.0,
+      "initial_capital": 39.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
@@ -46,20 +46,19 @@
     }
   ],
   "tickers": [
-    "AVAAIUSDT",
-    "BIOUSDT",
     "SWARMSUSDT",
     "LUMIAUSDT",
+    "FLOWUSDT",
     "DEXEUSDT",
-    "KAITOUSDT",
-    "ORCAUSDT",
-    "STOUSDT",
-    "APEUSDT",
-    "HIGHUSDT"
+    "SIRENUSDT",
+    "ARCUSDT",
+    "SOLVUSDT",
+    "NFPUSDT",
+    "VVVUSDT",
+    "APTUSDT"
   ],
-  "base_ticker": "AVAAIUSDT",
+  "base_ticker": "SWARMSUSDT",
   "live_swarm": [
-    "BIOUSDT",
-    "LUMIAUSDT"
+    "SWARMSUSDT"
   ]
 }
