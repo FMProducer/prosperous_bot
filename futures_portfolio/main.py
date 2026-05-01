@@ -213,7 +213,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
-                    await save_json(state_file_path, state)
 
                 # Для калькулятора используем ЧИСТУЮ эквити (для расчета профита), 
                 # а внутри калькулятора будет лимитированная tpv для ребаланса.
@@ -228,7 +227,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                     tpv_ath = calc.total_tpv
                     state["tpv_ath"] = tpv_ath
-                    await save_json(state_file_path, state)
 
                 if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                     drawdown_pct = (1 - calc.total_tpv / tpv_ath) * 100
@@ -330,7 +328,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 virt_basis_price = price
                                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
                                 state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
-                                await save_json(state_file_path, state)
                                 logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
                                 continue
 
@@ -358,7 +355,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     
                                     paper_state["positions"][pos_key] = new_qty
                                     paper_state["balance"] -= res.get("commission", 0.0)
-                                    await save_json(paper_state_file_path, paper_state)
                                     
                                     trade_log = f"📝 PAPER: {side} {qty} {pos_key} @ {price:.6g}"
                                     if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
@@ -374,7 +370,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         siphoning_reserve += siphon_amount
                                         excess_to_siphon -= siphon_amount
                                         state["siphoning_reserve"] = siphoning_reserve
-                                        await save_json(state_file_path, state)
                                         logger.info(f"💰 SIPHONED: +{siphon_amount:.4f} USDT (Reserve: {siphoning_reserve:.2f})")
                                         asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}"))
                             else:
@@ -382,8 +377,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                         cycles += 1
                         state["rebalance_cycles"] = cycles
-                        await save_json(state_file_path, state)
                         
+                        if paper_mode:
+                            await save_json(paper_state_file_path, paper_state)
+
                         # Recalculate and notify completion - use updated state without extra network calls if possible
                         if paper_mode:
                             new_raw_positions = paper_state["positions"]
