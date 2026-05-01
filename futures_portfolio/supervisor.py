@@ -5,8 +5,6 @@ import os
 import time
 import random
 import sys
-import aiofiles
-from filelock import FileLock, Timeout
 from typing import Dict, List, Set, Any
 from dotenv import load_dotenv
 from pathlib import Path
@@ -16,6 +14,7 @@ load_dotenv()
 
 from rank_tickers import main as run_scanner
 from backtest_rebalance import run_backtest
+from storage import safe_load_json, safe_save_json
 
 # Настройка логирования
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
@@ -42,56 +41,6 @@ def read_shared_config(path: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Critical: Shared config read failed: {e}")
         return {}
-
-async def safe_load_json(path: str, default: Dict[str, Any], retries: int = 15) -> Dict[str, Any]:
-    """Симметричное чтение стейтов с Zombie Lock очисткой."""
-    lock_path = f"{path}.lock"
-    
-    # Zombie Lock Cleanup: если лок старше 60 секунд, удаляем его
-    if os.path.exists(lock_path):
-        if time.time() - os.path.getmtime(lock_path) > 60:
-            try: os.remove(lock_path)
-            except: pass
-
-    lock = FileLock(lock_path, timeout=30)
-    for attempt in range(retries):
-        try:
-            if not os.path.exists(path): return default
-            await asyncio.to_thread(lock.acquire)
-            try:
-                async with aiofiles.open(path, "r", encoding="utf-8") as f:
-                    content = await f.read()
-                    return json.loads(content)
-            finally:
-                await asyncio.to_thread(lock.release)
-        except (Timeout, PermissionError, json.JSONDecodeError) as e:
-            if attempt == retries - 1:
-                logger.error(f"Load failed for {path} after {retries} retries: {type(e).__name__}")
-            await asyncio.sleep(1.0 + random.random() * 2.0)
-    return default
-
-async def safe_save_json(path: str, data: Dict[str, Any], retries: int = 15):
-    """Атомарная запись через временный файл с улучшенным бэк-оффом."""
-    lock_path = f"{path}.lock"
-    # Увеличиваем таймаут до 10с
-    lock = FileLock(lock_path, timeout=10)
-    
-    for attempt in range(retries):
-        try:
-            await asyncio.to_thread(lock.acquire)
-            try:
-                tmp_path = f"{path}.tmp"
-                async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
-                    await f.write(json.dumps(data, indent=2))
-                os.replace(tmp_path, path)
-                return
-            finally:
-                await asyncio.to_thread(lock.release)
-        except (Timeout, PermissionError) as e:
-            if attempt == retries - 1:
-                logger.error(f"Failed to save {path}: {e}")
-            # Агрессивный джиттер
-            await asyncio.sleep(0.5 + random.random() * 1.5)
 
 async def get_running_bots_info() -> Dict[str, dict]:
     """Получает детальную информацию о запущенных ботах из PM2"""
