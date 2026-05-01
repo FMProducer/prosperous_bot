@@ -96,12 +96,15 @@ class PortfolioCalculator:
                 actions.append({
                     "type": "VIRTUAL_RESET",
                     "symbol": "VIRTUAL",
+                    "base_symbol": "VIRTUAL",
+                    "position_side": "BOTH",
                     "diff_usdt": diff_share * self.tpv,
                     "priority": 1 if diff_share > 0 else 3
                 })
             else:
                 cfg: Dict = targets[key]
-                pos_key: str = f"{self.base_ticker}_LONG" if key == "BASE_LONG" else f"{self.base_ticker}_SHORT"
+                pos_side: str = "LONG" if key == "BASE_LONG" else "SHORT"
+                pos_key: str = f"{self.base_ticker}_{pos_side}"
 
                 # ПОРТФЕЛЬНАЯ ФОРМУЛА:
                 # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
@@ -119,6 +122,8 @@ class PortfolioCalculator:
                 actions.append({
                     "type": "ORDER",
                     "symbol": pos_key,
+                    "base_symbol": self.base_ticker,
+                    "position_side": pos_side,
                     "diff_usdt": diff_usdt,
                     "priority": 0 if is_reduction else 2
                 })

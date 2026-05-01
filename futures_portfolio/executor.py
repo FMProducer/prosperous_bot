@@ -1,13 +1,17 @@
 """Исполнение ордеров на Binance Futures (Hedge Mode)."""
 import logging
 import asyncio
-from typing import Dict, Optional, Tuple, Any, List
+import math
+from typing import Dict, Optional, Tuple, Any, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from connector import BinanceConnector
 
 logger = logging.getLogger(__name__)
 
 
 class PortfolioExecutor:
-    def __init__(self, connector, base_ticker: str = "BTCUSDT", max_orders_per_second: int = 10):
+    def __init__(self, connector: 'BinanceConnector', base_ticker: str = "BTCUSDT", max_orders_per_second: int = 10):
         self.connector = connector
         self.base_ticker = base_ticker
         self.semaphore = asyncio.Semaphore(max_orders_per_second)
@@ -20,13 +24,12 @@ class PortfolioExecutor:
         return order_qty
 
     def round_quantity(self, qty: float, step_size: float) -> float:
-        """Округление количества до шага лота."""
+        """Математически корректное округление количества до шага лота."""
         if step_size <= 0:
             return qty
-        precision = 0
-        s = str(step_size).rstrip('0')
-        if '.' in s:
-            precision = len(s.split('.')[1])
+
+        # log10 от 0.001 даст -3. Инвертируем знак для получения количества знаков после запятой.
+        precision = max(0, int(round(-math.log10(step_size))))
         return round(qty, precision)
 
     async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH", min_notional: float = 6.0, price: float = 0.0) -> Dict:
@@ -219,7 +222,16 @@ class PortfolioExecutor:
         Совместимость со старым кодом: выполнение одного действия ребалансировки.
         """
         symbol = action["symbol"]
-        pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
+
+        # Оптимизация: используем предварительно разложенные поля, если они есть
+        base_symbol = action.get("base_symbol")
+        pos_side = action.get("position_side")
+
+        if not base_symbol or not pos_side:
+            symbol_parts = symbol.split('_')
+            base_symbol = symbol_parts[0]
+            pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
+
         diff_usdt = action["diff_usdt"]
         side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
         order_qty = abs(diff_usdt / price)
@@ -230,13 +242,13 @@ class PortfolioExecutor:
         if limit_order:
             limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
             res = await self.execute_limit_with_fallback(
-                symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                 reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
                 timeout_sec=limit_timeout, min_notional=min_notional, price=price
             )
         else:
             res = await self.execute_market_order(
-                symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                 reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=price
             )
 
@@ -248,12 +260,21 @@ class PortfolioExecutor:
             return {"type": "VIRTUAL_RESET", "status": "SUCCESS"}
 
         symbol = action["symbol"]
-        pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
+
+        # Оптимизация: используем предварительно разложенные поля, если они есть
+        base_symbol = action.get("base_symbol")
+        pos_side = action.get("position_side")
+
+        if not base_symbol or not pos_side:
+            symbol_parts = symbol.split('_')
+            base_symbol = symbol_parts[0]
+            pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
+
         diff_usdt = action["diff_usdt"]
         side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
         order_qty = abs(diff_usdt / price)
         reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-        step_size = step_sizes.get(symbol.split('_')[0], 0.0) if step_sizes else 0.0
+        step_size = step_sizes.get(base_symbol, 0.0) if step_sizes else 0.0
         min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
 
         if paper_mode:
@@ -298,13 +319,13 @@ class PortfolioExecutor:
                 limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
                 if limit_enabled:
                     res = await self.execute_limit_with_fallback(
-                        symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                         reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
                         timeout_sec=limit_timeout, min_notional=min_notional, price=price
                     )
                 else:
                     res = await self.execute_market_order(
-                        symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                         reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=price
                     )
 
