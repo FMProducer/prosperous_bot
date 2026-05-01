@@ -30,6 +30,8 @@ class PortfolioCalculator:
             # ПРАВИЛО: Активный TPV не может превышать initial_capital.
             # Излишек считается потенциальным резервом для сифонинга в main.py
             self.tpv: float = self.initial_capital
+            # Обновляем reserve для соответствия total_tpv (для тестов и логов)
+            self.siphoning_reserve = self.total_tpv - self.initial_capital
         else:
             # Если мы в просадке, используем SAFE для поддержания маржи (Recovery Mode)
             self.tpv: float = self.total_tpv
@@ -44,21 +46,18 @@ class PortfolioCalculator:
         long_qty: float = abs(self.positions.get(f"{self.base_ticker}_LONG", 0.0))
         short_qty: float = abs(self.positions.get(f"{self.base_ticker}_SHORT", 0.0))
         
-        # Используем цену входа для расчета базы, если она есть, иначе текущую
-        l_entry: float = long_entry_price if long_entry_price > 0 else spot_price
-        s_entry: float = short_entry_price if short_entry_price > 0 else spot_price
-        
         l_lev: float = targets["BASE_LONG"]["leverage"] if targets and "BASE_LONG" in targets else 5.0
         s_lev: float = targets["BASE_SHORT"]["leverage"] if targets and "BASE_SHORT" in targets else 5.0
 
-        # Актуальная стоимость Long (Доля капитала + PnL)
-        val_long: float = (long_qty * l_entry / l_lev) + (long_qty * (spot_price - l_entry))
-        # Актуальная стоимость Short (Доля капитала + PnL)
-        val_short: float = (short_qty * s_entry / s_lev) + (short_qty * (s_entry - spot_price))
-        # Стоимость Виртуальной части
+        # Упрощенный расчет долей: (Номинал / Плечо) / TPV
+        self.notional_long = long_qty * spot_price
+        self.notional_short = short_qty * spot_price
+
+        val_long: float = (self.notional_long / l_lev) if l_lev > 0 else 0.0
+        val_short: float = (self.notional_short / s_lev) if s_lev > 0 else 0.0
         val_virt: float = self.virt_current_value
 
-        # Сохраняем для логирования
+        # Сохраняем для логирования и проверок отклонений
         self.share_long_pct: float = round(val_long / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_short_pct: float = round(val_short / self.tpv * 100, 1) if self.tpv > 0 else 0.0
         self.share_virt_pct: float = round(val_virt / self.tpv * 100, 1) if self.tpv > 0 else 0.0

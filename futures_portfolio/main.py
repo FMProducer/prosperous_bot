@@ -33,8 +33,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     limit_order_enabled = True
     min_notional_usdt = 6.0
 
-    # Используем новое безопасное чтение конфига через единый механизм блокировок
-    config = await load_json(config_path, {})
+    # Обычное чтение конфига без блокировок
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        logger.error(f"Aborting cycle: Failed to read config {config_path}: {e}")
+        return
+
     if not config or "portfolios" not in config:
         logger.error(f"Aborting cycle: Invalid or missing config structure from {config_path}")
         return
@@ -48,7 +54,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     portfolio_cfg = config["portfolios"][0]
     targets = portfolio_cfg["targets"]
     global_threshold = portfolio_cfg["rebalance_threshold"]
-    check_interval = portfolio_cfg["check_interval_sec"]
+    check_interval = portfolio_cfg.get("check_interval_sec", 15)
     
     # Приоритет тикера: override > config > default
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
@@ -421,7 +427,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         await notifier.close()
 
 async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
-    config = await load_json(config_path, {})
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except:
+        config = {}
     paper_mode = config.get("paper_mode", False)
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     
@@ -472,10 +482,14 @@ if __name__ == "__main__":
     
     config_base = os.path.splitext(os.path.basename(args.config))[0]
 
-    async def get_initial_cfg():
-        return await load_json(args.config, {})
+    def get_initial_cfg():
+        try:
+            with open(args.config, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
 
-    cfg = asyncio.run(get_initial_cfg())
+    cfg = get_initial_cfg()
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
     
     # Paper mode logic: flag --paper OR global config paper_mode
