@@ -13,6 +13,18 @@ module.exports = {
       env: {
         PYTHONUNBUFFERED: "1"
       }
+    },
+    {
+      name: "swarm-aggregator",
+      script: "aggregator.py",
+      interpreter: "python",
+      restart_delay: 5000,
+      error_file: "./logs/err_aggregator.log",
+      out_file: "./logs/out_aggregator.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      env: {
+        PYTHONUNBUFFERED: "1"
+      }
     }
   ]
 };

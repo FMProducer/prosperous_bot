@@ -48,17 +48,17 @@
     }
   ],
   "tickers": [
-    "VICUSDT",
     "BRUSDT",
+    "VICUSDT",
     "DRIFTUSDT",
-    "SWARMSUSDT",
-    "ZEREBROUSDT",
-    "HIGHUSDT",
-    "EDUUSDT",
     "BIOUSDT",
-    "APTUSDT",
-    "1000LUNCUSDT"
+    "DUSDT",
+    "DEXEUSDT",
+    "EDUUSDT",
+    "1000LUNCUSDT",
+    "SWARMSUSDT",
+    "LUNA2USDT"
   ],
-  "base_ticker": "VICUSDT",
+  "base_ticker": "BRUSDT",
   "live_swarm": []
 }

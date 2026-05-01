@@ -217,10 +217,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     positions = {k: v["qty"] for k, v in raw_positions.items()}
                     l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
                     s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
-                
-                # Ограничение капитала, если задано
-                if max_capital_usdt > 0:
-                    real_equity = min(real_equity, max_capital_usdt)
 
                 if virt_basis_price == 0 or initial_tpv == 0:
                     if virt_basis_price == 0:
@@ -243,10 +239,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     })
                     await save_json(state_file_path, state)
 
+                # Для калькулятора используем ЧИСТУЮ эквити (для расчета профита), 
+                # а внутри калькулятора будет лимитированная tpv для ребаланса.
                 calc = PortfolioCalculator(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                                          base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
                                          long_entry_price=l_entry, short_entry_price=s_entry,
                                          initial_capital=initial_tpv)
+                
+                # Лимитированная версия эквити для логики стоп-лоссов и маржи
+                limited_equity = min(real_equity, max_capital_usdt) if max_capital_usdt > 0 else real_equity
                 
                 if tpv_ath == 0 or calc.total_tpv > tpv_ath:
                     tpv_ath = calc.total_tpv

@@ -62,12 +62,14 @@ class StatusAggregator:
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)
                 
-                # Проверка на "протухание" данных (5 минут)
+                # Все боты попадают в расчет общего профита (как в swarm_analyzer)
+                total_profit += profit
+                
+                # Проверка на "протухание" данных (5 минут) для иконки статуса
                 is_active = (time.time() - last_update) < 300 if last_update > 0 else False
                 
                 if is_active:
                     active_bots += 1
-                    total_profit += profit
                     status_icon = "🟢"
                 else:
                     status_icon = "🔴"
