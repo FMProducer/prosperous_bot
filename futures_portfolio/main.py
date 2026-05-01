@@ -14,9 +14,8 @@ from connector import BinanceConnector
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 from notifier import TelegramNotifier
+from storage import safe_load_json as load_json, safe_save_json as save_json
 
-import aiofiles
-from filelock import FileLock, Timeout
 from pathlib import Path
 
 def read_shared_config(path: str) -> Dict[str, Any]:
@@ -36,31 +35,6 @@ def emit_signal(signal_type: str, ticker: str) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
-async def load_json(path: str, default: Dict[str, Any]) -> Dict[str, Any]:
-    """Lock-free read. Полагаемся на атомарность файловой системы."""
-    try:
-        if not os.path.exists(path):
-            return default
-        async with aiofiles.open(path, "r", encoding="utf-8") as f:
-            content = await f.read()
-            return json.loads(content)
-    except (json.JSONDecodeError, FileNotFoundError, PermissionError):
-        return _STATE_CACHE.get(path, default)
-
-# Глобальный кэш для защиты состояния
-_STATE_CACHE: Dict[str, Dict[str, Any]] = {}
-
-async def save_json(path: str, data: Dict[str, Any]) -> None:
-    """Атомарная запись без блокировок. os.replace гарантирует консистентность на Windows."""
-    _STATE_CACHE[path] = data
-    try:
-        tmp_path = f"{path}.tmp"
-        async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
-            await f.write(json.dumps(data, indent=2))
-        os.replace(tmp_path, path)
-        if path in _STATE_CACHE: del _STATE_CACHE[path]
-    except Exception as e:
-        logging.warning(f"Failed to save {path}, cached in memory: {e}")
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
     # Defaults to satisfy linters
@@ -335,10 +309,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             f"Target Actions: {len(valid_actions)}"
                         )
                         asyncio.create_task(notifier.send_message(rebalance_msg))
-
-                        # Fetch step sizes for correct rounding
-                        exchange_info = await connector.get_exchange_info()
-                        step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
 
                         # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
                         current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)

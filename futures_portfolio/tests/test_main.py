@@ -3,6 +3,7 @@ import json
 import os
 import asyncio
 import copy
+import logging
 from unittest.mock import patch, AsyncMock, MagicMock
 from futures_portfolio.main import rebalance_loop
 
@@ -47,6 +48,7 @@ def mock_notifier():
     notifier.send_message = AsyncMock()
     notifier.send_alert = AsyncMock()
     notifier.send_status = AsyncMock()
+    notifier.close = AsyncMock()
     return notifier
 
 @pytest.mark.asyncio
@@ -70,7 +72,6 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
         "short_entry_price": 0.0
     }
     def load_side_effect(path, default=None):
-        if "config" in path: return mock_config
         if "paper_state" in path: return paper_state
         if "state" in path: return state
         return default
@@ -84,12 +85,13 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
     mock_config["portfolios"][0]["max_capital_usdt"] = 0.0
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-            with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
-                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                    try:
-                        await rebalance_loop(mock_connector, MagicMock(), "config.json", "state.json", "paper_state.json", MagicMock())
-                    except Exception as e:
-                        if str(e) != "StopLoop": raise e
+            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
+                with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
+                    with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                        try:
+                            await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
+                        except Exception as e:
+                            if str(e) != "StopLoop": raise e
     # Note: siphoning might not trigger if no profitable sell occurs in this setup.
     assert len(saves) > 0
 
@@ -113,7 +115,6 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
         "base_ticker": "BTCUSDT"
     }
     def load_side_effect(path, default=None):
-        if "config" in path: return mock_config
         if "paper_state" in path: return paper_state
         if "state" in path: return state
         return default
@@ -126,12 +127,13 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
 
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
-                    try:
-                            await rebalance_loop(mock_connector, MagicMock(), "config.json", "state.json", "paper_state.json", MagicMock())
-                    except Exception as e:
-                        if str(e) != "StopLoop": raise e
+            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
+                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                    with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
+                        try:
+                                await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
+                        except Exception as e:
+                            if str(e) != "StopLoop": raise e
     last_paper_state = next(s[1] for s in reversed(saves) if "positions" in s[1])
     assert last_paper_state["positions"]["BTCUSDT_LONG"] == 0.0
 
@@ -144,18 +146,18 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
     mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 3.0})
 
     async def async_load_side_effect(path, default=None):
-        if "c.json" in path: return mock_config
         if "s.json" in path: return state
         return default
 
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=async_load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock()):
-            with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
-                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                    try:
-                        await rebalance_loop(mock_connector, MagicMock(), "c.json", "s.json", "p.json", MagicMock())
-                    except Exception as e:
-                        if str(e) != "StopLoop": raise e
+            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
+                with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
+                    with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                        try:
+                            await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
+                        except Exception as e:
+                            if str(e) != "StopLoop": raise e
     mock_notifier.send_message.assert_any_call("⚠️ <b>WARNING</b>: Low margin ratio: 3.00 (BTCUSDT)")
 
 @pytest.mark.asyncio
@@ -166,16 +168,16 @@ async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_
     mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 1.5})
 
     async def async_load_side_effect(path, default=None):
-        if "c.json" in path: return mock_config
         if "s.json" in path: return state
         return default
 
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=async_load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock()):
-            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                with patch("asyncio.sleep", side_effect=Exception("StopLoop")):
-                    try:
-                        await rebalance_loop(mock_connector, MagicMock(), "c.json", "s.json", "p.json", MagicMock())
-                    except Exception as e:
-                        if str(e) != "StopLoop": raise e
-    mock_notifier.send_alert.assert_called_with("CRITICAL MARGIN", "Margin ratio 1.50 < 2.00. Emergency stop!")
+            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
+                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                    with patch("asyncio.sleep", side_effect=Exception("StopLoop")):
+                        try:
+                            await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
+                        except Exception as e:
+                            if str(e) != "StopLoop": raise e
+    mock_notifier.send_alert.assert_called_with("CRITICAL MARGIN", f"Margin ratio 1.50 < {2.0:.1f}. Emergency stop!")

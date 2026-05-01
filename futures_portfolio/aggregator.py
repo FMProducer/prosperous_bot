@@ -7,6 +7,7 @@ import glob
 from datetime import datetime
 from dotenv import load_dotenv
 from notifier import TelegramNotifier
+from storage import safe_load_json
 
 load_dotenv()
 
@@ -28,16 +29,11 @@ class StatusAggregator:
         self.config_path = config_path
         self.notifier = TelegramNotifier()
         
-    def load_config(self):
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}")
-            return {}
+    async def load_config(self) -> Dict[str, Any]:
+        return await safe_load_json(self.config_path, {})
 
-    async def collect_and_send(self):
-        config = self.load_config()
+    async def collect_and_send(self) -> None:
+        config = await self.load_config()
         if not config.get("telegram_enabled", True):
             logger.info("Telegram is disabled in config. Skipping summary.")
             return
@@ -64,8 +60,7 @@ class StatusAggregator:
         # Для PAPER ботов нам нужно читать paper_state_*.json чтобы получить реальный баланс (как в swarm_analyzer)
         for f_path in state_files:
             try:
-                with open(f_path, 'r', encoding='utf-8') as f:
-                    state = json.load(f)
+                state = await safe_load_json(f_path, {})
                 
                 ticker = state.get("base_ticker", "UNKNOWN")
                 if ticker == "UNKNOWN": continue
@@ -74,11 +69,8 @@ class StatusAggregator:
                 paper_state_path = f"paper_state_{ticker}.json"
                 paper_balance = initial_per_bot
                 if os.path.exists(paper_state_path):
-                    try:
-                        with open(paper_state_path, 'r', encoding='utf-8') as pf:
-                            ps = json.load(pf)
-                            paper_balance = ps.get("balance", initial_per_bot)
-                    except: pass
+                    ps = await safe_load_json(paper_state_path, {})
+                    paper_balance = ps.get("balance", initial_per_bot)
 
                 siphoned = state.get("siphoning_reserve", 0.0)
                 # Расчет профита: (Баланс - Начальный) + SAFE (как в swarm_analyzer)
@@ -140,10 +132,10 @@ class StatusAggregator:
         else:
             logger.warning("Failed to send summary to Telegram (throttled or disabled).")
 
-    async def run(self):
+    async def run(self) -> None:
         logger.info("Status Aggregator started.")
         while True:
-            config = self.load_config()
+            config = await self.load_config()
             interval_min = config.get("telegram_summary_interval_min", 1)
             
             try:
