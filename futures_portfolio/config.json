@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -13,7 +13,7 @@
   "supervisor_interval_days": 0.125,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
-  "telegram_enabled": false,
+  "telegram_enabled": true,
   "black_list": [],
   "portfolios": [
     {
