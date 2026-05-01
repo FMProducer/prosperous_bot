@@ -81,6 +81,7 @@
 - [x] **Config Expansion:** Добавлены `paper_mode_bots` и `probation_period_days`.
 - [x] **started_at Tracking:** Фиксация времени запуска в состоянии бота.
 - [x] **Timing Synchronization:** Внедрена гибкая настройка периодов бэктеста, супервайзера и сканера в днях через `config.json`.
+- [x] **Telegram Rate Limiting & Robustness:** Исправлены ошибки `HTTP 429 (Too Many Requests)`. Внедрена логика повторных попыток с экспоненциальным бэк-оффом и учетом заголовка `Retry-After`. Добавлен джиттер (разброс по времени) для регулярных отчетов ботов.
 
 ## Next Steps
 - [ ] **Performance Monitoring:** Оценить влияние сокращенного окна бэктеста (3ч вместо 24ч) на качество отбора тикеров в Супервайзере.

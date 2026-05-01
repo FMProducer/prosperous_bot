@@ -13,6 +13,8 @@
   "supervisor_interval_days": 0.125,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
+  "telegram_enabled": true,
+  "telegram_summary_interval_min": 1,
   "black_list": [],
   "portfolios": [
     {
@@ -46,17 +48,17 @@
     }
   ],
   "tickers": [
+    "VICUSDT",
     "BRUSDT",
     "DRIFTUSDT",
+    "SWARMSUSDT",
     "ZEREBROUSDT",
-    "BIOUSDT",
-    "USTCUSDT",
     "HIGHUSDT",
-    "LUNA2USDT",
-    "APEUSDT",
-    "API3USDT",
+    "EDUUSDT",
+    "BIOUSDT",
+    "APTUSDT",
     "1000LUNCUSDT"
   ],
-  "base_ticker": "BRUSDT",
+  "base_ticker": "VICUSDT",
   "live_swarm": []
 }
