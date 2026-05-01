@@ -8,27 +8,19 @@ from filelock import FileLock, Timeout
 from typing import Dict, Any
 
 async def safe_load_json(path: str, default: Dict[str, Any], retries: int = 15) -> Dict[str, Any]:
-    lock_path = f"{path}.lock"
-    try:
-        if os.path.exists(lock_path) and time.time() - os.path.getmtime(lock_path) > 60:
-            os.remove(lock_path)
-    except FileNotFoundError:
-        pass
-
-    lock = FileLock(lock_path, timeout=30)
+    """Безопасное чтение JSON без блокировок (но с ретраями при ошибках декодирования)."""
     for attempt in range(retries):
         try:
             if not os.path.exists(path): return default
-            await asyncio.to_thread(lock.acquire)
-            try:
-                async with aiofiles.open(path, "r", encoding="utf-8") as f:
-                    content = await f.read()
-                    return json.loads(content)
-            finally:
-                await asyncio.to_thread(lock.release)
-        except (Timeout, json.JSONDecodeError, PermissionError) as e:
-            if attempt == retries - 1: raise e
-            await asyncio.sleep(0.5 + random.random())
+            async with aiofiles.open(path, "r", encoding="utf-8") as f:
+                content = await f.read()
+                if not content: return default
+                return json.loads(content)
+        except (json.JSONDecodeError, PermissionError) as e:
+            if attempt == retries - 1:
+                # Если последний шанс и файл пустой или битый, возвращаем дефолт вместо падения
+                return default
+            await asyncio.sleep(0.1 + random.random() * 0.2)
     return default
 
 async def safe_save_json(path: str, data: Dict[str, Any]) -> None:

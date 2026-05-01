@@ -30,11 +30,16 @@ class StatusAggregator:
         self.config_path = config_path
         self.notifier = TelegramNotifier()
         
-    async def load_config(self) -> Dict[str, Any]:
-        return await safe_load_json(self.config_path, {})
+    def load_config(self) -> Dict[str, Any]:
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read config {self.config_path}: {e}")
+            return {}
 
     async def collect_and_send(self) -> None:
-        config = await self.load_config()
+        config = self.load_config()
         if not config.get("telegram_enabled", True):
             logger.info("Telegram is disabled in config. Skipping summary.")
             return
@@ -134,7 +139,7 @@ class StatusAggregator:
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
         while True:
-            config = await self.load_config()
+            config = self.load_config()
             interval_min = config.get("telegram_summary_interval_min", 1)
             
             try:
