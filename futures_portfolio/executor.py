@@ -1,7 +1,7 @@
 """Исполнение ордеров на Binance Futures (Hedge Mode)."""
 import logging
 import asyncio
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class PortfolioExecutor:
             precision = len(s.split('.')[1])
         return round(qty, precision)
 
-    async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH", min_notional: float = 6.0) -> Dict:
+    async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH", min_notional: float = 6.0, price: float = 0.0) -> Dict:
         """
         Отправка рыночного ордера на Binance Futures.
         """
@@ -42,10 +42,12 @@ class PortfolioExecutor:
 
         # Проверка минимальной стоимости (Notional Value)
         try:
-            # Получаем текущую цену для проверки стоимости
-            prices = await self.connector.get_futures_prices([symbol])
-            price = prices.get(symbol)
-            if price and (qty * price) < min_notional:
+            if price <= 0:
+                # Получаем текущую цену только если она не передана
+                prices = await self.connector.get_futures_prices([symbol])
+                price = prices.get(symbol, 0.0)
+
+            if price > 0 and (qty * price) < min_notional:
                 msg = f"Order too small: {qty * price:.2f} USDT < {min_notional} USDT. Skipping."
                 logger.info(msg)
                 return {"status": "SKIPPED", "message": msg}
@@ -74,7 +76,8 @@ class PortfolioExecutor:
                                            position_side: str = "BOTH",
                                            offset_pct: float = 0.2,
                                            timeout_sec: int = 30,
-                                           min_notional: float = 6.0) -> Dict:
+                                           min_notional: float = 6.0,
+                                           price: float = 0.0) -> Dict:
         """
         Limit + Fallback с проверкой минимальной стоимости.
         """
@@ -210,11 +213,39 @@ class PortfolioExecutor:
         timeout_sec = config.get("limit_timeout_sec", 30)
         return enabled, offset_pct, timeout_sec
 
-    async def execute_actions(self, actions: list, price: float, ticker: str, paper_mode: bool = True, portfolio_cfg: dict = None, step_sizes: dict = None) -> list:
+    async def execute_rebalance(self, action: Dict[str, Any], price: float, step_size: float, limit_order: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Совместимость со старым кодом: выполнение одного действия ребалансировки.
+        """
+        symbol = action["symbol"]
+        pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
+        diff_usdt = action["diff_usdt"]
+        side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
+        order_qty = abs(diff_usdt / price)
+        reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
+
+        min_notional = portfolio_cfg.get("min_notional_usdt", 6.0) if portfolio_cfg else 6.0
+
+        if limit_order:
+            limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
+            res = await self.execute_limit_with_fallback(
+                symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
+                timeout_sec=limit_timeout, min_notional=min_notional, price=price
+            )
+        else:
+            res = await self.execute_market_order(
+                symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
+                reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=price
+            )
+
+        return res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]
+
+    async def execute_actions(self, actions: List[Dict[str, Any]], price: float, ticker: str, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
         """
         Пакетное выполнение действий по ребалансировке.
         """
-        results = []
+        results: List[Dict[str, Any]] = []
         for action in actions:
             await asyncio.sleep(0.01) # Профилактика зависания
 
@@ -243,17 +274,17 @@ class PortfolioExecutor:
                 })
             else:
                 # Real mode
-                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg)
+                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
                 if limit_enabled:
                     res = await self.execute_limit_with_fallback(
                         symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
                         reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
-                        timeout_sec=limit_timeout, min_notional=min_notional
+                        timeout_sec=limit_timeout, min_notional=min_notional, price=price
                     )
                 else:
                     res = await self.execute_market_order(
                         symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
-                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional
+                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=price
                     )
                 results.append({
                     "type": pos_side,

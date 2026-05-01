@@ -83,10 +83,10 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
         if "state" in path: state = copy.deepcopy(data)
 
     mock_config["portfolios"][0]["max_capital_usdt"] = 0.0
-    with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
+    with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)) as m_load:
         with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
-                with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
+            m_load.side_effect = lambda path, default: mock_config if "config.json" in path else load_side_effect(path, default)
+            with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
                     with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                         try:
                             await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
@@ -125,10 +125,10 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
         if "paper_state" in path: paper_state = copy.deepcopy(data)
         if "state" in path: state = copy.deepcopy(data)
 
-    with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
+    with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)) as m_load:
         with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
-                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+            m_load.side_effect = lambda path, default: mock_config if "config.json" in path else load_side_effect(path, default)
+            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                     with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
                         try:
                                 await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
@@ -147,12 +147,12 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
 
     async def async_load_side_effect(path, default=None):
         if "s.json" in path: return state
+        if "c.json" in path: return mock_config
         return default
 
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=async_load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock()):
-            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
-                with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
+            with patch("asyncio.sleep", side_effect=[None, Exception("StopLoop")]):
                     with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                         try:
                             await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
@@ -169,12 +169,12 @@ async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_
 
     async def async_load_side_effect(path, default=None):
         if "s.json" in path: return state
+        if "c.json" in path: return mock_config
         return default
 
     with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=async_load_side_effect)):
         with patch("futures_portfolio.main.save_json", AsyncMock()):
-            with patch("futures_portfolio.main.read_shared_config", return_value=mock_config):
-                with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                     with patch("asyncio.sleep", side_effect=Exception("StopLoop")):
                         try:
                             await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
