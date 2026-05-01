@@ -134,6 +134,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     notifier = TelegramNotifier()
     config_base = os.path.splitext(os.path.basename(config_path))[0]
     
+    # Инициализация экзекутора
+    max_ops = config.get("max_orders_per_second", 10)
+    executor = PortfolioExecutor(connector, base_ticker=base_ticker, max_orders_per_second=max_ops)
+
     # Hedge Mode Guard
     if not paper_mode:
         try:
@@ -306,10 +310,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
                         excess_to_siphon: float = max(0, (calc.total_tpv - siphoning_reserve) - current_initial_cap)
 
-                        for action in valid_actions:
-                            trade_pnl = 0.0 
+                        # Векторизованное исполнение всех действий
+                        exec_results = await executor.execute_actions(
+                            valid_actions, price, paper_mode, portfolio_cfg, step_sizes, paper_state
+                        )
 
-                            if action["type"] == "VIRTUAL_RESET":
+                        for res in exec_results:
+                            if res.get("status") == "ERROR":
+                                logger.error(f"Action failed: {res.get('message')}")
+                                continue
+
+                            if res["type"] == "VIRTUAL_RESET":
                                 virt_basis_price = price
                                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
                                 state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
@@ -317,65 +328,51 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
                                 continue
 
-                            key = action["symbol"]
-                            pos_side = key.split('_')[1]
-                            diff_usdt = action["diff_usdt"]
-                            order_qty = diff_usdt / price
-                            side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-                            reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-                            step_size = step_sizes.get(key.split('_')[0], 0.0)
+                            # Обработка результатов исполнения
+                            pos_side = res["type"]
+                            key = res["symbol"]
+                            side = res["side"]
+                            qty = res["qty"]
+                            status = res["status"]
+                            trade_pnl = res.get("trade_pnl", 0.0)
+                            reduce_only = res.get("reduce_only", False)
 
-                            if paper_mode:
-                                qty_rounded = PortfolioExecutor(None).round_quantity(abs(order_qty), step_size)
-                                if qty_rounded > 0:
-                                    order_value = qty_rounded * price
-                                    commission = order_value * 0.0004
-                                    
-                                    # PnL Calculation for paper mode
+                            if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                                if paper_mode:
                                     pos_key = f"{base_ticker}_{pos_side}"
                                     old_qty = paper_state["positions"].get(pos_key, 0.0)
                                     entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
                                     old_entry = paper_state.get(entry_key, price)
 
-                                    if reduce_only:
-                                        if pos_side == "LONG":
-                                            trade_pnl = qty_rounded * (price - old_entry) - commission
-                                        else:
-                                            trade_pnl = qty_rounded * (old_entry - price) - commission
-                                    
-                                    new_qty = (old_qty + qty_rounded) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty_rounded)
+                                    new_qty = (old_qty + qty) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty)
                                     
                                     if not reduce_only:
                                         curr_q = abs(old_qty)
-                                        paper_state[entry_key] = (curr_q * old_entry + qty_rounded * price) / (curr_q + qty_rounded) if (curr_q + qty_rounded) > 0 else price
+                                        paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
                                     
                                     paper_state["positions"][pos_key] = new_qty
-                                    paper_state["balance"] -= commission
+                                    paper_state["balance"] -= res.get("commission", 0.0)
                                     await save_json(paper_state_file_path, paper_state)
                                     
-                                    trade_log = f"📝 PAPER: {side} {qty_rounded} {pos_key} @ {price:.6g}"
+                                    trade_log = f"📝 PAPER: {side} {qty} {pos_key} @ {price:.6g}"
                                     if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
                                     logger.info(trade_log)
                                     asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
-                            else:
-                                # Real execution
-                                logger.info(f"⚡ REAL: Executing {side} {abs(order_qty):.6g} {key}...")
-                                executor = PortfolioExecutor(connector)
-                                success = await executor.execute_rebalance(action, price, step_size, limit_order=limit_order_enabled, portfolio_cfg=portfolio_cfg)
-                                if success:
-                                    logger.info(f"✅ REAL: {side} {key} order filled.")
                                 else:
-                                    logger.warning(f"❌ REAL: {side} {key} order failed.")
+                                    logger.info(f"✅ REAL: {side} {key} order filled. Status: {status}")
 
-                            if reduce_only and trade_pnl > 0 and excess_to_siphon > 0:
-                                siphon_amount = min(trade_pnl * (1 - reinvestment_ratio), excess_to_siphon)
-                                if siphon_amount > 0:
-                                    siphoning_reserve += siphon_amount
-                                    excess_to_siphon -= siphon_amount
-                                    state["siphoning_reserve"] = siphoning_reserve
-                                    await save_json(state_file_path, state)
-                                    logger.info(f"💰 SIPHONED: +{siphon_amount:.4f} USDT (Reserve: {siphoning_reserve:.2f})")
-                                    asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}"))
+                                # Сифонинг прибыли (SAFE)
+                                if reduce_only and trade_pnl > 0 and excess_to_siphon > 0:
+                                    siphon_amount = min(trade_pnl * (1 - reinvestment_ratio), excess_to_siphon)
+                                    if siphon_amount > 0:
+                                        siphoning_reserve += siphon_amount
+                                        excess_to_siphon -= siphon_amount
+                                        state["siphoning_reserve"] = siphoning_reserve
+                                        await save_json(state_file_path, state)
+                                        logger.info(f"💰 SIPHONED: +{siphon_amount:.4f} USDT (Reserve: {siphoning_reserve:.2f})")
+                                        asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}"))
+                            else:
+                                logger.warning(f"❌ {side} {key} execution status: {status}. Message: {res.get('message')}")
 
                         cycles += 1
                         state["rebalance_cycles"] = cycles

@@ -5,6 +5,7 @@
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.0,
+  "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
   "probation_period_days": 0.125,
