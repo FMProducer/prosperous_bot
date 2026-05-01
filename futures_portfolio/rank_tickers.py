@@ -1,11 +1,13 @@
+import numpy as np
+import pandas as pd
+import numpy.typing as npt
+from typing import List, Dict, Optional, Any, Callable
 import asyncio
 import aiohttp
-import logging
 import time
-import json
 import os
-import numpy as np
-from typing import List, Dict, Optional, Callable, Any
+import json
+import logging
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -32,6 +34,56 @@ def retry_on_network_error(retries: int = 3, delay: float = 1.0):
         return wrapper
     return decorator
 
+class TickerRanker:
+    def __init__(self, multi_df: pd.DataFrame):
+        # Ожидается MultiIndex DataFrame (ticker, datetime) строго с колонками OHLCV
+        self.df = multi_df[['open', 'high', 'low', 'close', 'volume']]
+
+    def calculate_metrics(self, threshold: float = 0.02) -> pd.DataFrame:
+        # Векторизованный расчет по cross-section
+        grouped = self.df.groupby(level='ticker')
+
+        # 1. Net Change %
+        first_close = grouped['close'].transform('first')
+        last_close = grouped['close'].transform('last')
+        net_change = (last_close / first_close - 1) * 100
+
+        # 2. Max Spurt % (1h = 60 min)
+        # Использование rolling(60) для поиска максимального всплеска внутри часа
+        h_roll = grouped['high'].rolling(60).max().reset_index(level=0, drop=True)
+        l_roll = grouped['low'].rolling(60).min().reset_index(level=0, drop=True)
+        o_roll = grouped['open'].shift(59)
+        # Фильтруем случаи где o_roll относится к другому тикеру (из-за shift)
+        # Но в MultiIndex с groupby shift работает корректно внутри групп
+        max_spurt = ((h_roll - l_roll) / o_roll * 100).groupby(level='ticker').max()
+
+        # 3. Trend Efficiency %
+        abs_diff = grouped['close'].diff().abs()
+        total_path = abs_diff.groupby(level='ticker').sum()
+        net_move_abs = (last_close - first_close).abs().groupby(level='ticker').last()
+        trend = (net_move_abs / total_path * 100)
+
+        # 4. Cycles (Saw Factor) - Векторизованный прокси для количества ребалансировок
+        # Сумма абсолютных изменений в единицах порога
+        cycles = (abs_diff / (first_close * threshold)).groupby(level='ticker').sum()
+
+        results = pd.DataFrame({
+            'net_change': net_change.groupby(level='ticker').last(),
+            'max_spurt': max_spurt.fillna(0),
+            'trend': trend.fillna(0),
+            'cycles': cycles.fillna(0)
+        })
+        return results
+
+    def rank_by_momentum(self, window: int = 14) -> pd.Series:
+        # Векторизованный расчет по cross-section
+        returns = self.df.groupby(level='ticker')['close'].pct_change()
+        momentum = returns.groupby(level='ticker').rolling(window).mean()
+        # Сброс индекса группы rolling для корректного доступа к уровням
+        momentum = momentum.reset_index(level=0, drop=True)
+        # Возвращаем Series с ранжированием на последний доступный timestamp
+        return momentum.groupby(level='ticker').last().sort_values(ascending=False)
+
 class TickerScanner:
     def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.02, scanner_period_days: float = 1.0):
         self.base_url = "https://fapi.binance.com"
@@ -43,7 +95,6 @@ class TickerScanner:
     async def fetch(self, session: aiohttp.ClientSession, endpoint: str, params: dict = None):
         async with self.semaphore:
             try:
-                # Отключаем прокси только для этого конкретного запроса к Binance
                 async with session.get(f"{self.base_url}{endpoint}", params=params, timeout=20, proxy=None) as response:
                     if response.status == 429:
                         retry_after = int(response.headers.get("Retry-After", 5))
@@ -55,54 +106,25 @@ class TickerScanner:
             except Exception as e:
                 return None
 
-    async def analyze_ticker(self, session: aiohttp.ClientSession, symbol: str, funding_rate: float) -> Optional[Dict]:
+    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, limit: int) -> Optional[pd.DataFrame]:
         now_ms = int(time.time() * 1000)
-        # 1440 minutes in a day
-        limit = max(1, int(self.scanner_period_days * 1440))
         params = {"symbol": symbol, "interval": "1m", "limit": limit, "endTime": now_ms}
         klines = await self.fetch(session, "/fapi/v1/klines", params)
-
-        if not klines or len(klines) < min(100, limit):
+        if not klines or len(klines) < 100:
             return None
         
-        arr = np.array(klines, dtype=np.float32)
-        closes = arr[:, 4]
+        df = pd.DataFrame(klines, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
+        df = df[['time', 'open', 'high', 'low', 'close', 'volume']].copy()
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = df[col].astype(float)
         
-        cycles = 0
-        basis = closes[0]
-        # Cycles detection can remain iterative due to path dependency, or use Numba. 
-        # Kept iterative for structural safety unless Numba is injected.
-        for price in closes.tolist():
-            if abs(price - basis) / basis >= self.rebalance_threshold:
-                cycles += 1
-                basis = price
+        df['ticker'] = symbol
+        df['time'] = pd.to_datetime(df['time'], unit='ms')
+        return df.set_index(['ticker', 'time'])
 
-        max_hourly_spurt = 0.0
-        n_windows = len(arr) // 60
-        if n_windows > 0:
-            windows = arr[:n_windows*60].reshape((n_windows, 60, -1))
-            # index 2: high, index 3: low, index 1: open
-            spurts = (np.max(windows[:, :, 2], axis=1) - np.min(windows[:, :, 3], axis=1)) / windows[:, 0, 1] * 100
-            max_hourly_spurt = float(np.max(spurts))
-
-        total_path = float(np.sum(np.abs(np.diff(closes))))
-        net_move_abs = float(np.abs(closes[-1] - closes[0]))
-        trend_ratio_pct = float((net_move_abs / total_path * 100)) if total_path > 0 else 0.0
-        net_change_pct = float((closes[-1] / closes[0] - 1) * 100)
-        
-        return {
-            "symbol": symbol,
-            "cycles": cycles,
-            "net_change": net_change_pct,
-            "max_spurt": max_hourly_spurt,
-            "trend": trend_ratio_pct,
-            "funding": float(funding_rate * 100)
-        }
-
-    async def get_top_tickers(self, min_volume: float = 10_000_000):
+    async def get_top_tickers(self, min_volume: float = 10_000_000) -> List[Dict[str, Any]]:
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
-        # Load White List
         white_list = set()
         if os.path.exists("tickers.txt"):
             try:
@@ -111,7 +133,6 @@ class TickerScanner:
             except Exception as e:
                 logger.error(f"Failed to load tickers.txt: {e}")
 
-        # Load Black List from config
         black_list = set()
         if os.path.exists(CONFIG_FILE):
             try:
@@ -121,7 +142,6 @@ class TickerScanner:
             except Exception as e:
                 logger.error(f"Failed to load black_list from config: {e}")
 
-        # trust_env=True позволяет aiohttp использовать системные прокси (важно для Telegram)
         async with aiohttp.ClientSession(trust_env=True) as session:
             tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
             premium_info = await self.fetch(session, "/fapi/v1/premiumIndex")
@@ -137,20 +157,31 @@ class TickerScanner:
                 if not symbol.endswith("USDT"): continue
                 if float(t['quoteVolume']) < min_volume: continue
                 if not all(ord(c) < 128 for c in symbol): continue
-                
-                # Apply Filtering
                 if white_list and symbol not in white_list: continue
                 if symbol in black_list: continue
-                
                 candidates.append(t)
 
             candidates.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
             candidates = candidates[:80]
             
-            tasks = [self.analyze_ticker(session, c['symbol'], funding_map.get(c['symbol'], 0.0)) for c in candidates]
-            results = await asyncio.gather(*tasks)
+            limit = max(1, int(self.scanner_period_days * 1440))
+            tasks = [self.fetch_klines(session, c['symbol'], limit) for c in candidates]
+            dfs = await asyncio.gather(*tasks)
+
+            valid_dfs = [df for df in dfs if df is not None]
+            if not valid_dfs:
+                return []
+
+            multi_df = pd.concat(valid_dfs)
+            ranker = TickerRanker(multi_df)
+            metrics_df = ranker.calculate_metrics(self.rebalance_threshold)
+
+            metrics_df['symbol'] = metrics_df.index
+            metrics_df['funding'] = metrics_df['symbol'].map(funding_map).fillna(0.0) * 100
             
-            ranked_list = [r for r in results if r is not None and r['cycles'] >= 10]
+            # Фильтр по циклам (минимум 10)
+            metrics_df = metrics_df[metrics_df['cycles'] >= 10]
+            ranked_list = metrics_df.to_dict('records')
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
             try:

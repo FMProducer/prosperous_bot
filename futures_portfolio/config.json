@@ -1,5 +1,4 @@
 {
-  "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
   "paper_mode": false,
   "limit_order_enabled": true,
@@ -14,7 +13,6 @@
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
   "telegram_enabled": false,
-  "telegram_summary_interval_min": 1,
   "black_list": [],
   "portfolios": [
     {
@@ -38,16 +36,7 @@
       "ticker_thresholds": {
         "BTCUSDT": 0.013,
         "ETHUSDT": 0.013
-      },
-      "_comment_siphoning": "Now triggers on each profitable trade, not threshold",
-      "reinvestment_ratio": 0.0,
-      "equity_trailing_stop_pct": 15.0,
-      "margin_ratio_warning": 5.0,
-      "margin_ratio_critical": 2.0,
-      "check_interval_sec": 15
+      }
     }
-  ],
-  "tickers": [],
-  "base_ticker": "",
-  "live_swarm": []
+  ]
 }
