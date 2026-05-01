@@ -18,14 +18,6 @@ from storage import safe_load_json as load_json, safe_save_json as save_json
 
 from pathlib import Path
 
-def read_shared_config(path: str) -> Dict[str, Any]:
-    """Чтение общего конфига без использования блокировок для исключения конкуренции."""
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        logging.error(f"Critical: Shared config read failed: {e}")
-        return {}
 
 def emit_signal(signal_type: str, ticker: str) -> None:
     """Создает пустой файл-флаг для супервайзера."""
@@ -41,8 +33,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     limit_order_enabled = True
     min_notional_usdt = 6.0
 
-    # Используем новое безопасное чтение конфига
-    config = read_shared_config(config_path)
+    # Используем новое безопасное чтение конфига через единый механизм блокировок
+    config = await load_json(config_path, {})
     if not config or "portfolios" not in config:
         logger.error(f"Aborting cycle: Invalid or missing config structure from {config_path}")
         return
@@ -369,7 +361,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # Real execution
                                 logger.info(f"⚡ REAL: Executing {side} {abs(order_qty):.6g} {key}...")
                                 executor = PortfolioExecutor(connector)
-                                success = await executor.execute_rebalance(action, price, step_size, limit_order=limit_order_enabled)
+                                success = await executor.execute_rebalance(action, price, step_size, limit_order=limit_order_enabled, portfolio_cfg=portfolio_cfg)
                                 if success:
                                     logger.info(f"✅ REAL: {side} {key} order filled.")
                                 else:
@@ -389,9 +381,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         state["rebalance_cycles"] = cycles
                         await save_json(state_file_path, state)
                         
-                        # Recalculate and notify completion
-                        new_raw_positions = paper_state["positions"] if paper_mode else (await connector.get_positions())
-                        new_positions = new_raw_positions if paper_mode else {k: v["qty"] for k, v in new_raw_positions.items()}
+                        # Recalculate and notify completion - use updated state without extra network calls if possible
+                        if paper_mode:
+                            new_raw_positions = paper_state["positions"]
+                            new_positions = new_raw_positions
+                        else:
+                            # В реальном режиме все же нужно обновить позиции после ордеров
+                            new_raw_positions = await connector.get_positions()
+                            new_positions = {k: v["qty"] for k, v in new_raw_positions.items()}
+
                         new_calc = PortfolioCalculator(new_positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
                                                     base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
                                                     long_entry_price=l_entry, short_entry_price=s_entry,
@@ -476,7 +474,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     config_base = os.path.splitext(os.path.basename(args.config))[0]
-    with open(args.config, "r", encoding="utf-8") as f: cfg = json.load(f)
+
+    async def get_initial_cfg():
+        return await load_json(args.config, {})
+
+    cfg = asyncio.run(get_initial_cfg())
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
     
     # Paper mode logic: flag --paper OR global config paper_mode

@@ -4,6 +4,7 @@ import os
 import logging
 import time
 import glob
+from typing import Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
 from notifier import TelegramNotifier
@@ -49,7 +50,7 @@ class StatusAggregator:
             working_capital = 390.0
             active_tickers = []
 
-        state_files = glob.glob("state_*.json")
+        state_files = await asyncio.to_thread(glob.glob, "state_*.json")
         summary_lines = []
         total_profit = 0.0
         total_safe = 0.0
@@ -67,10 +68,8 @@ class StatusAggregator:
                 
                 # Читаем баланс из paper_state если он есть
                 paper_state_path = f"paper_state_{ticker}.json"
-                paper_balance = initial_per_bot
-                if os.path.exists(paper_state_path):
-                    ps = await safe_load_json(paper_state_path, {})
-                    paper_balance = ps.get("balance", initial_per_bot)
+                ps = await safe_load_json(paper_state_path, {})
+                paper_balance = ps.get("balance", initial_per_bot)
 
                 siphoned = state.get("siphoning_reserve", 0.0)
                 # Расчет профита: (Баланс - Начальный) + SAFE (как в swarm_analyzer)
