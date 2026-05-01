@@ -1,7 +1,7 @@
 {
   "_comment": "API keys loaded from environment variables: BINANCE_API_KEY and BINANCE_SECRET_KEY",
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -13,7 +13,7 @@
   "supervisor_interval_days": 0.125,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
-  "telegram_enabled": true,
+  "telegram_enabled": false,
   "telegram_summary_interval_min": 1,
   "black_list": [],
   "portfolios": [
@@ -47,18 +47,7 @@
       "check_interval_sec": 15
     }
   ],
-  "tickers": [
-    "BRUSDT",
-    "VICUSDT",
-    "DRIFTUSDT",
-    "DUSDT",
-    "BIOUSDT",
-    "EDUUSDT",
-    "PENDLEUSDT",
-    "SWARMSUSDT",
-    "1000LUNCUSDT",
-    "LUNA2USDT"
-  ],
-  "base_ticker": "BRUSDT",
+  "tickers": [],
+  "base_ticker": "",
   "live_swarm": []
 }
