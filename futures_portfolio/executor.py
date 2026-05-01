@@ -1,15 +1,16 @@
 """Исполнение ордеров на Binance Futures (Hedge Mode)."""
 import logging
 import asyncio
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 
 logger = logging.getLogger(__name__)
 
 
 class PortfolioExecutor:
-    def __init__(self, connector, base_ticker: str = "BTCUSDT"):
+    def __init__(self, connector, base_ticker: str = "BTCUSDT", max_orders_per_second: int = 10):
         self.connector = connector
         self.base_ticker = base_ticker
+        self.semaphore = asyncio.Semaphore(max_orders_per_second)
 
     def calculate_order_size(self, target_share: float, current_value: float, total_value: float, spot_price: float) -> float:
         """Расчёт размера ордера в контрактах."""
@@ -241,39 +242,59 @@ class PortfolioExecutor:
 
         return res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]
 
-    async def execute_actions(self, actions: List[Dict[str, Any]], price: float, ticker: str, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
-        """
-        Пакетное выполнение действий по ребалансировке.
-        """
-        results: List[Dict[str, Any]] = []
-        for action in actions:
-            await asyncio.sleep(0.01) # Профилактика зависания
+    async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None) -> Dict[str, Any]:
+        """Внутренний метод для выполнения одного действия (для gather)."""
+        if action["type"] == "VIRTUAL_RESET":
+            return {"type": "VIRTUAL_RESET", "status": "SUCCESS"}
 
-            if action["type"] == "VIRTUAL_RESET":
-                results.append({"type": "VIRTUAL_RESET"})
-                continue
+        symbol = action["symbol"]
+        pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
+        diff_usdt = action["diff_usdt"]
+        side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
+        order_qty = abs(diff_usdt / price)
+        reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
+        step_size = step_sizes.get(symbol.split('_')[0], 0.0) if step_sizes else 0.0
+        min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
 
-            symbol = action["symbol"]
-            pos_side = symbol.split('_')[1] if "_" in symbol else "LONG"
-            diff_usdt = action["diff_usdt"]
-            side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-            order_qty = abs(diff_usdt / price)
-            reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-            step_size = step_sizes.get(symbol.split('_')[0], 0.0) if step_sizes else 0.0
-
-            min_notional = portfolio_cfg.get("min_notional_usdt", 6.0) if portfolio_cfg else 6.0
-
-            if paper_mode:
-                results.append({
+        if paper_mode:
+            qty_rounded = self.round_quantity(order_qty, step_size)
+            if qty_rounded <= 0:
+                return {
                     "type": pos_side,
                     "symbol": symbol,
                     "side": side,
-                    "qty": order_qty,
-                    "price": price,
-                    "status": "SUCCESS"
-                })
-            else:
-                # Real mode
+                    "qty": 0.0,
+                    "status": "SKIPPED",
+                    "message": "Округлено до нуля"
+                }
+
+            order_value = qty_rounded * price
+            commission = order_value * 0.0004
+
+            trade_pnl = 0.0
+            if paper_state:
+                entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                old_entry = paper_state.get(entry_key, price)
+                if reduce_only:
+                    if pos_side == "LONG":
+                        trade_pnl = qty_rounded * (price - old_entry) - commission
+                    else:
+                        trade_pnl = qty_rounded * (old_entry - price) - commission
+
+            return {
+                "type": pos_side,
+                "symbol": symbol,
+                "side": side,
+                "qty": qty_rounded,
+                "price": price,
+                "status": "SUCCESS",
+                "trade_pnl": trade_pnl,
+                "commission": commission,
+                "reduce_only": reduce_only
+            }
+        else:
+            # Real mode
+            async with self.semaphore:
                 limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
                 if limit_enabled:
                     res = await self.execute_limit_with_fallback(
@@ -286,13 +307,43 @@ class PortfolioExecutor:
                         symbol=symbol.split('_')[0], qty=order_qty, side=side, step_size=step_size,
                         reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=price
                     )
-                results.append({
+
+                return {
                     "type": pos_side,
                     "symbol": symbol,
                     "side": side,
                     "qty": order_qty,
                     "price": price,
                     "status": res["status"],
-                    "exec_res": res
-                })
-        return results
+                    "exec_res": res,
+                    "reduce_only": reduce_only,
+                    "trade_pnl": 0.0 # В реальном режиме PnL определяется биржей
+                }
+
+    async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """
+        Векторизованное (конкурентное) выполнение действий по ребалансировке.
+        """
+        if not actions:
+            return []
+
+        tasks = [
+            self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
+            for action in actions
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        final_results = []
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error(f"Action execution failed with exception: {r}")
+                final_results.append({"status": "ERROR", "message": str(r)})
+            else:
+                final_results.append(r)
+
+        success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
+        if len(actions) > 0:
+            logger.info(f"Executed {success_count}/{len(actions)} actions concurrently.")
+
+        return final_results
