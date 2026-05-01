@@ -42,11 +42,26 @@ class StatusAggregator:
             logger.info("Telegram is disabled in config. Skipping summary.")
             return
 
+        # Параметры для ROI (из swarm_analyzer logic)
+        try:
+            initial_per_bot = config['portfolios'][0].get('initial_capital', 39.0)
+            max_bots = config.get('max_bots', 10)
+            working_capital = initial_per_bot * max_bots
+            active_tickers = config.get('tickers', [])
+        except:
+            initial_per_bot = 39.0
+            working_capital = 390.0
+            active_tickers = []
+
         state_files = glob.glob("state_*.json")
         summary_lines = []
         total_profit = 0.0
-        active_bots = 0
+        total_safe = 0.0
+        active_bots_count = 0
+        active_pnl = 0.0
+        removed_pnl = 0.0
 
+        # Для PAPER ботов нам нужно читать paper_state_*.json чтобы получить реальный баланс (как в swarm_analyzer)
         for f_path in state_files:
             try:
                 with open(f_path, 'r', encoding='utf-8') as f:
@@ -55,29 +70,42 @@ class StatusAggregator:
                 ticker = state.get("base_ticker", "UNKNOWN")
                 if ticker == "UNKNOWN": continue
                 
-                last_tpv = state.get("last_tpv", 0)
-                initial_tpv = state.get("initial_tpv", 0)
-                profit = state.get("last_profit", last_tpv - initial_tpv if initial_tpv > 0 else 0)
+                # Читаем баланс из paper_state если он есть
+                paper_state_path = f"paper_state_{ticker}.json"
+                paper_balance = initial_per_bot
+                if os.path.exists(paper_state_path):
+                    try:
+                        with open(paper_state_path, 'r', encoding='utf-8') as pf:
+                            ps = json.load(pf)
+                            paper_balance = ps.get("balance", initial_per_bot)
+                    except: pass
+
                 siphoned = state.get("siphoning_reserve", 0.0)
+                # Расчет профита: (Баланс - Начальный) + SAFE (как в swarm_analyzer)
+                profit = (paper_balance - initial_per_bot) + siphoned
+                
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)
                 
-                # Все боты попадают в расчет общего профита (как в swarm_analyzer)
+                # Общие итоги
                 total_profit += profit
+                total_safe += siphoned
                 
-                # Проверка на "протухание" данных (5 минут) для иконки статуса
-                is_active = (time.time() - last_update) < 300 if last_update > 0 else False
+                # Проверка активности процесса (5 мин)
+                is_active_process = (time.time() - last_update) < 300 if last_update > 0 else False
                 
-                if is_active:
-                    active_bots += 1
-                    status_icon = "🟢"
+                # Логика "Active" vs "Removed" для шапки
+                if ticker in active_tickers:
+                    active_pnl += profit
                 else:
-                    status_icon = "🔴"
+                    removed_pnl += profit
+
+                status_icon = "🟢" if is_active_process else "🔴"
                 
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:
                     line += f" 🛡️<code>{siphoned:.2f}</code>"
-                summary_lines.append(line)
+                summary_lines.append((profit, line)) # Сохраняем с профитом для сортировки
             except Exception as e:
                 logger.error(f"Error reading {f_path}: {e}")
 
@@ -85,16 +113,30 @@ class StatusAggregator:
             logger.info("No bot states found to aggregate.")
             return
 
-        header = f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
-        header += f"Bots: {active_bots} | Total PnL: <code>{total_profit:+.2f} USDT</code>\n"
-        header += "━━━━━━━━━━━━━━━━━━\n"
+        # Сортировка по профиту (как в swarm_analyzer)
+        summary_lines.sort(key=lambda x: x[0], reverse=True)
+        lines_text = [x[1] for x in summary_lines]
+
+        # Формируем шапку как в swarm_analyzer
+        roi = (total_profit / working_capital) * 100 if working_capital > 0 else 0
         
-        message = header + "\n".join(summary_lines)
+        header = (
+            f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💰 Total Net Profit: <code>{total_profit:+.2f} USDT</code>\n"
+            f"🛡️ Total SAFE Reserve: <code>{total_safe:+.2f} USDT</code>\n"
+            f"📈 Overall ROI: <code>{roi:.2f}%</code> (of {working_capital:.1f})\n"
+            f"✅ Active Bots PnL: <code>{active_pnl:+.2f} USDT</code>\n"
+            f"🗑️ Removed Bots PnL: <code>{removed_pnl:+.2f} USDT</code>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+        )
+        
+        message = header + "\n".join(lines_text)
         
         # Отправляем в Telegram
         success = await self.notifier.send_message(message)
         if success:
-            logger.info(f"Summary sent for {active_bots} bots. Total PnL: {total_profit:+.2f}")
+            logger.info(f"Summary sent for {active_bots_count} bots. Total PnL: {total_profit:+.2f}")
         else:
             logger.warning("Failed to send summary to Telegram (throttled or disabled).")
 
