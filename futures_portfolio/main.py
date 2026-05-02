@@ -173,8 +173,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Расчет Unrealized PnL для корректного TPV (без изменения wallet balance)
                 unrealized_pnl = 0.0
                 if paper_mode:
-                    l_qty = paper_state["positions"].get(f"{base_ticker}_LONG", 0.0)
-                    s_qty = paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0)
+                    l_qty = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
+                    s_qty = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
                     unrealized_pnl += l_qty * (price - paper_state.get("long_entry_price", price))
                     unrealized_pnl += s_qty * (paper_state.get("short_entry_price", price) - price)
 
@@ -186,10 +186,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     positions = {k: v for k, v in raw_positions.items()}
                     l_entry = paper_state.get("long_entry_price", price)
                     s_entry = paper_state.get("short_entry_price", price)
+                    m_info = {}
                 else:
-                    # В реальном режиме считаем активным капиталом всё, что за вычетом сейфа
-                    total_free = await connector.get_free_balance()
-                    real_equity = total_free - siphoning_reserve
+                    # В реальном режиме считаем активным капиталом Equity (Margin Balance) за вычетом сейфа
+                    m_info = await connector.get_margin_ratio()
+                    real_equity = m_info.get("total_margin_balance", 0.0) - siphoning_reserve
                     raw_positions = await connector.get_positions()
                     # Извлекаем только QTY для калькулятора, цены входа передаем отдельно
                     positions = {k: v["qty"] for k, v in raw_positions.items()}
@@ -222,6 +223,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                          base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
                                          long_entry_price=l_entry, short_entry_price=s_entry,
                                          initial_capital=initial_tpv)
+                current_calc = calc
                 
                 # Лимитированная версия эквити для логики стоп-лоссов и маржи
                 limited_equity = min(real_equity, max_capital_usdt) if max_capital_usdt > 0 else real_equity
@@ -262,7 +264,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:
-                        m_info = await connector.get_margin_ratio()
                         m_ratio = m_info.get("margin_ratio", 0.0)
                         if m_ratio > 0:
                             if m_ratio < portfolio_cfg.get("margin_ratio_critical", 2.0):
@@ -295,9 +296,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 actions = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
                 
                 if actions:
-                    # Фиксируем TPV до ребаланса для контроля излишка
-                    tpv_before = calc.total_tpv
-
                     # Внедряем Notional Value Guard для физических ордеров
                     min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
                     valid_actions = [a for a in actions if a["type"] == "VIRTUAL_RESET" or abs(a.get("diff_usdt", 0)) >= min_notional]
@@ -315,44 +313,36 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         )
                         asyncio.create_task(notifier.send_message(rebalance_msg))
 
-                        # В начале цикла ребаланса фиксируем доступный излишек для сифонинга
-                        current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
-                        excess_to_siphon: float = max(0, (calc.total_tpv - siphoning_reserve) - current_initial_cap)
+                        # 1. Execute actions concurrently
+                        # Capture virtual parameters before potential reset to ensure virtual profit is siphoned
+                        old_virt_basis: float = virt_basis_price
+                        old_virt_alloc: float = virt_allocated_usdt
 
-                        # Векторизованное исполнение всех действий
                         exec_results = await executor.execute_actions(
                             valid_actions, price, paper_mode, portfolio_cfg, step_sizes, paper_state
                         )
 
+                        # 2. Update core states (Virtual Basis, Paper Positions/Balance)
                         for res in exec_results:
-                            if res.get("status") == "ERROR":
+                            status = res.get("status")
+                            pos_side = res.get("type", "UNKNOWN")
+
+                            if status == "ERROR":
                                 logger.error(f"Action failed: {res.get('message')}")
                                 continue
 
-                            pos_side = res.get("type", "UNKNOWN")
-
-                            # В Paper Mode считаем PnL сделки вручную, если executor его не вернул или для гарантии точности
-                            if paper_mode and res.get("status") == "SUCCESS" and res.get("reduce_only"):
-                                entry_p = paper_state.get("long_entry_price" if pos_side == "LONG" else "short_entry_price", price)
-                                trade_qty = res["qty"]
-                                if pos_side == "LONG":
-                                    res["trade_pnl"] = (price - entry_p) * trade_qty
-                                else:
-                                    res["trade_pnl"] = (entry_p - price) * trade_qty
-
                             if res["type"] == "VIRTUAL_RESET":
-                                virt_basis_price = price
-                                virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
-                                state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
-                                logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
+                                if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                                    virt_basis_price = price
+                                    virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
+                                    state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
+                                    logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
                                 continue
 
-                            # Обработка результатов исполнения
-                            pos_side = res["type"]
-                            key = res["symbol"]
-                            side = res["side"]
-                            qty = res["qty"]
-                            status = res["status"]
+                            # Update execution results info
+                            key = res.get("symbol", "UNKNOWN")
+                            side = res.get("side", "UNKNOWN")
+                            qty = res.get("qty", 0.0)
                             trade_pnl = res.get("trade_pnl", 0.0)
                             reduce_only = res.get("reduce_only", False)
 
@@ -363,6 +353,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
                                     old_entry = paper_state.get(entry_key, price)
 
+                                    # Fallback PnL calculation if executor didn't provide it correctly or for safety
+                                    if trade_pnl == 0.0 and reduce_only:
+                                        if pos_side == "LONG":
+                                            trade_pnl = qty * (price - old_entry)
+                                        else:
+                                            trade_pnl = qty * (old_entry - price)
+
                                     new_qty = (old_qty + qty) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty)
                                     
                                     if not reduce_only:
@@ -370,7 +367,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
                                     
                                     paper_state["positions"][pos_key] = new_qty
-                                    # Обновляем кошелек: добавляем реализованный PnL и вычитаем комиссию
                                     paper_state["balance"] += trade_pnl
                                     paper_state["balance"] -= res.get("commission", 0.0)
                                     
@@ -380,62 +376,92 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
                                 else:
                                     logger.info(f"✅ REAL: {side} {key} order filled. Status: {status}")
-
-                                # Сифонинг прибыли (SAFE)
-                                if res.get("reduce_only") and res.get("trade_pnl", 0) > 0:
-                                    # Проверяем, есть ли вообще профит относительно начального капитала
-                                    current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
-                                    excess_to_siphon = max(0, tpv_before - siphoning_reserve - current_initial_cap)
-                                    siphon_amount = min(res["trade_pnl"] * (1 - reinvestment_ratio), excess_to_siphon)
-                                    if siphon_amount > 0:
-                                        siphoning_reserve += siphon_amount
-                                        if paper_mode:
-                                            paper_state["balance"] -= siphon_amount  # Вычитаем из рабочего кошелька
-                                        state["siphoning_reserve"] = siphoning_reserve
-                                        logger.info(f"💰 SIPHONED: +{siphon_amount:.4f} USDT (Reserve: {siphoning_reserve:.2f})")
-                                        asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}"))
                             else:
                                 logger.warning(f"❌ {side} {key} execution status: {status}. Message: {res.get('message')}")
 
+                        # 3. GLOBAL SAFE SIPHONING (After all actions)
+                        new_positions: Dict[str, float] = {}
+                        l_entry: float = 0.0
+                        s_entry: float = 0.0
+                        current_real_equity: float = 0.0
+
+                        if paper_mode:
+                            l_qty_p: float = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
+                            s_qty_p: float = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
+                            unrealized_pnl_p: float = l_qty_p * (price - paper_state.get("long_entry_price", price))
+                            unrealized_pnl_p += s_qty_p * (paper_state.get("short_entry_price", price) - price)
+                            current_real_equity = paper_state["balance"] + unrealized_pnl_p
+                            new_positions = paper_state["positions"]
+                            l_entry = paper_state.get("long_entry_price", price)
+                            s_entry = paper_state.get("short_entry_price", price)
+                        else:
+                            # В реальном режиме используем актуальный Margin Balance (уже полученный в начале цикла)
+                            current_real_equity = m_info.get("total_margin_balance", 0.0) - siphoning_reserve
+                            new_raw_positions = await connector.get_positions()
+                            new_positions = {k: v["qty"] for k, v in new_raw_positions.items()}
+                            l_entry = new_raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
+                            s_entry = new_raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+
+                        # Calculate surplus using PRE-RESET virtual parameters to capture virtual profit
+                        final_calc = PortfolioCalculator(
+                            new_positions, price, current_real_equity,
+                            old_virt_basis, old_virt_alloc,
+                            base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
+                            long_entry_price=l_entry, short_entry_price=s_entry,
+                            initial_capital=initial_tpv
+                        )
+
+                        current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
+                        total_surplus = final_calc.total_tpv - (current_initial_cap + siphoning_reserve)
+
+                        if total_surplus > 0:
+                            siphon_amount = total_surplus * (1 - reinvestment_ratio)
+                            if siphon_amount > 0.1:
+                                siphoning_reserve += siphon_amount
+                                if paper_mode:
+                                    paper_state["balance"] -= siphon_amount
+                                state["siphoning_reserve"] = siphoning_reserve
+                                logger.info(f"💰 SAFE ACTIVATED: Siphoned {siphon_amount:.4f} USDT. New Reserve: {siphoning_reserve:.2f}")
+                                asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT (Global Surplus)"))
+
+                                # Re-sync equity for final calculator
+                                current_real_equity -= siphon_amount
+
+                        # ALWAYS re-sync final_calc with new virtual params and siphoning results for summary
+                        final_calc = PortfolioCalculator(
+                            new_positions, price, current_real_equity,
+                            virt_basis_price, virt_allocated_usdt,
+                            base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
+                            long_entry_price=l_entry, short_entry_price=s_entry,
+                            initial_capital=initial_tpv
+                        )
+                        
+                        current_calc = final_calc
                         cycles += 1
                         state["rebalance_cycles"] = cycles
-                        
+
                         if paper_mode:
                             await save_json(paper_state_file_path, paper_state)
 
-                        # Recalculate and notify completion - use updated state without extra network calls if possible
-                        if paper_mode:
-                            new_raw_positions = paper_state["positions"]
-                            new_positions = new_raw_positions
-                        else:
-                            # В реальном режиме все же нужно обновить позиции после ордеров
-                            new_raw_positions = await connector.get_positions()
-                            new_positions = {k: v["qty"] for k, v in new_raw_positions.items()}
-
-                        new_calc = PortfolioCalculator(new_positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                                                    base_ticker=base_ticker, siphoning_reserve=siphoning_reserve, targets=targets,
-                                                    long_entry_price=l_entry, short_entry_price=s_entry,
-                                                    initial_capital=initial_tpv)
-                        
                         summary_msg = (
                             f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
-                            f"New Shares: L:{new_calc.share_long_pct:.1f}% S:{new_calc.share_short_pct:.1f}% V:{new_calc.share_virt_pct:.1f}%\n"
-                            f"TPV: <code>{new_calc.total_tpv:.2f} USDT</code>"
+                            f"New Shares: L:{final_calc.share_long_pct:.1f}% S:{final_calc.share_short_pct:.1f}% V:{final_calc.share_virt_pct:.1f}%\n"
+                            f"TPV: <code>{final_calc.total_tpv:.2f} USDT</code>"
                         )
-                        logger.info(f"Rebalance #{cycles} complete. TPV: {new_calc.total_tpv:.2f}")
+                        logger.info(f"Rebalance #{cycles} complete. TPV: {final_calc.total_tpv:.2f}")
                         asyncio.create_task(notifier.send_message(summary_msg))
 
                 # Всегда обновляем стейт для агрегатора статусов в конце каждого цикла
                 state.update({
-                    "last_tpv": calc.total_tpv,
-                    "last_profit": calc.total_tpv - initial_tpv,
+                    "last_tpv": current_calc.total_tpv,
+                    "last_profit": current_calc.total_tpv - initial_tpv,
                     "last_update": time.time(),
                     "rebalance_cycles": cycles
                 })
                 await save_json(state_file_path, state)
 
                 if (i + status_offset) % 100 == 0:
-                    logger.info(f"Heartbeat: TPV={calc.total_tpv:.2f} | PnL={calc.total_tpv - initial_tpv:+.2f} | Cycles={cycles}")
+                    logger.info(f"Heartbeat: TPV={current_calc.total_tpv:.2f} | PnL={current_calc.total_tpv - initial_tpv:+.2f} | Cycles={cycles}")
 
             except Exception as e:
                 logger.error(f"Error in cycle: {e}")
