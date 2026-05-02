@@ -4,7 +4,7 @@
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 6.0,
+  "min_notional_usdt": 5.5,
   "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
@@ -18,7 +18,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 1000.0,
+      "initial_capital": 39.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
@@ -33,14 +33,25 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.008,
+      "rebalance_threshold": 0.001,
       "ticker_thresholds": {
         "BTCUSDT": 0.008,
         "ETHUSDT": 0.008
       }
     }
   ],
-  "tickers": [],
+  "tickers": [
+    "LUNA2USDT",
+    "BABYUSDT",
+    "BBUSDT",
+    "AIXBTUSDT",
+    "LUMIAUSDT",
+    "AIOTUSDT",
+    "NFPUSDT",
+    "ARKMUSDT",
+    "1000SATSUSDT",
+    "USTCUSDT"
+  ],
   "live_swarm": [],
-  "base_ticker": ""
+  "base_ticker": "LUNA2USDT"
 }
