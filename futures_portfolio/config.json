@@ -13,12 +13,12 @@
   "supervisor_interval_days": 0.125,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
-  "telegram_enabled": true,
+  "telegram_enabled": false,
   "black_list": [],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 39.0,
+      "initial_capital": 39000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
