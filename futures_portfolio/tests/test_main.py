@@ -115,7 +115,9 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
         "balance": 18000.0,
         "positions": {"BTCUSDT_LONG": 0.1, "BTCUSDT_SHORT": 0.0},
         "last_price": 60000.0,
-        "base_ticker": "BTCUSDT"
+        "base_ticker": "BTCUSDT",
+        "long_entry_price": 60000.0,
+        "short_entry_price": 60000.0
     }
     def load_side_effect(path, default=None):
         if "paper_state" in path: return paper_state

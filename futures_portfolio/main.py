@@ -170,15 +170,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 price = prices.get(base_ticker)
                 if not price: raise Exception(f"Could not fetch {base_ticker} price")
                 
-                if paper_mode and paper_state["last_price"] > 0:
-                    price_diff = price - paper_state["last_price"]
-                    long_pnl = paper_state["positions"].get(f"{base_ticker}_LONG", 0.0) * price_diff
-                    short_pnl = paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0) * (-price_diff)
-                    paper_state["balance"] += (long_pnl + short_pnl)
-                
+                # Расчет Unrealized PnL для корректного TPV (без изменения wallet balance)
+                unrealized_pnl = 0.0
+                if paper_mode:
+                    l_qty = paper_state["positions"].get(f"{base_ticker}_LONG", 0.0)
+                    s_qty = paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0)
+                    unrealized_pnl += l_qty * (price - paper_state.get("long_entry_price", price))
+                    unrealized_pnl += s_qty * (paper_state.get("short_entry_price", price) - price)
+
                 if paper_mode:
                     paper_state["last_price"] = price
-                    real_equity = paper_state["balance"]
+                    real_equity = paper_state["balance"] + unrealized_pnl  # Это фактический Equity
                     # Для Paper Mode имитируем структуру с ценами входа
                     raw_positions = paper_state.get("positions", {})
                     positions = {k: v for k, v in raw_positions.items()}
@@ -293,6 +295,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 actions = calc.calculate_deviations(targets, current_threshold, ignore_limits=(current_threshold < 0))
                 
                 if actions:
+                    # Фиксируем TPV до ребаланса для контроля излишка
+                    tpv_before = calc.total_tpv
+
                     # Внедряем Notional Value Guard для физических ордеров
                     min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
                     valid_actions = [a for a in actions if a["type"] == "VIRTUAL_RESET" or abs(a.get("diff_usdt", 0)) >= min_notional]
@@ -324,6 +329,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.error(f"Action failed: {res.get('message')}")
                                 continue
 
+                            pos_side = res.get("type", "UNKNOWN")
+
+                            # В Paper Mode считаем PnL сделки вручную, если executor его не вернул или для гарантии точности
+                            if paper_mode and res.get("status") == "SUCCESS" and res.get("reduce_only"):
+                                entry_p = paper_state.get("long_entry_price" if pos_side == "LONG" else "short_entry_price", price)
+                                trade_qty = res["qty"]
+                                if pos_side == "LONG":
+                                    res["trade_pnl"] = (price - entry_p) * trade_qty
+                                else:
+                                    res["trade_pnl"] = (entry_p - price) * trade_qty
+
                             if res["type"] == "VIRTUAL_RESET":
                                 virt_basis_price = price
                                 virt_allocated_usdt = calc.tpv * targets["VIRTUAL"]["share"]
@@ -354,6 +370,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
                                     
                                     paper_state["positions"][pos_key] = new_qty
+                                    # Обновляем кошелек: добавляем реализованный PnL и вычитаем комиссию
+                                    paper_state["balance"] += trade_pnl
                                     paper_state["balance"] -= res.get("commission", 0.0)
                                     
                                     trade_log = f"📝 PAPER: {side} {qty} {pos_key} @ {price:.6g}"
@@ -364,11 +382,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     logger.info(f"✅ REAL: {side} {key} order filled. Status: {status}")
 
                                 # Сифонинг прибыли (SAFE)
-                                if reduce_only and trade_pnl > 0 and excess_to_siphon > 0:
-                                    siphon_amount = min(trade_pnl * (1 - reinvestment_ratio), excess_to_siphon)
+                                if res.get("reduce_only") and res.get("trade_pnl", 0) > 0:
+                                    # Проверяем, есть ли вообще профит относительно начального капитала
+                                    current_initial_cap = portfolio_cfg.get("initial_capital", initial_tpv)
+                                    excess_to_siphon = max(0, tpv_before - siphoning_reserve - current_initial_cap)
+                                    siphon_amount = min(res["trade_pnl"] * (1 - reinvestment_ratio), excess_to_siphon)
                                     if siphon_amount > 0:
                                         siphoning_reserve += siphon_amount
-                                        excess_to_siphon -= siphon_amount
+                                        if paper_mode:
+                                            paper_state["balance"] -= siphon_amount  # Вычитаем из рабочего кошелька
                                         state["siphoning_reserve"] = siphoning_reserve
                                         logger.info(f"💰 SIPHONED: +{siphon_amount:.4f} USDT (Reserve: {siphoning_reserve:.2f})")
                                         asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT from {pos_side} {side}"))
