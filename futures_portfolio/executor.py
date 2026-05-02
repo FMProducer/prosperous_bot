@@ -298,9 +298,9 @@ class PortfolioExecutor:
                 old_entry = paper_state.get(entry_key, price)
                 if reduce_only:
                     if pos_side == "LONG":
-                        trade_pnl = qty_rounded * (price - old_entry) - commission
+                        trade_pnl = qty_rounded * (price - old_entry)
                     else:
-                        trade_pnl = qty_rounded * (old_entry - price) - commission
+                        trade_pnl = qty_rounded * (old_entry - price)
 
             return {
                 "type": pos_side,
