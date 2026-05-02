@@ -11,20 +11,25 @@ import math
 import logging
 import argparse
 import traceback
+from decimal import Decimal, ROUND_HALF_EVEN, getcontext
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("Backtest")
 
+# Set decimal precision and rounding mode globally for financial calculations
+getcontext().prec = 28
+getcontext().rounding = ROUND_HALF_EVEN
+
 class LimitOrderSimulator:
     """Симулятор лимитных ордеров для учета рыночных фрикций."""
     def __init__(self, commission_pct: float = 0.0004, offset_pct: float = 0.1):
-        self.commission_pct: float = commission_pct
-        self.offset_pct: float = offset_pct
+        self.commission_pct = Decimal(str(commission_pct))
+        self.offset_pct = Decimal(str(offset_pct))
         self.stats: Dict[str, Any] = {"attempted": 0, "filled": 0, "fallback": 0}
 
-    def simulate_limit_execution(self, side: str, qty: float, mid_price: float,
-                                  candle_high: float, candle_low: float) -> Tuple[bool, float, float, str]:
+    def simulate_limit_execution(self, side: str, qty: Decimal, mid_price: Decimal,
+                                  candle_high: Decimal, candle_low: Decimal) -> Tuple[bool, Decimal, Decimal, str]:
         self.stats["attempted"] += 1
         if side == "SELL":
             limit_price = mid_price * (1 + self.offset_pct / 100)
@@ -48,118 +53,161 @@ class PortfolioState:
     """Управление состоянием портфеля во время бэктеста."""
     def __init__(self, initial_capital: float, commission: float, targets: Dict[str, Any], threshold: float,
                  siphoning_threshold_pct: float = 0.0, reinvestment_ratio: float = 0.0):
-        self.initial_capital: float = initial_capital
-        self.commission: float = commission
-        self.targets: Dict[str, Any] = targets
-        self.threshold: float = threshold
-        self.siphoning_threshold_pct: float = siphoning_threshold_pct
-        self.reinvestment_ratio: float = reinvestment_ratio
+        self.initial_capital = Decimal(str(initial_capital))
+        self.commission = Decimal(str(commission))
+        self.targets = targets
+        self.threshold = Decimal(str(threshold))
+        self.siphoning_threshold_pct = Decimal(str(siphoning_threshold_pct))
+        self.reinvestment_ratio = Decimal(str(reinvestment_ratio))
 
-        self.current_equity: float = initial_capital
-        self.siphoning_reserve: float = 0.0
+        self.real_equity = self.initial_capital
+        self.siphoning_reserve = Decimal('0.0')
 
-        self.l_target: float = targets["BASE_LONG"]["share"]
-        self.s_target: float = targets["BASE_SHORT"]["share"]
-        self.v_target: float = targets["VIRTUAL"]["share"]
-        self.l_lev: float = targets["BASE_LONG"]["leverage"]
-        self.s_lev: float = targets["BASE_SHORT"]["leverage"]
+        self.l_target = Decimal(str(targets["BASE_LONG"]["share"]))
+        self.s_target = Decimal(str(targets["BASE_SHORT"]["share"]))
+        self.v_target = Decimal(str(targets["VIRTUAL"]["share"]))
+        self.l_lev = Decimal(str(targets["BASE_LONG"]["leverage"]))
+        self.s_lev = Decimal(str(targets["BASE_SHORT"]["leverage"]))
 
-        self.positions: Dict[str, float] = {"LONG": 0.0, "SHORT": 0.0}
-        self.entry_prices: Dict[str, float] = {"LONG": 0.0, "SHORT": 0.0}
-        self.virt_basis_price: float = 0.0
-        self.virt_allocated_usdt: float = 0.0
+        self.positions: Dict[str, Decimal] = {"LONG": Decimal('0.0'), "SHORT": Decimal('0.0')}
+        self.entry_prices: Dict[str, Decimal] = {"LONG": Decimal('0.0'), "SHORT": Decimal('0.0')}
+        
+        self.virt_basis_price = Decimal('0.0')
+        self.virt_allocated_usdt = Decimal('0.0')
 
         self.history: List[float] = []
         self.cycles: int = 0
 
     def init_state(self, price: float) -> None:
         """Инициализация начальных позиций."""
-        self.positions["LONG"] = (self.initial_capital * self.l_target * self.l_lev) / (price + 1e-9)
-        self.positions["SHORT"] = (self.initial_capital * self.s_target * self.s_lev) / (price + 1e-9)
-        self.entry_prices["LONG"] = price
-        self.entry_prices["SHORT"] = price
+        dec_price = Decimal(str(price))
+        # Initial allocation based on target shares of initial capital
+        self.positions["LONG"] = (self.initial_capital * self.l_target * self.l_lev) / dec_price
+        self.positions["SHORT"] = (self.initial_capital * self.s_target * self.s_lev) / dec_price
+        self.entry_prices["LONG"] = dec_price
+        self.entry_prices["SHORT"] = dec_price
 
-        init_comm = (abs(self.positions["LONG"] * price) + abs(self.positions["SHORT"] * price)) * self.commission
-        self.current_equity -= init_comm
+        # Initial commission for entry
+        init_comm = (abs(self.positions["LONG"] * dec_price) + abs(self.positions["SHORT"] * dec_price)) * self.commission
+        self.real_equity -= init_comm
 
-        self.virt_basis_price = price
+        self.virt_basis_price = dec_price
         self.virt_allocated_usdt = self.initial_capital * self.v_target
 
     def update(self, price: float, high: float, low: float, sim: Optional[LimitOrderSimulator] = None) -> float:
-        l_pnl: float = self.positions["LONG"] * (price - self.entry_prices["LONG"])
-        s_pnl: float = self.positions["SHORT"] * (self.entry_prices["SHORT"] - price)
-        virt_pnl: float = self.virt_allocated_usdt * (price / (self.virt_basis_price + 1e-9) - 1)
+        dec_price = Decimal(str(price))
+        dec_high = Decimal(str(high))
+        dec_low = Decimal(str(low))
 
-        total_tpv: float = self.current_equity + l_pnl + s_pnl + virt_pnl + self.siphoning_reserve
+        # 1. Update Real Equity based on futures PnL
+        l_pnl = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
+        s_pnl = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
+        current_real_equity = self.real_equity + l_pnl + s_pnl
+
+        # 2. Update Virtual Value (Recalculated every iteration)
+        # V_current = Qty_virt * Price_current = (Allocated / Basis) * Price_current
+        virt_current_value = self.virt_allocated_usdt * (dec_price / self.virt_basis_price)
+        virt_pnl = virt_current_value - self.virt_allocated_usdt
+
+        # 3. Calculate Global TPV
+        # TPV = Real_Equity + Virtual_PnL
+        tpv = current_real_equity + virt_pnl
+        total_tpv = tpv + self.siphoning_reserve
 
         if total_tpv <= 0:
             self.history.append(0.0)
             return 0.0
 
-        # SAFE Siphoning logic (Sync with main.py)
-        active_part: float = self.current_equity + l_pnl + s_pnl + virt_pnl
-        total_surplus: float = active_part - self.initial_capital
-        siphoning_threshold_abs: float = self.initial_capital * (self.siphoning_threshold_pct / 100)
+        # 4. SAFE Siphoning logic (Triggered if global total_tpv > initial_capital)
+        total_surplus = total_tpv - self.initial_capital
+        siphoning_threshold_abs = self.initial_capital * (self.siphoning_threshold_pct / 100)
 
-        if total_surplus > max(0.1, siphoning_threshold_abs):
-            siphon_amount: float = total_surplus * (1 - self.reinvestment_ratio)
-            if siphon_amount > 0.1:
+        if total_surplus > self.siphoning_reserve + max(Decimal('0.1'), siphoning_threshold_abs):
+            new_profit = total_surplus - self.siphoning_reserve
+            siphon_amount = new_profit * (1 - self.reinvestment_ratio)
+            if siphon_amount > Decimal('0.1'):
                 self.siphoning_reserve += siphon_amount
-                self.current_equity -= siphon_amount
-                active_part -= siphon_amount
+                # Reserve is taken from real_equity
+                self.real_equity -= siphon_amount
+                current_real_equity -= siphon_amount
+                tpv -= siphon_amount
 
-        active_tpv: float = min(total_tpv, self.initial_capital)
+        # 5. Rebalance Check
+        # Leg Values
+        val_virt = virt_current_value
+        val_real_total = current_real_equity - self.virt_allocated_usdt
+        
+        # Pro-rata for real legs
+        notional_l = self.positions["LONG"] * dec_price
+        notional_s = self.positions["SHORT"] * dec_price
+        
+        est_l = (notional_l / self.l_lev) if self.l_lev > 0 else Decimal('0')
+        est_s = (notional_s / self.s_lev) if self.s_lev > 0 else Decimal('0')
+        est_sum = est_l + est_s
 
-        # Rebalance Check
-        val_l: float = (self.positions["LONG"] * price) / self.l_lev
-        val_s: float = (self.positions["SHORT"] * price) / self.s_lev
-        val_virt: float = self.virt_allocated_usdt * (price / (self.virt_basis_price + 1e-9))
+        if est_sum > 0:
+            val_l = (est_l / est_sum) * val_real_total
+            val_s = (est_s / est_sum) * val_real_total
+        else:
+            val_l = (self.l_target / (self.l_target + self.s_target)) * val_real_total
+            val_s = (self.s_target / (self.l_target + self.s_target)) * val_real_total
 
-        share_l: float = val_l / (active_tpv + 1e-9) if active_tpv > 0 else 0
-        share_s: float = val_s / (active_tpv + 1e-9) if active_tpv > 0 else 0
-        share_v: float = val_virt / (active_tpv + 1e-9) if active_tpv > 0 else 0
+        # Shares
+        share_l = val_l / tpv if tpv > 0 else Decimal('0')
+        share_s = val_s / tpv if tpv > 0 else Decimal('0')
+        share_v = val_virt / tpv if tpv > 0 else Decimal('0')
 
-        if not math.isclose(share_l, self.l_target, abs_tol=self.threshold) or \
-           not math.isclose(share_s, self.s_target, abs_tol=self.threshold) or \
-           not math.isclose(share_v, self.v_target, abs_tol=self.threshold):
+        if abs(share_l - self.l_target) > self.threshold or \
+           abs(share_s - self.s_target) > self.threshold or \
+           abs(share_v - self.v_target) > self.threshold:
 
-            self.cycles += 1
-            # Realize PnL
-            self.current_equity += l_pnl + s_pnl + virt_pnl
-
-            # Rebalance Long
-            target_vol_l: float = active_tpv * self.l_target * self.l_lev
-            diff_usdt_l: float = target_vol_l - (self.positions["LONG"] * price)
-            if abs(diff_usdt_l) > 5.0:
+            # Rebalance triggers
+            rebalanced = False
+            
+            # Action candidate: Long
+            target_vol_l = tpv * self.l_target * self.l_lev
+            diff_usdt_l = target_vol_l - notional_l
+            if abs(diff_usdt_l) >= Decimal('6.0'):
+                self.cycles += 1
+                rebalanced = True
                 side = "BUY" if diff_usdt_l > 0 else "SELL"
-                f_price = price
+                f_price = dec_price
                 if sim:
-                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_l)/(price + 1e-9), price, high, low)
-                self.current_equity -= abs(diff_usdt_l) * self.commission
-                self.positions["LONG"] = target_vol_l / (f_price + 1e-9)
+                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_l)/dec_price, dec_price, dec_high, dec_low)
+                
+                # Realize PnL for the leg partially
+                self.real_equity += self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
+                self.real_equity -= abs(diff_usdt_l) * self.commission
+                self.positions["LONG"] = target_vol_l / f_price
                 self.entry_prices["LONG"] = f_price
-            else:
-                self.entry_prices["LONG"] = price
 
-            # Rebalance Short
-            target_vol_s: float = active_tpv * self.s_target * self.s_lev
-            diff_usdt_s: float = target_vol_s - (self.positions["SHORT"] * price)
-            if abs(diff_usdt_s) > 5.0:
+            # Action candidate: Short
+            target_vol_s = tpv * self.s_target * self.s_lev
+            diff_usdt_s = target_vol_s - notional_s
+            if abs(diff_usdt_s) >= Decimal('6.0'):
+                if not rebalanced: self.cycles += 1
+                rebalanced = True
                 side = "SELL" if diff_usdt_s > 0 else "BUY"
-                f_price = price
+                f_price = dec_price
                 if sim:
-                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_s)/(price + 1e-9), price, high, low)
-                self.current_equity -= abs(diff_usdt_s) * self.commission
-                self.positions["SHORT"] = target_vol_s / (f_price + 1e-9)
+                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_s)/dec_price, dec_price, dec_high, dec_low)
+                
+                self.real_equity += self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
+                self.real_equity -= abs(diff_usdt_s) * self.commission
+                self.positions["SHORT"] = target_vol_s / f_price
                 self.entry_prices["SHORT"] = f_price
-            else:
-                self.entry_prices["SHORT"] = price
 
-            self.virt_basis_price = price
-            self.virt_allocated_usdt = active_tpv * self.v_target
+            # Action candidate: Virtual
+            diff_usdt_v = (tpv * self.v_target) - virt_current_value
+            if abs(diff_usdt_v) >= Decimal('6.0'):
+                if not rebalanced: self.cycles += 1
+                rebalanced = True
+                # Reset virtual basis
+                self.virt_basis_price = dec_price
+                self.virt_allocated_usdt = tpv * self.v_target
 
-        self.history.append(total_tpv)
-        return total_tpv
+        self.history.append(float(total_tpv))
+        return float(total_tpv)
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"

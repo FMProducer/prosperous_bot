@@ -267,12 +267,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 loop = asyncio.get_running_loop()
                 current_threshold = -1.0 if (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0) else threshold
                 
-                # Adaptive threshold for pro-rata recovery
-                if current_threshold > 0 and reference_tpv > 0:
-                    # If we are in drawdown, increase threshold to avoid over-trading
-                    # This is a simplified version of the logic
-                    pass 
-
                 calc_res = await loop.run_in_executor(
                     process_executor, calculate_portfolio_task,
                     positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
@@ -344,14 +338,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 old_virt_basis: float = virt_basis_price
                 old_virt_alloc: float = virt_allocated_usdt
 
+                # Логика ребалансировки
+                valid_actions = []
                 if actions:
-                    # Внедряем Notional Value Guard для физических ордеров
+                    # Внедряем Notional Value Guard для ВСЕХ ордеров (включая VIRTUAL_RESET)
                     min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
-                    valid_actions = [a for a in actions if a["type"] == "VIRTUAL_RESET" or abs(a.get("diff_usdt", 0)) >= min_notional]
+                    valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
                     if not valid_actions:
                         if i % 10 == 0:
-                            logger.info(f"Rebalance actions identified, but too small (<{min_notional} USDT). Skipping.")
+                            logger.info(f"Rebalance actions identified, but all too small (<{min_notional} USDT). Skipping.")
                     else:
                         logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%")
                         
@@ -376,29 +372,28 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.error(f"Action failed: {res.get('message')}")
                                 continue
 
-                            if res["type"] == "VIRTUAL_RESET":
-                                if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                            if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                                if res.get("type") == "VIRTUAL_RESET":
                                     virt_basis_price = price
-                                    virt_allocated_usdt = tpv_active * targets["VIRTUAL"]["share"]
+                                    # Target share reset based on active TPV
+                                    virt_allocated_usdt = float(Decimal(str(tpv_active)) * Decimal(str(targets["VIRTUAL"]["share"])))
                                     state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
                                     logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
-                                continue
+                                    continue
 
-                            # Update execution results info
-                            key = res.get("symbol", "UNKNOWN")
-                            side = res.get("side", "UNKNOWN")
-                            qty = res.get("qty", 0.0)
-                            trade_pnl = res.get("trade_pnl", 0.0)
-                            reduce_only = res.get("reduce_only", False)
+                                # Update execution results info
+                                key = res.get("symbol", "UNKNOWN")
+                                side = res.get("side", "UNKNOWN")
+                                qty = res.get("qty", 0.0)
+                                trade_pnl = res.get("trade_pnl", 0.0)
+                                reduce_only = res.get("reduce_only", False)
 
-                            if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                                 if paper_mode:
                                     pos_key = f"{base_ticker}_{pos_side}"
                                     old_qty = paper_state["positions"].get(pos_key, 0.0)
                                     entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
                                     old_entry = paper_state.get(entry_key, price)
 
-                                    # Fallback PnL calculation if executor didn't provide it correctly or for safety
                                     if trade_pnl == 0.0 and reduce_only:
                                         if pos_side == "LONG":
                                             trade_pnl = qty * (price - old_entry)
@@ -431,8 +426,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             await save_json(paper_state_file_path, paper_state)
 
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
-                # After potential actions, we need fresh data for siphoning calculation
-                if actions:
+                if actions and len(valid_actions) > 0:
                     if paper_mode:
                         l_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
                         s_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
@@ -449,25 +443,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     safe_real_equity = real_equity
                     safe_positions = positions
 
-                # Calculate surplus using PRE-RESET virtual parameters to capture virtual profit correctly
-                calc_virt_basis: float = old_virt_basis if actions else virt_basis_price
-                calc_virt_alloc: float = old_virt_alloc if actions else virt_allocated_usdt
-
+                # Calculate surplus using CURRENT virtual parameters (Basis price was reset ONLY if rebalance happened)
                 # Re-calculate in separate process to get final TPV for siphoning
                 safe_calc_res = await loop.run_in_executor(
                     process_executor, calculate_portfolio_task,
                     safe_positions, price, safe_real_equity,
-                    calc_virt_basis, calc_virt_alloc,
+                    virt_basis_price, virt_allocated_usdt,
                     base_ticker, siphoning_reserve, targets, initial_tpv,
                     -1.0, True
                 )
 
                 total_tpv_final = safe_calc_res["total_tpv"]
-                total_surplus: float = total_tpv_final - (initial_tpv + siphoning_reserve)
+                # SURPLUS = Current Total Capital (including reserve) - Initial Targeted Capital
+                total_surplus: float = total_tpv_final - initial_tpv
                 siphoning_threshold_abs: float = initial_tpv * (siphoning_threshold_pct / 100)
 
-                if total_surplus > max(0.1, siphoning_threshold_abs):
-                    siphon_amount: float = total_surplus * (1 - reinvestment_ratio)
+                # Siphon only if total_surplus > existing reserve (meaning there is NEW profit)
+                if total_surplus > siphoning_reserve + max(0.1, siphoning_threshold_abs):
+                    new_profit = total_surplus - siphoning_reserve
+                    siphon_amount: float = new_profit * (1 - reinvestment_ratio)
+                    
                     if siphon_amount > 0.1:
                         siphoning_reserve += siphon_amount
                         if paper_mode:
@@ -478,10 +473,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         logger.info(f"💰 SAFE ACTIVATED: Siphoned {siphon_amount:.4f} USDT. New Reserve: {siphoning_reserve:.2f}")
                         asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT (Surplus)"))
 
-                        # Re-calculate final TPV after siphoning for state reporting
-                        total_tpv_final -= siphon_amount
+                # Update reporting value in summary to account for new reserve
+                final_reported_tpv = total_tpv_final
 
-                if actions:
+                if actions and len(valid_actions) > 0:
                     summary_msg = (
                         f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
                         f"New Shares: L:{safe_calc_res['share_long_pct']:.1f}% S:{safe_calc_res['share_short_pct']:.1f}% V:{safe_calc_res['share_virt_pct']:.1f}%\n"

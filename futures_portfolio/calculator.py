@@ -23,53 +23,62 @@ class PortfolioCalculator:
         self.initial_capital = Decimal(str(initial_capital))
         self.real_equity = Decimal(str(real_equity))
         
-        # Виртуальная доля
+        # 1. Calculate Virtual Leg Current Value (Recalculated every iteration)
         dec_virt_basis_price = Decimal(str(virt_basis_price))
         dec_virt_allocated_usdt = Decimal(str(virt_allocated_usdt))
         
         if dec_virt_basis_price <= 0: 
             dec_virt_basis_price = self.price
             
-        price_change = self.price / dec_virt_basis_price
-        self.virt_current_value = dec_virt_allocated_usdt * price_change
+        # V_current = Qty_virt * Price_current = (Allocated / Basis) * Price_current
+        self.virt_current_value = dec_virt_allocated_usdt * (self.price / dec_virt_basis_price)
         
-        # Общий TPV (включая накопленный резерв)
-        self.total_tpv = self.real_equity + (self.virt_current_value - dec_virt_allocated_usdt) + self.siphoning_reserve
+        # 2. Calculate Total Portfolio Value (TPV)
+        # TPV = Real_Equity (exchange balance) + Virtual_PnL
+        # Virtual_PnL = Current_Value - Initial_Allocation
+        self.virt_pnl = self.virt_current_value - dec_virt_allocated_usdt
+        self.tpv = self.real_equity + self.virt_pnl
+        
+        # Total TPV including siphoned reserve for SAFE check
+        self.total_tpv = self.tpv + self.siphoning_reserve
 
-        # Логика TPV Cap (Siphoning) + Recovery Mode
-        if self.total_tpv > self.initial_capital:
-            # ПРАВИЛО: Активный TPV не может превышать initial_capital.
-            # Излишек считается потенциальным резервом для сифонинга в main.py
-            self.tpv = self.initial_capital
-            # Обновляем reserve для соответствия total_tpv (для тестов и логов)
-            self.siphoning_reserve = self.total_tpv - self.initial_capital
-        else:
-            # Если мы в просадке, используем SAFE для поддержания маржи (Recovery Mode)
-            self.tpv = self.total_tpv
-
-        # Защита от нулевого или отрицательного TPV
-        if self.tpv <= 0:
-            self.tpv = Decimal('1e-9')
-
-        # Расчет стоимости позиций (Allocated Capital + PnL)
+        # 3. Calculate Real Legs (Long/Short) Pro-rata Values
+        # We assign the 'real' part of the portfolio (Real_Equity - Virtual_Buffer) to L/S
+        # Virtual_Buffer is the dec_virt_allocated_usdt (the capital we simulate as spot)
+        val_real_total = self.real_equity - dec_virt_allocated_usdt
+        
         long_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
         short_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
         
         l_lev = Decimal(str(targets["BASE_LONG"]["leverage"])) if targets and "BASE_LONG" in targets else Decimal('5.0')
         s_lev = Decimal(str(targets["BASE_SHORT"]["leverage"])) if targets and "BASE_SHORT" in targets else Decimal('5.0')
 
-        # Упрощенный расчет долей: (Номинал / Плечо) / TPV
         self.notional_long = long_qty * self.price
         self.notional_short = short_qty * self.price
 
-        val_long = (self.notional_long / l_lev) if l_lev > 0 else Decimal('0')
-        val_short = (self.notional_short / s_lev) if s_lev > 0 else Decimal('0')
-        val_virt = self.virt_current_value
+        est_l = (self.notional_long / l_lev) if l_lev > 0 else Decimal('0')
+        est_s = (self.notional_short / s_lev) if s_lev > 0 else Decimal('0')
+        est_sum = est_l + est_s
 
-        # Сохраняем для логирования и проверок отклонений
-        self.share_long_pct = (val_long / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN) if self.tpv > 0 else Decimal('0')
-        self.share_short_pct = (val_short / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN) if self.tpv > 0 else Decimal('0')
-        self.share_virt_pct = (val_virt / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN) if self.tpv > 0 else Decimal('0')
+        if est_sum > 0:
+            self.val_long = (est_l / est_sum) * val_real_total
+            self.val_short = (est_s / est_sum) * val_real_total
+        else:
+            # Fallback to target ratios if no positions exist
+            l_t = Decimal(str(targets["BASE_LONG"]["share"]))
+            s_t = Decimal(str(targets["BASE_SHORT"]["share"]))
+            self.val_long = (l_t / (l_t + s_t)) * val_real_total
+            self.val_short = (s_t / (l_t + s_t)) * val_real_total
+
+        # 4. Calculate shares (Guaranteed to sum to 100.0%)
+        # Share_i = Value_i / TPV
+        # Note: val_long + val_short + virt_current_value = (Real_Equity - Alloc) + Virt_Current = Real_Equity + Virt_PnL = TPV.
+        if self.tpv > 0:
+            self.share_long_pct = (self.val_long / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
+            self.share_short_pct = (self.val_short / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
+            self.share_virt_pct = (Decimal('100.0') - self.share_long_pct - self.share_short_pct)
+        else:
+            self.share_long_pct = self.share_short_pct = self.share_virt_pct = Decimal('0')
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """
@@ -119,25 +128,13 @@ class PortfolioCalculator:
 
                 # ПОРТФЕЛЬНАЯ ФОРМУЛА:
                 # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
-                # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
                 diff_usdt = -diff_share * self.tpv * lev
 
                 if not ignore_limits:
-                    max_change = self.tpv * Decimal('0.5') * lev
-                    if abs(diff_usdt) > max_change:
-                        diff_usdt = diff_usdt.copy_sign(max_change) if diff_usdt < 0 else max_change
-                        if diff_share > 0: # Отрицательный diff_usdt
-                             diff_usdt = -max_change
-                        else:
-                             diff_usdt = max_change
+                    limit = self.tpv * Decimal('0.5') * lev
+                    if diff_usdt > limit: diff_usdt = limit
+                    if diff_usdt < -limit: diff_usdt = -limit
 
-                # Перерасчет лимитов более аккуратно
-                if not ignore_limits:
-                     limit = self.tpv * Decimal('0.5') * lev
-                     if diff_usdt > limit: diff_usdt = limit
-                     if diff_usdt < -limit: diff_usdt = -limit
-
-                # Reduction (продажа излишка) если diff_usdt < 0
                 is_reduction: bool = diff_usdt < 0
 
                 actions.append({
