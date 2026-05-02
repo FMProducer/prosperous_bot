@@ -19,6 +19,11 @@ from storage import safe_load_json as load_json, safe_save_json as save_json
 from pathlib import Path
 
 
+def sync_read_json(path: str) -> Dict:
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
 def emit_signal(signal_type: str, ticker: str) -> None:
     """Создает пустой файл-флаг для супервайзера."""
     sig_path = Path("signals") / f"{signal_type}_{ticker}.flag"
@@ -155,8 +160,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             try:
                 # Dynamic config reload
                 try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        current_config = json.load(f)
+                    # Unblock the Event Loop
+                    current_config = await asyncio.to_thread(sync_read_json, config_path)
                     portfolio_cfg = current_config["portfolios"][0]
                     targets = portfolio_cfg["targets"]
                     global_threshold = portfolio_cfg["rebalance_threshold"]

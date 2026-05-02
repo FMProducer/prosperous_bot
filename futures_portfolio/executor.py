@@ -28,9 +28,9 @@ class PortfolioExecutor:
         if step_size <= 0:
             return qty
 
-        # log10 от 0.001 даст -3. Инвертируем знак для получения количества знаков после запятой.
         precision = max(0, int(round(-math.log10(step_size))))
-        return round(qty, precision)
+        # Strictly mathematically correct rounding for arbitrary steps (e.g., 0.05, 0.03)
+        return round(round(qty / step_size) * step_size, precision)
 
     async def execute_market_order(self, symbol: str, qty: float, side: str, step_size: float = 0.0, reduce_only: bool = False, position_side: str = "BOTH", min_notional: float = 6.0, price: float = 0.0) -> Dict:
         """
@@ -172,6 +172,10 @@ class PortfolioExecutor:
 
             # Добиваем остаток market-ордером
             if qty > 0:
+                # CRITICAL: Re-verify notional value for the remaining snippet
+                if (qty * mid_price) < min_notional:
+                    logger.warning(f"Fallback snippet too small ({qty * mid_price:.2f} < {min_notional}). Discarding remainder.")
+                    return {"status": "SUCCESS_PARTIAL", "filled_qty": filled_qty, "message": "Remainder dropped due to min_notional"}
                 market_result = await self.execute_market_order(
                     symbol=symbol,
                     qty=qty,
