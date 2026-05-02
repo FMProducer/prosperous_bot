@@ -133,29 +133,19 @@ class PortfolioState:
                 tpv -= siphon_amount
 
         # 5. Rebalance Check
-        # Leg Values
-        val_virt = virt_current_value
-        val_real_total = current_real_equity - self.virt_allocated_usdt
+        # Use actual Market Value calculation (Basis + PnL)
+        val_l = (self.positions["LONG"] * self.entry_prices["LONG"] / self.l_lev) + \
+                (self.positions["LONG"] * (dec_price - self.entry_prices["LONG"]))
         
-        # Pro-rata for real legs
-        notional_l = self.positions["LONG"] * dec_price
-        notional_s = self.positions["SHORT"] * dec_price
+        val_s = (self.positions["SHORT"] * self.entry_prices["SHORT"] / self.s_lev) + \
+                (self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price))
         
-        est_l = (notional_l / self.l_lev) if self.l_lev > 0 else Decimal('0')
-        est_s = (notional_s / self.s_lev) if self.s_lev > 0 else Decimal('0')
-        est_sum = est_l + est_s
+        val_v = virt_current_value
 
-        if est_sum > 0:
-            val_l = (est_l / est_sum) * val_real_total
-            val_s = (est_s / est_sum) * val_real_total
-        else:
-            val_l = (self.l_target / (self.l_target + self.s_target)) * val_real_total
-            val_s = (self.s_target / (self.l_target + self.s_target)) * val_real_total
-
-        # Shares
+        # Shares relative to working capital (TPV)
         share_l = val_l / tpv if tpv > 0 else Decimal('0')
         share_s = val_s / tpv if tpv > 0 else Decimal('0')
-        share_v = val_virt / tpv if tpv > 0 else Decimal('0')
+        share_v = val_v / tpv if tpv > 0 else Decimal('0')
 
         if abs(share_l - self.l_target) > self.threshold or \
            abs(share_s - self.s_target) > self.threshold or \
@@ -165,6 +155,7 @@ class PortfolioState:
             rebalanced = False
             
             # Action candidate: Long
+            notional_l = self.positions["LONG"] * dec_price
             target_vol_l = tpv * self.l_target * self.l_lev
             diff_usdt_l = target_vol_l - notional_l
             if abs(diff_usdt_l) >= Decimal('6.0'):
@@ -182,6 +173,7 @@ class PortfolioState:
                 self.entry_prices["LONG"] = f_price
 
             # Action candidate: Short
+            notional_s = self.positions["SHORT"] * dec_price
             target_vol_s = tpv * self.s_target * self.s_lev
             diff_usdt_s = target_vol_s - notional_s
             if abs(diff_usdt_s) >= Decimal('6.0'):

@@ -23,62 +23,48 @@ class PortfolioCalculator:
         self.initial_capital = Decimal(str(initial_capital))
         self.real_equity = Decimal(str(real_equity))
         
-        # 1. Calculate Virtual Leg Current Value (Recalculated every iteration)
+        # 1. Calculate Virtual Leg Current Value (Market Value V)
         dec_virt_basis_price = Decimal(str(virt_basis_price))
         dec_virt_allocated_usdt = Decimal(str(virt_allocated_usdt))
+        if dec_virt_basis_price <= 0: dec_virt_basis_price = self.price
         
-        if dec_virt_basis_price <= 0: 
-            dec_virt_basis_price = self.price
-            
-        # V_current = Qty_virt * Price_current = (Allocated / Basis) * Price_current
         self.virt_current_value = dec_virt_allocated_usdt * (self.price / dec_virt_basis_price)
         
-        # 2. Calculate Total Portfolio Value (TPV)
-        # TPV = Real_Equity (exchange balance) + Virtual_PnL
-        # Virtual_PnL = Current_Value - Initial_Allocation
-        self.virt_pnl = self.virt_current_value - dec_virt_allocated_usdt
-        self.tpv = self.real_equity + self.virt_pnl
+        # 2. Total Working TPV (Account Value + Virtual Profit)
+        # This is our '100%' base for all rebalancing
+        virt_pnl = self.virt_current_value - dec_virt_allocated_usdt
+        self.tpv = self.real_equity + virt_pnl
         
-        # Total TPV including siphoned reserve for SAFE check
+        if self.tpv <= 0:
+            self.tpv = Decimal('1e-9')
+            
         self.total_tpv = self.tpv + self.siphoning_reserve
 
-        # 3. Calculate Real Legs (Long/Short) Pro-rata Values
-        # We assign the 'real' part of the portfolio (Real_Equity - Virtual_Buffer) to L/S
-        # Virtual_Buffer is the dec_virt_allocated_usdt (the capital we simulate as spot)
-        val_real_total = self.real_equity - dec_virt_allocated_usdt
-        
+        # 3. Calculate Actual Market Value of Real Legs (L + S)
         long_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
         short_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
         
         l_lev = Decimal(str(targets["BASE_LONG"]["leverage"])) if targets and "BASE_LONG" in targets else Decimal('5.0')
         s_lev = Decimal(str(targets["BASE_SHORT"]["leverage"])) if targets and "BASE_SHORT" in targets else Decimal('5.0')
 
-        self.notional_long = long_qty * self.price
-        self.notional_short = short_qty * self.price
+        # Use entry prices if provided, otherwise assume current price (no PnL)
+        l_entry = Decimal(str(long_entry_price)) if long_entry_price > 0 else self.price
+        s_entry = Decimal(str(short_entry_price)) if short_entry_price > 0 else self.price
 
-        est_l = (self.notional_long / l_lev) if l_lev > 0 else Decimal('0')
-        est_s = (self.notional_short / s_lev) if s_lev > 0 else Decimal('0')
-        est_sum = est_l + est_s
+        # Market Value = Collateral Basis + Unrealized PnL
+        # Note: Collateral Basis = (Qty * EntryPrice) / Leverage
+        self.val_long = (long_qty * l_entry / l_lev) + (long_qty * (self.price - l_entry)) if long_qty > 0 else Decimal('0')
+        self.val_short = (short_qty * s_entry / s_lev) + (short_qty * (s_entry - self.price)) if short_qty > 0 else Decimal('0')
+        self.val_virt = self.virt_current_value
 
-        if est_sum > 0:
-            self.val_long = (est_l / est_sum) * val_real_total
-            self.val_short = (est_s / est_sum) * val_real_total
-        else:
-            # Fallback to target ratios if no positions exist
-            l_t = Decimal(str(targets["BASE_LONG"]["share"]))
-            s_t = Decimal(str(targets["BASE_SHORT"]["share"]))
-            self.val_long = (l_t / (l_t + s_t)) * val_real_total
-            self.val_short = (s_t / (l_t + s_t)) * val_real_total
-
-        # 4. Calculate shares (Guaranteed to sum to 100.0%)
-        # Share_i = Value_i / TPV
-        # Note: val_long + val_short + virt_current_value = (Real_Equity - Alloc) + Virt_Current = Real_Equity + Virt_PnL = TPV.
-        if self.tpv > 0:
-            self.share_long_pct = (self.val_long / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
-            self.share_short_pct = (self.val_short / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
-            self.share_virt_pct = (Decimal('100.0') - self.share_long_pct - self.share_short_pct)
-        else:
-            self.share_long_pct = self.share_short_pct = self.share_virt_pct = Decimal('0')
+        # 4. Shares calculation
+        self.share_long_pct = (self.val_long / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
+        self.share_short_pct = (self.val_short / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
+        self.share_virt_pct = (self.val_virt / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
+        
+        # Cash is the remainder (Uninvested capital)
+        self.share_cash_pct = (Decimal('100.0') - self.share_long_pct - self.share_short_pct - self.share_virt_pct)
+        if self.share_cash_pct < 0: self.share_cash_pct = Decimal('0')
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """
@@ -93,6 +79,7 @@ class PortfolioCalculator:
         }
 
         # Проверяем, превышен ли порог хотя бы одной ногой
+        # Принудительная ребалансировка если threshold < 0
         any_exceeded: bool = dec_threshold < 0
 
         if not any_exceeded:
@@ -126,8 +113,8 @@ class PortfolioCalculator:
                 pos_side: str = "LONG" if key == "BASE_LONG" else "SHORT"
                 pos_key: str = f"{self.base_ticker}_{pos_side}"
 
-                # ПОРТФЕЛЬНАЯ ФОРМУЛА:
                 # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
+                # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
                 diff_usdt = -diff_share * self.tpv * lev
 
                 if not ignore_limits:

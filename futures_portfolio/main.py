@@ -25,7 +25,7 @@ process_executor = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8))
 
 def calculate_portfolio_task(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                              base_ticker, siphoning_reserve, targets, initial_capital, 
-                             threshold, ignore_limits):
+                             threshold, ignore_limits, long_entry_price=0.0, short_entry_price=0.0):
     """Heavy math task to be run in a separate process."""
     calc = PortfolioCalculator(
         positions=positions,
@@ -36,7 +36,9 @@ def calculate_portfolio_task(positions, price, real_equity, virt_basis_price, vi
         base_ticker=base_ticker,
         siphoning_reserve=siphoning_reserve,
         targets=targets,
-        initial_capital=initial_capital
+        initial_capital=initial_capital,
+        long_entry_price=long_entry_price,
+        short_entry_price=short_entry_price
     )
     actions = calc.calculate_deviations(targets, threshold, ignore_limits=ignore_limits)
     
@@ -46,6 +48,7 @@ def calculate_portfolio_task(positions, price, real_equity, virt_basis_price, vi
         "share_long_pct": float(calc.share_long_pct),
         "share_short_pct": float(calc.share_short_pct),
         "share_virt_pct": float(calc.share_virt_pct),
+        "share_cash_pct": float(calc.share_cash_pct),
         "tpv": float(calc.tpv),
         "total_tpv": float(calc.total_tpv),
         "siphoning_reserve": float(calc.siphoning_reserve),
@@ -251,7 +254,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         initial_calc_res = await loop.run_in_executor(
                             process_executor, calculate_portfolio_task,
                             positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                            base_ticker, 0.0, targets, config_initial_cap, -1.0, True
+                            base_ticker, 0.0, targets, config_initial_cap, -1.0, True,
+                            l_entry, s_entry
                         )
                         initial_tpv = initial_calc_res["tpv"]
                         reference_tpv = initial_tpv
@@ -271,12 +275,22 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     process_executor, calculate_portfolio_task,
                     positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
                     base_ticker, siphoning_reserve, targets, initial_tpv, 
-                    current_threshold, (current_threshold < 0)
+                    current_threshold, (current_threshold < 0),
+                    l_entry, s_entry
                 )
                 
                 tpv_total = calc_res["total_tpv"]
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
+
+                # EMERGENCY STOP: If TPV drops below 50% of initial capital
+                if tpv_total < initial_tpv * 0.5:
+                    msg = f"CRITICAL: TPV {tpv_total:.2f} is less than 50% of initial {initial_tpv:.2f}. EMERGENCY STOP!"
+                    logger.critical(msg)
+                    asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
+                    emit_signal("stop", base_ticker)
+                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker)
+                    return
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
                     tpv_ath = tpv_total
@@ -332,7 +346,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if i % 5 == 0:
                     res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                    logger.info(f"Heartbeat: Balance={real_equity:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%")
+                    logger.info(f"Heartbeat: Balance={real_equity:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}% C:{calc_res['share_cash_pct']:.1f}%")
                 
                 # Capture virtual parameters before potential reset to ensure virtual profit is siphoned
                 old_virt_basis: float = virt_basis_price
@@ -345,10 +359,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
-                    if not valid_actions:
-                        if i % 10 == 0:
-                            logger.info(f"Rebalance actions identified, but all too small (<{min_notional} USDT). Skipping.")
-                    else:
+                    if valid_actions:
                         logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%")
                         
                         rebalance_msg = (
@@ -392,7 +403,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     pos_key = f"{base_ticker}_{pos_side}"
                                     old_qty = paper_state["positions"].get(pos_key, 0.0)
                                     entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                                    # CRITICAL FIX: If entry price is 0.0, use current price to prevent fake collapse
                                     old_entry = paper_state.get(entry_key, price)
+                                    if old_entry <= 0: old_entry = price
 
                                     if trade_pnl == 0.0 and reduce_only:
                                         if pos_side == "LONG":
@@ -439,9 +452,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         safe_real_equity = m_info_new.get("total_margin_balance", 0.0) - siphoning_reserve
                         raw_positions_new = await connector.get_positions()
                         safe_positions = {k: v["qty"] for k, v in raw_positions_new.items()}
+                        safe_l_entry = raw_positions_new.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
+                        safe_s_entry = raw_positions_new.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
                 else:
                     safe_real_equity = real_equity
                     safe_positions = positions
+                    safe_l_entry = l_entry
+                    safe_s_entry = s_entry
+
+                if paper_mode:
+                    safe_l_entry = paper_state.get("long_entry_price", price)
+                    safe_s_entry = paper_state.get("short_entry_price", price)
 
                 # Calculate surplus using CURRENT virtual parameters (Basis price was reset ONLY if rebalance happened)
                 # Re-calculate in separate process to get final TPV for siphoning
@@ -450,7 +471,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     safe_positions, price, safe_real_equity,
                     virt_basis_price, virt_allocated_usdt,
                     base_ticker, siphoning_reserve, targets, initial_tpv,
-                    -1.0, True
+                    -1.0, True, safe_l_entry, safe_s_entry
                 )
 
                 total_tpv_final = safe_calc_res["total_tpv"]

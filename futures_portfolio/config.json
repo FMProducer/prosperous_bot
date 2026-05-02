@@ -18,7 +18,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 39.0,
+      "initial_capital": 1000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
@@ -33,10 +33,10 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.02,
+      "rebalance_threshold": 0.008,
       "ticker_thresholds": {
-        "BTCUSDT": 0.02,
-        "ETHUSDT": 0.02
+        "BTCUSDT": 0.008,
+        "ETHUSDT": 0.008
       }
     }
   ],
