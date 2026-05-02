@@ -84,12 +84,21 @@ class TickerRanker:
         # Возвращаем Series с ранжированием на последний доступный timestamp
         return momentum.groupby(level='ticker').last().sort_values(ascending=False)
 
+from concurrent.futures import ProcessPoolExecutor
+
+def run_ranker_task(multi_df: pd.DataFrame, threshold: float):
+    """Helper function to run the ranker in a separate process."""
+    ranker = TickerRanker(multi_df)
+    metrics_df = ranker.calculate_metrics(threshold)
+    return metrics_df
+
 class TickerScanner:
     def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.02, scanner_period_days: float = 1.0):
         self.base_url = "https://fapi.binance.com"
         self.rebalance_threshold = rebalance_threshold
         self.scanner_period_days = scanner_period_days
         self.semaphore = asyncio.Semaphore(concurrent_requests)
+        self.process_executor = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8))
         
     @retry_on_network_error(retries=3)
     async def fetch(self, session: aiohttp.ClientSession, endpoint: str, params: dict = None):
@@ -173,8 +182,12 @@ class TickerScanner:
                 return []
 
             multi_df = pd.concat(valid_dfs)
-            ranker = TickerRanker(multi_df)
-            metrics_df = ranker.calculate_metrics(self.rebalance_threshold)
+            
+            # Offload ranking to a separate process
+            loop = asyncio.get_running_loop()
+            metrics_df = await loop.run_in_executor(
+                self.process_executor, run_ranker_task, multi_df, self.rebalance_threshold
+            )
 
             metrics_df['symbol'] = metrics_df.index
             metrics_df['funding'] = metrics_df['symbol'].map(funding_map).fillna(0.0) * 100

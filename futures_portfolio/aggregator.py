@@ -41,7 +41,7 @@ class StatusAggregator:
     async def collect_and_send(self) -> None:
         config = self.load_config()
         if not config.get("telegram_enabled", True):
-            logger.info("Telegram is disabled in config. Skipping summary.")
+#            logger.info("Telegram is disabled in config. Skipping summary.")
             return
 
         # Параметры для ROI (из swarm_analyzer logic)

@@ -185,7 +185,8 @@ async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> s
 
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
                         days: float = 2.0, commission: float = 0.0004, use_limit_orders: bool = False,
-                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False) -> Optional[Dict[str, Any]]:
+                        limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False,
+                        threshold_override: Optional[float] = None) -> Optional[Dict[str, Any]]:
     try:
         if quiet:
             logger.setLevel(logging.WARNING)
@@ -216,7 +217,12 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         initial_capital: float = portfolio_cfg.get("initial_capital", 1000.0)
         targets: Dict[str, Any] = portfolio_cfg["targets"]
         ticker_thresholds: Dict[str, float] = portfolio_cfg.get("ticker_thresholds", {})
-        threshold: float = ticker_thresholds.get(base_ticker, portfolio_cfg.get("rebalance_threshold", 0.02))
+        
+        if threshold_override is not None:
+            threshold = threshold_override
+        else:
+            threshold = ticker_thresholds.get(base_ticker, portfolio_cfg.get("rebalance_threshold", 0.02))
+            
         siphoning_threshold_pct: float = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
         reinvestment_ratio: float = portfolio_cfg.get("reinvestment_ratio", 0.0)
         

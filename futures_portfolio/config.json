@@ -33,11 +33,31 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.002,
+      "rebalance_threshold": 0.04,
       "ticker_thresholds": {
-        "BTCUSDT": 0.002,
-        "ETHUSDT": 0.002
+        "BTCUSDT": 0.01,
+        "ETHUSDT": 0.01,
+        "ZEREBROUSDT": 0.04,
+        "CTSIUSDT": 0.04,
+        "ZENUSDT": 0.04,
+        "CHRUSDT": 0.04,
+        "AIOTUSDT": 0.04,
+        "TRBUSDT": 0.04,
+        "BABYUSDT": 0.04,
+        "BBUSDT": 0.04,
+        "APEUSDT": 0.04,
+        "NFPUSDT": 0.04
       }
     }
-  ]
+  ],
+  "tickers": [
+    "CTSIUSDT",
+    "BBUSDT",
+    "BABYUSDT",
+    "BRUSDT",
+    "AIOTUSDT",
+    "MOVRUSDT"
+  ],
+  "live_swarm": [],
+  "base_ticker": "CTSIUSDT"
 }
