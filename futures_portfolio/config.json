@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -8,12 +8,12 @@
   "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_days": 0.125,
+  "probation_period_days": 0.025,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.125,
+  "supervisor_interval_days": 0.025,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
-  "telegram_enabled": false,
+  "telegram_enabled": true,
   "black_list": [],
   "portfolios": [
     {
@@ -41,17 +41,17 @@
     }
   ],
   "tickers": [
-    "LUNA2USDT",
     "BABYUSDT",
+    "PNUTUSDT",
+    "LUNA2USDT",
     "BBUSDT",
-    "AIXBTUSDT",
+    "USTCUSDT",
+    "ORDIUSDT",
+    "ZKUSDT",
     "LUMIAUSDT",
-    "AIOTUSDT",
-    "NFPUSDT",
-    "ARKMUSDT",
-    "1000SATSUSDT",
-    "USTCUSDT"
+    "ACHUSDT",
+    "AXLUSDT"
   ],
   "live_swarm": [],
-  "base_ticker": "LUNA2USDT"
+  "base_ticker": "BABYUSDT"
 }

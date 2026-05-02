@@ -234,3 +234,5 @@ futures_portfolio/state_*.json.lock
 futures_portfolio/paper_state_*.json.lock
 futures_portfolio/config.json.lock
 futures_portfolio/signals/stop_*.flag
+futures_portfolio/check_binance_api.py
+futures_portfolio/Dialog.md

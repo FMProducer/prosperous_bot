@@ -28,8 +28,8 @@ logger = logging.getLogger("Aggregator")
 class StatusAggregator:
     def __init__(self, config_path="config.json"):
         self.config_path = config_path
-        self.notifier = TelegramNotifier()
-        
+        self.notifier = None
+
     def load_config(self) -> Dict[str, Any]:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -41,8 +41,10 @@ class StatusAggregator:
     async def collect_and_send(self) -> None:
         config = self.load_config()
         if not config.get("telegram_enabled", True):
-#            logger.info("Telegram is disabled in config. Skipping summary.")
             return
+            
+        if self.notifier is None:
+            self.notifier = TelegramNotifier()
 
         # Параметры для ROI (из swarm_analyzer logic)
         try:
