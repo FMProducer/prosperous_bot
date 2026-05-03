@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -41,17 +41,16 @@
     }
   ],
   "tickers": [
-    "BABYUSDT",
     "PNUTUSDT",
-    "LUNA2USDT",
-    "BBUSDT",
-    "USTCUSDT",
-    "ORDIUSDT",
     "ZKUSDT",
-    "LUMIAUSDT",
-    "ACHUSDT",
-    "AXLUSDT"
+    "ALGOUSDT",
+    "AIOTUSDT",
+    "NFPUSDT",
+    "CHILLGUYUSDT",
+    "BIOUSDT"
   ],
-  "live_swarm": [],
-  "base_ticker": "BABYUSDT"
+  "live_swarm": [
+    "AIOTUSDT"
+  ],
+  "base_ticker": "PNUTUSDT"
 }

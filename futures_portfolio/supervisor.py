@@ -135,20 +135,30 @@ async def manage_swarm():
             logger.error(f"Error processing signal {sig_file}: {e}")
 
     # 3. Анализ и Рейтинг
+    logger.info("Starting scanner analysis...")
     try:
-        scanner_results = await run_scanner(quiet=True, min_volume=10_000_000)
+        # Добавляем таймаут для безопасности
+        scanner_results = await asyncio.wait_for(run_scanner(quiet=True, min_volume=10_000_000), timeout=60)
         scanner_tickers = [r['symbol'] for r in scanner_results]
-    except: scanner_tickers = []
+        logger.info(f"Scanner found {len(scanner_tickers)} tickers.")
+    except Exception as e:
+        logger.error(f"Scanner failed or timed out: {e}")
+        scanner_tickers = []
     
     eval_pool = [t for t in list(set(running_info.keys()) | set(scanner_tickers)) if t not in new_black_list]
     
     perf_dict = {}
+    logger.info(f"Starting backtest analysis for {len(eval_pool)} tickers...")
     for symbol in eval_pool:
         try:
-            res = await run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True)
+            # Добавляем таймаут для каждого тикера
+            res = await asyncio.wait_for(run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True), timeout=30)
             if res and res.get("profit_pct", 0) > 0:
                 perf_dict[symbol] = res.get("profit_pct", 0)
-        except: pass
+        except Exception as e:
+            logger.warning(f"Backtest failed for {symbol}: {e}")
+            pass
+    logger.info("Backtest analysis complete.")
 
     all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x], reverse=True)
     top_10 = all_sorted[:max_bots]

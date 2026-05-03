@@ -73,6 +73,8 @@ class StatusAggregator:
                 ticker = state.get("base_ticker", "UNKNOWN")
                 if ticker == "UNKNOWN": continue
                 
+                active_bots_count += 1
+                
                 # Читаем баланс из paper_state если он есть
                 paper_state_path = f"paper_state_{ticker}.json"
                 ps = await safe_load_json(paper_state_path, {})
