@@ -559,7 +559,15 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                     side = "SELL" if qty > 0 else "BUY"
                     step_size = step_sizes.get(base_ticker, 0.0)
                     logger.info(f"Closing REAL position {pos_key}: {qty}")
-                    await PortfolioExecutor(connector).execute_market_order(base_ticker, abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
+                    await PortfolioExecutor(connector).execute_market_order(
+                        symbol=base_ticker,
+                        qty=abs(qty),
+                        side=side,
+                        step_size=step_size,
+                        reduce_only=True,
+                        position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
+                        min_notional=0.0
+                    )
 
     # Сброс состояния
     state = await load_json(state_file_path, {})

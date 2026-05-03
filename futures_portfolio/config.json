@@ -41,19 +41,16 @@
     }
   ],
   "tickers": [
-    "AXLUSDT",
+    "ACHUSDT",
     "PARTIUSDT",
-    "PNUTUSDT",
-    "ZEREBROUSDT",
-    "AIOTUSDT",
-    "1000SATSUSDT",
-    "ZKUSDT",
+    "1000LUNCUSDT",
+    "AKTUSDT",
     "NFPUSDT",
-    "CHILLGUYUSDT",
-    "AKTUSDT"
-  ],
-  "live_swarm": [
+    "ZEREBROUSDT",
     "AXLUSDT"
   ],
-  "base_ticker": "AXLUSDT"
+  "live_swarm": [
+    "PARTIUSDT"
+  ],
+  "base_ticker": "ACHUSDT"
 }

@@ -71,17 +71,22 @@ async def get_running_bots_info() -> Dict[str, dict]:
 async def stop_bot(ticker: str):
     logger.info(f"🛑 Stopping bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
+    
+    # 1. Сначала принудительно останавливаем процесс, чтобы он не открывал новые позиции
+    try:
+        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        await proc.wait()
+        await asyncio.sleep(1) # Даем время на завершение процесса
+    except: pass
+    
+    # 2. Затем запускаем скрипт закрытия позиций (он отработает в отдельном процессе и завершится)
     try:
         cmd = f'"{sys.executable}" main.py --config config.json --ticker {ticker} --stop'
         proc = await asyncio.create_subprocess_shell(cmd)
         await asyncio.wait_for(proc.wait(), timeout=30)
+        await asyncio.sleep(1) # Даем время Binance обработать ордера
     except Exception as e:
         logger.warning(f"Stop command failed for {ticker}: {e}")
-    
-    try:
-        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
-        await proc.wait()
-    except: pass
 
 async def start_bot(ticker: str, paper: bool = False):
     mode_str = "PAPER" if paper else "REAL"

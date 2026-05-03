@@ -180,10 +180,9 @@ class BinanceConnector:
             "price": price,
             "positionSide": position_side
         }
-        # Исключаем reduceOnly из параметров, так как он вызывает ошибку -1106
-        if reduce_only:
-            params["reduceOnly"] = True
-            
+        # Исключаем reduceOnly из параметров, так как в Hedge Mode он вызывает ошибку -1106
+        # В режиме хеджирования достаточно указать side и positionSide
+        
         result = await asyncio.to_thread(
             self.futures_client.futures_create_order,
             **params

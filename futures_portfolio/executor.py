@@ -72,6 +72,7 @@ class PortfolioExecutor:
 
         try:
             # Обязательно передаем positionSide для Hedge Mode
+            # ВНИМАНИЕ: reduceOnly НЕ передается, так как в Hedge Mode это вызывает ошибку -1106
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -138,6 +139,7 @@ class PortfolioExecutor:
             logger.info(f"Limit order: {side} {float(dec_qty)} {symbol} @ {float(limit_price):.6f} (mid={float(mid_price):.6f}, expected_gain={float(expected_improvement_pct):.3f}%)")
 
             # 3. Выставляем POST-ONLY лимитку (гарантия maker-комиссии 0.02%)
+            # ВНИМАНИЕ: reduceOnly не передается, так как в Hedge Mode это вызывает ошибку -1106
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -145,8 +147,6 @@ class PortfolioExecutor:
                 "price": float(limit_price),
                 "position_side": position_side
             }
-            if reduce_only:
-                params["reduceOnly"] = True
             
             order = await self.connector.place_limit_maker_order(**params)
 
