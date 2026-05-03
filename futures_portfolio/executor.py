@@ -79,9 +79,7 @@ class PortfolioExecutor:
                 "quantity": float(abs(dec_qty)),
                 "positionSide": position_side
             }
-            if reduce_only:
-                params["reduceOnly"] = True
-                
+            
             result = await asyncio.to_thread(
                 self.connector.futures_client.futures_create_order,
                 **params
@@ -148,7 +146,7 @@ class PortfolioExecutor:
                 "position_side": position_side
             }
             if reduce_only:
-                params["reduce_only"] = True
+                params["reduceOnly"] = True
             
             order = await self.connector.place_limit_maker_order(**params)
 
@@ -206,7 +204,6 @@ class PortfolioExecutor:
                     qty=float(dec_qty),
                     side=side,
                     step_size=0,  # Уже округлено
-                    reduce_only=reduce_only,
                     position_side=position_side
                 )
                 return {

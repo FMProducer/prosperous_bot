@@ -170,18 +170,23 @@ class BinanceConnector:
                                 time_in_force: str = "GTC") -> Dict:
         """
         Выставление лимитного ордера (Hedge Mode).
-        time_in_force: GTC (Good Till Cancel), IOC (Immediate Or Cancel), FOK (Fill Or Kill)
         """
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": "LIMIT",
+            "timeInForce": time_in_force,
+            "quantity": abs(qty),
+            "price": price,
+            "positionSide": position_side
+        }
+        # Исключаем reduceOnly из параметров, так как он вызывает ошибку -1106
+        if reduce_only:
+            params["reduceOnly"] = True
+            
         result = await asyncio.to_thread(
             self.futures_client.futures_create_order,
-            symbol=symbol,
-            side=side,
-            type="LIMIT",
-            timeInForce=time_in_force,
-            quantity=abs(qty),
-            price=price,
-            reduceOnly=reduce_only,
-            positionSide=position_side
+            **params
         )
         return result
 
@@ -217,7 +222,6 @@ class BinanceConnector:
             type="LIMIT_MAKER",
             quantity=abs(qty),
             price=price,
-            reduceOnly=reduce_only,
             positionSide=position_side
         )
         return result

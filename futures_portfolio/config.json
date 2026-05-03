@@ -8,9 +8,9 @@
   "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_days": 0.0125,
+  "probation_period_days": 0.025,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.0125,
+  "supervisor_interval_days": 0.025,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
   "telegram_enabled": true,
@@ -41,19 +41,17 @@
     }
   ],
   "tickers": [
+    "PARTIUSDT",
     "PNUTUSDT",
+    "ZEREBROUSDT",
     "ACHUSDT",
+    "AIOTUSDT",
     "ZKUSDT",
-    "ALGOUSDT",
-    "BANANAS31USDT",
-    "USTCUSDT",
-    "MOVRUSDT",
-    "NFPUSDT",
-    "AKTUSDT",
-    "ORDIUSDT"
+    "CHILLGUYUSDT",
+    "NFPUSDT"
   ],
   "live_swarm": [
-    "USTCUSDT"
+    "PARTIUSDT"
   ],
-  "base_ticker": "PNUTUSDT"
+  "base_ticker": "PARTIUSDT"
 }
