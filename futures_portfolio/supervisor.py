@@ -173,10 +173,14 @@ async def manage_swarm():
     for ticker in all_sorted:
         # ПРОВЕРКА: Если бот сейчас в PAPER, читаем paper_state, если в REAL - state
         is_in_paper = ticker in running_info and running_info[ticker]['paper']
-        state_file = f"paper_state_{ticker}.json" if is_in_paper else f"state_{ticker}.json"
-        
-        state = await safe_load_json(os.path.join(CURRENT_DIR, state_file), {})
         is_already_real = ticker in running_info and not running_info[ticker]['paper']
+        
+        # Только запущенные боты могут претендовать на REAL
+        if not (is_in_paper or is_already_real):
+            continue
+            
+        state_file = f"paper_state_{ticker}.json" if is_in_paper else f"state_{ticker}.json"
+        state = await safe_load_json(os.path.join(CURRENT_DIR, state_file), {})
         
         started_at = state.get("started_at", 0)
         elapsed = (time.time() - started_at) / 3600 if started_at > 0 else 0

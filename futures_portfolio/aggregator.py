@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from notifier import TelegramNotifier
 from storage import safe_load_json
+from connector import BinanceConnector
 
 load_dotenv()
 
@@ -45,6 +46,21 @@ class StatusAggregator:
             
         if self.notifier is None:
             self.notifier = TelegramNotifier()
+
+        # Получаем реальные балансы с биржи для "Reality Check"
+        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+        testnet = config.get("testnet", False)
+        
+        wallet_usdt = 0.0
+        wallet_bnb = 0.0
+        
+        try:
+            connector = BinanceConnector(api_key, secret_key, testnet=testnet)
+            wallet_usdt = await connector.get_free_balance()
+            wallet_bnb = await connector.get_bnb_balance()
+        except Exception as e:
+            logger.error(f"Failed to fetch real balances: {e}")
 
         # Параметры для ROI (из swarm_analyzer logic)
         try:
@@ -137,6 +153,9 @@ class StatusAggregator:
             f"📈 Overall ROI: <code>{roi:.2f}%</code> (of {working_capital:.1f})\n"
             f"✅ Active Bots PnL: <code>{active_pnl:+.2f} USDT</code>\n"
             f"🗑️ Removed Bots PnL: <code>{removed_pnl:+.2f} USDT</code>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💳 Wallet USDT: <code>{wallet_usdt:.2f}</code>\n"
+            f"🪙 Wallet BNB: <code>{wallet_bnb:.4f}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
         

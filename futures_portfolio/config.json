@@ -43,17 +43,14 @@
   ],
   "tickers": [
     "AKTUSDT",
-    "BATUSDT",
-    "PNUTUSDT",
     "ORDIUSDT",
-    "CHILLGUYUSDT",
-    "NFPUSDT",
-    "KNCUSDT",
+    "BATUSDT",
     "PARTIUSDT",
-    "BRUSDT"
+    "REZUSDT",
+    "NFPUSDT",
+    "CHILLGUYUSDT",
+    "1000LUNCUSDT"
   ],
-  "live_swarm": [
-    "KNCUSDT"
-  ],
+  "live_swarm": [],
   "base_ticker": "AKTUSDT"
 }
