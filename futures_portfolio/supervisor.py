@@ -43,7 +43,7 @@ def read_shared_config(path: str) -> Dict[str, Any]:
         return {}
 
 async def get_running_bots_info() -> Dict[str, dict]:
-    """Получает детальную информацию о запущенных ботах из PM2"""
+    """Получает детальную информацию о запущенных ботах из PM2, включая аптайм"""
     try:
         proc = await asyncio.create_subprocess_shell(
             "pm2 jlist",
@@ -62,7 +62,14 @@ async def get_running_bots_info() -> Dict[str, dict]:
                     if arg == '--ticker' and i + 1 < len(args):
                         ticker = args[i+1]
                 if ticker:
-                    bots[ticker] = {"name": app['name'], "paper": is_paper, "status": app['pm2_env']['status']}
+                    # Извлекаем pm_uptime (timestamp старта в мс)
+                    uptime_ms = app.get('pm2_env', {}).get('pm_uptime', 0)
+                    bots[ticker] = {
+                        "name": app['name'], 
+                        "paper": is_paper, 
+                        "status": app['pm2_env']['status'],
+                        "uptime": uptime_ms
+                    }
         return bots
     except Exception as e:
         logger.error(f"Failed to get PM2 list: {e}")
@@ -158,39 +165,58 @@ async def manage_swarm():
         try:
             # Добавляем таймаут для каждого тикера
             res = await asyncio.wait_for(run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True), timeout=30)
-            if res and res.get("profit_pct", 0) > 0:
-                perf_dict[symbol] = res.get("profit_pct", 0)
+            if res and res.get("profit_pct", 0) > 0 and res.get("siphoning_reserve", 0) > 0:
+                # Сохраняем и профит, и сейф для анализа
+                perf_dict[symbol] = {
+                    "profit": res.get("profit_pct", 0),
+                    "safe": res.get("siphoning_reserve", 0)
+                }
         except Exception as e:
             logger.warning(f"Backtest failed for {symbol}: {e}")
             pass
     logger.info("Backtest analysis complete.")
 
-    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x], reverse=True)
+    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x]['profit'], reverse=True)
     top_10 = all_sorted[:max_bots]
     
-    # 4. Выбор Чемпионов для REAL
-    ready_for_real = []
-    for ticker in all_sorted:
-        # ПРОВЕРКА: Если бот сейчас в PAPER, читаем paper_state, если в REAL - state
-        is_in_paper = ticker in running_info and running_info[ticker]['paper']
-        is_already_real = ticker in running_info and not running_info[ticker]['paper']
-        
-        # Только запущенные боты могут претендовать на REAL
-        if not (is_in_paper or is_already_real):
-            continue
-            
-        state_file = f"paper_state_{ticker}.json" if is_in_paper else f"state_{ticker}.json"
-        state = await safe_load_json(os.path.join(CURRENT_DIR, state_file), {})
-        
-        started_at = state.get("started_at", 0)
-        elapsed = (time.time() - started_at) / 3600 if started_at > 0 else 0
-        has_profit = state.get("siphoning_reserve", 0.0) > 0
-        
-        if is_already_real or (has_profit and elapsed >= probation_hours):
-            ready_for_real.append(ticker)
+    # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
+    ready_pool = []
+    now_ms = time.time() * 1000
+    probation_ms = probation_hours * 3600 * 1000
 
-    target_real_bots = ready_for_real[:max_real_slots]
-    logger.info(f"🎯 Target REAL bots ({len(target_real_bots)}/{max_real_slots}): {target_real_bots}")
+    for ticker in all_sorted:
+        bot_info = running_info.get(ticker)
+        perf = perf_dict.get(ticker, {})
+        backtest_profit = perf.get("profit", 0)
+        backtest_safe = perf.get("safe", 0)
+        
+        # Только если бэктест прибыльный И зафиксирован SAFE
+        if backtest_profit <= 0 or backtest_safe <= 0:
+            continue
+
+        # Если бот уже в Реале, он остается кандидатом
+        is_already_real = bot_info and not bot_info['paper'] and bot_info['status'] == 'online'
+        if is_already_real:
+            ready_pool.append(ticker)
+            continue
+
+        # Если бот в Песочнице, проверяем время
+        is_in_paper = bot_info and bot_info['paper'] and bot_info['status'] == 'online'
+        if is_in_paper:
+            uptime_ms = bot_info.get('uptime', 0)
+            elapsed_ms = now_ms - uptime_ms
+            
+            if elapsed_ms >= probation_ms:
+                logger.info(f"✅ {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with profit {backtest_profit:.2f}% and SAFE {backtest_safe:.2f}")
+                ready_pool.append(ticker)
+            else:
+                logger.info(f"⏳ {ticker} is maturing ({elapsed_ms/3600000:.2f}h / {probation_hours:.2f}h)")
+
+    # Сортируем ВСЕХ готовых по текущей прибыли бэктеста
+    ready_pool.sort(key=lambda x: perf_dict.get(x, {}).get('profit', 0), reverse=True)
+    target_real_bots = ready_pool[:max_real_slots]
+    
+    logger.info(f"🎯 Target REAL bots (Best of Ready): {target_real_bots}")
     
     # 5. ИСПОЛНЕНИЕ
     for ticker, info in running_info.items():

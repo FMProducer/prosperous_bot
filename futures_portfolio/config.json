@@ -42,15 +42,19 @@
     }
   ],
   "tickers": [
+    "DUSDT",
+    "BIOUSDT",
     "AKTUSDT",
-    "ORDIUSDT",
     "BATUSDT",
-    "PARTIUSDT",
+    "BANANAS31USDT",
+    "BRUSDT",
+    "ORDIUSDT",
+    "1000LUNCUSDT",
     "REZUSDT",
-    "NFPUSDT",
-    "CHILLGUYUSDT",
-    "1000LUNCUSDT"
+    "NFPUSDT"
   ],
-  "live_swarm": [],
-  "base_ticker": "AKTUSDT"
+  "live_swarm": [
+    "BIOUSDT"
+  ],
+  "base_ticker": "DUSDT"
 }
