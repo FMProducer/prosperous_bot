@@ -122,6 +122,9 @@
 5.  **Persistence of started_at:** В `main.py` добавлено отслеживание времени запуска в JSON-состоянии для корректного расчета времени «испытательного срока».
 
 ## Completed Tasks
+- [x] **Real Trading Transition (03.05.2026):** Переход в `paper_mode: false`. Успешный запуск ордеров.
+- [x] **API Error Resolution:** Исправление `reduceOnly` параметра в `executor.py` (устранение APIError -1106).
+- [x] **Supervisor Stabilization:** Добавление сетевых таймаутов (`asyncio.wait_for`) для исключения зависаний сервиса.
 - [x] **Regression Fix (v2.3):** Восстановлена математика расчета рыночной стоимости плеч и детекция дрейфа PnL.
 - [x] **Entry Price Integration:** Полноценное использование цен входа для расчета "живой" стоимости позиций.
 - [x] **Zero-Position Opening Fix:** Обеспечен старт бота при пустом портфеле.

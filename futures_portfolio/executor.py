@@ -72,14 +72,19 @@ class PortfolioExecutor:
 
         try:
             # Обязательно передаем positionSide для Hedge Mode
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "type": "MARKET",
+                "quantity": float(abs(dec_qty)),
+                "positionSide": position_side
+            }
+            if reduce_only:
+                params["reduceOnly"] = True
+                
             result = await asyncio.to_thread(
                 self.connector.futures_client.futures_create_order,
-                symbol=symbol,
-                side=side,
-                type="MARKET",
-                quantity=float(abs(dec_qty)),
-                reduceOnly=reduce_only,
-                positionSide=position_side
+                **params
             )
             logger.info(f"Order: {side} {float(abs(dec_qty))} {symbol} ({position_side})")
             return {"status": "SUCCESS", "result": result}
@@ -135,14 +140,17 @@ class PortfolioExecutor:
             logger.info(f"Limit order: {side} {float(dec_qty)} {symbol} @ {float(limit_price):.6f} (mid={float(mid_price):.6f}, expected_gain={float(expected_improvement_pct):.3f}%)")
 
             # 3. Выставляем POST-ONLY лимитку (гарантия maker-комиссии 0.02%)
-            order = await self.connector.place_limit_maker_order(
-                symbol=symbol,
-                side=side,
-                qty=float(dec_qty),
-                price=float(limit_price),
-                position_side=position_side,
-                reduce_only=reduce_only
-            )
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "qty": float(dec_qty),
+                "price": float(limit_price),
+                "position_side": position_side
+            }
+            if reduce_only:
+                params["reduce_only"] = True
+            
+            order = await self.connector.place_limit_maker_order(**params)
 
             order_id = order["orderId"]
             logger.info(f"Limit order placed: {order_id}")

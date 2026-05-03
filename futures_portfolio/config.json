@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -8,9 +8,9 @@
   "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_days": 0.025,
+  "probation_period_days": 0.0125,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.025,
+  "supervisor_interval_days": 0.0125,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
   "telegram_enabled": true,
@@ -42,15 +42,18 @@
   ],
   "tickers": [
     "PNUTUSDT",
+    "ACHUSDT",
     "ZKUSDT",
     "ALGOUSDT",
-    "AIOTUSDT",
+    "BANANAS31USDT",
+    "USTCUSDT",
+    "MOVRUSDT",
     "NFPUSDT",
-    "CHILLGUYUSDT",
-    "BIOUSDT"
+    "AKTUSDT",
+    "ORDIUSDT"
   ],
   "live_swarm": [
-    "AIOTUSDT"
+    "USTCUSDT"
   ],
   "base_ticker": "PNUTUSDT"
 }
