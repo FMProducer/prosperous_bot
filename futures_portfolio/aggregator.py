@@ -52,10 +52,12 @@ class StatusAggregator:
             max_bots = config.get('max_bots', 10)
             working_capital = initial_per_bot * max_bots
             active_tickers = config.get('tickers', [])
+            live_swarm = config.get('live_swarm', [])
         except:
             initial_per_bot = 39.0
             working_capital = 390.0
             active_tickers = []
+            live_swarm = []
 
         state_files = await asyncio.to_thread(glob.glob, "state_*.json")
         summary_lines = []
@@ -100,7 +102,14 @@ class StatusAggregator:
                 else:
                     removed_pnl += profit
 
-                status_icon = "🟢" if is_active_process else "🔴"
+                # НОВАЯ ЛОГИКА ЦВЕТОВ: 
+                # 🟢 - Активен в REAL (в списке live_swarm)
+                # 🟡 - Активен в PAPER (не в live_swarm, но в активных)
+                # 🔴 - Неактивен (процесс давно не обновлялся)
+                if is_active_process:
+                    status_icon = "🟢" if ticker in live_swarm else "🟡"
+                else:
+                    status_icon = "🔴"
                 
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:

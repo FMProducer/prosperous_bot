@@ -8,9 +8,9 @@
   "max_orders_per_second": 10,
   "max_bots": 10,
   "paper_mode_bots": 9,
-  "probation_period_days": 0.124,
+  "probation_period_days": 0.024,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.125,
+  "supervisor_interval_days": 0.025,
   "scanner_period_days": 1.0,
   "max_drawdown_limit": 20.0,
   "telegram_enabled": true,
@@ -19,6 +19,7 @@
     {
       "name": "SyntheticMarketNeutral",
       "initial_capital": 39.0,
+      "siphoning_threshold_pct": 0.3,
       "targets": {
         "BASE_LONG": {
           "share": 0.29,
@@ -41,16 +42,18 @@
     }
   ],
   "tickers": [
-    "PARTIUSDT",
-    "1000LUNCUSDT",
     "AKTUSDT",
+    "BATUSDT",
+    "PNUTUSDT",
+    "ORDIUSDT",
     "CHILLGUYUSDT",
-    "BRUSDT",
     "NFPUSDT",
-    "BIOUSDT"
+    "KNCUSDT",
+    "PARTIUSDT",
+    "BRUSDT"
   ],
   "live_swarm": [
-    "PARTIUSDT"
+    "KNCUSDT"
   ],
-  "base_ticker": "PARTIUSDT"
+  "base_ticker": "AKTUSDT"
 }
