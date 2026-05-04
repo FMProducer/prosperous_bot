@@ -156,6 +156,30 @@ class BinanceConnector:
         return float(bnb_balance)
 
     @retry_on_network_error(retries=3, delay=2.0)
+    async def set_leverage(self, symbol: str, leverage: int):
+        """Установка плеча для символа."""
+        return await asyncio.to_thread(
+            self.futures_client.futures_change_leverage,
+            symbol=symbol,
+            leverage=leverage
+        )
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def set_margin_type(self, symbol: str, margin_type: str):
+        """Установка типа маржи (ISOLATED или CROSS)."""
+        try:
+            return await asyncio.to_thread(
+                self.futures_client.futures_change_margin_type,
+                symbol=symbol,
+                marginType=margin_type
+            )
+        except BinanceAPIException as e:
+            # Если тип маржи уже установлен, Бинанс вернет ошибку -4046 "No need to change margin type"
+            if "No need to change margin type" in str(e):
+                return None
+            raise e
+
+    @retry_on_network_error(retries=3, delay=2.0)
     async def get_order_book(self, symbol: str, limit: int = 20) -> Dict:
         """Получение стакана ордеров (глубина 5-1000 уровней)."""
         return await asyncio.to_thread(

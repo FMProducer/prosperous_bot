@@ -42,19 +42,17 @@
     }
   ],
   "tickers": [
-    "DUSDT",
-    "BIOUSDT",
-    "AKTUSDT",
-    "BATUSDT",
-    "BANANAS31USDT",
-    "BRUSDT",
-    "ORDIUSDT",
+    "MUBARAKUSDT",
+    "PENDLEUSDT",
+    "AIOTUSDT",
+    "SWARMSUSDT",
+    "ZENUSDT",
     "1000LUNCUSDT",
-    "REZUSDT",
-    "NFPUSDT"
+    "AXLUSDT",
+    "PARTIUSDT"
   ],
   "live_swarm": [
-    "BIOUSDT"
+    "MUBARAKUSDT"
   ],
-  "base_ticker": "DUSDT"
+  "base_ticker": "MUBARAKUSDT"
 }

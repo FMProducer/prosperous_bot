@@ -172,7 +172,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_ops = config.get("max_orders_per_second", 10)
     executor = PortfolioExecutor(connector, base_ticker=base_ticker, max_orders_per_second=max_ops)
 
-    # Hedge Mode Guard
+    # Hedge Mode, Leverage and Margin Type Guard
     if not paper_mode:
         try:
             is_hedge = await connector.get_hedge_mode()
@@ -182,9 +182,23 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 asyncio.create_task(notifier.send_alert("STARTUP ERROR", msg))
                 return
             logger.info("Hedge Mode verified.")
+
+            # Force Leverage 5x and Isolated Margin
+            try:
+                await connector.set_leverage(base_ticker, 5)
+                logger.info(f"Leverage set to 5x for {base_ticker}")
+            except Exception as e:
+                logger.warning(f"Could not set leverage for {base_ticker}: {e}")
+
+            try:
+                await connector.set_margin_type(base_ticker, "ISOLATED")
+                logger.info(f"Margin Type set to ISOLATED for {base_ticker}")
+            except Exception as e:
+                logger.warning(f"Could not set margin type for {base_ticker}: {e}")
+
         except Exception as e:
-            logger.error(f"Failed to verify Hedge Mode: {e}")
-            asyncio.create_task(notifier.send_alert("STARTUP ERROR", f"Could not verify Hedge Mode: {e}"))
+            logger.error(f"Failed to verify exchange settings: {e}")
+            asyncio.create_task(notifier.send_alert("STARTUP ERROR", f"Could not verify exchange settings: {e}"))
             return
 
     asyncio.create_task(notifier.send_message(f"🚀 <b>Bot Started</b>: <code>{config_base}</code> ({base_ticker})\nMode: {'PAPER' if paper_mode else 'REAL'}"))
@@ -236,7 +250,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 else:
                     m_info = await connector.get_margin_ratio()
                     # CRITICAL: Subtract reserve from margin balance before deviation calculation
-                    real_equity = m_info.get("total_margin_balance", 0.0) - siphoning_reserve
+                    raw_real_equity = m_info.get("total_margin_balance", 0.0) - siphoning_reserve
+                    
+                    # CAP: Respect initial_capital as a hard limit for working margin (per user instruction)
+                    config_initial_cap = portfolio_cfg.get("initial_capital", 39.0)
+                    real_equity = min(raw_real_equity, config_initial_cap)
+                    
+                    if raw_real_equity > config_initial_cap + 0.01:
+                        if i % 20 == 0:
+                            logger.info(f"Capital Cap Active: Using {real_equity:.2f} USDT (Config limit) instead of {raw_real_equity:.2f} USDT (Wallet)")
+                    
                     raw_positions = await connector.get_positions()
                     positions = {k: v["qty"] for k, v in raw_positions.items()}
                     l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
