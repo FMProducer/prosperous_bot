@@ -10,17 +10,15 @@ import numpy as np
 # Import functions from existing script
 from backtest_rebalance import run_backtest
 
-# Define threshold range for optimization
-THRESHOLDS = [0.001, 0.002, 0.003, 0.005, 0.008, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05]
+# Define threshold range for optimization - more realistic for rebalancing
+THRESHOLDS = [0.001, 0.002, 0.003, 0.005, 0.008, 0.01, 0.015, 0.02, 0.03, 0.05]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("Optimizer")
 
 def run_backtest_sync(config_path: str, data_dir: str, ticker: str, threshold: float):
     """Sync wrapper to run backtest in a separate process."""
-    # We use asyncio.run because run_backtest is async
     try:
-        # We need to suppress logs inside processes to keep output clean
         return asyncio.run(run_backtest(
             config_path=config_path,
             data_dir=data_dir,
@@ -51,14 +49,8 @@ async def main():
     logger.info(f"Starting threshold optimization for {len(tickers)} tickers...")
     logger.info(f"Thresholds to test: {THRESHOLDS}")
 
-    best_threshold = config["portfolios"][0].get("rebalance_threshold", 0.02)
-    max_avg_profit = -float('inf')
-    
-    # We will run backtests in parallel using ProcessPoolExecutor
-    # Optimization: One threshold at a time, parallel across tickers
-    # OR: All combinations in parallel.
-    
-    results_map = {} # threshold -> [profits]
+    # Results: threshold -> {avg_profit, avg_cycles}
+    results_map = {} 
 
     with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8)) as executor:
         loop = asyncio.get_running_loop()
@@ -66,19 +58,24 @@ async def main():
         for threshold in THRESHOLDS:
             logger.info(f"Testing threshold: {threshold:.4f}...")
             
-            # Parallelize across tickers for this threshold
             tasks = [
                 loop.run_in_executor(executor, run_backtest_sync, config_path, data_dir, ticker, threshold)
                 for ticker in tickers
             ]
             
-            ticker_results = await asyncio.gather(*tasks)
+            ticker_results = [res for res in await asyncio.gather(*tasks) if res]
             
-            profits = [res["profit_pct"] for res in ticker_results if res]
-            if profits:
-                avg_profit = sum(profits) / len(profits)
-                results_map[threshold] = avg_profit
-                logger.info(f"  Result -> Avg Profit: {avg_profit:+.4f}% | Max DD: {max([res['max_dd_pct'] for res in ticker_results if res]):.2f}%")
+            if ticker_results:
+                avg_profit = sum(res["profit_pct"] for res in ticker_results) / len(ticker_results)
+                avg_cycles = sum(res["cycles"] for res in ticker_results) / len(ticker_results)
+                max_dd = max(res['max_dd_pct'] for res in ticker_results)
+                
+                results_map[threshold] = {
+                    "profit": avg_profit,
+                    "cycles": avg_cycles,
+                    "max_dd": max_dd
+                }
+                logger.info(f"  Result -> Avg Profit: {avg_profit:+.4f}% | Avg Cycles: {avg_cycles:.1f} | Max DD: {max_dd:.2f}%")
             else:
                 logger.warning(f"  No valid results for threshold {threshold}")
 
@@ -86,13 +83,28 @@ async def main():
         logger.error("Optimization failed: no results collected.")
         return
 
-    best_threshold = max(results_map, key=results_map.get)
-    best_profit = results_map[best_threshold]
+    # Selection Logic: 
+    # 1. We MUST have rebalances. If avg_cycles < 1.0, it's a "static" threshold, not rebalancing.
+    # 2. Among those with cycles >= 1, pick the one with highest profit.
+    # 3. If NONE have cycles >= 1, pick the one with highest cycles (attempting to rebalance).
+    
+    valid_candidates = {t: v for t, v in results_map.items() if v["cycles"] >= 1.0}
+    
+    if valid_candidates:
+        best_threshold = max(valid_candidates, key=lambda k: valid_candidates[k]["profit"])
+    else:
+        # Fallback: find the one that rebalances even a little bit
+        best_threshold = max(results_map, key=lambda k: results_map[k]["cycles"])
+        logger.warning("No threshold achieved avg cycles >= 1.0. Picking threshold with maximum activity.")
+
+    best_profit = results_map[best_threshold]["profit"]
+    best_cycles = results_map[best_threshold]["cycles"]
     
     logger.info("=" * 50)
     logger.info(f"OPTIMIZATION COMPLETE")
     logger.info(f"Best Universal Threshold: {best_threshold:.4f}")
-    logger.info(f"Expected Avg Profit (3h): {best_profit:+.4f}%")
+    logger.info(f"Expected Avg Profit: {best_profit:+.4f}%")
+    logger.info(f"Expected Avg Cycles: {best_cycles:.1f}")
     logger.info("=" * 50)
 
     # Update configuration

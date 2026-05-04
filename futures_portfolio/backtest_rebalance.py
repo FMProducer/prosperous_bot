@@ -52,13 +52,14 @@ class LimitOrderSimulator:
 class PortfolioState:
     """Управление состоянием портфеля во время бэктеста."""
     def __init__(self, initial_capital: float, commission: float, targets: Dict[str, Any], threshold: float,
-                 siphoning_threshold_pct: float = 0.0, reinvestment_ratio: float = 0.0):
+                 siphoning_threshold_pct: float = 0.0, reinvestment_ratio: float = 0.0, min_notional: float = 6.0):
         self.initial_capital = Decimal(str(initial_capital))
         self.commission = Decimal(str(commission))
         self.targets = targets
         self.threshold = Decimal(str(threshold))
         self.siphoning_threshold_pct = Decimal(str(siphoning_threshold_pct))
         self.reinvestment_ratio = Decimal(str(reinvestment_ratio))
+        self.min_notional = Decimal(str(min_notional))
 
         self.real_equity = self.initial_capital
         self.siphoning_reserve = Decimal('0.0')
@@ -158,7 +159,7 @@ class PortfolioState:
             notional_l = self.positions["LONG"] * dec_price
             target_vol_l = tpv * self.l_target * self.l_lev
             diff_usdt_l = target_vol_l - notional_l
-            if abs(diff_usdt_l) >= Decimal('6.0'):
+            if abs(diff_usdt_l) >= self.min_notional:
                 self.cycles += 1
                 rebalanced = True
                 side = "BUY" if diff_usdt_l > 0 else "SELL"
@@ -176,7 +177,7 @@ class PortfolioState:
             notional_s = self.positions["SHORT"] * dec_price
             target_vol_s = tpv * self.s_target * self.s_lev
             diff_usdt_s = target_vol_s - notional_s
-            if abs(diff_usdt_s) >= Decimal('6.0'):
+            if abs(diff_usdt_s) >= self.min_notional:
                 if not rebalanced: self.cycles += 1
                 rebalanced = True
                 side = "SELL" if diff_usdt_s > 0 else "BUY"
@@ -191,7 +192,7 @@ class PortfolioState:
 
             # Action candidate: Virtual
             diff_usdt_v = (tpv * self.v_target) - virt_current_value
-            if abs(diff_usdt_v) >= Decimal('6.0'):
+            if abs(diff_usdt_v) >= self.min_notional:
                 if not rebalanced: self.cycles += 1
                 rebalanced = True
                 # Reset virtual basis
@@ -265,6 +266,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             
         siphoning_threshold_pct: float = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
         reinvestment_ratio: float = portfolio_cfg.get("reinvestment_ratio", 0.0)
+        min_notional: float = config.get("min_notional_usdt", 6.0)
         
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
         high_prices: npt.NDArray[np.float64] = df['high'].values.astype(np.float64)
@@ -273,7 +275,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         limit_enabled: bool = config.get("limit_order_enabled", use_limit_orders)
         sim: Optional[LimitOrderSimulator] = LimitOrderSimulator(commission_pct=commission, offset_pct=limit_offset_pct) if limit_enabled else None
 
-        state = PortfolioState(initial_capital, commission, targets, threshold, siphoning_threshold_pct, reinvestment_ratio)
+        state = PortfolioState(initial_capital, commission, targets, threshold, siphoning_threshold_pct, reinvestment_ratio, min_notional)
         state.init_state(close_prices[0])
 
         for i in range(len(df)):
