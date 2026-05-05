@@ -7,12 +7,13 @@
   "min_notional_usdt": 5.1,
   "max_orders_per_second": 10,
   "max_bots": 10,
-  "paper_mode_bots": 5,
+  "paper_mode_bots": 8,
   "probation_period_days": 0.041,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.042,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 20.0,
+  "max_drawdown_limit": 0.5,
+  "equity_trailing_stop_pct": 5.0,
   "telegram_enabled": true,
   "black_list": [],
   "portfolios": [
@@ -41,7 +42,21 @@
       }
     }
   ],
-  "tickers": [],
-  "live_swarm": [],
-  "base_ticker": ""
+  "tickers": [
+    "SWARMSUSDT",
+    "AIOTUSDT",
+    "TURBOUSDT",
+    "TSTUSDT",
+    "APEUSDT",
+    "PENGUUSDT",
+    "LUNA2USDT",
+    "DASHUSDT",
+    "ZECUSDT",
+    "ENAUSDT"
+  ],
+  "live_swarm": [
+    "AIOTUSDT",
+    "SWARMSUSDT"
+  ],
+  "base_ticker": "SWARMSUSDT"
 }

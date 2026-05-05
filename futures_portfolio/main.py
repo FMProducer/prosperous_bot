@@ -136,7 +136,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
     
-    equity_trailing_stop_pct = portfolio_cfg.get("equity_trailing_stop_pct", 0.0)
+    equity_trailing_stop_pct = config.get("equity_trailing_stop_pct", 0.0)
+    max_drawdown_limit = config.get("max_drawdown_limit", 0.5)
     margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
     margin_critical = portfolio_cfg.get("margin_ratio_critical", 2.0)
 
@@ -221,6 +222,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
                     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
                     max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
+                    max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
+                    equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
@@ -306,9 +309,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
 
-                # EMERGENCY STOP: If TPV drops below 50% of initial capital
-                if tpv_total < initial_tpv * 0.5:
-                    msg = f"CRITICAL: TPV {tpv_total:.2f} is less than 50% of initial {initial_tpv:.2f}. EMERGENCY STOP!"
+                # EMERGENCY STOP: If TPV drops below max_drawdown_limit %
+                drawdown_threshold = initial_tpv * (1 - max_drawdown_limit / 100)
+                if initial_tpv > 0 and tpv_total < drawdown_threshold:
+                    msg = f"CRITICAL: TPV {tpv_total:.2f} is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% drawdown limit). EMERGENCY STOP!"
                     logger.critical(msg)
                     asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
                     emit_signal("stop", base_ticker)
@@ -336,7 +340,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         if paper_mode: await save_json(paper_state_file_path, paper_state)
                         
                         # Эмитируем сигнал остановки для супервайзера
-                        emit_signal("stop", base_ticker)
+                        if tpv_total < initial_tpv:
+                            emit_signal("stop", base_ticker)
+                            logger.info("Sent STOP signal (Loss-making Trailing Stop).")
+                        else:
+                            emit_signal("exit", base_ticker)
+                            logger.info("Sent EXIT signal (Profitable Trailing Stop).")
                         
                         # Сбрасываем ATH и начальные значения, чтобы при перезапуске бот не попал в цикл стоп-лоссов
                         state["tpv_ath"] = 0.0

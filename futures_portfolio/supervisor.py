@@ -142,6 +142,9 @@ async def manage_swarm():
                     logger.warning(f"⚠️ {ticker} sent emergency STOP signal.")
                     await stop_bot(ticker)
                     new_black_list.add(ticker)
+                elif sig_type == "exit":
+                    logger.info(f"✅ {ticker} sent profitable EXIT signal.")
+                    await stop_bot(ticker)
             sig_file.unlink(missing_ok=True)
         except Exception as e:
             logger.error(f"Error processing signal {sig_file}: {e}")
