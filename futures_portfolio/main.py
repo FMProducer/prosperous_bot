@@ -309,10 +309,29 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
 
-                # EMERGENCY STOP: If TPV drops below max_drawdown_limit %
+                # Probation PnL tracking for Supervisor (window tied to probation_period_days)
+                probation_days = current_config.get("probation_period_days", 0.041)
+                probation_sec = max(900, probation_days * 86400) # Min 15 min for safety
+                
+                now = time.time()
+                last_prob_update = state.get("last_probation_update", 0)
+                if now - last_prob_update > probation_sec:
+                    old_tpv = state.get("tpv_probation_basis", tpv_total)
+                    state["profit_probation"] = tpv_total - old_tpv
+                    state["tpv_probation_basis"] = tpv_total
+                    state["last_probation_update"] = now
+                elif "profit_probation" not in state:
+                    # Fallback for compatibility or first run
+                    state["profit_probation"] = state.get("profit_1h", 0.0)
+                    if "last_probation_update" not in state:
+                        state["last_probation_update"] = now
+                        state["tpv_probation_basis"] = tpv_total
+
+                # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of initial_capital
+                # Note: initial_tpv here is the reference point for THIS run, usually initial_capital
                 drawdown_threshold = initial_tpv * (1 - max_drawdown_limit / 100)
                 if initial_tpv > 0 and tpv_total < drawdown_threshold:
-                    msg = f"CRITICAL: TPV {tpv_total:.2f} is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% drawdown limit). EMERGENCY STOP!"
+                    msg = f"CRITICAL: Total Equity {tpv_total:.2f} (including SAFE) is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% drawdown limit). EMERGENCY STOP!"
                     logger.critical(msg)
                     asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
                     emit_signal("stop", base_ticker)
@@ -340,12 +359,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         if paper_mode: await save_json(paper_state_file_path, paper_state)
                         
                         # Эмитируем сигнал остановки для супервайзера
+                        # Бот попадает в black_list (сигнал stop) только если его СУММАРНЫЙ эквити (TPV + SAFE) ниже начального капитала
                         if tpv_total < initial_tpv:
                             emit_signal("stop", base_ticker)
-                            logger.info("Sent STOP signal (Loss-making Trailing Stop).")
+                            logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Initial {initial_tpv:.2f}. Ticker blacklisted.")
                         else:
                             emit_signal("exit", base_ticker)
-                            logger.info("Sent EXIT signal (Profitable Trailing Stop).")
+                            logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Initial {initial_tpv:.2f}. Ticker remains available.")
                         
                         # Сбрасываем ATH и начальные значения, чтобы при перезапуске бот не попал в цикл стоп-лоссов
                         state["tpv_ath"] = 0.0

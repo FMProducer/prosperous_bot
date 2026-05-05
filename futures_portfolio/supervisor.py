@@ -112,6 +112,42 @@ async def start_bot(ticker: str, paper: bool = False):
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
+async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
+    """Получает реальную статистику бота из его файлов состояния."""
+    state_path = f"state_{ticker}.json"
+    paper_state_path = f"paper_state_{ticker}.json"
+    
+    state = await safe_load_json(state_path, {})
+    paper_state = await safe_load_json(paper_state_path, {})
+    
+    if not state or not paper_state:
+        return {}
+        
+    paper_balance = paper_state.get("balance", initial_capital)
+    siphoned = state.get("siphoning_reserve", 0.0)
+    cycles = state.get("rebalance_cycles", 0)
+    last_update = state.get("last_update", 0)
+    
+    # Расчет профита: (Текущий баланс - Начальный) + SAFE
+    profit_usdt = (paper_balance - initial_capital) + siphoned
+    profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
+    
+    # Используем profit_probation если он есть (рассчитывается в main.py на базе probation_period_days)
+    profit_prob_usdt = state.get("profit_probation", 0.0)
+    profit_prob_pct = (profit_prob_usdt / initial_capital) * 100 if initial_capital > 0 else 0
+    
+    # Проверка активности (если бот "завис", его стата может быть неактуальной)
+    is_active = (time.time() - last_update) < 600 if last_update > 0 else False
+    
+    return {
+        "profit": profit_pct,
+        "profit_probation": profit_prob_pct,
+        "safe": siphoned,
+        "cycles": cycles,
+        "is_active": is_active,
+        "is_real_data": True
+    }
+
 async def manage_swarm():
     logger.info("--- Starting Multi-Slot Supervisor Cycle ---")
     
@@ -119,14 +155,15 @@ async def manage_swarm():
     if not config: return
     
     max_bots = config.get("max_bots", 10)
-    paper_mode_bots = config.get("paper_mode_bots", 9)
+    paper_mode_bots = config.get("paper_mode_bots", 8)
     max_real_slots = max(0, max_bots - paper_mode_bots)
     
     probation_hours = config.get("probation_period_days", 0.125) * 24
-    backtest_days = config.get("backtest_period_days", 1.0)
+    backtest_days = config.get("backtest_period_days", 0.125) # 3 часа
     
     # 1. Сбор реальности
     running_info = await get_running_bots_info()
+    initial_capital = config['portfolios'][0].get('initial_capital', 65.0)
     
     # 2. Обработка сигналов от ботов (пассивный мониторинг)
     signal_dir = Path("signals")
@@ -152,7 +189,6 @@ async def manage_swarm():
     # 3. Анализ и Рейтинг
     logger.info("Starting scanner analysis...")
     try:
-        # Добавляем таймаут для безопасности
         scanner_results = await asyncio.wait_for(run_scanner(quiet=True, min_volume=10_000_000), timeout=60)
         scanner_tickers = [r['symbol'] for r in scanner_results]
         logger.info(f"Scanner found {len(scanner_tickers)} tickers.")
@@ -163,23 +199,41 @@ async def manage_swarm():
     eval_pool = [t for t in list(set(running_info.keys()) | set(scanner_tickers)) if t not in new_black_list]
     
     perf_dict = {}
-    logger.info(f"Starting backtest analysis for {len(eval_pool)} tickers...")
+    logger.info(f"Evaluating {len(eval_pool)} tickers (Real stats vs Backtest)...")
+    
     for symbol in eval_pool:
+        # ПРИОРИТЕТ 1: Реальная статистика для уже запущенных ботов
+        if symbol in running_info:
+            real_stats = await get_real_bot_stats(symbol, initial_capital)
+            if real_stats and real_stats['is_active']:
+                # Если бот прибыльный в реальности (общий профит > 0), мы доверяем этому больше чем бэктесту
+                if real_stats['profit'] > 0:
+                    perf_dict[symbol] = real_stats
+                    logger.info(f"📈 {symbol} (REAL STATS): Total {real_stats['profit']:.2f}%, Probation: {real_stats['profit_probation']:.2f}%, Cycles: {real_stats['cycles']}, SAFE: {real_stats['safe']:.2f}")
+                    continue # Пропускаем бэктест для реально прибыльных
+
+        # ПРИОРИТЕТ 2: Бэктест для новых кандидатов или убыточных ботов
         try:
-            # Добавляем таймаут для каждого тикера
             res = await asyncio.wait_for(run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True), timeout=30)
-            if res and res.get("profit_pct", 0) > 0 and res.get("siphoning_reserve", 0) > 0:
-                # Сохраняем и профит, и сейф для анализа
+            if res and (res.get("profit_pct", 0) > 0 or symbol in running_info):
+                # Для уже запущенных ботов, если бэктест прибыльный, а реальной статы нет/она плохая - берем бэктест
                 perf_dict[symbol] = {
                     "profit": res.get("profit_pct", 0),
-                    "safe": res.get("siphoning_reserve", 0)
+                    "safe": res.get("siphoning_reserve", 0),
+                    "is_real_data": False
                 }
         except Exception as e:
-            logger.warning(f"Backtest failed for {symbol}: {e}")
-            pass
-    logger.info("Backtest analysis complete.")
+            if symbol not in perf_dict:
+                logger.warning(f"Backtest failed for {symbol}: {e}")
 
-    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x]['profit'], reverse=True)
+    logger.info(f"Evaluation complete. Tickers with profit: {list(perf_dict.keys())}")
+
+    # Сортировка: Сначала реально прибыльные боты, затем по профиту
+    # Это гарантирует, что прибыльные боты не будут вытеснены "теоретическими" кандидатами легко
+    all_sorted = sorted(perf_dict.keys(), 
+                        key=lambda x: (perf_dict[x].get('is_real_data', False), perf_dict[x]['profit']), 
+                        reverse=True)
+    
     top_10 = all_sorted[:max_bots]
     
     # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
@@ -190,14 +244,9 @@ async def manage_swarm():
     for ticker in all_sorted:
         bot_info = running_info.get(ticker)
         perf = perf_dict.get(ticker, {})
-        backtest_profit = perf.get("profit", 0)
-        backtest_safe = perf.get("safe", 0)
+        profit = perf.get("profit", 0)
         
-        # Только если бэктест прибыльный И зафиксирован SAFE
-        if backtest_profit <= 0 or backtest_safe <= 0:
-            continue
-
-        # Если бот уже в Реале, он остается кандидатом
+        # Если бот в Реале, он остается кандидатом (если профит > 0 или он активен)
         is_already_real = bot_info and not bot_info['paper'] and bot_info['status'] == 'online'
         if is_already_real:
             ready_pool.append(ticker)
@@ -210,16 +259,17 @@ async def manage_swarm():
             elapsed_ms = now_ms - uptime_ms
             
             if elapsed_ms >= probation_ms:
-                logger.info(f"✅ {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with profit {backtest_profit:.2f}% and SAFE {backtest_safe:.2f}")
+                logger.info(f"✅ {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with profit {profit:.2f}%")
                 ready_pool.append(ticker)
             else:
                 logger.info(f"⏳ {ticker} is maturing ({elapsed_ms/3600000:.2f}h / {probation_hours:.2f}h)")
 
-    # Сортируем ВСЕХ готовых по текущей прибыли бэктеста
-    ready_pool.sort(key=lambda x: perf_dict.get(x, {}).get('profit', 0), reverse=True)
+    # Сортировка REAL пула (приоритет реальным данным)
+    ready_pool.sort(key=lambda x: (perf_dict.get(x, {}).get('is_real_data', False), perf_dict.get(x, {}).get('profit', 0)), reverse=True)
     target_real_bots = ready_pool[:max_real_slots]
     
-    logger.info(f"🎯 Target REAL bots (Best of Ready): {target_real_bots}")
+    logger.info(f"🎯 Target REAL bots: {target_real_bots}")
+
     
     # 5. ИСПОЛНЕНИЕ
     for ticker, info in running_info.items():
