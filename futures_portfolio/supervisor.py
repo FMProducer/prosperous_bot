@@ -196,107 +196,127 @@ async def manage_swarm():
         logger.error(f"Scanner failed or timed out: {e}")
         scanner_tickers = []
     
-    eval_pool = [t for t in list(set(running_info.keys()) | set(scanner_tickers)) if t not in new_black_list]
-    
+    # ПУЛЫ: Разделяем запущенных и кандидатов
     perf_dict = {}
-    logger.info(f"Evaluating {len(eval_pool)} tickers (Real stats vs Backtest)...")
     
-    for symbol in eval_pool:
-        # ПРИОРИТЕТ 1: Реальная статистика для уже запущенных ботов
-        if symbol in running_info:
-            real_stats = await get_real_bot_stats(symbol, initial_capital)
-            if real_stats and real_stats['is_active']:
-                # Если бот прибыльный в реальности (общий профит > 0), мы доверяем этому больше чем бэктесту
-                if real_stats['profit'] > 0:
-                    perf_dict[symbol] = real_stats
-                    logger.info(f"📈 {symbol} (REAL STATS): Total {real_stats['profit']:.2f}%, Probation: {real_stats['profit_probation']:.2f}%, Cycles: {real_stats['cycles']}, SAFE: {real_stats['safe']:.2f}")
-                    continue # Пропускаем бэктест для реально прибыльных
+    # 3.1. Оцениваем ЗАПУЩЕННЫХ ботов (ТОЛЬКО РЕАЛЬНАЯ СТАТИСТИКА)
+    logger.info(f"Evaluating {len(running_info)} running bots (REAL stats only)...")
+    for symbol in running_info:
+        if symbol in new_black_list: continue
+        real_stats = await get_real_bot_stats(symbol, initial_capital)
+        if real_stats and real_stats['is_active']:
+            perf_dict[symbol] = real_stats
+            logger.info(f"📈 {symbol} (RUNNING): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
+        else:
+            logger.warning(f"⚠️ {symbol} is running but has no valid state or inactive.")
 
-        # ПРИОРИТЕТ 2: Бэктест для новых кандидатов или убыточных ботов
+    # 3.2. Оцениваем КАНДИДАТОВ из сканера (БЭКТЕСТ)
+    candidates = [t for t in scanner_tickers if t not in perf_dict and t not in new_black_list]
+    logger.info(f"Evaluating {len(candidates)} scanner candidates (Backtest only)...")
+    
+    for symbol in candidates:
         try:
             res = await asyncio.wait_for(run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True), timeout=30)
-            if res and (res.get("profit_pct", 0) > 0 or symbol in running_info):
-                # Для уже запущенных ботов, если бэктест прибыльный, а реальной статы нет/она плохая - берем бэктест
+            if res and res.get("profit_pct", 0) > 0:
                 perf_dict[symbol] = {
                     "profit": res.get("profit_pct", 0),
                     "safe": res.get("siphoning_reserve", 0),
                     "is_real_data": False
                 }
-        except Exception as e:
-            if symbol not in perf_dict:
-                logger.warning(f"Backtest failed for {symbol}: {e}")
+        except Exception: pass
 
-    logger.info(f"Evaluation complete. Tickers with profit: {list(perf_dict.keys())}")
-
-    # Сортировка: Сначала реально прибыльные боты, затем по профиту
-    # Это гарантирует, что прибыльные боты не будут вытеснены "теоретическими" кандидатами легко
-    all_sorted = sorted(perf_dict.keys(), 
-                        key=lambda x: (perf_dict[x].get('is_real_data', False), perf_dict[x]['profit']), 
-                        reverse=True)
-    
-    top_10 = all_sorted[:max_bots]
+    # Сортировка всего пула по профиту
+    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x]['profit'], reverse=True)
     
     # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
     ready_pool = []
     now_ms = time.time() * 1000
     probation_ms = probation_hours * 3600 * 1000
 
+    logger.info(f"Selecting champions (Max REAL slots: {max_real_slots})...")
     for ticker in all_sorted:
-        bot_info = running_info.get(ticker)
         perf = perf_dict.get(ticker, {})
         profit = perf.get("profit", 0)
+        bot_info = running_info.get(ticker)
         
-        # Если бот в Реале, он остается кандидатом (если профит > 0 или он активен)
+        # УСЛОВИЕ 1: Только прибыльные боты могут быть в REAL
+        if profit <= 0:
+            continue
+
+        # УСЛОВИЕ 2: Если бот уже в Реале, он остается в пуле готовых
         is_already_real = bot_info and not bot_info['paper'] and bot_info['status'] == 'online'
         if is_already_real:
             ready_pool.append(ticker)
             continue
 
-        # Если бот в Песочнице, проверяем время
+        # УСЛОВИЕ 3: Если бот в Песочнице, проверяем время
         is_in_paper = bot_info and bot_info['paper'] and bot_info['status'] == 'online'
         if is_in_paper:
             uptime_ms = bot_info.get('uptime', 0)
             elapsed_ms = now_ms - uptime_ms
             
             if elapsed_ms >= probation_ms:
-                logger.info(f"✅ {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with profit {profit:.2f}%")
+                logger.info(f"🏆 {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with real profit {profit:.2f}%")
                 ready_pool.append(ticker)
             else:
-                logger.info(f"⏳ {ticker} is maturing ({elapsed_ms/3600000:.2f}h / {probation_hours:.2f}h)")
+                logger.info(f"⏳ {ticker} maturing: {elapsed_ms/3600000:.2f}h < {probation_hours:.2f}h")
 
-    # Сортировка REAL пула (приоритет реальным данным)
-    ready_pool.sort(key=lambda x: (perf_dict.get(x, {}).get('is_real_data', False), perf_dict.get(x, {}).get('profit', 0)), reverse=True)
+    # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
+    ready_pool.sort(key=lambda x: perf_dict[x]['profit'], reverse=True)
     target_real_bots = ready_pool[:max_real_slots]
     
-    logger.info(f"🎯 Target REAL bots: {target_real_bots}")
-
+    # ИТОГОВЫЙ СПИСОК (всего max_bots слотов)
+    final_swarm = []
+    final_swarm.extend(target_real_bots)
     
+    # Дозабиваем остаток PAPER слотов из топа всех прибыльных (включая новых кандидатов)
+    for ticker in all_sorted:
+        if len(final_swarm) >= max_bots: break
+        if ticker not in final_swarm:
+            final_swarm.append(ticker)
+    
+    logger.info(f"🎯 Target REAL (PnL > 0 only): {target_real_bots}")
+    logger.info(f"📦 Total Swarm ({len(final_swarm)}): {final_swarm}")
+
     # 5. ИСПОЛНЕНИЕ
-    for ticker, info in running_info.items():
-        if not info['paper'] and ticker not in target_real_bots:
-            logger.info(f"🚫 Removing OLD REAL bot: {ticker}")
-            await stop_bot(ticker)
-
-    for ticker in target_real_bots:
-        if ticker not in running_info or running_info[ticker]['paper']:
-            logger.info(f"🏆 Promoting to REAL: {ticker}")
-            await stop_bot(ticker)
-            await start_bot(ticker, paper=False)
-
     current_pm2 = await get_running_bots_info()
-    for ticker in (set(current_pm2.keys()) - set(top_10)):
-        if ticker not in target_real_bots:
+    
+    # Сначала останавливаем тех, кто не в финальном списке ИЛИ должен сменить режим (Paper -> Real)
+    for ticker, info in current_pm2.items():
+        # Если бота вообще нет в новом списке
+        if ticker not in final_swarm:
+            logger.info(f"🚫 Stopping bot (not in top): {ticker}")
+            await stop_bot(ticker)
+            continue
+            
+        # Если бот должен быть REAL, а он PAPER
+        should_be_real = ticker in target_real_bots
+        if should_be_real and info['paper']:
+            logger.info(f"🔄 Switching {ticker} from PAPER to REAL")
+            await stop_bot(ticker)
+            
+        # Если бот должен быть PAPER, а он REAL
+        if not should_be_real and not info['paper']:
+            logger.info(f"📉 Demoting {ticker} from REAL to PAPER")
             await stop_bot(ticker)
 
-    for ticker in top_10:
-        if ticker in target_real_bots: continue
-        if ticker not in current_pm2 or not current_pm2[ticker]['paper']:
-            await start_bot(ticker, paper=True)
+    # Теперь запускаем тех, кто не запущен в нужном режиме
+    updated_pm2 = await get_running_bots_info()
+    for ticker in final_swarm:
+        should_be_real = ticker in target_real_bots
+        
+        if ticker not in updated_pm2:
+            await start_bot(ticker, paper=(not should_be_real))
+        else:
+            # На всякий случай проверяем режим еще раз
+            if updated_pm2[ticker]['paper'] != (not should_be_real):
+                await stop_bot(ticker)
+                await start_bot(ticker, paper=(not should_be_real))
 
     # 6. Финализация конфига (принудительное обновление)
-    config["tickers"] = top_10
+    config["tickers"] = final_swarm
     config["live_swarm"] = sorted(target_real_bots)
-    config["base_ticker"] = all_sorted[0] if all_sorted else "BTCUSDT"
+    config["base_ticker"] = final_swarm[0] if final_swarm else "BTCUSDT"
     config["black_list"] = sorted(list(new_black_list))
     
     logger.info(f"Writing to config: tickers={len(config['tickers'])}, swarm={config['live_swarm']}")
