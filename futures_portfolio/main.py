@@ -145,29 +145,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
     margin_critical = portfolio_cfg.get("margin_ratio_critical", 2.0)
 
-    if paper_mode:
-        default_paper_state = {
-            "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
-            "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
-            "last_price": 0.0,
-            "base_ticker": base_ticker,
-            "long_entry_price": 0.0,
-            "short_entry_price": 0.0
-        }
-        paper_state = await load_json(paper_state_file_path, default_paper_state)
+    # Initialize paper_state for shadow balance tracking (Used in both PAPER and REAL modes for isolation)
+    default_paper_state = {
+        "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
+        "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+        "last_price": 0.0,
+        "base_ticker": base_ticker,
+        "long_entry_price": 0.0,
+        "short_entry_price": 0.0
+    }
+    paper_state = await load_json(paper_state_file_path, default_paper_state)
 
-        if paper_state.get("base_ticker") != base_ticker:
-            logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
-            paper_state["last_price"] = 0.0
-            paper_state["base_ticker"] = base_ticker
+    if paper_state.get("base_ticker") != base_ticker:
+        logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
+        paper_state["last_price"] = 0.0
+        paper_state["base_ticker"] = base_ticker
+        paper_state["balance"] = max_capital_usdt if max_capital_usdt > 0 else 10000.0
+        paper_state["positions"] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+        paper_state["long_entry_price"] = 0.0
+        paper_state["short_entry_price"] = 0.0
 
-        if "positions" not in paper_state: paper_state["positions"] = {}
-        if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
-        if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
-        if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
-        if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
-    else:
-        paper_state = None
+    if "positions" not in paper_state: paper_state["positions"] = {}
+    if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
+    if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
+    if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
+    if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
 
     # Инициализация уведомлений
     notifier = TelegramNotifier()
@@ -243,54 +245,42 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 real_equity: float = 0.0
                 positions: Dict[str, float] = {}
 
+                # ALWAYS use shadow balance (paper_state) for real_equity calculation to support shared accounts
+                # This ensures per-bot PnL isolation and prevents double-counting of account-wide profit
                 if paper_mode:
                     paper_state["last_price"] = price
                     l_qty = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
                     s_qty = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
-                    u_pnl = l_qty * (price - paper_state.get("long_entry_price", price)) + \
-                            s_qty * (paper_state.get("short_entry_price", price) - price)
-
-                    real_equity = paper_state["balance"] + u_pnl
-                    positions = paper_state["positions"]
                     l_entry = paper_state.get("long_entry_price", price)
                     s_entry = paper_state.get("short_entry_price", price)
                     m_info = {}
                 else:
-                    m_info = await connector.get_margin_ratio()
-                    # CRITICAL: Subtract reserve from margin balance before deviation calculation
-                    raw_real_equity = m_info.get("total_margin_balance", 0.0) - siphoning_reserve
-                    
-                    # CAP: Respect initial_capital as a hard limit for working margin (per user instruction)
-                    config_initial_cap = portfolio_cfg.get("initial_capital", 39.0)
-                    real_equity = min(raw_real_equity, config_initial_cap)
-                    
-                    if raw_real_equity > config_initial_cap + 0.01:
-                        if i % 20 == 0:
-                            logger.info(f"Capital Cap Active: Using {real_equity:.2f} USDT (Config limit) instead of {raw_real_equity:.2f} USDT (Wallet)")
-                    
+                    # In REAL mode, we sync positions from exchange but keep balance in shadow
                     raw_positions = await connector.get_positions()
-                    positions = {k: v["qty"] for k, v in raw_positions.items()}
+                    # Filter for this ticker only
+                    ticker_positions = {k: v["qty"] for k, v in raw_positions.items() if base_ticker in k}
+                    l_qty = abs(ticker_positions.get(f"{base_ticker}_LONG", 0.0))
+                    s_qty = abs(ticker_positions.get(f"{base_ticker}_SHORT", 0.0))
                     l_entry = raw_positions.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
                     s_entry = raw_positions.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+                    
+                    # For logging and safety only
+                    m_info = await connector.get_margin_ratio()
+                    
+                # Calculate isolated PnL and Equity
+                u_pnl = l_qty * (price - l_entry) + s_qty * (s_entry - price)
+                real_equity = paper_state["balance"] + u_pnl
+                positions = paper_state["positions"] if paper_mode else {k: v for k, v in ticker_positions.items()}
 
                 if virt_basis_price == 0 or initial_tpv == 0:
                     if virt_basis_price == 0:
                         virt_basis_price = price
                         virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
                     if initial_tpv == 0:
-                        config_initial_cap = portfolio_cfg.get("initial_capital", real_equity)
-                        
-                        # Use executor for initial TPV calculation
-                        loop = asyncio.get_running_loop()
-                        initial_calc_res = await loop.run_in_executor(
-                            process_executor, calculate_portfolio_task,
-                            positions, price, real_equity, virt_basis_price, virt_allocated_usdt,
-                            base_ticker, 0.0, targets, config_initial_cap, -1.0, True,
-                            l_entry, s_entry
-                        )
-                        initial_tpv = initial_calc_res["tpv"]
+                        # For shared accounts, we MUST use assigned initial_capital as base
+                        initial_tpv = portfolio_cfg.get("initial_capital", real_equity)
                         reference_tpv = initial_tpv
-                        logger.info(f"Initialized TPV base: {initial_tpv:.2f} (from {'config' if 'initial_capital' in portfolio_cfg else 'current equity'})")
+                        logger.info(f"Initialized TPV base: {initial_tpv:.2f} (Isolated Shadow Balance)")
 
                     state.update({
                         "virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt,
@@ -368,8 +358,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if paper_mode:
                                     paper_state["positions"][pos_key] = 0.0
                                 else:
+                                    # In REAL mode, close real position AND update shadow state
                                     await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
-                            if paper_mode: await save_json(paper_state_file_path, paper_state)
+                                    paper_state["positions"][pos_key] = 0.0
+                                    
+                            # Always update shadow entry prices and save state
+                            paper_state["long_entry_price"] = 0.0
+                            paper_state["short_entry_price"] = 0.0
+                            await save_json(paper_state_file_path, paper_state)
                             
                             # Set paper probation timeout (from probation_period_days)
                             probation_days = current_config.get("probation_period_days", 0.041)
@@ -477,61 +473,64 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 trade_pnl = res.get("trade_pnl", 0.0)
                                 reduce_only = res.get("reduce_only", False)
 
-                                if paper_mode:
-                                    pos_key = f"{base_ticker}_{pos_side}"
-                                    old_qty = paper_state["positions"].get(pos_key, 0.0)
-                                    entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                                    # CRITICAL FIX: If entry price is 0.0, use current price to prevent fake collapse
-                                    old_entry = paper_state.get(entry_key, price)
-                                    if old_entry <= 0: old_entry = price
+                                # Shadow accounting for BOTH paper and real modes to support per-bot isolation
+                                pos_key = f"{base_ticker}_{pos_side}"
+                                old_qty = paper_state["positions"].get(pos_key, 0.0)
+                                entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                                old_entry = paper_state.get(entry_key, price)
+                                if old_entry <= 0: old_entry = price
 
-                                    if trade_pnl == 0.0 and reduce_only:
-                                        if pos_side == "LONG":
-                                            trade_pnl = qty * (price - old_entry)
-                                        else:
-                                            trade_pnl = qty * (old_entry - price)
+                                if trade_pnl == 0.0 and reduce_only:
+                                    if pos_side == "LONG":
+                                        trade_pnl = qty * (price - old_entry)
+                                    else:
+                                        trade_pnl = qty * (old_entry - price)
 
-                                    new_qty = (old_qty + qty) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty)
-                                    
-                                    if not reduce_only:
-                                        curr_q = abs(old_qty)
-                                        paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
-                                    
-                                    paper_state["positions"][pos_key] = new_qty
-                                    paper_state["balance"] += trade_pnl
-                                    paper_state["balance"] -= res.get("commission", 0.0)
-                                    
-                                    trade_log = f"📝 PAPER: {side} {qty} {pos_key} @ {price:.6g}"
-                                    if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
-                                    logger.info(trade_log)
-                                    asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
-                                else:
-                                    logger.info(f"✅ REAL: {side} {key} order filled. Status: {status}")
+                                new_qty = (old_qty + qty) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty)
+                                
+                                if not reduce_only:
+                                    curr_q = abs(old_qty)
+                                    paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
+                                
+                                paper_state["positions"][pos_key] = new_qty
+                                paper_state["balance"] += trade_pnl
+                                paper_state["balance"] -= res.get("commission", 0.0)
+                                
+                                mode_tag = "PAPER" if paper_mode else "REAL"
+                                trade_log = f"📝 {mode_tag}: {side} {qty} {pos_key} @ {price:.6g}"
+                                if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
+                                logger.info(trade_log)
+                                asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
                             else:
                                 logger.warning(f"❌ {side} {key} execution status: {status}. Message: {res.get('message')}")
 
                         cycles += 1
                         state["rebalance_cycles"] = cycles
 
-                        if paper_mode:
-                            await save_json(paper_state_file_path, paper_state)
+                        # Always save paper_state to track shadow balance
+                        await save_json(paper_state_file_path, paper_state)
 
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
                 if actions and len(valid_actions) > 0:
+                    # ALWAYS use shadow balance (paper_state) for siphoning calculation to support shared accounts
+                    # This prevents multiple bots on the same account from siphoning the same global profit.
+                    l_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
+                    s_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
+                    
                     if paper_mode:
-                        l_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
-                        s_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
-                        u_pnl = l_qty_p * (price - paper_state.get("long_entry_price", price)) + \
-                                s_qty_p * (paper_state.get("short_entry_price", price) - price)
-                        safe_real_equity = paper_state["balance"] + u_pnl
-                        safe_positions = paper_state["positions"]
+                        u_pnl_p = l_qty_p * (price - paper_state.get("long_entry_price", price)) + \
+                                  s_qty_p * (paper_state.get("short_entry_price", price) - price)
+                        safe_l_entry = paper_state.get("long_entry_price", price)
+                        safe_s_entry = paper_state.get("short_entry_price", price)
                     else:
-                        m_info_new = await connector.get_margin_ratio()
-                        safe_real_equity = m_info_new.get("total_margin_balance", 0.0) - siphoning_reserve
+                        # In real mode, use exchange entry prices for better accuracy
                         raw_positions_new = await connector.get_positions()
-                        safe_positions = {k: v["qty"] for k, v in raw_positions_new.items()}
                         safe_l_entry = raw_positions_new.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
                         safe_s_entry = raw_positions_new.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
+                        u_pnl_p = l_qty_p * (price - safe_l_entry) + s_qty_p * (safe_s_entry - price)
+                        
+                    safe_real_equity = paper_state["balance"] + u_pnl_p
+                    safe_positions = paper_state["positions"]
                 else:
                     safe_real_equity = real_equity
                     safe_positions = positions
@@ -542,8 +541,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     safe_l_entry = paper_state.get("long_entry_price", price)
                     safe_s_entry = paper_state.get("short_entry_price", price)
 
-                # Calculate surplus using CURRENT virtual parameters (Basis price was reset ONLY if rebalance happened)
-                # Re-calculate in separate process to get final TPV for siphoning
+                # Calculate surplus using CURRENT virtual parameters
+                loop = asyncio.get_running_loop()
                 safe_calc_res = await loop.run_in_executor(
                     process_executor, calculate_portfolio_task,
                     safe_positions, price, safe_real_equity,
@@ -564,9 +563,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     
                     if siphon_amount > 0.1:
                         siphoning_reserve += siphon_amount
-                        if paper_mode:
-                            paper_state["balance"] -= siphon_amount
-                            await save_json(paper_state_file_path, paper_state)
+                        # ALWAYS subtract from shadow balance to track isolated per-bot equity
+                        paper_state["balance"] -= siphon_amount
+                        await save_json(paper_state_file_path, paper_state)
 
                         state["siphoning_reserve"] = siphoning_reserve
                         logger.info(f"💰 SAFE ACTIVATED: Siphoned {siphon_amount:.4f} USDT. New Reserve: {siphoning_reserve:.2f}")
@@ -630,6 +629,8 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
             await save_json(paper_state_file_path, paper_state)
     else:
         raw_positions = await connector.get_positions()
+        # Load paper_state even in real mode for sync
+        paper_state = await load_json(paper_state_file_path, {})
         for pos_key, data in raw_positions.items():
             if base_ticker in pos_key:
                 qty = data["qty"]
@@ -646,6 +647,13 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                         position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
                         min_notional=0.0
                     )
+                    if paper_state and "positions" in paper_state:
+                        paper_state["positions"][pos_key] = 0.0
+        
+        if paper_state:
+            paper_state["long_entry_price"] = 0.0
+            paper_state["short_entry_price"] = 0.0
+            await save_json(paper_state_file_path, paper_state)
 
     # Сброс состояния
     state = await load_json(state_file_path, {})

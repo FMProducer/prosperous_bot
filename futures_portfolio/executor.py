@@ -357,6 +357,48 @@ class PortfolioExecutor:
                         reduce_only=reduce_only, position_side=pos_side, min_notional=float(min_notional), price=price
                     )
 
+                # Shadow tracking for REAL orders to support multi-bot isolated equity
+                executed_qty = Decimal('0.0')
+                avg_price = dec_price
+                
+                if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                    # Try to extract actual fill data from Binance response
+                    if "result" in res and isinstance(res["result"], dict):
+                        executed_qty = Decimal(str(res["result"].get("executedQty", order_qty)))
+                        avg_price = Decimal(str(res["result"].get("avgPrice", price)))
+                        if avg_price <= 0: avg_price = dec_price
+                    elif "filled_qty" in res: # From execute_limit_with_fallback
+                        executed_qty = Decimal(str(res["filled_qty"]))
+                        avg_price = Decimal(str(res.get("avg_price", price)))
+                    else:
+                        executed_qty = order_qty
+
+                    # Calculate commission (0.04% for market, 0.02% for limit maker)
+                    comm_rate = Decimal('0.0002') if res["status"] == "SUCCESS_LIMIT" else Decimal('0.0004')
+                    commission = (executed_qty * avg_price) * comm_rate
+                    
+                    trade_pnl = Decimal('0.0')
+                    if paper_state and reduce_only:
+                        entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                        old_entry = Decimal(str(paper_state.get(entry_key, avg_price)))
+                        if pos_side == "LONG":
+                            trade_pnl = executed_qty * (avg_price - old_entry)
+                        else:
+                            trade_pnl = executed_qty * (old_entry - avg_price)
+
+                    return {
+                        "type": pos_side,
+                        "symbol": symbol,
+                        "side": side,
+                        "qty": float(executed_qty),
+                        "price": float(avg_price),
+                        "status": res["status"],
+                        "exec_res": res,
+                        "reduce_only": reduce_only,
+                        "trade_pnl": float(trade_pnl),
+                        "commission": float(commission)
+                    }
+                
                 return {
                     "type": pos_side,
                     "symbol": symbol,
@@ -366,7 +408,8 @@ class PortfolioExecutor:
                     "status": res["status"],
                     "exec_res": res,
                     "reduce_only": reduce_only,
-                    "trade_pnl": 0.0 # В реальном режиме PnL определяется биржей
+                    "trade_pnl": 0.0,
+                    "commission": 0.0
                 }
 
     async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:
