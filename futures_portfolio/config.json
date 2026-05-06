@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -13,7 +13,7 @@
   "supervisor_interval_days": 0.042,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 5.0,
-  "equity_trailing_stop_pct": 5.0,
+  "equity_trailing_stop_pct": 2.0,
   "telegram_enabled": true,
   "black_list": [],
   "portfolios": [
@@ -43,20 +43,20 @@
     }
   ],
   "tickers": [
-    "WIFUSDT",
-    "ARUSDT",
-    "STXUSDT",
-    "EIGENUSDT",
-    "SWARMSUSDT",
-    "ONTUSDT",
-    "CFXUSDT",
     "FARTCOINUSDT",
-    "STRKUSDT",
-    "GALAUSDT"
+    "DOGSUSDT",
+    "ZROUSDT",
+    "FILUSDT",
+    "VIRTUALUSDT",
+    "MORPHOUSDT",
+    "PARTIUSDT",
+    "1000BONKUSDT",
+    "BABYUSDT",
+    "SWARMSUSDT"
   ],
   "live_swarm": [
-    "ARUSDT",
-    "WIFUSDT"
+    "DOGSUSDT",
+    "FARTCOINUSDT"
   ],
-  "base_ticker": "WIFUSDT"
+  "base_ticker": "FARTCOINUSDT"
 }
