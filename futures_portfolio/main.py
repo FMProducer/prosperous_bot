@@ -108,6 +108,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "initial_tpv": 0.0,
         "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
         "tpv_ath": 0.0,
+        "trailing_stop_violation_start": 0.0,
+        "trailing_stop_paper_timeout_end": 0.0,
         "rebalance_cycles": 0,
         "started_at": time.time()
     })
@@ -120,6 +122,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         state["initial_tpv"] = 0.0 
         state["reference_tpv"] = 0.0
         state["tpv_ath"] = 0.0
+        state["trailing_stop_violation_start"] = 0.0
+        state["trailing_stop_paper_timeout_end"] = 0.0
         state["base_ticker"] = base_ticker
         state["started_at"] = time.time()
         await save_json(state_file_path, state)
@@ -224,6 +228,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
                     max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
                     equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
+                    equity_trailing_stop_timeout_sec = current_config.get("equity_trailing_stop_timeout_sec", 0.0)
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
@@ -345,38 +350,59 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                     drawdown_pct = (1 - tpv_total / tpv_ath) * 100
                     if drawdown_pct >= equity_trailing_stop_pct:
-                        msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH. Closing all positions for {base_ticker}."
-                        logger.warning(f"!!! [STOP] {msg}")
-                        asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
-                        for pos_key, qty in positions.items():
-                            if qty == 0 or base_ticker not in pos_key: continue
-                            side = "SELL" if qty > 0 else "BUY"
-                            step_size = step_sizes.get(base_ticker, 0.0)
-                            if paper_mode:
-                                paper_state["positions"][pos_key] = 0.0
+                        violation_start = state.get("trailing_stop_violation_start", 0.0)
+                        if violation_start == 0:
+                            violation_start = now
+                            state["trailing_stop_violation_start"] = violation_start
+                            logger.warning(f"Trailing Stop threshold breached ({drawdown_pct:.2f}%). Timeout: {equity_trailing_stop_timeout_sec}s")
+                        
+                        elapsed = now - violation_start
+                        if elapsed >= equity_trailing_stop_timeout_sec:
+                            msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH for {elapsed:.1f}s. Closing all positions for {base_ticker}."
+                            logger.warning(f"!!! [STOP] {msg}")
+                            asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
+                            for pos_key, qty in positions.items():
+                                if qty == 0 or base_ticker not in pos_key: continue
+                                side = "SELL" if qty > 0 else "BUY"
+                                step_size = step_sizes.get(base_ticker, 0.0)
+                                if paper_mode:
+                                    paper_state["positions"][pos_key] = 0.0
+                                else:
+                                    await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
+                            if paper_mode: await save_json(paper_state_file_path, paper_state)
+                            
+                            # Set paper probation timeout (from probation_period_days)
+                            probation_days = current_config.get("probation_period_days", 0.041)
+                            timeout_end = now + probation_days * 86400
+                            state["trailing_stop_paper_timeout_end"] = timeout_end
+                            logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
+
+                            # Эмитируем сигнал остановки для супервайзера
+                            if tpv_total < initial_tpv:
+                                emit_signal("stop", base_ticker)
+                                logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Initial {initial_tpv:.2f}. Ticker blacklisted.")
                             else:
-                                await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
-                        if paper_mode: await save_json(paper_state_file_path, paper_state)
-                        
-                        # Эмитируем сигнал остановки для супервайзера
-                        # Бот попадает в black_list (сигнал stop) только если его СУММАРНЫЙ эквити (TPV + SAFE) ниже начального капитала
-                        if tpv_total < initial_tpv:
-                            emit_signal("stop", base_ticker)
-                            logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Initial {initial_tpv:.2f}. Ticker blacklisted.")
+                                emit_signal("exit", base_ticker)
+                                logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Initial {initial_tpv:.2f}. Ticker remains available.")
+                            
+                            # Сбрасываем ATH и начальные значения
+                            state["tpv_ath"] = 0.0
+                            state["initial_tpv"] = 0.0
+                            state["reference_tpv"] = 0.0
+                            state["virt_basis_price"] = 0.0
+                            state["trailing_stop_triggered"] = True
+                            state["trailing_stop_violation_start"] = 0.0
+                            await save_json(state_file_path, state)
+                            
+                            logger.info("Positions closed and state reset. Bot stopped.")
+                            break
                         else:
-                            emit_signal("exit", base_ticker)
-                            logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Initial {initial_tpv:.2f}. Ticker remains available.")
-                        
-                        # Сбрасываем ATH и начальные значения, чтобы при перезапуске бот не попал в цикл стоп-лоссов
-                        state["tpv_ath"] = 0.0
-                        state["initial_tpv"] = 0.0
-                        state["reference_tpv"] = 0.0
-                        state["virt_basis_price"] = 0.0
-                        state["trailing_stop_triggered"] = True
-                        await save_json(state_file_path, state)
-                        
-                        logger.info("Positions closed and state reset. Bot stopped.")
-                        break
+                            if i % 5 == 0:
+                                logger.info(f"Trailing Stop Pending: {drawdown_pct:.2f}% (Wait {equity_trailing_stop_timeout_sec - elapsed:.1f}s more)")
+                    else:
+                        if state.get("trailing_stop_violation_start", 0.0) > 0:
+                            logger.info(f"Trailing Stop Recovered: drawdown {drawdown_pct:.2f}% is back below {equity_trailing_stop_pct}%")
+                            state["trailing_stop_violation_start"] = 0.0
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:

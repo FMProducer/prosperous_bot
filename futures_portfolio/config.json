@@ -12,7 +12,7 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.042,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 1.0,
+  "max_drawdown_limit": 5.0,
   "equity_trailing_stop_pct": 5.0,
   "telegram_enabled": true,
   "black_list": [],
@@ -42,7 +42,21 @@
       }
     }
   ],
-  "tickers": [],
-  "live_swarm": [],
-  "base_ticker": ""
+  "tickers": [
+    "WIFUSDT",
+    "ARUSDT",
+    "STXUSDT",
+    "EIGENUSDT",
+    "SWARMSUSDT",
+    "ONTUSDT",
+    "CFXUSDT",
+    "FARTCOINUSDT",
+    "STRKUSDT",
+    "GALAUSDT"
+  ],
+  "live_swarm": [
+    "ARUSDT",
+    "WIFUSDT"
+  ],
+  "base_ticker": "WIFUSDT"
 }

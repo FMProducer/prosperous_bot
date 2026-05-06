@@ -145,7 +145,8 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
         "safe": siphoned,
         "cycles": cycles,
         "is_active": is_active,
-        "is_real_data": True
+        "is_real_data": True,
+        "trailing_stop_paper_timeout_end": state.get("trailing_stop_paper_timeout_end", 0.0)
     }
 
 async def manage_swarm():
@@ -199,18 +200,23 @@ async def manage_swarm():
     # ПУЛЫ: Разделяем запущенных и кандидатов
     perf_dict = {}
     
-    # 3.1. Оцениваем ЗАПУЩЕННЫХ ботов (ТОЛЬКО РЕАЛЬНАЯ СТАТИСТИКА)
-    logger.info(f"Evaluating {len(running_info)} running bots (REAL stats only)...")
-    for symbol in running_info:
-        if symbol in new_black_list: continue
-        real_stats = await get_real_bot_stats(symbol, initial_capital)
-        if real_stats and real_stats['is_active']:
-            perf_dict[symbol] = real_stats
-            logger.info(f"📈 {symbol} (RUNNING): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
-        else:
-            logger.warning(f"⚠️ {symbol} is running but has no valid state or inactive.")
+    # 3.1. Оцениваем ВСЕХ ботов с реальной историей (The Fact Protocol)
+    # Сканируем все файлы state_*.json в директории
+    logger.info("Scanning for real bot states...")
+    for state_file in Path(".").glob("state_*.json"):
+        ticker = state_file.stem.replace("state_", "")
+        if ticker in new_black_list: continue
+        
+        real_stats = await get_real_bot_stats(ticker, initial_capital)
+        if real_stats:
+            # Бот считается "валидным" для ротации если он либо запущен, 
+            # либо у него положительный профит (мы не удаляем прибыльных)
+            if real_stats['profit'] > 0 or ticker in running_info:
+                perf_dict[ticker] = real_stats
+                status = "RUNNING" if ticker in running_info else "STOPPED"
+                logger.info(f"📈 {ticker} ({status}): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
 
-    # 3.2. Оцениваем КАНДИДАТОВ из сканера (БЭКТЕСТ)
+    # 3.2. Оцениваем КАНДИДАТОВ из сканера (БЭКТЕСТ) - только если их нет в perf_dict
     candidates = [t for t in scanner_tickers if t not in perf_dict and t not in new_black_list]
     logger.info(f"Evaluating {len(candidates)} scanner candidates (Backtest only)...")
     
@@ -221,7 +227,8 @@ async def manage_swarm():
                 perf_dict[symbol] = {
                     "profit": res.get("profit_pct", 0),
                     "safe": res.get("siphoning_reserve", 0),
-                    "is_real_data": False
+                    "is_real_data": False,
+                    "trailing_stop_paper_timeout_end": 0.0
                 }
         except Exception: pass
 
@@ -230,7 +237,8 @@ async def manage_swarm():
     
     # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
     ready_pool = []
-    now_ms = time.time() * 1000
+    now = time.time()
+    now_ms = now * 1000
     probation_ms = probation_hours * 3600 * 1000
 
     logger.info(f"Selecting champions (Max REAL slots: {max_real_slots})...")
@@ -238,18 +246,25 @@ async def manage_swarm():
         perf = perf_dict.get(ticker, {})
         profit = perf.get("profit", 0)
         bot_info = running_info.get(ticker)
+        ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
         
         # УСЛОВИЕ 1: Только прибыльные боты могут быть в REAL
         if profit <= 0:
             continue
+            
+        # УСЛОВИЕ 2: Трейлинг-Стоп Таймаут (Бумажная пробация)
+        if now < ts_timeout_end:
+            remaining = ts_timeout_end - now
+            logger.info(f"🛡 {ticker} in TRAILING STOP PROBATION. Remaining: {remaining/3600:.2f}h. Restricted to PAPER.")
+            continue
 
-        # УСЛОВИЕ 2: Если бот уже в Реале, он остается в пуле готовых
+        # УСЛОВИЕ 3: Если бот уже в Реале, он остается в пуле готовых
         is_already_real = bot_info and not bot_info['paper'] and bot_info['status'] == 'online'
         if is_already_real:
             ready_pool.append(ticker)
             continue
 
-        # УСЛОВИЕ 3: Если бот в Песочнице, проверяем время
+        # УСЛОВИЕ 4: Если бот в Песочнице, проверяем время
         is_in_paper = bot_info and bot_info['paper'] and bot_info['status'] == 'online'
         if is_in_paper:
             uptime_ms = bot_info.get('uptime', 0)
