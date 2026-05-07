@@ -131,7 +131,7 @@ class TickerScanner:
         df['time'] = pd.to_datetime(df['time'], unit='ms')
         return df.set_index(['ticker', 'time'])
 
-    async def get_top_tickers(self, min_volume: float = 50_000_000) -> List[Dict[str, Any]]:
+    async def get_top_tickers(self, min_volume: float = 40_000_000) -> List[Dict[str, Any]]:
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
         white_list = set()
@@ -205,7 +205,7 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=50_000_000):
+async def main(quiet=False, min_volume=40_000_000):
     threshold = 0.02
     scanner_period_days = 1.0
     try:
@@ -223,7 +223,7 @@ async def main(quiet=False, min_volume=50_000_000):
         print("\n" + "="*125)
         print(f"{'SYMBOL':<15} | {'CYCLES':<8} | {'NET MOVE%':<12} | {'MAX SPURT%':<12} | {'TREND EFF%':<12} | {'FUNDING%'}")
         print("-" * 125)
-        for t in top_tickers[:40]:
+        for t in top_tickers[:50]:
             print(f"{t['symbol']:<15} | {t['cycles']:<8} | {t['net_change']:<12.2f} | {t['max_spurt']:<12.2f} | {t['trend']:<12.2f} | {t['funding']:.4f}")
         print("="*125)
     
