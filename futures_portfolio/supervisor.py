@@ -139,8 +139,21 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
     # Проверка активности (если бот "завис", его стата может быть неактуальной)
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
+    # Прунинг: проверка дельты за 3 часа (profit_prob_usdt)
+    if profit_prob_usdt < -0.1:
+        logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.1. Firing bot.")
+        await stop_bot(ticker)
+        # Rename files to .fired to prevent re-scan
+        for ext in ["", ".json"]:
+            if os.path.exists(f"state_{ticker}.json"):
+                os.rename(f"state_{ticker}.json", f"state_{ticker}.json.fired")
+            if os.path.exists(f"paper_state_{ticker}.json"):
+                os.rename(f"paper_state_{ticker}.json", f"paper_state_{ticker}.json.fired")
+        return {}
+
     return {
         "profit": profit_pct,
+        "profit_delta": profit_prob_usdt, # 3h delta
         "profit_probation": profit_prob_pct,
         "safe": siphoned,
         "cycles": cycles,
@@ -179,7 +192,13 @@ async def manage_swarm():
                 if sig_type == "stop":
                     logger.warning(f"⚠️ {ticker} sent emergency STOP signal.")
                     await stop_bot(ticker)
-                    new_black_list.add(ticker)
+                    
+                    # Проверяем: если бот прибыльный в целом, не кидаем в Blacklist, а даем шанс на пробацию
+                    stats = await get_real_bot_stats(ticker, initial_capital)
+                    if stats and stats.get('profit', 0) > 0:
+                        logger.info(f"🛡️ {ticker} is profitable ({stats['profit']:.2f}%). Moving to probation instead of blacklist.")
+                    else:
+                        new_black_list.add(ticker)
                 elif sig_type == "exit":
                     logger.info(f"✅ {ticker} sent profitable EXIT signal.")
                     await stop_bot(ticker)
@@ -232,8 +251,8 @@ async def manage_swarm():
                 }
         except Exception: pass
 
-    # Сортировка всего пула по профиту
-    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x]['profit'], reverse=True)
+    # Сортировка всего пула по дельте за 3 часа (profit_delta)
+    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x].get('profit_delta', perf_dict[x]['profit']), reverse=True)
     
     # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
     ready_pool = []

@@ -304,32 +304,45 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
 
-                # Probation PnL tracking for Supervisor (window tied to probation_period_days)
-                probation_days = current_config.get("probation_period_days", 0.041)
-                probation_sec = max(900, probation_days * 86400) # Min 15 min for safety
+                # Rotation window PnL tracking for Supervisor (tied to backtest_period_days)
+                rotation_window_days = current_config.get("backtest_period_days", 0.125)
+                rotation_sec = max(900, rotation_window_days * 86400) # e.g. 3 hours
                 
                 now = time.time()
                 last_prob_update = state.get("last_probation_update", 0)
-                if now - last_prob_update > probation_sec:
+                if now - last_prob_update > rotation_sec:
                     old_tpv = state.get("tpv_probation_basis", tpv_total)
                     state["profit_probation"] = tpv_total - old_tpv
                     state["tpv_probation_basis"] = tpv_total
                     state["last_probation_update"] = now
                 elif "profit_probation" not in state:
-                    # Fallback for compatibility or first run
-                    state["profit_probation"] = state.get("profit_1h", 0.0)
-                    if "last_probation_update" not in state:
-                        state["last_probation_update"] = now
-                        state["tpv_probation_basis"] = tpv_total
+                    # Fallback for first run
+                    state["profit_probation"] = 0.0
+                    state["tpv_probation_basis"] = tpv_total
+                    state["last_probation_update"] = now
 
-                # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of initial_capital
-                # Note: initial_tpv here is the reference point for THIS run, usually initial_capital
+                # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of initial_tpv
                 drawdown_threshold = initial_tpv * (1 - max_drawdown_limit / 100)
                 if initial_tpv > 0 and tpv_total < drawdown_threshold:
                     msg = f"CRITICAL: Total Equity {tpv_total:.2f} (including SAFE) is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% drawdown limit). EMERGENCY STOP!"
                     logger.critical(msg)
                     asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
-                    emit_signal("stop", base_ticker)
+                    
+                    # Проверяем прибыль относительно глобального начального капитала
+                    global_initial = portfolio_cfg.get("initial_capital", 65.0)
+                    if tpv_total < global_initial:
+                        emit_signal("stop", base_ticker)
+                        logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
+                    else:
+                        emit_signal("exit", base_ticker)
+                        logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}. Ticker goes to probation.")
+                        
+                        # Устанавливаем таймаут пробации для прибыльного Emergency Stop
+                        probation_days = current_config.get("probation_period_days", 0.041)
+                        state["trailing_stop_paper_timeout_end"] = now + probation_days * 86400
+                        state["trailing_stop_triggered"] = True
+                        await save_json(state_file_path, state)
+
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker)
                     return
 
@@ -374,12 +387,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
 
                             # Эмитируем сигнал остановки для супервайзера
-                            if tpv_total < initial_tpv:
+                            # Проверяем прибыль относительно глобального начального капитала (65 USDT)
+                            global_initial = portfolio_cfg.get("initial_capital", 65.0)
+                            if tpv_total < global_initial:
                                 emit_signal("stop", base_ticker)
-                                logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Initial {initial_tpv:.2f}. Ticker blacklisted.")
+                                logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
                             else:
                                 emit_signal("exit", base_ticker)
-                                logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Initial {initial_tpv:.2f}. Ticker remains available.")
+                                logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}. Ticker remains available (Probation).")
                             
                             # Сбрасываем ATH и начальные значения
                             state["tpv_ath"] = 0.0
