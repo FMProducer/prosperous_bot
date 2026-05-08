@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": true,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -8,9 +8,9 @@
   "max_orders_per_second": 10,
   "max_bots": 20,
   "paper_mode_bots": 18,
-  "probation_period_days": 0.011,
+  "probation_period_days": 0.021,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.012,
+  "supervisor_interval_days": 0.022,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 5.0,
   "equity_trailing_stop_pct": 5.0,
@@ -19,7 +19,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 60.0,
+      "initial_capital": 63.0,
       "siphoning_threshold_pct": 0.4,
       "targets": {
         "BASE_LONG": {
@@ -42,7 +42,31 @@
       }
     }
   ],
-  "tickers": [],
-  "live_swarm": [],
-  "base_ticker": ""
+  "tickers": [
+    "ICPUSDT",
+    "NILUSDT",
+    "SIRENUSDT",
+    "STRKUSDT",
+    "JUPUSDT",
+    "ONDOUSDT",
+    "JTOUSDT",
+    "TSTUSDT",
+    "BIOUSDT",
+    "ENAUSDT",
+    "OPUSDT",
+    "MOVRUSDT",
+    "TIAUSDT",
+    "FHEUSDT",
+    "IOUSDT",
+    "TONUSDT",
+    "ARUSDT",
+    "GALAUSDT",
+    "ARBUSDT",
+    "ORDIUSDT"
+  ],
+  "live_swarm": [
+    "ICPUSDT",
+    "NILUSDT"
+  ],
+  "base_ticker": "ICPUSDT"
 }
