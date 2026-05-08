@@ -629,7 +629,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     finally:
         await notifier.close()
 
-async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode: bool = False):
+async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode: bool = False, close_only: bool = False):
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -640,12 +640,12 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
     portfolio_cfg = config.get("portfolios", [{}])[0]
     initial_capital = portfolio_cfg.get("initial_capital", 65.0)
 
-    logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode})")
+    logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode}, CloseOnly: {close_only})")
     
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
     
-    # Always try to load paper_state to reset it
+    # Always try to load paper_state to reset it (unless close_only)
     paper_state = await load_json(paper_state_file_path, {})
     
     if paper_mode:
@@ -654,17 +654,18 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                 if qty != 0:
                     logger.info(f"Closing PAPER position {pos_key}: {qty}")
         
-        # Reset paper state to fresh start
-        paper_state.update({
-            "balance": initial_capital,
-            "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
-            "long_entry_price": 0.0,
-            "short_entry_price": 0.0,
-            "last_price": 0.0
-        })
-        await save_json(paper_state_file_path, paper_state)
+        if not close_only:
+            # Reset paper state to fresh start
+            paper_state.update({
+                "balance": initial_capital,
+                "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+                "long_entry_price": 0.0,
+                "short_entry_price": 0.0,
+                "last_price": 0.0
+            })
+            await save_json(paper_state_file_path, paper_state)
     else:
-        # REAL mode: close on exchange AND sync shadow state
+        # REAL mode: close on exchange
         raw_positions = await connector.get_positions()
         for pos_key, data in raw_positions.items():
             if base_ticker in pos_key:
@@ -683,30 +684,32 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                         min_notional=0.0
                     )
         
-        # Even in REAL mode, we reset shadow positions/entries to 0 but keep balance? 
-        # Actually, if we want a fresh start, we should probably reset balance too if it's isolated.
-        if paper_state:
-            paper_state.update({
-                "balance": initial_capital, # Reset to initial to break the stop-loop
-                "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
-                "long_entry_price": 0.0,
-                "short_entry_price": 0.0
-            })
-            await save_json(paper_state_file_path, paper_state)
+        if not close_only:
+            if paper_state:
+                paper_state.update({
+                    "balance": initial_capital,
+                    "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+                    "long_entry_price": 0.0,
+                    "short_entry_price": 0.0
+                })
+                await save_json(paper_state_file_path, paper_state)
 
-    # Сброс основного состояния
-    state = await load_json(state_file_path, {})
-    state.update({
-        "virt_basis_price": 0.0,
-        "virt_allocated_usdt": 0.0,
-        "initial_tpv": 0.0,
-        "reference_tpv": 0.0,
-        "tpv_ath": 0.0,
-        "trailing_stop_triggered": False,
-        "trailing_stop_violation_start": 0.0
-    })
-    await save_json(state_file_path, state)
-    logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
+    if not close_only:
+        # Сброс основного состояния
+        state = await load_json(state_file_path, {})
+        state.update({
+            "virt_basis_price": 0.0,
+            "virt_allocated_usdt": 0.0,
+            "initial_tpv": 0.0,
+            "reference_tpv": 0.0,
+            "tpv_ath": 0.0,
+            "trailing_stop_triggered": False,
+            "trailing_stop_violation_start": 0.0
+        })
+        await save_json(state_file_path, state)
+        logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
+    else:
+        logger.info(f"✅ Positions closed for {base_ticker}. State preserved.")
 
 if __name__ == "__main__":
     import argparse
@@ -714,6 +717,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--ticker", default=None)
     parser.add_argument("--stop", action="store_true", help="Close all positions and stop")
+    parser.add_argument("--close-only", action="store_true", help="Only close positions on exchange, preserve bot state")
     parser.add_argument("--paper", action="store_true", help="Force paper mode for this instance")
     args = parser.parse_args()
     
@@ -746,7 +750,7 @@ if __name__ == "__main__":
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
 
     if args.stop:
-        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance))
+        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance, close_only=args.close_only))
     else:
         logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file} | Mode: {'PAPER' if is_paper_instance else 'REAL'}")
         # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 

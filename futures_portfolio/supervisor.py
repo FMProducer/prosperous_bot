@@ -77,8 +77,8 @@ async def get_running_bots_info() -> Dict[str, dict]:
         logger.error(f"Failed to get PM2 list: {e}")
         return {}
 
-async def stop_bot(ticker: str, full_reset: bool = True):
-    logger.info(f"🛑 Stopping process for {ticker} (Full Reset: {full_reset})...")
+async def stop_bot(ticker: str, full_reset: bool = True, is_paper: bool = False, close_only: bool = False):
+    logger.info(f"🛑 Stopping process for {ticker} (Full Reset: {full_reset}, Paper: {is_paper}, CloseOnly: {close_only})...")
     short_name = ticker.replace('USDT', '').lower()
     
     # 1. Всегда останавливаем процесс в PM2
@@ -88,12 +88,14 @@ async def stop_bot(ticker: str, full_reset: bool = True):
         await asyncio.sleep(0.5)
     except: pass
     
-    # 2. Только если нужен полный сброс (увольнение или стоп-лосс), вызываем очистку позиций и стейта
-    if full_reset:
+    # 2. Очистка на бирже / сброс стейта
+    # Если это REAL бот или нужен полный сброс (увольнение) - запускаем cleanup
+    # Если бот бумажный и переходит в REAL - нам НЕ нужно закрывать позиции на бирже (их нет)
+    if not is_paper or full_reset:
         try:
-            # Передаем --paper если бот был бумажным (определяем по текущему состоянию в PM2 или просто пробуем)
-            # В режиме --stop бот сам разберется, если мы передадим правильный флаг.
-            cmd = f'"{sys.executable}" main.py --config config.json --ticker {ticker} --stop'
+            paper_flag = "--paper" if is_paper else ""
+            close_flag = "--close-only" if close_only else ""
+            cmd = f'"{sys.executable}" main.py --config config.json --ticker {ticker} --stop {paper_flag} {close_flag}'
             proc = await asyncio.create_subprocess_shell(cmd)
             await asyncio.wait_for(proc.wait(), timeout=30)
         except Exception as e:
@@ -153,6 +155,15 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
             logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in its probation window ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping pruning.")
         else:
             logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.1. Firing bot.")
+            
+            # Сохраняем финальный профит ПЕРЕД сбросом стейта
+            final_stats = await get_real_bot_stats(ticker, initial_capital)
+            if final_stats:
+                state_path = f"state_{ticker}.json"
+                state = await safe_load_json(state_path, {})
+                state["final_profit"] = final_stats.get("profit_usdt", 0.0) # В USDT для точности
+                await safe_save_json(state_path, state)
+            
             await stop_bot(ticker, full_reset=True)
             # Rename files to .fired to prevent re-scan
         for ext in ["state_", "paper_state_"]:
@@ -322,22 +333,26 @@ async def manage_swarm():
     
     # Сначала останавливаем тех, кто не в финальном списке ИЛИ должен сменить режим (Paper -> Real)
     for ticker, info in current_pm2.items():
+        is_currently_paper = info['paper']
+        
         # Если бота вообще нет в новом списке
         if ticker not in final_swarm:
             logger.info(f"🚫 Stopping bot (not in top): {ticker}")
-            await stop_bot(ticker, full_reset=True) # Здесь полный сброс, так как бот уходит из ротации
+            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper) 
             continue
             
         # Если бот должен быть REAL, а он PAPER
         should_be_real = ticker in target_real_bots
-        if should_be_real and info['paper']:
+        if should_be_real and is_currently_paper:
             logger.info(f"🔄 Switching {ticker} from PAPER to REAL (Preserving state)")
-            await stop_bot(ticker, full_reset=False) # МЯГКИЙ СТОП: только убиваем процесс
+            # МЯГКИЙ СТОП: только убиваем процесс, на бирже закрывать нечего
+            await stop_bot(ticker, full_reset=False, is_paper=True) 
             
         # Если бот должен быть PAPER, а он REAL
-        if not should_be_real and not info['paper']:
-            logger.info(f"📉 Demoting {ticker} from REAL to PAPER (Preserving state)")
-            await stop_bot(ticker, full_reset=False) # МЯГКИЙ СТОП: только убиваем процесс
+        if not should_be_real and not is_currently_paper:
+            logger.info(f"📉 Demoting {ticker} from REAL to PAPER (Preserving state, closing REAL positions)")
+            # КРИТИЧЕСКИЙ МОМЕНТ: Закрываем реальные позиции, но сохраняем стейт
+            await stop_bot(ticker, full_reset=False, is_paper=False, close_only=True) 
 
     # Теперь запускаем тех, кто не запущен в нужном режиме
     updated_pm2 = await get_running_bots_info()

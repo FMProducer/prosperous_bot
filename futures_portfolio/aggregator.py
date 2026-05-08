@@ -87,11 +87,8 @@ class StatusAggregator:
         for f_path in state_files:
             try:
                 state = await safe_load_json(f_path, {})
-                
                 ticker = state.get("base_ticker", "UNKNOWN")
                 if ticker == "UNKNOWN": continue
-                
-                active_bots_count += 1
                 
                 # Читаем баланс из paper_state если он есть
                 paper_state_path = f"paper_state_{ticker}.json"
@@ -99,32 +96,30 @@ class StatusAggregator:
                 paper_balance = ps.get("balance", initial_per_bot)
 
                 siphoned = state.get("siphoning_reserve", 0.0)
-                # Расчет профита: (Баланс - Начальный) + SAFE (как в swarm_analyzer)
-                profit = (paper_balance - initial_per_bot) + siphoned
+                
+                # НОВАЯ ЛОГИКА ПРОФИТА: если бот уволен, берем его финализированный профит
+                is_fired = f_path.endswith(".fired")
+                if is_fired and "final_profit" in state:
+                    profit = state["final_profit"]
+                else:
+                    profit = (paper_balance - initial_per_bot) + siphoned
                 
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)
                 
-                # Общие итоги
-                total_profit += profit
-                total_safe += siphoned
-                
                 # Проверка активности процесса (5 мин)
                 is_active_process = (time.time() - last_update) < 300 if last_update > 0 else False
                 
-                # Логика "Active" vs "Removed" для шапки
-                if ticker in active_tickers:
+                # Логика "Active" vs "Removed" для шапки и статистики
+                # Бот считается активным, если он есть в списке тикеров конфига И у него нет пометки .fired
+                if ticker in active_tickers and not is_fired:
+                    active_bots_count += 1
                     active_pnl += profit
-                else:
-                    removed_pnl += profit
-
-                # НОВАЯ ЛОГИКА ЦВЕТОВ: 
-                # 🟢 - Активен в REAL (в списке live_swarm)
-                # 🟡 - Активен в PAPER (не в live_swarm, но в активных)
-                # 🔴 - Неактивен (процесс давно не обновлялся)
-                if is_active_process:
+                    total_profit += profit
+                    total_safe += siphoned
                     status_icon = "🟢" if ticker in live_swarm else "🟡"
                 else:
+                    removed_pnl += profit
                     status_icon = "🔴"
                 
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
