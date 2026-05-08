@@ -194,6 +194,7 @@ class TickerScanner:
             
             # Фильтр по циклам (минимум 10)
             metrics_df = metrics_df[metrics_df['cycles'] >= 10]
+            metrics_df['cycles'] = metrics_df['cycles'].astype(int)
             ranked_list = metrics_df.to_dict('records')
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             
