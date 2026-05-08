@@ -193,8 +193,8 @@ class TickerScanner:
             metrics_df['funding'] = metrics_df['symbol'].map(funding_map).fillna(0.0) * 100
             
             # Фильтр по циклам (минимум 10)
-            metrics_df = metrics_df[metrics_df['cycles'] >= 10]
-            metrics_df['cycles'] = metrics_df['cycles'].astype(int)
+            metrics_df = metrics_df[metrics_df['cycles'] >= 10].copy()
+            metrics_df.loc[:, 'cycles'] = metrics_df['cycles'].astype(int)
             ranked_list = metrics_df.to_dict('records')
             ranked_list.sort(key=lambda x: x['cycles'], reverse=True)
             

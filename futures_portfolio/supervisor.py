@@ -118,7 +118,7 @@ async def start_bot(ticker: str, paper: bool = False):
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
-async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict) -> dict:
+async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, running_info: dict) -> dict:
     """Получает реальную статистику бота из его файлов состояния."""
     state_path = f"state_{ticker}.json"
     paper_state_path = f"paper_state_{ticker}.json"
@@ -158,16 +158,20 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict) 
             logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.2. Firing bot.")
             
             # Сохраняем финальный профит ПЕРЕД сбросом стейта
-            final_stats = {
-                "profit_usdt": profit_usdt
-            }
-            if final_stats:
+            try:
                 state_path = f"state_{ticker}.json"
                 state_data = await safe_load_json(state_path, {})
-                state_data["final_profit"] = final_stats.get("profit_usdt", 0.0)
+                state_data["final_profit"] = profit_usdt 
                 await safe_save_json(state_path, state_data)
+                logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
+            except Exception as e:
+                logger.error(f"Failed to save final profit for {ticker}: {e}")
             
-            await stop_bot(ticker, full_reset=True)
+            # Определяем текущий режим для корректной остановки
+            bot_info = running_info.get(ticker, {})
+            is_currently_paper = bot_info.get('paper', False)
+            
+            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
             return {}
 
     return {
@@ -213,7 +217,7 @@ async def manage_swarm():
                     await stop_bot(ticker)
                     
                     # Проверяем: если бот прибыльный в целом, не кидаем в Blacklist, а даем шанс на пробацию
-                    stats = await get_real_bot_stats(ticker, initial_capital, config)
+                    stats = await get_real_bot_stats(ticker, initial_capital, config, running_info)
                     if stats and stats.get('profit', 0) > 0:
                         logger.info(f"🛡️ {ticker} is profitable ({stats['profit']:.2f}%). Moving to probation instead of blacklist.")
                     else:
@@ -243,7 +247,7 @@ async def manage_swarm():
         ticker = state_file.stem.replace("state_", "")
         if ticker in new_black_list: continue
         
-        real_stats = await get_real_bot_stats(ticker, initial_capital, config)
+        real_stats = await get_real_bot_stats(ticker, initial_capital, config, running_info)
         if real_stats:
             perf_dict[ticker] = real_stats
             status = "RUNNING" if ticker in running_info else "STOPPED"
