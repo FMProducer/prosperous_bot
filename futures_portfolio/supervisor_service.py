@@ -51,11 +51,11 @@ async def main():
             if proc.returncode == 0:
                 logger.info("Cycle completed successfully.")
                 if stdout:
-                    logger.debug(f"STDOUT: {stdout.decode().strip()}")
+                    logger.debug(f"STDOUT: {stdout.decode('utf-8', errors='replace').strip()}")
             else:
                 logger.error(f"Cycle failed with exit code {proc.returncode}")
                 if stderr:
-                    logger.error(f"STDERR: {stderr.decode().strip()}")
+                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='replace').strip()}")
                     
         except Exception as e:
             logger.error(f"Unexpected error during cycle: {e}")

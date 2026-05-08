@@ -14,7 +14,7 @@ async def safe_load_json(path: str, default: Dict[str, Any], retries: int = 15) 
     def _read_json() -> Dict[str, Any]:
         if not os.path.exists(path):
             return default
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
             if not content:
                 return default

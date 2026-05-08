@@ -343,7 +343,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         state["trailing_stop_triggered"] = True
                         await save_json(state_file_path, state)
 
-                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker)
+                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
                     return
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
@@ -364,18 +364,29 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH for {elapsed:.1f}s. Closing all positions for {base_ticker}."
                             logger.warning(f"!!! [STOP] {msg}")
                             asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
+                            
+                            # Realize PnL and close positions
                             for pos_key, qty in positions.items():
                                 if qty == 0 or base_ticker not in pos_key: continue
                                 side = "SELL" if qty > 0 else "BUY"
                                 step_size = step_sizes.get(base_ticker, 0.0)
-                                if paper_mode:
+                                
+                                # Calculate realized PnL for shadow balance
+                                p_qty = abs(paper_state["positions"].get(pos_key, 0.0))
+                                if p_qty > 0:
+                                    if "LONG" in pos_key:
+                                        pnl = p_qty * (price - paper_state.get("long_entry_price", price))
+                                    else:
+                                        pnl = p_qty * (paper_state.get("short_entry_price", price) - price)
+                                    paper_state["balance"] += pnl
                                     paper_state["positions"][pos_key] = 0.0
-                                else:
-                                    # In REAL mode, close real position AND update shadow state
+
+                                if not paper_mode:
+                                    # In REAL mode, close real position
                                     await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
-                                    paper_state["positions"][pos_key] = 0.0
                                     
-                            # Always update shadow entry prices and save state
+                            # Reset shadow balance to initial capital to avoid loop on restart
+                            paper_state["balance"] = portfolio_cfg.get("initial_capital", 65.0)
                             paper_state["long_entry_price"] = 0.0
                             paper_state["short_entry_price"] = 0.0
                             await save_json(paper_state_file_path, paper_state)
@@ -424,7 +435,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.error(msg)
                                 asyncio.create_task(notifier.send_alert("CRITICAL MARGIN", msg))
                                 emit_signal("stop", base_ticker)
-                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker)
+                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
                                 return
                             elif m_ratio < portfolio_cfg.get("margin_ratio_warning", 5.0):
                                 msg = f"Low margin ratio: {m_ratio:.2f}"
@@ -618,34 +629,43 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     finally:
         await notifier.close()
 
-async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None):
+async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode: bool = False):
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
     except:
         config = {}
-    paper_mode = config.get("paper_mode", False)
-    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     
+    base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
+    portfolio_cfg = config.get("portfolios", [{}])[0]
+    initial_capital = portfolio_cfg.get("initial_capital", 65.0)
+
     logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode})")
     
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
     
+    # Always try to load paper_state to reset it
+    paper_state = await load_json(paper_state_file_path, {})
+    
     if paper_mode:
-        paper_state = await load_json(paper_state_file_path, {})
         if paper_state and "positions" in paper_state:
             for pos_key, qty in paper_state["positions"].items():
                 if qty != 0:
                     logger.info(f"Closing PAPER position {pos_key}: {qty}")
-            paper_state["positions"] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
-            paper_state["long_entry_price"] = 0.0
-            paper_state["short_entry_price"] = 0.0
-            await save_json(paper_state_file_path, paper_state)
+        
+        # Reset paper state to fresh start
+        paper_state.update({
+            "balance": initial_capital,
+            "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+            "long_entry_price": 0.0,
+            "short_entry_price": 0.0,
+            "last_price": 0.0
+        })
+        await save_json(paper_state_file_path, paper_state)
     else:
+        # REAL mode: close on exchange AND sync shadow state
         raw_positions = await connector.get_positions()
-        # Load paper_state even in real mode for sync
-        paper_state = await load_json(paper_state_file_path, {})
         for pos_key, data in raw_positions.items():
             if base_ticker in pos_key:
                 qty = data["qty"]
@@ -662,21 +682,29 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                         position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
                         min_notional=0.0
                     )
-                    if paper_state and "positions" in paper_state:
-                        paper_state["positions"][pos_key] = 0.0
         
+        # Even in REAL mode, we reset shadow positions/entries to 0 but keep balance? 
+        # Actually, if we want a fresh start, we should probably reset balance too if it's isolated.
         if paper_state:
-            paper_state["long_entry_price"] = 0.0
-            paper_state["short_entry_price"] = 0.0
+            paper_state.update({
+                "balance": initial_capital, # Reset to initial to break the stop-loop
+                "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+                "long_entry_price": 0.0,
+                "short_entry_price": 0.0
+            })
             await save_json(paper_state_file_path, paper_state)
 
-    # Сброс состояния
+    # Сброс основного состояния
     state = await load_json(state_file_path, {})
-    state["virt_basis_price"] = 0.0
-    state["virt_allocated_usdt"] = 0.0
-    state["initial_tpv"] = 0.0 
-    state["reference_tpv"] = 0.0
-    state["tpv_ath"] = 0.0
+    state.update({
+        "virt_basis_price": 0.0,
+        "virt_allocated_usdt": 0.0,
+        "initial_tpv": 0.0,
+        "reference_tpv": 0.0,
+        "tpv_ath": 0.0,
+        "trailing_stop_triggered": False,
+        "trailing_stop_violation_start": 0.0
+    })
     await save_json(state_file_path, state)
     logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
 
@@ -718,7 +746,7 @@ if __name__ == "__main__":
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
 
     if args.stop:
-        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker))
+        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance))
     else:
         logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file} | Mode: {'PAPER' if is_paper_instance else 'REAL'}")
         # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 

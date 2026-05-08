@@ -51,7 +51,9 @@ async def get_running_bots_info() -> Dict[str, dict]:
             stderr=asyncio.subprocess.PIPE
         )
         stdout, _ = await proc.communicate()
-        data = json.loads(stdout.decode())
+        if not stdout:
+            return {}
+        data = json.loads(stdout.decode('utf-8', errors='replace'))
         bots = {}
         for app in data:
             if app['name'].startswith('bot-'):
@@ -144,11 +146,15 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
         logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.1. Firing bot.")
         await stop_bot(ticker)
         # Rename files to .fired to prevent re-scan
-        for ext in ["", ".json"]:
-            if os.path.exists(f"state_{ticker}.json"):
-                os.rename(f"state_{ticker}.json", f"state_{ticker}.json.fired")
-            if os.path.exists(f"paper_state_{ticker}.json"):
-                os.rename(f"paper_state_{ticker}.json", f"paper_state_{ticker}.json.fired")
+        for ext in ["state_", "paper_state_"]:
+            old_name = f"{ext}{ticker}.json"
+            new_name = f"{ext}{ticker}.json.fired"
+            if os.path.exists(old_name):
+                if os.path.exists(new_name):
+                    try: os.remove(new_name)
+                    except: pass
+                try: os.rename(old_name, new_name)
+                except Exception as e: logger.error(f"Failed to rename {old_name}: {e}")
         return {}
 
     return {
