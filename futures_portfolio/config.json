@@ -43,30 +43,30 @@
     }
   ],
   "tickers": [
-    "SIRENUSDT",
-    "JUPUSDT",
-    "OPUSDT",
-    "NILUSDT",
-    "GALAUSDT",
-    "ICPUSDT",
-    "ENAUSDT",
-    "JTOUSDT",
-    "BIOUSDT",
-    "STRKUSDT",
     "TSTUSDT",
-    "ONDOUSDT",
     "TONUSDT",
-    "FHEUSDT",
-    "ARUSDT",
+    "GALAUSDT",
+    "ONDOUSDT",
+    "ICPUSDT",
     "FILUSDT",
     "TIAUSDT",
-    "MOVRUSDT",
-    "ORDIUSDT",
-    "1000BONKUSDT"
+    "BIOUSDT",
+    "ENAUSDT",
+    "JUPUSDT",
+    "OPUSDT",
+    "STRKUSDT",
+    "NILUSDT",
+    "FHEUSDT",
+    "SIRENUSDT",
+    "ARUSDT",
+    "DOGSUSDT",
+    "ZECUSDT",
+    "JTOUSDT",
+    "MOVRUSDT"
   ],
   "live_swarm": [
-    "JUPUSDT",
-    "SIRENUSDT"
+    "TONUSDT",
+    "TSTUSDT"
   ],
-  "base_ticker": "SIRENUSDT"
+  "base_ticker": "TSTUSDT"
 }

@@ -118,7 +118,7 @@ async def start_bot(ticker: str, paper: bool = False):
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
-async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
+async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict) -> dict:
     """Получает реальную статистику бота из его файлов состояния."""
     state_path = f"state_{ticker}.json"
     paper_state_path = f"paper_state_{ticker}.json"
@@ -138,48 +138,42 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
     profit_usdt = (paper_balance - initial_capital) + siphoned
     profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
     
-    # Используем profit_probation если он есть (рассчитывается в main.py на базе probation_period_days)
+    # Используем profit_probation если он есть
     profit_prob_usdt = state.get("profit_probation", 0.0)
     profit_prob_pct = (profit_prob_usdt / initial_capital) * 100 if initial_capital > 0 else 0
     
-    # Проверка активности (если бот "завис", его стата может быть неактуальной)
+    # Проверка активности
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
     # Прунинг: проверка дельты за время пробации
     if profit_prob_usdt < -0.2:
-        # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period (отбивает комиссию)
-        probation_sec = config.get("probation_period_days", 0.041) * 86400
+        # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period
+        probation_days = config.get("probation_period_days", 0.041)
+        probation_sec = probation_days * 86400
         uptime_sec = (time.time() - last_update) if last_update > 0 else 0
         
         if last_update > 0 and uptime_sec < probation_sec:
             logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in its probation window ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping pruning.")
         else:
-            logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.1. Firing bot.")
+            logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.2. Firing bot.")
             
             # Сохраняем финальный профит ПЕРЕД сбросом стейта
-            final_stats = await get_real_bot_stats(ticker, initial_capital)
+            final_stats = {
+                "profit_usdt": profit_usdt
+            }
             if final_stats:
                 state_path = f"state_{ticker}.json"
-                state = await safe_load_json(state_path, {})
-                state["final_profit"] = final_stats.get("profit_usdt", 0.0) # В USDT для точности
-                await safe_save_json(state_path, state)
+                state_data = await safe_load_json(state_path, {})
+                state_data["final_profit"] = final_stats.get("profit_usdt", 0.0)
+                await safe_save_json(state_path, state_data)
             
             await stop_bot(ticker, full_reset=True)
-            # Rename files to .fired to prevent re-scan
-        for ext in ["state_", "paper_state_"]:
-            old_name = f"{ext}{ticker}.json"
-            new_name = f"{ext}{ticker}.json.fired"
-            if os.path.exists(old_name):
-                if os.path.exists(new_name):
-                    try: os.remove(new_name)
-                    except: pass
-                try: os.rename(old_name, new_name)
-                except Exception as e: logger.error(f"Failed to rename {old_name}: {e}")
-        return {}
+            return {}
 
     return {
         "profit": profit_pct,
-        "profit_delta": profit_prob_usdt, # 3h delta
+        "profit_usdt": profit_usdt,
+        "profit_delta": profit_prob_usdt,
         "profit_probation": profit_prob_pct,
         "safe": siphoned,
         "cycles": cycles,
@@ -219,7 +213,7 @@ async def manage_swarm():
                     await stop_bot(ticker)
                     
                     # Проверяем: если бот прибыльный в целом, не кидаем в Blacklist, а даем шанс на пробацию
-                    stats = await get_real_bot_stats(ticker, initial_capital)
+                    stats = await get_real_bot_stats(ticker, initial_capital, config)
                     if stats and stats.get('profit', 0) > 0:
                         logger.info(f"🛡️ {ticker} is profitable ({stats['profit']:.2f}%). Moving to probation instead of blacklist.")
                     else:
@@ -249,7 +243,7 @@ async def manage_swarm():
         ticker = state_file.stem.replace("state_", "")
         if ticker in new_black_list: continue
         
-        real_stats = await get_real_bot_stats(ticker, initial_capital)
+        real_stats = await get_real_bot_stats(ticker, initial_capital, config)
         if real_stats:
             perf_dict[ticker] = real_stats
             status = "RUNNING" if ticker in running_info else "STOPPED"
