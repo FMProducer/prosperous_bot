@@ -19,7 +19,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 65.0,
+      "initial_capital": 60.0,
       "siphoning_threshold_pct": 0.4,
       "targets": {
         "BASE_LONG": {
@@ -37,36 +37,12 @@
       },
       "rebalance_threshold": 0.001,
       "ticker_thresholds": {
-        "PARTIUSDT": 0.001,
-        "FILUSDT": 0.001
+        "BTCUSDT": 0.001,
+        "ETHUSDT": 0.001
       }
     }
   ],
-  "tickers": [
-    "FHEUSDT",
-    "DOGSUSDT",
-    "EIGENUSDT",
-    "FILUSDT",
-    "DUSDT",
-    "IOUSDT",
-    "KSMUSDT",
-    "ETCUSDT",
-    "VIRTUALUSDT",
-    "1000LUNCUSDT",
-    "SEIUSDT",
-    "ZEREBROUSDT",
-    "ICPUSDT",
-    "ORDIUSDT",
-    "OPUSDT",
-    "1000FLOKIUSDT",
-    "APEUSDT",
-    "CRVUSDT",
-    "BIOUSDT",
-    "1000BONKUSDT"
-  ],
-  "live_swarm": [
-    "DOGSUSDT",
-    "FHEUSDT"
-  ],
-  "base_ticker": "FHEUSDT"
+  "tickers": [],
+  "live_swarm": [],
+  "base_ticker": ""
 }

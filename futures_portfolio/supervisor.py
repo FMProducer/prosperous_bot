@@ -13,7 +13,7 @@ from pathlib import Path
 load_dotenv()
 
 from rank_tickers import main as run_scanner
-from backtest_rebalance import run_backtest
+# run_backtest удален
 from storage import safe_load_json, safe_save_json
 
 # Настройка логирования
@@ -169,7 +169,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float) -> dict:
     }
 
 async def manage_swarm():
-    logger.info("--- Starting Multi-Slot Supervisor Cycle ---")
+    logger.info("--- Starting Pure Live Multi-Slot Supervisor Cycle ---")
     
     config = await safe_load_json(CONFIG_PATH, {})
     if not config: return
@@ -178,8 +178,7 @@ async def manage_swarm():
     paper_mode_bots = config.get("paper_mode_bots", 8)
     max_real_slots = max(0, max_bots - paper_mode_bots)
     
-    probation_hours = config.get("probation_period_days", 0.125) * 24
-    backtest_days = config.get("backtest_period_days", 0.125) # 3 часа
+    probation_hours = config.get("probation_period_days", 0.041) * 24
     
     # 1. Сбор реальности
     running_info = await get_running_bots_info()
@@ -213,20 +212,18 @@ async def manage_swarm():
             logger.error(f"Error processing signal {sig_file}: {e}")
 
     # 3. Анализ и Рейтинг
-    logger.info("Starting scanner analysis...")
+    logger.info("Starting scanner analysis (Volatility Factor)...")
     try:
         scanner_results = await asyncio.wait_for(run_scanner(quiet=True, min_volume=10_000_000), timeout=60)
         scanner_tickers = [r['symbol'] for r in scanner_results]
-        logger.info(f"Scanner found {len(scanner_tickers)} tickers.")
+        logger.info(f"Scanner found {len(scanner_tickers)} volatile tickers.")
     except Exception as e:
         logger.error(f"Scanner failed or timed out: {e}")
         scanner_tickers = []
     
-    # ПУЛЫ: Разделяем запущенных и кандидатов
     perf_dict = {}
     
     # 3.1. Оцениваем ВСЕХ ботов с реальной историей (The Fact Protocol)
-    # Сканируем все файлы state_*.json в директории
     logger.info("Scanning for real bot states...")
     for state_file in Path(".").glob("state_*.json"):
         ticker = state_file.stem.replace("state_", "")
@@ -234,33 +231,37 @@ async def manage_swarm():
         
         real_stats = await get_real_bot_stats(ticker, initial_capital)
         if real_stats:
-            # Бот считается "валидным" для ротации если он либо запущен, 
-            # либо у него положительный профит (мы не удаляем прибыльных)
-            if real_stats['profit'] > 0 or ticker in running_info:
-                perf_dict[ticker] = real_stats
-                status = "RUNNING" if ticker in running_info else "STOPPED"
-                logger.info(f"📈 {ticker} ({status}): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
+            perf_dict[ticker] = real_stats
+            status = "RUNNING" if ticker in running_info else "STOPPED"
+            logger.info(f"📈 {ticker} ({status}): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
 
-    # 3.2. Оцениваем КАНДИДАТОВ из сканера (БЭКТЕСТ) - только если их нет в perf_dict
+    # 3.2. Добавляем КАНДИДАТОВ из сканера (БЕЗ БЭКТЕСТА)
     candidates = [t for t in scanner_tickers if t not in perf_dict and t not in new_black_list]
-    logger.info(f"Evaluating {len(candidates)} scanner candidates (Backtest only)...")
+    logger.info(f"New candidates from scanner: {len(candidates)}")
     
-    for symbol in candidates:
-        try:
-            res = await asyncio.wait_for(run_backtest(CONFIG_PATH, DATA_DIR, live_mode=True, ticker_override=symbol, days=backtest_days, quiet=True), timeout=30)
-            if res and res.get("profit_pct", 0) > 0:
-                perf_dict[symbol] = {
-                    "profit": res.get("profit_pct", 0),
-                    "safe": res.get("siphoning_reserve", 0),
-                    "is_real_data": False,
-                    "trailing_stop_paper_timeout_end": 0.0
-                }
-        except Exception: pass
+    for symbol in candidates[:max_bots]: 
+        if symbol not in perf_dict:
+            perf_dict[symbol] = {
+                "profit": 0.0,
+                "profit_delta": 0.0,
+                "is_real_data": False,
+                "trailing_stop_paper_timeout_end": 0.0
+            }
 
-    # Сортировка всего пула по дельте за 3 часа (profit_delta)
-    all_sorted = sorted(perf_dict.keys(), key=lambda x: perf_dict[x].get('profit_delta', perf_dict[x]['profit']), reverse=True)
+    # Сортировка: Приоритет запущенным прибыльным -> прибыльным -> топу сканера
+    def ranking_key(t):
+        p = perf_dict[t]
+        if t in running_info and p.get('profit_delta', 0) > 0:
+            return 1000 + p['profit_delta']
+        if p.get('profit', 0) > 0:
+            return 500 + p['profit']
+        if t in scanner_tickers:
+            return 100 - scanner_tickers.index(t)
+        return 0
+
+    all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
     
-    # 4. Выбор Чемпионов для REAL (Математика Чемпионов)
+    # 4. Выбор Чемпионов для REAL
     ready_pool = []
     now = time.time()
     now_ms = now * 1000
@@ -273,33 +274,22 @@ async def manage_swarm():
         bot_info = running_info.get(ticker)
         ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
         
-        # УСЛОВИЕ 1: Только прибыльные боты могут быть в REAL
+        if now < ts_timeout_end:
+            continue
+
         if profit <= 0:
             continue
-            
-        # УСЛОВИЕ 2: Трейлинг-Стоп Таймаут (Бумажная пробация)
-        if now < ts_timeout_end:
-            remaining = ts_timeout_end - now
-            logger.info(f"🛡 {ticker} in TRAILING STOP PROBATION. Remaining: {remaining/3600:.2f}h. Restricted to PAPER.")
-            continue
 
-        # УСЛОВИЕ 3: Если бот уже в Реале, он остается в пуле готовых
-        is_already_real = bot_info and not bot_info['paper'] and bot_info['status'] == 'online'
-        if is_already_real:
-            ready_pool.append(ticker)
-            continue
-
-        # УСЛОВИЕ 4: Если бот в Песочнице, проверяем время
         is_in_paper = bot_info and bot_info['paper'] and bot_info['status'] == 'online'
         if is_in_paper:
             uptime_ms = bot_info.get('uptime', 0)
             elapsed_ms = now_ms - uptime_ms
-            
             if elapsed_ms >= probation_ms:
-                logger.info(f"🏆 {ticker} passed probation ({elapsed_ms/3600000:.2f}h) with real profit {profit:.2f}%")
                 ready_pool.append(ticker)
-            else:
-                logger.info(f"⏳ {ticker} maturing: {elapsed_ms/3600000:.2f}h < {probation_hours:.2f}h")
+            continue
+            
+        if bot_info and not bot_info['paper']:
+            ready_pool.append(ticker)
 
     # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
     ready_pool.sort(key=lambda x: perf_dict[x]['profit'], reverse=True)

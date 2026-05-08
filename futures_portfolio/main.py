@@ -304,9 +304,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
 
-                # Rotation window PnL tracking for Supervisor (tied to backtest_period_days)
-                rotation_window_days = current_config.get("backtest_period_days", 0.125)
-                rotation_sec = max(900, rotation_window_days * 86400) # e.g. 3 hours
+                # Rotation window PnL tracking for Supervisor (tied to probation_period_days)
+                rotation_window_days = current_config.get("probation_period_days", 0.041)
+                rotation_sec = max(300, rotation_window_days * 86400) # e.g. 1 hour
                 
                 now = time.time()
                 last_prob_update = state.get("last_probation_update", 0)
