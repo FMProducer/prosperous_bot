@@ -283,8 +283,15 @@ class PortfolioExecutor:
 
     async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None) -> Dict[str, Any]:
         """Внутренний метод для выполнения одного действия (для gather)."""
-        if action["type"] == "VIRTUAL_RESET":
-            return {"type": "VIRTUAL_RESET", "status": "SUCCESS"}
+        if action["type"] == "VIRTUAL_ORDER":
+            diff_usdt = action["diff_usdt"]
+            side = "BUY" if diff_usdt > 0 else "SELL"
+            return {
+                "type": "VIRTUAL_ORDER",
+                "status": "SUCCESS",
+                "diff_usdt": diff_usdt,
+                "side": side
+            }
 
         symbol = action["symbol"]
 

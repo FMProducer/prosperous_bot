@@ -10,7 +10,7 @@ getcontext().rounding = ROUND_HALF_EVEN
 
 class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
-                 virt_basis_price: float, virt_allocated_usdt: float, 
+                 virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
                  targets: Dict[str, Dict] = None, initial_capital: float = 10000.0) -> None:
@@ -22,18 +22,16 @@ class PortfolioCalculator:
         self.siphoning_reserve = Decimal(str(siphoning_reserve))
         self.initial_capital = Decimal(str(initial_capital))
         self.real_equity = Decimal(str(real_equity))
+        self.virt_qty = Decimal(str(virt_qty))
         
         # 1. Calculate Virtual Leg Current Value (Market Value V)
-        dec_virt_basis_price = Decimal(str(virt_basis_price))
-        dec_virt_allocated_usdt = Decimal(str(virt_allocated_usdt))
-        if dec_virt_basis_price <= 0: dec_virt_basis_price = self.price
+        # Treated as a spot position: Value = Quantity * Price
+        self.virt_current_value = self.virt_qty * self.price
         
-        self.virt_current_value = dec_virt_allocated_usdt * (self.price / dec_virt_basis_price)
-        
-        # 2. Total Working TPV (Account Value + Virtual Profit)
-        # This is our '100%' base for all rebalancing
-        virt_pnl = self.virt_current_value - dec_virt_allocated_usdt
-        self.tpv = self.real_equity + virt_pnl
+        # 2. Total Working TPV (Account Value + Virtual Value)
+        # Note: real_equity already includes unrealized PnL of L and S legs.
+        # TPV represents the total market value of all components (L + S + V + Cash).
+        self.tpv = self.real_equity + self.virt_current_value
         
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
@@ -79,7 +77,6 @@ class PortfolioCalculator:
         }
 
         # Проверяем, превышен ли порог хотя бы одной ногой
-        # Принудительная ребалансировка если threshold < 0
         any_exceeded: bool = dec_threshold < 0
 
         if not any_exceeded:
@@ -99,12 +96,14 @@ class PortfolioCalculator:
             diff_share = current_share - target_share # Положительно при ИЗБЫТКЕ
 
             if key == "VIRTUAL":
+                # For Virtual, diff_usdt is the amount to move to/from Cash
+                diff_usdt = diff_share * self.tpv
                 actions.append({
-                    "type": "VIRTUAL_RESET",
+                    "type": "VIRTUAL_ORDER",
                     "symbol": "VIRTUAL",
                     "base_symbol": "VIRTUAL",
                     "position_side": "BOTH",
-                    "diff_usdt": float(diff_share * self.tpv),
+                    "diff_usdt": float(-diff_usdt), # Negative means we need to "sell" units to Cash
                     "priority": 1 if diff_share > 0 else 3
                 })
             else:
@@ -113,8 +112,7 @@ class PortfolioCalculator:
                 pos_side: str = "LONG" if key == "BASE_LONG" else "SHORT"
                 pos_key: str = f"{self.base_ticker}_{pos_side}"
 
-                # Чтобы изменить долю капитала на X%, нужно изменить НОМИНАЛ на (X% * Плечо)
-                # Если у нас избыток доли (diff_share > 0), нам нужно ОТРИЦАТЕЛЬНОЕ изменение (продажа)
+                # To change capital share by X%, we change NOTIONAL by (X% * Leverage)
                 diff_usdt = -diff_share * self.tpv * lev
 
                 if not ignore_limits:

@@ -130,12 +130,18 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
         return {}
         
     paper_balance = paper_state.get("balance", initial_capital)
+    last_price = paper_state.get("last_price", 0.0)
+    virt_qty = state.get("virt_qty", 0.0)
     siphoned = state.get("siphoning_reserve", 0.0)
     cycles = state.get("rebalance_cycles", 0)
     last_update = state.get("last_update", 0)
     
-    # Расчет профита: (Текущий баланс - Начальный) + SAFE
-    profit_usdt = (paper_balance - initial_capital) + siphoned
+    # Расчет TPV: Баланс кэша + Стоимость Виртуальной части
+    current_virt_value = virt_qty * last_price
+    current_tpv = paper_balance + current_virt_value
+    
+    # Расчет профита: (Текущий TPV - Начальный) + SAFE
+    profit_usdt = (current_tpv - initial_capital) + siphoned
     profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
     
     # Используем profit_probation если он есть

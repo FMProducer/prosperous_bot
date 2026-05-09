@@ -94,15 +94,20 @@ class StatusAggregator:
                 paper_state_path = f"paper_state_{ticker}.json"
                 ps = await safe_load_json(paper_state_path, {})
                 paper_balance = ps.get("balance", initial_per_bot)
+                last_price = ps.get("last_price", 0.0)
 
                 siphoned = state.get("siphoning_reserve", 0.0)
+                virt_qty = state.get("virt_qty", 0.0)
                 
-                # НОВАЯ ЛОГИКА ПРОФИТА: если бот уволен, берем его финализированный профит
+                # НОВАЯ ЛОГИКА ПРОФИТА: теперь учитываем виртуальную спотовую ногу
                 is_fired = f_path.endswith(".fired")
                 if is_fired and "final_profit" in state:
                     profit = state["final_profit"]
                 else:
-                    profit = (paper_balance - initial_per_bot) + siphoned
+                    # TPV = Paper Balance + (Quantity * Price) + SAFE
+                    # Profit = TPV - Initial
+                    current_virt_value = virt_qty * last_price
+                    profit = (paper_balance + current_virt_value - initial_per_bot) + siphoned
                 
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)

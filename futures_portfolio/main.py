@@ -23,7 +23,7 @@ from pathlib import Path
 # Global ProcessPoolExecutor for heavy math
 process_executor = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8))
 
-def calculate_portfolio_task(positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+def calculate_portfolio_task(positions, price, real_equity, virt_qty, 
                              base_ticker, siphoning_reserve, targets, initial_capital, 
                              threshold, ignore_limits, long_entry_price=0.0, short_entry_price=0.0):
     """Heavy math task to be run in a separate process."""
@@ -31,8 +31,7 @@ def calculate_portfolio_task(positions, price, real_equity, virt_basis_price, vi
         positions=positions,
         spot_price=price,
         real_equity=real_equity,
-        virt_basis_price=virt_basis_price,
-        virt_allocated_usdt=virt_allocated_usdt,
+        virt_qty=virt_qty,
         base_ticker=base_ticker,
         siphoning_reserve=siphoning_reserve,
         targets=targets,
@@ -101,8 +100,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     # Состояние синтетической доли и сейфа
     state = await load_json(state_file_path, {
-        "virt_basis_price": 0.0,
-        "virt_allocated_usdt": 0.0,
+        "virt_qty": 0.0,
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
         "initial_tpv": 0.0,
@@ -114,11 +112,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "started_at": time.time()
     })
 
-    # Если тикер сменился, сбрасываем базис виртуальной части и начальный TPV
+    # Если тикер сменился, сбрасываем количество виртуальных монет и начальный TPV
     if state.get("base_ticker") != base_ticker:
-        logger.info(f"Ticker in state changed from {state.get('base_ticker')} to {base_ticker}. Resetting basis, initial TPV and ATH.")
-        state["virt_basis_price"] = 0.0
-        state["virt_allocated_usdt"] = 0.0
+        logger.info(f"Ticker in state changed from {state.get('base_ticker')} to {base_ticker}. Resetting virt_qty, initial TPV and ATH.")
+        state["virt_qty"] = 0.0
         state["initial_tpv"] = 0.0 
         state["reference_tpv"] = 0.0
         state["tpv_ath"] = 0.0
@@ -128,8 +125,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         state["started_at"] = time.time()
         await save_json(state_file_path, state)
 
-    virt_basis_price = float(state["virt_basis_price"])
-    virt_allocated_usdt = float(state["virt_allocated_usdt"])
+    virt_qty = float(state.get("virt_qty", 0.0))
     siphoning_reserve = float(state.get("siphoning_reserve", 0.0))
     initial_tpv = float(state.get("initial_tpv", 0.0))
     reference_tpv = float(state.get("reference_tpv", 0.0))
@@ -272,18 +268,20 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 real_equity = paper_state["balance"] + u_pnl
                 positions = paper_state["positions"] if paper_mode else {k: v for k, v in ticker_positions.items()}
 
-                if virt_basis_price == 0 or initial_tpv == 0:
-                    if virt_basis_price == 0:
-                        virt_basis_price = price
-                        virt_allocated_usdt = real_equity * targets["VIRTUAL"]["share"]
+                if virt_qty == 0 or initial_tpv == 0:
                     if initial_tpv == 0:
                         # For shared accounts, we MUST use assigned initial_capital as base
                         initial_tpv = portfolio_cfg.get("initial_capital", real_equity)
                         reference_tpv = initial_tpv
                         logger.info(f"Initialized TPV base: {initial_tpv:.2f} (Isolated Shadow Balance)")
 
+                    if virt_qty == 0:
+                        # Initialize Virtual Quantity as spot equivalent
+                        virt_qty = (initial_tpv * targets["VIRTUAL"]["share"]) / price
+                        logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker}")
+
                     state.update({
-                        "virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt,
+                        "virt_qty": virt_qty,
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
@@ -294,7 +292,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 
                 calc_res = await loop.run_in_executor(
                     process_executor, calculate_portfolio_task,
-                    positions, price, real_equity, virt_basis_price, virt_allocated_usdt, 
+                    positions, price, real_equity, virt_qty, 
                     base_ticker, siphoning_reserve, targets, initial_tpv, 
                     current_threshold, (current_threshold < 0),
                     l_entry, s_entry
@@ -411,7 +409,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             state["tpv_ath"] = 0.0
                             state["initial_tpv"] = 0.0
                             state["reference_tpv"] = 0.0
-                            state["virt_basis_price"] = 0.0
+                            state["virt_qty"] = 0.0
                             state["trailing_stop_triggered"] = True
                             state["trailing_stop_violation_start"] = 0.0
                             await save_json(state_file_path, state)
@@ -448,19 +446,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
                     logger.info(f"Heartbeat: Balance={real_equity:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}% C:{calc_res['share_cash_pct']:.1f}%")
                 
-                # Capture virtual parameters before potential reset to ensure virtual profit is siphoned
-                old_virt_basis: float = virt_basis_price
-                old_virt_alloc: float = virt_allocated_usdt
-
                 # Логика ребалансировки
                 valid_actions = []
                 if actions:
-                    # Внедряем Notional Value Guard для ВСЕХ ордеров (включая VIRTUAL_RESET)
+                    # Внедряем Notional Value Guard для ВСЕХ ордеров
                     min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
                     if valid_actions:
-                        logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%")
+                        logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
                         
                         rebalance_msg = (
                             f"🔄 <b>Rebalance Starting</b>: <code>{base_ticker}</code>\n"
@@ -474,7 +468,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             valid_actions, price, paper_mode, portfolio_cfg, step_sizes, paper_state
                         )
 
-                        # 2. Update core states (Virtual Basis, Paper Positions/Balance)
+                        # 2. Update core states (Virtual Quantity, Paper Positions/Balance)
                         for res in exec_results:
                             status = res.get("status")
                             pos_side = res.get("type", "UNKNOWN")
@@ -484,12 +478,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 continue
 
                             if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
-                                if res.get("type") == "VIRTUAL_RESET":
-                                    virt_basis_price = price
-                                    # Target share reset based on active TPV
-                                    virt_allocated_usdt = float(Decimal(str(tpv_active)) * Decimal(str(targets["VIRTUAL"]["share"])))
-                                    state.update({"virt_basis_price": virt_basis_price, "virt_allocated_usdt": virt_allocated_usdt})
-                                    logger.info(f"🔄 Virtual share rebalanced (Reset to {targets['VIRTUAL']['share']*100:.1f}%)")
+                                if res.get("type") == "VIRTUAL_ORDER":
+                                    # Update virtual quantity based on the USDT diff (sold/bought from Cash)
+                                    diff_usdt = res.get("diff_usdt", 0.0)
+                                    # diff_usdt is the amount ADDED to Virtual (from Cash)
+                                    # So we subtract it from paper_state["balance"] and add to virt_qty
+                                    paper_state["balance"] -= diff_usdt
+                                    virt_qty += diff_usdt / price
+                                    state["virt_qty"] = virt_qty
+                                    
+                                    logger.info(f"🔄 Virtual Fixed: {diff_usdt:+.4f} USDT moved between Cash and Virtual. New Qty: {virt_qty:.6f}")
                                     continue
 
                                 # Update execution results info
@@ -539,7 +537,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
                 if actions and len(valid_actions) > 0:
                     # ALWAYS use shadow balance (paper_state) for siphoning calculation to support shared accounts
-                    # This prevents multiple bots on the same account from siphoning the same global profit.
                     l_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
                     s_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
                     
@@ -572,7 +569,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 safe_calc_res = await loop.run_in_executor(
                     process_executor, calculate_portfolio_task,
                     safe_positions, price, safe_real_equity,
-                    virt_basis_price, virt_allocated_usdt,
+                    virt_qty,
                     base_ticker, siphoning_reserve, targets, initial_tpv,
                     -1.0, True, safe_l_entry, safe_s_entry
                 )
@@ -698,8 +695,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         # Сброс основного состояния
         state = await load_json(state_file_path, {})
         state.update({
-            "virt_basis_price": 0.0,
-            "virt_allocated_usdt": 0.0,
+            "virt_qty": 0.0,
             "initial_tpv": 0.0,
             "reference_tpv": 0.0,
             "tpv_ath": 0.0,
