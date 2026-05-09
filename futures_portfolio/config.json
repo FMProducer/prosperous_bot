@@ -36,7 +36,7 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.008,
+      "rebalance_threshold": 0.015,
       "ticker_thresholds": {
         "BTCUSDT": 0.001,
         "ETHUSDT": 0.001
@@ -45,25 +45,25 @@
   ],
   "tickers": [
     "DYMUSDT",
+    "TONUSDT",
+    "PLUMEUSDT",
+    "ZEREBROUSDT",
     "TSTUSDT",
     "ACEUSDT",
-    "ZEREBROUSDT",
     "SIRENUSDT",
     "AKTUSDT",
-    "STRKUSDT",
     "ORDIUSDT",
+    "STRKUSDT",
     "VVVUSDT",
-    "DOGSUSDT",
     "DEEPUSDT",
-    "ICPUSDT",
-    "NILUSDT",
+    "DOGSUSDT",
     "NOTUSDT",
-    "PLUMEUSDT",
+    "NILUSDT",
     "ONDOUSDT",
     "GALAUSDT",
+    "ICPUSDT",
     "BIOUSDT",
-    "FILUSDT",
-    "TONUSDT"
+    "FILUSDT"
   ],
   "live_swarm": [],
   "base_ticker": "DYMUSDT"

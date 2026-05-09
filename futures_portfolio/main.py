@@ -277,14 +277,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                     if virt_qty == 0:
                         # Initialize Virtual Quantity as spot equivalent
-                        virt_qty = (initial_tpv * targets["VIRTUAL"]["share"]) / price
-                        logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker}")
+                        v_share = targets["VIRTUAL"]["share"]
+                        v_cost = initial_tpv * v_share
+                        virt_qty = v_cost / price
+                        
+                        # CRITICAL: Deduct virtual cost from balance to maintain 100% TPV invariant
+                        paper_state["balance"] -= v_cost
+                        real_equity -= v_cost # Update local variable for immediate consistency
+                        
+                        logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker} (Cost: {v_cost:.2f} USDT deducted from Balance)")
+                        await save_json(paper_state_file_path, paper_state)
 
                     state.update({
                         "virt_qty": virt_qty,
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
+
+                # One-time Sanity Check for existing bots (Migration from buggy version)
+                # If TPV is ~135% of initial and it's the first cycles, fix the double-counting
+                if cycles <= 10 and (real_equity + virt_qty * price) > initial_tpv * 1.25:
+                    v_cost = initial_tpv * targets["VIRTUAL"]["share"]
+                    logger.warning(f"⚠️ Sanity Check: Detected double-counted Virtual leg for {base_ticker}. Adjusting balance by -{v_cost:.2f} USDT.")
+                    paper_state["balance"] -= v_cost
+                    real_equity -= v_cost
+                    await save_json(paper_state_file_path, paper_state)
 
                 # Offload heavy math to ProcessPoolExecutor
                 loop = asyncio.get_running_loop()
