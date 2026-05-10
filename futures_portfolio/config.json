@@ -7,10 +7,10 @@
   "min_notional_usdt": 5.1,
   "max_orders_per_second": 10,
   "max_bots": 20,
-  "paper_mode_bots": 18,
-  "probation_period_days": 0.021,
+  "paper_mode_bots": 19,
+  "probation_period_days": 0.011,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.022,
+  "supervisor_interval_days": 0.012,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 10.0,
   "equity_trailing_stop_pct": 3.0,
@@ -20,7 +20,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 60.0,
+      "initial_capital": 120.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -36,23 +36,35 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.03,
+      "rebalance_threshold": 0.001,
       "ticker_thresholds": {
-        "BTCUSDT": 0.001,
-        "ETHUSDT": 0.001
+        "BTCUSDT": 0.01,
+        "ETHUSDT": 0.01
       }
     }
   ],
   "tickers": [
+    "FHEUSDT",
     "LAYERUSDT",
-    "1000XECUSDT",
-    "WALUSDT",
-    "1000LUNCUSDT",
-    "ZEREBROUSDT",
+    "CETUSUSDT",
+    "SUIUSDT",
     "DEEPUSDT",
-    "SONICUSDT",
-    "AKTUSDT"
+    "ZEREBROUSDT",
+    "1000LUNCUSDT",
+    "WLDUSDT",
+    "1000XECUSDT",
+    "SIRENUSDT",
+    "TIAUSDT",
+    "QTUMUSDT",
+    "WUSDT",
+    "UNIUSDT",
+    "DOGSUSDT",
+    "WALUSDT",
+    "JASMYUSDT",
+    "FARTCOINUSDT",
+    "TONUSDT",
+    "BIOUSDT"
   ],
   "live_swarm": [],
-  "base_ticker": "LAYERUSDT"
+  "base_ticker": "FHEUSDT"
 }

@@ -51,7 +51,7 @@ def calculate_portfolio_task(positions, price, real_equity, virt_qty,
         "tpv": float(calc.tpv),
         "total_tpv": float(calc.total_tpv),
         "siphoning_reserve": float(calc.siphoning_reserve),
-        "virt_current_value": float(calc.notional_virt)
+        "virt_current_value": float(calc.val_virt)
     }
 
 def sync_read_json(path: str) -> Dict:
@@ -230,6 +230,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
+                # Dynamic initial_tpv update from config
+                target_initial = portfolio_cfg.get("initial_capital", 60.0)
+                if initial_tpv != target_initial and target_initial > 0:
+                    logger.info(f"🔄 Initial Capital changed in config: {initial_tpv} -> {target_initial}. Updating base.")
+                    initial_tpv = target_initial
+                    reference_tpv = initial_tpv
+                    state["initial_tpv"] = initial_tpv
+                    state["reference_tpv"] = reference_tpv
+
                 # Use Mark Price for TPV and rebalance triggers as recommended by Audit
                 prices = await connector.get_mark_prices([base_ticker])
                 price = prices.get(base_ticker)
@@ -344,7 +353,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
                     
                     # Проверяем прибыль относительно глобального начального капитала
-                    global_initial = portfolio_cfg.get("initial_capital", 65.0)
+                    global_initial = portfolio_cfg.get("initial_capital", 60.0)
                     if tpv_total < global_initial:
                         emit_signal("stop", base_ticker)
                         logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
@@ -401,7 +410,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
                                     
                             # Reset shadow balance to initial capital to avoid loop on restart
-                            paper_state["balance"] = portfolio_cfg.get("initial_capital", 65.0)
+                            paper_state["balance"] = portfolio_cfg.get("initial_capital", 60.0)
                             paper_state["long_entry_price"] = 0.0
                             paper_state["short_entry_price"] = 0.0
                             await save_json(paper_state_file_path, paper_state)
@@ -413,8 +422,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
 
                             # Эмитируем сигнал остановки для супервайзера
-                            # Проверяем прибыль относительно глобального начального капитала (65 USDT)
-                            global_initial = portfolio_cfg.get("initial_capital", 65.0)
+                            # Проверяем прибыль относительно глобального начального капитала
+                            global_initial = portfolio_cfg.get("initial_capital", 60.0)
                             if tpv_total < global_initial:
                                 emit_signal("stop", base_ticker)
                                 logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
@@ -654,7 +663,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
 
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     portfolio_cfg = config.get("portfolios", [{}])[0]
-    initial_capital = portfolio_cfg.get("initial_capital", 65.0)
+    initial_capital = portfolio_cfg.get("initial_capital", 60.0)
 
     logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode}, CloseOnly: {close_only})")
 

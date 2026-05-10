@@ -152,7 +152,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
     # Прунинг: проверка дельты за время пробации
-    if profit_prob_usdt < -0.2:
+    if profit_prob_usdt < 0:
         # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period
         probation_days = config.get("probation_period_days", 0.041)
         probation_sec = probation_days * 86400
@@ -161,7 +161,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
         if last_update > 0 and uptime_sec < probation_sec:
             logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in its probation window ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping pruning.")
         else:
-            logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < -0.2. Firing bot.")
+            logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < 0. Firing bot.")
             
             # Сохраняем финальный профит ПЕРЕД сбросом стейта
             try:
@@ -272,16 +272,10 @@ async def manage_swarm():
                 "trailing_stop_paper_timeout_end": 0.0
             }
 
-    # Сортировка: Приоритет запущенным прибыльным -> прибыльным -> топу сканера
+    # Сортировка: Только по чистому PnL (profit_delta)
     def ranking_key(t):
         p = perf_dict[t]
-        if t in running_info and p.get('profit_delta', 0) > 0:
-            return 1000 + p['profit_delta']
-        if p.get('profit', 0) > 0:
-            return 500 + p['profit']
-        if t in scanner_tickers:
-            return 100 - scanner_tickers.index(t)
-        return 0
+        return p.get('profit_delta', 0.0)
 
     all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
     

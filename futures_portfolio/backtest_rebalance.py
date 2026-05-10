@@ -77,6 +77,7 @@ class PortfolioState:
         self.virt_allocated_usdt = Decimal('0.0')
 
         self.history: List[float] = []
+        self.rebalance_log: List[Dict[str, Any]] = []
         self.cycles: int = 0
 
     def init_state(self, price: float) -> None:
@@ -94,6 +95,9 @@ class PortfolioState:
 
         self.virt_basis_price = dec_price
         self.virt_allocated_usdt = self.initial_capital * self.v_target
+        
+        # CRITICAL FIX: Subtract virtual cost from equity to maintain 100% TPV invariant
+        self.real_equity -= self.virt_allocated_usdt
 
     def update(self, price: float, high: float, low: float, sim: Optional[LimitOrderSimulator] = None) -> float:
         dec_price = Decimal(str(price))
@@ -105,12 +109,11 @@ class PortfolioState:
         l_pnl = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
         s_pnl = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
         
-        # 2. Virtual Notional Value
-        notional_virt = (self.virt_allocated_usdt / self.virt_basis_price) * dec_price
+        # 2. Virtual Market Value
+        val_virt = (self.virt_allocated_usdt / self.virt_basis_price) * dec_price
         
         # 3. Total Working TPV (Real Equity + Virtual Market Value)
-        # In this simulator, real_equity acts as the balance + unrealized futures PnL
-        tpv = self.real_equity + l_pnl + s_pnl + notional_virt
+        tpv = self.real_equity + l_pnl + s_pnl + val_virt
         total_tpv = tpv + self.siphoning_reserve
 
         if total_tpv <= 0:
@@ -126,17 +129,17 @@ class PortfolioState:
             siphon_amount = new_profit * (1 - self.reinvestment_ratio)
             if siphon_amount > Decimal('0.1'):
                 self.siphoning_reserve += siphon_amount
-                # Reserve is taken from the capital base
                 self.real_equity -= siphon_amount
                 tpv -= siphon_amount
 
-        # 5. Shares calculation based on NOTIONAL
-        notional_long = self.positions["LONG"] * dec_price
-        notional_short = self.positions["SHORT"] * dec_price
+        # 5. Shares calculation based on EQUITY (Capital Basis + PnL)
+        # val_long = (Collateral) + PnL
+        val_l = (self.positions["LONG"] * self.entry_prices["LONG"] / self.l_lev) + l_pnl
+        val_s = (self.positions["SHORT"] * self.entry_prices["SHORT"] / self.s_lev) + s_pnl
         
-        share_l = notional_long / (tpv * self.l_lev) if tpv > 0 else Decimal('0')
-        share_s = notional_short / (tpv * self.s_lev) if tpv > 0 else Decimal('0')
-        share_v = notional_virt / tpv if tpv > 0 else Decimal('0')
+        share_l = val_l / tpv if tpv > 0 else Decimal('0')
+        share_s = val_s / tpv if tpv > 0 else Decimal('0')
+        share_v = val_virt / tpv if tpv > 0 else Decimal('0')
 
         # 6. Rebalance Check
         if abs(share_l - self.l_target) > self.threshold or \
@@ -144,26 +147,36 @@ class PortfolioState:
            abs(share_v - self.v_target) > self.threshold:
 
             self.cycles += 1
+            log_entry = {
+                "step": len(self.history),
+                "price": float(dec_price),
+                "tpv": float(tpv),
+                "shares_before": {"L": float(share_l), "S": float(share_s), "V": float(share_v)},
+                "actions": []
+            }
             
-            # Rebalance ALL legs to their Target Notional
-            # LONG
-            target_notional_l = tpv * self.l_target * self.l_lev
-            diff_usdt_l = target_notional_l - notional_long
+            # Rebalance ALL legs to restore Target Equity
+            # 1. BASE_LONG
+            diff_share_l = share_l - self.l_target
+            diff_usdt_l = -diff_share_l * tpv * self.l_lev
             if abs(diff_usdt_l) >= self.min_notional:
                 side = "BUY" if diff_usdt_l > 0 else "SELL"
                 f_price = dec_price
                 if sim:
                     _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_l)/dec_price, dec_price, dec_high, dec_low)
                 
-                # Update positions and realize PnL into real_equity
+                # Realize PnL and update basis
                 self.real_equity += self.positions["LONG"] * (f_price - self.entry_prices["LONG"])
                 self.real_equity -= abs(diff_usdt_l) * self.commission
-                self.positions["LONG"] = target_notional_l / f_price
+                
+                new_notional = (self.positions["LONG"] * f_price) + diff_usdt_l
+                self.positions["LONG"] = new_notional / f_price
                 self.entry_prices["LONG"] = f_price
+                log_entry["actions"].append(f"LONG {side} {float(abs(diff_usdt_l)):.2f} USDT @ {float(f_price):.6g}")
 
-            # SHORT
-            target_notional_s = tpv * self.s_target * self.s_lev
-            diff_usdt_s = target_notional_s - notional_short
+            # 2. BASE_SHORT
+            diff_share_s = share_s - self.s_target
+            diff_usdt_s = -diff_share_s * tpv * self.s_lev
             if abs(diff_usdt_s) >= self.min_notional:
                 side = "SELL" if diff_usdt_s > 0 else "BUY"
                 f_price = dec_price
@@ -172,14 +185,25 @@ class PortfolioState:
                 
                 self.real_equity += self.positions["SHORT"] * (self.entry_prices["SHORT"] - f_price)
                 self.real_equity -= abs(diff_usdt_s) * self.commission
-                self.positions["SHORT"] = target_notional_s / f_price
+                
+                new_notional = (self.positions["SHORT"] * f_price) + (-diff_usdt_s if side == "BUY" else diff_usdt_s)
+                # Correction: for Short, diff_usdt > 0 means we need to increase short capacity (SELL)
+                # diff_usdt_s = - (share_s - target) * tpv * lev. If share_s < target, diff_usdt_s is positive -> side SELL.
+                self.positions["SHORT"] = ((self.positions["SHORT"] * f_price) + diff_usdt_s) / f_price
                 self.entry_prices["SHORT"] = f_price
+                log_entry["actions"].append(f"SHORT {side} {float(abs(diff_usdt_s)):.2f} USDT @ {float(f_price):.6g}")
 
-            # VIRTUAL
-            target_notional_v = tpv * self.v_target
-            # Reset virtual allocation based on target
-            self.virt_basis_price = dec_price
-            self.virt_allocated_usdt = target_notional_v
+            # 3. VIRTUAL
+            diff_share_v = share_v - self.v_target
+            diff_v = diff_share_v * tpv
+            if abs(diff_v) > Decimal('0.01'):
+                self.real_equity += diff_v
+                self.virt_basis_price = dec_price
+                self.virt_allocated_usdt = tpv * self.v_target
+                side_v = "SELL" if diff_v > 0 else "BUY"
+                log_entry["actions"].append(f"VIRT {side_v} {float(abs(diff_v)):.2f} USDT")
+
+            self.rebalance_log.append(log_entry)
 
         self.history.append(float(total_tpv))
         return float(total_tpv)
@@ -209,7 +233,7 @@ async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> s
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
                         days: float = 2.0, commission: float = 0.0004, use_limit_orders: bool = False,
                         limit_offset_pct: float = 0.1, limit_timeout_sec: int = 30, quiet: bool = False,
-                        threshold_override: Optional[float] = None) -> Optional[Dict[str, Any]]:
+                        threshold_override: Optional[float] = None, capital_override: Optional[float] = None) -> Optional[Dict[str, Any]]:
     try:
         if quiet:
             logger.setLevel(logging.WARNING)
@@ -237,7 +261,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         df = df[['open', 'high', 'low', 'close', 'volume']]
         
         portfolio_cfg: Dict[str, Any] = config["portfolios"][0]
-        initial_capital: float = portfolio_cfg.get("initial_capital", 1000.0)
+        initial_capital: float = capital_override if capital_override is not None else portfolio_cfg.get("initial_capital", 1000.0)
         targets: Dict[str, Any] = portfolio_cfg["targets"]
         ticker_thresholds: Dict[str, float] = portfolio_cfg.get("ticker_thresholds", {})
         
@@ -274,6 +298,14 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             logger.info(f"Iterative Backtest for {base_ticker}:")
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
+            
+            if state.rebalance_log:
+                logger.info("\nRebalance Log:")
+                for log in state.rebalance_log:
+                    shares_str = f"L:{log['shares_before']['L']*100:.1f}% S:{log['shares_before']['S']*100:.1f}% V:{log['shares_before']['V']*100:.1f}%"
+                    actions_str = " | ".join(log['actions'])
+                    logger.info(f"Cycle #{log['step']}: Price {log['price']:.6g} | Shares: {shares_str} | TPV: {log['tpv']:.2f} | Actions: {actions_str}")
+
             if sim:
                 s = sim.get_summary()
                 logger.info(f"Limit Orders: {s['filled']}/{s['attempted']} filled ({s['fallback']} fallbacks)")
@@ -296,6 +328,8 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", default=None)
     parser.add_argument("--days", type=float, default=1.0)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--capital", type=float, default=None)
+    parser.add_argument("--threshold", type=float, default=None)
     args = parser.parse_args()
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-    asyncio.run(run_backtest(args.config, data_dir, args.live, args.ticker, args.days))
+    asyncio.run(run_backtest(args.config, data_dir, args.live, args.ticker, args.days, capital_override=args.capital, threshold_override=args.threshold))
