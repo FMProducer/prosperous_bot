@@ -17,21 +17,22 @@ from rank_tickers import main as run_scanner
 from storage import safe_load_json, safe_save_json
 
 # Настройка логирования
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(log_dir, exist_ok=True)
+BASE_PATH = Path(__file__).resolve().parent
+log_dir = BASE_PATH / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(log_dir, "supervisor.log"), encoding="utf-8"),
+        logging.FileHandler(log_dir / "supervisor.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("Supervisor")
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(CURRENT_DIR, "config.json")
-DATA_DIR = r"C:\Python\Prosperous_Bot\third_party\rl-trading-binance\user_data\data\binance\futures"
+CONFIG_PATH = str(BASE_PATH / "config.json")
+# Динамический путь к данным относительно корня проекта
+DATA_DIR = str(BASE_PATH.parent / "third_party" / "rl-trading-binance" / "user_data" / "data" / "binance" / "futures")
 
 def read_shared_config(path: str) -> Dict[str, Any]:
     """Чтение общего конфига без использования блокировок."""
@@ -114,7 +115,7 @@ async def start_bot(ticker: str, paper: bool = False):
     except: pass
     
     # Формируем команду запуска
-    cmd = f'pm2 start main.py --name bot-{short_name} --cwd "{CURRENT_DIR}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
+    cmd = f'pm2 start main.py --name bot-{short_name} --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
@@ -240,13 +241,17 @@ async def manage_swarm():
             logger.error(f"Error processing signal {sig_file}: {e}")
 
     # 3. Анализ и Рейтинг
-    logger.info("Starting scanner analysis (Volatility Factor)...")
+    logger.info("🔍 Running ticker scanner (Volatility Factor)...")
     try:
-        scanner_results = await asyncio.wait_for(run_scanner(quiet=True, min_volume=10_000_000), timeout=60)
+        scanner_results: list[dict[str, Any]] = await asyncio.wait_for(run_scanner(quiet=True, min_volume=10_000_000), timeout=60)
+
+        if not scanner_results:
+            logger.warning(f"⚠️ Scanner found 0 tickers in {DATA_DIR}. Check data availability.")
+
         scanner_tickers = [r['symbol'] for r in scanner_results]
-        logger.info(f"Scanner found {len(scanner_tickers)} volatile tickers.")
+        logger.info(f"📊 Scanner found {len(scanner_tickers)} potential tickers.")
     except Exception as e:
-        logger.error(f"Scanner failed or timed out: {e}")
+        logger.error(f"❌ Scanner failed or timed out: {e}")
         scanner_tickers = []
     
     perf_dict = {}
@@ -377,13 +382,23 @@ async def manage_swarm():
                 await start_bot(ticker, paper=(not should_be_real))
 
     # 6. Финализация конфига (принудительное обновление)
-    config["tickers"] = final_swarm
-    config["live_swarm"] = sorted(target_real_bots)
-    config["base_ticker"] = final_swarm[0] if final_swarm else "BTCUSDT"
-    config["black_list"] = sorted(list(new_black_list))
-    
-    logger.info(f"Writing to config: tickers={len(config['tickers'])}, swarm={config['live_swarm']}")
-    await safe_save_json(CONFIG_PATH, config)
+    if not final_swarm:
+        logger.error("❌ CRITICAL: Scanner returned empty ticker list. Aborting config update to prevent wipeout.")
+        # Если список пуст, мы не имеем права обновлять tickers и live_swarm,
+        # так как это остановит все работающие инстансы.
+        return
+
+    # Обновляем только если есть валидные данные
+    try:
+        config["tickers"] = final_swarm
+        config["live_swarm"] = sorted(target_real_bots)
+        config["base_ticker"] = final_swarm[0]
+        config["black_list"] = sorted(list(new_black_list))
+
+        logger.info(f"💾 Config Integrity Verified. Writing: {len(final_swarm)} tickers, {len(target_real_bots)} in live swarm.")
+        await safe_save_json(CONFIG_PATH, config)
+    except Exception as e:
+        logger.error(f"❌ Failed to update config: {e}", exc_info=True)
     
     # Релоад PM2
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
