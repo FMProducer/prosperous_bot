@@ -22,31 +22,33 @@ def analyze_swarm():
 
     total_net_pnl = 0
     total_safe = 0
-    files = glob.glob("paper_state_*.json")
+    files = glob.glob("state_*.json")
     
     results = []
     
     for f in files:
         try:
             with open(f, 'r') as j:
-                data = json.load(j)
-                balance = data.get('balance', initial_per_bot)
+                state_data = json.load(j)
                 
                 # Извлекаем тикер
-                ticker_from_file = os.path.basename(f).replace('paper_state_', '').replace('.json', '')
-                ticker = data.get('base_ticker', ticker_from_file)
+                ticker_from_file = os.path.basename(f).replace('state_', '').replace('.json', '')
+                ticker = state_data.get('base_ticker', ticker_from_file)
                 
-                # Ищем соответствующий state_*.json для получения SAFE
-                safe_reserve = 0.0
-                state_file = f"state_{ticker}.json"
-                if os.path.exists(state_file):
-                    with open(state_file, 'r') as sj:
-                        state_data = json.load(sj)
-                        safe_reserve = state_data.get('siphoning_reserve', 0.0)
+                # Архитектурное исправление: Читаем готовый расчет напрямую от main.py.
+                total_ticker_pnl = state_data.get("last_profit", 0.0)
+                if "final_profit" in state_data:
+                    total_ticker_pnl = state_data.get("final_profit", total_ticker_pnl)
                 
-                # Расчет PnL: (Текущий баланс - Начальный) + То что ушло в SAFE
-                working_pnl = balance - initial_per_bot
-                total_ticker_pnl = working_pnl + safe_reserve
+                safe_reserve = state_data.get('siphoning_reserve', 0.0)
+
+                # Для отображения баланса ищем paper_state
+                balance = initial_per_bot
+                paper_state_file = f"paper_state_{ticker}.json"
+                if os.path.exists(paper_state_file):
+                    with open(paper_state_file, 'r') as p_j:
+                        p_data = json.load(p_j)
+                        balance = p_data.get('balance', initial_per_bot)
                 
                 total_net_pnl += total_ticker_pnl
                 total_safe += safe_reserve

@@ -129,19 +129,19 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     if not state or not paper_state:
         return {}
         
-    paper_balance = paper_state.get("balance", initial_capital)
-    last_price = paper_state.get("last_price", 0.0)
-    virt_qty = state.get("virt_qty", 0.0)
     siphoned = state.get("siphoning_reserve", 0.0)
     cycles = state.get("rebalance_cycles", 0)
     last_update = state.get("last_update", 0)
     
-    # Расчет TPV: Баланс кэша + Стоимость Виртуальной части
-    current_virt_value = virt_qty * last_price
-    current_tpv = paper_balance + current_virt_value
+    # Архитектурное исправление: Строгий SSOT.
+    # Супервайзер не должен вычислять TPV (иначе теряется PnL L/S ног).
+    # Читаем готовый расчет напрямую от main.py.
+    profit_usdt = state.get("last_profit", 0.0)
     
-    # Расчет профита: (Текущий TPV - Начальный) + SAFE
-    profit_usdt = (current_tpv - initial_capital) + siphoned
+    # Если бот уже уволен, читаем его зафиксированный финальный PnL
+    if "final_profit" in state and ticker not in running_info:
+        profit_usdt = state.get("final_profit", profit_usdt)
+
     profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
     
     # Используем profit_probation если он есть
