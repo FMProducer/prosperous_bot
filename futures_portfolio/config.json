@@ -1,10 +1,10 @@
 {
   "testnet": false,
   "paper_mode": true,
-  "limit_order_enabled": true,
+  "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.1,
+  "min_notional_usdt": 10.0,
   "max_orders_per_second": 10,
   "max_bots": 20,
   "paper_mode_bots": 18,
@@ -12,11 +12,21 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.022,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 5.0,
-  "equity_trailing_stop_pct": 0.5,
+  "max_drawdown_limit": 10.0,
+  "equity_trailing_stop_pct": 3.0,
   "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,
-  "black_list": [],
+  "black_list": [
+    "1000XECUSDT",
+    "BANANAUSDT",
+    "DYMUSDT",
+    "JASMYUSDT",
+    "JTOUSDT",
+    "LAYERUSDT",
+    "SIRENUSDT",
+    "TSTUSDT",
+    "ZEREBROUSDT"
+  ],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
@@ -36,7 +46,7 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.015,
+      "rebalance_threshold": 0.03,
       "ticker_thresholds": {
         "BTCUSDT": 0.001,
         "ETHUSDT": 0.001
@@ -44,27 +54,28 @@
     }
   ],
   "tickers": [
-    "DYMUSDT",
-    "TONUSDT",
-    "PLUMEUSDT",
-    "ZEREBROUSDT",
-    "TSTUSDT",
-    "ACEUSDT",
-    "SIRENUSDT",
-    "AKTUSDT",
-    "ORDIUSDT",
-    "STRKUSDT",
-    "VVVUSDT",
     "DEEPUSDT",
-    "DOGSUSDT",
-    "NOTUSDT",
-    "NILUSDT",
-    "ONDOUSDT",
-    "GALAUSDT",
-    "ICPUSDT",
+    "CETUSUSDT",
+    "1000LUNCUSDT",
+    "VVVUSDT",
+    "UNIUSDT",
     "BIOUSDT",
-    "FILUSDT"
+    "DOGSUSDT",
+    "MOVRUSDT",
+    "PLUMEUSDT",
+    "SONICUSDT",
+    "WUSDT",
+    "NILUSDT",
+    "AKTUSDT",
+    "BROCCOLIF3BUSDT",
+    "MOVEUSDT",
+    "NOTUSDT",
+    "ORCAUSDT",
+    "TONUSDT"
   ],
-  "live_swarm": [],
-  "base_ticker": "DYMUSDT"
+  "live_swarm": [
+    "CETUSUSDT",
+    "DEEPUSDT"
+  ],
+  "base_ticker": "DEEPUSDT"
 }

@@ -649,25 +649,46 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
             config = json.load(f)
     except:
         config = {}
-    
+
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     portfolio_cfg = config.get("portfolios", [{}])[0]
     initial_capital = portfolio_cfg.get("initial_capital", 65.0)
 
     logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode}, CloseOnly: {close_only})")
-    
+
+    # --- PERSISTENCE PROTOCOL: Archive state before reset ---
+    if not close_only:
+        try:
+            history_dir = Path("history")
+            history_dir.mkdir(exist_ok=True)
+            state = await load_json(state_file_path, {})
+            paper_state = await load_json(paper_state_file_path, {})
+
+            archive_data = {
+                "ticker": base_ticker,
+                "timestamp": time.time(),
+                "state": state,
+                "paper_state": paper_state,
+                "final_profit": (paper_state.get("balance", 0) + state.get("virt_qty", 0) * paper_state.get("last_price", 0)) - initial_capital + state.get("siphoning_reserve", 0)
+            }
+            archive_path = history_dir / f"archive_{base_ticker}_{int(time.time())}.json"
+            await save_json(str(archive_path), archive_data)
+            logger.info(f"💾 State archived to {archive_path}")
+        except Exception as e:
+            logger.error(f"Failed to archive state: {e}")
+
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
-    
+
     # Always try to load paper_state to reset it (unless close_only)
     paper_state = await load_json(paper_state_file_path, {})
-    
+
     if paper_mode:
         if paper_state and "positions" in paper_state:
             for pos_key, qty in paper_state["positions"].items():
                 if qty != 0:
                     logger.info(f"Closing PAPER position {pos_key}: {qty}")
-        
+
         if not close_only:
             # Reset paper state to fresh start
             paper_state.update({
@@ -697,7 +718,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                         position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
                         min_notional=0.0
                     )
-        
+
         if not close_only:
             if paper_state:
                 paper_state.update({

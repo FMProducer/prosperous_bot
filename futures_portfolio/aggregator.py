@@ -116,7 +116,6 @@ class StatusAggregator:
                 is_active_process = (time.time() - last_update) < 300 if last_update > 0 else False
                 
                 # Логика "Active" vs "Removed" для шапки и статистики
-                # Бот считается активным, если он есть в списке тикеров конфига И у него нет пометки .fired
                 if ticker in active_tickers and not is_fired:
                     active_bots_count += 1
                     active_pnl += profit
@@ -124,6 +123,9 @@ class StatusAggregator:
                     total_safe += siphoned
                     status_icon = "🟢" if ticker in live_swarm else "🟡"
                 else:
+                    # Пропускаем или помечаем неактивных, если они не принесли профита
+                    if abs(profit) < 0.01:
+                        continue
                     removed_pnl += profit
                     status_icon = "🔴"
                 

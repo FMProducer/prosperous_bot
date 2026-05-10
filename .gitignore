@@ -239,3 +239,4 @@ futures_portfolio/Dialog.md
 futures_portfolio/check_binance_key.py
 futures_portfolio/state_*USDT.json.fired
 futures_portfolio/paper_state_*USDT.json.fired
+futures_portfolio/history/archive_*.json
