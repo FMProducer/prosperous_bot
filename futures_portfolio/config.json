@@ -4,7 +4,7 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 10.0,
+  "min_notional_usdt": 5.1,
   "max_orders_per_second": 10,
   "max_bots": 20,
   "paper_mode_bots": 18,
@@ -44,19 +44,15 @@
     }
   ],
   "tickers": [
-    "1000LUNCUSDT",
     "LAYERUSDT",
-    "DEEPUSDT",
     "1000XECUSDT",
     "WALUSDT",
-    "ZEREBROUSDT",
-    "SONICUSDT",
-    "AKTUSDT",
-    "SIRENUSDT"
-  ],
-  "live_swarm": [
     "1000LUNCUSDT",
-    "LAYERUSDT"
+    "ZEREBROUSDT",
+    "DEEPUSDT",
+    "SONICUSDT",
+    "AKTUSDT"
   ],
-  "base_ticker": "1000LUNCUSDT"
+  "live_swarm": [],
+  "base_ticker": "LAYERUSDT"
 }

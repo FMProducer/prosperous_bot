@@ -51,7 +51,7 @@ def calculate_portfolio_task(positions, price, real_equity, virt_qty,
         "tpv": float(calc.tpv),
         "total_tpv": float(calc.total_tpv),
         "siphoning_reserve": float(calc.siphoning_reserve),
-        "virt_current_value": float(calc.virt_current_value)
+        "virt_current_value": float(calc.notional_virt)
     }
 
 def sync_read_json(path: str) -> Dict:

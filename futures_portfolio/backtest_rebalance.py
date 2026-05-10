@@ -101,25 +101,23 @@ class PortfolioState:
         dec_low = Decimal(str(low))
 
         # 1. Update Real Equity based on futures PnL
+        # Note: real_equity in PortfolioState is the isolated shadow balance + PnL
         l_pnl = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
         s_pnl = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
-        current_real_equity = self.real_equity + l_pnl + s_pnl
-
-        # 2. Update Virtual Value (Recalculated every iteration)
-        # V_current = Qty_virt * Price_current = (Allocated / Basis) * Price_current
-        virt_current_value = self.virt_allocated_usdt * (dec_price / self.virt_basis_price)
-        virt_pnl = virt_current_value - self.virt_allocated_usdt
-
-        # 3. Calculate Global TPV
-        # TPV = Real_Equity + Virtual_PnL
-        tpv = current_real_equity + virt_pnl
+        
+        # 2. Virtual Notional Value
+        notional_virt = (self.virt_allocated_usdt / self.virt_basis_price) * dec_price
+        
+        # 3. Total Working TPV (Real Equity + Virtual Market Value)
+        # In this simulator, real_equity acts as the balance + unrealized futures PnL
+        tpv = self.real_equity + l_pnl + s_pnl + notional_virt
         total_tpv = tpv + self.siphoning_reserve
 
         if total_tpv <= 0:
             self.history.append(0.0)
             return 0.0
 
-        # 4. SAFE Siphoning logic (Triggered if global total_tpv > initial_capital)
+        # 4. SAFE Siphoning logic
         total_surplus = total_tpv - self.initial_capital
         siphoning_threshold_abs = self.initial_capital * (self.siphoning_threshold_pct / 100)
 
@@ -128,76 +126,60 @@ class PortfolioState:
             siphon_amount = new_profit * (1 - self.reinvestment_ratio)
             if siphon_amount > Decimal('0.1'):
                 self.siphoning_reserve += siphon_amount
-                # Reserve is taken from real_equity
+                # Reserve is taken from the capital base
                 self.real_equity -= siphon_amount
-                current_real_equity -= siphon_amount
                 tpv -= siphon_amount
 
-        # 5. Rebalance Check
-        # Use actual Market Value calculation (Basis + PnL)
-        val_l = (self.positions["LONG"] * self.entry_prices["LONG"] / self.l_lev) + \
-                (self.positions["LONG"] * (dec_price - self.entry_prices["LONG"]))
+        # 5. Shares calculation based on NOTIONAL
+        notional_long = self.positions["LONG"] * dec_price
+        notional_short = self.positions["SHORT"] * dec_price
         
-        val_s = (self.positions["SHORT"] * self.entry_prices["SHORT"] / self.s_lev) + \
-                (self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price))
-        
-        val_v = virt_current_value
+        share_l = notional_long / (tpv * self.l_lev) if tpv > 0 else Decimal('0')
+        share_s = notional_short / (tpv * self.s_lev) if tpv > 0 else Decimal('0')
+        share_v = notional_virt / tpv if tpv > 0 else Decimal('0')
 
-        # Shares relative to working capital (TPV)
-        share_l = val_l / tpv if tpv > 0 else Decimal('0')
-        share_s = val_s / tpv if tpv > 0 else Decimal('0')
-        share_v = val_v / tpv if tpv > 0 else Decimal('0')
-
+        # 6. Rebalance Check
         if abs(share_l - self.l_target) > self.threshold or \
            abs(share_s - self.s_target) > self.threshold or \
            abs(share_v - self.v_target) > self.threshold:
 
-            # Rebalance triggers
-            rebalanced = False
+            self.cycles += 1
             
-            # Action candidate: Long
-            notional_l = self.positions["LONG"] * dec_price
-            target_vol_l = tpv * self.l_target * self.l_lev
-            diff_usdt_l = target_vol_l - notional_l
+            # Rebalance ALL legs to their Target Notional
+            # LONG
+            target_notional_l = tpv * self.l_target * self.l_lev
+            diff_usdt_l = target_notional_l - notional_long
             if abs(diff_usdt_l) >= self.min_notional:
-                self.cycles += 1
-                rebalanced = True
                 side = "BUY" if diff_usdt_l > 0 else "SELL"
                 f_price = dec_price
                 if sim:
                     _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_l)/dec_price, dec_price, dec_high, dec_low)
                 
-                # Realize PnL for the leg partially
-                self.real_equity += self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
+                # Update positions and realize PnL into real_equity
+                self.real_equity += self.positions["LONG"] * (f_price - self.entry_prices["LONG"])
                 self.real_equity -= abs(diff_usdt_l) * self.commission
-                self.positions["LONG"] = target_vol_l / f_price
+                self.positions["LONG"] = target_notional_l / f_price
                 self.entry_prices["LONG"] = f_price
 
-            # Action candidate: Short
-            notional_s = self.positions["SHORT"] * dec_price
-            target_vol_s = tpv * self.s_target * self.s_lev
-            diff_usdt_s = target_vol_s - notional_s
+            # SHORT
+            target_notional_s = tpv * self.s_target * self.s_lev
+            diff_usdt_s = target_notional_s - notional_short
             if abs(diff_usdt_s) >= self.min_notional:
-                if not rebalanced: self.cycles += 1
-                rebalanced = True
                 side = "SELL" if diff_usdt_s > 0 else "BUY"
                 f_price = dec_price
                 if sim:
                     _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_s)/dec_price, dec_price, dec_high, dec_low)
                 
-                self.real_equity += self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
+                self.real_equity += self.positions["SHORT"] * (self.entry_prices["SHORT"] - f_price)
                 self.real_equity -= abs(diff_usdt_s) * self.commission
-                self.positions["SHORT"] = target_vol_s / f_price
+                self.positions["SHORT"] = target_notional_s / f_price
                 self.entry_prices["SHORT"] = f_price
 
-            # Action candidate: Virtual
-            diff_usdt_v = (tpv * self.v_target) - virt_current_value
-            if abs(diff_usdt_v) >= self.min_notional:
-                if not rebalanced: self.cycles += 1
-                rebalanced = True
-                # Reset virtual basis
-                self.virt_basis_price = dec_price
-                self.virt_allocated_usdt = tpv * self.v_target
+            # VIRTUAL
+            target_notional_v = tpv * self.v_target
+            # Reset virtual allocation based on target
+            self.virt_basis_price = dec_price
+            self.virt_allocated_usdt = target_notional_v
 
         self.history.append(float(total_tpv))
         return float(total_tpv)
