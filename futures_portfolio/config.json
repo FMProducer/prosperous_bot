@@ -16,17 +16,7 @@
   "equity_trailing_stop_pct": 3.0,
   "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,
-  "black_list": [
-    "1000XECUSDT",
-    "BANANAUSDT",
-    "DYMUSDT",
-    "JASMYUSDT",
-    "JTOUSDT",
-    "LAYERUSDT",
-    "SIRENUSDT",
-    "TSTUSDT",
-    "ZEREBROUSDT"
-  ],
+  "black_list": [],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
@@ -54,28 +44,19 @@
     }
   ],
   "tickers": [
-    "DEEPUSDT",
-    "CETUSUSDT",
     "1000LUNCUSDT",
-    "VVVUSDT",
-    "UNIUSDT",
-    "BIOUSDT",
-    "DOGSUSDT",
-    "MOVRUSDT",
-    "PLUMEUSDT",
+    "LAYERUSDT",
+    "DEEPUSDT",
+    "1000XECUSDT",
+    "WALUSDT",
+    "ZEREBROUSDT",
     "SONICUSDT",
-    "WUSDT",
-    "NILUSDT",
     "AKTUSDT",
-    "BROCCOLIF3BUSDT",
-    "MOVEUSDT",
-    "NOTUSDT",
-    "ORCAUSDT",
-    "TONUSDT"
+    "SIRENUSDT"
   ],
   "live_swarm": [
-    "CETUSUSDT",
-    "DEEPUSDT"
+    "1000LUNCUSDT",
+    "LAYERUSDT"
   ],
-  "base_ticker": "DEEPUSDT"
+  "base_ticker": "1000LUNCUSDT"
 }

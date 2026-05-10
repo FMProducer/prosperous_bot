@@ -206,7 +206,7 @@ async def manage_swarm():
     
     # 1. Сбор реальности
     running_info = await get_running_bots_info()
-    initial_capital = config['portfolios'][0].get('initial_capital', 65.0)
+    initial_capital = config['portfolios'][0].get('initial_capital', 60.0)
     
     # 2. Обработка сигналов от ботов (пассивный мониторинг)
     signal_dir = Path("signals")

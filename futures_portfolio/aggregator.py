@@ -62,16 +62,16 @@ class StatusAggregator:
         except Exception as e:
             logger.error(f"Failed to fetch real balances: {e}")
 
-        # Параметры для ROI (из swarm_analyzer logic)
+        # Параметры для ROI (динамически из конфига)
         try:
-            initial_per_bot = config['portfolios'][0].get('initial_capital', 39.0)
+            initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
             max_bots = config.get('max_bots', 10)
             working_capital = initial_per_bot * max_bots
             active_tickers = config.get('tickers', [])
             live_swarm = config.get('live_swarm', [])
         except:
-            initial_per_bot = 39.0
-            working_capital = 390.0
+            initial_per_bot = 60.0
+            working_capital = 600.0
             active_tickers = []
             live_swarm = []
 
@@ -91,23 +91,15 @@ class StatusAggregator:
                 if ticker == "UNKNOWN": continue
                 
                 # Читаем баланс из paper_state если он есть
-                paper_state_path = f"paper_state_{ticker}.json"
-                ps = await safe_load_json(paper_state_path, {})
-                paper_balance = ps.get("balance", initial_per_bot)
-                last_price = ps.get("last_price", 0.0)
-
                 siphoned = state.get("siphoning_reserve", 0.0)
-                virt_qty = state.get("virt_qty", 0.0)
                 
-                # НОВАЯ ЛОГИКА ПРОФИТА: теперь учитываем виртуальную спотовую ногу
+                # ИСПОЛЬЗУЕМ ПРЯМОЙ ОТЧЕТ БОТА ДЛЯ ИСКЛЮЧЕНИЯ РАСХОЖДЕНИЙ
                 is_fired = f_path.endswith(".fired")
                 if is_fired and "final_profit" in state:
                     profit = state["final_profit"]
                 else:
-                    # TPV = Paper Balance + (Quantity * Price) + SAFE
-                    # Profit = TPV - Initial
-                    current_virt_value = virt_qty * last_price
-                    profit = (paper_balance + current_virt_value - initial_per_bot) + siphoned
+                    # Берем профит, который рассчитал сам бот в своем цикле
+                    profit = state.get("last_profit", 0.0)
                 
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)

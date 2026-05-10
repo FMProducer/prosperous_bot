@@ -461,13 +461,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if i % 5 == 0:
                     res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                    logger.info(f"Heartbeat: Balance={real_equity:.2f}{res_str} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}% C:{calc_res['share_cash_pct']:.1f}%")
+                    # prioritizing TPV in logs to match user's config expectation
+                    logger.info(f"Heartbeat: TPV={tpv_total:.2f}{res_str} | PnL={tpv_total - initial_tpv:+.2f} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}% C:{calc_res['share_cash_pct']:.1f}% (RealEquity:{real_equity:.2f})")
                 
                 # Логика ребалансировки
                 valid_actions = []
                 if actions:
                     # Внедряем Notional Value Guard для ВСЕХ ордеров
-                    min_notional = portfolio_cfg.get("min_notional_usdt", 6.0)
+                    # Проверяем и в портфеле, и в глобальном конфиге
+                    min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
                     if valid_actions:
