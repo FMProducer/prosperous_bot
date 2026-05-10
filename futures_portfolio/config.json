@@ -43,30 +43,7 @@
       }
     }
   ],
-  "tickers": [
-    "JUPUSDT",
-    "1000LUNCUSDT",
-    "1000BONKUSDT",
-    "FARTCOINUSDT",
-    "ENSUSDT",
-    "WLDUSDT",
-    "PENGUUSDT",
-    "AAVEUSDT",
-    "FETUSDT",
-    "QTUMUSDT",
-    "DOGSUSDT",
-    "ONDOUSDT",
-    "NOTUSDT",
-    "1000XECUSDT",
-    "ZECUSDT",
-    "ARBUSDT",
-    "FILUSDT",
-    "OPUSDT",
-    "NEARUSDT",
-    "DASHUSDT"
-  ],
-  "live_swarm": [
-    "JUPUSDT"
-  ],
-  "base_ticker": "JUPUSDT"
+  "tickers": [],
+  "live_swarm": [],
+  "base_ticker": ""
 }
