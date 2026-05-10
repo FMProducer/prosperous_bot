@@ -272,10 +272,11 @@ async def manage_swarm():
                 "trailing_stop_paper_timeout_end": 0.0
             }
 
-    # Сортировка: Только по чистому PnL (profit_delta)
+    # Сортировка: Только по текущему общему PnL (%)
     def ranking_key(t):
         p = perf_dict[t]
-        return p.get('profit_delta', 0.0)
+        # Rank by current total profit percentage (overall PnL)
+        return p.get('profit', 0.0)
 
     all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
     
