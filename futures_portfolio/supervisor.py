@@ -153,32 +153,36 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     
     # Прунинг: проверка дельты за время пробации
     if profit_prob_usdt < 0:
-        # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period
-        probation_days = config.get("probation_period_days", 0.041)
-        probation_sec = probation_days * 86400
-        uptime_sec = (time.time() - last_update) if last_update > 0 else 0
-        
-        if last_update > 0 and uptime_sec < probation_sec:
-            logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in its probation window ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping pruning.")
+        # ЗАЩИТА ПРОФИТА: Никогда не увольняем бота, если его общий PnL в плюсе (The Grace Rule)
+        if profit_usdt > 0:
+            logger.info(f"🛡️ {ticker} has negative delta ({profit_prob_usdt:.4f}), but is protected by overall profit (+{profit_usdt:.4f}). Skipping pruning.")
         else:
-            logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < 0. Firing bot.")
+            # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period
+            probation_days = config.get("probation_period_days", 0.041)
+            probation_sec = probation_days * 86400
+            uptime_sec = (time.time() - last_update) if last_update > 0 else 0
             
-            # Сохраняем финальный профит ПЕРЕД сбросом стейта
-            try:
-                state_path = f"state_{ticker}.json"
-                state_data = await safe_load_json(state_path, {})
-                state_data["final_profit"] = profit_usdt 
-                await safe_save_json(state_path, state_data)
-                logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
-            except Exception as e:
-                logger.error(f"Failed to save final profit for {ticker}: {e}")
-            
-            # Определяем текущий режим для корректной остановки
-            bot_info = running_info.get(ticker, {})
-            is_currently_paper = bot_info.get('paper', False)
-            
-            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
-            return {}
+            if last_update > 0 and uptime_sec < probation_sec:
+                logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in probation ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping.")
+            else:
+                logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < 0 and Overall PnL {profit_usdt:.4f} <= 0. Firing bot.")
+
+                # Сохраняем финальный профит ПЕРЕД сбросом стейта
+                try:
+                    state_path = f"state_{ticker}.json"
+                    state_data = await safe_load_json(state_path, {})
+                    state_data["final_profit"] = profit_usdt
+                    await safe_save_json(state_path, state_data)
+                    logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
+                except Exception as e:
+                    logger.error(f"Failed to save final profit for {ticker}: {e}")
+
+                # Определяем текущий режим для корректной остановки
+                bot_info = running_info.get(ticker, {})
+                is_currently_paper = bot_info.get('paper', False)
+
+                await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
+                return {}
 
     return {
         "profit": profit_pct,
@@ -333,6 +337,7 @@ async def manage_swarm():
     # Сначала останавливаем тех, кто не в финальном списке ИЛИ должен сменить режим (Paper -> Real)
     for ticker, info in current_pm2.items():
         is_currently_paper = info['paper']
+        bot_overall_profit = perf_dict.get(ticker, {}).get("profit", 0)
         
         # Если бота вообще нет в новом списке
         if ticker not in final_swarm:
@@ -342,6 +347,11 @@ async def manage_swarm():
             
         # Если бот должен быть REAL, а он PAPER
         should_be_real = ticker in target_real_bots
+
+        # Строгий контроль: Если бот в убытке, он НЕ может быть REAL, независимо от списков
+        if bot_overall_profit <= 0:
+            should_be_real = False
+
         if should_be_real and is_currently_paper:
             logger.info(f"🔄 Switching {ticker} from PAPER to REAL (Preserving state)")
             # МЯГКИЙ СТОП: только убиваем процесс, на бирже закрывать нечего
