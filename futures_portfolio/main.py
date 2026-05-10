@@ -680,7 +680,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                 "timestamp": time.time(),
                 "state": state,
                 "paper_state": paper_state,
-                "final_profit": (paper_state.get("balance", 0) + state.get("virt_qty", 0) * paper_state.get("last_price", 0)) - initial_capital + state.get("siphoning_reserve", 0)
+                "final_profit": state.get("last_profit", 0.0)
             }
             archive_path = history_dir / f"archive_{base_ticker}_{int(time.time())}.json"
             await save_json(str(archive_path), archive_data)
