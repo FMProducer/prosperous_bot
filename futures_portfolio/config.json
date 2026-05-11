@@ -7,7 +7,7 @@
   "min_notional_usdt": 6.1,
   "max_orders_per_second": 10,
   "max_bots": 20,
-  "min_cycles_for_rank": 20,
+  "min_cycles_for_rank": 5,
   "paper_mode_bots": 19,
   "probation_period_days": 0.02,
   "backtest_period_days": 0.125,
@@ -16,14 +16,12 @@
   "max_drawdown_limit": 5.0,
   "equity_trailing_stop_pct": 1.2,
   "equity_trailing_stop_timeout_sec": 45,
-  "telegram_enabled": true,
-  "black_list": [
-    "ZEREBROUSDT"
-  ],
+  "telegram_enabled": false,
+  "black_list": [],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 120.0,
+      "initial_capital": 100.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -46,30 +44,7 @@
       }
     }
   ],
-  "tickers": [
-    "ALCHUSDT",
-    "DOGSUSDT",
-    "ENSUSDT",
-    "FARTCOINUSDT",
-    "GTCUSDT",
-    "JELLYJELLYUSDT",
-    "LDOUSDT",
-    "MOVEUSDT",
-    "NILUSDT",
-    "NOTUSDT",
-    "ORCAUSDT",
-    "PARTIUSDT",
-    "QTUMUSDT",
-    "SAGAUSDT",
-    "SIRENUSDT",
-    "SONICUSDT",
-    "SUIUSDT",
-    "VVVUSDT",
-    "WALUSDT",
-    "WLDUSDT"
-  ],
-  "live_swarm": [
-    "SAGAUSDT"
-  ],
-  "base_ticker": "ALCHUSDT"
+  "tickers": [],
+  "live_swarm": [],
+  "base_ticker": ""
 }

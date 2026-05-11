@@ -109,6 +109,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "trailing_stop_violation_start": 0.0,
         "trailing_stop_paper_timeout_end": 0.0,
         "rebalance_cycles": 0,
+        "last_rebalance_price": 0.0,
         "started_at": time.time()
     })
 
@@ -501,21 +502,54 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
-                    if valid_actions:
-                        logger.info(f"Rebalance needed ({len(valid_actions)} actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
+                    # -------------------------------------------------------------------------
+                    # [V3.6.0] ANTI-CHURN PRICE FUSE (Enforce BLSH)
+                    # -------------------------------------------------------------------------
+                    last_reb_price = state.get("last_rebalance_price", 0.0)
+                    fused_actions = []
+                    
+                    if last_reb_price == 0:
+                        # Cold start: always allow first rebalance
+                        fused_actions = valid_actions
+                        logger.info(f"❄️ Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
+                    else:
+                        for action in valid_actions:
+                            side = action.get("side")
+                            act_type = action.get("type", "REAL") # VIRTUAL_ORDER or position side
+                            
+                            if side == "BUY":
+                                # Buy only if price dropped enough
+                                limit_price = last_reb_price * (1 - threshold)
+                                if price <= limit_price:
+                                    fused_actions.append(action)
+                                else:
+                                    logger.warning(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                            elif side == "SELL":
+                                # Sell only if price rose enough
+                                limit_price = last_reb_price * (1 + threshold)
+                                if price >= limit_price:
+                                    fused_actions.append(action)
+                                else:
+                                    logger.warning(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                            else:
+                                fused_actions.append(action) # Safety for unknown types
+                    
+                    if fused_actions:
+                        logger.info(f"Rebalance needed ({len(fused_actions)} fused actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
                         
                         rebalance_msg = (
                             f"🔄 <b>Rebalance Starting</b>: <code>{base_ticker}</code>\n"
-                            f"Current: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\n"
-                            f"Target Actions: {len(valid_actions)}"
+                            f"Price: {price:.6g} (Last: {last_reb_price:.6g})\n"
+                            f"Actions: {len(fused_actions)}"
                         )
                         asyncio.create_task(notifier.send_message(rebalance_msg))
 
                         # 1. Execute actions concurrently
                         exec_results = await executor.execute_actions(
-                            valid_actions, price, paper_mode, portfolio_cfg, step_sizes, paper_state
+                            fused_actions, price, paper_mode, portfolio_cfg, step_sizes, paper_state
                         )
 
+                        any_success = False
                         # 2. Update core states (Virtual Quantity, Paper Positions/Balance)
                         for res in exec_results:
                             status = res.get("status")
@@ -526,6 +560,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 continue
 
                             if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                                any_success = True
                                 if res.get("type") == "VIRTUAL_ORDER":
                                     # Update virtual quantity based on the USDT diff (sold/bought from Cash)
                                     diff_usdt = res.get("diff_usdt", 0.0)
@@ -575,6 +610,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
                             else:
                                 logger.warning(f"❌ {side} {key} execution status: {status}. Message: {res.get('message')}")
+
+                        if any_success:
+                            state["last_rebalance_price"] = price
+                            logger.info(f"🎯 Baseline Updated: Last rebalance price set to {price:.6g}")
 
                         cycles += 1
                         state["rebalance_cycles"] = cycles

@@ -317,21 +317,24 @@ async def manage_swarm():
             current_tickers.add(winner_ticker)
             swapped_count += 1
     
-    # 4. Выбор Чемпионов для REAL (Чистая Меритократия по Profit > 0)
+    # 4. Выбор Чемпионов для REAL (Меритократия + Статистическая значимость)
     ready_pool = []
     now = time.time()
+    min_cycles = config.get("min_cycles_for_rank", 20)
 
-    logger.info(f"Selecting champions (Max REAL slots: {max_real_slots})...")
+    logger.info(f"Selecting champions (Max REAL slots: {max_real_slots}, Min Cycles: {min_cycles})...")
     for ticker in all_sorted:
         perf = perf_dict.get(ticker, {})
         profit = perf.get("profit", 0)
+        bot_cycles = perf.get("cycles", 0)
         ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
         
         if now < ts_timeout_end:
             continue
 
-        # Добавляем в пул всех прибыльных кандидатов моментально
-        if profit > 0:
+        # СТРОГИЙ ОТБОР: Только прибыльные И накопившие достаточно циклов (опыта)
+        if profit > 0 and bot_cycles >= min_cycles:
+            logger.info(f"✅ {ticker} qualified for REAL: Profit {profit:.2f}%, Cycles {bot_cycles}/{min_cycles}")
             ready_pool.append(ticker)
 
     # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
