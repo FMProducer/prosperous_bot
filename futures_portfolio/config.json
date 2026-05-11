@@ -13,9 +13,9 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.021,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 10.0,
-  "equity_trailing_stop_pct": 3.0,
-  "equity_trailing_stop_timeout_sec": 60,
+  "max_drawdown_limit": 5.0,
+  "equity_trailing_stop_pct": 1.2,
+  "equity_trailing_stop_timeout_sec": 45,
   "telegram_enabled": true,
   "black_list": [],
   "portfolios": [
@@ -44,7 +44,30 @@
       }
     }
   ],
-  "tickers": [],
-  "live_swarm": [],
-  "base_ticker": ""
+  "tickers": [
+    "ALCHUSDT",
+    "DEEPUSDT",
+    "DOGSUSDT",
+    "ENSUSDT",
+    "FARTCOINUSDT",
+    "FHEUSDT",
+    "JELLYJELLYUSDT",
+    "MOVEUSDT",
+    "NILUSDT",
+    "NOTUSDT",
+    "ORCAUSDT",
+    "QTUMUSDT",
+    "SAGAUSDT",
+    "SIRENUSDT",
+    "SONICUSDT",
+    "SUIUSDT",
+    "VVVUSDT",
+    "WALUSDT",
+    "WLDUSDT",
+    "ZEREBROUSDT"
+  ],
+  "live_swarm": [
+    "SONICUSDT"
+  ],
+  "base_ticker": "ALCHUSDT"
 }
