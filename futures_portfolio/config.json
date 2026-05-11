@@ -4,13 +4,13 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.1,
+  "min_notional_usdt": 6.1,
   "max_orders_per_second": 10,
   "max_bots": 20,
   "paper_mode_bots": 19,
-  "probation_period_days": 0.01,
+  "probation_period_days": 0.02,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.011,
+  "supervisor_interval_days": 0.021,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 10.0,
   "equity_trailing_stop_pct": 3.0,
@@ -36,10 +36,10 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.001,
+      "rebalance_threshold": 0.03,
       "ticker_thresholds": {
-        "BTCUSDT": 0.01,
-        "ETHUSDT": 0.01
+        "1000XECUSDT": 0.03,
+        "ALCHUSDT": 0.03
       }
     }
   ],
