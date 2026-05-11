@@ -61,9 +61,8 @@ class SwarmIntegrator:
 
         # Мы патчим rank_tickers чтобы не ждать настоящего сканирования
         with patch("supervisor.run_scanner", return_value=[{"symbol": self.test_ticker, "score": 200}]):
-            with patch("supervisor.run_backtest", return_value={"profit_pct": 1.0, "max_dd_pct": 1.0}):
-                with patch("notifier.TelegramNotifier.send_message", AsyncMock()):
-                    await manage_swarm()
+            with patch("notifier.TelegramNotifier.send_message", AsyncMock()):
+                await manage_swarm()
 
         bot_name = f"bot-{self.test_ticker.replace('USDT', '').lower()}"
 

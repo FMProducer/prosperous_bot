@@ -43,6 +43,12 @@ def read_shared_config(path: str) -> Dict[str, Any]:
         logger.error(f"Critical: Shared config read failed: {e}")
         return {}
 
+async def get_ticker_pnl(ticker: str) -> float:
+    """Вспомогательная функция для чтения state_*.json и получения профита."""
+    state_path = BASE_PATH / f"state_{ticker}.json"
+    state = await safe_load_json(str(state_path), {})
+    return state.get("last_profit", 0.0)
+
 async def get_running_bots_info() -> Dict[str, dict]:
     """Получает детальную информацию о запущенных ботах из PM2, включая аптайм"""
     try:
@@ -121,11 +127,11 @@ async def start_bot(ticker: str, paper: bool = False):
 
 async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, running_info: dict) -> dict:
     """Получает реальную статистику бота из его файлов состояния."""
-    state_path = f"state_{ticker}.json"
-    paper_state_path = f"paper_state_{ticker}.json"
+    state_path = BASE_PATH / f"state_{ticker}.json"
+    paper_state_path = BASE_PATH / f"paper_state_{ticker}.json"
     
-    state = await safe_load_json(state_path, {})
-    paper_state = await safe_load_json(paper_state_path, {})
+    state = await safe_load_json(str(state_path), {})
+    paper_state = await safe_load_json(str(paper_state_path), {})
     
     if not state or not paper_state:
         return {}
@@ -170,10 +176,10 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
 
                 # Сохраняем финальный профит ПЕРЕД сбросом стейта
                 try:
-                    state_path = f"state_{ticker}.json"
-                    state_data = await safe_load_json(state_path, {})
+                    state_path = BASE_PATH / f"state_{ticker}.json"
+                    state_data = await safe_load_json(str(state_path), {})
                     state_data["final_profit"] = profit_usdt
-                    await safe_save_json(state_path, state_data)
+                    await safe_save_json(str(state_path), state_data)
                     logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
                 except Exception as e:
                     logger.error(f"Failed to save final profit for {ticker}: {e}")
@@ -213,11 +219,15 @@ async def manage_swarm():
     running_info = await get_running_bots_info()
     initial_capital = config['portfolios'][0].get('initial_capital', 60.0)
     
+    # 0. Загрузка текущего состояния
+    current_tickers = set(config.get("tickers", []))
+
     # 2. Обработка сигналов от ботов (пассивный мониторинг)
-    signal_dir = Path("signals")
+    signal_dir = BASE_PATH / "signals"
     if not signal_dir.exists(): signal_dir.mkdir(parents=True)
     
-    new_black_list = set(config.get("black_list", []))
+    # Очищаем черный список каждый цикл, давая тикерам шанс на рециркуляцию
+    new_black_list = set()
     for sig_file in signal_dir.glob("*.flag"):
         try:
             parts = sig_file.stem.split("_")
@@ -258,7 +268,7 @@ async def manage_swarm():
     
     # 3.1. Оцениваем ВСЕХ ботов с реальной историей (The Fact Protocol)
     logger.info("Scanning for real bot states...")
-    for state_file in Path(".").glob("state_*.json"):
+    for state_file in BASE_PATH.glob("state_*.json"):
         ticker = state_file.stem.replace("state_", "")
         if ticker in new_black_list: continue
         
@@ -272,7 +282,7 @@ async def manage_swarm():
     candidates = [t for t in scanner_tickers if t not in perf_dict and t not in new_black_list]
     logger.info(f"New candidates from scanner: {len(candidates)}")
     
-    for symbol in candidates[:max_bots]: 
+    for symbol in candidates:
         if symbol not in perf_dict:
             perf_dict[symbol] = {
                 "profit": 0.0,
@@ -288,6 +298,31 @@ async def manage_swarm():
         return p.get('profit', 0.0)
 
     all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
+
+    # Логика ротации (Dynamic Ticker Recirculation):
+    # 1. Находим кандидатов на вылет (PnL < 0) среди ТЕКУЩИХ активных ботов
+    underperformers = []
+    for ticker in list(current_tickers):
+        pnl = await get_ticker_pnl(ticker)
+        if pnl < 0:
+            underperformers.append((ticker, pnl))
+
+    # 2. Находим новых лидеров из сканера, которых нет в текущем рое
+    new_candidates = [t for t in scanner_tickers if t not in current_tickers and t not in new_black_list]
+
+    # 3. Производим замену (Swap)
+    swapped_count = 0
+    max_swaps = max(1, len(current_tickers) // 5) if current_tickers else 1 # Не более 20%
+
+    underperformers.sort(key=lambda x: x[1]) # От худшего к лучшему
+
+    for loser_ticker, pnl in underperformers:
+        if new_candidates and swapped_count < max_swaps:
+            winner_ticker = new_candidates.pop(0)
+            logger.info(f"🔄 Swapping: {loser_ticker} (PnL: {pnl:.2f}) -> {winner_ticker} (Rank Leader)")
+            if loser_ticker in current_tickers: current_tickers.remove(loser_ticker)
+            current_tickers.add(winner_ticker)
+            swapped_count += 1
     
     # 4. Выбор Чемпионов для REAL
     ready_pool = []
@@ -324,10 +359,16 @@ async def manage_swarm():
     target_real_bots = ready_pool[:max_real_slots]
     
     # ИТОГОВЫЙ СПИСОК (всего max_bots слотов)
-    final_swarm = []
-    final_swarm.extend(target_real_bots)
+    # Приоритет 1: REAL боты
+    final_swarm = list(target_real_bots)
     
-    # Дозабиваем остаток PAPER слотов из топа всех прибыльных (включая новых кандидатов)
+    # Приоритет 2: Те, кто остался в current_tickers после ротации
+    for ticker in all_sorted:
+        if len(final_swarm) >= max_bots: break
+        if ticker in current_tickers and ticker not in final_swarm:
+            final_swarm.append(ticker)
+
+    # Приоритет 3: Дозабиваем остаток из топа прибыльных / кандидатов
     for ticker in all_sorted:
         if len(final_swarm) >= max_bots: break
         if ticker not in final_swarm:
@@ -390,12 +431,13 @@ async def manage_swarm():
 
     # Обновляем только если есть валидные данные
     try:
-        config["tickers"] = final_swarm
+        # Сохраняем обновленный состав после замен
+        config["tickers"] = sorted(final_swarm)
         config["live_swarm"] = sorted(target_real_bots)
-        config["base_ticker"] = final_swarm[0]
+        config["base_ticker"] = config["tickers"][0] if config["tickers"] else "BTCUSDT"
         config["black_list"] = sorted(list(new_black_list))
 
-        logger.info(f"💾 Config Integrity Verified. Writing: {len(final_swarm)} tickers, {len(target_real_bots)} in live swarm.")
+        logger.info(f"💾 Config Integrity Verified. Writing: {len(config['tickers'])} tickers, {len(target_real_bots)} in live swarm.")
         await safe_save_json(CONFIG_PATH, config)
     except Exception as e:
         logger.error(f"❌ Failed to update config: {e}", exc_info=True)
