@@ -52,7 +52,10 @@ def calculate_portfolio_task(positions, price, real_equity, virt_qty,
         "tpv": float(calc.tpv),
         "total_tpv": float(calc.total_tpv),
         "siphoning_reserve": float(calc.siphoning_reserve),
-        "virt_current_value": float(calc.val_virt)
+        "virt_current_value": float(calc.val_virt),
+        "pnl_l": float(calc.pnl_l),
+        "pnl_s": float(calc.pnl_s),
+        "pnl_v": float(calc.pnl_v)
     }
 
 def sync_read_json(path: str) -> Dict:
@@ -338,6 +341,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         
                         logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker} (Cost: {v_cost:.2f} USDT deducted from Balance)")
                         await save_json(paper_state_file_path, paper_state)
+                        state["virt_entry_price"] = price
 
                     state.update({
                         "virt_qty": virt_qty,
@@ -345,14 +349,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
 
-                # One-time Sanity Check for existing bots (Migration from buggy version)
-                # If TPV is ~135% of initial and it's the first cycles, fix the double-counting
-                if cycles <= 10 and (real_equity + virt_qty * price) > initial_tpv * 1.25:
-                    v_cost = initial_tpv * targets["VIRTUAL"]["share"]
-                    logger.warning(f"⚠️ Sanity Check: Detected double-counted Virtual leg for {base_ticker}. Adjusting balance by -{v_cost:.2f} USDT.")
-                    paper_state["balance"] -= v_cost
-                    real_equity -= v_cost
-                    await save_json(paper_state_file_path, paper_state)
+                # REMOVED: Migration Sanity Check (Caused TPV leakage)
 
                 # Offload heavy math to ProcessPoolExecutor
                 loop = asyncio.get_running_loop()
@@ -497,8 +494,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if i % 5 == 0:
                     res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                    # prioritizing TPV in logs to match user's config expectation
-                    logger.info(f"Heartbeat: TPV={tpv_total:.2f}{res_str} | PnL={tpv_total - initial_tpv:+.2f} | {base_ticker}={price:.6g} | L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}% C:{calc_res['share_cash_pct']:.1f}% (RealEquity:{real_equity:.2f})")
+                    # Heartbeat showing shares and PnL contributions
+                    pnl_l, pnl_s, pnl_v = calc_res['pnl_l'], calc_res['pnl_s'], calc_res['pnl_v']
+                    logger.info(
+                        f"Heartbeat: TPV={tpv_total:.2f}{res_str} | PnL={tpv_total - initial_tpv:+.2f} | {base_ticker}={price:.6g} | "
+                        f"L:{calc_res['share_long_pct']:.1f}%({pnl_l:+.2f}) S:{calc_res['share_short_pct']:.1f}%({pnl_s:+.2f}) "
+                        f"V:{calc_res['share_virt_pct']:.1f}%({pnl_v:+.2f}) C:{calc_res['share_cash_pct']:.1f}%"
+                    )
                 
                 # Логика ребалансировки
                 valid_actions = []
@@ -569,22 +571,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 any_success = True
                                 if res.get("type") == "VIRTUAL_ORDER":
                                     # Update virtual quantity based on the USDT diff (sold/bought from Cash)
-                                    diff_usdt = res.get("diff_usdt", 0.0)
+                                    diff_usdt_val = res.get("diff_usdt", 0.0)
+                                    diff_usdt = Decimal(str(diff_usdt_val))
                                     
-                                    old_v_qty = virt_qty
-                                    old_v_entry = float(state.get("virt_entry_price", price))
+                                    old_v_qty = Decimal(str(virt_qty))
+                                    old_v_entry = Decimal(str(state.get("virt_entry_price", price)))
+                                    if old_v_entry <= 0: old_v_entry = Decimal(str(price))
+
+                                    new_v_qty = old_v_qty + diff_usdt / Decimal(str(price))
+
+                                    # Update entry price for VIRTUAL leg (WAP logic)
+                                    if new_v_qty > 0 and diff_usdt > 0: # Buy/Increase
+                                        new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
+                                        state["virt_entry_price"] = float(new_v_entry)
                                     
                                     # Update balance and quantity
-                                    paper_state["balance"] -= diff_usdt
-                                    virt_qty += diff_usdt / price
+                                    paper_state["balance"] -= float(diff_usdt)
+                                    virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
-
-                                    # Update entry price for VIRTUAL leg (Weighted Average for BUYs)
-                                    if diff_usdt > 0: # Increasing V-position
-                                        new_v_qty = virt_qty
-                                        state["virt_entry_price"] = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty if new_v_qty > 0 else price
                                     
-                                    logger.info(f"🔄 Virtual Fixed: {diff_usdt:+.4f} USDT moved. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
+                                    logger.info(f"🔄 Virtual Fixed: {float(diff_usdt):+.4f} USDT moved. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
                                     continue
 
                                 # Update execution results info
@@ -818,6 +824,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         state = await load_json(state_file_path, {})
         state.update({
             "virt_qty": 0.0,
+            "virt_entry_price": 0.0,
             "initial_tpv": 0.0,
             "reference_tpv": 0.0,
             "tpv_ath": 0.0,
