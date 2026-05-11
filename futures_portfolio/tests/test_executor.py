@@ -23,14 +23,16 @@ def executor(mock_connector):
     return PortfolioExecutor(mock_connector)
 
 def test_calculate_order_size(executor):
+    from decimal import Decimal
     qty = executor.calculate_order_size(0.4, 30000, 100000, 50000)
-    assert qty == 0.2
+    assert float(qty) == 0.2
 
 def test_round_quantity(executor):
-    assert executor.round_quantity(0.123456, 0.001) == 0.123
-    assert executor.round_quantity(0.123456, 0.01) == 0.12
-    assert executor.round_quantity(15.78, 1.0) == 16.0
-    assert executor.round_quantity(0.123, 0.0) == 0.123
+    from decimal import Decimal
+    assert float(executor.round_quantity(Decimal("0.123456"), Decimal("0.001"))) == 0.123
+    assert float(executor.round_quantity(Decimal("0.123456"), Decimal("0.01"))) == 0.12
+    assert float(executor.round_quantity(Decimal("15.78"), Decimal("1.0"))) == 16.0
+    assert float(executor.round_quantity(Decimal("0.123"), Decimal("0.0"))) == 0.123
 
 @pytest.mark.asyncio
 async def test_execute_market_order_success(mock_connector, executor):

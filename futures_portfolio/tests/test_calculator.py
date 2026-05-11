@@ -62,9 +62,10 @@ def test_calculate_deviations(sample_params, targets):
     
     virt_action = next(a for a in actions if a["symbol"] == "VIRTUAL")
     # Target Notional V = 12000 * 0.2 = 2400
-    # Current Notional V = 2000
-    # Diff = 2400 - 2000 = 400
-    assert virt_action["diff_usdt"] == pytest.approx(400.0)
+    # Current Share V = 16.7% (quantized) -> 0.167
+    # Current Notional V = 0.167 * 12000 = 2004
+    # Diff = 2400 - 2004 = 396
+    assert virt_action["diff_usdt"] == pytest.approx(396.0)
 
 def test_siphoning_reserve_impact(sample_params):
     params = sample_params.copy()
@@ -82,9 +83,9 @@ def test_price_change_impact(sample_params):
     # But for unit test of Calculator, we just check its math given the inputs.
     calc = PortfolioCalculator(**params)
     assert float(calc.tpv) == pytest.approx(12200.0)
-    # Notional Long = 0.5 * 66000 = 33000
-    # Share Long = 33000 / (12200 * 5) = 33000 / 61000 = 54.1%
-    assert float(calc.share_long_pct) == pytest.approx(54.1, abs=0.1)
+    # val_long = (0.5 * 60000 / 5) + (0.5 * (66000 - 60000)) = 6000 + 3000 = 9000
+    # Share Long = 9000 / 12200 * 100 = 73.8%
+    assert float(calc.share_long_pct) == pytest.approx(73.8, abs=0.1)
 
 def test_negative_tpv_protection():
     calc = PortfolioCalculator(

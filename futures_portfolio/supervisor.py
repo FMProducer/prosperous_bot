@@ -379,9 +379,15 @@ async def manage_swarm():
             should_be_real = False
 
         if should_be_real and is_currently_paper:
-            logger.info(f"🔄 Switching {ticker} from PAPER to REAL (Preserving state)")
-            # МЯГКИЙ СТОП: только убиваем процесс, на бирже закрывать нечего
-            await stop_bot(ticker, full_reset=False, is_paper=True) 
+            logger.info(f"🔄 Switching {ticker} from PAPER to REAL (Enforcing State Isolation)")
+            # Жесткий стоп бумажного бота со сбросом бумажного стейта
+            await stop_bot(ticker, full_reset=True, is_paper=True)
+
+            # Гарантированное удаление реального стейта для чистого старта
+            real_state_path = BASE_PATH / f"state_{ticker}.json"
+            if real_state_path.exists():
+                real_state_path.unlink()
+                logger.info(f"🧹 Wiped old REAL state for {ticker} to prevent Phantom Buffer.")
             
         # Если бот должен быть PAPER, а он REAL
         if not should_be_real and not is_currently_paper:

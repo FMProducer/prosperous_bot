@@ -9,6 +9,18 @@ import requests.exceptions
 
 logger = logging.getLogger(__name__)
 
+class BinanceConnectorMock:
+    def __init__(self, *args, **kwargs):
+        from unittest.mock import MagicMock
+        self.futures_client = MagicMock()
+    async def get_exchange_info(self): return {"symbols": []}
+    async def get_hedge_mode(self): return True
+    async def set_leverage(self, *args): pass
+    async def set_margin_type(self, *args): pass
+    async def get_mark_prices(self, tickers): return {t: 60000.0 for t in tickers}
+    async def get_positions(self): return {}
+    async def get_margin_ratio(self): return {"margin_ratio": 10.0}
+
 # Подмена URL на уровне класса для обхода блокировок в РФ (до инициализации)
 Client.API_URL = 'https://api1.binance.com/api'
 Client.FUTURES_URL = 'https://fapi.binance.com/fapi'
