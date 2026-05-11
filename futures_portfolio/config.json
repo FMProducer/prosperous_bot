@@ -45,24 +45,27 @@
     }
   ],
   "tickers": [
-    "ALCHUSDT",
+    "AKTUSDT",
     "BANANAS31USDT",
     "CRVUSDT",
     "DEEPUSDT",
     "DOGSUSDT",
     "FHEUSDT",
     "GTCUSDT",
+    "INJUSDT",
     "JELLYJELLYUSDT",
     "JUPUSDT",
     "LDOUSDT",
     "ONDOUSDT",
     "PARTIUSDT",
+    "PENDLEUSDT",
     "SAGAUSDT",
     "SIRENUSDT",
+    "SUIUSDT",
     "TONUSDT",
     "VVVUSDT",
     "ZEREBROUSDT"
   ],
   "live_swarm": [],
-  "base_ticker": "ALCHUSDT"
+  "base_ticker": "AKTUSDT"
 }

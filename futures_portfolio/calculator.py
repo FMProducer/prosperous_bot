@@ -12,6 +12,7 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
+                 virt_entry_price: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
                  targets: Dict[str, Dict] = None, initial_capital: float = 10000.0) -> None:
         
@@ -23,6 +24,7 @@ class PortfolioCalculator:
         self.initial_capital = Decimal(str(initial_capital))
         self.real_equity = Decimal(str(real_equity)) # Includes unrealized PnL and collateral of L/S legs
         self.virt_qty = Decimal(str(virt_qty))
+        self.virt_entry = Decimal(str(virt_entry_price)) if virt_entry_price > 0 else self.price
         
         # 1. Calculate Virtual Leg Current Market Value
         self.val_virt = self.virt_qty * self.price
@@ -53,13 +55,26 @@ class PortfolioCalculator:
         self.val_short = (short_qty * s_entry / s_lev) + (short_qty * (s_entry - self.price)) if short_qty > 0 else Decimal('0')
 
         # 4. Shares calculation (Capital weights)
-        self.share_long_pct = (self.val_long / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
-        self.share_short_pct = (self.val_short / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
-        self.share_virt_pct = (self.val_virt / self.tpv * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)
-        
-        # Cash is the uninvested capital remainder
-        self.share_cash_pct = (Decimal('100.0') - self.share_long_pct - self.share_short_pct - self.share_virt_pct)
-        if self.share_cash_pct < 0: self.share_cash_pct = Decimal('0')
+        # We calculate raw fractions first to avoid rounding errors accumulation
+        self.share_long_raw = (self.val_long / self.tpv)
+        self.share_short_raw = (self.val_short / self.tpv)
+        self.share_virt_raw = (self.val_virt / self.tpv)
+
+        # Cash is the uninvested capital remainder (Strict Invariant)
+        # We allow it to be negative if the sum of other legs > 100% (e.g. commission drain)
+        self.share_cash_raw = Decimal('1.0') - self.share_long_raw - self.share_short_raw - self.share_virt_raw
+
+        # Convert to percentages for display and rebalancing logic
+        self.share_long_pct = (self.share_long_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.share_short_pct = (self.share_short_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.share_virt_pct = (self.share_virt_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.share_cash_pct = (self.share_cash_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+
+        # Final correction to ensure exactly 100.00%
+        total_pct = self.share_long_pct + self.share_short_pct + self.share_virt_pct + self.share_cash_pct
+        if total_pct != Decimal('100.00'):
+            diff = Decimal('100.00') - total_pct
+            self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """

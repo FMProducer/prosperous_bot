@@ -25,7 +25,7 @@ process_executor = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8))
 
 def calculate_portfolio_task(positions, price, real_equity, virt_qty, 
                              base_ticker, siphoning_reserve, targets, initial_capital, 
-                             threshold, ignore_limits, long_entry_price=0.0, short_entry_price=0.0):
+                             threshold, ignore_limits, long_entry_price=0.0, short_entry_price=0.0, virt_entry_price=0.0):
     """Heavy math task to be run in a separate process."""
     calc = PortfolioCalculator(
         positions=positions,
@@ -37,7 +37,8 @@ def calculate_portfolio_task(positions, price, real_equity, virt_qty,
         targets=targets,
         initial_capital=initial_capital,
         long_entry_price=long_entry_price,
-        short_entry_price=short_entry_price
+        short_entry_price=short_entry_price,
+        virt_entry_price=virt_entry_price
     )
     actions = calc.calculate_deviations(targets, threshold, ignore_limits=ignore_limits)
     
@@ -101,6 +102,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # Состояние синтетической доли и сейфа
     state = await load_json(state_file_path, {
         "virt_qty": 0.0,
+        "virt_entry_price": 0.0,
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
         "initial_tpv": 0.0,
@@ -568,13 +570,21 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if res.get("type") == "VIRTUAL_ORDER":
                                     # Update virtual quantity based on the USDT diff (sold/bought from Cash)
                                     diff_usdt = res.get("diff_usdt", 0.0)
-                                    # diff_usdt is the amount ADDED to Virtual (from Cash)
-                                    # So we subtract it from paper_state["balance"] and add to virt_qty
+                                    
+                                    old_v_qty = virt_qty
+                                    old_v_entry = float(state.get("virt_entry_price", price))
+                                    
+                                    # Update balance and quantity
                                     paper_state["balance"] -= diff_usdt
                                     virt_qty += diff_usdt / price
                                     state["virt_qty"] = virt_qty
+
+                                    # Update entry price for VIRTUAL leg (Weighted Average for BUYs)
+                                    if diff_usdt > 0: # Increasing V-position
+                                        new_v_qty = virt_qty
+                                        state["virt_entry_price"] = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty if new_v_qty > 0 else price
                                     
-                                    logger.info(f"🔄 Virtual Fixed: {diff_usdt:+.4f} USDT moved between Cash and Virtual. New Qty: {virt_qty:.6f}")
+                                    logger.info(f"🔄 Virtual Fixed: {diff_usdt:+.4f} USDT moved. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
                                     continue
 
                                 # Update execution results info
