@@ -328,22 +328,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 tpv_active = calc_res["tpv"]
                 actions = calc_res["actions"]
 
-                # Rotation window PnL tracking for Supervisor (tied to probation_period_days)
-                rotation_window_days = current_config.get("probation_period_days", 0.041)
-                rotation_sec = max(300, rotation_window_days * 86400) # e.g. 1 hour
-                
                 now = time.time()
-                last_prob_update = state.get("last_probation_update", 0)
-                if now - last_prob_update > rotation_sec:
-                    old_tpv = state.get("tpv_probation_basis", tpv_total)
-                    state["profit_probation"] = tpv_total - old_tpv
-                    state["tpv_probation_basis"] = tpv_total
-                    state["last_probation_update"] = now
-                elif "profit_probation" not in state:
-                    # Fallback for first run
-                    state["profit_probation"] = 0.0
-                    state["tpv_probation_basis"] = tpv_total
-                    state["last_probation_update"] = now
 
                 # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of initial_tpv
                 drawdown_threshold = initial_tpv * (1 - max_drawdown_limit / 100)
