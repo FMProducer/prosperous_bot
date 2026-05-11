@@ -22,47 +22,46 @@ class PortfolioCalculator:
         self.base_ticker = base_ticker
         self.siphoning_reserve = Decimal(str(siphoning_reserve))
         self.initial_capital = Decimal(str(initial_capital))
-        self.real_equity = Decimal(str(real_equity)) # Includes unrealized PnL and collateral of L/S legs
+        self.real_equity = Decimal(str(real_equity)) # Wallet Balance + Unrealized PnL (L/S)
         self.virt_qty = Decimal(str(virt_qty))
-        self.virt_entry = Decimal(str(virt_entry_price)) if virt_entry_price > 0 else self.price
-        
-        # 1. Calculate Virtual Leg Current Market Value
-        self.val_virt = self.virt_qty * self.price
-        
-        # 2. Total Working TPV (Real Account Value + Virtual Spot Value)
-        # TPV represents the total liquidation value of the entire swarm unit.
-        self.tpv = self.real_equity + self.val_virt
-        
+        self.virt_entry_price = Decimal(str(virt_entry_price))
+        self.targets = targets or {}
+
+        # 1. Calculate TPV: Real Equity (Futures) + Market Value of Virtual Leg
+        self.tpv = self.real_equity + (self.virt_qty * self.price)
+
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
-            
+
         self.total_tpv = self.tpv + self.siphoning_reserve
 
-        # 3. Calculate Equity Value of Real Legs (L + S)
-        # Equity = (Notional / Leverage) + Unrealized PnL
-        long_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
-        short_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
-        
-        l_lev = Decimal(str(targets["BASE_LONG"]["leverage"])) if targets and "BASE_LONG" in targets else Decimal('5.0')
-        s_lev = Decimal(str(targets["BASE_SHORT"]["leverage"])) if targets and "BASE_SHORT" in targets else Decimal('5.0')
+        # 2. Calculate NAV for each leg
+        l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
+        s_lev = Decimal(str(self.targets.get("BASE_SHORT", {}).get("leverage", 5)))
 
-        # Use entry prices to separate Collateral from PnL
-        l_entry = Decimal(str(long_entry_price)) if long_entry_price > 0 else self.price
-        s_entry = Decimal(str(short_entry_price)) if short_entry_price > 0 else self.price
+        l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
+        s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
 
-        # The core of Equity rebalancing: position value changes with price
-        self.val_long = (long_qty * l_entry / l_lev) + (long_qty * (self.price - l_entry)) if long_qty > 0 else Decimal('0')
-        self.val_short = (short_qty * s_entry / s_lev) + (short_qty * (s_entry - self.price)) if short_qty > 0 else Decimal('0')
+        # Value = Initial Margin + Unrealized PnL
+        self.val_long = (l_qty * Decimal(str(long_entry_price)) / l_lev) + (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
+        self.val_short = (s_qty * Decimal(str(short_entry_price)) / s_lev) + (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
+        self.val_virt = self.virt_qty * self.price
+
+        # PnL contributions for transparency
+        self.pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
+        self.pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
+        self.pnl_v = self.virt_qty * (self.price - self.virt_entry_price) if self.virt_qty > 0 else Decimal('0')
+
+        # 3. Cash is what's left in the futures wallet that isn't tied up in L/S margin/PnL
+        # Since TPV = real_equity + val_virt, and real_equity = val_l + val_s + cash
+        self.val_cash = self.tpv - (self.val_long + self.val_short + self.val_virt)
+        if self.val_cash < 0 and abs(self.val_cash) < 0.1: self.val_cash = Decimal('0') # Rounding protection
 
         # 4. Shares calculation (Capital weights)
-        # We calculate raw fractions first to avoid rounding errors accumulation
         self.share_long_raw = (self.val_long / self.tpv)
         self.share_short_raw = (self.val_short / self.tpv)
         self.share_virt_raw = (self.val_virt / self.tpv)
-
-        # Cash is the uninvested capital remainder (Strict Invariant)
-        # We allow it to be negative if the sum of other legs > 100% (e.g. commission drain)
-        self.share_cash_raw = Decimal('1.0') - self.share_long_raw - self.share_short_raw - self.share_virt_raw
+        self.share_cash_raw = (self.val_cash / self.tpv)
 
         # Convert to percentages for display and rebalancing logic
         self.share_long_pct = (self.share_long_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
