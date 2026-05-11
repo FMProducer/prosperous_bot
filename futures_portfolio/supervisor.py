@@ -151,51 +151,41 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
 
     profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
     
-    # Используем profit_probation если он есть
-    profit_prob_usdt = state.get("profit_probation", 0.0)
-    profit_prob_pct = (profit_prob_usdt / initial_capital) * 100 if initial_capital > 0 else 0
-    
     # Проверка активности
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
-    # Прунинг: проверка дельты за время пробации
-    if profit_prob_usdt < 0:
-        # ЗАЩИТА ПРОФИТА: Никогда не увольняем бота, если его общий PnL в плюсе (The Grace Rule)
-        if profit_usdt > 0:
-            logger.info(f"🛡️ {ticker} has negative delta ({profit_prob_usdt:.4f}), but is protected by overall profit (+{profit_usdt:.4f}). Skipping pruning.")
+    # Прунинг: Только по абсолютному убытку (Overall PnL < 0)
+    if profit_usdt < 0:
+        # ЗАЩИТА НОВИЧКА: Не убиваем сразу после старта (даем время отбить комиссию)
+        probation_days = config.get("probation_period_days", 0.041)
+        probation_sec = probation_days * 86400
+        uptime_sec = (time.time() - last_update) if last_update > 0 else 0
+
+        if last_update > 0 and uptime_sec < probation_sec:
+            logger.info(f"🛡️ {ticker} has negative PnL ({profit_usdt:.4f}), but is still in startup grace period. Skipping.")
         else:
-            # ЗАЩИТА НОВИЧКА: Не увольняем, если бот запущен меньше probation_period
-            probation_days = config.get("probation_period_days", 0.041)
-            probation_sec = probation_days * 86400
-            uptime_sec = (time.time() - last_update) if last_update > 0 else 0
-            
-            if last_update > 0 and uptime_sec < probation_sec:
-                logger.info(f"🛡️ {ticker} is below pruning threshold ({profit_prob_usdt:.4f}), but is still in probation ({uptime_sec/3600:.2f}h < {probation_sec/3600:.2f}h). Skipping.")
-            else:
-                logger.warning(f"🔥 Pruning {ticker}: Delta PnL {profit_prob_usdt:.4f} < 0 and Overall PnL {profit_usdt:.4f} <= 0. Firing bot.")
+            logger.warning(f"🔥 Pruning {ticker}: Overall PnL {profit_usdt:.4f} < 0. Firing bot.")
 
-                # Сохраняем финальный профит ПЕРЕД сбросом стейта
-                try:
-                    state_path = BASE_PATH / f"state_{ticker}.json"
-                    state_data = await safe_load_json(str(state_path), {})
-                    state_data["final_profit"] = profit_usdt
-                    await safe_save_json(str(state_path), state_data)
-                    logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
-                except Exception as e:
-                    logger.error(f"Failed to save final profit for {ticker}: {e}")
+            # Сохраняем финальный профит ПЕРЕД сбросом стейта
+            try:
+                state_path = BASE_PATH / f"state_{ticker}.json"
+                state_data = await safe_load_json(str(state_path), {})
+                state_data["final_profit"] = profit_usdt
+                await safe_save_json(str(state_path), state_data)
+                logger.info(f"✅ Final profit {profit_usdt:+.4f} USDT saved for fired bot {ticker}")
+            except Exception as e:
+                logger.error(f"Failed to save final profit for {ticker}: {e}")
 
-                # Определяем текущий режим для корректной остановки
-                bot_info = running_info.get(ticker, {})
-                is_currently_paper = bot_info.get('paper', False)
+            # Определяем текущий режим для корректной остановки
+            bot_info = running_info.get(ticker, {})
+            is_currently_paper = bot_info.get('paper', False)
 
-                await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
-                return {}
+            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
+            return {}
 
     return {
         "profit": profit_pct,
         "profit_usdt": profit_usdt,
-        "profit_delta": profit_prob_usdt,
-        "profit_probation": profit_prob_pct,
         "safe": siphoned,
         "cycles": cycles,
         "is_active": is_active,
@@ -212,8 +202,6 @@ async def manage_swarm():
     max_bots = config.get("max_bots", 10)
     paper_mode_bots = config.get("paper_mode_bots", 8)
     max_real_slots = max(0, max_bots - paper_mode_bots)
-    
-    probation_hours = config.get("probation_period_days", 0.041) * 24
     
     # 1. Сбор реальности
     running_info = await get_running_bots_info()
@@ -286,7 +274,6 @@ async def manage_swarm():
         if symbol not in perf_dict:
             perf_dict[symbol] = {
                 "profit": 0.0,
-                "profit_delta": 0.0,
                 "is_real_data": False,
                 "trailing_stop_paper_timeout_end": 0.0
             }
@@ -324,34 +311,21 @@ async def manage_swarm():
             current_tickers.add(winner_ticker)
             swapped_count += 1
     
-    # 4. Выбор Чемпионов для REAL
+    # 4. Выбор Чемпионов для REAL (Чистая Меритократия по Profit > 0)
     ready_pool = []
     now = time.time()
-    now_ms = now * 1000
-    probation_ms = probation_hours * 3600 * 1000
 
     logger.info(f"Selecting champions (Max REAL slots: {max_real_slots})...")
     for ticker in all_sorted:
         perf = perf_dict.get(ticker, {})
         profit = perf.get("profit", 0)
-        bot_info = running_info.get(ticker)
         ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
         
         if now < ts_timeout_end:
             continue
 
-        if profit <= 0:
-            continue
-
-        is_in_paper = bot_info and bot_info['paper'] and bot_info['status'] == 'online'
-        if is_in_paper:
-            uptime_ms = bot_info.get('uptime', 0)
-            elapsed_ms = now_ms - uptime_ms
-            if elapsed_ms >= probation_ms:
-                ready_pool.append(ticker)
-            continue
-            
-        if bot_info and not bot_info['paper']:
+        # Добавляем в пул всех прибыльных кандидатов моментально
+        if profit > 0:
             ready_pool.append(ticker)
 
     # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
