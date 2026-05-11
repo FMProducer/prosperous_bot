@@ -546,9 +546,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         logger.info(f"Rebalance needed ({len(fused_actions)} fused actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
                         
                         rebalance_msg = (
-                            f"🔄 <b>Rebalance Starting</b>: <code>{base_ticker}</code>\n"
-                            f"Price: {price:.6g} (Last: {last_reb_price:.6g})\n"
-                            f"Actions: {len(fused_actions)}"
+                            f"🔄 <b>Rebalance #{cycles + 1} Starting</b>: <code>{base_ticker}</code>\n"
+                            f"Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\n"
+                            f"TPV: <code>{tpv_total:.2f} USDT</code>"
                         )
                         asyncio.create_task(notifier.send_message(rebalance_msg))
 
@@ -584,11 +584,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     if new_v_qty > 0 and diff_usdt > 0: # Buy/Increase
                                         new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
                                         state["virt_entry_price"] = float(new_v_entry)
+                                    elif new_v_qty <= 0:
+                                        state["virt_entry_price"] = 0.0
                                     
                                     # Update balance and quantity
                                     paper_state["balance"] -= float(diff_usdt)
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
+                                    if virt_qty < 0:
+                                        virt_qty = 0.0
+                                        state["virt_qty"] = 0.0
                                     
                                     logger.info(f"🔄 Virtual Fixed: {float(diff_usdt):+.4f} USDT moved. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
                                     continue
@@ -627,7 +632,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 trade_log = f"📝 {mode_tag}: {side} {qty} {pos_key} @ {price:.6g}"
                                 if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
                                 logger.info(trade_log)
-                                asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
+                                # asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
                             else:
                                 logger.warning(f"❌ {side} {key} execution status: {status}. Message: {res.get('message')}")
 
