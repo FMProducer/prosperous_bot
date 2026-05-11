@@ -112,6 +112,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "started_at": time.time()
     })
 
+    # Initialize paper_state for shadow balance tracking (Used in both PAPER and REAL modes for isolation)
+    default_paper_state = {
+        "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
+        "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
+        "last_price": 0.0,
+        "base_ticker": base_ticker,
+        "long_entry_price": 0.0,
+        "short_entry_price": 0.0
+    }
+    paper_state = await load_json(paper_state_file_path, default_paper_state)
+
     # Если тикер сменился, сбрасываем количество виртуальных монет и начальный TPV
     if state.get("base_ticker") != base_ticker:
         logger.info(f"Ticker in state changed from {state.get('base_ticker')} to {base_ticker}. Resetting virt_qty, initial TPV and ATH.")
@@ -124,6 +135,56 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         state["base_ticker"] = base_ticker
         state["started_at"] = time.time()
         await save_json(state_file_path, state)
+
+    if paper_state.get("base_ticker") != base_ticker:
+        logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
+        paper_state["last_price"] = 0.0
+        paper_state["base_ticker"] = base_ticker
+        paper_state["balance"] = max_capital_usdt if max_capital_usdt > 0 else 10000.0
+        paper_state["positions"] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+        paper_state["long_entry_price"] = 0.0
+        paper_state["short_entry_price"] = 0.0
+        await save_json(paper_state_file_path, paper_state)
+
+    if "positions" not in paper_state: paper_state["positions"] = {}
+    if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
+    if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
+    if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
+    if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
+
+    # [Architectural Safeguard] State Isolation Protocol
+    # Если реальных позиций нет, это чистый старт (или рестарт после стопа).
+    # Жестко затираем фантомные балансы, чтобы не сломать Trailing Stop.
+    if not paper_mode:
+        try:
+            raw_positions = await connector.get_positions()
+            ticker_positions = {k: v["qty"] for k, v in raw_positions.items() if base_ticker in k}
+            total_position_size = sum(abs(float(v)) for v in ticker_positions.values())
+
+            if total_position_size == 0:
+                initial_cap = float(portfolio_cfg.get('initial_capital', 120.0))
+
+                # Проверяем оба стейта на наличие фантомного профита
+                current_balance = float(paper_state.get('balance', initial_cap))
+                if abs(current_balance - initial_cap) > 0.1 or float(state.get('virt_qty', 0)) > 0:
+                    logger.warning(f"🧹 Phantom Buffer detected for {base_ticker}. Enforcing Clean Slate for baseline!")
+
+                    # Сброс бумажного стейта (баланс и позиции)
+                    paper_state['balance'] = initial_cap
+                    paper_state['long_entry_price'] = 0.0
+                    paper_state['short_entry_price'] = 0.0
+                    paper_state['positions'] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+                    await save_json(paper_state_file_path, paper_state)
+
+                    # Сброс основного стейта (ATH, V-нога, циклы)
+                    state['tpv_ath'] = initial_cap
+                    state['virt_qty'] = 0.0
+                    state['rebalance_cycles'] = 0
+                    state['initial_tpv'] = initial_cap
+                    state['reference_tpv'] = initial_cap
+                    await save_json(state_file_path, state)
+        except Exception as e:
+            logger.error(f"State Isolation Protocol failed: {e}")
 
     virt_qty = float(state.get("virt_qty", 0.0))
     siphoning_reserve = float(state.get("siphoning_reserve", 0.0))
@@ -140,32 +201,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_drawdown_limit = config.get("max_drawdown_limit", 0.5)
     margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
     margin_critical = portfolio_cfg.get("margin_ratio_critical", 2.0)
-
-    # Initialize paper_state for shadow balance tracking (Used in both PAPER and REAL modes for isolation)
-    default_paper_state = {
-        "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
-        "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
-        "last_price": 0.0,
-        "base_ticker": base_ticker,
-        "long_entry_price": 0.0,
-        "short_entry_price": 0.0
-    }
-    paper_state = await load_json(paper_state_file_path, default_paper_state)
-
-    if paper_state.get("base_ticker") != base_ticker:
-        logger.info(f"Ticker in paper state changed from {paper_state.get('base_ticker')} to {base_ticker}. Resetting.")
-        paper_state["last_price"] = 0.0
-        paper_state["base_ticker"] = base_ticker
-        paper_state["balance"] = max_capital_usdt if max_capital_usdt > 0 else 10000.0
-        paper_state["positions"] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
-        paper_state["long_entry_price"] = 0.0
-        paper_state["short_entry_price"] = 0.0
-
-    if "positions" not in paper_state: paper_state["positions"] = {}
-    if f"{base_ticker}_LONG" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_LONG"] = 0.0
-    if f"{base_ticker}_SHORT" not in paper_state["positions"]: paper_state["positions"][f"{base_ticker}_SHORT"] = 0.0
-    if "long_entry_price" not in paper_state: paper_state["long_entry_price"] = 0.0
-    if "short_entry_price" not in paper_state: paper_state["short_entry_price"] = 0.0
 
     # Инициализация уведомлений
     notifier = TelegramNotifier()
@@ -777,7 +812,12 @@ if __name__ == "__main__":
     
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))
-    connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
+
+    if os.environ.get("MOCK_MODE") == "1":
+        from connector import BinanceConnectorMock
+        connector = BinanceConnectorMock()
+    else:
+        connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
 
     if args.stop:
         asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance, close_only=args.close_only))
