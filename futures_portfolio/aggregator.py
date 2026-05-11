@@ -30,6 +30,8 @@ class StatusAggregator:
     def __init__(self, config_path="config.json"):
         self.config_path = config_path
         self.notifier = None
+        self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
+        os.makedirs(self.queue_dir, exist_ok=True)
 
     def load_config(self) -> Dict[str, Any]:
         try:
@@ -38,6 +40,48 @@ class StatusAggregator:
         except Exception as e:
             logger.error(f"Failed to read config {self.config_path}: {e}")
             return {}
+
+    async def process_telegram_queue(self):
+        """Обработка очереди сообщений от других ботов с соблюдением лимитов Telegram"""
+        if self.notifier is None:
+            self.notifier = TelegramNotifier()
+            
+        logger.info("Telegram Queue Processor started.")
+        while True:
+            try:
+                msg_files = sorted(glob.glob(os.path.join(self.queue_dir, "*.json")))
+                if not msg_files:
+                    await asyncio.sleep(1)
+                    continue
+
+                # Обрабатываем по одному, чтобы не спамить
+                f_path = msg_files[0]
+                try:
+                    with open(f_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    success = False
+                    if data.get("type") == "text":
+                        success = await self.notifier.send_message(data["text"], force_direct=True)
+                    elif data.get("type") == "photo":
+                        success = await self.notifier.send_photo(data["path"], data.get("caption", ""), force_direct=True)
+                    
+                    if success:
+                        if os.path.exists(f_path): os.remove(f_path)
+                        # Пауза между сообщениями для соблюдения лимитов
+                        await asyncio.sleep(1.2)
+                    else:
+                        # Если не удалось отправить (например 429), ждем подольше
+                        logger.warning(f"Failed to send queued message {f_path}, retrying later...")
+                        await asyncio.sleep(5)
+                except Exception as e:
+                    logger.error(f"Error processing queued message {f_path}: {e}")
+                    # Если файл битый, удаляем его
+                    if os.path.exists(f_path): os.remove(f_path)
+
+            except Exception as e:
+                logger.error(f"Error in telegram queue processor: {e}")
+                await asyncio.sleep(5)
 
     async def collect_and_send(self) -> None:
         config = self.load_config()
@@ -83,31 +127,23 @@ class StatusAggregator:
         active_pnl = 0.0
         removed_pnl = 0.0
 
-        # Для PAPER ботов нам нужно читать paper_state_*.json чтобы получить реальный баланс (как в swarm_analyzer)
         for f_path in state_files:
             try:
                 state = await safe_load_json(f_path, {})
                 ticker = state.get("base_ticker", "UNKNOWN")
                 if ticker == "UNKNOWN": continue
                 
-                # Читаем баланс из paper_state если он есть
                 siphoned = state.get("siphoning_reserve", 0.0)
                 
-                # ИСПОЛЬЗУЕМ ПРЯМОЙ ОТЧЕТ БОТА ДЛЯ ИСКЛЮЧЕНИЯ РАСХОЖДЕНИЙ
                 is_fired = f_path.endswith(".fired")
                 if is_fired and "final_profit" in state:
                     profit = state["final_profit"]
                 else:
-                    # Берем профит, который рассчитал сам бот в своем цикле
                     profit = state.get("last_profit", 0.0)
                 
                 cycles = state.get("rebalance_cycles", 0)
                 last_update = state.get("last_update", 0)
                 
-                # Проверка активности процесса (5 мин)
-                is_active_process = (time.time() - last_update) < 300 if last_update > 0 else False
-                
-                # Логика "Active" vs "Removed" для шапки и статистики
                 if ticker in active_tickers and not is_fired:
                     active_bots_count += 1
                     active_pnl += profit
@@ -115,7 +151,6 @@ class StatusAggregator:
                     total_safe += siphoned
                     status_icon = "🟢" if ticker in live_swarm else "🟡"
                 else:
-                    # Пропускаем или помечаем неактивных, если они не принесли профита
                     if abs(profit) < 0.01:
                         continue
                     removed_pnl += profit
@@ -124,7 +159,7 @@ class StatusAggregator:
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:
                     line += f" 🛡️<code>{siphoned:.2f}</code>"
-                summary_lines.append((profit, line)) # Сохраняем с профитом для сортировки
+                summary_lines.append((profit, line))
             except Exception as e:
                 logger.error(f"Error reading {f_path}: {e}")
 
@@ -132,11 +167,9 @@ class StatusAggregator:
             logger.info("No bot states found to aggregate.")
             return
 
-        # Сортировка по профиту (как в swarm_analyzer)
         summary_lines.sort(key=lambda x: x[0], reverse=True)
         lines_text = [x[1] for x in summary_lines]
 
-        # Формируем шапку как в swarm_analyzer
         roi = (total_profit / working_capital) * 100 if working_capital > 0 else 0
         
         header = (
@@ -155,8 +188,7 @@ class StatusAggregator:
         
         message = header + "\n".join(lines_text)
         
-        # Отправляем в Telegram
-        success = await self.notifier.send_message(message)
+        success = await self.notifier.send_message(message, force_direct=True)
         if success:
             logger.info(f"Summary sent for {active_bots_count} bots. Total PnL: {total_profit:+.2f}")
         else:
@@ -164,6 +196,9 @@ class StatusAggregator:
 
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
+        # Запускаем обработчик очереди как фоновую задачу
+        asyncio.create_task(self.process_telegram_queue())
+        
         while True:
             config = self.load_config()
             interval_min = config.get("telegram_summary_interval_min", 1)

@@ -16,7 +16,9 @@
   "max_drawdown_limit": 5.0,
   "equity_trailing_stop_pct": 1.2,
   "equity_trailing_stop_timeout_sec": 45,
-  "telegram_enabled": false,
+  "telegram_enabled": true,
+  "telegram_use_queue": true,
+  "telegram_summary_interval_min": 5,
   "black_list": [],
   "portfolios": [
     {
@@ -66,6 +68,8 @@
     "VVVUSDT",
     "ZEREBROUSDT"
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "SAGAUSDT"
+  ],
   "base_ticker": "AKTUSDT"
 }

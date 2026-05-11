@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 import json
 import logging
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,10 +16,17 @@ class TelegramNotifier:
         self.chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         self.api_base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org")
         
-        # Загружаем настройки из config.json для проверки enabled
+        # Загружаем настройки из config.json
         self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        self.config = self._load_config()
         self.enabled = self._is_enabled()
         
+        # Очередь сообщений для предотвращения 429
+        self.use_queue = self.config.get("telegram_use_queue", True)
+        self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
+        if self.use_queue:
+            os.makedirs(self.queue_dir, exist_ok=True)
+
         self._session = None
         # Максимальное время ожидания при 429, чтобы не блокировать логику бота
         self.max_retry_wait = 30 
@@ -29,19 +37,20 @@ class TelegramNotifier:
             else:
                 logger.info("Telegram Notifier disabled via config.json")
 
+    def _load_config(self) -> dict:
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except:
+            pass
+        return {}
+
     def _is_enabled(self) -> bool:
         """Проверка включен ли Telegram в .env и config.json"""
         env_ok = all([self.token, self.chat_id])
         if not env_ok: return False
-        
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    cfg = json.load(f)
-                    return cfg.get("telegram_enabled", True)
-        except:
-            pass
-        return True
+        return self.config.get("telegram_enabled", True)
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
@@ -52,9 +61,12 @@ class TelegramNotifier:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def send_message(self, text: str, max_retries: int = 2):
+    async def send_message(self, text: str, max_retries: int = 2, force_direct: bool = False):
         if not self.enabled:
             return False
+
+        if self.use_queue and not force_direct:
+            return await self._queue_message({"type": "text", "text": text})
 
         url = f"{self.api_base}/bot{self.token}/sendMessage"
         payload = {
@@ -62,6 +74,7 @@ class TelegramNotifier:
             "text": text,
             "parse_mode": "HTML"
         }
+        # ... rest of the existing send_message logic ...
 
         for attempt in range(max_retries):
             try:
@@ -97,9 +110,12 @@ class TelegramNotifier:
                 return False
         return False
 
-    async def send_photo(self, photo_path: str, caption: str = "", max_retries: int = 2):
+    async def send_photo(self, photo_path: str, caption: str = "", max_retries: int = 2, force_direct: bool = False):
         if not self.enabled or not os.path.exists(photo_path):
             return False
+
+        if self.use_queue and not force_direct:
+            return await self._queue_message({"type": "photo", "path": photo_path, "caption": caption})
 
         url = f"{self.api_base}/bot{self.token}/sendPhoto"
         
@@ -145,9 +161,24 @@ class TelegramNotifier:
                 return False
         return False
 
-    async def send_alert(self, title: str, message: str):
+    async def _queue_message(self, data: dict) -> bool:
+        """Сохраняет сообщение в файл для последующей отправки централизованным сервисом"""
+        try:
+            timestamp = time.time()
+            filename = f"msg_{int(timestamp * 1000)}_{os.getpid()}.json"
+            filepath = os.path.join(self.queue_dir, filename)
+            
+            async with asyncio.Lock(): # Локальный лок для безопасности в рамках одного процесса
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to queue telegram message: {e}")
+            return False
+
+    async def send_alert(self, title: str, message: str, force_direct: bool = True):
         formatted_text = f"<b>⚠️ {title}</b>\n\n{message}"
-        await self.send_message(formatted_text)
+        await self.send_message(formatted_text, force_direct=force_direct)
 
     async def send_status(self, bot_name: str, tpv: float, profit: float, cycles: int, safe_reserve: float, total_balance: float = None, bnb_balance: float = None):
         active_balance = tpv - safe_reserve
