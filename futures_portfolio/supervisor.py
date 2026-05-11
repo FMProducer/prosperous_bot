@@ -154,6 +154,10 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     # Проверка активности
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
+    # Efficiency calculation: Average profit per cycle, protected from division by zero
+    min_cycles = config.get("min_cycles_for_rank", 10)
+    efficiency = profit_usdt / max(cycles, min_cycles)
+
     # Прунинг: Только по абсолютному убытку (Overall PnL < 0)
     if profit_usdt < 0:
         # ЗАЩИТА НОВИЧКА: Не убиваем сразу после старта (даем время отбить комиссию)
@@ -186,6 +190,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     return {
         "profit": profit_pct,
         "profit_usdt": profit_usdt,
+        "efficiency": efficiency,
         "safe": siphoned,
         "cycles": cycles,
         "is_active": is_active,
@@ -274,15 +279,16 @@ async def manage_swarm():
         if symbol not in perf_dict:
             perf_dict[symbol] = {
                 "profit": 0.0,
+                "efficiency": 0.0,
                 "is_real_data": False,
                 "trailing_stop_paper_timeout_end": 0.0
             }
 
-    # Сортировка: Только по текущему общему PnL (%)
+    # Сортировка: По эффективности (средний профит на цикл)
     def ranking_key(t):
         p = perf_dict[t]
-        # Rank by current total profit percentage (overall PnL)
-        return p.get('profit', 0.0)
+        # Rank by efficiency (USDT/Cycle)
+        return p.get('efficiency', 0.0)
 
     all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
 
@@ -329,7 +335,7 @@ async def manage_swarm():
             ready_pool.append(ticker)
 
     # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
-    ready_pool.sort(key=lambda x: perf_dict[x]['profit'], reverse=True)
+    ready_pool.sort(key=lambda x: perf_dict[x]['efficiency'], reverse=True)
     target_real_bots = ready_pool[:max_real_slots]
     
     # ИТОГОВЫЙ СПИСОК (всего max_bots слотов)
