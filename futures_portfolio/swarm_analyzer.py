@@ -10,6 +10,7 @@ def analyze_swarm():
             # Берем initial_capital из первого портфеля (обычно 39000)
             initial_per_bot = config['portfolios'][0].get('initial_capital', 39000.0)
             max_bots = config.get('max_bots', 10)
+            min_cycles_for_rank = config.get('min_cycles_for_rank', 10)
             working_capital = initial_per_bot * max_bots
             active_tickers = config.get('tickers', [])
             live_swarm = config.get('live_swarm', [])
@@ -40,6 +41,9 @@ def analyze_swarm():
                 if "final_profit" in state_data:
                     total_ticker_pnl = state_data.get("final_profit", total_ticker_pnl)
                 
+                cycles = int(state_data.get('rebalance_cycles', 0))
+                efficiency = total_ticker_pnl / max(cycles, min_cycles_for_rank)
+
                 safe_reserve = state_data.get('siphoning_reserve', 0.0)
 
                 # Для отображения баланса ищем paper_state
@@ -58,6 +62,7 @@ def analyze_swarm():
                     "balance": balance,
                     "safe": safe_reserve,
                     "pnl": total_ticker_pnl,
+                    "eff": efficiency,
                     "mode": "REAL" if ticker in live_swarm else "PAPER"
                 })
         except Exception as e:
@@ -66,13 +71,13 @@ def analyze_swarm():
     # Сортировка по общему профиту
     results.sort(key=lambda x: x['pnl'], reverse=True)
     
-    print(f"\n{'Ticker':<15} | {'Balance':<10} | {'SAFE':<10} | {'Total PnL':<10} | {'Mode':<7} | {'Status':<10}")
-    print("-" * 85)
+    print(f"\n{'Ticker':<15} | {'Balance':<10} | {'SAFE':<10} | {'Total PnL':<10} | {'Eff':<10} | {'Mode':<7} | {'Status':<10}")
+    print("-" * 98)
     for r in results:
         status = "Active" if r['ticker'] in active_tickers else "Removed"
-        print(f"{r['ticker']:<15} | {r['balance']:<10.2f} | {r['safe']:<10.2f} | {r['pnl']:<10.2f} | {r['mode']:<7} | {status:<10}")
+        print(f"{r['ticker']:<15} | {r['balance']:<10.2f} | {r['safe']:<10.2f} | {r['pnl']:<10.2f} | {r['eff']:<10.2f} | {r['mode']:<7} | {status:<10}")
         
-    print("-" * 85)
+    print("-" * 98)
     print(f"Total Swarm Net Profit: {total_net_pnl:.2f} USDT (including SAFE)")
     print(f"Total SAFE Reserve:     {total_safe:.2f} USDT")
     print(f"Overall ROI: {(total_net_pnl / working_capital) * 100:.2f}% (Relative to {working_capital} USDT deposit)")
