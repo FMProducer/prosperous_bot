@@ -50,7 +50,7 @@ class PortfolioCalculator:
         # PnL contributions for transparency
         self.pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
         self.pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
-        self.pnl_v = self.virt_qty * (self.price - self.virt_entry_price) if self.virt_qty > 0 else Decimal('0')
+        self.pnl_v = self.virt_qty * (self.price - self.virt_entry_price)
 
         # 3. Cash is what's left in the futures wallet that isn't tied up in L/S margin/PnL
         # Since TPV = real_equity + val_virt, and real_equity = val_l + val_s + cash
@@ -89,23 +89,19 @@ class PortfolioCalculator:
             "VIRTUAL": self.share_virt_pct / 100
         }
 
-        # Check if rebalance is triggered by any leg
-        any_exceeded: bool = dec_threshold < 0
-        if not any_exceeded:
-            for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-                target_share = Decimal(str(targets[key]["share"]))
-                if abs(shares[key] - target_share) > dec_threshold:
-                    any_exceeded = True
-                    break
-
-        if not any_exceeded:
-            return []
-
-        # Rebalance ALL legs to restore Target Equity shares
+        # Rebalance ONLY legs that actually breached the threshold
         for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
             target_share = Decimal(str(targets[key]["share"]))
             current_share = shares[key]
             diff_share = current_share - target_share # Positive if surplus
+
+            # Only rebalance legs that actually breached the threshold
+            if not ignore_limits and abs(diff_share) < dec_threshold:
+                continue
+
+            if abs(diff_share) > 0:
+                # Log the trigger reason (will be captured by main.py)
+                logger.info(f"Trigger: {key} deviation {diff_share*100:+.2f}% targets {target_share*100}%")
 
             if key == "VIRTUAL":
                 # For Virtual, diff_usdt is the amount to move to/from Cash
