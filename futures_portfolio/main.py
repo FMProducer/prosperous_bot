@@ -494,13 +494,24 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if i % 5 == 0:
                     res_str = f" | SAFE:{siphoning_reserve:.2f}" if siphoning_reserve > 0 else ""
-                    # Heartbeat showing shares and PnL contributions
+                    def get_dev(actual, target): return (actual - target) * 100
+
+                    l_p, s_p, v_p = calc_res['share_long_pct'], calc_res['share_short_pct'], calc_res['share_virt_pct']
+                    c_p = calc_res['share_cash_pct']
                     pnl_l, pnl_s, pnl_v = calc_res['pnl_l'], calc_res['pnl_s'], calc_res['pnl_v']
-                    logger.info(
+
+                    l_target = Decimal(str(targets['BASE_LONG']['share']))
+                    s_target = Decimal(str(targets['BASE_SHORT']['share']))
+                    v_target = Decimal(str(targets['VIRTUAL']['share']))
+
+                    h_msg = (
                         f"Heartbeat: TPV={tpv_total:.2f}{res_str} | PnL={tpv_total - initial_tpv:+.2f} | {base_ticker}={price:.6g} | "
-                        f"L:{calc_res['share_long_pct']:.1f}%({pnl_l:+.2f}) S:{calc_res['share_short_pct']:.1f}%({pnl_s:+.2f}) "
-                        f"V:{calc_res['share_virt_pct']:.1f}%({pnl_v:+.2f}) C:{calc_res['share_cash_pct']:.1f}%"
+                        f"L:{l_p:.1f}% [{get_dev(Decimal(str(l_p))/100, l_target):+.1f}%] {{{pnl_l:+.2f}$}} | "
+                        f"S:{s_p:.1f}% [{get_dev(Decimal(str(s_p))/100, s_target):+.1f}%] {{{pnl_s:+.2f}$}} | "
+                        f"V:{v_p:.1f}% [{get_dev(Decimal(str(v_p))/100, v_target):+.1f}%] {{{pnl_v:+.2f}$}} | "
+                        f"C:{c_p:.1f}%"
                     )
+                    logger.info(h_msg)
                 
                 # Логика ребалансировки
                 valid_actions = []
@@ -543,6 +554,24 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 fused_actions.append(action) # Safety for unknown types
                     
                     if fused_actions:
+                        # Log specific trigger reasons
+                        for action in fused_actions:
+                            act_type = action.get("type")
+                            side = action.get("position_side", "BOTH")
+                            symbol = action.get("symbol")
+                            diff_usdt = action.get("diff_usdt", 0)
+
+                            key_map = {"ORDER": "BASE_" + side, "VIRTUAL_ORDER": "VIRTUAL"}
+                            key = key_map.get(act_type, symbol)
+
+                            share_suffix = "virt" if key == "VIRTUAL" else key.split('_')[-1].lower()
+                            current_share = Decimal(str(calc_res.get(f"share_{share_suffix}_pct", 0))) / 100
+                            target_share = Decimal(str(targets.get(key, {}).get("share", 0)))
+                            dev = (current_share - target_share) * 100
+
+                            trigger_key = key.replace("BASE_", "")
+                            logger.info(f"Rebalance triggered: {trigger_key} deviation {dev:+.2f}% exceeds threshold {threshold*100:.2f}%")
+
                         logger.info(f"Rebalance needed ({len(fused_actions)} fused actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
                         
                         rebalance_msg = (

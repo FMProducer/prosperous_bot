@@ -44,9 +44,9 @@ def test_calculate_deviations(sample_params, targets):
     actions = calc.calculate_deviations(targets, threshold)
     
     # Shares: L:50%, S:0%, V:16.7%. Targets: L:40%, S:40%, V:20%.
-    # All deviations (10%, 40%, 3.3%) trigger if any exceeded? 
-    # Wait, 10% and 40% are > 5%.
-    assert len(actions) == 3
+    # Deviations: L: +10% (BREACH), S: -40% (BREACH), V: -3.3% (NO BREACH)
+    # Threshold is 5%.
+    assert len(actions) == 2
     
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     # Target Notional L = 12000 * 0.4 * 5 = 24000
@@ -60,12 +60,8 @@ def test_calculate_deviations(sample_params, targets):
     # Diff = 24000 - 0 = 24000
     assert short_action["diff_usdt"] == pytest.approx(24000.0)
     
-    virt_action = next(a for a in actions if a["symbol"] == "VIRTUAL")
-    # Target Notional V = 12000 * 0.2 = 2400
-    # Current Share V = 16.67% (quantized) -> 0.1667
-    # Diff Share = 0.1667 - 0.20 = -0.0333
-    # diff_usdt in action is float(-diff_share * tpv) = float(-(-0.0333) * 12000) = 399.6
-    assert virt_action["diff_usdt"] == pytest.approx(399.6)
+    # Virtual should not be here since 3.3% < 5%
+    assert not any(a["symbol"] == "VIRTUAL" for a in actions)
 
 def test_siphoning_reserve_impact(sample_params):
     params = sample_params.copy()
