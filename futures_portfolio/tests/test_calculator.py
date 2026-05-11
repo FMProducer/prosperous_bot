@@ -62,10 +62,10 @@ def test_calculate_deviations(sample_params, targets):
     
     virt_action = next(a for a in actions if a["symbol"] == "VIRTUAL")
     # Target Notional V = 12000 * 0.2 = 2400
-    # Current Share V = 16.7% (quantized) -> 0.167
-    # Current Notional V = 0.167 * 12000 = 2004
-    # Diff = 2400 - 2004 = 396
-    assert virt_action["diff_usdt"] == pytest.approx(396.0)
+    # Current Share V = 16.67% (quantized) -> 0.1667
+    # Diff Share = 0.1667 - 0.20 = -0.0333
+    # diff_usdt in action is float(-diff_share * tpv) = float(-(-0.0333) * 12000) = 399.6
+    assert virt_action["diff_usdt"] == pytest.approx(399.6)
 
 def test_siphoning_reserve_impact(sample_params):
     params = sample_params.copy()
