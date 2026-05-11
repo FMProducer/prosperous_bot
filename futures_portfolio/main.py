@@ -257,6 +257,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     check_interval = portfolio_cfg.get("check_interval_sec", 15)
                     ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
                     threshold = ticker_thresholds.get(base_ticker, global_threshold)
+                    
+                    if i % 20 == 0:
+                        logger.info(f"⚙️ Active Threshold for {base_ticker}: {threshold*100:.2f}%")
+
                     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
                     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
                     max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
