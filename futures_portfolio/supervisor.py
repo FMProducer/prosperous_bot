@@ -155,7 +155,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
     
     # Efficiency calculation: Average profit per cycle, protected from division by zero
-    min_cycles = config.get("min_cycles_for_rank", 10)
+    min_cycles = config.get("min_cycles_for_rank", 20)
     efficiency = profit_usdt / max(cycles, min_cycles)
 
     # Прунинг: Только по абсолютному убытку (Overall PnL < 0)
@@ -336,6 +336,11 @@ async def manage_swarm():
         if profit > 0 and bot_cycles >= min_cycles:
             logger.info(f"✅ {ticker} qualified for REAL: Profit {profit:.2f}%, Cycles {bot_cycles}/{min_cycles}")
             ready_pool.append(ticker)
+        else:
+            reason = ""
+            if profit <= 0: reason += f"Profit {profit:.2f} <= 0 "
+            if bot_cycles < min_cycles: reason += f"Cycles {bot_cycles} < {min_cycles}"
+            logger.info(f"❌ {ticker} NOT qualified: {reason}")
 
     # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
     ready_pool.sort(key=lambda x: perf_dict[x]['efficiency'], reverse=True)

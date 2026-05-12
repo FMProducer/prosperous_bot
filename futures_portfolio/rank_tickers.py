@@ -131,7 +131,7 @@ class TickerScanner:
         df['time'] = pd.to_datetime(df['time'], unit='ms')
         return df.set_index(['ticker', 'time'])
 
-    async def get_top_tickers(self, min_volume: float = 20_000_000) -> List[Dict[str, Any]]:
+    async def get_top_tickers(self, min_volume: float = 10_000_000) -> List[Dict[str, Any]]:
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
         white_list = set()
@@ -206,7 +206,7 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=20_000_000):
+async def main(quiet=False, min_volume=10_000_000):
     threshold = 0.02
     scanner_period_days = 1.0
     try:

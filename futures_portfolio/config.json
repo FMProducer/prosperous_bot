@@ -1,29 +1,29 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.1,
   "max_orders_per_second": 10,
   "max_bots": 20,
-  "min_cycles_for_rank": 5,
+  "min_cycles_for_rank": 1,
   "paper_mode_bots": 19,
-  "probation_period_days": 0.02,
+  "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.021,
+  "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 5.0,
-  "equity_trailing_stop_pct": 1.2,
+  "max_drawdown_limit": 10.0,
+  "equity_trailing_stop_pct": 10.0,
   "equity_trailing_stop_timeout_sec": 45,
   "telegram_enabled": true,
   "telegram_use_queue": true,
-  "telegram_summary_interval_min": 5,
+  "telegram_summary_interval_min": 1,
   "black_list": [],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 100.0,
+      "initial_capital": 105.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -39,28 +39,13 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.025,
+      "rebalance_threshold": 0.035,
       "ticker_thresholds": {
-        "ALCHUSDT": 0.025,
-        "DOGSUSDT": 0.025
+        "GTCUSDT": 0.035
       }
     }
   ],
-  "tickers": [
-    "AKTUSDT",
-    "BANANAS31USDT",
-    "CRVUSDT",
-    "DOGSUSDT",
-    "GTCUSDT",
-    "INJUSDT",
-    "JELLYJELLYUSDT",
-    "PARTIUSDT",
-    "PENDLEUSDT",
-    "SAGAUSDT",
-    "TONUSDT",
-    "VVVUSDT",
-    "ZEREBROUSDT"
-  ],
+  "tickers": [],
   "live_swarm": [],
-  "base_ticker": "AKTUSDT"
+  "base_ticker": ""
 }

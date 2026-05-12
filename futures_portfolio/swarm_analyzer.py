@@ -10,7 +10,7 @@ def analyze_swarm():
             # Берем initial_capital из первого портфеля (обычно 39000)
             initial_per_bot = config['portfolios'][0].get('initial_capital', 39000.0)
             max_bots = config.get('max_bots', 10)
-            min_cycles_for_rank = config.get('min_cycles_for_rank', 10)
+            min_cycles_for_rank = config.get('min_cycles_for_rank', 20)
             working_capital = initial_per_bot * max_bots
             active_tickers = config.get('tickers', [])
             live_swarm = config.get('live_swarm', [])
