@@ -75,6 +75,14 @@ def emit_signal(signal_type: str, ticker: str) -> None:
 
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
+    # [SSOT] Absolute Scope Safety - Initialize all variables at function start
+    i = 0
+    status_offset = random.randint(0, 99)
+    target_initial = 0.0
+    max_spread = 0.0015 # 0.15%
+    max_velocity = 0.01 # 1.0%
+    velocity_window = 60
+    
     # Обычное чтение конфига без блокировок
     try:
         with open(config_path, 'r', encoding='utf-8') as f:

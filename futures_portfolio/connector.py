@@ -195,7 +195,7 @@ class BinanceConnector:
     async def get_order_book(self, symbol: str, limit: int = 20) -> Dict:
         """Получение стакана ордеров (глубина 5-1000 уровней)."""
         return await asyncio.to_thread(
-            self.futures_client.futures_depth,
+            self.futures_client.futures_order_book,
             symbol=symbol,
             limit=limit
         )
