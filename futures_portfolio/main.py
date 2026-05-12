@@ -5,6 +5,7 @@ import os
 import time
 import random
 import shutil
+from collections import deque
 from typing import Dict, List, Any
 from decimal import Decimal
 from concurrent.futures import ProcessPoolExecutor
@@ -263,8 +264,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     asyncio.create_task(notifier.send_message(f"🚀 <b>Bot Started</b>: <code>{config_base}</code> ({base_ticker})\nMode: {'PAPER' if paper_mode else 'REAL'}"))
 
-    i = 0
-    status_offset = random.randint(0, 99)
+    # Инициализация буфера для Velocity Guard
+    velocity_cfg = portfolio_cfg.get("safety_guards", {})
+    window_sec = velocity_cfg.get("velocity_window_sec", 60)
+    price_history = deque() # Будет хранить (timestamp, price)
+
     try:
         while True:
             try:
@@ -294,6 +298,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
                     equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
                     equity_trailing_stop_timeout_sec = current_config.get("equity_trailing_stop_timeout_sec", 0.0)
+                    
+                    # Обновляем параметры защит
+                    guards_cfg = portfolio_cfg.get("safety_guards", {})
+                    max_spread = guards_cfg.get("max_spread_pct", 0.15) / 100
+                    max_velocity = guards_cfg.get("max_price_velocity_pct", 1.0) / 100
+                    velocity_window = guards_cfg.get("velocity_window_sec", 60)
+
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
@@ -310,6 +321,44 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 price = prices.get(base_ticker)
                 if not price: raise Exception(f"Could not fetch {base_ticker} mark price")
                 
+                # -------------------------------------------------------------------------
+                # [SAFETY] VELOCITY GUARD
+                # -------------------------------------------------------------------------
+                now = time.time()
+                price_history.append((now, price))
+                # Удаляем старые записи за пределами окна
+                while price_history and (now - price_history[0][0]) > velocity_window:
+                    price_history.popleft()
+                
+                if len(price_history) > 1:
+                    old_t, old_p = price_history[0]
+                    velocity = abs(price - old_p) / old_p
+                    if velocity > max_velocity:
+                        if i % 5 == 0:
+                            logger.warning(f"🚀 Velocity Guard: {base_ticker} is moving too fast ({velocity*100:.2f}% in {int(now-old_t)}s). Blocking trades.")
+                        await asyncio.sleep(check_interval)
+                        i += 1
+                        continue
+
+                # -------------------------------------------------------------------------
+                # [SAFETY] SPREAD GUARD (Only for REAL mode or detailed Paper simulation)
+                # -------------------------------------------------------------------------
+                if not paper_mode:
+                    try:
+                        depth = await connector.get_order_book(base_ticker, limit=5)
+                        best_bid = float(depth['bids'][0][0]) if depth['bids'] else 0
+                        best_ask = float(depth['asks'][0][0]) if depth['asks'] else 0
+                        if best_bid > 0 and best_ask > 0:
+                            spread = (best_ask - best_bid) / best_bid
+                            if spread > max_spread:
+                                if i % 5 == 0:
+                                    logger.warning(f"⚠️ Spread Guard: {base_ticker} spread too wide ({spread*100:.3f}% > {max_spread*100:.3f}%). Blocking trades.")
+                                await asyncio.sleep(check_interval)
+                                i += 1
+                                continue
+                    except Exception as e:
+                        logger.error(f"Failed to check order book for spread: {e}")
+
                 # Fetch current data for deviation calculation
                 l_entry: float = 0.0
                 s_entry: float = 0.0
