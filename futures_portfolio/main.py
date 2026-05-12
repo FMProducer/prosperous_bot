@@ -268,6 +268,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     velocity_cfg = portfolio_cfg.get("safety_guards", {})
     window_sec = velocity_cfg.get("velocity_window_sec", 60)
     price_history = deque() # Будет хранить (timestamp, price)
+    
+    # [Safety] Initial values for dynamic parameters to prevent UnboundLocalError
+    i = 0
+    target_initial = target_initial_cap
+    max_spread = velocity_cfg.get("max_spread_pct", 0.15) / 100
+    max_velocity = velocity_cfg.get("max_price_velocity_pct", 1.0) / 100
+    velocity_window = window_sec
+    status_offset = random.randint(0, 99)
 
     try:
         while True:

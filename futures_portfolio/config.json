@@ -50,12 +50,15 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "VICUSDT"
+  ],
   "real_whitelist": [
     "VICUSDT"
   ],
   "black_list": [],
   "tickers": [
+    "BANANAS31USDT",
     "DYMUSDT",
     "GTCUSDT",
     "SAGAUSDT",
@@ -64,5 +67,5 @@
     "VICUSDT",
     "ZEREBROUSDT"
   ],
-  "base_ticker": "DYMUSDT"
+  "base_ticker": "BANANAS31USDT"
 }
