@@ -193,7 +193,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             total_position_size = sum(abs(float(v)) for v in ticker_positions.values())
 
             if total_position_size == 0:
-                initial_cap = float(portfolio_cfg.get('initial_capital', 120.0))
+                initial_cap = target_initial_cap
 
                 # Проверяем оба стейта на наличие фантомного профита
                 current_balance = float(paper_state.get('balance', initial_cap))
@@ -218,6 +218,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             logger.error(f"State Isolation Protocol failed: {e}")
 
     virt_qty = float(state.get("virt_qty", 0.0))
+    virt_entry_price = float(state.get("virt_entry_price", 0.0))
     siphoning_reserve = float(state.get("siphoning_reserve", 0.0))
     initial_tpv = float(state.get("initial_tpv", 0.0))
     reference_tpv = float(state.get("reference_tpv", 0.0))
@@ -272,18 +273,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     asyncio.create_task(notifier.send_message(f"🚀 <b>Bot Started</b>: <code>{config_base}</code> ({base_ticker})\nMode: {'PAPER' if paper_mode else 'REAL'}"))
 
-    # Инициализация буфера для Velocity Guard
-    velocity_cfg = portfolio_cfg.get("safety_guards", {})
-    window_sec = velocity_cfg.get("velocity_window_sec", 60)
-    price_history = deque() # Будет хранить (timestamp, price)
-    
-    # [Safety] Initial values for dynamic parameters to prevent UnboundLocalError
+    # [Safety] Absolute Scope Safety - Initialize all variables before the loop
     i = 0
+    status_offset = random.randint(0, 99)
     target_initial = target_initial_cap
+    velocity_cfg = portfolio_cfg.get("safety_guards", {})
     max_spread = velocity_cfg.get("max_spread_pct", 0.15) / 100
     max_velocity = velocity_cfg.get("max_price_velocity_pct", 1.0) / 100
-    velocity_window = window_sec
-    status_offset = random.randint(0, 99)
+    velocity_window = velocity_cfg.get("velocity_window_sec", 60)
+    price_history = deque() # Будет хранить (timestamp, price)
 
     try:
         while True:

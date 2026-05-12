@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -50,22 +50,16 @@
       }
     }
   ],
-  "live_swarm": [
-    "VICUSDT"
-  ],
-  "real_whitelist": [
-    "VICUSDT"
-  ],
+  "live_swarm": [],
+  "real_whitelist": [],
   "black_list": [],
   "tickers": [
     "BANANAS31USDT",
     "DYMUSDT",
     "GTCUSDT",
     "SAGAUSDT",
-    "SOLVUSDT",
     "TRUMPUSDT",
-    "VICUSDT",
-    "ZEREBROUSDT"
+    "VICUSDT"
   ],
   "base_ticker": "BANANAS31USDT"
 }
