@@ -241,5 +241,6 @@ futures_portfolio/state_*USDT.json.fired
 futures_portfolio/paper_state_*USDT.json.fired
 futures_portfolio/history/archive_*.json
 futures_portfolio/signals/exit_*USDT.flag
-.gitignore
 futures_portfolio/signals/telegram_queue/msg_*.json
+futures_portfolio/shadow_state_*USDT.json
+futures_portfolio/real_state_*USDT.json

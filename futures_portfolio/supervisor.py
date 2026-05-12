@@ -44,13 +44,13 @@ def read_shared_config(path: str) -> Dict[str, Any]:
         return {}
 
 async def get_ticker_pnl(ticker: str) -> float:
-    """Вспомогательная функция для чтения state_*.json и получения профита."""
-    state_path = BASE_PATH / f"state_{ticker}.json"
+    """Чтение прибыли из мастер-бумажного стейта для ранжирования."""
+    state_path = BASE_PATH / f"paper_state_{ticker}.json"
     state = await safe_load_json(str(state_path), {})
     return state.get("last_profit", 0.0)
 
 async def get_running_bots_info() -> Dict[str, dict]:
-    """Получает детальную информацию о запущенных ботах из PM2, включая аптайм"""
+    """Получает информацию о ботах с учетом префиксов paper- и real-"""
     try:
         proc = await asyncio.create_subprocess_shell(
             "pm2 jlist",
@@ -63,18 +63,18 @@ async def get_running_bots_info() -> Dict[str, dict]:
         data = json.loads(stdout.decode('utf-8', errors='replace'))
         bots = {}
         for app in data:
-            if app['name'].startswith('bot-'):
+            name = app['name']
+            if name.startswith(('paper-', 'real-')):
                 args = app.get('pm2_env', {}).get('args', [])
-                ticker = None
-                is_paper = "--paper" in args
-                for i, arg in enumerate(args):
-                    if arg == '--ticker' and i + 1 < len(args):
-                        ticker = args[i+1]
+                ticker = next((args[i+1] for i, a in enumerate(args) if a == '--ticker'), None)
+                is_paper = name.startswith('paper-')
+                
                 if ticker:
                     # Извлекаем pm_uptime (timestamp старта в мс)
                     uptime_ms = app.get('pm2_env', {}).get('pm_uptime', 0)
-                    bots[ticker] = {
-                        "name": app['name'], 
+                    # Ключ теперь включает режим, так как один тикер может быть в обоих режимах
+                    bots[f"{'p' if is_paper else 'r'}_{ticker}"] = {
+                        "name": name, 
                         "paper": is_paper, 
                         "status": app['pm2_env']['status'],
                         "uptime": uptime_ms
@@ -84,56 +84,46 @@ async def get_running_bots_info() -> Dict[str, dict]:
         logger.error(f"Failed to get PM2 list: {e}")
         return {}
 
-async def stop_bot(ticker: str, full_reset: bool = True, is_paper: bool = False, close_only: bool = False):
-    logger.info(f"🛑 Stopping process for {ticker} (Full Reset: {full_reset}, Paper: {is_paper}, CloseOnly: {close_only})...")
+async def stop_bot(ticker: str, is_paper: bool = False):
+    prefix = "paper" if is_paper else "real"
     short_name = ticker.replace('USDT', '').lower()
+    proc_name = f"{prefix}-{short_name}"
+    logger.info(f"🛑 Stopping process {proc_name}...")
     
     # 1. Всегда останавливаем процесс в PM2
     try:
-        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        proc = await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")
         await proc.wait()
         await asyncio.sleep(0.5)
     except: pass
-    
-    # 2. Очистка на бирже / сброс стейта
-    # Если это REAL бот или нужен полный сброс (увольнение) - запускаем cleanup
-    # Если бот бумажный и переходит в REAL - нам НЕ нужно закрывать позиции на бирже (их нет)
-    if not is_paper or full_reset:
-        try:
-            paper_flag = "--paper" if is_paper else ""
-            close_flag = "--close-only" if close_only else ""
-            cmd = f'"{sys.executable}" main.py --config config.json --ticker {ticker} --stop {paper_flag} {close_flag}'
-            proc = await asyncio.create_subprocess_shell(cmd)
-            await asyncio.wait_for(proc.wait(), timeout=30)
-        except Exception as e:
-            logger.warning(f"Stop command cleanup failed for {ticker}: {e}")
 
-async def start_bot(ticker: str, paper: bool = False):
-    mode_str = "PAPER" if paper else "REAL"
+async def start_bot(ticker: str, is_paper: bool = True):
+    prefix = "paper" if is_paper else "real"
+    mode_str = prefix.upper()
     logger.info(f"🚀 Launching {mode_str} bot for {ticker}...")
     short_name = ticker.replace('USDT', '').lower()
-    paper_flag = "--paper" if paper else ""
+    proc_name = f"{prefix}-{short_name}"
+    paper_flag = "--paper" if is_paper else ""
     
     # Удаляем старый если есть
     try:
-        proc = await asyncio.create_subprocess_shell(f"pm2 delete bot-{short_name}")
+        proc = await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")
         await proc.wait()
     except: pass
     
     # Формируем команду запуска
-    cmd = f'pm2 start main.py --name bot-{short_name} --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
+    cmd = f'pm2 start main.py --name {proc_name} --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
     proc = await asyncio.create_subprocess_shell(cmd)
     await proc.wait()
 
 async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, running_info: dict) -> dict:
     """Получает реальную статистику бота из его файлов состояния."""
-    state_path = BASE_PATH / f"state_{ticker}.json"
-    paper_state_path = BASE_PATH / f"paper_state_{ticker}.json"
+    state_path = BASE_PATH / f"paper_state_{ticker}.json"
+    paper_state_path = state_path # В новой архитектуре бумажный стейт един
     
     state = await safe_load_json(str(state_path), {})
-    paper_state = await safe_load_json(str(paper_state_path), {})
     
-    if not state or not paper_state:
+    if not state:
         return {}
         
     siphoned = state.get("siphoning_reserve", 0.0)
@@ -141,12 +131,11 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     last_update = state.get("last_update", 0)
     
     # Архитектурное исправление: Строгий SSOT.
-    # Супервайзер не должен вычислять TPV (иначе теряется PnL L/S ног).
-    # Читаем готовый расчет напрямую от main.py.
     profit_usdt = state.get("last_profit", 0.0)
     
     # Если бот уже уволен, читаем его зафиксированный финальный PnL
-    if "final_profit" in state and ticker not in running_info:
+    # (Хотя в новой архитектуре мы их реже увольняем из инкубатора)
+    if "final_profit" in state and f"p_{ticker}" not in running_info:
         profit_usdt = state.get("final_profit", profit_usdt)
 
     profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
@@ -172,7 +161,6 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
 
             # Сохраняем финальный профит ПЕРЕД сбросом стейта
             try:
-                state_path = BASE_PATH / f"state_{ticker}.json"
                 state_data = await safe_load_json(str(state_path), {})
                 state_data["final_profit"] = profit_usdt
                 await safe_save_json(str(state_path), state_data)
@@ -180,11 +168,7 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
             except Exception as e:
                 logger.error(f"Failed to save final profit for {ticker}: {e}")
 
-            # Определяем текущий режим для корректной остановки
-            bot_info = running_info.get(ticker, {})
-            is_currently_paper = bot_info.get('paper', False)
-
-            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper)
+            await stop_bot(ticker, is_paper=True)
             return {}
 
     return {
@@ -261,14 +245,15 @@ async def manage_swarm():
     
     # 3.1. Оцениваем ВСЕХ ботов с реальной историей (The Fact Protocol)
     logger.info("Scanning for real bot states...")
-    for state_file in BASE_PATH.glob("state_*.json"):
-        ticker = state_file.stem.replace("state_", "")
+    # В новой архитектуре мы ищем paper_state_*.json как основной источник истины для рейтинга
+    for state_file in BASE_PATH.glob("paper_state_*.json"):
+        ticker = state_file.stem.replace("paper_state_", "")
         if ticker in new_black_list: continue
         
         real_stats = await get_real_bot_stats(ticker, initial_capital, config, running_info)
         if real_stats:
             perf_dict[ticker] = real_stats
-            status = "RUNNING" if ticker in running_info else "STOPPED"
+            status = "RUNNING" if f"p_{ticker}" in running_info else "STOPPED"
             logger.info(f"📈 {ticker} ({status}): Real Profit {real_stats['profit']:.2f}% (Cycles: {real_stats['cycles']})")
 
     # 3.2. Добавляем КАНДИДАТОВ из сканера (БЕЗ БЭКТЕСТА)
@@ -293,9 +278,10 @@ async def manage_swarm():
     all_sorted = sorted(perf_dict.keys(), key=ranking_key, reverse=True)
 
     # Логика ротации (Dynamic Ticker Recirculation):
-    # 1. Находим кандидатов на вылет (PnL < 0) среди ТЕКУЩИХ активных ботов
+    # 1. Находим кандидатов на вылет (PnL < 0) среди ТЕКУЩИХ активных ботов ИНКУБАТОРА
     underperformers = []
     for ticker in list(current_tickers):
+        # Проверяем прибыль в инкубаторе
         pnl = await get_ticker_pnl(ticker)
         if pnl < 0:
             underperformers.append((ticker, pnl))
@@ -303,7 +289,7 @@ async def manage_swarm():
     # 2. Находим новых лидеров из сканера, которых нет в текущем рое
     new_candidates = [t for t in scanner_tickers if t not in current_tickers and t not in new_black_list]
 
-    # 3. Производим замену (Swap)
+    # 3. Производим замену (Swap) в ИНКУБАТОРЕ
     swapped_count = 0
     max_swaps = max(1, len(current_tickers) // 5) if current_tickers else 1 # Не более 20%
 
@@ -312,7 +298,7 @@ async def manage_swarm():
     for loser_ticker, pnl in underperformers:
         if new_candidates and swapped_count < max_swaps:
             winner_ticker = new_candidates.pop(0)
-            logger.info(f"🔄 Swapping: {loser_ticker} (PnL: {pnl:.2f}) -> {winner_ticker} (Rank Leader)")
+            logger.info(f"🔄 Swapping Incubator: {loser_ticker} (PnL: {pnl:.2f}) -> {winner_ticker} (Rank Leader)")
             if loser_ticker in current_tickers: current_tickers.remove(loser_ticker)
             current_tickers.add(winner_ticker)
             swapped_count += 1
@@ -346,92 +332,64 @@ async def manage_swarm():
     ready_pool.sort(key=lambda x: perf_dict[x]['efficiency'], reverse=True)
     target_real_bots = ready_pool[:max_real_slots]
     
-    # ИТОГОВЫЙ СПИСОК (всего max_bots слотов)
-    # Приоритет 1: REAL боты
-    final_swarm = list(target_real_bots)
+    # ИТОГОВЫЙ СПИСОК ИНКУБАТОРА (всего paper_mode_bots слотов)
+    final_incubator = list(current_tickers)
     
-    # Приоритет 2: Те, кто остался в current_tickers после ротации
-    for ticker in all_sorted:
-        if len(final_swarm) >= max_bots: break
-        if ticker in current_tickers and ticker not in final_swarm:
-            final_swarm.append(ticker)
-
     # Приоритет 3: Дозабиваем остаток из топа прибыльных / кандидатов
     for ticker in all_sorted:
-        if len(final_swarm) >= max_bots: break
-        if ticker not in final_swarm:
-            final_swarm.append(ticker)
+        if len(final_incubator) >= paper_mode_bots: break
+        if ticker not in final_incubator:
+            final_incubator.append(ticker)
     
-    logger.info(f"🎯 Target REAL (PnL > 0 only): {target_real_bots}")
-    logger.info(f"📦 Total Swarm ({len(final_swarm)}): {final_swarm}")
+    logger.info(f"🎯 Combat Swarm (REAL): {target_real_bots}")
+    logger.info(f"🧪 Incubator Swarm (PAPER): {final_incubator}")
 
-    # 5. ИСПОЛНЕНИЕ
-    current_pm2 = await get_running_bots_info()
-    
-    # Сначала останавливаем тех, кто не в финальном списке ИЛИ должен сменить режим (Paper -> Real)
-    for ticker, info in current_pm2.items():
-        is_currently_paper = info['paper']
-        bot_overall_profit = perf_dict.get(ticker, {}).get("profit", 0)
-        
-        # Если бота вообще нет в новом списке
-        if ticker not in final_swarm:
-            logger.info(f"🚫 Stopping bot (not in top): {ticker}")
-            await stop_bot(ticker, full_reset=True, is_paper=is_currently_paper) 
-            continue
-            
-        # Если бот должен быть REAL, а он PAPER
-        should_be_real = ticker in target_real_bots
-
-        # Строгий контроль: Если бот в убытке, он НЕ может быть REAL, независимо от списков
-        if bot_overall_profit <= 0:
-            should_be_real = False
-
-        if should_be_real and is_currently_paper:
-            logger.info(f"🔄 Switching {ticker} from PAPER to REAL (Enforcing State Isolation)")
-            # Жесткий стоп бумажного бота со сбросом бумажного стейта
-            await stop_bot(ticker, full_reset=True, is_paper=True)
-
-            # Гарантированное удаление реального стейта для чистого старта
-            real_state_path = BASE_PATH / f"state_{ticker}.json"
-            if real_state_path.exists():
-                real_state_path.unlink()
-                logger.info(f"🧹 Wiped old REAL state for {ticker} to prevent Phantom Buffer.")
-            
-        # Если бот должен быть PAPER, а он REAL
-        if not should_be_real and not is_currently_paper:
-            logger.info(f"📉 Demoting {ticker} from REAL to PAPER (Preserving state, closing REAL positions)")
-            # КРИТИЧЕСКИЙ МОМЕНТ: Закрываем реальные позиции, но сохраняем стейт
-            await stop_bot(ticker, full_reset=False, is_paper=False, close_only=True) 
-
-    # Теперь запускаем тех, кто не запущен в нужном режиме
+    # 5. ИСПОЛНЕНИЕ (Strict Isolation Protocol)
     updated_pm2 = await get_running_bots_info()
-    for ticker in final_swarm:
-        should_be_real = ticker in target_real_bots
-        
-        if ticker not in updated_pm2:
-            await start_bot(ticker, paper=(not should_be_real))
-        else:
-            # На всякий случай проверяем режим еще раз
-            if updated_pm2[ticker]['paper'] != (not should_be_real):
-                await stop_bot(ticker)
-                await start_bot(ticker, paper=(not should_be_real))
+    
+    # 5.1. Управление ИНКУБАТОРОМ (Paper)
+    for ticker in final_incubator:
+        if f"p_{ticker}" not in updated_pm2:
+            await start_bot(ticker, is_paper=True)
+            
+    # Останавливаем лишних в инкубаторе
+    for key, info in updated_pm2.items():
+        if key.startswith("p_"):
+            ticker = key.replace("p_", "")
+            if ticker not in final_incubator:
+                logger.info(f"🚫 Removing from Incubator: {ticker}")
+                await stop_bot(ticker, is_paper=True)
+
+    # 5.2. Управление БОЕВЫМ РОЕМ (Real)
+    for ticker in target_real_bots:
+        if f"r_{ticker}" not in updated_pm2:
+            await start_bot(ticker, is_paper=False)
+            
+    # Останавливаем лишних в боевом рою
+    for key, info in updated_pm2.items():
+        if key.startswith("r_"):
+            ticker = key.replace("r_", "")
+            if ticker not in target_real_bots:
+                logger.info(f"🚫 Removing from Combat Swarm: {ticker}")
+                # При остановке реального бота МЫ НЕ СБРОСИМ бумажный стейт, 
+                # так как stop_bot теперь просто удаляет процесс
+                await stop_bot(ticker, is_paper=False)
+                
+                # Но нам нужно закрыть позиции на бирже для этого тикера!
+                # Запускаем разовый стоп через main.py
+                cmd = f'"{sys.executable}" main.py --ticker {ticker} --stop'
+                await (await asyncio.create_subprocess_shell(cmd)).wait()
 
     # 6. Финализация конфига (принудительное обновление)
-    if not final_swarm:
-        logger.error("❌ CRITICAL: Scanner returned empty ticker list. Aborting config update to prevent wipeout.")
-        # Если список пуст, мы не имеем права обновлять tickers и live_swarm,
-        # так как это остановит все работающие инстансы.
-        return
-
     # Обновляем только если есть валидные данные
     try:
         # Сохраняем обновленный состав после замен
-        config["tickers"] = sorted(final_swarm)
+        config["tickers"] = sorted(final_incubator)
         config["live_swarm"] = sorted(target_real_bots)
         config["base_ticker"] = config["tickers"][0] if config["tickers"] else "BTCUSDT"
         config["black_list"] = sorted(list(new_black_list))
 
-        logger.info(f"💾 Config Integrity Verified. Writing: {len(config['tickers'])} tickers, {len(target_real_bots)} in live swarm.")
+        logger.info(f"💾 Config Integrity Verified. Writing: {len(config['tickers'])} incubator, {len(target_real_bots)} in combat swarm.")
         await safe_save_json(CONFIG_PATH, config)
     except Exception as e:
         logger.error(f"❌ Failed to update config: {e}", exc_info=True)

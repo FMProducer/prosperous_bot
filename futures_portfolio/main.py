@@ -901,8 +901,17 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
     logger = logging.getLogger(base_ticker)
     
-    instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"state_{base_ticker}.json"))
-    instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
+    # Strict Isolation: Different prefixes for Paper and Real modes
+    prefix = "paper" if is_paper_instance else "real"
+    instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"{prefix}_state_{base_ticker}.json"))
+    
+    if is_paper_instance:
+        # В бумажном режиме основной стейт и есть бумажный стейт
+        instance_paper_state_file = instance_state_file
+    else:
+        # В реальном режиме бот ведет "теневой" бумажный баланс в отдельном файле, 
+        # чтобы не конфликтовать с основным бумажным ботом (мастер-рейтингом)
+        instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"shadow_state_{base_ticker}.json"))
     
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", cfg.get("secret_key", ""))

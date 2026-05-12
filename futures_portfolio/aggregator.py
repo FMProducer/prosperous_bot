@@ -107,54 +107,35 @@ class StatusAggregator:
             logger.error(f"Failed to fetch real balances: {e}")
 
         # Параметры для ROI (динамически из конфига)
-        try:
-            initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
-            max_bots = config.get('max_bots', 10)
-            working_capital = initial_per_bot * max_bots
-            active_tickers = config.get('tickers', [])
-            live_swarm = config.get('live_swarm', [])
-        except:
-            initial_per_bot = 60.0
-            working_capital = 600.0
-            active_tickers = []
-            live_swarm = []
-
-        state_files = await asyncio.to_thread(glob.glob, "state_*.json")
-        summary_lines = []
+    def _generate_swarm_section(self, files, live_swarm, label):
         total_profit = 0.0
         total_safe = 0.0
-        active_bots_count = 0
-        active_pnl = 0.0
-        removed_pnl = 0.0
+        summary_lines = []
+        
+        # Получаем конфиг для расчета ROI в этой секции если нужно
+        config = self.load_config()
+        initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
 
-        for f_path in state_files:
+        for f_path in files:
             try:
-                state = await safe_load_json(f_path, {})
-                ticker = state.get("base_ticker", "UNKNOWN")
-                if ticker == "UNKNOWN": continue
+                # В асинхронном контексте читаем через safe_load_json или просто json.load
+                with open(f_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
                 
+                ticker = state.get("base_ticker", "UNKNOWN")
+                profit = state.get("last_profit", 0.0)
+                cycles = state.get("rebalance_cycles", 0)
                 siphoned = state.get("siphoning_reserve", 0.0)
                 
-                is_fired = f_path.endswith(".fired")
-                if is_fired and "final_profit" in state:
-                    profit = state["final_profit"]
-                else:
-                    profit = state.get("last_profit", 0.0)
+                total_profit += profit
+                total_safe += siphoned
                 
-                cycles = state.get("rebalance_cycles", 0)
-                last_update = state.get("last_update", 0)
-                
-                if ticker in active_tickers and not is_fired:
-                    active_bots_count += 1
-                    active_pnl += profit
-                    total_profit += profit
-                    total_safe += siphoned
-                    status_icon = "🟢" if ticker in live_swarm else "🟡"
+                if label == "INCUBATOR":
+                    status_icon = "🧪"
+                elif label == "COMBAT":
+                    status_icon = "⚔️"
                 else:
-                    if abs(profit) < 0.01:
-                        continue
-                    removed_pnl += profit
-                    status_icon = "🔴"
+                    status_icon = "🟡"
                 
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:
@@ -164,35 +145,63 @@ class StatusAggregator:
                 logger.error(f"Error reading {f_path}: {e}")
 
         if not summary_lines:
-            logger.info("No bot states found to aggregate.")
-            return
+            return "", 0.0, 0.0
 
         summary_lines.sort(key=lambda x: x[0], reverse=True)
-        lines_text = [x[1] for x in summary_lines]
+        section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
+        return section_text, total_profit, total_safe
 
+    async def collect_and_send(self):
+        config = self.load_config()
+        if not config: return
+        
+        if self.notifier is None:
+            self.notifier = TelegramNotifier()
+
+        # Получаем реальные балансы с биржи для "Reality Check"
+        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+        testnet = config.get("testnet", False)
+        
+        wallet_usdt = 0.0
+        wallet_bnb = 0.0
+        
+        try:
+            connector = BinanceConnector(api_key, secret_key, testnet=testnet)
+            wallet_usdt = await connector.get_free_balance()
+            wallet_bnb = await connector.get_bnb_balance()
+        except Exception as e:
+            logger.error(f"Failed to fetch real balances: {e}")
+
+        # Параметры для ROI
+        initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
+        live_swarm = config.get("live_swarm", [])
+        
+        # Разделяем стейты
+        paper_files = glob.glob("paper_state_*.json")
+        real_files = glob.glob("real_state_*.json")
+        
+        combat_text, c_profit, c_safe = self._generate_swarm_section(real_files, live_swarm, "COMBAT")
+        incubator_text, i_profit, i_safe = self._generate_swarm_section(paper_files, live_swarm, "INCUBATOR")
+
+        total_profit = c_profit # ROI считаем только по реальным деньгам
+        working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
         roi = (total_profit / working_capital) * 100 if working_capital > 0 else 0
         
         header = (
             f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Total Net Profit: <code>{total_profit:+.2f} USDT</code>\n"
-            f"🛡️ Total SAFE Reserve: <code>{total_safe:+.2f} USDT</code>\n"
-            f"📈 Overall ROI: <code>{roi:.2f}%</code> (of {working_capital:.1f})\n"
-            f"✅ Active Bots PnL: <code>{active_pnl:+.2f} USDT</code>\n"
-            f"🗑️ Removed Bots PnL: <code>{removed_pnl:+.2f} USDT</code>\n"
+            f"⚔️ Combat PnL: <code>{c_profit:+.2f} USDT</code>\n"
+            f"🧪 Incubator PnL: <code>{i_profit:+.2f} USDT</code>\n"
+            f"📈 Combat ROI: <code>{roi:.2f}%</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💳 Wallet USDT: <code>{wallet_usdt:.2f}</code>\n"
-            f"🪙 Wallet BNB: <code>{wallet_bnb:.4f}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
         
-        message = header + "\n".join(lines_text)
+        message = header + combat_text + "\n" + incubator_text
         
-        success = await self.notifier.send_message(message, force_direct=True)
-        if success:
-            logger.info(f"Summary sent for {active_bots_count} bots. Total PnL: {total_profit:+.2f}")
-        else:
-            logger.warning("Failed to send summary to Telegram (throttled or disabled).")
+        await self.notifier.send_message(message, force_direct=True)
 
     async def run(self) -> None:
         logger.info("Status Aggregator started.")

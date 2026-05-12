@@ -23,7 +23,8 @@ def analyze_swarm():
 
     total_net_pnl = 0
     total_safe = 0
-    files = glob.glob("state_*.json")
+    # Анализируем всё: и реальные, и бумажные
+    files = glob.glob("*_state_*.json")
     
     results = []
     
