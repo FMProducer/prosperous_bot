@@ -24,6 +24,7 @@
     {
       "name": "SyntheticMarketNeutral",
       "initial_capital": 86.0,
+      "paper_initial_capital": 100.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -45,9 +46,7 @@
       }
     }
   ],
-  "tickers": [
-    "VICUSDT"
-  ],
+  "tickers": [],
   "live_swarm": [],
-  "base_ticker": "VICUSDT"
+  "base_ticker": ""
 }

@@ -101,27 +101,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     threshold = ticker_thresholds.get(base_ticker, global_threshold)
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
-    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
-
-    # [Inheritance] Shadow State Sync Protocol
-    # Если мы запускаем REAL бота впервые (нет его real_state файла), 
-    # мы наследуем всю историю из Master Paper State (Инкубатора).
-    if not paper_mode and not os.path.exists(state_file_path):
-        master_paper_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
-        if os.path.exists(master_paper_file):
-            master_data = await load_json(master_paper_file, {})
-            # ВАЛИДАЦИЯ: Проверяем, что мастер-файл не пустой и содержит историю
-            if master_data and "tpv_ath" in master_data and master_data.get("rebalance_cycles", 0) > 0:
-                logger.info(f"🧬 REAL bot first start: Inheriting Master State from {master_paper_file}")
-                # АТОМАРНОЕ КОПИРОВАНИЕ: shutil.copy2 быстрее json.load/save и сохраняет метаданные
-                try:
-                    await asyncio.to_thread(shutil.copy2, master_paper_file, state_file_path)
-                    await asyncio.to_thread(shutil.copy2, master_paper_file, paper_state_file_path)
-                    logger.info(f"✅ Shadow State synchronized via atomic copy for {base_ticker}")
-                except Exception as e:
-                    logger.error(f"❌ Inheritance copy failed: {e}. Falling back to default initialization.")
-            else:
-                logger.warning(f"⚠️ Master state found at {master_paper_file} but it is empty or invalid. Starting from scratch.")
+    
+    # SSOT Capital: Use paper_initial_capital for PAPER, initial_capital for REAL
+    if paper_mode:
+        target_initial_cap = float(portfolio_cfg.get("paper_initial_capital", 100.0))
+    else:
+        target_initial_cap = float(portfolio_cfg.get("initial_capital", 86.0))
+    
+    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", target_initial_cap)
 
     # Состояние синтетической доли и сейфа
     state = await load_json(state_file_path, {
@@ -129,6 +116,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "virt_entry_price": 0.0,
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
+        "balance": target_initial_cap, # SSOT Balance
         "initial_tpv": 0.0,
         "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
         "tpv_ath": 0.0,
@@ -141,7 +129,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     # Initialize paper_state for shadow balance tracking (Used in both PAPER and REAL modes for isolation)
     default_paper_state = {
-        "balance": max_capital_usdt if max_capital_usdt > 0 else 10000.0,
+        "balance": target_initial_cap,
         "positions": {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0},
         "last_price": 0.0,
         "base_ticker": base_ticker,
@@ -149,6 +137,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "short_entry_price": 0.0
     }
     paper_state = await load_json(paper_state_file_path, default_paper_state)
+
+    # Ensure balance exists (Shadow Balance Migration Guard)
+    if "balance" not in paper_state:
+        fallback_bal = state.get("initial_tpv", target_initial_cap)
+        if fallback_bal <= 0: fallback_bal = target_initial_cap
+        paper_state["balance"] = fallback_bal
+        logger.warning(f"⚠️ 'balance' missing in {paper_state_file_path}. Initialized to {fallback_bal}")
 
     # Если тикер сменился, сбрасываем количество виртуальных монет и начальный TPV
     if state.get("base_ticker") != base_ticker:
@@ -917,14 +912,15 @@ if __name__ == "__main__":
     # Paper mode logic: flag --paper OR global config paper_mode
     is_paper_instance = args.paper or cfg.get("paper_mode", False)
     
+    # Strict Isolation: Different prefixes for Paper and Real modes
+    prefix = "paper" if is_paper_instance else "real"
+    
     log_dir = os.path.join(os.path.dirname(__file__), "logs")
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"rebalance_{base_ticker}.log")
+    log_file = os.path.join(log_dir, f"rebalance_{prefix}_{base_ticker}.log")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
     logger = logging.getLogger(base_ticker)
     
-    # Strict Isolation: Different prefixes for Paper and Real modes
-    prefix = "paper" if is_paper_instance else "real"
     instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"{prefix}_state_{base_ticker}.json"))
     
     if is_paper_instance:
