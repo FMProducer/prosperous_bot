@@ -284,7 +284,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
                     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
-                    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
+                    
+                    if paper_mode:
+                        target_initial = float(portfolio_cfg.get("paper_initial_capital", 100.0))
+                    else:
+                        target_initial = float(portfolio_cfg.get("initial_capital", 86.0))
+                        
+                    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", target_initial)
                     max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
                     equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
                     equity_trailing_stop_timeout_sec = current_config.get("equity_trailing_stop_timeout_sec", 0.0)
@@ -292,7 +298,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
                 # Dynamic initial_tpv update from config
-                target_initial = portfolio_cfg.get("initial_capital", 60.0)
                 if initial_tpv != target_initial and target_initial > 0:
                     logger.info(f"🔄 Initial Capital changed in config: {initial_tpv} -> {target_initial}. Updating base.")
                     initial_tpv = target_initial

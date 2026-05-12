@@ -46,7 +46,9 @@
       }
     }
   ],
-  "tickers": [],
+  "tickers": [
+    "VICUSDT"
+  ],
   "live_swarm": [],
-  "base_ticker": ""
+  "base_ticker": "VICUSDT"
 }
