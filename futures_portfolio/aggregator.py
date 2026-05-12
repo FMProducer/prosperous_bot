@@ -137,7 +137,11 @@ class StatusAggregator:
                 
                 status_icon = "🟢" if is_active else "💤"
                 
-                line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
+                # Показываем щит если тикер в белом списке (доверенный для реала)
+                real_whitelist = config.get("real_whitelist", [])
+                vetted_icon = " 🛡️" if ticker in real_whitelist else ""
+                
+                line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:
                     line += f" 🛡️<code>{siphoned:.2f}</code>"
                 summary_lines.append((profit, line))

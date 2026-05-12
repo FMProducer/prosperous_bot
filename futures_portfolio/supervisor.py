@@ -303,12 +303,13 @@ async def manage_swarm():
             current_tickers.add(winner_ticker)
             swapped_count += 1
     
-    # 4. Выбор Чемпионов для REAL (Меритократия + Статистическая значимость)
+    # 4. Выбор Чемпионов для REAL (Меритократия + Белый список)
     ready_pool = []
     now = time.time()
     min_cycles = config.get("min_cycles_for_rank", 20)
+    real_whitelist = set(config.get("real_whitelist", []))
 
-    logger.info(f"Selecting champions (Max REAL slots: {max_real_slots}, Min Cycles: {min_cycles})...")
+    logger.info(f"Selecting champions (Max REAL slots: {max_real_slots}, Min Cycles: {min_cycles}, Whitelist: {len(real_whitelist)})...")
     for ticker in all_sorted:
         perf = perf_dict.get(ticker, {})
         profit = perf.get("profit", 0)
@@ -316,6 +317,12 @@ async def manage_swarm():
         ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
         
         if now < ts_timeout_end:
+            continue
+
+        # ПРОВЕРКА БЕЛОГО СПИСКА
+        is_whitelisted = ticker in real_whitelist
+        if not is_whitelisted:
+            # logger.debug(f"ℹ️ {ticker} not in real_whitelist. Paper-only.")
             continue
 
         # СТРОГИЙ ОТБОР: Только прибыльные И накопившие достаточно циклов (опыта)

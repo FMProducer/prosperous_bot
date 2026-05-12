@@ -20,6 +20,9 @@
   "telegram_use_queue": true,
   "telegram_summary_interval_min": 1,
   "black_list": [],
+  "real_whitelist": [
+    "VICUSDT"
+  ],
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
