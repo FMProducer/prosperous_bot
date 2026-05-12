@@ -371,14 +371,14 @@ async def manage_swarm():
             ticker = key.replace("r_", "")
             if ticker not in target_real_bots:
                 logger.info(f"🚫 Removing from Combat Swarm: {ticker}")
-                # При остановке реального бота МЫ НЕ СБРОСИМ бумажный стейт, 
-                # так как stop_bot теперь просто удаляет процесс
+                # 1. Удаляем процесс из PM2
                 await stop_bot(ticker, is_paper=False)
                 
-                # Но нам нужно закрыть позиции на бирже для этого тикера!
-                # Запускаем разовый стоп через main.py
+                # 2. Закрываем позиции на бирже, но НЕ стираем файлы стейта!
+                # Флаг --stop в паре с исправленным main.py теперь безопасен.
                 cmd = f'"{sys.executable}" main.py --ticker {ticker} --stop'
                 await (await asyncio.create_subprocess_shell(cmd)).wait()
+                logger.info(f"✅ Combat positions for {ticker} closed. State preserved.")
 
     # 6. Финализация конфига (принудительное обновление)
     # Обновляем только если есть валидные данные

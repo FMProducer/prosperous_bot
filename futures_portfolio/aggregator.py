@@ -107,14 +107,13 @@ class StatusAggregator:
             logger.error(f"Failed to fetch real balances: {e}")
 
         # Параметры для ROI (динамически из конфига)
-    def _generate_swarm_section(self, files, live_swarm, label):
+    def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
         total_profit = 0.0
         total_safe = 0.0
         summary_lines = []
         
         # Получаем конфиг для расчета ROI в этой секции если нужно
         config = self.load_config()
-        initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
 
         for f_path in files:
             try:
@@ -130,12 +129,13 @@ class StatusAggregator:
                 total_profit += profit
                 total_safe += siphoned
                 
+                # РЕЖИМ ОТОБРАЖЕНИЯ: 🟢 - работает, 💤 - остановлен (хранит историю)
                 if label == "INCUBATOR":
-                    status_icon = "🧪"
-                elif label == "COMBAT":
-                    status_icon = "⚔️"
+                    is_active = ticker in active_tickers
                 else:
-                    status_icon = "🟡"
+                    is_active = ticker in live_swarm
+                
+                status_icon = "🟢" if is_active else "💤"
                 
                 line = f"{status_icon} <b>{ticker}</b>: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
                 if siphoned > 0:
@@ -173,16 +173,17 @@ class StatusAggregator:
         except Exception as e:
             logger.error(f"Failed to fetch real balances: {e}")
 
-        # Параметры для ROI
+        # Параметры
         initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
         live_swarm = config.get("live_swarm", [])
+        active_tickers = config.get("tickers", [])
         
         # Разделяем стейты
         paper_files = glob.glob("paper_state_*.json")
         real_files = glob.glob("real_state_*.json")
         
-        combat_text, c_profit, c_safe = self._generate_swarm_section(real_files, live_swarm, "COMBAT")
-        incubator_text, i_profit, i_safe = self._generate_swarm_section(paper_files, live_swarm, "INCUBATOR")
+        combat_text, c_profit, c_safe = self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
+        incubator_text, i_profit, i_safe = self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
 
         total_profit = c_profit # ROI считаем только по реальным деньгам
         working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot

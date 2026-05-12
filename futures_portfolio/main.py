@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import random
+import shutil
 from typing import Dict, List, Any
 from decimal import Decimal
 from concurrent.futures import ProcessPoolExecutor
@@ -101,6 +102,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
     max_capital_usdt = portfolio_cfg.get("max_capital_usdt", portfolio_cfg.get("initial_capital", 0.0))
+
+    # [Inheritance] Shadow State Sync Protocol
+    # Если мы запускаем REAL бота впервые (нет его real_state файла), 
+    # мы наследуем всю историю из Master Paper State (Инкубатора).
+    if not paper_mode and not os.path.exists(state_file_path):
+        master_paper_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
+        if os.path.exists(master_paper_file):
+            master_data = await load_json(master_paper_file, {})
+            # ВАЛИДАЦИЯ: Проверяем, что мастер-файл не пустой и содержит историю
+            if master_data and "tpv_ath" in master_data and master_data.get("rebalance_cycles", 0) > 0:
+                logger.info(f"🧬 REAL bot first start: Inheriting Master State from {master_paper_file}")
+                # АТОМАРНОЕ КОПИРОВАНИЕ: shutil.copy2 быстрее json.load/save и сохраняет метаданные
+                try:
+                    await asyncio.to_thread(shutil.copy2, master_paper_file, state_file_path)
+                    await asyncio.to_thread(shutil.copy2, master_paper_file, paper_state_file_path)
+                    logger.info(f"✅ Shadow State synchronized via atomic copy for {base_ticker}")
+                except Exception as e:
+                    logger.error(f"❌ Inheritance copy failed: {e}. Falling back to default initialization.")
+            else:
+                logger.warning(f"⚠️ Master state found at {master_paper_file} but it is empty or invalid. Starting from scratch.")
 
     # Состояние синтетической доли и сейфа
     state = await load_json(state_file_path, {
@@ -877,6 +898,7 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", default=None)
     parser.add_argument("--stop", action="store_true", help="Close all positions and stop")
     parser.add_argument("--close-only", action="store_true", help="Only close positions on exchange, preserve bot state")
+    parser.add_argument("--wipe", action="store_true", help="Wipe bot state (destructive stop)")
     parser.add_argument("--paper", action="store_true", help="Force paper mode for this instance")
     args = parser.parse_args()
     
@@ -923,7 +945,10 @@ if __name__ == "__main__":
         connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
 
     if args.stop:
-        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance, close_only=args.close_only))
+        # КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: По умолчанию НЕ удаляем стейт при стопе. 
+        # Только если явно передан --wipe
+        should_wipe = args.wipe
+        asyncio.run(emergency_stop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode=is_paper_instance, close_only=(not should_wipe)))
     else:
         logger.info(f"💾 State files: REAL={instance_state_file}, PAPER={instance_paper_state_file} | Mode: {'PAPER' if is_paper_instance else 'REAL'}")
         # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 
