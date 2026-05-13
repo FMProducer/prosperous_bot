@@ -187,6 +187,24 @@ async def manage_swarm():
     
     config = await safe_load_json(CONFIG_PATH, {})
     if not config: return
+
+    # Automated blacklisting based on drawdown
+    max_drawdown = config.get("max_drawdown_limit", 10.0)
+    new_black_list = set(config.get("black_list", []))
+
+    # Scan all state files for drawdown violation
+    state_files = list(BASE_PATH.glob("*_state_*.json"))
+    for sf in state_files:
+        try:
+            state = await safe_load_json(str(sf), {})
+            ticker = state.get("base_ticker")
+            # We use total_pnl_pct as the SSOT for drawdown checks
+            pnl = state.get("total_pnl_pct", 0.0)
+            if pnl < -max_drawdown:
+                logger.warning(f"⛔ Ticker {ticker} hit drawdown {pnl}. Blacklisting.")
+                new_black_list.add(ticker)
+        except Exception as e:
+            logger.error(f"Error checking state {sf}: {e}")
     
     max_bots = config.get("max_bots", 10)
     paper_mode_bots = config.get("paper_mode_bots", 8)
@@ -203,8 +221,7 @@ async def manage_swarm():
     signal_dir = BASE_PATH / "signals"
     if not signal_dir.exists(): signal_dir.mkdir(parents=True)
     
-    # Очищаем черный список каждый цикл, давая тикерам шанс на рециркуляцию
-    new_black_list = set()
+    # We already initialized new_black_list with drawdown-hit tickers
     for sig_file in signal_dir.glob("*.flag"):
         try:
             parts = sig_file.stem.split("_")

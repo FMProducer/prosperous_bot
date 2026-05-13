@@ -27,13 +27,18 @@ class PortfolioCalculator:
         self.virt_entry_price = Decimal(str(virt_entry_price))
         self.targets = targets or {}
 
-        # 1. Calculate TPV: Real Equity (Futures) + Market Value of Virtual Leg
-        self.tpv = self.real_equity + (self.virt_qty * self.price)
+        # 1. Calculate TPV: Real Equity (Futures) + Virtual PnL
+        # Virtual PnL = (Current Price - Entry Price) * Qty
+        self.virt_pnl = (self.price - self.virt_entry_price) * self.virt_qty if self.virt_qty > 0 else Decimal('0')
+        self.tpv = self.real_equity + self.virt_pnl
 
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
 
         self.total_tpv = self.tpv + self.siphoning_reserve
+
+        # Total PnL % for logs
+        self.total_pnl_pct = ((self.tpv / self.initial_capital) - 1) * 100 if self.initial_capital > 0 else Decimal('0')
 
         # 2. Calculate NAV for each leg
         l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
@@ -50,7 +55,7 @@ class PortfolioCalculator:
         # PnL contributions for transparency
         self.pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
         self.pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
-        self.pnl_v = self.virt_qty * (self.price - self.virt_entry_price)
+        self.pnl_v = self.virt_pnl
 
         # 3. Cash is what's left in the futures wallet that isn't tied up in L/S margin/PnL
         # Since TPV = real_equity + val_virt, and real_equity = val_l + val_s + cash
@@ -74,6 +79,28 @@ class PortfolioCalculator:
         if total_pct != Decimal('100.00'):
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
+
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> Dict:
+        """
+        Calculate rebalance actions and return a summary of the current state.
+        """
+        actions = self.calculate_deviations(targets, threshold, ignore_limits)
+
+        return {
+            "actions": actions,
+            "share_long_pct": float(self.share_long_pct),
+            "share_short_pct": float(self.share_short_pct),
+            "share_virt_pct": float(self.share_virt_pct),
+            "share_cash_pct": float(self.share_cash_pct),
+            "tpv": float(self.tpv),
+            "total_tpv": float(self.total_tpv),
+            "siphoning_reserve": float(self.siphoning_reserve),
+            "virt_current_value": float(self.val_virt),
+            "pnl_l": float(self.pnl_l),
+            "pnl_s": float(self.pnl_s),
+            "pnl_v": float(self.pnl_v),
+            "total_pnl_pct": float(self.total_pnl_pct)
+        }
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
         """
