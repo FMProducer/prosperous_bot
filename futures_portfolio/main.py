@@ -444,7 +444,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     positions, price, real_equity, virt_qty, 
                     base_ticker, siphoning_reserve, targets, initial_tpv, 
                     current_threshold, (current_threshold < 0),
-                    l_entry, s_entry
+                    l_entry, s_entry, virt_entry_price
                 )
                 
                 tpv_total = calc_res["total_tpv"]
