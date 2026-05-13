@@ -8,7 +8,6 @@ import shutil
 from collections import deque
 from typing import Dict, List, Any
 from decimal import Decimal
-from concurrent.futures import ProcessPoolExecutor
 from dotenv import load_dotenv
 
 # Load .env file
@@ -22,43 +21,7 @@ from storage import safe_load_json as load_json, safe_save_json as save_json
 
 from pathlib import Path
 
-# Global ProcessPoolExecutor for heavy math
-process_executor = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8))
-
-def calculate_portfolio_task(positions, price, real_equity, virt_qty, 
-                             base_ticker, siphoning_reserve, targets, initial_capital, 
-                             threshold, ignore_limits, long_entry_price=0.0, short_entry_price=0.0, virt_entry_price=0.0):
-    """Heavy math task to be run in a separate process."""
-    calc = PortfolioCalculator(
-        positions=positions,
-        spot_price=price,
-        real_equity=real_equity,
-        virt_qty=virt_qty,
-        base_ticker=base_ticker,
-        siphoning_reserve=siphoning_reserve,
-        targets=targets,
-        initial_capital=initial_capital,
-        long_entry_price=long_entry_price,
-        short_entry_price=short_entry_price,
-        virt_entry_price=virt_entry_price
-    )
-    actions = calc.calculate_deviations(targets, threshold, ignore_limits=ignore_limits)
-    
-    # Extract serializable data for return
-    return {
-        "actions": actions,
-        "share_long_pct": float(calc.share_long_pct),
-        "share_short_pct": float(calc.share_short_pct),
-        "share_virt_pct": float(calc.share_virt_pct),
-        "share_cash_pct": float(calc.share_cash_pct),
-        "tpv": float(calc.tpv),
-        "total_tpv": float(calc.total_tpv),
-        "siphoning_reserve": float(calc.siphoning_reserve),
-        "virt_current_value": float(calc.val_virt),
-        "pnl_l": float(calc.pnl_l),
-        "pnl_s": float(calc.pnl_s),
-        "pnl_v": float(calc.pnl_v)
-    }
+# ProcessPoolExecutor removed to reduce latency
 
 def sync_read_json(path: str) -> Dict:
     with open(path, 'r', encoding='utf-8') as f:
@@ -419,12 +382,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         v_cost = initial_tpv * v_share
                         virt_qty = v_cost / price
                         
-                        # CRITICAL: Deduct virtual cost from balance to maintain 100% TPV invariant
-                        paper_state["balance"] -= v_cost
-                        real_equity -= v_cost # Update local variable for immediate consistency
+                        # SSOT Fix: Do not deduct virtual cost from balance.
+                        # TPV now reflects real_equity + virt_pnl
                         
-                        logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker} (Cost: {v_cost:.2f} USDT deducted from Balance)")
-                        await save_json(paper_state_file_path, paper_state)
+                        logger.info(f"Initialized Virtual Quantity: {virt_qty:.6f} {base_ticker} (Target Cost: {v_cost:.2f} USDT, Not deducted from Balance)")
                         state["virt_entry_price"] = price
 
                     state.update({
@@ -435,17 +396,23 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 # REMOVED: Migration Sanity Check (Caused TPV leakage)
 
-                # Offload heavy math to ProcessPoolExecutor
-                loop = asyncio.get_running_loop()
+                # Direct synchronous call to PortfolioCalculator to reduce latency
                 current_threshold = -1.0 if (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0) else threshold
                 
-                calc_res = await loop.run_in_executor(
-                    process_executor, calculate_portfolio_task,
-                    positions, price, real_equity, virt_qty, 
-                    base_ticker, siphoning_reserve, targets, initial_tpv, 
-                    current_threshold, (current_threshold < 0),
-                    l_entry, s_entry, virt_entry_price
+                calc = PortfolioCalculator(
+                    positions=positions,
+                    spot_price=price,
+                    real_equity=real_equity,
+                    virt_qty=virt_qty,
+                    base_ticker=base_ticker,
+                    siphoning_reserve=siphoning_reserve,
+                    targets=targets,
+                    initial_capital=initial_tpv,
+                    long_entry_price=l_entry,
+                    short_entry_price=s_entry,
+                    virt_entry_price=virt_entry_price
                 )
+                calc_res = calc.calculate_rebalance(targets, current_threshold, (current_threshold < 0))
                 
                 tpv_total = calc_res["total_tpv"]
                 tpv_active = calc_res["tpv"]
@@ -683,7 +650,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                                 any_success = True
                                 if res.get("type") == "VIRTUAL_ORDER":
-                                    # Update virtual quantity based on the USDT diff (sold/bought from Cash)
+                                    # Update virtual quantity based on the USDT diff
                                     diff_usdt_val = res.get("diff_usdt", 0.0)
                                     diff_usdt = Decimal(str(diff_usdt_val))
                                     
@@ -691,24 +658,32 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     old_v_entry = Decimal(str(state.get("virt_entry_price", price)))
                                     if old_v_entry <= 0: old_v_entry = Decimal(str(price))
 
-                                    new_v_qty = old_v_qty + diff_usdt / Decimal(str(price))
-
-                                    # Update entry price for VIRTUAL leg (WAP logic)
-                                    if new_v_qty > 0 and diff_usdt > 0: # Buy/Increase
+                                    if diff_usdt > 0: # BUY (Increasing virtual position)
+                                        new_v_qty = old_v_qty + diff_usdt / Decimal(str(price))
+                                        # Update entry price for VIRTUAL leg (WAP logic)
                                         new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
                                         state["virt_entry_price"] = float(new_v_entry)
-                                    elif new_v_qty <= 0:
-                                        state["virt_entry_price"] = 0.0
+                                        # Balance doesn't change when buying virtually
+                                    else: # SELL (Decreasing virtual position)
+                                        qty_to_sell = abs(diff_usdt) / Decimal(str(price))
+                                        if qty_to_sell > old_v_qty: qty_to_sell = old_v_qty
+
+                                        # Realize PnL from selling virtual quantity
+                                        realized_pnl = qty_to_sell * (Decimal(str(price)) - old_v_entry)
+                                        paper_state["balance"] += float(realized_pnl)
+
+                                        new_v_qty = old_v_qty - qty_to_sell
+                                        if new_v_qty <= 0:
+                                            new_v_qty = Decimal('0')
+                                            state["virt_entry_price"] = 0.0
+                                        else:
+                                            # Entry price stays the same for remaining quantity
+                                            pass
                                     
-                                    # Update balance and quantity
-                                    paper_state["balance"] -= float(diff_usdt)
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
-                                    if virt_qty < 0:
-                                        virt_qty = 0.0
-                                        state["virt_qty"] = 0.0
                                     
-                                    logger.info(f"🔄 Virtual Fixed: {float(diff_usdt):+.4f} USDT moved. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
+                                    logger.info(f"🔄 Virtual Fixed: {float(diff_usdt):+.4f} USDT order. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
                                     continue
 
                                 # Update execution results info
@@ -790,14 +765,20 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     safe_s_entry = paper_state.get("short_entry_price", price)
 
                 # Calculate surplus using CURRENT virtual parameters
-                loop = asyncio.get_running_loop()
-                safe_calc_res = await loop.run_in_executor(
-                    process_executor, calculate_portfolio_task,
-                    safe_positions, price, safe_real_equity,
-                    virt_qty,
-                    base_ticker, siphoning_reserve, targets, initial_tpv,
-                    -1.0, True, safe_l_entry, safe_s_entry
+                safe_calc = PortfolioCalculator(
+                    positions=safe_positions,
+                    spot_price=price,
+                    real_equity=safe_real_equity,
+                    virt_qty=virt_qty,
+                    base_ticker=base_ticker,
+                    siphoning_reserve=siphoning_reserve,
+                    targets=targets,
+                    initial_capital=initial_tpv,
+                    long_entry_price=safe_l_entry,
+                    short_entry_price=safe_s_entry,
+                    virt_entry_price=virt_entry_price
                 )
+                safe_calc_res = safe_calc.calculate_rebalance(targets, -1.0, True)
 
                 total_tpv_final = safe_calc_res["total_tpv"]
                 # SURPLUS = Current Total Capital (including reserve) - Initial Targeted Capital
@@ -835,6 +816,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 state.update({
                     "last_tpv": total_tpv_final,
                     "last_profit": total_tpv_final - initial_tpv,
+                    "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
                     "last_update": time.time(),
                     "rebalance_cycles": cycles
                 })
