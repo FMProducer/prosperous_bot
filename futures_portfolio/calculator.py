@@ -32,12 +32,19 @@ class PortfolioCalculator:
         self.tpv = self.real_equity + self.virt_value
 
         # PnL для логов: разница между текущей стоимостью и ценой входа
-        self.virt_pnl_val = (self.price - self.virt_entry_price) * self.virt_qty if self.virt_entry_price > 0 else Decimal('0')
+        # Если цена входа не задана, PnL = 0
+        if self.virt_entry_price > 0 and self.virt_qty > 0:
+            self.virt_pnl_val = (self.price - self.virt_entry_price) * self.virt_qty
+        else:
+            self.virt_pnl_val = Decimal('0')
 
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
 
         self.total_tpv = self.tpv + self.siphoning_reserve
+
+        # Общий PnL системы для Heartbeat
+        self.total_pnl = self.tpv - self.initial_capital
 
         # Total PnL % for logs
         self.total_pnl_pct = ((self.tpv / self.initial_capital) - 1) * 100 if self.initial_capital > 0 else Decimal('0')
@@ -101,6 +108,7 @@ class PortfolioCalculator:
             "pnl_l": float(self.pnl_l),
             "pnl_s": float(self.pnl_s),
             "pnl_v": float(self.pnl_v),
+            "total_pnl": float(self.total_pnl),
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
