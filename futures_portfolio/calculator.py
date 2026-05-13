@@ -110,10 +110,11 @@ class PortfolioCalculator:
         dec_threshold = Decimal(str(threshold))
         actions: List[Dict] = []
         
+        # Use raw ratios for maximum precision before rebalancing
         shares: Dict[str, Decimal] = {
-            "BASE_LONG": self.share_long_pct / 100,
-            "BASE_SHORT": self.share_short_pct / 100,
-            "VIRTUAL": self.share_virt_pct / 100
+            "BASE_LONG": self.share_long_raw,
+            "BASE_SHORT": self.share_short_raw,
+            "VIRTUAL": self.share_virt_raw
         }
 
         # Rebalance ONLY legs that actually breached the threshold
@@ -132,13 +133,15 @@ class PortfolioCalculator:
 
             if key == "VIRTUAL":
                 # For Virtual, diff_usdt is the amount to move to/from Cash
-                diff_usdt = diff_share * self.tpv
+                # Positive diff_share means surplus (sell), Negative means deficit (buy)
+                # We want: >0 is BUY, <0 is SELL for consistency with main.py
+                diff_usdt = -diff_share * self.tpv
                 actions.append({
                     "type": "VIRTUAL_ORDER",
                     "symbol": "VIRTUAL",
                     "base_symbol": "VIRTUAL",
                     "position_side": "BOTH",
-                    "diff_usdt": float(-diff_usdt), # Negative means sell virtual to cash
+                    "diff_usdt": float(diff_usdt),
                     "priority": 1 if diff_share > 0 else 3
                 })
             else:

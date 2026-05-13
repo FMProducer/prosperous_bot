@@ -131,14 +131,16 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     last_update = state.get("last_update", 0)
     
     # Архитектурное исправление: Строгий SSOT.
+    # total_pnl_pct is the primary metric for performance and risk
+    profit_pct = state.get("total_pnl_pct", 0.0)
     profit_usdt = state.get("last_profit", 0.0)
     
     # Если бот уже уволен, читаем его зафиксированный финальный PnL
-    # (Хотя в новой архитектуре мы их реже увольняем из инкубатора)
     if "final_profit" in state and f"p_{ticker}" not in running_info:
         profit_usdt = state.get("final_profit", profit_usdt)
-
-    profit_pct = (profit_usdt / initial_capital) * 100 if initial_capital > 0 else 0
+        # Recalculate profit_pct for archived bots if total_pnl_pct is missing
+        if profit_pct == 0 and initial_capital > 0:
+            profit_pct = (profit_usdt / initial_capital) * 100
     
     # Проверка активности
     is_active = (time.time() - last_update) < 600 if last_update > 0 else False
@@ -148,7 +150,8 @@ async def get_real_bot_stats(ticker: str, initial_capital: float, config: dict, 
     efficiency = profit_usdt / max(cycles, min_cycles)
 
     # Прунинг: Только по абсолютному убытку (Overall PnL < 0)
-    if profit_usdt < 0:
+    # Используем profit_pct (total_pnl_pct) как SSOT
+    if profit_pct < 0:
         # ЗАЩИТА НОВИЧКА: Не убиваем сразу после старта (даем время отбить комиссию)
         probation_days = config.get("probation_period_days", 0.041)
         probation_sec = probation_days * 86400
@@ -196,12 +199,23 @@ async def manage_swarm():
     state_files = list(BASE_PATH.glob("*_state_*.json"))
     for sf in state_files:
         try:
+            # Add safety check for empty files
+            if sf.stat().st_size == 0:
+                logger.warning(f"⚠️ Empty state file found: {sf}. Skipping.")
+                continue
+
             state = await safe_load_json(str(sf), {})
+            if not state:
+                continue
+
             ticker = state.get("base_ticker")
+            if not ticker:
+                continue
+
             # We use total_pnl_pct as the SSOT for drawdown checks
             pnl = state.get("total_pnl_pct", 0.0)
             if pnl < -max_drawdown:
-                logger.warning(f"⛔ Ticker {ticker} hit drawdown {pnl}. Blacklisting.")
+                logger.warning(f"⛔ Ticker {ticker} hit drawdown {pnl}%. Blacklisting.")
                 new_black_list.add(ticker)
         except Exception as e:
             logger.error(f"Error checking state {sf}: {e}")
