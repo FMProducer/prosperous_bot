@@ -22,16 +22,16 @@ class PortfolioCalculator:
         self.base_ticker = base_ticker
         self.siphoning_reserve = Decimal(str(siphoning_reserve))
         self.initial_capital = Decimal(str(initial_capital))
-        self.real_equity = Decimal(str(real_equity)) # Wallet Balance + Unrealized PnL (L/S)
+        self.real_equity = Decimal(str(real_equity)) # Чистый кэш (Wallet Balance)
         self.virt_qty = Decimal(str(virt_qty))
         self.virt_entry_price = Decimal(str(virt_entry_price))
         self.targets = targets or {}
 
-        # TPV = Свободный кэш + Стоимость виртуального актива
+        # TPV = Кэш + Рыночная стоимость виртуальной позиции
         self.virt_value = self.virt_qty * self.price
         self.tpv = self.real_equity + self.virt_value
 
-        # PnL для логов: (Текущая цена / Цена входа - 1) * Навеска
+        # PnL для логов: разница между текущей стоимостью и ценой входа
         self.virt_pnl_val = (self.price - self.virt_entry_price) * self.virt_qty if self.virt_entry_price > 0 else Decimal('0')
 
         if self.tpv <= 0:
@@ -49,9 +49,9 @@ class PortfolioCalculator:
         l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
         s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
 
-        # Value = Initial Margin + Unrealized PnL
-        self.val_long = (l_qty * Decimal(str(long_entry_price)) / l_lev) + (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
-        self.val_short = (s_qty * Decimal(str(short_entry_price)) / s_lev) + (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
+        # Value = Initial Margin (Ignoring Unrealized PnL for rebalancing basis to keep Cash logs positive)
+        self.val_long = (l_qty * Decimal(str(long_entry_price)) / l_lev) if l_qty > 0 else Decimal('0')
+        self.val_short = (s_qty * Decimal(str(short_entry_price)) / s_lev) if s_qty > 0 else Decimal('0')
         self.val_virt = self.virt_qty * self.price
 
         # PnL contributions for transparency
@@ -127,6 +127,8 @@ class PortfolioCalculator:
 
             # Only rebalance legs that actually breached the threshold
             if not ignore_limits and abs(diff_share) < dec_threshold:
+                if abs(diff_share) > 0:
+                    logger.debug(f"Trigger: {key} deviation {diff_share*100:+.2f}% (below threshold)")
                 continue
 
             if abs(diff_share) > 0:
@@ -134,12 +136,12 @@ class PortfolioCalculator:
                 logger.debug(f"Trigger: {key} deviation {diff_share*100:+.2f}% targets {target_share*100}%")
 
             if key == "VIRTUAL":
-                # For Virtual, diff_usdt is the amount to move to/from Cash
-                # Positive diff_share means surplus (sell), Negative means deficit (buy)
-                # We want: >0 is BUY, <0 is SELL for consistency with main.py
+                # Знак: если target > current (deficit), diff_usdt > 0 (BUY)
+                # diff_share = current - target. If deficit, diff_share < 0.
+                # So BUY is -diff_share * tpv.
                 diff_usdt = -diff_share * self.tpv
 
-                # Value-based Dust Guard: 1.0 USDT
+                # Dust Guard: игнорируем сделки меньше 1 USDT
                 if abs(diff_usdt) < Decimal('1.0'):
                     continue
 
@@ -149,7 +151,7 @@ class PortfolioCalculator:
                     "base_symbol": "VIRTUAL",
                     "position_side": "BOTH",
                     "diff_usdt": float(diff_usdt),
-                    "priority": 1 if diff_share > 0 else 3
+                    "priority": 1 if diff_usdt > 0 else 3
                 })
             else:
                 lev = Decimal(str(targets[key]["leverage"]))

@@ -365,8 +365,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     m_info = await connector.get_margin_ratio()
                     
                 # Calculate isolated PnL and Equity
-                u_pnl = l_qty * (price - l_entry) + s_qty * (s_entry - price)
-                real_equity = paper_state["balance"] + u_pnl
+                # [SSOT] TPV = Cash + Virtual Value. Cash is paper_state["balance"].
+                # In calculator.py, real_equity is treated as Wallet Balance.
+                real_equity = paper_state["balance"]
                 positions = paper_state["positions"] if paper_mode else {k: v for k, v in ticker_positions.items()}
 
                 if virt_qty == 0 or initial_tpv == 0:
@@ -650,46 +651,32 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                                 any_success = True
                                 if res.get("type") == "VIRTUAL_ORDER":
-                                    # Update virtual quantity based on the USDT diff
-                                    diff_usdt_val = res.get("diff_usdt", 0.0)
-                                    trade_value = abs(diff_usdt_val)
-                                    if trade_value < 1.0: continue # Dust Guard 1.0 USDT
-                                    
-                                    diff_usdt = Decimal(str(diff_usdt_val))
+                                    diff_usdt = Decimal(str(res.get("diff_usdt", 0.0)))
                                     dec_price = Decimal(str(price))
-                                    old_v_qty = Decimal(str(virt_qty))
-                                    old_v_entry = Decimal(str(state.get("virt_entry_price", price)))
-                                    if old_v_entry <= 0: old_v_entry = dec_price
+                                    virt_qty_before = Decimal(str(virt_qty))
 
-                                    if diff_usdt > 0: # BUY (Increasing virtual position)
-                                        if old_v_qty == 0:
-                                            state["virt_entry_price"] = float(dec_price)
-                                            new_v_qty = diff_usdt / dec_price
-                                        else:
-                                            new_v_qty = old_v_qty + diff_usdt / dec_price
-                                            # Update entry price for VIRTUAL leg (WAP logic)
-                                            new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
-                                            state["virt_entry_price"] = float(new_v_entry)
+                                    # 1. Списание/начисление кэша (Cash Accounting)
+                                    paper_state["balance"] -= float(diff_usdt)
 
-                                        paper_state["balance"] -= float(diff_usdt) # Strict Cash Accounting
-                                        logger.info(f"➕ VIRTUAL BUY: {float(diff_usdt):.2f} USDT")
-                                    else: # SELL (Decreasing virtual position)
-                                        qty_to_sell = trade_value / float(dec_price)
-                                        if Decimal(str(qty_to_sell)) > old_v_qty: qty_to_sell = float(old_v_qty)
+                                    # 2. Обновление количества
+                                    new_v_qty = virt_qty_before + diff_usdt / dec_price
 
-                                        actual_sell_value = qty_to_sell * float(dec_price)
-                                        new_v_qty = old_v_qty - Decimal(str(qty_to_sell))
-                                        if (new_v_qty * dec_price) < Decimal('1.0'): # Value-based Dust Guard
-                                            new_v_qty = Decimal('0')
-                                            state["virt_entry_price"] = 0.0
+                                    # 3. Установка цены входа (только при открытии с нуля)
+                                    if diff_usdt > 0 and virt_qty_before == 0:
+                                        state["virt_entry_price"] = float(dec_price)
 
-                                        paper_state["balance"] += actual_sell_value # Strict Cash Accounting
-                                        logger.info(f"➖ VIRTUAL SELL: {actual_sell_value:.2f} USDT")
-                                    
+                                    # 4. Value-based Dust Guard: если позиция меньше 1.0 USDT — в ноль
+                                    if abs(new_v_qty * dec_price) < Decimal('1.0'):
+                                        # Возвращаем остатки в кэш перед обнулением
+                                        paper_state["balance"] += float(new_v_qty * dec_price)
+                                        new_v_qty = Decimal('0')
+                                        state["virt_entry_price"] = 0.0
+                                        logger.info(f"🧹 Dust cleaned: Position value < 1.0 USDT")
+
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
                                     
-                                    logger.info(f"🔄 Virtual Updated. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
+                                    logger.info(f"{'➕ VIRTUAL BUY' if diff_usdt > 0 else '➖ VIRTUAL SELL'}: {abs(float(diff_usdt)):.2f} USDT")
                                     continue
 
                                 # Update execution results info
@@ -747,8 +734,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     s_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
                     
                     if paper_mode:
-                        u_pnl_p = l_qty_p * (price - paper_state.get("long_entry_price", price)) + \
-                                  s_qty_p * (paper_state.get("short_entry_price", price) - price)
                         safe_l_entry = paper_state.get("long_entry_price", price)
                         safe_s_entry = paper_state.get("short_entry_price", price)
                     else:
@@ -756,12 +741,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         raw_positions_new = await connector.get_positions()
                         safe_l_entry = raw_positions_new.get(f"{base_ticker}_LONG", {}).get("entry_price", 0.0)
                         safe_s_entry = raw_positions_new.get(f"{base_ticker}_SHORT", {}).get("entry_price", 0.0)
-                        u_pnl_p = l_qty_p * (price - safe_l_entry) + s_qty_p * (safe_s_entry - price)
                         
-                    safe_real_equity = paper_state["balance"] + u_pnl_p
+                    safe_real_equity = paper_state["balance"]
                     safe_positions = paper_state["positions"]
                 else:
-                    safe_real_equity = real_equity
+                    safe_real_equity = paper_state["balance"]
                     safe_positions = positions
                     safe_l_entry = l_entry
                     safe_s_entry = s_entry

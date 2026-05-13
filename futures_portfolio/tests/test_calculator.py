@@ -73,15 +73,13 @@ def test_siphoning_reserve_impact(sample_params):
 def test_price_change_impact(sample_params):
     params = sample_params.copy()
     params["spot_price"] = 66000.0
-    # TPV = 10000 (Equity) + 0.0333 * 66000 (Virtual) = 10000 + 2200 = 12200
-    # Wait, real_equity in the test is fixed at 10000. 
-    # In reality, real_equity would change with price. 
-    # But for unit test of Calculator, we just check its math given the inputs.
+    # TPV = 10000 (Cash) + 0.0333 * 66000 (Virtual) = 10000 + 2200 = 12200
+    # In the new math, TPV excludes L/S Unrealized PnL.
     calc = PortfolioCalculator(**params)
     assert float(calc.tpv) == pytest.approx(12200.0)
-    # val_long = (0.5 * 60000 / 5) + (0.5 * (66000 - 60000)) = 6000 + 3000 = 9000
-    # Share Long = 9000 / 12200 * 100 = 73.8%
-    assert float(calc.share_long_pct) == pytest.approx(73.8, abs=0.1)
+    # val_long = (0.5 * 60000 / 5) = 6000.
+    # Share Long = 6000 / 12200 * 100 = 49.18...
+    assert float(calc.share_long_pct) == pytest.approx(49.18, abs=0.1)
 
 def test_negative_tpv_protection():
     calc = PortfolioCalculator(
