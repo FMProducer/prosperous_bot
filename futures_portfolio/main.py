@@ -654,26 +654,30 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     diff_usdt_val = res.get("diff_usdt", 0.0)
                                     diff_usdt = Decimal(str(diff_usdt_val))
                                     
+                                    dec_price = Decimal(str(price))
                                     old_v_qty = Decimal(str(virt_qty))
                                     old_v_entry = Decimal(str(state.get("virt_entry_price", price)))
-                                    if old_v_entry <= 0: old_v_entry = Decimal(str(price))
+                                    if old_v_entry <= 0: old_v_entry = dec_price
 
                                     if diff_usdt > 0: # BUY (Increasing virtual position)
-                                        new_v_qty = old_v_qty + diff_usdt / Decimal(str(price))
-                                        # Update entry price for VIRTUAL leg (WAP logic)
-                                        new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
-                                        state["virt_entry_price"] = float(new_v_entry)
-                                        # Balance doesn't change when buying virtually
+                                        if old_v_qty == 0:
+                                            state["virt_entry_price"] = float(dec_price)
+                                            new_v_qty = diff_usdt / dec_price
+                                        else:
+                                            new_v_qty = old_v_qty + diff_usdt / dec_price
+                                            # Update entry price for VIRTUAL leg (WAP logic)
+                                            new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
+                                            state["virt_entry_price"] = float(new_v_entry)
                                     else: # SELL (Decreasing virtual position)
-                                        qty_to_sell = abs(diff_usdt) / Decimal(str(price))
+                                        qty_to_sell = abs(diff_usdt) / dec_price
                                         if qty_to_sell > old_v_qty: qty_to_sell = old_v_qty
 
                                         # Realize PnL from selling virtual quantity
-                                        realized_pnl = qty_to_sell * (Decimal(str(price)) - old_v_entry)
+                                        realized_pnl = qty_to_sell * (dec_price - old_v_entry)
                                         paper_state["balance"] += float(realized_pnl)
 
                                         new_v_qty = old_v_qty - qty_to_sell
-                                        if new_v_qty <= 0:
+                                        if new_v_qty < Decimal('0.001'):
                                             new_v_qty = Decimal('0')
                                             state["virt_entry_price"] = 0.0
                                         else:
