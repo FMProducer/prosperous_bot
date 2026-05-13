@@ -652,8 +652,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if res.get("type") == "VIRTUAL_ORDER":
                                     # Update virtual quantity based on the USDT diff
                                     diff_usdt_val = res.get("diff_usdt", 0.0)
-                                    diff_usdt = Decimal(str(diff_usdt_val))
+                                    trade_value = abs(diff_usdt_val)
+                                    if trade_value < 1.0: continue # Dust Guard 1.0 USDT
                                     
+                                    diff_usdt = Decimal(str(diff_usdt_val))
                                     dec_price = Decimal(str(price))
                                     old_v_qty = Decimal(str(virt_qty))
                                     old_v_entry = Decimal(str(state.get("virt_entry_price", price)))
@@ -668,26 +670,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                             # Update entry price for VIRTUAL leg (WAP logic)
                                             new_v_entry = (old_v_qty * old_v_entry + diff_usdt) / new_v_qty
                                             state["virt_entry_price"] = float(new_v_entry)
+
+                                        paper_state["balance"] -= float(diff_usdt) # Strict Cash Accounting
+                                        logger.info(f"➕ VIRTUAL BUY: {float(diff_usdt):.2f} USDT")
                                     else: # SELL (Decreasing virtual position)
-                                        qty_to_sell = abs(diff_usdt) / dec_price
-                                        if qty_to_sell > old_v_qty: qty_to_sell = old_v_qty
+                                        qty_to_sell = trade_value / float(dec_price)
+                                        if Decimal(str(qty_to_sell)) > old_v_qty: qty_to_sell = float(old_v_qty)
 
-                                        # Realize PnL from selling virtual quantity
-                                        realized_pnl = qty_to_sell * (dec_price - old_v_entry)
-                                        paper_state["balance"] += float(realized_pnl)
-
-                                        new_v_qty = old_v_qty - qty_to_sell
-                                        if new_v_qty < Decimal('0.001'):
+                                        actual_sell_value = qty_to_sell * float(dec_price)
+                                        new_v_qty = old_v_qty - Decimal(str(qty_to_sell))
+                                        if (new_v_qty * dec_price) < Decimal('1.0'): # Value-based Dust Guard
                                             new_v_qty = Decimal('0')
                                             state["virt_entry_price"] = 0.0
-                                        else:
-                                            # Entry price stays the same for remaining quantity
-                                            pass
+
+                                        paper_state["balance"] += actual_sell_value # Strict Cash Accounting
+                                        logger.info(f"➖ VIRTUAL SELL: {actual_sell_value:.2f} USDT")
                                     
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
                                     
-                                    logger.info(f"🔄 Virtual Fixed: {float(diff_usdt):+.4f} USDT order. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
+                                    logger.info(f"🔄 Virtual Updated. New Qty: {virt_qty:.6f}, New Entry: {state.get('virt_entry_price'):.6g}")
                                     continue
 
                                 # Update execution results info

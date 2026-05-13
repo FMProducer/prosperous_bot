@@ -27,10 +27,12 @@ class PortfolioCalculator:
         self.virt_entry_price = Decimal(str(virt_entry_price))
         self.targets = targets or {}
 
-        # 1. Calculate TPV: Real Equity (Futures) + Virtual PnL
-        # Virtual PnL = (Current Price - Entry Price) * Qty
-        self.virt_pnl = (self.price - self.virt_entry_price) * self.virt_qty if self.virt_qty > 0 else Decimal('0')
-        self.tpv = self.real_equity + self.virt_pnl
+        # TPV = Свободный кэш + Стоимость виртуального актива
+        self.virt_value = self.virt_qty * self.price
+        self.tpv = self.real_equity + self.virt_value
+
+        # PnL для логов: (Текущая цена / Цена входа - 1) * Навеска
+        self.virt_pnl_val = (self.price - self.virt_entry_price) * self.virt_qty if self.virt_entry_price > 0 else Decimal('0')
 
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
@@ -55,7 +57,7 @@ class PortfolioCalculator:
         # PnL contributions for transparency
         self.pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
         self.pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
-        self.pnl_v = self.virt_pnl
+        self.pnl_v = self.virt_pnl_val
 
         # 3. Cash is what's left in the futures wallet that isn't tied up in L/S margin/PnL
         # Since TPV = real_equity + val_virt, and real_equity = val_l + val_s + cash
@@ -129,13 +131,18 @@ class PortfolioCalculator:
 
             if abs(diff_share) > 0:
                 # Log the trigger reason (will be captured by main.py)
-                logger.info(f"Trigger: {key} deviation {diff_share*100:+.2f}% targets {target_share*100}%")
+                logger.debug(f"Trigger: {key} deviation {diff_share*100:+.2f}% targets {target_share*100}%")
 
             if key == "VIRTUAL":
                 # For Virtual, diff_usdt is the amount to move to/from Cash
                 # Positive diff_share means surplus (sell), Negative means deficit (buy)
                 # We want: >0 is BUY, <0 is SELL for consistency with main.py
                 diff_usdt = -diff_share * self.tpv
+
+                # Value-based Dust Guard: 1.0 USDT
+                if abs(diff_usdt) < Decimal('1.0'):
+                    continue
+
                 actions.append({
                     "type": "VIRTUAL_ORDER",
                     "symbol": "VIRTUAL",
