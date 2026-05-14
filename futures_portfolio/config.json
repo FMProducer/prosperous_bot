@@ -1,6 +1,6 @@
 {
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -39,15 +39,15 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.02,
       "safety_guards": {
         "max_spread_pct": 0.15,
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
+      "rebalance_threshold": 0.025,
       "ticker_thresholds": {
-        "CFXUSDT": 0.02,
-        "CGPTUSDT": 0.02
+        "CFXUSDT": 0.025,
+        "CGPTUSDT": 0.025
       }
     }
   ],
