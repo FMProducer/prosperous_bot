@@ -35,9 +35,20 @@ def retry_on_network_error(retries: int = 3, delay: float = 2.0):
                     return await func(*args, **kwargs)
                 except (requests.exceptions.RequestException, 
                         requests.exceptions.ProxyError,
-                        requests.exceptions.ConnectionError,
-                        BinanceAPIException) as e:
+                        requests.exceptions.ConnectionError) as e:
                     last_err = e
+                    if attempt < retries - 1:
+                        logger.warning(f"Network error in {func.__name__} (attempt {attempt+1}/{retries}): {e}. Retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(f"Max retries reached for {func.__name__}. Last error: {e}")
+                except BinanceAPIException as e:
+                    last_err = e
+                    # Do not retry on client-side errors (except 429 Rate Limit)
+                    if e.status_code and 400 <= e.status_code < 500 and e.status_code != 429:
+                        logger.error(f"Fatal Binance API Error in {func.__name__}: {e}. Aborting retry.")
+                        raise e
+
                     if attempt < retries - 1:
                         logger.warning(f"Network error in {func.__name__} (attempt {attempt+1}/{retries}): {e}. Retrying in {delay}s...")
                         await asyncio.sleep(delay)
