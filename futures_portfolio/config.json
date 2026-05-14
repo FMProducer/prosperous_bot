@@ -22,16 +22,16 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 88.0,
-      "paper_initial_capital": 88.0,
+      "initial_capital": 100.0,
+      "paper_initial_capital": 100.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
-          "share": 0.29,
+          "share": 0.28,
           "leverage": 5
         },
         "BASE_SHORT": {
-          "share": 0.36,
+          "share": 0.35,
           "leverage": 5
         },
         "VIRTUAL": {
@@ -52,29 +52,19 @@
   ],
   "live_swarm": [],
   "real_whitelist": [],
-  "black_list": [
-    "SIRENUSDT"
-  ],
+  "black_list": [],
   "tickers": [
-    "ATAUSDT",
-    "BIOUSDT",
     "CFXUSDT",
     "CGPTUSDT",
-    "DEXEUSDT",
     "DODOXUSDT",
-    "DOGSUSDT",
     "EIGENUSDT",
-    "INJUSDT",
-    "JTOUSDT",
     "MLNUSDT",
-    "NILUSDT",
     "PHBUSDT",
+    "PNUTUSDT",
     "SAGAUSDT",
     "SIRENUSDT",
     "SWARMSUSDT",
-    "SYSUSDT",
-    "VICUSDT",
     "VVVUSDT"
   ],
-  "base_ticker": "ATAUSDT"
+  "base_ticker": "CFXUSDT"
 }
