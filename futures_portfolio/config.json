@@ -51,19 +51,29 @@
     }
   ],
   "live_swarm": [],
-  "real_whitelist": [
-    "ATAUSDT"
+  "real_whitelist": [],
+  "black_list": [
+    "SIRENUSDT"
   ],
-  "black_list": [],
   "tickers": [
     "ATAUSDT",
-    "BBUSDT",
-    "COSUSDT",
+    "BIOUSDT",
+    "CFXUSDT",
+    "CGPTUSDT",
+    "DEXEUSDT",
+    "DODOXUSDT",
+    "DOGSUSDT",
+    "EIGENUSDT",
     "INJUSDT",
+    "JTOUSDT",
     "MLNUSDT",
+    "NILUSDT",
     "PHBUSDT",
     "SAGAUSDT",
     "SIRENUSDT",
+    "SWARMSUSDT",
+    "SYSUSDT",
+    "VICUSDT",
     "VVVUSDT"
   ],
   "base_ticker": "ATAUSDT"
