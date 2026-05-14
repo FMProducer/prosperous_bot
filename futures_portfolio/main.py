@@ -825,7 +825,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if (i + status_offset) % 100 == 0:
                     total_pnl_final = safe_calc_res.get("total_pnl", total_tpv_final - initial_tpv)
-                    logger.info(f"Heartbeat: TPV={total_tpv_final:.2f} | PnL={total_pnl_final:+.2f} | Cycles={cycles}")
+                    logger.info(f"Heartbeat: TPV={total_tpv_final:.2f} | PnL={total_pnl_final:+.2f} | {base_ticker}={price:.6g} | Cycles={cycles}")
 
             except Exception as e:
                 logger.error(f"Error in cycle: {e}")
