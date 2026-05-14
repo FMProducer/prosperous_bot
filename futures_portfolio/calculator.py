@@ -59,9 +59,9 @@ class PortfolioCalculator:
         l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
         s_lev = Decimal(str(self.targets.get("BASE_SHORT", {}).get("leverage", 5)))
 
-        # Value = Initial Margin + Unrealized PnL (Actual Equity of the position)
-        self.val_long = ((l_qty * Decimal(str(long_entry_price)) / l_lev) + self.pnl_l) if l_qty > 0 else Decimal('0')
-        self.val_short = ((s_qty * Decimal(str(short_entry_price)) / s_lev) + self.pnl_s) if s_qty > 0 else Decimal('0')
+        # Value = Initial Margin + MTM PnL (Actual Liquidation Equity of the position)
+        self.val_long = ((l_qty * Decimal(str(long_entry_price)) / l_lev) + mtm_pnl_l) if l_qty > 0 else Decimal('0')
+        self.val_short = ((s_qty * Decimal(str(short_entry_price)) / s_lev) + mtm_pnl_s) if s_qty > 0 else Decimal('0')
         self.val_virt = self.virt_value
         
         # V-PnL: Change in market value relative to the capital allocated to it

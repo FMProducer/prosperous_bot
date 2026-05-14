@@ -31,12 +31,13 @@ def test_calculator_initialization(sample_params):
     assert float(calc.total_tpv) == pytest.approx(12000.0)
     
     # Notional Long = 0.5 * 60000 = 30000
-    # Share Long = 30000 / (12000 * 5) = 50%
+    # Val Long = Margin (30000/5=6000) + PnL (0) = 6000
+    # Share Long = 6000 / 12000 = 50%
     assert float(calc.share_long_pct) == 50.0
     assert float(calc.share_short_pct) == 0.0
     # Notional Virt = 2000
-    # Share Virt = 2000 / 12000 = 16.7%
-    assert float(calc.share_virt_pct) == pytest.approx(16.7, abs=0.1)
+    # Share Virt = 2000 / 12000 = 16.67%
+    assert float(calc.share_virt_pct) == pytest.approx(16.67, abs=0.1)
 
 def test_calculate_deviations(sample_params, targets):
     calc = PortfolioCalculator(**sample_params)
@@ -49,16 +50,15 @@ def test_calculate_deviations(sample_params, targets):
     assert len(actions) == 2
     
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
-    # Target Notional L = 12000 * 0.4 * 5 = 24000
-    # Current Notional L = 30000
-    # Diff = 24000 - 30000 = -6000
+    # Current Share L = 50%. Target Share L = 40%. Diff Share = 10%.
+    # Diff USDT = -0.1 * 12000 * 5 = -6000.
     assert long_action["diff_usdt"] == pytest.approx(-6000.0)
     
     short_action = next(a for a in actions if a["symbol"] == "BTCUSDT_SHORT")
-    # Target Notional S = 12000 * 0.4 * 5 = 24000
-    # Current Notional S = 0
-    # Diff = 24000 - 0 = 24000
-    assert short_action["diff_usdt"] == pytest.approx(24000.0)
+    # Current Share S = 0%. Target Share S = 40%. Diff Share = -40%.
+    # Diff USDT = -(-0.4) * 12000 * 5 = 24000.
+    # But available funds = val_cash (4000) + proceeds_from_long (6000) = 10000.
+    assert short_action["diff_usdt"] == pytest.approx(10000.0)
     
     # Virtual should not be here since 3.3% < 5%
     assert not any(a["symbol"] == "VIRTUAL" for a in actions)
@@ -73,13 +73,15 @@ def test_siphoning_reserve_impact(sample_params):
 def test_price_change_impact(sample_params):
     params = sample_params.copy()
     params["spot_price"] = 66000.0
-    # TPV = 10000 (Cash) + 0.0333 * 66000 (Virtual) = 10000 + 2200 = 12200
-    # In the new math, TPV excludes L/S Unrealized PnL.
+    # l_qty = 0.5, long_entry_price = 60000.0. mtm_pnl_l = 0.5 * (66000 - 60000) = 3000.
+    # real_equity = 10000.
+    # virt_qty = 0.03333..., virt_value = 0.0333... * 66000 = 2200.
+    # TPV = 10000 + 3000 + 2200 = 15200.
     calc = PortfolioCalculator(**params)
-    assert float(calc.tpv) == pytest.approx(12200.0)
-    # val_long = (0.5 * 60000 / 5) = 6000.
-    # Share Long = 6000 / 12200 * 100 = 49.18...
-    assert float(calc.share_long_pct) == pytest.approx(49.18, abs=0.1)
+    assert float(calc.tpv) == pytest.approx(15200.0)
+    # val_long = (0.5 * 60000 / 5) + 3000 = 9000.
+    # Share Long = 9000 / 15200 * 100 = 59.21%
+    assert float(calc.share_long_pct) == pytest.approx(59.21, abs=0.1)
 
 def test_negative_tpv_protection():
     calc = PortfolioCalculator(
@@ -96,11 +98,13 @@ def test_ignore_limits_deviation(sample_params, targets):
     params["real_equity"] = 100000.0
     params["virt_qty"] = 0.0
     params["positions"] = {"BTCUSDT_LONG": 10.0}
+    # val_long = (10 * 60000 / 5) = 120000.
+    # tpv = 100000 (real_equity) + 0 (mtm_pnl) + 0 (virt) = 100000.
+    # share_long = 120000 / 100000 = 1.2
+    # target_share_long = 0.4
+    # diff_share = 1.2 - 0.4 = 0.8
+    # diff_usdt = -0.8 * 100000 * 5 = -400000.
     calc = PortfolioCalculator(**params)
-    # tpv = 100000. 
-    # notional_long = 10 * 60000 = 600000.
-    # target_notional_long = 100000 * 0.4 * 5 = 200000.
-    # diff = 200000 - 600000 = -400000.
     actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=True)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     assert long_action["diff_usdt"] == pytest.approx(-400000.0)
@@ -113,5 +117,5 @@ def test_limits_deviation(sample_params, targets):
     calc = PortfolioCalculator(**params)
     actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=False)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
-    # TPV is 100,000. max_change = 100,000 * 0.5 * 5 = 250,000.
-    assert long_action["diff_usdt"] == pytest.approx(-250000.0)
+    # TPV is 100,000. diff_usdt is -400,000 as calculated above.
+    assert long_action["diff_usdt"] == pytest.approx(-400000.0)
