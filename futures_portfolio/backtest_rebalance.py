@@ -190,7 +190,7 @@ class PortfolioState:
 
                 # [EDGE CASE] Death Spiral / Min Notional check
                 if abs(diff_usdt) < self.min_notional and act['key'] != "VIRTUAL":
-                    if abs(target_notional/act['lev'] - act['val']) / (tpv + 1e-9) > 3 * self.threshold:
+                    if abs(target_notional/act['lev'] - act['val']) / (tpv + Decimal('1e-9')) > Decimal('3') * self.threshold:
                         logger.warning(f"BLOCK: Rebalance for {act['key']} blocked by min_notional! Deviation exceeds 3x threshold")
                     continue
 

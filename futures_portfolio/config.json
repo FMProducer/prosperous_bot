@@ -4,10 +4,10 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 6.1,
+  "min_notional_usdt": 5.2,
   "max_orders_per_second": 10,
   "max_bots": 20,
-  "min_cycles_for_rank": 2,
+  "min_cycles_for_rank": 3,
   "paper_mode_bots": 19,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 100.0,
-      "paper_initial_capital": 100.0,
+      "initial_capital": 86.0,
+      "paper_initial_capital": 86.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -39,32 +39,21 @@
           "leverage": 1
         }
       },
-      "rebalance_threshold": 0.035,
+      "rebalance_threshold": 0.02,
       "safety_guards": {
         "max_spread_pct": 0.15,
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
       "ticker_thresholds": {
-        "GTCUSDT": 0.035
+        "CFXUSDT": 0.02,
+        "CGPTUSDT": 0.02
       }
     }
   ],
   "live_swarm": [],
   "real_whitelist": [],
   "black_list": [],
-  "tickers": [
-    "CFXUSDT",
-    "CGPTUSDT",
-    "DODOXUSDT",
-    "EIGENUSDT",
-    "MLNUSDT",
-    "PHBUSDT",
-    "PNUTUSDT",
-    "SAGAUSDT",
-    "SIRENUSDT",
-    "SWARMSUSDT",
-    "VVVUSDT"
-  ],
-  "base_ticker": "CFXUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }

@@ -11,7 +11,7 @@ import numpy as np
 from backtest_rebalance import run_backtest
 
 # Define threshold range for optimization - more realistic for rebalancing
-THRESHOLDS = [0.002, 0.004, 0.008, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04]
+THRESHOLDS = [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("Optimizer")
