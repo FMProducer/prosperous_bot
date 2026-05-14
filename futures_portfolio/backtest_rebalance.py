@@ -73,12 +73,13 @@ class PortfolioState:
         self.positions: Dict[str, Decimal] = {"LONG": Decimal('0.0'), "SHORT": Decimal('0.0')}
         self.entry_prices: Dict[str, Decimal] = {"LONG": Decimal('0.0'), "SHORT": Decimal('0.0')}
         
-        self.virt_basis_price = Decimal('0.0')
-        self.virt_allocated_usdt = Decimal('0.0')
+        self.virt_qty = Decimal('0.0')
 
         self.history: List[float] = []
         self.rebalance_log: List[Dict[str, Any]] = []
         self.cycles: int = 0
+        self.skipped_expansions_counter: int = 0
+        self.liquidations_counter: int = 0
 
     def init_state(self, price: float) -> None:
         """Инициализация начальных позиций."""
@@ -89,39 +90,162 @@ class PortfolioState:
         self.entry_prices["LONG"] = dec_price
         self.entry_prices["SHORT"] = dec_price
 
-        # Initial commission for entry
-        init_comm = (abs(self.positions["LONG"] * dec_price) + abs(self.positions["SHORT"] * dec_price)) * self.commission
-        self.real_equity -= init_comm
+        # Virtual leg as physical coins
+        self.virt_qty = (self.initial_capital * self.v_target) / dec_price
 
-        self.virt_basis_price = dec_price
-        self.virt_allocated_usdt = self.initial_capital * self.v_target
-        
-        # CRITICAL FIX: Subtract virtual cost from equity to maintain 100% TPV invariant
-        self.real_equity -= self.virt_allocated_usdt
+        # Initial commission and setup
+        # Wallet Balance = Initial Capital - Cost of Virtual (since it's spot-like) - entry commissions
+        virt_cost = self.virt_qty * dec_price
+        init_comm = (abs(self.positions["LONG"] * dec_price) + abs(self.positions["SHORT"] * dec_price)) * self.commission
+
+        self.real_equity -= init_comm
+        self.real_equity -= virt_cost
 
     def update(self, price: float, high: float, low: float, sim: Optional[LimitOrderSimulator] = None) -> float:
         dec_price = Decimal(str(price))
         dec_high = Decimal(str(high))
         dec_low = Decimal(str(low))
 
-        # 1. Update Real Equity based on futures PnL
-        # Note: real_equity in PortfolioState is the isolated shadow balance + PnL
-        l_pnl = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
-        s_pnl = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
-        
-        # 2. Virtual Market Value
-        val_virt = (self.virt_allocated_usdt / self.virt_basis_price) * dec_price
-        
-        # 3. Total Working TPV (Real Equity + Virtual Market Value)
-        tpv = self.real_equity + l_pnl + s_pnl + val_virt
-        total_tpv = tpv + self.siphoning_reserve
+        # 1. MTM PnL (Futures)
+        mtm_pnl_l = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
+        mtm_pnl_s = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
 
-        if total_tpv <= 0:
+        # 2. Liquidation Check & NAV Calculation
+        # For MTM Pure Isolation: NAV = (PositionValue / Leverage) + UnrealizedPnL
+        val_l = ((abs(self.positions["LONG"]) * self.entry_prices["LONG"] / self.l_lev) + mtm_pnl_l) if self.positions["LONG"] != 0 else Decimal('0')
+        val_s = ((abs(self.positions["SHORT"]) * self.entry_prices["SHORT"] / self.s_lev) + mtm_pnl_s) if self.positions["SHORT"] != 0 else Decimal('0')
+        
+        # [EDGE CASE] Leg-Specific Liquidation
+        if val_l <= 0 and self.positions["LONG"] != 0:
+            loss = (abs(self.positions["LONG"]) * self.entry_prices["LONG"] / self.l_lev)
+            self.real_equity -= loss
+            self.positions["LONG"] = Decimal('0')
+            self.liquidations_counter += 1
+            mtm_pnl_l = Decimal('0')
+            val_l = Decimal('0')
+            logger.warning(f"LONG leg liquidated at price {price}! Loss: {loss:.2f} USDT")
+
+        if val_s <= 0 and self.positions["SHORT"] != 0:
+            loss = (abs(self.positions["SHORT"]) * self.entry_prices["SHORT"] / self.s_lev)
+            self.real_equity -= loss
+            self.positions["SHORT"] = Decimal('0')
+            self.liquidations_counter += 1
+            mtm_pnl_s = Decimal('0')
+            val_s = Decimal('0')
+            logger.warning(f"SHORT leg liquidated at price {price}! Loss: {loss:.2f} USDT")
+
+        val_v = self.virt_qty * dec_price
+
+        # 3. TPV = Wallet Balance + Futures PnL + Virtual Value
+        tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + val_v
+        
+        # total_tpv includes reserve for tracking/siphoning
+        total_tpv_with_reserve = tpv + self.siphoning_reserve
+
+        if total_tpv_with_reserve <= 0:
             self.history.append(0.0)
             return 0.0
 
-        # 4. SAFE Siphoning logic
-        total_surplus = total_tpv - self.initial_capital
+        # 4. Current Shares
+        share_l = val_l / tpv if tpv > 0 else Decimal('0')
+        share_s = val_s / tpv if tpv > 0 else Decimal('0')
+        share_v = val_v / tpv if tpv > 0 else Decimal('0')
+        share_c = (tpv - (val_l + val_s + val_v)) / tpv if tpv > 0 else Decimal('0')
+
+        # 5. Rebalance Check
+        dev_l = share_l - self.l_target
+        dev_s = share_s - self.s_target
+        dev_v = share_v - self.v_target
+
+        if any(abs(d) > self.threshold for d in [dev_l, dev_s, dev_v]):
+            self.cycles += 1
+            log_entry = {
+                "step": len(self.history) + 1,
+                "price": float(dec_price),
+                "tpv": float(tpv),
+                "shares": {"L": float(share_l), "S": float(share_s), "V": float(share_v), "C": float(share_c)},
+                "actions": []
+            }
+
+            actions = [
+                {"key": "LONG", "dev": dev_l, "lev": self.l_lev, "val": val_l},
+                {"key": "SHORT", "dev": dev_s, "lev": self.s_lev, "val": val_s},
+                {"key": "VIRTUAL", "dev": dev_v, "lev": Decimal('1.0'), "val": val_v}
+            ]
+            # Order of execution: Surplus FIRST to liberate cash
+            actions.sort(key=lambda x: x['dev'], reverse=True)
+
+            for act in actions:
+                if act['key'] == "LONG":
+                    target_notional = self.l_target * tpv * self.l_lev
+                    current_notional = abs(self.positions["LONG"]) * dec_price
+                elif act['key'] == "SHORT":
+                    target_notional = self.s_target * tpv * self.s_lev
+                    current_notional = abs(self.positions["SHORT"]) * dec_price
+                else: # VIRTUAL
+                    target_notional = self.v_target * tpv * Decimal('1.0')
+                    current_notional = self.virt_qty * dec_price
+
+                diff_usdt = target_notional - current_notional
+
+                # [EDGE CASE] Death Spiral / Min Notional check
+                if abs(diff_usdt) < self.min_notional and act['key'] != "VIRTUAL":
+                    if abs(target_notional/act['lev'] - act['val']) / (tpv + 1e-9) > 3 * self.threshold:
+                        logger.warning(f"BLOCK: Rebalance for {act['key']} blocked by min_notional! Deviation exceeds 3x threshold")
+                    continue
+
+                # Trade side mapping
+                if act['key'] == "SHORT":
+                    side = "SELL" if diff_usdt > 0 else "BUY"
+                else:
+                    side = "BUY" if diff_usdt > 0 else "SELL"
+
+                f_price = dec_price
+                if sim and act['key'] != "VIRTUAL":
+                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt)/dec_price, dec_price, dec_high, dec_low)
+
+                # Expansion constraint: only if we have enough real_equity (Wallet Balance)
+                if diff_usdt > 0:
+                    needed_margin = diff_usdt / act['lev']
+                    # Budget for commission (all legs including Virtual have commission now)
+                    est_comm = abs(diff_usdt) * self.commission
+                    if needed_margin + est_comm > self.real_equity:
+                        self.skipped_expansions_counter += 1
+                        # Scale down
+                        max_allowed_margin = max(Decimal('0'), self.real_equity - est_comm)
+                        if max_allowed_margin * act['lev'] < (self.min_notional if act['key'] != "VIRTUAL" else Decimal('0.1')):
+                            continue # Cannot even afford min order
+                        diff_usdt = max_allowed_margin * act['lev']
+
+                if act['key'] == "LONG":
+                    pnl = self.positions["LONG"] * (f_price - self.entry_prices["LONG"])
+                    comm = abs(diff_usdt) * self.commission
+                    self.real_equity += pnl - comm
+                    self.positions["LONG"] = (self.positions["LONG"] * f_price + diff_usdt) / f_price
+                    self.entry_prices["LONG"] = f_price
+                elif act['key'] == "SHORT":
+                    pnl = self.positions["SHORT"] * (self.entry_prices["SHORT"] - f_price)
+                    comm = abs(diff_usdt) * self.commission
+                    self.real_equity += pnl - comm
+                    self.positions["SHORT"] = (self.positions["SHORT"] * f_price + diff_usdt) / f_price
+                    self.entry_prices["SHORT"] = f_price
+                elif act['key'] == "VIRTUAL":
+                    comm = abs(diff_usdt) * self.commission # Virtual now pays commission
+                    self.real_equity -= (diff_usdt + comm)
+                    self.virt_qty = (self.virt_qty * dec_price + diff_usdt) / dec_price
+
+                log_entry["actions"].append(f"{act['key']} {side} {float(abs(diff_usdt)):.2f}")
+
+            self.rebalance_log.append(log_entry)
+
+            # Re-calculate TPV after rebalance for history
+            mtm_pnl_l = self.positions["LONG"] * (dec_price - self.entry_prices["LONG"])
+            mtm_pnl_s = self.positions["SHORT"] * (self.entry_prices["SHORT"] - dec_price)
+            tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + (self.virt_qty * dec_price)
+            total_tpv_with_reserve = tpv + self.siphoning_reserve
+
+        # 6. SAFE Siphoning logic (Runs every cycle)
+        total_surplus = total_tpv_with_reserve - self.initial_capital
         siphoning_threshold_abs = self.initial_capital * (self.siphoning_threshold_pct / 100)
 
         if total_surplus > self.siphoning_reserve + max(Decimal('0.1'), siphoning_threshold_abs):
@@ -130,83 +254,10 @@ class PortfolioState:
             if siphon_amount > Decimal('0.1'):
                 self.siphoning_reserve += siphon_amount
                 self.real_equity -= siphon_amount
-                tpv -= siphon_amount
+                total_tpv_with_reserve -= siphon_amount
 
-        # 5. Shares calculation based on EQUITY (Capital Basis + PnL)
-        # val_long = (Collateral) + PnL
-        val_l = (self.positions["LONG"] * self.entry_prices["LONG"] / self.l_lev) + l_pnl
-        val_s = (self.positions["SHORT"] * self.entry_prices["SHORT"] / self.s_lev) + s_pnl
-        
-        share_l = val_l / tpv if tpv > 0 else Decimal('0')
-        share_s = val_s / tpv if tpv > 0 else Decimal('0')
-        share_v = val_virt / tpv if tpv > 0 else Decimal('0')
-
-        # 6. Rebalance Check
-        if abs(share_l - self.l_target) > self.threshold or \
-           abs(share_s - self.s_target) > self.threshold or \
-           abs(share_v - self.v_target) > self.threshold:
-
-            self.cycles += 1
-            log_entry = {
-                "step": len(self.history),
-                "price": float(dec_price),
-                "tpv": float(tpv),
-                "shares_before": {"L": float(share_l), "S": float(share_s), "V": float(share_v)},
-                "actions": []
-            }
-            
-            # Rebalance ALL legs to restore Target Equity
-            # 1. BASE_LONG
-            diff_share_l = share_l - self.l_target
-            diff_usdt_l = -diff_share_l * tpv * self.l_lev
-            if abs(diff_usdt_l) >= self.min_notional:
-                side = "BUY" if diff_usdt_l > 0 else "SELL"
-                f_price = dec_price
-                if sim:
-                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_l)/dec_price, dec_price, dec_high, dec_low)
-                
-                # Realize PnL and update basis
-                self.real_equity += self.positions["LONG"] * (f_price - self.entry_prices["LONG"])
-                self.real_equity -= abs(diff_usdt_l) * self.commission
-                
-                new_notional = (self.positions["LONG"] * f_price) + diff_usdt_l
-                self.positions["LONG"] = new_notional / f_price
-                self.entry_prices["LONG"] = f_price
-                log_entry["actions"].append(f"LONG {side} {float(abs(diff_usdt_l)):.2f} USDT @ {float(f_price):.6g}")
-
-            # 2. BASE_SHORT
-            diff_share_s = share_s - self.s_target
-            diff_usdt_s = -diff_share_s * tpv * self.s_lev
-            if abs(diff_usdt_s) >= self.min_notional:
-                side = "SELL" if diff_usdt_s > 0 else "BUY"
-                f_price = dec_price
-                if sim:
-                    _, _, f_price, _ = sim.simulate_limit_execution(side, abs(diff_usdt_s)/dec_price, dec_price, dec_high, dec_low)
-                
-                self.real_equity += self.positions["SHORT"] * (self.entry_prices["SHORT"] - f_price)
-                self.real_equity -= abs(diff_usdt_s) * self.commission
-                
-                new_notional = (self.positions["SHORT"] * f_price) + (-diff_usdt_s if side == "BUY" else diff_usdt_s)
-                # Correction: for Short, diff_usdt > 0 means we need to increase short capacity (SELL)
-                # diff_usdt_s = - (share_s - target) * tpv * lev. If share_s < target, diff_usdt_s is positive -> side SELL.
-                self.positions["SHORT"] = ((self.positions["SHORT"] * f_price) + diff_usdt_s) / f_price
-                self.entry_prices["SHORT"] = f_price
-                log_entry["actions"].append(f"SHORT {side} {float(abs(diff_usdt_s)):.2f} USDT @ {float(f_price):.6g}")
-
-            # 3. VIRTUAL
-            diff_share_v = share_v - self.v_target
-            diff_v = diff_share_v * tpv
-            if abs(diff_v) > Decimal('0.01'):
-                self.real_equity += diff_v
-                self.virt_basis_price = dec_price
-                self.virt_allocated_usdt = tpv * self.v_target
-                side_v = "SELL" if diff_v > 0 else "BUY"
-                log_entry["actions"].append(f"VIRT {side_v} {float(abs(diff_v)):.2f} USDT")
-
-            self.rebalance_log.append(log_entry)
-
-        self.history.append(float(total_tpv))
-        return float(total_tpv)
+        self.history.append(float(total_tpv_with_reserve))
+        return float(total_tpv_with_reserve)
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
@@ -298,11 +349,12 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             logger.info(f"Iterative Backtest for {base_ticker}:")
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
+            logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Liquidations: {state.liquidations_counter}")
             
             if state.rebalance_log:
                 logger.info("\nRebalance Log:")
                 for log in state.rebalance_log:
-                    shares_str = f"L:{log['shares_before']['L']*100:.1f}% S:{log['shares_before']['S']*100:.1f}% V:{log['shares_before']['V']*100:.1f}%"
+                    shares_str = f"L:{log['shares']['L']*100:.1f}% S:{log['shares']['S']*100:.1f}% V:{log['shares']['V']*100:.1f}% C:{log['shares']['C']*100:.1f}%"
                     actions_str = " | ".join(log['actions'])
                     logger.info(f"Cycle #{log['step']}: Price {log['price']:.6g} | Shares: {shares_str} | TPV: {log['tpv']:.2f} | Actions: {actions_str}")
 
@@ -315,7 +367,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "max_dd_pct": float(max_dd_pct),
             "cycles": int(state.cycles),
             "asset_chg_pct": float(asset_chg_pct),
-            "siphoning_reserve": float(state.siphoning_reserve)
+            "siphoning_reserve": float(state.siphoning_reserve),
+            "skipped_expansions": int(state.skipped_expansions_counter),
+            "liquidations": int(state.liquidations_counter)
         }
     except Exception as e:
         logger.error(f"Backtest failed: {e}")
