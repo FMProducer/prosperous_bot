@@ -45,6 +45,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_spread = 0.0015 # 0.15%
     max_velocity = 0.01 # 1.0%
     velocity_window = 60
+    last_config_mtime = 0.0
     
     # Обычное чтение конфига без блокировок
     try:
@@ -249,36 +250,42 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             try:
                 # Dynamic config reload
                 try:
-                    # Unblock the Event Loop
-                    current_config = await asyncio.to_thread(sync_read_json, config_path)
-                    portfolio_cfg = current_config["portfolios"][0]
-                    targets = portfolio_cfg["targets"]
-                    global_threshold = portfolio_cfg["rebalance_threshold"]
-                    check_interval = portfolio_cfg.get("check_interval_sec", 15)
-                    ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
-                    threshold = ticker_thresholds.get(base_ticker, global_threshold)
-                    
-                    if i % 20 == 0:
-                        logger.info(f"⚙️ Active Threshold for {base_ticker}: {threshold*100:.2f}%")
-
-                    siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
-                    reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
-                    
-                    if paper_mode:
-                        target_initial = float(portfolio_cfg.get("paper_initial_capital", 100.0))
-                    else:
-                        target_initial = float(portfolio_cfg.get("initial_capital", 86.0))
+                    current_mtime = os.path.getmtime(config_path)
+                    if current_mtime != last_config_mtime:
+                        # Unblock the Event Loop only if file changed
+                        current_config = await asyncio.to_thread(sync_read_json, config_path)
+                        last_config_mtime = current_mtime
                         
-                    max_capital_usdt = portfolio_cfg.get("max_capital_usdt", target_initial)
-                    max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
-                    equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
-                    equity_trailing_stop_timeout_sec = current_config.get("equity_trailing_stop_timeout_sec", 0.0)
-                    
-                    # Обновляем параметры защит
-                    guards_cfg = portfolio_cfg.get("safety_guards", {})
-                    max_spread = guards_cfg.get("max_spread_pct", 0.15) / 100
-                    max_velocity = guards_cfg.get("max_price_velocity_pct", 1.0) / 100
-                    velocity_window = guards_cfg.get("velocity_window_sec", 60)
+                        portfolio_cfg = current_config["portfolios"][0]
+                        targets = portfolio_cfg["targets"]
+                        global_threshold = portfolio_cfg["rebalance_threshold"]
+                        check_interval = portfolio_cfg.get("check_interval_sec", 15)
+                        ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
+                        threshold = ticker_thresholds.get(base_ticker, global_threshold)
+
+                        siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
+                        reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
+
+                        if paper_mode:
+                            target_initial = float(portfolio_cfg.get("paper_initial_capital", 100.0))
+                        else:
+                            target_initial = float(portfolio_cfg.get("initial_capital", 86.0))
+
+                        max_capital_usdt = portfolio_cfg.get("max_capital_usdt", target_initial)
+                        max_drawdown_limit = current_config.get("max_drawdown_limit", 0.5)
+                        equity_trailing_stop_pct = current_config.get("equity_trailing_stop_pct", 0.0)
+                        equity_trailing_stop_timeout_sec = current_config.get("equity_trailing_stop_timeout_sec", 0.0)
+
+                        # Обновляем параметры защит
+                        guards_cfg = portfolio_cfg.get("safety_guards", {})
+                        max_spread = guards_cfg.get("max_spread_pct", 0.15) / 100
+                        max_velocity = guards_cfg.get("max_price_velocity_pct", 1.0) / 100
+                        velocity_window = guards_cfg.get("velocity_window_sec", 60)
+
+                        logger.info(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%")
+
+                    if i % 20 == 0:
+                        logger.debug(f"Threshold running at: {threshold*100:.2f}%")
 
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
