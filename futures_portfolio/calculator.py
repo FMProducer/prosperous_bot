@@ -12,9 +12,9 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
-                 virt_entry_price: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
-                 targets: Dict[str, Dict] = None, initial_capital: float = 10000.0) -> None:
+                 targets: Dict[str, Dict] = None, initial_capital: float = 10000.0,
+                 last_rebalance_price: float = 0.0) -> None:
         
         # Convert all inputs to Decimal for precision
         self.positions = {k: Decimal(str(v)) for k, v in positions.items()}
@@ -22,56 +22,58 @@ class PortfolioCalculator:
         self.base_ticker = base_ticker
         self.siphoning_reserve = Decimal(str(siphoning_reserve))
         self.initial_capital = Decimal(str(initial_capital))
-        self.real_equity = Decimal(str(real_equity)) # Чистый кэш (Wallet Balance)
+        self.real_equity = Decimal(str(real_equity)) # Wallet Balance (Cash + Margin, NO PnL)
         self.virt_qty = Decimal(str(virt_qty))
-        self.virt_entry_price = Decimal(str(virt_entry_price))
         self.targets = targets or {}
+        self.last_rebalance_price = Decimal(str(last_rebalance_price)) if last_rebalance_price > 0 else self.price
 
-        # TPV = Кэш + Рыночная стоимость виртуальной позиции
+        # 1. PnL contributions for Heartbeat (RELATIVE to last rebalance)
+        # This ensures the sign of $ PnL always matches the sign of % deviation.
+        l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
+        s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
+
+        self.pnl_l = (l_qty * (self.price - self.last_rebalance_price)) if l_qty > 0 else Decimal('0')
+        self.pnl_s = (s_qty * (self.last_rebalance_price - self.price)) if s_qty > 0 else Decimal('0')
+        self.pnl_v = (self.virt_qty * (self.price - self.last_rebalance_price)) if self.virt_qty > 0 else Decimal('0')
+
+        # Real MTM PnL (for TPV) relative to entry prices for futures
+        mtm_pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
+        mtm_pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
+        
+        # 2. TPV (Net Liquidation Value) = Wallet Balance + Futures PnL + Market Value of Virtual assets
         self.virt_value = self.virt_qty * self.price
-        self.tpv = self.real_equity + self.virt_value
-
-        # PnL для логов: разница между текущей стоимостью и ценой входа
-        # Если цена входа не задана, PnL = 0
-        if self.virt_entry_price > 0 and self.virt_qty > 0:
-            self.virt_pnl_val = (self.price - self.virt_entry_price) * self.virt_qty
-        else:
-            self.virt_pnl_val = Decimal('0')
+        self.tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + self.virt_value
 
         if self.tpv <= 0:
             self.tpv = Decimal('1e-9')
 
         self.total_tpv = self.tpv + self.siphoning_reserve
 
-        # Общий PnL системы для Heartbeat
+        # Total PnL = Sum of all contributions
         self.total_pnl = self.tpv - self.initial_capital
 
-        # Total PnL % for logs
+        # Total PnL % = (TPV / initial_capital - 1) * 100
         self.total_pnl_pct = ((self.tpv / self.initial_capital) - 1) * 100 if self.initial_capital > 0 else Decimal('0')
 
-        # 2. Calculate NAV for each leg
+        # 4. Calculate NAV for each leg
         l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
         s_lev = Decimal(str(self.targets.get("BASE_SHORT", {}).get("leverage", 5)))
 
-        l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
-        s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
+        # Value = Initial Margin + Unrealized PnL (Actual Equity of the position)
+        self.val_long = ((l_qty * Decimal(str(long_entry_price)) / l_lev) + self.pnl_l) if l_qty > 0 else Decimal('0')
+        self.val_short = ((s_qty * Decimal(str(short_entry_price)) / s_lev) + self.pnl_s) if s_qty > 0 else Decimal('0')
+        self.val_virt = self.virt_value
+        
+        # V-PnL: Change in market value relative to the capital allocated to it
+        # (This is illustrative for the Heartbeat)
+        v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
+        self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
 
-        # Value = Initial Margin (Ignoring Unrealized PnL for rebalancing basis to keep Cash logs positive)
-        self.val_long = (l_qty * Decimal(str(long_entry_price)) / l_lev) if l_qty > 0 else Decimal('0')
-        self.val_short = (s_qty * Decimal(str(short_entry_price)) / s_lev) if s_qty > 0 else Decimal('0')
-        self.val_virt = self.virt_qty * self.price
-
-        # PnL contributions for transparency
-        self.pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
-        self.pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
-        self.pnl_v = self.virt_pnl_val
-
-        # 3. Cash is what's left in the futures wallet that isn't tied up in L/S margin/PnL
-        # Since TPV = real_equity + val_virt, and real_equity = val_l + val_s + cash
+        # 5. Cash is the remaining liquidity (Free Wallet Balance)
         self.val_cash = self.tpv - (self.val_long + self.val_short + self.val_virt)
         if self.val_cash < 0 and abs(self.val_cash) < 0.1: self.val_cash = Decimal('0') # Rounding protection
 
-        # 4. Shares calculation (Capital weights)
+        # 6. Shares calculation (Capital weights against true TPV)
         self.share_long_raw = (self.val_long / self.tpv)
         self.share_short_raw = (self.val_short / self.tpv)
         self.share_virt_raw = (self.val_virt / self.tpv)
@@ -101,6 +103,10 @@ class PortfolioCalculator:
             "share_short_pct": float(self.share_short_pct),
             "share_virt_pct": float(self.share_virt_pct),
             "share_cash_pct": float(self.share_cash_pct),
+            "val_long": float(self.val_long),
+            "val_short": float(self.val_short),
+            "val_virt": float(self.val_virt),
+            "val_cash": float(self.val_cash),
             "tpv": float(self.tpv),
             "total_tpv": float(self.total_tpv),
             "siphoning_reserve": float(self.siphoning_reserve),
@@ -118,72 +124,87 @@ class PortfolioCalculator:
         This allows the portfolio to harvest volatility profit.
         """
         dec_threshold = Decimal(str(threshold))
-        actions: List[Dict] = []
+        min_notional = Decimal('6.1')
         
-        # Use raw ratios for maximum precision before rebalancing
+        # Actions split by intent
+        surplus_actions: List[Dict] = []
+        deficit_actions: List[Dict] = []
+        
+        # Use raw ratios for maximum precision
         shares: Dict[str, Decimal] = {
             "BASE_LONG": self.share_long_raw,
             "BASE_SHORT": self.share_short_raw,
             "VIRTUAL": self.share_virt_raw
         }
 
-        # Rebalance ONLY legs that actually breached the threshold
+        # 1. Gather all legs that reached the threshold
         for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
             target_share = Decimal(str(targets[key]["share"]))
             current_share = shares[key]
-            diff_share = current_share - target_share # Positive if surplus
-
-            # Only rebalance legs that actually breached the threshold
+            diff_share = current_share - target_share # Positive if surplus (actual > target)
+            
             if not ignore_limits and abs(diff_share) < dec_threshold:
-                if abs(diff_share) > 0:
-                    logger.debug(f"Trigger: {key} deviation {diff_share*100:+.2f}% (below threshold)")
                 continue
 
-            if abs(diff_share) > 0:
-                # Log the trigger reason (will be captured by main.py)
-                logger.debug(f"Trigger: {key} deviation {diff_share*100:+.2f}% targets {target_share*100}%")
+            # Calculate theoretical diff_usdt
+            # diff_usdt = -diff_share * self.tpv * leverage
+            # Surplus (+) -> Negative diff_usdt (SELL/Reduction)
+            # Deficit (-) -> Positive diff_usdt (BUY/Expansion)
+            lev = Decimal(str(targets[key].get("leverage", 1)))
+            diff_usdt = -diff_share * self.tpv * lev
 
-            if key == "VIRTUAL":
-                # Знак: если target > current (deficit), diff_usdt > 0 (BUY)
-                # diff_share = current - target. If deficit, diff_share < 0.
-                # So BUY is -diff_share * tpv.
-                diff_usdt = -diff_share * self.tpv
+            if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
+                continue
 
-                # Dust Guard: игнорируем сделки меньше 1 USDT
-                if abs(diff_usdt) < Decimal('1.0'):
-                    continue
+            action = {
+                "key": key,
+                "type": "VIRTUAL_ORDER" if key == "VIRTUAL" else "ORDER",
+                "symbol": "VIRTUAL" if key == "VIRTUAL" else f"{self.base_ticker}_{key.replace('BASE_', '')}",
+                "base_symbol": "VIRTUAL" if key == "VIRTUAL" else self.base_ticker,
+                "position_side": "BOTH" if key == "VIRTUAL" else key.replace('BASE_', ''),
+                "diff_usdt": float(diff_usdt),
+                "is_reduction": diff_usdt < 0
+            }
 
-                actions.append({
-                    "type": "VIRTUAL_ORDER",
-                    "symbol": "VIRTUAL",
-                    "base_symbol": "VIRTUAL",
-                    "position_side": "BOTH",
-                    "diff_usdt": float(diff_usdt),
-                    "priority": 1 if diff_usdt > 0 else 3
-                })
+            if action["is_reduction"]:
+                surplus_actions.append(action)
             else:
-                lev = Decimal(str(targets[key]["leverage"]))
-                pos_side: str = "LONG" if key == "BASE_LONG" else "SHORT"
-                pos_key: str = f"{self.base_ticker}_{pos_side}"
+                deficit_actions.append(action)
 
-                # To restore Equity share by X%, we must change Notional volume by (X% * Leverage)
-                diff_usdt = -diff_share * self.tpv * lev
+        # 2. Final actions list starts with all SELLs (Priority 0)
+        final_actions: List[Dict] = []
+        
+        # proceeds are negative diff_usdt (since they return cash)
+        total_proceeds = Decimal('0')
+        for act in surplus_actions:
+            # Check min_notional for real orders, Virtual leg can be smaller but usually notional still applies
+            if abs(Decimal(str(act["diff_usdt"]))) >= min_notional or ignore_limits:
+                act["priority"] = 0
+                final_actions.append(act)
+                total_proceeds += abs(Decimal(str(act["diff_usdt"])))
 
-                if not ignore_limits:
-                    limit = self.tpv * Decimal('0.5') * lev
-                    if diff_usdt > limit: diff_usdt = limit
-                    if diff_usdt < -limit: diff_usdt = -limit
+        # 3. Calculate available funds for BUYs
+        available_funds = self.val_cash + total_proceeds
+        
+        # 4. Process Deficits with Priority (VIRTUAL first)
+        deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
+        
+        for act in deficit_actions:
+            if available_funds < min_notional and not ignore_limits:
+                continue # No money for even a minimum order
+                
+            needed_usdt = Decimal(str(act["diff_usdt"]))
+            
+            # Use available funds (even if less than needed)
+            if needed_usdt > available_funds and not ignore_limits:
+                actual_buy_usdt = available_funds
+            else:
+                actual_buy_usdt = needed_usdt
+                
+            if actual_buy_usdt >= min_notional or ignore_limits:
+                act["diff_usdt"] = float(actual_buy_usdt)
+                act["priority"] = 2
+                final_actions.append(act)
+                available_funds -= actual_buy_usdt
 
-                is_reduction: bool = diff_usdt < 0
-
-                actions.append({
-                    "type": "ORDER",
-                    "symbol": pos_key,
-                    "base_symbol": self.base_ticker,
-                    "position_side": pos_side,
-                    "diff_usdt": float(diff_usdt),
-                    "priority": 0 if is_reduction else 2
-                })
-
-        actions.sort(key=lambda x: x["priority"])
-        return actions
+        return final_actions

@@ -85,7 +85,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # Состояние синтетической доли и сейфа
     state = await load_json(state_file_path, {
         "virt_qty": 0.0,
-        "virt_entry_price": 0.0,
         "base_ticker": base_ticker,
         "siphoning_reserve": 0.0,
         "balance": target_initial_cap, # SSOT Balance
@@ -181,7 +180,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             logger.error(f"State Isolation Protocol failed: {e}")
 
     virt_qty = float(state.get("virt_qty", 0.0))
-    virt_entry_price = float(state.get("virt_entry_price", 0.0))
     siphoning_reserve = float(state.get("siphoning_reserve", 0.0))
     initial_tpv = float(state.get("initial_tpv", 0.0))
     reference_tpv = float(state.get("reference_tpv", 0.0))
@@ -367,13 +365,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Calculate isolated PnL and Equity
                 # [SSOT] TPV = Cash + Virtual Value. Cash is paper_state["balance"].
                 # In calculator.py, real_equity is treated as Wallet Balance.
-                real_equity = paper_state["balance"]
                 positions = paper_state["positions"] if paper_mode else {k: v for k, v in ticker_positions.items()}
 
                 if virt_qty == 0 or initial_tpv == 0:
                     if initial_tpv == 0:
                         # For shared accounts, we MUST use assigned initial_capital as base
-                        initial_tpv = portfolio_cfg.get("initial_capital", real_equity)
+                        initial_tpv = portfolio_cfg.get("initial_capital", paper_state["balance"])
                         reference_tpv = initial_tpv
                         logger.info(f"Initialized TPV base: {initial_tpv:.2f} (Isolated Shadow Balance)")
 
@@ -390,10 +387,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         paper_state["balance"] -= float(virt_qty_dec * dec_price)
                         await save_json(paper_state_file_path, paper_state)
 
-                        # 3. Фиксируем цену входа, чтобы PnL был 0.0 при старте
+                        # 3. Фиксируем количество
                         virt_qty = float(virt_qty_dec)
-                        virt_entry_price = float(price)
-                        state["virt_entry_price"] = virt_entry_price
 
                         logger.info(f"🚀 Initialized Virtual: {virt_qty} units (Cost: {virt_qty*float(dec_price):.2f} USDT deducted from Balance)")
 
@@ -402,6 +397,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
+
+                # SSOT real_equity for calculator
+                real_equity = paper_state["balance"]
 
                 # REMOVED: Migration Sanity Check (Caused TPV leakage)
 
@@ -419,7 +417,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     initial_capital=initial_tpv,
                     long_entry_price=l_entry,
                     short_entry_price=s_entry,
-                    virt_entry_price=virt_entry_price
+                    last_rebalance_price=state.get("last_rebalance_price", 0.0)
                 )
                 calc_res = calc.calculate_rebalance(targets, current_threshold, (current_threshold < 0))
                 
@@ -558,7 +556,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                     l_p, s_p, v_p = calc_res['share_long_pct'], calc_res['share_short_pct'], calc_res['share_virt_pct']
                     c_p = calc_res['share_cash_pct']
-                    pnl_l, pnl_s, pnl_v = calc_res['pnl_l'], calc_res['pnl_s'], calc_res['pnl_v']
+                    
+                    # Values for absolute breakdown
+                    v_l, v_s, v_v, v_c = calc_res['val_long'], calc_res['val_short'], calc_res['val_virt'], calc_res['val_cash']
                     total_pnl = calc_res.get("total_pnl", tpv_total - initial_tpv)
 
                     l_target = Decimal(str(targets['BASE_LONG']['share']))
@@ -567,10 +567,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                     h_msg = (
                         f"Heartbeat: TPV={tpv_total:.2f}{res_str} | PnL={total_pnl:+.2f} | {base_ticker}={price:.6g} | "
-                        f"L:{l_p:.1f}% [{get_dev(Decimal(str(l_p))/100, l_target):+.1f}%] {{{pnl_l:+.2f}$}} | "
-                        f"S:{s_p:.1f}% [{get_dev(Decimal(str(s_p))/100, s_target):+.1f}%] {{{pnl_s:+.2f}$}} | "
-                        f"V:{v_p:.1f}% [{get_dev(Decimal(str(v_p))/100, v_target):+.1f}%] {{{pnl_v:+.2f}$}} | "
-                        f"C:{c_p:.1f}%"
+                        f"L:{l_p:.1f}% [{get_dev(Decimal(str(l_p))/100, l_target):+.1f}%] {{{v_l:+.2f}$}} | "
+                        f"S:{s_p:.1f}% [{get_dev(Decimal(str(s_p))/100, s_target):+.1f}%] {{{v_s:+.2f}$}} | "
+                        f"V:{v_p:.1f}% [{get_dev(Decimal(str(v_p))/100, v_target):+.1f}%] {{{v_v:+.2f}$}} | "
+                        f"C:{c_p:.1f}% {{{v_c:.2f}$}}"
                     )
                     logger.info(h_msg)
                 
@@ -670,18 +670,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     # 2. Обновление количества
                                     new_v_qty = virt_qty_before + diff_usdt / dec_price
 
-                                    # 3. Установка цены входа (только при открытии с нуля)
-                                    if diff_usdt > 0 and virt_qty_before == 0:
-                                        virt_entry_price = float(dec_price)
-                                        state["virt_entry_price"] = virt_entry_price
-
-                                    # 4. Value-based Dust Guard: если позиция меньше 1.0 USDT — в ноль
+                                    # 3. Value-based Dust Guard: если позиция меньше 1.0 USDT — в ноль
                                     if abs(new_v_qty * dec_price) < Decimal('1.0'):
                                         # Возвращаем остатки в кэш перед обнулением
                                         paper_state["balance"] += float(new_v_qty * dec_price)
                                         new_v_qty = Decimal('0')
-                                        virt_entry_price = 0.0
-                                        state["virt_entry_price"] = virt_entry_price
                                         logger.info(f"🧹 Dust Guard: Position liquidated (value < 1.0 USDT)")
 
                                     virt_qty = float(new_v_qty)
@@ -777,7 +770,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     initial_capital=initial_tpv,
                     long_entry_price=safe_l_entry,
                     short_entry_price=safe_s_entry,
-                    virt_entry_price=virt_entry_price
+                    last_rebalance_price=state.get("last_rebalance_price", 0.0)
                 )
                 safe_calc_res = safe_calc.calculate_rebalance(targets, -1.0, True)
 
@@ -926,7 +919,6 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         state = await load_json(state_file_path, {})
         state.update({
             "virt_qty": 0.0,
-            "virt_entry_price": 0.0,
             "initial_tpv": 0.0,
             "reference_tpv": 0.0,
             "tpv_ath": 0.0,
