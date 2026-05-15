@@ -335,39 +335,59 @@ async def manage_swarm():
             swapped_count += 1
     
     # 4. Выбор Чемпионов для REAL (Меритократия + Белый список)
+    # --- НОВАЯ ЛОГИКА: Sticky Slots & Replacement Threshold ---
     ready_pool = []
     now = time.time()
     min_cycles = config.get("min_cycles_for_rank", 20)
     real_whitelist = set(config.get("real_whitelist", []))
+    replacement_threshold = config.get("replacement_efficiency_threshold_pct", 20.0)
+    
+    current_real_tickers = [k.replace("r_", "") for k in running_info.keys() if k.startswith("r_")]
 
     logger.info(f"Selecting champions (Max REAL slots: {max_real_slots}, Min Cycles: {min_cycles}, Whitelist: {len(real_whitelist)})...")
     for ticker in all_sorted:
         perf = perf_dict.get(ticker, {})
-        profit = perf.get("profit", 0)
+        profit = perf.get("profit", 0) # Это paper_profit
         bot_cycles = perf.get("cycles", 0)
         ts_timeout_end = perf.get("trailing_stop_paper_timeout_end", 0.0)
+        eff = perf.get("efficiency", 0.0)
         
-        if now < ts_timeout_end:
-            continue
+        if now < ts_timeout_end: continue
+        if ticker not in real_whitelist: continue
 
-        # ПРОВЕРКА БЕЛОГО СПИСКА
-        is_whitelisted = ticker in real_whitelist
-        if not is_whitelisted:
-            # logger.debug(f"ℹ️ {ticker} not in real_whitelist. Paper-only.")
-            continue
+        # ПРОВЕРКА STICKY (Drawdown Protection)
+        is_running_real = ticker in current_real_tickers
+        is_sticky = False
+        if is_running_real:
+            # Читаем РЕАЛЬНЫЙ стейт бота
+            real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
+            real_pnl = real_state.get("total_pnl_pct", 0.0)
+            if real_pnl < 0:
+                logger.info(f"🛡️ {ticker} is currently in REAL drawdown ({real_pnl:.2f}%). Slot is STICKY.")
+                is_sticky = True
 
-        # СТРОГИЙ ОТБОР: Только прибыльные И накопившие достаточно циклов (опыта)
-        if profit > 0 and bot_cycles >= min_cycles:
-            logger.info(f"✅ {ticker} qualified for REAL: Profit {profit:.2f}%, Cycles {bot_cycles}/{min_cycles}")
+        # СТРОГИЙ ОТБОР: Только прибыльные (на бумаге) ИЛИ уже работающие в просадке
+        if (profit > 0 and bot_cycles >= min_cycles) or is_sticky:
+            # Расчет скорректированной эффективности для сортировки (Меритократия с защитой)
+            sort_eff = eff
+            if is_sticky:
+                # Абсолютный приоритет: Не увольняем, пока не выйдет из просадки
+                sort_eff = eff + 1000000.0
+            elif is_running_real:
+                # Бонус лояльности: Заменяем только если кандидат значительно (>20%) лучше
+                sort_eff = eff * (1 + replacement_threshold / 100.0)
+            
+            perf_dict[ticker]['sort_eff'] = sort_eff
             ready_pool.append(ticker)
+            
+            status_flag = "STICKY" if is_sticky else ("REAL" if is_running_real else "CANDIDATE")
+            logger.info(f"✅ {ticker} qualified for REAL [{status_flag}]: Paper Profit {profit:.2f}%, Sort Eff: {sort_eff:.4f}")
         else:
-            reason = ""
-            if profit <= 0: reason += f"Profit {profit:.2f} <= 0 "
-            if bot_cycles < min_cycles: reason += f"Cycles {bot_cycles} < {min_cycles}"
-            logger.info(f"❌ {ticker} NOT qualified: {reason}")
+            if ticker in current_real_tickers:
+                logger.warning(f"⚠️ {ticker} is REAL but NOT qualified (Paper Profit {profit:.2f} <= 0).")
 
-    # Сортировка REAL пула (лучшие из ПРИБЫЛЬНЫХ и ГОТОВЫХ)
-    ready_pool.sort(key=lambda x: perf_dict[x]['efficiency'], reverse=True)
+    # Сортировка REAL пула по СКОРРЕКТИРОВАННОЙ эффективности
+    ready_pool.sort(key=lambda x: perf_dict[x].get('sort_eff', 0.0), reverse=True)
     target_real_bots = ready_pool[:max_real_slots]
     
     # ИТОГОВЫЙ СПИСОК ИНКУБАТОРА (всего paper_mode_bots слотов)

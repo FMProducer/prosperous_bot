@@ -389,15 +389,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         dec_price = Decimal(str(price))
                         
                         virt_qty_dec = (target_v_share * initial_cap) / dec_price
+                        virt_cost = float(virt_qty_dec * dec_price)
                         
-                        # 2. ВЫЧИТАЕМ стоимость покупки из кэша
-                        paper_state["balance"] -= float(virt_qty_dec * dec_price)
+                        # 2. ВЫЧИТАЕМ стоимость покупки из кэша (для Paper) и записываем ДОЛГ (для Real)
+                        paper_state["balance"] -= virt_cost
+                        state["virt_debt"] = state.get("virt_debt", 0.0) + virt_cost
                         await save_json(paper_state_file_path, paper_state)
 
                         # 3. Фиксируем количество
                         virt_qty = float(virt_qty_dec)
 
-                        logger.info(f"🚀 Initialized Virtual: {virt_qty} units (Cost: {virt_qty*float(dec_price):.2f} USDT deducted from Balance)")
+                        logger.info(f"🚀 Initialized Virtual: {virt_qty} units (Cost: {virt_cost:.2f} USDT added to virt_debt)")
 
                     state.update({
                         "virt_qty": virt_qty,
@@ -406,9 +408,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     })
 
                 # SSOT real_equity for calculator
-                real_equity = paper_state["balance"]
-
-                # REMOVED: Migration Sanity Check (Caused TPV leakage)
+                if paper_mode:
+                    real_equity = paper_state["balance"]
+                else:
+                    # REAL MODE RECONCILIATION:
+                    # Get fresh balance from exchange
+                    wallet_balance = float(m_info.get("totalWalletBalance", 0.0))
+                    # Adjusted Equity = Exchange Balance - Virtual Debt
+                    real_equity = wallet_balance - state.get("virt_debt", 0.0)
+                    if real_equity < 0: real_equity = 0.0
+                    
+                    # Also keep paper_state["balance"] somewhat in sync for history
+                    paper_state["balance"] = real_equity
 
                 # Direct synchronous call to PortfolioCalculator to reduce latency
                 current_threshold = -1.0 if (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0) else threshold
@@ -673,6 +684,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                                     # 1. Списание/начисление кэша (Cash Accounting)
                                     paper_state["balance"] -= float(diff_usdt)
+                                    # Track debt for real mode reconciliation
+                                    state["virt_debt"] = state.get("virt_debt", 0.0) + float(diff_usdt)
 
                                     # 2. Обновление количества
                                     new_v_qty = virt_qty_before + diff_usdt / dec_price
