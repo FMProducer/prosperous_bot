@@ -126,6 +126,11 @@ class StatusAggregator:
                 cycles = state.get("rebalance_cycles", 0)
                 siphoned = state.get("siphoning_reserve", 0.0)
                 
+                # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
+                # Используем min_cycles=20 для стабилизации рейтинга новичков
+                min_cycles = config.get("min_cycles_for_rank", 20)
+                efficiency = profit / max(cycles, min_cycles)
+                
                 total_profit += profit
                 total_safe += siphoned
                 
@@ -141,16 +146,18 @@ class StatusAggregator:
                 real_whitelist = config.get("real_whitelist", [])
                 vetted_icon = " 🛡️" if ticker in real_whitelist else ""
                 
-                line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT ({cycles} cyc)"
+                # Чистый формат без скобок и лишних слов
+                line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT {cycles} cyc"
                 if siphoned > 0:
                     line += f" 🛡️<code>{siphoned:.2f}</code>"
-                summary_lines.append((profit, line))
+                summary_lines.append((efficiency, line))
             except Exception as e:
                 logger.error(f"Error reading {f_path}: {e}")
 
         if not summary_lines:
             return "", 0.0, 0.0
 
+        # Сортировка по ЭФФЕКТИВНОСТИ (x[0] теперь содержит efficiency)
         summary_lines.sort(key=lambda x: x[0], reverse=True)
         section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
         return section_text, total_profit, total_safe

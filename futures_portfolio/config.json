@@ -23,16 +23,16 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 86.0,
+      "initial_capital": 85.0,
       "paper_initial_capital": 86.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
-          "share": 0.28,
+          "share": 0.27,
           "leverage": 5
         },
         "BASE_SHORT": {
-          "share": 0.35,
+          "share": 0.34,
           "leverage": 5
         },
         "VIRTUAL": {
@@ -41,7 +41,7 @@
         }
       },
       "safety_guards": {
-        "max_spread_pct": 0.15,
+        "max_spread_pct": 0.1,
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
@@ -52,38 +52,18 @@
       }
     }
   ],
-  "live_swarm": [
-    "GOATUSDT"
-  ],
-  "real_whitelist": [
-    "SIRENUSDT",
-    "CGPTUSDT",
-    "GOATUSDT",
-    "CFXUSDT",
-    "ZEREBROUSDT",
-    "VICUSDT"
-  ],
+  "live_swarm": [],
+  "real_whitelist": [],
   "black_list": [],
   "tickers": [
-    "1000LUNCUSDT",
-    "BBUSDT",
-    "BIOUSDT",
-    "CFXUSDT",
     "CGPTUSDT",
-    "DODOXUSDT",
-    "DOGSUSDT",
-    "DUSKUSDT",
-    "GOATUSDT",
-    "IMXUSDT",
-    "INJUSDT",
+    "DUSDT",
+    "GPSUSDT",
     "MLNUSDT",
-    "PHBUSDT",
-    "PNUTUSDT",
-    "RUNEUSDT",
-    "SIRENUSDT",
+    "SAGAUSDT",
+    "STORJUSDT",
     "VICUSDT",
-    "VVVUSDT",
     "ZEREBROUSDT"
   ],
-  "base_ticker": "1000LUNCUSDT"
+  "base_ticker": "CGPTUSDT"
 }

@@ -73,6 +73,15 @@ class TickerRanker:
             'trend': trend.fillna(0),
             'cycles': cycles.fillna(0)
         })
+        
+        # [REFINED] TOXICITY DETECTION
+        # 1. Extreme Trend Efficiency (> 15%) - Pure one-way movement (Kernel-style)
+        # 2. Extreme Net Change (> 10%) - Too risky for neutral delta
+        results['is_toxic'] = (
+            (results['trend'] > 15.0) | 
+            (results['net_change'].abs() > 10.0)
+        )
+        
         return results
 
     def rank_by_momentum(self, window: int = 14) -> pd.Series:
@@ -131,7 +140,7 @@ class TickerScanner:
         df['time'] = pd.to_datetime(df['time'], unit='ms')
         return df.set_index(['ticker', 'time'])
 
-    async def get_top_tickers(self, min_volume: float = 10_000_000) -> List[Dict[str, Any]]:
+    async def get_top_tickers(self, min_volume: float = 20_000_000) -> List[Dict[str, Any]]:
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
         white_list = set()
@@ -154,11 +163,24 @@ class TickerScanner:
         async with aiohttp.ClientSession(trust_env=True) as session:
             tickers_24h = await self.fetch(session, "/fapi/v1/ticker/24hr")
             premium_info = await self.fetch(session, "/fapi/v1/premiumIndex")
-            if not tickers_24h or not premium_info:
+            book_tickers = await self.fetch(session, "/fapi/v1/ticker/bookTicker")
+            
+            if not tickers_24h or not premium_info or not book_tickers:
                 logger.error("Failed to fetch initial market data.")
                 return []
 
             funding_map = {item['symbol']: float(item['lastFundingRate']) for item in premium_info}
+            
+            # Расчет мгновенного спреда
+            spread_map = {}
+            for bt in book_tickers:
+                symbol = bt['symbol']
+                bid = float(bt['bidPrice'])
+                ask = float(bt['askPrice'])
+                if bid > 0:
+                    spread_map[symbol] = (ask - bid) / bid * 100
+                else:
+                    spread_map[symbol] = 999.0
             
             candidates = []
             for t in tickers_24h:
@@ -191,6 +213,11 @@ class TickerScanner:
 
             metrics_df['symbol'] = metrics_df.index
             metrics_df['funding'] = metrics_df['symbol'].map(funding_map).fillna(0.0) * 100
+            metrics_df['spread'] = metrics_df['symbol'].map(spread_map).fillna(999.0)
+            
+            # [FINAL TOXIC CHECK] Liquidity + Trend
+            # Блокируем если спред > 0.15% ИЛИ тренд слишком сильный
+            metrics_df['is_toxic'] = (metrics_df['is_toxic']) | (metrics_df['spread'] > 0.15)
             
             # Фильтр по циклам (минимум 10)
             metrics_df = metrics_df[metrics_df['cycles'] >= 10].copy()
@@ -206,7 +233,7 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=10_000_000):
+async def main(quiet=False, min_volume=20_000_000):
     threshold = 0.02
     scanner_period_days = 1.0
     try:
@@ -221,12 +248,14 @@ async def main(quiet=False, min_volume=10_000_000):
     top_tickers = await scanner.get_top_tickers(min_volume=min_volume)
     
     if not quiet:
-        print("\n" + "="*125)
-        print(f"{'SYMBOL':<15} | {'CYCLES':<8} | {'NET MOVE%':<12} | {'MAX SPURT%':<12} | {'TREND EFF%':<12} | {'FUNDING%'}")
-        print("-" * 125)
+        print("\n" + "="*145)
+        print(f"{'SYMBOL':<15} | {'CYCLES':<8} | {'NET MOVE%':<12} | {'MAX SPURT%':<12} | {'TREND EFF%':<12} | {'SPREAD%':<10} | {'FUNDING%'}")
+        print("-" * 145)
         for t in top_tickers[:50]:
-            print(f"{t['symbol']:<15} | {t['cycles']:<8} | {t['net_change']:<12.2f} | {t['max_spurt']:<12.2f} | {t['trend']:<12.2f} | {t['funding']:.4f}")
-        print("="*125)
+            toxic_tag = " [X]" if t.get('is_toxic') else ""
+            symbol_str = f"{t['symbol']}{toxic_tag}"
+            print(f"{symbol_str:<15} | {t['cycles']:<8} | {t['net_change']:<12.2f} | {t['max_spurt']:<12.2f} | {t['trend']:<12.2f} | {t['spread']:<10.4f} | {t['funding']:.4f}")
+        print("="*145)
     
     return top_tickers
 

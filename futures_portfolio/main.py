@@ -261,7 +261,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         global_threshold = portfolio_cfg["rebalance_threshold"]
                         check_interval = portfolio_cfg.get("check_interval_sec", 15)
                         ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
-                        threshold = ticker_thresholds.get(base_ticker, global_threshold)
+                        # [FIX] Гарантируем, что торговый порог не путается с порогами защиты
+                        threshold = float(ticker_thresholds.get(base_ticker, global_threshold))
 
                         siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
                         reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
@@ -278,11 +279,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                         # Обновляем параметры защит
                         guards_cfg = portfolio_cfg.get("safety_guards", {})
-                        max_spread = guards_cfg.get("max_spread_pct", 0.15) / 100
-                        max_velocity = guards_cfg.get("max_price_velocity_pct", 1.0) / 100
-                        velocity_window = guards_cfg.get("velocity_window_sec", 60)
+                        max_spread = float(guards_cfg.get("max_spread_pct", 0.15)) / 100.0
+                        max_velocity = float(guards_cfg.get("max_price_velocity_pct", 1.0)) / 100.0
+                        velocity_window = int(guards_cfg.get("velocity_window_sec", 60))
 
-                        logger.info(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%")
+                        logger.info(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
 
                     if i % 20 == 0:
                         logger.debug(f"Threshold running at: {threshold*100:.2f}%")
@@ -304,23 +305,36 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if not price: raise Exception(f"Could not fetch {base_ticker} mark price")
                 
                 # -------------------------------------------------------------------------
-                # [SAFETY] VELOCITY GUARD
+                # [SAFETY] VELOCITY & TREND GUARD
                 # -------------------------------------------------------------------------
                 now = time.time()
                 price_history.append((now, price))
-                # Удаляем старые записи за пределами окна
-                while price_history and (now - price_history[0][0]) > velocity_window:
+                # Увеличиваем окно истории до 300 секунд для анализа тренда
+                while price_history and (now - price_history[0][0]) > 300:
                     price_history.popleft()
                 
                 if len(price_history) > 1:
-                    old_t, old_p = price_history[0]
+                    # 1. VELOCITY GUARD (% за окно 60с)
+                    v_point = next((p for p in price_history if now - p[0] <= velocity_window), price_history[0])
+                    old_t, old_p = v_point
                     velocity = abs(price - old_p) / old_p
                     if velocity > max_velocity:
                         if i % 5 == 0:
                             logger.warning(f"🚀 Velocity Guard: {base_ticker} is moving too fast ({velocity*100:.2f}% in {int(now-old_t)}s). Blocking trades.")
-                        await asyncio.sleep(check_interval)
-                        i += 1
-                        continue
+                        await asyncio.sleep(check_interval); i += 1; continue
+
+                    # 2. TREND GUARD (Efficiency Filter)
+                    if len(price_history) > 10:
+                        p_list = [p[1] for p in price_history]
+                        net_move = abs(p_list[-1] - p_list[0])
+                        total_path = sum(abs(p_list[j] - p_list[j-1]) for j in range(1, len(p_list)))
+                        trend_eff = (net_move / total_path) if total_path > 0 else 0
+                        
+                        # Если прошли > 0.5% и более 85% пути в одну сторону - это "палка"
+                        if (net_move / p_list[0] > 0.005) and trend_eff > 0.85:
+                            if i % 5 == 0:
+                                logger.warning(f"🚫 Trend Guard: {base_ticker} toxic move (Eff: {trend_eff:.2f}, Move: {net_move/p_list[0]*100:.2f}%). Freezing.")
+                            await asyncio.sleep(check_interval); i += 1; continue
 
                 # -------------------------------------------------------------------------
                 # [SAFETY] SPREAD GUARD (Only for REAL mode or detailed Paper simulation)
