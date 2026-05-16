@@ -44,7 +44,7 @@ def mock_connector():
     connector.get_hedge_mode = AsyncMock(return_value=True)
     connector.get_free_balance = AsyncMock(return_value=10000.0)
     connector.get_positions = AsyncMock(return_value={"BTCUSDT_LONG": {"qty": 1.0, "entry_price": 60000.0}})
-    connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 10.0})
+    connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 10.0, "total_wallet_balance": 10000.0})
     connector.get_bnb_balance = AsyncMock(return_value=1.0)
     connector.set_leverage = AsyncMock()
     connector.set_margin_type = AsyncMock()
@@ -149,7 +149,7 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
 async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_notifier):
     mock_config["paper_mode"] = False
     state = {"virt_qty": 0.0, "base_ticker": "BTCUSDT", "initial_tpv": 10000.0, "rebalance_cycles": 10}
-    mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 3.0})
+    mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 3.0, "total_wallet_balance": 10000.0})
     mock_connector.get_positions = AsyncMock(return_value={"BTCUSDT_LONG": {"qty": 1.0, "entry_price": 60000.0}})
 
     def load_side_effect(path, default=None):
@@ -171,7 +171,7 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
 async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_notifier):
     mock_config["paper_mode"] = False
     state = {"virt_qty": 0.0, "base_ticker": "BTCUSDT", "initial_tpv": 10000.0, "rebalance_cycles": 10}
-    mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 1.5})
+    mock_connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 1.5, "total_wallet_balance": 10000.0})
     mock_connector.get_positions = AsyncMock(return_value={"BTCUSDT_LONG": {"qty": 1.0, "entry_price": 60000.0}})
 
     def load_side_effect(path, default=None):

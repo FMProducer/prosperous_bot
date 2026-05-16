@@ -66,7 +66,7 @@ class PortfolioExecutor:
 
         try:
             # Конвертируем в строку для API Binance, чтобы избежать float-погрешностей
-            str_qty = str(abs(qty).normalize())
+            str_qty = "{:f}".format(abs(qty).normalize())
 
             params = {
                 "symbol": symbol,

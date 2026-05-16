@@ -12,6 +12,7 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
+                 virt_entry_price: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
                  targets: Dict[str, Dict] = None, initial_capital: float = 10000.0,
                  last_rebalance_price: float = 0.0) -> None:
@@ -65,9 +66,11 @@ class PortfolioCalculator:
         self.val_virt = self.virt_value
         
         # V-PnL: Change in market value relative to the capital allocated to it
-        # (This is illustrative for the Heartbeat)
-        v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
-        self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
+        if virt_entry_price > 0:
+            self.pnl_v = (self.price - Decimal(str(virt_entry_price))) * self.virt_qty
+        else:
+            v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
+            self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
 
         # 5. Cash is the remaining liquidity (Free Wallet Balance)
         self.val_cash = self.tpv - (self.val_long + self.val_short + self.val_virt)
