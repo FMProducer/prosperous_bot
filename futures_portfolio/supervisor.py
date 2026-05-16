@@ -71,7 +71,7 @@ async def start_bot(ticker: str, is_paper: bool = True):
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
-    min_cycles = config.get("min_cycles_for_rank", 20)
+    min_cycles = config.get("min_cycles_for_rank", 10)
     
     # [FIX] Гарантируем наличие всех ключей даже если файл отсутствует
     if not state: 
@@ -149,10 +149,17 @@ async def manage_swarm():
                 is_sticky = True
         
         # Только прибыльные или Sticky
-        if p['profit'] > 0 or is_sticky:
+        min_cycles_required = config.get("min_cycles_for_rank", 10)
+        has_enough_history = p['cycles'] >= min_cycles_required
+
+        # Бот допускается к оценке REAL, если он прошел карантин по циклам,
+        # ЛИБО если он уже торгует в реале (is_running_real), чтобы не дергать процессы зря.
+        if (p['profit'] > 0 and (has_enough_history or is_running_real)) or is_sticky:
             sort_eff = p['eff']
-            if is_sticky: sort_eff += 1000000.0
-            elif is_running_real: sort_eff *= (1 + replacement_threshold / 100.0)
+            if is_sticky:
+                sort_eff += 1000000.0
+            elif is_running_real:
+                sort_eff *= (1 + replacement_threshold / 100.0)
             
             p['sort_eff'] = sort_eff
             ready_pool.append(ticker)
