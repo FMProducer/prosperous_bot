@@ -422,6 +422,7 @@ class PortfolioExecutor:
     async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """
         Векторизованное (конкурентное) выполнение действий по ребалансировке с принудительным Market-only исполнением.
+        SURPLUS-FIRST: Reductions (SELLs) are executed before Expansions (BUYs).
         """
         if not actions:
             return []
@@ -430,23 +431,29 @@ class PortfolioExecutor:
         if portfolio_cfg:
             portfolio_cfg["limit_order_enabled"] = False
 
-        tasks = [
-            self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
-            for action in actions
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Surplus-First Doctrine: Execute SELLs (reductions) before BUYs (expansions)
+        reductions = [a for a in actions if a.get("is_reduction")]
+        expansions = [a for a in actions if not a.get("is_reduction")]
 
         final_results = []
-        for r in results:
-            if isinstance(r, Exception):
-                logger.error(f"Action execution failed with exception: {r}")
-                final_results.append({"status": "ERROR", "message": str(r)})
-            else:
-                final_results.append(r)
+
+        for group in [reductions, expansions]:
+            if not group:
+                continue
+            tasks = [
+                self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
+                for action in group
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    logger.error(f"Action execution failed with exception: {r}")
+                    final_results.append({"status": "ERROR", "message": str(r)})
+                else:
+                    final_results.append(r)
 
         success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
         if len(actions) > 0:
-            logger.info(f"Executed {success_count}/{len(actions)} actions concurrently (Market-only).")
+            logger.info(f"Executed {success_count}/{len(actions)} actions in two phases (Surplus-First).")
 
         return final_results
