@@ -733,13 +733,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # Update execution results info
                                 key = res.get("symbol", "UNKNOWN")
                                 side = res.get("side", "UNKNOWN")
-                                # [FIX] If execution result is Success but qty is missing in result (common for REAL market), 
-                                # use the originally requested qty from the action context
-                                qty = res.get("qty")
-                                if qty is None:
-                                    # Try to find the original action that produced this result to get the requested qty
-                                    action = next((a for a in fused_actions if a.get("symbol") == key and a.get("side") == side), {})
-                                    qty = abs(action.get("qty", 0.0))
+
+                                # Берем строго то, что исполнила биржа
+                                qty = res.get("qty", 0.0)
+                                if qty <= 0.0:
+                                    logger.warning(f"⚠️ Skip state update for {key} because executed qty is {qty}")
+                                    continue # Не обновляем shadow_state фантомными данными!
                                 
                                 trade_pnl = res.get("trade_pnl", 0.0)
                                 reduce_only = res.get("reduce_only", False)
