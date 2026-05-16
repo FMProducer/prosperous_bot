@@ -1,11 +1,24 @@
-# 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.8.1)
+# 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.9.0)
 
 ## Completed Tasks
 - [x] Hardcoded `rebalance_threshold` to 0.01 in `rank_tickers.py` and enforced it by removing the configuration override for this parameter.
+- [x] Log Noise Suppression: Moved FUSE blocked and Config reloaded logs to DEBUG level.
+- [x] Success-Only Reporting: Suppressed "Rebalance Complete" logs/notifications when no trades occur.
+- [x] Telegram Startup Guard: Disabled Telegram notifications for Rebalance #1 to prevent startup spam.
 
 ## Next Steps
 
 Система управляет портфелем, извлекая прибыль из внутренней волатильности активов через динамическое управление долями капитала (Equity-based).
+
+---
+
+## 🗓 16 мая 2026: Протокол «Информационная Тишина» (v3.9.0)
+
+### 🛠 Оптимизация логирования и уведомлений:
+1.  **Log Noise Suppression:** Уровень логирования для предупреждений `FUSE blocked` и сообщений `Config reloaded` изменен с `INFO/WARNING` на `DEBUG`. Это устранило основной поток технического шума в консоли.
+2.  **Success-Only Reporting:** Итоговые отчеты о ребалансировке теперь формируются только при наличии **реально выполненных** и успешных сделок (`any_success`). Если все действия заблокированы предохранителем, бот работает молча.
+3.  **Telegram Startup Guard:** Внедрен фильтр для подавления уведомлений о самой первой ребалансировке (`Rebalance #1`). Это исключает «шторм» сообщений в Telegram при массовом перезапуске ботов, сохраняя при этом запись в локальных логах.
+4.  **Cycle Accounting Fix:** Инкремент счетчика циклов и обновление базовой цены (`last_rebalance_price`) перенесены внутрь блока успешного исполнения. Теперь статистика бота отражает только реально совершенные изменения портфеля.
 
 ---
 

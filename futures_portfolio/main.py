@@ -251,6 +251,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         while True:
             state_dirty = False
             paper_state_dirty = False
+            any_success = False
             try:
                 # Dynamic config reload
                 try:
@@ -287,7 +288,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         max_velocity = float(guards_cfg.get("max_price_velocity_pct", 1.0)) / 100.0
                         velocity_window = int(guards_cfg.get("velocity_window_sec", 60))
 
-                        logger.info(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
+                        logger.debug(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
 
                     if i % 20 == 0:
                         logger.debug(f"Threshold running at: {threshold*100:.2f}%")
@@ -625,6 +626,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 
                 # Логика ребалансировки
                 valid_actions = []
+                fused_actions = []
                 if actions:
                     # Внедряем Notional Value Guard для ВСЕХ ордеров
                     # Проверяем и в портфеле, и в глобальном конфиге
@@ -635,7 +637,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     # [V3.6.0] ANTI-CHURN PRICE FUSE (Enforce BLSH)
                     # -------------------------------------------------------------------------
                     last_reb_price = state.get("last_rebalance_price", 0.0)
-                    fused_actions = []
 
                     if last_reb_price == 0:
                         fused_actions = valid_actions
@@ -659,13 +660,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if price <= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.warning(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    logger.debug(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             elif side == "SELL":
                                 limit_price = last_reb_price * (1 + threshold)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.warning(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    logger.debug(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             else:
                                 fused_actions.append(action)
                     
@@ -809,12 +810,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                         if any_success:
                             state["last_rebalance_price"] = price
+                            cycles += 1
+                            state["rebalance_cycles"] = cycles
                             state_dirty = True
                             logger.info(f"🎯 Baseline Updated: Last rebalance price set to {price:.6g}")
-
-                        cycles += 1
-                        state["rebalance_cycles"] = cycles
-                        state_dirty = True
 
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
                 # siphoning_reserve is local variable, but we should update state as well
@@ -890,14 +889,19 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Update reporting value in summary to account for new reserve
                 final_reported_tpv = total_tpv_final
 
-                if actions and len(valid_actions) > 0:
+                if any_success:
                     summary_msg = (
                         f"<b>✅ Rebalance #{cycles} Complete</b>: <code>{base_ticker}</code>\n"
                         f"New Shares: L:{safe_calc_res['share_long_pct']:.1f}% S:{safe_calc_res['share_short_pct']:.1f}% V:{safe_calc_res['share_virt_pct']:.1f}%\n"
                         f"TPV: <code>{total_tpv_final:.2f} USDT</code>"
                     )
                     logger.info(f"Rebalance #{cycles} complete. TPV: {total_tpv_final:.2f}")
-                    asyncio.create_task(notifier.send_message(summary_msg))
+                    
+                    # [V3.9.0] Silence Telegram for Rebalance #1 (Baseline formation) to avoid startup spam
+                    if cycles > 1:
+                        asyncio.create_task(notifier.send_message(summary_msg))
+                    else:
+                        logger.info(f"ℹ️ Rebalance #1 (Baseline) notification suppressed in Telegram.")
 
                 # Всегда обновляем стейт для агрегатора статусов в конце каждого цикла
                 state.update({
