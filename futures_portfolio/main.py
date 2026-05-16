@@ -714,31 +714,52 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                             if status in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                                 any_success = True
+                                # -------------------------------------------------------------------------
+                                # [V3.8.3] LOGGING & ACCOUNTING FOR VIRTUAL SPOT POSITION (1x Leverage)
+                                # -------------------------------------------------------------------------
                                 if res.get("type") == "VIRTUAL_ORDER":
                                     diff_usdt = Decimal(str(res.get("diff_usdt", 0.0)))
                                     dec_price = Decimal(str(price))
                                     virt_qty_before = Decimal(str(virt_qty))
 
-                                    # 1. Обновляем долг виртуальной ноги (Net Investment)
+                                    # 1. Списание/начисление кэша (Cash Accounting)
+                                    current_balance = Decimal(str(paper_state["balance"]))
+                                    paper_state["balance"] = float((current_balance - diff_usdt).quantize(Decimal('1e-4')))
+
+                                    # Фиксация затрат (долга) для Real-режима
                                     state["virt_debt"] = float((Decimal(str(state.get("virt_debt", 0.0))) + diff_usdt).quantize(Decimal('1e-4')))
+                                    paper_state_dirty = True
                                     state_dirty = True
 
-                                    # 2. Обновление количества
-                                    new_v_qty = virt_qty_before + diff_usdt / dec_price
+                                    # 2. Пересчет количества монет по цене "сделки"
+                                    # Дельта объема в чистых контрактах (монетах) базового актива
+                                    v_delta_qty = diff_usdt / dec_price
+                                    new_v_qty = virt_qty_before + v_delta_qty
 
                                     # 3. Value-based Dust Guard: если позиция меньше 1.0 USDT — в ноль
                                     if abs(new_v_qty * dec_price) < Decimal('1.0'):
-                                        # Корректируем долг при ликвидации пыли
-                                        dust_value = new_v_qty * dec_price
-                                        state["virt_debt"] = float((Decimal(str(state.get("virt_debt", 0.0))) - dust_value).quantize(Decimal('1e-4')))
+                                        current_balance = Decimal(str(paper_state["balance"]))
+                                        paper_state["balance"] = float((current_balance + new_v_qty * dec_price).quantize(Decimal('1e-4')))
+                                        v_delta_qty = -new_v_qty # Фиксируем закрытие остатка
                                         new_v_qty = Decimal('0')
-                                        logger.info(f"🧹 Dust Guard: Position liquidated (value < 1.0 USDT)")
+                                        logger.info(f"🧹 Dust Guard: Virtual Spot position liquidated (value < 1.0 USDT)")
 
                                     virt_qty = float(new_v_qty.quantize(Decimal('1e-8')))
                                     state["virt_qty"] = virt_qty
                                     state_dirty = True
-                                    
-                                    logger.info(f"{'➕ VIRTUAL BUY' if diff_usdt > 0 else '➖ VIRTUAL SELL'}: {abs(float(diff_usdt)):.2f} USDT")
+
+                                    # 4. ПОЛНОЕ ИНФОРМАТИВНОЕ ЛОГИРОВАНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ
+                                    v_side = "BUY" if diff_usdt > 0 else "SELL"
+                                    mode_tag = "PAPER" if paper_mode else "REAL"
+                                    v_notional = virt_qty * float(dec_price)
+
+                                    # Выводим строгий лог, идентичный реальной бирже
+                                    v_trade_log = (
+                                        f"📝 {mode_tag}_VIRTUAL: {v_side} {abs(float(v_delta_qty)):.4f} {base_ticker} @ {float(dec_price):.6g} "
+                                        f"| Flow: {float(diff_usdt):+.2f} USDT "
+                                        f"| Total Held: {virt_qty:.4f} {base_ticker.split('USDT')[0]} ({v_notional:.2f} USDT)"
+                                    )
+                                    logger.info(v_trade_log)
                                     continue
 
                                 key = res.get("symbol", "UNKNOWN")
