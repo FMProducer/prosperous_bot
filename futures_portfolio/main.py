@@ -244,9 +244,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_velocity = velocity_cfg.get("max_price_velocity_pct", 1.0) / 100
     velocity_window = velocity_cfg.get("velocity_window_sec", 60)
     price_history = deque() # Будет хранить (timestamp, price)
+    last_io_save = time.time()
 
     try:
         while True:
+            state_dirty = False
+            paper_dirty = False
             try:
                 # Dynamic config reload
                 try:
@@ -298,6 +301,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     reference_tpv = initial_tpv
                     state["initial_tpv"] = initial_tpv
                     state["reference_tpv"] = reference_tpv
+                    state_dirty = True
 
                 # Use Mark Price for TPV and rebalance triggers as recommended by Audit
                 prices = await connector.get_mark_prices([base_ticker])
@@ -408,7 +412,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         # 2. ВЫЧИТАЕМ стоимость покупки из кэша (для Paper) и записываем ДОЛГ (для Real)
                         paper_state["balance"] -= virt_cost
                         state["virt_debt"] = state.get("virt_debt", 0.0) + virt_cost
-                        await save_json(paper_state_file_path, paper_state)
+                        paper_dirty = True
 
                         # 3. Фиксируем количество
                         virt_qty = float(virt_qty_dec)
@@ -420,6 +424,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
+                    state_dirty = True
 
                 # SSOT real_equity for calculator
                 if paper_mode:
@@ -487,6 +492,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 if tpv_ath == 0 or tpv_total > tpv_ath:
                     tpv_ath = tpv_total
                     state["tpv_ath"] = tpv_ath
+                    state_dirty = True
 
                 if equity_trailing_stop_pct > 0 and tpv_ath > 0:
                     drawdown_pct = (1 - tpv_total / tpv_ath) * 100
@@ -495,6 +501,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         if violation_start == 0:
                             violation_start = now
                             state["trailing_stop_violation_start"] = violation_start
+                            state_dirty = True
                             logger.warning(f"Trailing Stop threshold breached ({drawdown_pct:.2f}%). Timeout: {equity_trailing_stop_timeout_sec}s")
                         
                         elapsed = now - violation_start
@@ -563,6 +570,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         if state.get("trailing_stop_violation_start", 0.0) > 0:
                             logger.info(f"Trailing Stop Recovered: drawdown {drawdown_pct:.2f}% is back below {equity_trailing_stop_pct}%")
                             state["trailing_stop_violation_start"] = 0.0
+                            state_dirty = True
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:
@@ -713,6 +721,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
+                                    state_dirty = True
+                                    paper_dirty = True
                                     
                                     logger.info(f"{'➕ VIRTUAL BUY' if diff_usdt > 0 else '➖ VIRTUAL SELL'}: {abs(float(diff_usdt)):.2f} USDT")
                                     continue
@@ -758,6 +768,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 paper_state["positions"][pos_key] = new_qty
                                 paper_state["balance"] += trade_pnl
                                 paper_state["balance"] -= res.get("commission", 0.0)
+                                paper_dirty = True
                                 
                                 mode_tag = "PAPER" if paper_mode else "REAL"
                                 trade_log = f"📝 {mode_tag}: {side} {qty} {pos_key} @ {price:.6g}"
@@ -769,13 +780,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                         if any_success:
                             state["last_rebalance_price"] = price
+                            state_dirty = True
                             logger.info(f"🎯 Baseline Updated: Last rebalance price set to {price:.6g}")
 
                         cycles += 1
                         state["rebalance_cycles"] = cycles
-
-                        # Always save paper_state to track shadow balance
-                        await save_json(paper_state_file_path, paper_state)
+                        state_dirty = True
 
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
                 if actions and len(valid_actions) > 0:
@@ -834,9 +844,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         siphoning_reserve += siphon_amount
                         # ALWAYS subtract from shadow balance to track isolated per-bot equity
                         paper_state["balance"] -= siphon_amount
-                        await save_json(paper_state_file_path, paper_state)
+                        paper_dirty = True
 
                         state["siphoning_reserve"] = siphoning_reserve
+                        state_dirty = True
                         logger.info(f"💰 SAFE ACTIVATED: Siphoned {siphon_amount:.4f} USDT. New Reserve: {siphoning_reserve:.2f}")
                         asyncio.create_task(notifier.send_message(f"💰 <b>SAFE</b>: +{siphon_amount:.4f} USDT (Surplus)"))
 

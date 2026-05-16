@@ -427,7 +427,6 @@ class PortfolioExecutor:
         if not actions:
             return []
 
-        # Override limit order settings in portfolio config for all actions
         if portfolio_cfg:
             portfolio_cfg["limit_order_enabled"] = False
 
@@ -467,7 +466,6 @@ class PortfolioExecutor:
             else:
                 final_results.append(r)
 
-        success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
         if len(actions) > 0:
             logger.info(f"Executed {success_count}/{len(actions)} actions in Surplus-First sequence ({len(reductions)} red, {len(expansions)} exp).")
 
