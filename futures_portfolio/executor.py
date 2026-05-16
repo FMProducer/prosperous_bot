@@ -421,7 +421,8 @@ class PortfolioExecutor:
 
     async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """
-        Векторизованное (конкурентное) выполнение действий по ребалансировке с принудительным Market-only исполнением.
+        Векторизованное (конкурентное) выполнение действий по ребалансировке.
+        Surplus-First Doctrine: Reductions (SELLs/liberating cash) are executed before expansions (BUYs/spending cash).
         """
         if not actions:
             return []
@@ -430,23 +431,44 @@ class PortfolioExecutor:
         if portfolio_cfg:
             portfolio_cfg["limit_order_enabled"] = False
 
-        tasks = [
-            self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
-            for action in actions
-        ]
+        # Split actions by intent (Surplus-First)
+        reductions = [a for a in actions if a.get("is_reduction")]
+        expansions = [a for a in actions if not a.get("is_reduction")]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results_dict = {}
 
+        # Stage 1: Execute Reductions (liberate cash/margin first)
+        if reductions:
+            red_tasks = [
+                self._execute_single_action(a, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
+                for a in reductions
+            ]
+            red_results = await asyncio.gather(*red_tasks, return_exceptions=True)
+            for a, r in zip(reductions, red_results):
+                results_dict[id(a)] = r
+
+        # Stage 2: Execute Expansions (spend available cash)
+        if expansions:
+            exp_tasks = [
+                self._execute_single_action(a, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
+                for a in expansions
+            ]
+            exp_results = await asyncio.gather(*exp_tasks, return_exceptions=True)
+            for a, r in zip(expansions, exp_results):
+                results_dict[id(a)] = r
+
+        # Reconstruct final results in original order
         final_results = []
-        for r in results:
+        for a in actions:
+            r = results_dict.get(id(a))
             if isinstance(r, Exception):
-                logger.error(f"Action execution failed with exception: {r}")
+                logger.error(f"Action execution failed: {r}")
                 final_results.append({"status": "ERROR", "message": str(r)})
             else:
                 final_results.append(r)
 
         success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
         if len(actions) > 0:
-            logger.info(f"Executed {success_count}/{len(actions)} actions concurrently (Market-only).")
+            logger.info(f"Executed {success_count}/{len(actions)} actions in Surplus-First sequence ({len(reductions)} red, {len(expansions)} exp).")
 
         return final_results

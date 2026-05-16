@@ -852,15 +852,23 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.info(f"Rebalance #{cycles} complete. TPV: {total_tpv_final:.2f}")
                     asyncio.create_task(notifier.send_message(summary_msg))
 
-                # Всегда обновляем стейт для агрегатора статусов в конце каждого цикла
-                state.update({
-                    "last_tpv": total_tpv_final,
-                    "last_profit": total_tpv_final - initial_tpv,
-                    "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
-                    "last_update": time.time(),
-                    "rebalance_cycles": cycles
-                })
-                await save_json(state_file_path, state)
+                # Обновляем метрики
+                current_time = time.time()
+                state_needs_save = False
+
+                # Проверяем мутации для оптимизации дисковых операций
+                if state.get("rebalance_cycles") != cycles or state.get("last_tpv") != total_tpv_final or (current_time - state.get("last_update", 0)) > 60:
+                    state.update({
+                        "last_tpv": total_tpv_final,
+                        "last_profit": total_tpv_final - initial_tpv,
+                        "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
+                        "last_update": current_time,
+                        "rebalance_cycles": cycles
+                    })
+                    state_needs_save = True
+
+                if state_needs_save:
+                    await save_json(state_file_path, state)
 
                 if (i + status_offset) % 100 == 0:
                     total_pnl_final = safe_calc_res.get("total_pnl", total_tpv_final - initial_tpv)
