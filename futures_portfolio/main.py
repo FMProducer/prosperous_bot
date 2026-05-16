@@ -244,6 +244,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_velocity = velocity_cfg.get("max_price_velocity_pct", 1.0) / 100
     velocity_window = velocity_cfg.get("velocity_window_sec", 60)
     price_history = deque() # Будет хранить (timestamp, price)
+    last_io_save = time.time()
 
     try:
         while True:
@@ -424,6 +425,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         "base_ticker": base_ticker, "siphoning_reserve": siphoning_reserve,
                         "initial_tpv": initial_tpv, "reference_tpv": reference_tpv
                     })
+                    state_dirty = True
 
                 # SSOT real_equity for calculator
                 if paper_mode:
@@ -722,6 +724,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                                     virt_qty = float(new_v_qty)
                                     state["virt_qty"] = virt_qty
+                                    state_dirty = True
+                                    paper_dirty = True
                                     
                                     logger.info(f"{'➕ VIRTUAL BUY' if diff_usdt > 0 else '➖ VIRTUAL SELL'}: {abs(float(diff_usdt)):.2f} USDT")
                                     continue
