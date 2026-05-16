@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import numpy.typing as npt
 from typing import Dict, List, Optional, Tuple, Any, Union
+from dataclasses import dataclass, field
 import asyncio
 import aiohttp
 import time
@@ -73,31 +74,32 @@ def validate_notional(qty: Decimal, price: Decimal, min_notional: Decimal) -> bo
     notional = abs(qty * price)
     return notional >= min_notional
 
-class PortfolioState:
+@dataclass
+class BacktestState:
     """Управление состоянием портфеля во время бэктеста."""
-    def __init__(self, initial_capital: Decimal, base_ticker: str):
-        self.initial_capital = initial_capital
-        self.base_ticker = base_ticker
-        self.real_equity = initial_capital # Wallet Balance (Cash + Margin)
-        self.pos_long = Decimal('0.0')
-        self.pos_short = Decimal('0.0')
-        self.entry_long = Decimal('0.0')
-        self.entry_short = Decimal('0.0')
-        self.virt_qty = Decimal('0.0')
-        self.virt_debt = Decimal('0.0')
-        self.siphoning_reserve = Decimal('0.0')
-        
-        self.history: List[float] = []
-        self.rebalance_log: List[Dict[str, Any]] = []
-        self.cycles: int = 0
-        self.skipped_expansions_counter: int = 0
-        self.liquidations_counter: int = 0
+    initial_capital: Decimal
+    base_ticker: str
+    val_cash: Decimal
+    pos_long: Decimal = Decimal('0')
+    pos_short: Decimal = Decimal('0')
+    virt_qty: Decimal = Decimal('0')
+    virt_debt: Decimal = Decimal('0')
+    long_entry_price: Decimal = Decimal('0')
+    short_entry_price: Decimal = Decimal('0')
+    siphoning_reserve: Decimal = Decimal('0')
+    cycles: int = 0
+    skipped_expansions_counter: int = 0
+    liquidations_counter: int = 0
+    history: List[float] = field(default_factory=list)
+    rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
     def get_tpv(self, price: Decimal) -> Decimal:
-        mtm_pnl_l = self.pos_long * (price - self.entry_long) if self.pos_long > 0 else Decimal('0')
-        mtm_pnl_s = self.pos_short * (self.entry_short - price) if self.pos_short > 0 else Decimal('0')
-        val_v = self.virt_qty * price
-        return self.real_equity + mtm_pnl_l + mtm_pnl_s + val_v
+        unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
+        unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
+        margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
+        margin_short = (self.pos_short * self.short_entry_price) / Decimal('5') if self.pos_short > 0 else Decimal('0')
+        virtual_equity = (self.virt_qty * price) - self.virt_debt
+        return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
@@ -171,7 +173,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         step_sizes = {base_ticker: 0.001}
 
         sim = MarketOrderSlippageSimulator(commission_pct=commission, slippage_pct=slippage)
-        state = PortfolioState(Decimal(str(initial_capital)), base_ticker)
+        state = BacktestState(initial_capital=Decimal(str(initial_capital)), base_ticker=base_ticker, val_cash=Decimal(str(initial_capital)))
 
         # Pre-calculate constants
         daily_funding_rate = Decimal('0.0002')
@@ -186,25 +188,27 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         virt_cost = target_v_share * state.initial_capital
         state.virt_qty = virt_cost / start_price
         state.virt_debt = virt_cost
-        state.real_equity -= virt_cost
+        # ВАЖНО: В бэктесте согласно Патчу №2 покупка Virtual не уменьшает val_cash напрямую
+        # val_cash остается равным initial_capital, а Virtual живет в своем "долге".
 
         for i in range(len(df)):
             mid_price = Decimal(str(close_prices[i]))
 
-            # --- 1. Funding Drag (Holding Costs) ---
-            long_notional = abs(state.pos_long) * mid_price
-            short_notional = abs(state.pos_short) * mid_price
-            total_drag = (long_notional + short_notional) * funding_drag_step
-            state.real_equity -= total_drag
-
             # --- 2. Portfolio Calculation ---
+            # Согласно логике main.py, мы передаем в калькулятор real_equity = WalletBalance - virt_debt
+            # Wallet Balance = val_cash + margin_long + margin_short
+            margin_long_current = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
+            margin_short_current = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
+            wallet_balance = state.val_cash + margin_long_current + margin_short_current
+            simulated_real_equity = wallet_balance - state.virt_debt
+
             calculator = PortfolioCalculator(
                 positions={f"{base_ticker}_LONG": float(state.pos_long), f"{base_ticker}_SHORT": float(state.pos_short)},
                 spot_price=float(mid_price),
-                real_equity=float(state.real_equity),
+                real_equity=float(simulated_real_equity),
                 virt_qty=float(state.virt_qty),
-                long_entry_price=float(state.entry_long),
-                short_entry_price=float(state.entry_short),
+                long_entry_price=float(state.long_entry_price),
+                short_entry_price=float(state.short_entry_price),
                 base_ticker=base_ticker,
                 targets=targets,
                 initial_capital=float(state.initial_capital)
@@ -214,100 +218,74 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             actions = calc_res["actions"]
 
             if actions:
-                # --- Phase 1: Reductions (Extracting Liquidity) ---
                 reductions = [a for a in actions if a.get("is_reduction", False)]
                 expansions = [a for a in actions if not a.get("is_reduction", False)]
 
+                # --- Фаза 1: Выполнение Reductions (SELL для Лонга, BUY для Шорта) ---
                 for act in reductions:
                     key = act["key"]
+                    lev = Decimal(str(act["leverage"]))
                     raw_qty = abs(Decimal(str(act["diff_usdt"]))) / mid_price
                     qty = quantize_qty(raw_qty, Decimal(str(step_sizes.get(base_ticker, 0.001))))
 
-                    if not validate_notional(qty, mid_price, min_notional_usdt):
+                    if qty <= Decimal('0') or not validate_notional(qty, mid_price, min_notional_usdt):
                         continue
 
-                    # Determine side based on leg type and reduction intent
-                    # Long Reduction -> SELL
-                    # Short Reduction -> BUY
-                    # Virtual Reduction -> SELL
                     if key == "BASE_LONG":
-                        side = "SELL"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        realized_pnl = qty * (exec_price - state.entry_long)
-                        state.real_equity += realized_pnl - comm
+                        exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
+                        realized_pnl = qty * (exec_price - state.long_entry_price)
+                        released_margin = (qty * state.long_entry_price) / lev
                         state.pos_long -= qty
+                        state.val_cash += released_margin + realized_pnl - commission
+                        if state.pos_long == Decimal('0'):
+                            state.long_entry_price = Decimal('0')
                     elif key == "BASE_SHORT":
-                        side = "BUY"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        realized_pnl = qty * (state.entry_short - exec_price)
-                        state.real_equity += realized_pnl - comm
+                        exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
+                        realized_pnl = qty * (state.short_entry_price - exec_price)
+                        released_margin = (qty * state.short_entry_price) / lev
                         state.pos_short -= qty
+                        state.val_cash += released_margin + realized_pnl - commission
+                        if state.pos_short == Decimal('0'):
+                            state.short_entry_price = Decimal('0')
                     elif key == "VIRTUAL":
-                        side = "SELL"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        state.real_equity += (qty * exec_price) - comm
+                        exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
                         state.virt_qty -= qty
-                        state.virt_debt -= (qty * exec_price)
+                        state.virt_debt -= (qty * exec_price) - commission
 
-                # --- Phase 2: Expansions (Distributing Liquidity) ---
-                # Recalculate available cash after reductions
-                # available_cash here means "Free Wallet Balance" (Available Margin)
-                # We need to re-run calculator or manually track it. Manual tracking is faster.
-
-                # Sort strictly by priority: VIRTUAL leg first
+                # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорта) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
 
                 for act in expansions:
                     key = act["key"]
-                    # Calculate current available cash (Free Wallet Balance)
-                    # val_cash = WalletBalance - InitialMargin
-                    margin_l = (state.pos_long * state.entry_long / l_lev) if state.pos_long > 0 else Decimal('0')
-                    margin_s = (state.pos_short * state.entry_short / s_lev) if state.pos_short > 0 else Decimal('0')
-                    available_cash = state.real_equity - margin_l - margin_s
+                    lev = Decimal(str(act["leverage"]))
+                    needed_usdt = abs(Decimal(str(act["diff_usdt"])))
 
-                    if available_cash <= Decimal('0'):
+                    if state.val_cash <= Decimal('0'):
                         state.skipped_expansions_counter += 1
                         continue
 
-                    needed_usdt = abs(Decimal(str(act["diff_usdt"])))
                     raw_qty = needed_usdt / mid_price
                     qty = quantize_qty(raw_qty, Decimal(str(step_sizes.get(base_ticker, 0.001))))
 
-                    if not validate_notional(qty, mid_price, min_notional_usdt):
+                    if qty <= Decimal('0') or not validate_notional(qty, mid_price, min_notional_usdt):
                         continue
 
                     if key == "BASE_LONG":
-                        side = "BUY"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        needed_margin = (qty * exec_price) / l_lev
-                        if available_cash < needed_margin + comm:
-                            state.skipped_expansions_counter += 1
-                            continue
-                        state.real_equity -= comm
-                        new_total = state.pos_long + qty
-                        state.entry_long = (state.pos_long * state.entry_long + qty * exec_price) / new_total
-                        state.pos_long = new_total
+                        exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
+                        margin_required = (qty * exec_price) / lev
+                        state.val_cash -= margin_required + commission
+                        state.long_entry_price = ((state.pos_long * state.long_entry_price) + (qty * exec_price)) / (state.pos_long + qty)
+                        state.pos_long += qty
                     elif key == "BASE_SHORT":
-                        side = "SELL"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        needed_margin = (qty * exec_price) / s_lev
-                        if available_cash < needed_margin + comm:
-                            state.skipped_expansions_counter += 1
-                            continue
-                        state.real_equity -= comm
-                        new_total = state.pos_short + qty
-                        state.entry_short = (state.pos_short * state.entry_short + qty * exec_price) / new_total
-                        state.pos_short = new_total
+                        exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
+                        margin_required = (qty * exec_price) / lev
+                        state.val_cash -= margin_required + commission
+                        state.short_entry_price = ((state.pos_short * state.short_entry_price) + (qty * exec_price)) / (state.pos_short + qty)
+                        state.pos_short += qty
                     elif key == "VIRTUAL":
-                        side = "BUY"
-                        exec_price, comm = sim.simulate_market_execution(side, qty, mid_price)
-                        cost = qty * exec_price
-                        if available_cash < cost + comm:
-                            state.skipped_expansions_counter += 1
-                            continue
-                        state.real_equity -= (cost + comm)
+                        exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
                         state.virt_qty += qty
-                        state.virt_debt += cost
+                        state.virt_debt += (qty * exec_price) + commission
 
                 state.cycles += 1
                 state.rebalance_log.append({
@@ -316,30 +294,35 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     "actions": [f"{a['key']} {'SELL' if a['is_reduction'] else 'BUY'}" for a in actions]
                 })
 
-            # --- 3. Liquidation Check (Per Leg) ---
-            mtm_pnl_l = state.pos_long * (mid_price - state.entry_long) if state.pos_long > 0 else Decimal('0')
-            mtm_pnl_s = state.pos_short * (state.entry_short - mid_price) if state.pos_short > 0 else Decimal('0')
+            # --- Расчет Funding Drag (Удержание за фьючерсные плечи) ---
+            long_notional = state.pos_long * mid_price
+            short_notional = state.pos_short * mid_price
+            total_drag = (long_notional + short_notional) * funding_drag_step
+            state.val_cash -= total_drag
 
-            val_l = (state.pos_long * state.entry_long / l_lev) + mtm_pnl_l
-            val_s = (state.pos_short * state.entry_short / s_lev) + mtm_pnl_s
+            # --- 3. Liquidation Check (Per Leg) ---
+            unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
+            unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
+            margin_long = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
+            margin_short = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
+
+            val_l = margin_long + unrealized_pnl_long
+            val_s = margin_short + unrealized_pnl_short
 
             if val_l <= 0 and state.pos_long != 0:
-                # Realize loss of the locked margin
-                state.real_equity -= (state.pos_long * state.entry_long / l_lev)
                 state.pos_long = Decimal('0')
+                state.long_entry_price = Decimal('0')
                 state.liquidations_counter += 1
-                mtm_pnl_l = Decimal('0')
                 logger.warning(f"Bar {i}: LONG leg liquidated!")
 
             if val_s <= 0 and state.pos_short != 0:
-                state.real_equity -= (state.pos_short * state.entry_short / s_lev)
                 state.pos_short = Decimal('0')
+                state.short_entry_price = Decimal('0')
                 state.liquidations_counter += 1
-                mtm_pnl_s = Decimal('0')
                 logger.warning(f"Bar {i}: SHORT leg liquidated!")
 
             # --- 4. SAFE Siphoning (Calculated on TPV) ---
-            tpv = state.real_equity + mtm_pnl_l + mtm_pnl_s + (state.virt_qty * mid_price)
+            tpv = state.get_tpv(mid_price)
             total_tpv_with_reserve = tpv + state.siphoning_reserve
             total_surplus = total_tpv_with_reserve - state.initial_capital
             siphoning_threshold_abs = state.initial_capital * (Decimal(str(siphoning_threshold_pct)) / 100)
@@ -349,14 +332,20 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 siphon_amount = new_profit * (1 - Decimal(str(reinvestment_ratio)))
                 if siphon_amount > Decimal('0.1'):
                     state.siphoning_reserve += siphon_amount
-                    state.real_equity -= siphon_amount
+                    state.val_cash -= siphon_amount
                     tpv -= siphon_amount
                     total_tpv_with_reserve -= siphon_amount
 
-            # --- 5. Sanity Check (Mathematical Invariant) ---
-            # Re-calculate TPV from components
-            current_tpv = state.real_equity + mtm_pnl_l + mtm_pnl_s + (state.virt_qty * mid_price)
-            assert current_tpv > Decimal('0'), f"Critical Portfolio Default: TPV {current_tpv} <= 0 at bar {i}"
+            # --- 5. Проверка математического инварианта (Sanity Check) ---
+            # Настоящий TPV = Свободный кэш + Чистая стоимость LONG + Чистая стоимость SHORT + Чистая стоимость VIRTUAL
+            unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
+            unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
+            margin_long = (state.pos_long * state.long_entry_price) / Decimal('5') if state.pos_long > 0 else Decimal('0')
+            margin_short = (state.pos_short * state.short_entry_price) / Decimal('5') if state.pos_short > 0 else Decimal('0')
+            virtual_equity = (state.virt_qty * mid_price) - state.virt_debt
+
+            current_tpv = state.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
+            assert current_tpv > Decimal('0'), "Критический дефолт портфеля: TPV <= 0"
 
             state.history.append(float(total_tpv_with_reserve))
 
