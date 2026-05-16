@@ -57,8 +57,13 @@ def test_calculate_deviations(sample_params, targets):
     short_action = next(a for a in actions if a["symbol"] == "BTCUSDT_SHORT")
     # Current Share S = 0%. Target Share S = 40%. Diff Share = -40%.
     # Diff USDT = -(-0.4) * 12000 * 5 = 24000.
-    # But available funds = val_cash (4000) + proceeds_from_long (6000) = 10000.
-    assert short_action["diff_usdt"] == pytest.approx(10000.0)
+    # Correct Cash Accounting:
+    # val_cash = 4000.
+    # proceeds_from_long (equity) = abs(-0.1 * 12000) = 1200.
+    # available_funds (equity) = 4000 + 1200 = 5200.
+    # needed_equity = 24000 / 5 = 4800.
+    # since 4800 <= 5200, full 24000 is allowed.
+    assert short_action["diff_usdt"] == pytest.approx(24000.0)
     
     # Virtual should not be here since 3.3% < 5%
     assert not any(a["symbol"] == "VIRTUAL" for a in actions)

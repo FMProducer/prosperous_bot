@@ -249,7 +249,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     try:
         while True:
             state_dirty = False
-            paper_dirty = False
+            paper_state_dirty = False
             try:
                 # Dynamic config reload
                 try:
@@ -412,7 +412,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         # 2. ВЫЧИТАЕМ стоимость покупки из кэша (для Paper) и записываем ДОЛГ (для Real)
                         paper_state["balance"] -= virt_cost
                         state["virt_debt"] = state.get("virt_debt", 0.0) + virt_cost
-                        paper_dirty = True
+                        paper_state_dirty = True
+                        state_dirty = True
 
                         # 3. Фиксируем количество
                         virt_qty = float(virt_qty_dec)
@@ -708,6 +709,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     paper_state["balance"] -= float(diff_usdt)
                                     # Track debt for real mode reconciliation
                                     state["virt_debt"] = state.get("virt_debt", 0.0) + float(diff_usdt)
+                                    paper_state_dirty = True
+                                    state_dirty = True
 
                                     # 2. Обновление количества
                                     new_v_qty = virt_qty_before + diff_usdt / dec_price
@@ -768,7 +771,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 paper_state["positions"][pos_key] = new_qty
                                 paper_state["balance"] += trade_pnl
                                 paper_state["balance"] -= res.get("commission", 0.0)
-                                paper_dirty = True
+                                paper_state_dirty = True
                                 
                                 mode_tag = "PAPER" if paper_mode else "REAL"
                                 trade_log = f"📝 {mode_tag}: {side} {qty} {pos_key} @ {price:.6g}"
@@ -788,6 +791,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         state_dirty = True
 
                 # 3. GLOBAL SAFE SIPHONING (Runs every cycle)
+                # siphoning_reserve is local variable, but we should update state as well
                 if actions and len(valid_actions) > 0:
                     # ALWAYS use shadow balance (paper_state) for siphoning calculation to support shared accounts
                     l_qty_p = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
@@ -844,7 +848,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         siphoning_reserve += siphon_amount
                         # ALWAYS subtract from shadow balance to track isolated per-bot equity
                         paper_state["balance"] -= siphon_amount
-                        paper_dirty = True
+                        paper_state_dirty = True
 
                         state["siphoning_reserve"] = siphoning_reserve
                         state_dirty = True
@@ -863,23 +867,20 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.info(f"Rebalance #{cycles} complete. TPV: {total_tpv_final:.2f}")
                     asyncio.create_task(notifier.send_message(summary_msg))
 
-                # Обновляем метрики
-                current_time = time.time()
-                state_needs_save = False
+                # Всегда обновляем стейт для агрегатора статусов в конце каждого цикла
+                state.update({
+                    "last_tpv": total_tpv_final,
+                    "last_profit": total_tpv_final - initial_tpv,
+                    "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
+                    "last_update": time.time(),
+                    "rebalance_cycles": cycles
+                })
+                state_dirty = True
 
-                # Проверяем мутации для оптимизации дисковых операций
-                if state.get("rebalance_cycles") != cycles or state.get("last_tpv") != total_tpv_final or (current_time - state.get("last_update", 0)) > 60:
-                    state.update({
-                        "last_tpv": total_tpv_final,
-                        "last_profit": total_tpv_final - initial_tpv,
-                        "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
-                        "last_update": current_time,
-                        "rebalance_cycles": cycles
-                    })
-                    state_needs_save = True
-
-                if state_needs_save:
+                if state_dirty:
                     await save_json(state_file_path, state)
+                if paper_state_dirty:
+                    await save_json(paper_state_file_path, paper_state)
 
                 if (i + status_offset) % 100 == 0:
                     total_pnl_final = safe_calc_res.get("total_pnl", total_tpv_final - initial_tpv)

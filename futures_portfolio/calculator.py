@@ -152,6 +152,7 @@ class PortfolioCalculator:
             # Deficit (-) -> Positive diff_usdt (BUY/Expansion)
             lev = Decimal(str(targets[key].get("leverage", 1)))
             diff_usdt = -diff_share * self.tpv * lev
+            diff_equity = -diff_share * self.tpv # Real cash (margin) movement
 
             if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
                 continue
@@ -163,6 +164,8 @@ class PortfolioCalculator:
                 "base_symbol": "VIRTUAL" if key == "VIRTUAL" else self.base_ticker,
                 "position_side": "BOTH" if key == "VIRTUAL" else key.replace('BASE_', ''),
                 "diff_usdt": float(diff_usdt),
+                "diff_equity": float(diff_equity),
+                "leverage": float(lev),
                 "is_reduction": diff_usdt < 0
             }
 
@@ -174,37 +177,40 @@ class PortfolioCalculator:
         # 2. Final actions list starts with all SELLs (Priority 0)
         final_actions: List[Dict] = []
         
-        # proceeds are negative diff_usdt (since they return cash)
+        # Proceeds must be calculated in pure Equity (Cash) terms
         total_proceeds = Decimal('0')
         for act in surplus_actions:
-            # Check min_notional for real orders, Virtual leg can be smaller but usually notional still applies
             if abs(Decimal(str(act["diff_usdt"]))) >= min_notional or ignore_limits:
                 act["priority"] = 0
                 final_actions.append(act)
-                total_proceeds += abs(Decimal(str(act["diff_usdt"])))
+                total_proceeds += abs(Decimal(str(act["diff_equity"])))
 
-        # 3. Calculate available funds for BUYs
+        # 3. Calculate available funds for BUYs (Strict Cash Accounting)
         available_funds = self.val_cash + total_proceeds
         
         # 4. Process Deficits with Priority (VIRTUAL first)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
         
         for act in deficit_actions:
-            if available_funds < min_notional and not ignore_limits:
-                continue # No money for even a minimum order
-                
-            needed_usdt = Decimal(str(act["diff_usdt"]))
+            lev = Decimal(str(act["leverage"]))
+            needed_equity = abs(Decimal(str(act["diff_equity"])))
             
-            # Use available funds (even if less than needed)
-            if needed_usdt > available_funds and not ignore_limits:
-                actual_buy_usdt = available_funds
+            if available_funds <= Decimal('0') and not ignore_limits:
+                continue
+
+            # Cap purchasing power by available cash (Equity)
+            if needed_equity > available_funds and not ignore_limits:
+                actual_buy_equity = available_funds
             else:
-                actual_buy_usdt = needed_usdt
+                actual_buy_equity = needed_equity
                 
+            # Convert approved Equity back to Notional for the executor
+            actual_buy_usdt = actual_buy_equity * lev
+
             if actual_buy_usdt >= min_notional or ignore_limits:
-                act["diff_usdt"] = float(actual_buy_usdt)
+                act["diff_usdt"] = float(abs(actual_buy_usdt))
                 act["priority"] = 2
                 final_actions.append(act)
-                available_funds -= actual_buy_usdt
+                available_funds -= actual_buy_equity
 
         return final_actions
