@@ -70,21 +70,24 @@ async def start_bot(ticker: str, is_paper: bool = True):
     await (await asyncio.create_subprocess_shell(cmd)).wait()
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
+    """
+    Строгий расчет эффективности на основе непрерывного трека инкубатора.
+    Обеспечивает доктрину параллельного слежения без рассинхронизации.
+    """
     state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
     min_cycles = config.get("min_cycles_for_rank", 10)
-    
-    # [FIX] Гарантируем наличие всех ключей даже если файл отсутствует
-    if not state: 
+
+    if not state:
         return {
-            "profit": 0.0, 
-            "cycles": 0, 
-            "eff": 0.0, 
+            "profit": 0.0,
+            "cycles": 0,
+            "eff": 0.0,
             "trailing_stop_paper_timeout_end": 0.0
         }
-    
+
     profit_usdt = state.get("last_profit", 0.0)
     cycles = state.get("rebalance_cycles", 0)
-    
+
     return {
         "profit": profit_usdt,
         "cycles": cycles,
