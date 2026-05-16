@@ -1,12 +1,12 @@
 {
   "testnet": false,
-  "paper_mode": false,
+  "paper_mode": true,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 5.2,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 20,
+  "min_cycles_for_rank": 3,
   "max_bots": 20,
   "paper_mode_bots": 19,
   "probation_period_days": 0.01,
@@ -24,7 +24,7 @@
     {
       "name": "SyntheticMarketNeutral",
       "initial_capital": 85.0,
-      "paper_initial_capital": 86.0,
+      "paper_initial_capital": 85.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -53,17 +53,20 @@
     }
   ],
   "live_swarm": [],
-  "real_whitelist": [],
-  "black_list": [],
-  "tickers": [
+  "real_whitelist": [
+    "STORJUSDT",
+    "ZEREBROUSDT",
     "CGPTUSDT",
     "DUSDT",
-    "GPSUSDT",
-    "MLNUSDT",
-    "SAGAUSDT",
-    "STORJUSDT",
     "VICUSDT",
-    "ZEREBROUSDT"
+    "ARCUSDT",
+    "GPSUSDT",
+    "POLYXUSDT",
+    "SIRENUSDT",
+    "JELLYJELLYUSDT",
+    "SAGAUSDT"
   ],
-  "base_ticker": "CGPTUSDT"
+  "black_list": [],
+  "tickers": [],
+  "base_ticker": ""
 }
