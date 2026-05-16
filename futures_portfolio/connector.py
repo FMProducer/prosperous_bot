@@ -152,6 +152,7 @@ class BinanceConnector:
             "available_balance": float(account_info.get("availableBalance", 0)),
             "total_maint_margin": float(account_info.get("totalMaintMargin", 0)),
             "total_margin_balance": float(account_info.get("totalMarginBalance", 0)),
+            "total_wallet_balance": float(account_info.get("totalWalletBalance", 0)),
             "liquidation_price": float(account_info.get("liquidationPrice", 0)) if account_info.get("liquidationPrice") else None
         }
 

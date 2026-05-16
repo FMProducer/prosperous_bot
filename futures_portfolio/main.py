@@ -427,7 +427,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 else:
                     # REAL MODE RECONCILIATION:
                     # Get fresh balance from exchange
-                    wallet_balance = float(m_info.get("totalWalletBalance", 0.0))
+                    wallet_balance = float(m_info.get("total_wallet_balance", 0.0))
                     # Adjusted Equity = Exchange Balance - Virtual Debt
                     real_equity = wallet_balance - state.get("virt_debt", 0.0)
                     if real_equity < 0: real_equity = 0.0
@@ -973,6 +973,7 @@ if __name__ == "__main__":
     parser.add_argument("--close-only", action="store_true", help="Only close positions on exchange, preserve bot state")
     parser.add_argument("--wipe", action="store_true", help="Wipe bot state (destructive stop)")
     parser.add_argument("--paper", action="store_true", help="Force paper mode for this instance")
+    parser.add_argument("--real", action="store_true", help="Force real mode (live) for this instance")
     args = parser.parse_args()
     
     config_base = os.path.splitext(os.path.basename(args.config))[0]
@@ -987,8 +988,16 @@ if __name__ == "__main__":
     cfg = get_initial_cfg()
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
     
-    # Paper mode logic: flag --paper OR global config paper_mode
-    is_paper_instance = args.paper or cfg.get("paper_mode", False)
+    # Paper mode logic:
+    # 1. If --real flag is present, force REAL mode.
+    # 2. If --paper flag is present, force PAPER mode.
+    # 3. Otherwise, fall back to global config paper_mode.
+    if args.real:
+        is_paper_instance = False
+    elif args.paper:
+        is_paper_instance = True
+    else:
+        is_paper_instance = cfg.get("paper_mode", False)
     
     # Strict Isolation: Different prefixes for Paper and Real modes
     prefix = "paper" if is_paper_instance else "real"

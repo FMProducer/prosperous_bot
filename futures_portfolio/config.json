@@ -52,7 +52,9 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "VICUSDT"
+  ],
   "real_whitelist": [
     "STORJUSDT",
     "ZEREBROUSDT",
@@ -68,18 +70,15 @@
   ],
   "black_list": [],
   "tickers": [
-    "1000LUNCUSDT",
     "ARCUSDT",
-    "CGPTUSDT",
-    "DUSDT",
-    "GPSUSDT",
-    "JELLYJELLYUSDT",
-    "POLYXUSDT",
+    "KERNELUSDT",
+    "MLNUSDT",
+    "ORCAUSDT",
     "SAGAUSDT",
-    "SIRENUSDT",
-    "STORJUSDT",
+    "SWARMSUSDT",
     "VICUSDT",
+    "VVVUSDT",
     "ZEREBROUSDT"
   ],
-  "base_ticker": "1000LUNCUSDT"
+  "base_ticker": "ARCUSDT"
 }

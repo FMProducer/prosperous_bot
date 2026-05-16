@@ -65,8 +65,8 @@ async def stop_bot(ticker: str, is_paper: bool = False):
 async def start_bot(ticker: str, is_paper: bool = True):
     prefix = "paper" if is_paper else "real"
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
-    paper_flag = "--paper" if is_paper else ""
-    cmd = f'pm2 start main.py --name {proc_name} --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {paper_flag}'
+    mode_flag = "--paper" if is_paper else "--real"
+    cmd = f'pm2 start main.py --name {proc_name} --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" -- --config config.json --ticker {ticker} {mode_flag}'
     await (await asyncio.create_subprocess_shell(cmd)).wait()
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
