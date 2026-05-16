@@ -1,6 +1,5 @@
 {
   "testnet": false,
-  "paper_mode": false,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
@@ -8,7 +7,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -51,35 +50,35 @@
       }
     }
   ],
-  "live_swarm": [
-    "ARCUSDT"
-  ],
+  "live_swarm": [],
   "real_whitelist": [
     "STORJUSDT",
     "ZEREBROUSDT",
-    "CGPTUSDT",
     "DUSDT",
     "VICUSDT",
     "ARCUSDT",
     "RUNEUSDT",
-    "MLNUSDT",
     "1000LUNCUSDT",
     "ORCAUSDT",
-    "GPSUSDT",
     "POLYXUSDT",
     "SIRENUSDT",
     "VVVUSDT",
     "JELLYJELLYUSDT",
     "SAGAUSDT"
   ],
-  "black_list": [],
+  "black_list": [
+    "CGPTUSDT",
+    "MLNUSDT",
+    "PHBUSDT",
+    "SYSUSDT",
+    "CHZUSDT",
+    "GPSUSDT"
+  ],
   "tickers": [
     "1000LUNCUSDT",
     "ARCUSDT",
-    "CGPTUSDT",
-    "MLNUSDT",
+    "NMRUSDT",
     "RUNEUSDT",
-    "STORJUSDT",
     "VVVUSDT"
   ],
   "base_ticker": "1000LUNCUSDT"

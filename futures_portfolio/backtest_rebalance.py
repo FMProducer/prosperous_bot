@@ -250,8 +250,23 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             state.short_entry_price = Decimal('0')
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
+                        
+                        # Вычисляем среднюю историческую цену входа виртуальной ноги перед продажей
+                        # Если virt_qty равен 0 (защита от ZeroDivision), берем текущую цену
+                        v_entry_price = (state.virt_debt / state.virt_qty) if state.virt_qty > 0 else exec_price
+                        
+                        # Историческая себестоимость продаваемых монет (то, на сколько реально уменьшается долг)
+                        allocated_debt_reduction = qty * v_entry_price
+                        
+                        # Физическая прибыль от фиксации профицита на споте (MTM Realized PnL)
+                        realized_pnl = qty * (exec_price - v_entry_price)
+                        
+                        # Обновляем состояние виртуальной ноги
                         state.virt_qty -= qty
-                        state.virt_debt -= (qty * exec_price) - commission
+                        state.virt_debt -= allocated_debt_reduction
+                        
+                        # Деньги физически возвращаются в кэш: себестоимость + прибыль - комиссия
+                        state.val_cash += allocated_debt_reduction + realized_pnl - commission
 
                 # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорта) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
@@ -285,8 +300,14 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.pos_short += qty
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
+                        
+                        # Сколько кэша реально тратится на добор спотовой ноги с учетом комиссии
+                        cash_spent = (qty * exec_price) + commission
+                        
+                        # Изменяем балансы
+                        state.val_cash -= cash_spent
                         state.virt_qty += qty
-                        state.virt_debt += (qty * exec_price) + commission
+                        state.virt_debt += cash_spent
 
                 state.cycles += 1
                 state.rebalance_log.append({
