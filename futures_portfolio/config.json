@@ -71,15 +71,31 @@
     "MLNUSDT",
     "PHBUSDT",
     "SYSUSDT",
+    "1000LUNCUSDT",
     "CHZUSDT",
     "GPSUSDT"
   ],
   "tickers": [
-    "1000LUNCUSDT",
+    "ARBUSDT",
     "ARCUSDT",
+    "ATOMUSDT",
+    "DASHUSDT",
+    "FILUSDT",
+    "INJUSDT",
+    "NEARUSDT",
     "NMRUSDT",
+    "ORCAUSDT",
+    "ORDIUSDT",
+    "PENDLEUSDT",
+    "QNTUSDT",
     "RUNEUSDT",
-    "VVVUSDT"
+    "SAGAUSDT",
+    "SIRENUSDT",
+    "STORJUSDT",
+    "TIAUSDT",
+    "TONUSDT",
+    "VVVUSDT",
+    "ZECUSDT"
   ],
-  "base_ticker": "1000LUNCUSDT"
+  "base_ticker": "ARBUSDT"
 }

@@ -1,5 +1,10 @@
 # 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.8.1)
 
+## Completed Tasks
+- [x] Hardcoded `rebalance_threshold` to 0.01 in `rank_tickers.py` and enforced it by removing the configuration override for this parameter.
+
+## Next Steps
+
 Система управляет портфелем, извлекая прибыль из внутренней волатильности активов через динамическое управление долями капитала (Equity-based).
 
 ---

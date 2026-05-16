@@ -36,10 +36,10 @@ async def main():
         except Exception as e:
             print(f"Error running backtest for {ticker}: {e}")
 
-    # Sort and print
+    # Sort and print top 20
     results.sort(key=lambda x: x['profit_pct'], reverse=True)
-    print("\nResults (Sorted by Profit):")
-    for r in results:
+    print("\nTop 20 Results (Sorted by Profit):")
+    for r in results[:20]:
         print(f"{r['ticker']}: {r['profit_pct']:.2f}%")
 
 if __name__ == "__main__":
