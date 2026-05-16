@@ -434,22 +434,32 @@ class PortfolioExecutor:
         reductions = [a for a in actions if a.get("is_reduction")]
         expansions = [a for a in actions if not a.get("is_reduction")]
 
-        final_results = []
+        # Mapping for result tracking to maintain original order
+        results_map = {}
 
         for group in [reductions, expansions]:
             if not group:
                 continue
+
+            # Map action IDs to their results
+            group_action_ids = [id(a) for a in group]
             tasks = [
                 self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
                 for action in group
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
+
+            group_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for action_id, r in zip(group_action_ids, group_results):
                 if isinstance(r, Exception):
                     logger.error(f"Action execution failed with exception: {r}")
-                    final_results.append({"status": "ERROR", "message": str(r)})
+                    results_map[action_id] = {"status": "ERROR", "message": str(r)}
                 else:
-                    final_results.append(r)
+                    results_map[action_id] = r
+
+        # Reconstruct results in original order
+        final_results = [results_map[id(a)] for a in actions]
+        success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
 
         if len(actions) > 0:
             logger.info(f"Executed {success_count}/{len(actions)} actions in two phases (Surplus-First).")
