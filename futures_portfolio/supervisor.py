@@ -168,23 +168,42 @@ async def manage_swarm():
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
     target_real_bots = ready_pool[:max_real_slots]
 
-    # 4. Исполнение в PM2
-    # Останавливаем тех, кого нет в новом списке
+    # -------------------------------------------------------------------------
+    # 4. Исполнение в PM2: Доктрина Параллельного Слежения (PAPER + REAL)
+    # -------------------------------------------------------------------------
+
+    # Сначала гасим только те БУМАЖНЫЕ боты, которые ВООБЩЕ вылетели из сканера
     for key, info in running_bots.items():
         ticker = key.split("_")[1]
-        if key.startswith("p_") and ticker not in final_incubator:
-            logger.info(f"🛑 Stopping Incubator: {ticker}")
-            await stop_bot(ticker, is_paper=True)
-        if key.startswith("r_") and ticker not in target_real_bots:
-            logger.info(f"🛑 Stopping Combat: {ticker}")
-            await stop_bot(ticker, is_paper=False)
-            await (await asyncio.create_subprocess_shell(f'"{sys.executable}" main.py --ticker {ticker} --stop')).wait()
 
-    # Запускаем новых
+        if key.startswith("p_") and ticker not in final_incubator:
+            logger.info(f"🛑 Stopping Incubator (Out of Scanner): {ticker}")
+            await stop_bot(ticker, is_paper=True)
+
+        # Гасим БОЕВЫХ ботов, которые потеряли эффективность и выбыли из REAL-топа
+        if key.startswith("r_") and ticker not in target_real_bots:
+            logger.info(f"🛑 Stopping Combat REAL process: {ticker} (Rolling back to pure paper tracking)")
+            await stop_bot(ticker, is_paper=False)
+            # Экстренно закрываем позиции на бирже для этого тикера
+            cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop'
+            await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
+
+    # Пауза для стабильности дескрипторов PM2
+    await asyncio.sleep(1.0)
+
+    # ЗАПУСК: Инкубатор (PAPER) работает ВСЕГДА для всех тикеров из сканера
     for ticker in final_incubator:
-        if f"p_{ticker}" not in running_bots: await start_bot(ticker, is_paper=True)
+        p_key = f"p_{ticker}"
+        if p_key not in running_bots:
+            logger.info(f"🚀 [A] Launching Continuous Incubator (PAPER): {ticker}")
+            await start_bot(ticker, is_paper=True)
+
+    # ЗАПУСК: Боевые боты (REAL) включаются ПАРАЛЛЕЛЬНО к бумажным
     for ticker in target_real_bots:
-        if f"r_{ticker}" not in running_bots: await start_bot(ticker, is_paper=False)
+        r_key = f"r_{ticker}"
+        if r_key not in running_bots:
+            logger.info(f"🔥 [A] LAUNCHING PARALLEL COMBAT (REAL): {ticker}")
+            await start_bot(ticker, is_paper=False)
 
     # 5. Сохранение конфига
     config["tickers"] = sorted(final_incubator)
