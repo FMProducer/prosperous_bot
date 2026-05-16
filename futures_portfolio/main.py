@@ -720,9 +720,21 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # Update execution results info
                                 key = res.get("symbol", "UNKNOWN")
                                 side = res.get("side", "UNKNOWN")
-                                qty = res.get("qty", 0.0)
+                                # [FIX] If execution result is Success but qty is missing in result (common for REAL market), 
+                                # use the originally requested qty from the action context
+                                qty = res.get("qty")
+                                if qty is None:
+                                    # Try to find the original action that produced this result to get the requested qty
+                                    action = next((a for a in fused_actions if a.get("symbol") == key and a.get("side") == side), {})
+                                    qty = abs(action.get("qty", 0.0))
+                                
                                 trade_pnl = res.get("trade_pnl", 0.0)
                                 reduce_only = res.get("reduce_only", False)
+
+                                # Identify the correct position side from action or result
+                                if pos_side == "UNKNOWN":
+                                    action = next((a for a in fused_actions if a.get("symbol") == key and a.get("side") == side), {})
+                                    pos_side = action.get("position_side", "BOTH")
 
                                 # Shadow accounting for BOTH paper and real modes to support per-bot isolation
                                 pos_key = f"{base_ticker}_{pos_side}"

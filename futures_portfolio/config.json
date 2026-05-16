@@ -23,7 +23,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 85.0,
+      "initial_capital": 85.93,
       "paper_initial_capital": 85.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
@@ -71,10 +71,12 @@
   "black_list": [],
   "tickers": [
     "ARCUSDT",
-    "KERNELUSDT",
+    "GPSUSDT",
     "MLNUSDT",
     "ORCAUSDT",
     "SAGAUSDT",
+    "SIRENUSDT",
+    "STORJUSDT",
     "SWARMSUSDT",
     "VICUSDT",
     "VVVUSDT",
