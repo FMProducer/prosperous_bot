@@ -71,11 +71,19 @@ async def start_bot(ticker: str, is_paper: bool = True):
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
-    if not state: return {"profit": 0.0, "cycles": 0, "eff": 0.0}
+    min_cycles = config.get("min_cycles_for_rank", 20)
+    
+    # [FIX] Гарантируем наличие всех ключей даже если файл отсутствует
+    if not state: 
+        return {
+            "profit": 0.0, 
+            "cycles": 0, 
+            "eff": 0.0, 
+            "trailing_stop_paper_timeout_end": 0.0
+        }
     
     profit_usdt = state.get("last_profit", 0.0)
     cycles = state.get("rebalance_cycles", 0)
-    min_cycles = config.get("min_cycles_for_rank", 20)
     
     return {
         "profit": profit_usdt,
