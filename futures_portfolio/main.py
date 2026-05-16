@@ -628,32 +628,38 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     # -------------------------------------------------------------------------
                     last_reb_price = state.get("last_rebalance_price", 0.0)
                     fused_actions = []
-                    
+
                     if last_reb_price == 0:
-                        # Cold start: always allow first rebalance
                         fused_actions = valid_actions
                         logger.info(f"❄️ Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
                     else:
                         for action in valid_actions:
-                            side = action.get("side")
-                            act_type = action.get("type", "REAL") # VIRTUAL_ORDER or position side
-                            
+                            pos_side = action.get("position_side") # LONG или SHORT
+                            diff_usdt = action.get("diff_usdt", 0)
+                            act_type = action.get("type", "REAL")
+
+                            # Вычисляем side ордера (BUY/SELL) аналогично экзекутору
+                            if act_type == "VIRTUAL_ORDER":
+                                side = "BUY" if diff_usdt > 0 else "SELL"
+                            elif pos_side == "LONG":
+                                side = "BUY" if diff_usdt > 0 else "SELL"
+                            else: # SHORT
+                                side = "SELL" if diff_usdt > 0 else "BUY"
+
                             if side == "BUY":
-                                # Buy only if price dropped enough
                                 limit_price = last_reb_price * (1 - threshold)
                                 if price <= limit_price:
                                     fused_actions.append(action)
                                 else:
                                     logger.warning(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             elif side == "SELL":
-                                # Sell only if price rose enough
                                 limit_price = last_reb_price * (1 + threshold)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
                                     logger.warning(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             else:
-                                fused_actions.append(action) # Safety for unknown types
+                                fused_actions.append(action)
                     
                     if fused_actions:
                         # Log specific trigger reasons
@@ -706,9 +712,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     virt_qty_before = Decimal(str(virt_qty))
 
                                     # 1. Списание/начисление кэша (Cash Accounting)
-                                    paper_state["balance"] -= float(diff_usdt)
+                                    current_balance = Decimal(str(paper_state["balance"]))
+                                    paper_state["balance"] = float((current_balance - diff_usdt).quantize(Decimal('1e-4')))
                                     # Track debt for real mode reconciliation
-                                    state["virt_debt"] = state.get("virt_debt", 0.0) + float(diff_usdt)
+                                    state["virt_debt"] = float((Decimal(str(state.get("virt_debt", 0.0))) + diff_usdt).quantize(Decimal('1e-4')))
                                     paper_state_dirty = True
                                     state_dirty = True
 
@@ -718,63 +725,58 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     # 3. Value-based Dust Guard: если позиция меньше 1.0 USDT — в ноль
                                     if abs(new_v_qty * dec_price) < Decimal('1.0'):
                                         # Возвращаем остатки в кэш перед обнулением
-                                        paper_state["balance"] += float(new_v_qty * dec_price)
+                                        current_balance = Decimal(str(paper_state["balance"]))
+                                        paper_state["balance"] = float((current_balance + new_v_qty * dec_price).quantize(Decimal('1e-4')))
                                         new_v_qty = Decimal('0')
                                         logger.info(f"🧹 Dust Guard: Position liquidated (value < 1.0 USDT)")
 
-                                    virt_qty = float(new_v_qty)
+                                    virt_qty = float(new_v_qty.quantize(Decimal('1e-8')))
                                     state["virt_qty"] = virt_qty
                                     state_dirty = True
-                                    paper_dirty = True
                                     
                                     logger.info(f"{'➕ VIRTUAL BUY' if diff_usdt > 0 else '➖ VIRTUAL SELL'}: {abs(float(diff_usdt)):.2f} USDT")
                                     continue
 
-                                # Update execution results info
                                 key = res.get("symbol", "UNKNOWN")
                                 side = res.get("side", "UNKNOWN")
 
-                                # Берем строго то, что исполнила биржа
-                                qty = res.get("qty", 0.0)
-                                if qty <= 0.0:
+                                qty = Decimal(str(res.get("qty", 0.0)))
+                                if qty <= 0:
                                     logger.warning(f"⚠️ Skip state update for {key} because executed qty is {qty}")
-                                    continue # Не обновляем shadow_state фантомными данными!
-                                
-                                trade_pnl = res.get("trade_pnl", 0.0)
+                                    continue
+
+                                trade_pnl = Decimal(str(res.get("trade_pnl", 0.0)))
+                                commission = Decimal(str(res.get("commission", 0.0)))
                                 reduce_only = res.get("reduce_only", False)
 
-                                # Identify the correct position side from action or result
-                                if pos_side == "UNKNOWN":
-                                    action = next((a for a in fused_actions if a.get("symbol") == key and a.get("side") == side), {})
-                                    pos_side = action.get("position_side", "BOTH")
-
-                                # Shadow accounting for BOTH paper and real modes to support per-bot isolation
                                 pos_key = f"{base_ticker}_{pos_side}"
-                                old_qty = paper_state["positions"].get(pos_key, 0.0)
+                                old_qty = Decimal(str(paper_state["positions"].get(pos_key, 0.0)))
                                 entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                                old_entry = paper_state.get(entry_key, price)
-                                if old_entry <= 0: old_entry = price
+                                old_entry = Decimal(str(paper_state.get(entry_key, price)))
+                                if old_entry <= 0: old_entry = Decimal(str(price))
 
-                                if trade_pnl == 0.0 and reduce_only:
-                                    if pos_side == "LONG":
-                                        trade_pnl = qty * (price - old_entry)
-                                    else:
-                                        trade_pnl = qty * (old_entry - price)
+                                # Математически точный расчет изменения позиции
+                                if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT"):
+                                    new_qty = old_qty + qty
+                                else:
+                                    new_qty = old_qty - qty
 
-                                new_qty = (old_qty + qty) if (side == "BUY" and pos_side == "LONG") or (side == "SELL" and pos_side == "SHORT") else (old_qty - qty)
-                                
-                                if not reduce_only:
-                                    curr_q = abs(old_qty)
-                                    paper_state[entry_key] = (curr_q * old_entry + qty * price) / (curr_q + qty) if (curr_q + qty) > 0 else price
-                                
-                                paper_state["positions"][pos_key] = new_qty
-                                paper_state["balance"] += trade_pnl
-                                paper_state["balance"] -= res.get("commission", 0.0)
+                                # Расчет средней цены входа (только при увеличении позиции)
+                                if not reduce_only and (old_qty + qty) > 0:
+                                    dec_price = Decimal(str(price))
+                                    new_entry = (old_qty * old_entry + qty * dec_price) / (old_qty + qty)
+                                    paper_state[entry_key] = float(new_entry.quantize(Decimal('1e-8')))
+
+                                # Запись обратно во float-структуру JSON
+                                paper_state["positions"][pos_key] = float(new_qty.quantize(Decimal('1e-8')))
+
+                                current_balance = Decimal(str(paper_state["balance"]))
+                                paper_state["balance"] = float((current_balance + trade_pnl - commission).quantize(Decimal('1e-4')))
                                 paper_state_dirty = True
-                                
+
                                 mode_tag = "PAPER" if paper_mode else "REAL"
-                                trade_log = f"📝 {mode_tag}: {side} {qty} {pos_key} @ {price:.6g}"
-                                if trade_pnl != 0: trade_log += f" | PnL: {trade_pnl:+.4f}"
+                                trade_log = f"📝 {mode_tag}: {side} {float(qty)} {pos_key} @ {price:.6g}"
+                                if trade_pnl != 0: trade_log += f" | PnL: {float(trade_pnl):+.4f}"
                                 logger.info(trade_log)
                                 # asyncio.create_task(notifier.send_message(f"<b>{trade_log}</b>"))
                             else:
