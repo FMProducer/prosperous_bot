@@ -1,12 +1,12 @@
 {
   "testnet": false,
-  "paper_mode": true,
+  "paper_mode": false,
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 5.2,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 3,
+  "min_cycles_for_rank": 10,
   "max_bots": 20,
   "paper_mode_bots": 19,
   "probation_period_days": 0.01,
@@ -23,8 +23,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 85.93,
-      "paper_initial_capital": 85.0,
+      "initial_capital": 81.0,
+      "paper_initial_capital": 81.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -47,13 +47,12 @@
       },
       "rebalance_threshold": 0.025,
       "ticker_thresholds": {
-        "CFXUSDT": 0.025,
-        "CGPTUSDT": 0.025
+        "BTCUSDT": 0.025
       }
     }
   ],
   "live_swarm": [
-    "VICUSDT"
+    "ARCUSDT"
   ],
   "real_whitelist": [
     "STORJUSDT",
@@ -62,25 +61,26 @@
     "DUSDT",
     "VICUSDT",
     "ARCUSDT",
+    "RUNEUSDT",
+    "MLNUSDT",
+    "1000LUNCUSDT",
+    "ORCAUSDT",
     "GPSUSDT",
     "POLYXUSDT",
     "SIRENUSDT",
+    "VVVUSDT",
     "JELLYJELLYUSDT",
     "SAGAUSDT"
   ],
   "black_list": [],
   "tickers": [
+    "1000LUNCUSDT",
     "ARCUSDT",
-    "GPSUSDT",
+    "CGPTUSDT",
     "MLNUSDT",
-    "ORCAUSDT",
-    "SAGAUSDT",
-    "SIRENUSDT",
+    "RUNEUSDT",
     "STORJUSDT",
-    "SWARMSUSDT",
-    "VICUSDT",
-    "VVVUSDT",
-    "ZEREBROUSDT"
+    "VVVUSDT"
   ],
-  "base_ticker": "ARCUSDT"
+  "base_ticker": "1000LUNCUSDT"
 }
