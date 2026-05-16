@@ -12,7 +12,7 @@ class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
-                 virt_entry_price: float = 0.0,
+                 virt_entry_price: float = 0.0, virt_debt: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
                  targets: Dict[str, Dict] = None, initial_capital: float = 10000.0,
                  last_rebalance_price: float = 0.0) -> None:
@@ -25,6 +25,7 @@ class PortfolioCalculator:
         self.initial_capital = Decimal(str(initial_capital))
         self.real_equity = Decimal(str(real_equity)) # Wallet Balance (Cash + Margin, NO PnL)
         self.virt_qty = Decimal(str(virt_qty))
+        self.virt_debt = Decimal(str(virt_debt))
         self.targets = targets or {}
         self.last_rebalance_price = Decimal(str(last_rebalance_price)) if last_rebalance_price > 0 else self.price
 
@@ -41,8 +42,19 @@ class PortfolioCalculator:
         mtm_pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
         mtm_pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
         
-        # 2. TPV (Net Liquidation Value) = Wallet Balance + Futures PnL + Market Value of Virtual assets
+        # 1. Рассчитываем ЧИСТЫЙ PnL виртуальной ноги (MTM)
+        # Если есть цена входа, считаем по ней. Если нет — по дельте от долга.
         self.virt_value = self.virt_qty * self.price
+        if virt_entry_price > 0:
+            self.pnl_v = (self.price - Decimal(str(virt_entry_price))) * self.virt_qty
+        elif self.virt_debt > 0:
+            self.pnl_v = self.virt_value - self.virt_debt
+        else:
+            v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
+            self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
+
+        # [SSOT] TPV = Доступный баланс (кэш) + PnL фьючерсов + Рыночная стоимость виртуальной ноги
+        # real_equity должен передаваться как "Чистый кэш" (Wallet Balance - virt_debt)
         self.tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + self.virt_value
 
         if self.tpv <= 0:
@@ -65,13 +77,6 @@ class PortfolioCalculator:
         self.val_short = ((s_qty * Decimal(str(short_entry_price)) / s_lev) + mtm_pnl_s) if s_qty > 0 else Decimal('0')
         self.val_virt = self.virt_value
         
-        # V-PnL: Change in market value relative to the capital allocated to it
-        if virt_entry_price > 0:
-            self.pnl_v = (self.price - Decimal(str(virt_entry_price))) * self.virt_qty
-        else:
-            v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
-            self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
-
         # 5. Cash is the remaining liquidity (Free Wallet Balance)
         self.val_cash = self.tpv - (self.val_long + self.val_short + self.val_virt)
         if self.val_cash < 0 and abs(self.val_cash) < 0.1: self.val_cash = Decimal('0') # Rounding protection
