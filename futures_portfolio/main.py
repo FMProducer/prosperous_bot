@@ -1066,23 +1066,13 @@ if __name__ == "__main__":
     else:
         is_paper_instance = cfg.get("paper_mode", False)
     
-    # Strict Isolation: Different prefixes for Paper and Real modes
-    prefix = "paper" if is_paper_instance else "real"
-    
-    log_dir = os.path.join(os.path.dirname(__file__), "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"rebalance_{prefix}_{base_ticker}.log")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()])
-    logger = logging.getLogger(base_ticker)
-    
-    instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"{prefix}_state_{base_ticker}.json"))
-    
     if is_paper_instance:
-        # В бумажном режиме основной стейт и есть бумажный стейт
+        # PAPER mode uses paper_state_*.json
+        instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
         instance_paper_state_file = instance_state_file
     else:
-        # В реальном режиме бот ведет "теневой" бумажный баланс в отдельном файле, 
-        # чтобы не конфликтовать с основным бумажным ботом (мастер-рейтингом)
+        # REAL mode uses real_state_*.json for primary state and shadow_state_*.json for shadow balance
+        instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"real_state_{base_ticker}.json"))
         instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"shadow_state_{base_ticker}.json"))
     
     api_key = os.environ.get("BINANCE_API_KEY", cfg.get("api_key", ""))

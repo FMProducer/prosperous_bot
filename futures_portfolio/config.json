@@ -5,9 +5,9 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 6.0,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 6,
+  "min_cycles_for_rank": 6.1,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -50,41 +50,9 @@
       }
     }
   ],
-  "live_swarm": [
-    "ARCUSDT"
-  ],
-  "real_whitelist": [
-    "ARCUSDT",
-    "VICUSDT",
-    "SYSUSDT",
-    "KAITOUSDT",
-    "RUNEUSDT",
-    "SHELLUSDT",
-    "ORCAUSDT",
-    "DUSDT",
-    "CHZUSDT",
-    "PARTIUSDT",
-    "ZEREBROUSDT",
-    "STORJUSDT",
-    "DUSKUSDT",
-    "1000LUNCUSDT",
-    "AKTUSDT",
-    "RIFUSDT",
-    "GOATUSDT",
-    "TSTUSDT",
-    "SIRENUSDT",
-    "NMRUSDT"
-  ],
+  "live_swarm": [],
+  "real_whitelist": [],
   "black_list": [],
-  "tickers": [
-    "ARCUSDT",
-    "CHZUSDT",
-    "DUSKUSDT",
-    "KAITOUSDT",
-    "NMRUSDT",
-    "ORCAUSDT",
-    "RUNEUSDT",
-    "STORJUSDT"
-  ],
-  "base_ticker": "ARCUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }
