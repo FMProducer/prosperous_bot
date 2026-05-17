@@ -3,7 +3,7 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.2,
+  "min_notional_usdt": 5.3,
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 10,
   "max_bots": 20,
@@ -14,7 +14,7 @@
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 10.0,
   "replacement_efficiency_threshold_pct": 20.0,
-  "equity_trailing_stop_pct": 10.0,
+  "equity_trailing_stop_pct": 5.0,
   "equity_trailing_stop_timeout_sec": 45,
   "telegram_enabled": true,
   "telegram_use_queue": true,
@@ -44,58 +44,15 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.025,
+      "rebalance_threshold": 0.001,
       "ticker_thresholds": {
-        "BTCUSDT": 0.025
+        "BTCUSDT": 0.001
       }
     }
   ],
   "live_swarm": [],
-  "real_whitelist": [
-    "STORJUSDT",
-    "ZEREBROUSDT",
-    "DUSDT",
-    "VICUSDT",
-    "ARCUSDT",
-    "RUNEUSDT",
-    "1000LUNCUSDT",
-    "ORCAUSDT",
-    "POLYXUSDT",
-    "SIRENUSDT",
-    "VVVUSDT",
-    "JELLYJELLYUSDT",
-    "SAGAUSDT"
-  ],
-  "black_list": [
-    "CGPTUSDT",
-    "MLNUSDT",
-    "PHBUSDT",
-    "SYSUSDT",
-    "1000LUNCUSDT",
-    "CHZUSDT",
-    "GPSUSDT"
-  ],
-  "tickers": [
-    "ARBUSDT",
-    "ARCUSDT",
-    "DOTUSDT",
-    "FARTCOINUSDT",
-    "FILUSDT",
-    "INJUSDT",
-    "NEARUSDT",
-    "NMRUSDT",
-    "ORCAUSDT",
-    "ORDIUSDT",
-    "PENDLEUSDT",
-    "POLYXUSDT",
-    "QNTUSDT",
-    "RENDERUSDT",
-    "RUNEUSDT",
-    "SAGAUSDT",
-    "STORJUSDT",
-    "TONUSDT",
-    "VVVUSDT",
-    "ZECUSDT"
-  ],
-  "base_ticker": "ARBUSDT"
+  "real_whitelist": [],
+  "black_list": [],
+  "tickers": [],
+  "base_ticker": ""
 }
