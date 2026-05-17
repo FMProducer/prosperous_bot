@@ -1,6 +1,8 @@
 # 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.9.0)
 
 ## Completed Tasks
+- [x] Robust JSON Handling: Implemented `safe_load_json_sync` and `safe_save_json_sync` with retry logic and atomic writes to eliminate `PermissionError` on Windows.
+- [x] Full System Integration: Updated `aggregator.py`, `main.py`, `swarm_analyzer.py`, and `equity_visualizer.py` to use safe JSON utilities, ensuring stable concurrent access to state files.
 - [x] Hardcoded `rebalance_threshold` to 0.01 in `rank_tickers.py` and enforced it by removing the configuration override for this parameter.
 - [x] Log Noise Suppression: Moved FUSE blocked and Config reloaded logs to DEBUG level.
 - [x] Success-Only Reporting: Suppressed "Rebalance Complete" logs/notifications when no trades occur.
@@ -9,6 +11,16 @@
 ## Next Steps
 
 Система управляет портфелем, извлекая прибыль из внутренней волатильности активов через динамическое управление долями капитала (Equity-based).
+
+---
+
+## 🗓 17 мая 2026: Протокол «Файловая Стабильность» (v3.9.1)
+
+### 🛠 Устранение конфликтов доступа (PermissionError Fix):
+1.  **Robust JSON Utilities:** В `storage.py` внедрены синхронные и асинхронные версии утилит `safe_load_json` и `safe_save_json`. Они используют систему ретраев (до 15 попыток) и атомарную запись через временные файлы, что критично для работы на Windows при высокой интенсивности I/O.
+2.  **Aggregator Safety:** `aggregator.py` полностью переведен на асинхронное чтение файлов состояния. Это устранило регулярные сбои сервиса при одновременном обращении к файлам `paper_state_*.json`.
+3.  **Config Access Lockdown:** Все компоненты системы (`main.py`, `supervisor.py`, `swarm_analyzer.py`) теперь используют единый стандарт безопасного чтения конфигурации. Это предотвращает «падение» ботов при обновлении настроек супервайзером.
+4.  **Equity Visualization Fix:** `equity_visualizer.py` обновлен для безопасного сбора данных, что позволяет генерировать графики доходности даже в моменты активной торговли без риска блокировки файлов.
 
 ---
 

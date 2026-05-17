@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import asyncio
 from datetime import datetime
 from notifier import TelegramNotifier
+from storage import safe_load_json
 
 # Настройки
 LOG_DIR = "logs"
@@ -25,15 +26,9 @@ async def get_total_equity():
     total_pnl = 0.0
     global_safe = 0.0
     
-    import glob
-    
     # Загружаем конфиг, чтобы отличить активных от архивных
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        active_tickers = config.get("tickers", [])
-    except:
-        active_tickers = []
+    config = await safe_load_json(CONFIG_PATH, {})
+    active_tickers = config.get("tickers", [])
 
     # Находим все файлы состояния (это база всех ботов, когда-либо запущенных)
     all_states = glob.glob("state_*.json")
@@ -44,8 +39,7 @@ async def get_total_equity():
         
         try:
             # 1. Считаем SAFE (зафиксированная прибыль)
-            with open(sf, "r", encoding="utf-8") as f:
-                s_data = json.load(f)
+            s_data = await safe_load_json(sf, {})
             bot_safe = s_data.get("siphoning_reserve", 0.0)
             global_safe += bot_safe
             
@@ -54,8 +48,7 @@ async def get_total_equity():
             bot_tpv = INITIAL_BOT_CAPITAL # По умолчанию, если файла нет
             
             if os.path.exists(pf):
-                with open(pf, "r", encoding="utf-8") as f:
-                    p_data = json.load(f)
+                p_data = await safe_load_json(pf, {})
                 
                 balance = p_data.get("balance", INITIAL_BOT_CAPITAL)
                 last_price = p_data.get("last_price", 0.0)

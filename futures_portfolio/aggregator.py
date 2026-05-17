@@ -83,31 +83,7 @@ class StatusAggregator:
                 logger.error(f"Error in telegram queue processor: {e}")
                 await asyncio.sleep(5)
 
-    async def collect_and_send(self) -> None:
-        config = self.load_config()
-        if not config.get("telegram_enabled", True):
-            return
-            
-        if self.notifier is None:
-            self.notifier = TelegramNotifier()
-
-        # Получаем реальные балансы с биржи для "Reality Check"
-        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
-        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
-        testnet = config.get("testnet", False)
-        
-        wallet_usdt = 0.0
-        wallet_bnb = 0.0
-        
-        try:
-            connector = BinanceConnector(api_key, secret_key, testnet=testnet)
-            wallet_usdt = await connector.get_free_balance()
-            wallet_bnb = await connector.get_bnb_balance()
-        except Exception as e:
-            logger.error(f"Failed to fetch real balances: {e}")
-
-        # Параметры для ROI (динамически из конфига)
-    def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
+    async def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
         total_profit = 0.0
         total_safe = 0.0
         summary_lines = []
@@ -117,9 +93,10 @@ class StatusAggregator:
 
         for f_path in files:
             try:
-                # В асинхронном контексте читаем через safe_load_json или просто json.load
-                with open(f_path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
+                # В асинхронном контексте читаем через safe_load_json
+                state = await safe_load_json(f_path, {})
+                if not state:
+                    continue
                 
                 ticker = state.get("base_ticker", "UNKNOWN")
                 profit = state.get("last_profit", 0.0)
@@ -165,6 +142,7 @@ class StatusAggregator:
     async def collect_and_send(self):
         config = self.load_config()
         if not config: return
+        if not config.get("telegram_enabled", True): return
         
         if self.notifier is None:
             self.notifier = TelegramNotifier()
@@ -193,8 +171,8 @@ class StatusAggregator:
         paper_files = glob.glob("paper_state_*.json")
         real_files = glob.glob("real_state_*.json")
         
-        combat_text, c_profit, c_safe = self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
-        incubator_text, i_profit, i_safe = self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
+        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
+        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
 
         total_profit = c_profit # ROI считаем только по реальным деньгам
         working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot

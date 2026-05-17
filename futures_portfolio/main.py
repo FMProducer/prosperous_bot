@@ -17,15 +17,14 @@ from connector import BinanceConnector
 from calculator import PortfolioCalculator
 from executor import PortfolioExecutor
 from notifier import TelegramNotifier
-from storage import safe_load_json as load_json, safe_save_json as save_json
+from storage import safe_load_json as load_json, safe_save_json as save_json, safe_load_json_sync
 
 from pathlib import Path
 
 # ProcessPoolExecutor removed to reduce latency
 
 def sync_read_json(path: str) -> Dict:
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return safe_load_json_sync(path, {})
 
 
 def emit_signal(signal_type: str, ticker: str) -> None:
@@ -48,11 +47,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     last_config_mtime = 0.0
     
     # Обычное чтение конфига без блокировок
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except Exception as e:
-        logger.error(f"Aborting cycle: Failed to read config {config_path}: {e}")
+    config = safe_load_json_sync(config_path, {})
+    if not config:
+        logger.error(f"Aborting cycle: Failed to read config {config_path}")
         return
 
     if not config or "portfolios" not in config:
@@ -931,11 +928,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         await notifier.close()
 
 async def emergency_stop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode: bool = False, close_only: bool = False):
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except:
-        config = {}
+    config = safe_load_json_sync(config_path, {})
 
     base_ticker = ticker_override if ticker_override else config.get("base_ticker", "BTCUSDT")
     portfolio_cfg = config.get("portfolios", [{}])[0]
@@ -1048,11 +1041,7 @@ if __name__ == "__main__":
     config_base = os.path.splitext(os.path.basename(args.config))[0]
 
     def get_initial_cfg():
-        try:
-            with open(args.config, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return {}
+        return safe_load_json_sync(args.config, {})
 
     cfg = get_initial_cfg()
     base_ticker = args.ticker if args.ticker else cfg.get("base_ticker", "BTCUSDT")
