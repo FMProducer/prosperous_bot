@@ -1,12 +1,12 @@
-# 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.9.0)
+# 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.9.1)
 
-## Completed Tasks
-- [x] Robust JSON Handling: Implemented `safe_load_json_sync` and `safe_save_json_sync` with retry logic and atomic writes to eliminate `PermissionError` on Windows.
-- [x] Full System Integration: Updated `aggregator.py`, `main.py`, `swarm_analyzer.py`, and `equity_visualizer.py` to use safe JSON utilities, ensuring stable concurrent access to state files.
-- [x] Hardcoded `rebalance_threshold` to 0.01 in `rank_tickers.py` and enforced it by removing the configuration override for this parameter.
-- [x] Log Noise Suppression: Moved FUSE blocked and Config reloaded logs to DEBUG level.
-- [x] Success-Only Reporting: Suppressed "Rebalance Complete" logs/notifications when no trades occur.
-- [x] Telegram Startup Guard: Disabled Telegram notifications for Rebalance #1 to prevent startup spam.
+## Выполненные задачи
+- [x] **Надежная работа с JSON:** Внедрены `safe_load_json_sync` и `safe_save_json_sync` с логикой ретраев и атомарной записью для устранения `PermissionError` на Windows.
+- [x] **Полная системная интеграция:** Обновлены `aggregator.py`, `main.py`, `swarm_analyzer.py` и `equity_visualizer.py` для использования безопасных утилит JSON, что гарантирует стабильный параллельный доступ к файлам состояния.
+- [x] **Фиксация порога:** Жестко задан `rebalance_threshold` на уровне 0.01 в `rank_tickers.py` и удалена возможность переопределения этого параметра через конфиг.
+- [x] **Подавление шума в логах:** Логи `FUSE blocked` и `Config reloaded` переведены на уровень DEBUG.
+- [x] **Отчеты только об успехах:** Подавлены уведомления «Rebalance Complete», если сделок не было.
+- [x] **Защита Telegram от спама:** Отключены уведомления для первой ребалансировки (Rebalance #1).
 
 ## Next Steps
 
