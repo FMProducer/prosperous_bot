@@ -113,15 +113,17 @@ class StatusAggregator:
                 logger.error(f"Error in telegram queue processor: {e}")
                 await asyncio.sleep(5)
 
-    def _generate_swarm_section(self, files, live_swarm, active_tickers, label, config):
+    async def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
         total_profit = 0.0
         total_safe = 0.0
         summary_lines = []
         
         for f_path in files:
             try:
-                with open(f_path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
+                # В асинхронном контексте читаем через safe_load_json
+                state = await safe_load_json(f_path, {})
+                if not state:
+                    continue
                 
                 ticker = state.get("base_ticker", "UNKNOWN")
                 profit = state.get("last_profit", 0.0)
@@ -158,11 +160,13 @@ class StatusAggregator:
         section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
         return section_text, total_profit, total_safe
 
-    async def execute_aggregation_cycle(self) -> None:
-        """Изолированная логика одного шага агрегации."""
-        config = await self.load_config_async()
-        if not config or not config.get("telegram_enabled", True):
-            return
+    async def collect_and_send(self):
+        config = self.load_config()
+        if not config: return
+        if not config.get("telegram_enabled", True): return
+        
+        if self.notifier is None:
+            self.notifier = TelegramNotifier()
 
         wallet_usdt = 0.0
         wallet_bnb = 0.0
@@ -181,8 +185,8 @@ class StatusAggregator:
         paper_files = glob.glob("paper_state_*.json")
         real_files = glob.glob("real_state_*.json")
         
-        combat_text, c_profit, c_safe = self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT", config)
-        incubator_text, i_profit, i_safe = self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR", config)
+        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
+        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
 
         working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
         roi = (c_profit / working_capital) * 100 if working_capital > 0 else 0

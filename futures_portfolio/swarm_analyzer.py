@@ -1,25 +1,25 @@
 import json
 import glob
 import os
+from storage import safe_load_json_sync
 
 def analyze_swarm():
     # Загрузка конфига для динамических параметров
-    try:
-        with open('config.json', 'r') as c:
-            config = json.load(c)
-            # Берем initial_capital из первого портфеля (обычно 39000)
-            initial_per_bot = config['portfolios'][0].get('initial_capital', 39000.0)
-            max_bots = config.get('max_bots', 10)
-            min_cycles_for_rank = config.get('min_cycles_for_rank', 20)
-            working_capital = initial_per_bot * max_bots
-            active_tickers = config.get('tickers', [])
-            live_swarm = config.get('live_swarm', [])
-    except Exception as e:
-        print(f"Error loading config.json: {e}")
+    config = safe_load_json_sync('config.json', {})
+    if not config:
+        print("Error loading config.json")
         initial_per_bot = 39000.0
         working_capital = 390000.0
         active_tickers = []
         live_swarm = []
+    else:
+        # Берем initial_capital из первого портфеля (обычно 39000)
+        initial_per_bot = config.get('portfolios', [{}])[0].get('initial_capital', 39000.0)
+        max_bots = config.get('max_bots', 10)
+        min_cycles_for_rank = config.get('min_cycles_for_rank', 20)
+        working_capital = initial_per_bot * max_bots
+        active_tickers = config.get('tickers', [])
+        live_swarm = config.get('live_swarm', [])
 
     total_net_pnl = 0
     total_safe = 0
@@ -30,42 +30,42 @@ def analyze_swarm():
     
     for f in files:
         try:
-            with open(f, 'r') as j:
-                state_data = json.load(j)
-                
-                # Извлекаем тикер
-                ticker_from_file = os.path.basename(f).replace('state_', '').replace('.json', '')
-                ticker = state_data.get('base_ticker', ticker_from_file)
-                
-                # Архитектурное исправление: Читаем готовый расчет напрямую от main.py.
-                total_ticker_pnl = state_data.get("last_profit", 0.0)
-                if "final_profit" in state_data:
-                    total_ticker_pnl = state_data.get("final_profit", total_ticker_pnl)
-                
-                cycles = int(state_data.get('rebalance_cycles', 0))
-                efficiency = total_ticker_pnl / max(cycles, min_cycles_for_rank)
+            state_data = safe_load_json_sync(f, {})
+            if not state_data:
+                continue
+            
+            # Извлекаем тикер
+            ticker_from_file = os.path.basename(f).replace('state_', '').replace('.json', '')
+            ticker = state_data.get('base_ticker', ticker_from_file)
+            
+            # Архитектурное исправление: Читаем готовый расчет напрямую от main.py.
+            total_ticker_pnl = state_data.get("last_profit", 0.0)
+            if "final_profit" in state_data:
+                total_ticker_pnl = state_data.get("final_profit", total_ticker_pnl)
+            
+            cycles = int(state_data.get('rebalance_cycles', 0))
+            efficiency = total_ticker_pnl / max(cycles, min_cycles_for_rank if 'min_cycles_for_rank' in locals() else 20)
 
-                safe_reserve = state_data.get('siphoning_reserve', 0.0)
+            safe_reserve = state_data.get('siphoning_reserve', 0.0)
 
-                # Для отображения баланса ищем paper_state
-                balance = initial_per_bot
-                paper_state_file = f"paper_state_{ticker}.json"
-                if os.path.exists(paper_state_file):
-                    with open(paper_state_file, 'r') as p_j:
-                        p_data = json.load(p_j)
-                        balance = p_data.get('balance', initial_per_bot)
-                
-                total_net_pnl += total_ticker_pnl
-                total_safe += safe_reserve
-                
-                results.append({
-                    "ticker": ticker,
-                    "balance": balance,
-                    "safe": safe_reserve,
-                    "pnl": total_ticker_pnl,
-                    "eff": efficiency,
-                    "mode": "REAL" if ticker in live_swarm else "PAPER"
-                })
+            # Для отображения баланса ищем paper_state
+            balance = initial_per_bot
+            paper_state_file = f"paper_state_{ticker}.json"
+            if os.path.exists(paper_state_file):
+                p_data = safe_load_json_sync(paper_state_file, {})
+                balance = p_data.get('balance', initial_per_bot)
+            
+            total_net_pnl += total_ticker_pnl
+            total_safe += safe_reserve
+            
+            results.append({
+                "ticker": ticker,
+                "balance": balance,
+                "safe": safe_reserve,
+                "pnl": total_ticker_pnl,
+                "eff": efficiency,
+                "mode": "REAL" if ticker in live_swarm else "PAPER"
+            })
         except Exception as e:
             print(f"Error reading {f}: {e}")
     
