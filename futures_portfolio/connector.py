@@ -64,9 +64,8 @@ class BinanceConnector:
         self.base_ticker = base_ticker
         self.api_key = api_key
         
-        # Настройка сессии: отключаем доверие к системному окружению (прокси)
+        # Для aiohttp (AsyncClient) параметр 'proxies' недопустим в kwargs.
         requests_params = {
-            'proxies': {'http': None, 'https': None},
             'timeout': 15
         }
         
