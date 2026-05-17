@@ -29,6 +29,11 @@ def retry_on_network_error(retries: int = 3, delay: float = 2.0):
     """Декоратор для повторных попыток при сетевых ошибках."""
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
+            # Lazy initialization of the client strictly inside the active Event Loop
+            self_obj = args[0] if args else None
+            if self_obj and hasattr(self_obj, '_ensure_client'):
+                await self_obj._ensure_client()
+
             last_err = None
             for attempt in range(retries):
                 try:
@@ -63,21 +68,23 @@ class BinanceConnector:
         self.testnet = testnet
         self.base_ticker = base_ticker
         self.api_key = api_key
-        
-        # Для aiohttp (AsyncClient) параметр 'proxies' недопустим в kwargs.
-        requests_params = {
-            'timeout': 15
-        }
-        
-        # Initialize AsyncClient directly
-        if testnet:
-            self.client = AsyncClient(api_key, secret_key, testnet=True, requests_params=requests_params)
-        else:
-            self.client = AsyncClient(api_key, secret_key, testnet=False, requests_params=requests_params)
-            self.client.API_URL = 'https://api1.binance.com/api'
-            self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
-            
-        self.futures_client = self.client
+        self.secret_key = secret_key
+        self.client = None
+        self.futures_client = None
+
+    async def _ensure_client(self):
+        if self.client is None:
+            requests_params = {'timeout': 15}
+            self.client = AsyncClient(
+                self.api_key,
+                self.secret_key,
+                testnet=self.testnet,
+                requests_params=requests_params
+            )
+            if not self.testnet:
+                self.client.API_URL = 'https://api1.binance.com/api'
+                self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+            self.futures_client = self.client
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:
