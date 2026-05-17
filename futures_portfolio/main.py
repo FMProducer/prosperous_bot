@@ -665,13 +665,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if price <= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.debug(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    logger.info(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             elif side == "SELL":
                                 limit_price = last_reb_price * (1 + threshold)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.debug(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    logger.info(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+
                             else:
                                 fused_actions.append(action)
                     

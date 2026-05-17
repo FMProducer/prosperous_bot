@@ -14,6 +14,7 @@ load_dotenv()
 
 from rank_tickers import main as run_scanner
 from storage import safe_load_json, safe_save_json
+from connector import BinanceConnector
 
 # Настройка логирования
 BASE_PATH = Path(__file__).resolve().parent
@@ -100,6 +101,11 @@ async def manage_swarm():
     config = await safe_load_json(CONFIG_PATH, {})
     if not config: return
 
+    # Инициализация коннектора для операций на бирже
+    api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+    secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+    connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
+
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
     try:
@@ -158,11 +164,17 @@ async def manage_swarm():
         # Бот допускается к оценке REAL, если он прошел карантин по циклам,
         # ЛИБО если он уже торгует в реале (is_running_real), чтобы не дергать процессы зря.
         if (p['profit'] > 0 and (has_enough_history or is_running_real)) or is_sticky:
-            sort_eff = p['eff']
+            pure_eff = p['eff']
+            sort_eff = pure_eff
+            
             if is_sticky:
                 sort_eff += 1000000.0
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky (Total:{sort_eff:.2f})")
             elif is_running_real:
                 sort_eff *= (1 + replacement_threshold / 100.0)
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.2f})")
+            else:
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})")
             
             p['sort_eff'] = sort_eff
             ready_pool.append(ticker)
@@ -172,6 +184,19 @@ async def manage_swarm():
     target_real_bots = ready_pool[:max_real_slots]
 
     # -------------------------------------------------------------------------
+    # 3.5. [Authoritative Cleanup] Закрываем позиции на бирже для тех, кто не в live_swarm, 
+    # даже если PM2 процесс уже не найден (застрявшие позиции).
+    active_positions = await connector.get_positions()
+    for pos_key in active_positions.keys():
+        # pos_key имеет вид "SYMBOL_SIDE"
+        ticker = pos_key.split('_')[0]
+        if ticker not in target_real_bots:
+            qty = active_positions[pos_key].get("qty", 0.0)
+            if float(qty) != 0:
+                logger.warning(f"🧹 Authoritative Cleanup: Found stray position for {ticker}. Closing it!")
+                cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
+                await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
+
     # 4. Исполнение в PM2: Доктрина Параллельного Слежения (Защищенная версия)
     # -------------------------------------------------------------------------
 
