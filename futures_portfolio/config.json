@@ -5,15 +5,15 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 5.3,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 5,
-  "max_bots": 10,
-  "paper_mode_bots": 9,
+  "min_cycles_for_rank": 6,
+  "max_bots": 20,
+  "paper_mode_bots": 19,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 10.0,
-  "replacement_efficiency_threshold_pct": 20.0,
+  "replacement_efficiency_threshold_pct": 30.0,
   "equity_trailing_stop_pct": 5.0,
   "equity_trailing_stop_timeout_sec": 45,
   "telegram_enabled": true,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 81.0,
-      "paper_initial_capital": 81.0,
+      "initial_capital": 78.0,
+      "paper_initial_capital": 78.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -52,16 +52,39 @@
   ],
   "live_swarm": [],
   "real_whitelist": [
-    "ATOMUSDT",
-    "FHEUSDT",
+    "ARCUSDT",
+    "VICUSDT",
+    "SYSUSDT",
+    "KAITOUSDT",
+    "RUNEUSDT",
+    "SHELLUSDT",
+    "ORCAUSDT",
+    "DUSDT",
+    "CHZUSDT",
+    "PARTIUSDT",
+    "ZEREBROUSDT",
+    "STORJUSDT",
+    "DUSKUSDT",
     "1000LUNCUSDT",
-    "JELLYJELLYUSDT",
-    "SYSUSDT"
+    "AKTUSDT",
+    "RIFUSDT",
+    "GOATUSDT",
+    "TSTUSDT",
+    "SIRENUSDT",
+    "NMRUSDT"
   ],
   "black_list": [],
   "tickers": [
     "1000LUNCUSDT",
-    "ATOMUSDT"
+    "ARCUSDT",
+    "CHZUSDT",
+    "DUSKUSDT",
+    "KAITOUSDT",
+    "NMRUSDT",
+    "ORCAUSDT",
+    "RUNEUSDT",
+    "STORJUSDT",
+    "ZEREBROUSDT"
   ],
   "base_ticker": "1000LUNCUSDT"
 }

@@ -39,10 +39,16 @@ class PortfolioExecutor:
         # Strictly mathematically correct rounding for arbitrary steps using Decimal
         return (qty / step_size).quantize(Decimal('1'), rounding=ROUND_HALF_EVEN) * step_size
 
-    async def execute_market_order(self, symbol: str, qty: Decimal, side: str, step_size: Decimal = Decimal('0'), reduce_only: bool = False, position_side: str = "BOTH", min_notional: Decimal = Decimal('6.0'), price: Decimal = Decimal('0')) -> Dict:
+    async def execute_market_order(self, symbol: str, qty: Any, side: str, step_size: Any = Decimal('0'), reduce_only: bool = False, position_side: str = "BOTH", min_notional: Any = Decimal('6.0'), price: Any = Decimal('0')) -> Dict:
         """
         Отправка рыночного ордера на Binance Futures с полной точностью Decimal.
         """
+        # Ensure Decimal for all numeric inputs to prevent float errors
+        qty = Decimal(str(qty))
+        step_size = Decimal(str(step_size))
+        min_notional = Decimal(str(min_notional))
+        price = Decimal(str(price))
+
         if qty == 0:
             return {"status": "NO_ORDER", "message": "Размер ордера равен нулю"}
 
@@ -102,16 +108,22 @@ class PortfolioExecutor:
             logger.error(f"Order FAILED: {e}")
             return {"status": "ERROR", "message": str(e)}
 
-    async def execute_limit_with_fallback(self, symbol: str, qty: Decimal, side: str,
-                                           step_size: Decimal = Decimal('0'), reduce_only: bool = False,
+    async def execute_limit_with_fallback(self, symbol: str, qty: Any, side: str,
+                                           step_size: Any = Decimal('0'), reduce_only: bool = False,
                                            position_side: str = "BOTH",
-                                           offset_pct: Decimal = Decimal('0.2'),
+                                           offset_pct: Any = Decimal('0.2'),
                                            timeout_sec: int = 30,
-                                           min_notional: Decimal = Decimal('6.0'),
-                                           price: Decimal = Decimal('0')) -> Dict:
+                                           min_notional: Any = Decimal('6.0'),
+                                           price: Any = Decimal('0')) -> Dict:
         """
         Limit + Fallback с проверкой минимальной стоимости с использованием Decimal.
         """
+        qty = Decimal(str(qty))
+        step_size = Decimal(str(step_size))
+        offset_pct = Decimal(str(offset_pct))
+        min_notional = Decimal(str(min_notional))
+        price = Decimal(str(price))
+
         if qty == 0:
             return {"status": "NO_ORDER", "message": "Размер ордера равен нулю"}
 

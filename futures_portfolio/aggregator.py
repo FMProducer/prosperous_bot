@@ -195,8 +195,6 @@ class StatusAggregator:
 
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
-        # Запускаем обработчик очереди как фоновую задачу
-        asyncio.create_task(self.process_telegram_queue())
         
         while True:
             config = self.load_config()

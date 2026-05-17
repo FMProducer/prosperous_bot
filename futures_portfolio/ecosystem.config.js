@@ -25,6 +25,16 @@ module.exports = {
       env: {
         PYTHONUNBUFFERED: "1"
       }
+    },
+    {
+      name: "telegram-sender",
+      script: "telegram_sender.py",
+      interpreter: "python",
+      restart_delay: 5000,
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      env: {
+        PYTHONUNBUFFERED: "1"
+      }
     }
   ]
 };

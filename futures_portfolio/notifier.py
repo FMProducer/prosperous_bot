@@ -22,10 +22,15 @@ class TelegramNotifier:
         self.enabled = self._is_enabled()
         
         # Очередь сообщений для предотвращения 429
+        # Используем значение из конфига или True по умолчанию
         self.use_queue = self.config.get("telegram_use_queue", True)
         self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
+        
         if self.use_queue:
             os.makedirs(self.queue_dir, exist_ok=True)
+            logger.info(f"Telegram Queue ENABLED: {self.queue_dir}")
+        else:
+            logger.info("Telegram Queue DISABLED")
 
         self._session = None
         # Максимальное время ожидания при 429, чтобы не блокировать логику бота

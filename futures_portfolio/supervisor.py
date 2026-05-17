@@ -193,7 +193,7 @@ async def manage_swarm():
             active_running_keys.discard(key)
 
             # Экстренно закрываем позиции на бирже для этого тикера
-            cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop'
+            cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
             await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
 
     # Пауза для стабильности дескрипторов PM2

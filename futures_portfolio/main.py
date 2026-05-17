@@ -535,7 +535,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                                 if not paper_mode:
                                     # In REAL mode, close real position
-                                    await PortfolioExecutor(connector).execute_market_order(pos_key.split('_')[0], abs(qty), side, step_size, True, pos_key.split('_')[1] if '_' in pos_key else "BOTH")
+                                    await PortfolioExecutor(connector).execute_market_order(
+                                        symbol=pos_key.split('_')[0],
+                                        qty=Decimal(str(abs(qty))),
+                                        side=side,
+                                        step_size=Decimal(str(step_size)),
+                                        reduce_only=True,
+                                        position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
+                                        min_notional=Decimal('0')
+                                    )
                                     
                             # Reset shadow balance to initial capital to avoid loop on restart
                             paper_state["balance"] = portfolio_cfg.get("initial_capital", 60.0)
@@ -991,12 +999,12 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                     logger.info(f"Closing REAL position {pos_key}: {qty}")
                     await PortfolioExecutor(connector).execute_market_order(
                         symbol=base_ticker,
-                        qty=abs(qty),
+                        qty=Decimal(str(abs(qty))),
                         side=side,
-                        step_size=step_size,
+                        step_size=Decimal(str(step_size)),
                         reduce_only=True,
                         position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
-                        min_notional=0.0
+                        min_notional=Decimal('0')
                     )
 
         if not close_only:
