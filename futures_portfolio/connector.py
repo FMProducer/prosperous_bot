@@ -1,13 +1,17 @@
+import aiohttp
 import os
 import asyncio
 import logging
 from typing import Dict, List, Callable, Any
 
-from binance.client import Client
+from binance import AsyncClient
 from binance.exceptions import BinanceAPIException
 import requests.exceptions
 
 logger = logging.getLogger(__name__)
+
+# Подмена URL на уровне класса для обхода блокировок в РФ (до инициализации)
+# Для AsyncClient это может работать иначе, но пока оставляем как в инструкции.
 
 class BinanceConnectorMock:
     def __init__(self, *args, **kwargs):
@@ -21,19 +25,20 @@ class BinanceConnectorMock:
     async def get_positions(self): return {}
     async def get_margin_ratio(self): return {"margin_ratio": 10.0}
 
-# Подмена URL на уровне класса для обхода блокировок в РФ (до инициализации)
-Client.API_URL = 'https://api1.binance.com/api'
-Client.FUTURES_URL = 'https://fapi.binance.com/fapi'
-
 def retry_on_network_error(retries: int = 3, delay: float = 2.0):
     """Декоратор для повторных попыток при сетевых ошибках."""
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
+            # Lazy initialization of the client strictly inside the active Event Loop
+            self_obj = args[0] if args else None
+            if self_obj and hasattr(self_obj, '_ensure_client'):
+                await self_obj._ensure_client()
+
             last_err = None
             for attempt in range(retries):
                 try:
                     return await func(*args, **kwargs)
-                except (requests.exceptions.RequestException, 
+                except (aiohttp.ClientError, requests.exceptions.RequestException,
                         requests.exceptions.ProxyError,
                         requests.exceptions.ConnectionError) as e:
                     last_err = e
@@ -63,30 +68,28 @@ class BinanceConnector:
         self.testnet = testnet
         self.base_ticker = base_ticker
         self.api_key = api_key
-        
-        # Настройка сессии: отключаем доверие к системному окружению (прокси)
-        requests_params = {
-            'proxies': {'http': None, 'https': None},
-            'timeout': 15
-        }
-        
-        if testnet:
-            # Для тестнета зеркала обычно не нужны или не работают, но прокси отключаем
-            self.client = Client(api_key, secret_key, testnet=True, requests_params=requests_params)
-        else:
-            self.client = Client(api_key, secret_key, testnet=False, requests_params=requests_params)
-            # Дополнительная проверка, что URL подменились
+        self.secret_key = secret_key
+
+        requests_params = {'timeout': 15}
+        self.client = AsyncClient(
+            self.api_key,
+            self.secret_key,
+            testnet=self.testnet,
+            requests_params=requests_params
+        )
+        if not self.testnet:
             self.client.API_URL = 'https://api1.binance.com/api'
             self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
-            
         self.futures_client = self.client
-        # Отключаем использование системных переменных в сессии requests
-        self.client.session.trust_env = False
+
+    async def _ensure_client(self):
+        """No-op for compatibility with decorator if needed, but client is already init in __init__"""
+        pass
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:
         """Получение фьючерсных позиций с разделением на LONG и SHORT, включая цену входа."""
-        positions = await asyncio.to_thread(self.futures_client.futures_position_information)
+        positions = await self.futures_client.futures_position_information()
         result = {}
         for pos in positions:
             qty = float(pos["positionAmt"])
@@ -105,7 +108,7 @@ class BinanceConnector:
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_futures_prices(self, tickers: List[str] = None) -> Dict[str, float]:
         """Получение фьючерсных цен (Last Price) для заданных тикеров."""
-        prices = await asyncio.to_thread(self.futures_client.futures_symbol_ticker)
+        prices = await self.futures_client.futures_symbol_ticker()
         if isinstance(prices, dict):
             prices = [prices]
         
@@ -117,7 +120,7 @@ class BinanceConnector:
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_mark_prices(self, tickers: List[str] = None) -> Dict[str, float]:
         """Получение цен маркировки (Mark Price) для заданных тикеров."""
-        prices = await asyncio.to_thread(self.futures_client.futures_mark_price)
+        prices = await self.futures_client.futures_mark_price()
         if isinstance(prices, dict):
             prices = [prices]
         
@@ -132,21 +135,21 @@ class BinanceConnector:
         if tickers is None:
             tickers = [self.base_ticker]
         
-        prices = await asyncio.to_thread(self.client.get_all_tickers)
+        prices = await self.client.get_all_tickers()
         result = {t["symbol"]: float(t["price"]) for t in prices}
         return {sym: result.get(sym.split('_')[0]) for sym in tickers}
 
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_exchange_info(self) -> Dict:
-        return await asyncio.to_thread(self.futures_client.futures_exchange_info)
+        return await self.futures_client.futures_exchange_info()
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_futures_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List]:
-        return await asyncio.to_thread(self.futures_client.futures_klines, symbol=symbol, interval=interval, limit=limit)
+        return await self.futures_client.futures_klines(symbol=symbol, interval=interval, limit=limit)
 
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_margin_ratio(self) -> Dict[str, float]:
-        account_info = await asyncio.to_thread(self.futures_client.futures_account)
+        account_info = await self.futures_client.futures_account()
         return {
             "margin_ratio": float(account_info.get("totalMarginBalance", 0)) / float(account_info.get("totalMaintMargin", 1)) if float(account_info.get("totalMaintMargin", 0)) > 0 else float('inf'),
             "available_balance": float(account_info.get("availableBalance", 0)),
@@ -159,14 +162,14 @@ class BinanceConnector:
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_hedge_mode(self) -> bool:
         """Проверка, включен ли Hedge Mode (True - включен, False - One-Way)."""
-        mode_info = await asyncio.to_thread(self.futures_client.futures_get_position_mode)
+        mode_info = await self.futures_client.futures_get_position_mode()
         return mode_info.get("dualSidePosition", False)
 
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_free_balance(self) -> float:
         if not self.api_key or self.api_key == "YOUR_API_KEY":
             return 10000.0
-        balances = await asyncio.to_thread(self.futures_client.futures_account_balance)
+        balances = await self.futures_client.futures_account_balance()
         usdt_balance = next((b["balance"] for b in balances if b["asset"] == "USDT"), 0.0)
         return float(usdt_balance)
 
@@ -175,15 +178,14 @@ class BinanceConnector:
         """Получение баланса BNB на фьючерсном аккаунте."""
         if not self.api_key or self.api_key == "YOUR_API_KEY":
             return 0.0
-        balances = await asyncio.to_thread(self.futures_client.futures_account_balance)
+        balances = await self.futures_client.futures_account_balance()
         bnb_balance = next((b["balance"] for b in balances if b["asset"] == "BNB"), 0.0)
         return float(bnb_balance)
 
     @retry_on_network_error(retries=3, delay=2.0)
     async def set_leverage(self, symbol: str, leverage: int):
         """Установка плеча для символа."""
-        return await asyncio.to_thread(
-            self.futures_client.futures_change_leverage,
+        return await self.futures_client.futures_change_leverage(
             symbol=symbol,
             leverage=leverage
         )
@@ -192,8 +194,7 @@ class BinanceConnector:
     async def set_margin_type(self, symbol: str, margin_type: str):
         """Установка типа маржи (ISOLATED или CROSS)."""
         try:
-            return await asyncio.to_thread(
-                self.futures_client.futures_change_margin_type,
+            return await self.futures_client.futures_change_margin_type(
                 symbol=symbol,
                 marginType=margin_type
             )
@@ -206,8 +207,7 @@ class BinanceConnector:
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_order_book(self, symbol: str, limit: int = 20) -> Dict:
         """Получение стакана ордеров (глубина 5-1000 уровней)."""
-        return await asyncio.to_thread(
-            self.futures_client.futures_order_book,
+        return await self.futures_client.futures_order_book(
             symbol=symbol,
             limit=limit
         )
@@ -231,8 +231,7 @@ class BinanceConnector:
         # Исключаем reduceOnly из параметров, так как в Hedge Mode он вызывает ошибку -1106
         # В режиме хеджирования достаточно указать side и positionSide
         
-        result = await asyncio.to_thread(
-            self.futures_client.futures_create_order,
+        result = await self.futures_client.futures_create_order(
             **params
         )
         return result
@@ -240,8 +239,7 @@ class BinanceConnector:
     @retry_on_network_error(retries=3, delay=2.0)
     async def get_order_status(self, symbol: str, order_id: int) -> Dict:
         """Проверка статуса ордера."""
-        return await asyncio.to_thread(
-            self.futures_client.futures_get_order,
+        return await self.futures_client.futures_get_order(
             symbol=symbol,
             orderId=order_id
         )
@@ -249,8 +247,7 @@ class BinanceConnector:
     @retry_on_network_error(retries=3, delay=2.0)
     async def cancel_order(self, symbol: str, order_id: int) -> Dict:
         """Отмена ордера."""
-        return await asyncio.to_thread(
-            self.futures_client.futures_cancel_order,
+        return await self.futures_client.futures_cancel_order(
             symbol=symbol,
             orderId=order_id
         )
@@ -262,8 +259,7 @@ class BinanceConnector:
         Выставление POST-ONLY лимитного ордера (гарантия maker-комиссии).
         Если ордер не может быть maker — будет отклонён биржей.
         """
-        result = await asyncio.to_thread(
-            self.futures_client.futures_create_order,
+        result = await self.futures_client.futures_create_order(
             symbol=symbol,
             side=side,
             type="LIMIT_MAKER",
