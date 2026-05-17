@@ -11,14 +11,14 @@ load_dotenv()
 logger = logging.getLogger("Notifier")
 
 class TelegramNotifier:
-    def __init__(self):
+    def __init__(self, config: dict = None):
         self.token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         self.api_base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org")
         
-        # Загружаем настройки из config.json
+        # Загружаем настройки из config.json или используем переданный конфиг
         self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-        self.config = self._load_config()
+        self.config = config if config is not None else self._load_config()
         self.enabled = self._is_enabled()
         
         # Очередь сообщений для предотвращения 429

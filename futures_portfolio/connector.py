@@ -69,22 +69,22 @@ class BinanceConnector:
         self.base_ticker = base_ticker
         self.api_key = api_key
         self.secret_key = secret_key
-        self.client = None
-        self.futures_client = None
+
+        requests_params = {'timeout': 15}
+        self.client = AsyncClient(
+            self.api_key,
+            self.secret_key,
+            testnet=self.testnet,
+            requests_params=requests_params
+        )
+        if not self.testnet:
+            self.client.API_URL = 'https://api1.binance.com/api'
+            self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+        self.futures_client = self.client
 
     async def _ensure_client(self):
-        if self.client is None:
-            requests_params = {'timeout': 15}
-            self.client = AsyncClient(
-                self.api_key,
-                self.secret_key,
-                testnet=self.testnet,
-                requests_params=requests_params
-            )
-            if not self.testnet:
-                self.client.API_URL = 'https://api1.binance.com/api'
-                self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
-            self.futures_client = self.client
+        """No-op for compatibility with decorator if needed, but client is already init in __init__"""
+        pass
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:
