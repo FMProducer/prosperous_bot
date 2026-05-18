@@ -5,12 +5,18 @@ import logging
 import time
 import glob
 import sys
+import io
 from typing import Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
 from notifier import TelegramNotifier
 from storage import safe_load_json
 from connector import BinanceConnector
+
+# Force UTF-8 for Windows streams
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 load_dotenv()
 

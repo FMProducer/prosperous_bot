@@ -91,6 +91,27 @@
     "STOUSDT"
   ],
   "black_list": [],
-  "tickers": [],
-  "base_ticker": ""
+  "tickers": [
+    "1000LUNCUSDT",
+    "ATOMUSDT",
+    "BCHUSDT",
+    "CGPTUSDT",
+    "COOKIEUSDT",
+    "DUSKUSDT",
+    "DYMUSDT",
+    "FIDAUSDT",
+    "HYPERUSDT",
+    "INJUSDT",
+    "KAIAUSDT",
+    "NEARUSDT",
+    "ONDOUSDT",
+    "PENDLEUSDT",
+    "PROMUSDT",
+    "SAGAUSDT",
+    "TONUSDT",
+    "VVVUSDT",
+    "XMRUSDT",
+    "ZECUSDT"
+  ],
+  "base_ticker": "1000LUNCUSDT"
 }

@@ -244,3 +244,4 @@ futures_portfolio/signals/exit_*USDT.flag
 futures_portfolio/signals/telegram_queue/msg_*.json
 futures_portfolio/shadow_state_*USDT.json
 futures_portfolio/real_state_*USDT.json
+futures_portfolio/paper_shadow_*USDT.json
