@@ -4,6 +4,7 @@ import os
 import logging
 import time
 import glob
+import sys
 from typing import Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
@@ -21,7 +22,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
     handlers=[
         logging.FileHandler(os.path.join(log_dir, "aggregator.log"), encoding="utf-8"),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger("Aggregator")

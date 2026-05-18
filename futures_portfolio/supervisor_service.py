@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Загрузка окружения
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", stream=sys.stdout)
 logger = logging.getLogger("SupervisorService")
 
 def get_sleep_interval():
@@ -51,11 +51,15 @@ async def main():
             if proc.returncode == 0:
                 logger.info("Cycle completed successfully.")
                 if stdout:
-                    logger.debug(f"STDOUT: {stdout.decode('utf-8', errors='replace').strip()}")
+                    output = stdout.decode('utf-8', errors='replace').strip()
+                    for line in output.split('\n'):
+                        logger.info(f"SUPERVISOR: {line}")
             else:
                 logger.error(f"Cycle failed with exit code {proc.returncode}")
                 if stderr:
-                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='replace').strip()}")
+                    error_output = stderr.decode('utf-8', errors='replace').strip()
+                    for line in error_output.split('\n'):
+                        logger.error(f"SUPERVISOR ERROR: {line}")
                     
         except Exception as e:
             logger.error(f"Unexpected error during cycle: {e}")

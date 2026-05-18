@@ -20,15 +20,31 @@ from connector import BinanceConnector
 BASE_PATH = Path(__file__).resolve().parent
 log_dir = BASE_PATH / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(log_dir / "supervisor.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("Supervisor")
+
+def setup_logger():
+    l = logging.getLogger("Supervisor")
+    l.setLevel(logging.INFO)
+    # Clear existing handlers if any
+    if l.handlers:
+        l.handlers.clear()
+    
+    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+    
+    # File Handler
+    fh = logging.FileHandler(log_dir / "supervisor.log", encoding="utf-8")
+    fh.setFormatter(formatter)
+    l.addHandler(fh)
+    
+    # Stream Handler
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(formatter)
+    l.addHandler(sh)
+    
+    # Prevent propagation to root logger
+    l.propagate = False
+    return l
+
+logger = setup_logger()
 
 CONFIG_PATH = str(BASE_PATH / "config.json")
 

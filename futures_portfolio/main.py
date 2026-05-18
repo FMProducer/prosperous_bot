@@ -1037,6 +1037,13 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
 
 if __name__ == "__main__":
     import argparse
+    # Configure logging for standalone execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    logger = logging.getLogger("Main")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--ticker", default=None)
@@ -1067,9 +1074,9 @@ if __name__ == "__main__":
         is_paper_instance = cfg.get("paper_mode", False)
     
     if is_paper_instance:
-        # PAPER mode uses paper_state_*.json
+        # PAPER mode uses paper_state_*.json for primary state and paper_shadow_*.json for simulated wallet
         instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_state_{base_ticker}.json"))
-        instance_paper_state_file = instance_state_file
+        instance_paper_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"paper_shadow_{base_ticker}.json"))
     else:
         # REAL mode uses real_state_*.json for primary state and shadow_state_*.json for shadow balance
         instance_state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"real_state_{base_ticker}.json"))
