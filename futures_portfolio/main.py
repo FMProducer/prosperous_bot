@@ -1037,12 +1037,13 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
 
 if __name__ == "__main__":
     import argparse
-    # Configure logging for standalone execution
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s: %(message)s"
-    )
-    logger = logging.getLogger("Main")
+    import sys
+    import io
+
+    # Force UTF-8 for Windows streams
+    if sys.platform == "win32":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
@@ -1072,6 +1073,34 @@ if __name__ == "__main__":
         is_paper_instance = True
     else:
         is_paper_instance = cfg.get("paper_mode", False)
+
+    # Configure individual logger
+    log_dir = os.path.join(os.path.dirname(__file__), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_prefix = "paper" if is_paper_instance else "real"
+    log_filename = f"{log_prefix}_{base_ticker}.log"
+    log_path = os.path.join(log_dir, log_filename)
+
+    logger = logging.getLogger(f"Bot_{base_ticker}_{log_prefix}")
+    logger.setLevel(logging.INFO)
+    # Clear handlers if any (prevent double logging on reload if it ever happens)
+    if logger.handlers:
+        logger.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+    
+    # File Handler (UTF-8)
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    
+    # Stream Handler (Console)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+    
+    # Prevent propagation to root logger
+    logger.propagate = False
     
     if is_paper_instance:
         # PAPER mode uses paper_state_*.json for primary state and paper_shadow_*.json for simulated wallet
@@ -1101,3 +1130,4 @@ if __name__ == "__main__":
         # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 
         # но rebalance_loop читает конфиг из файла. Лучше пропатчить rebalance_loop чтобы он принимал paper_mode_override.
         asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode_override=is_paper_instance))
+
