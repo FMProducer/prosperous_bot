@@ -7,7 +7,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 6,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 75.0,
-      "paper_initial_capital": 75.0,
+      "initial_capital": 200.0,
+      "paper_initial_capital": 200.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -44,15 +44,13 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.001,
+      "rebalance_threshold": 0.03,
       "ticker_thresholds": {
-        "BTCUSDT": 0.001
+        "BTCUSDT": 0.03
       }
     }
   ],
-  "live_swarm": [
-    "AXSUSDT"
-  ],
+  "live_swarm": [],
   "real_whitelist": [
     "ARCUSDT",
     "AXSUSDT",
