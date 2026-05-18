@@ -3,7 +3,7 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.7,
+  "min_notional_usdt": 7.0,
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 6,
   "max_bots": 20,
@@ -50,9 +50,12 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "AXSUSDT"
+  ],
   "real_whitelist": [
     "ARCUSDT",
+    "AXSUSDT",
     "VICUSDT",
     "SYSUSDT",
     "KAITOUSDT",
@@ -93,24 +96,14 @@
   "black_list": [],
   "tickers": [
     "1000LUNCUSDT",
-    "ATOMUSDT",
     "AXSUSDT",
-    "CGPTUSDT",
     "CHZUSDT",
     "COOKIEUSDT",
+    "DASHUSDT",
     "DUSKUSDT",
     "DYMUSDT",
-    "FILUSDT",
-    "HYPERUSDT",
-    "INJUSDT",
-    "NEARUSDT",
-    "ONDOUSDT",
     "ORDIUSDT",
-    "PROMUSDT",
-    "SAGAUSDT",
-    "TONUSDT",
     "VVVUSDT",
-    "XMRUSDT",
     "ZECUSDT"
   ],
   "base_ticker": "1000LUNCUSDT"

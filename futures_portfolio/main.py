@@ -427,28 +427,25 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     state_dirty = True
 
                 # [SSOT RECONCILIATION]
-                # Если монеты виртуала инициализированы, их историческая стоимость покупки
-                # должна быть вычтена из кэша, чтобы не было double-spending при расчете TPV.
+                # In both modes, we use the shadow balance (paper_state["balance"]) for TPV calculation.
+                # This ensures that adding/removing funds from the Binance wallet does not affect the bot's TPV.
                 virt_debt = Decimal(str(state.get("virt_debt", 0.0)))
-
-                if paper_mode:
-                    # Чистый кэш = Баланс стейта минус долг виртуала (если он туда еще не вычтен)
-                    real_equity = float(Decimal(str(paper_state["balance"])) - virt_debt)
-                else:
-                    wallet_balance = float(m_info.get("total_wallet_balance", 0.0))
-                    real_equity = wallet_balance - float(virt_debt)
+                real_equity = float(Decimal(str(paper_state["balance"])) - virt_debt)
 
                 if real_equity < 0:
                     real_equity = 0.0
 
-                # Also keep paper_state["balance"] somewhat in sync for history in REAL mode
-                # but ONLY if it's real mode. In paper mode, we manage it ourselves.
                 if not paper_mode:
-                    paper_state["balance"] = wallet_balance
+                    # In REAL mode, we still fetch wallet_balance for margin safety checks, 
+                    # but we NO LONGER overwrite paper_state["balance"] with it.
+                    wallet_balance = float(m_info.get("total_wallet_balance", 0.0))
 
                 # Direct synchronous call to PortfolioCalculator to reduce latency
                 current_threshold = -1.0 if (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0) else threshold
                 
+                # Fetch min_notional once to reuse
+                active_min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
+
                 calc = PortfolioCalculator(
                     positions=positions,
                     spot_price=price,
@@ -461,7 +458,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     initial_capital=initial_tpv,
                     long_entry_price=l_entry,
                     short_entry_price=s_entry,
-                    last_rebalance_price=state.get("last_rebalance_price", 0.0)
+                    last_rebalance_price=state.get("last_rebalance_price", 0.0),
+                    min_notional=active_min_notional
                 )
                 calc_res = calc.calculate_rebalance(targets, current_threshold, (current_threshold < 0))
                 
@@ -867,7 +865,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     initial_capital=initial_tpv,
                     long_entry_price=safe_l_entry,
                     short_entry_price=safe_s_entry,
-                    last_rebalance_price=state.get("last_rebalance_price", 0.0)
+                    last_rebalance_price=state.get("last_rebalance_price", 0.0),
+                    min_notional=active_min_notional
                 )
                 safe_calc_res = safe_calc.calculate_rebalance(targets, -1.0, True)
 

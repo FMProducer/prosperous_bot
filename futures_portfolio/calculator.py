@@ -15,7 +15,8 @@ class PortfolioCalculator:
                  virt_entry_price: float = 0.0, virt_debt: float = 0.0,
                  base_ticker: str = "BTCUSDT", siphoning_reserve: float = 0.0,
                  targets: Dict[str, Dict] = None, initial_capital: float = 10000.0,
-                 last_rebalance_price: float = 0.0) -> None:
+                 last_rebalance_price: float = 0.0,
+                 min_notional: float = 6.0) -> None:
         
         # Convert all inputs to Decimal for precision
         self.positions = {k: Decimal(str(v)) for k, v in positions.items()}
@@ -28,6 +29,7 @@ class PortfolioCalculator:
         self.virt_debt = Decimal(str(virt_debt))
         self.targets = targets or {}
         self.last_rebalance_price = Decimal(str(last_rebalance_price)) if last_rebalance_price > 0 else self.price
+        self.min_notional = Decimal(str(min_notional))
 
         # 1. PnL contributions for Heartbeat (RELATIVE to last rebalance)
         # This ensures the sign of $ PnL always matches the sign of % deviation.
@@ -132,7 +134,7 @@ class PortfolioCalculator:
         This allows the portfolio to harvest volatility profit.
         """
         dec_threshold = Decimal(str(threshold))
-        min_notional = Decimal('6.1')
+        min_notional = self.min_notional
         
         # Actions split by intent
         surplus_actions: List[Dict] = []

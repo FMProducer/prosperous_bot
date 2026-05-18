@@ -32,12 +32,20 @@ class PortfolioExecutor:
         return order_qty
 
     def round_quantity(self, qty: Decimal, step_size: Decimal) -> Decimal:
-        """Математически корректное округление количества до шага лота с использованием Decimal."""
+        """
+        Умное округление: использует шаг биржи, но ограничивает точность до 3 знаков (0.001).
+        Это позволяет торговать дорогими монетами (TAO, BTC) и при этом избегать 'пыли'.
+        """
         if step_size <= 0:
-            return qty
+            return qty.quantize(Decimal('1.000'), rounding="ROUND_FLOOR").normalize()
 
-        # Strictly mathematically correct rounding for arbitrary steps using Decimal
-        return (qty / step_size).quantize(Decimal('1'), rounding=ROUND_HALF_EVEN) * step_size
+        # Используем шаг биржи. Если он слишком мелкий (например, 0.000001), 
+        # укрупняем его до 0.001 для чистоты учета.
+        effective_step = max(step_size, Decimal('0.001'))
+        
+        # Округляем ВНИЗ до ближайшего разрешенного шага
+        rounded = (qty / effective_step).quantize(Decimal('1'), rounding="ROUND_FLOOR") * effective_step
+        return rounded.normalize()
 
     async def execute_market_order(self, symbol: str, qty: Any, side: str, step_size: Any = Decimal('0'), reduce_only: bool = False, position_side: str = "BOTH", min_notional: Any = Decimal('6.0'), price: Any = Decimal('0')) -> Dict:
         """
@@ -105,8 +113,10 @@ class PortfolioExecutor:
                 "avg_price": avg_price
             }
         except Exception as e:
-            logger.error(f"Order FAILED: {e}")
-            return {"status": "ERROR", "message": str(e)}
+            import traceback
+            logger.error(f"Order FAILED for {symbol}: {e}")
+            logger.error(traceback.format_exc())
+            return {"status": "ERROR", "message": str(e) if str(e) else f"Unknown error of type {type(e).__name__}"}
 
     async def execute_limit_with_fallback(self, symbol: str, qty: Any, side: str,
                                            step_size: Any = Decimal('0'), reduce_only: bool = False,
@@ -346,6 +356,18 @@ class PortfolioExecutor:
 
         if paper_mode:
             qty_rounded = self.round_quantity(order_qty, step_size)
+            order_value = qty_rounded * dec_price
+            
+            if order_value < min_notional:
+                return {
+                    "type": pos_side,
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": 0.0,
+                    "status": "SKIPPED",
+                    "message": f"Order too small: {float(order_value):.2f} USDT < {float(min_notional)} USDT"
+                }
+
             if qty_rounded <= 0:
                 return {
                     "type": pos_side,
@@ -355,8 +377,6 @@ class PortfolioExecutor:
                     "status": "SKIPPED",
                     "message": "Округлено до нуля"
                 }
-
-            order_value = qty_rounded * dec_price
             commission = order_value * Decimal('0.0004')
 
             trade_pnl = Decimal('0.0')
