@@ -136,14 +136,33 @@ async def manage_swarm():
     # 2. Формирование НОВОГО списка Инкубатора (Strictly from Scanner)
     final_incubator = []
     limit_bots = config.get("max_bots", 20)
-    toxic_tickers = {r['symbol'] for r in scanner_results if r.get('is_toxic')}
     
+    # Persistent Toxic Blacklist Logic
+    now = time.time()
+    toxic_blacklist = config.get("toxic_blacklist", {})
+    # Prune expired
+    toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now}
+    
+    cooldown_days = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0))
+    cooldown_sec = cooldown_days * 86400
+
+    for r in scanner_results:
+        symbol = r['symbol']
+        if r.get('is_toxic'):
+            expiry = now + cooldown_sec
+            toxic_blacklist[symbol] = expiry
+            logger.info(f"🚫 {symbol} marked toxic. Blacklisted until {time.ctime(expiry)}")
+
+    config["toxic_blacklist"] = toxic_blacklist
+
     for r in scanner_results:
         symbol = r['symbol']
         if len(final_incubator) >= limit_bots: break
-        if r.get('is_toxic'):
-            logger.info(f"🚫 {symbol} is [X] Toxic. Skipping.")
+        
+        if symbol in toxic_blacklist:
+            logger.info(f"⏳ {symbol} is in Toxic Quarantine. Skipping.")
             continue
+            
         final_incubator.append(symbol)
         logger.info(f"➕ Added to Incubator: {symbol} (Cycles: {r.get('cycles')})")
 
