@@ -179,8 +179,10 @@ async def manage_swarm():
     real_whitelist = set(config.get("real_whitelist", []))
     
     ready_pool = []
+    use_whitelist = config.get("use_real_whitelist", True)
+    
     for ticker in final_incubator:
-        if ticker not in real_whitelist: continue
+        if use_whitelist and ticker not in real_whitelist: continue
         p = perf_map[ticker]
         if time.time() < p['trailing_stop_paper_timeout_end']: continue
         

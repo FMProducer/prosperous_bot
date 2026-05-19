@@ -5,15 +5,13 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 7.0,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 6,
+  "min_cycles_for_rank": 3,
   "max_bots": 20,
-  "paper_mode_bots": 20,
+  "paper_mode_bots": 19,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
-  "toxic_cooldown_days": 0.042,
-  "toxic_blacklist": {},
   "max_drawdown_limit": 10.0,
   "replacement_efficiency_threshold_pct": 50.0,
   "equity_trailing_stop_pct": 5.0,
@@ -24,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 200.0,
-      "paper_initial_capital": 200.0,
+      "initial_capital": 75.0,
+      "paper_initial_capital": 75.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -53,6 +51,7 @@
     }
   ],
   "live_swarm": [],
+  "use_real_whitelist": false,
   "real_whitelist": [
     "PROMUSDT",
     "DYMUSDT",
@@ -65,6 +64,38 @@
     "FIDAUSDT"
   ],
   "black_list": [],
-  "tickers": [],
-  "base_ticker": ""
+  "toxic_cooldown_days": 0.042,
+  "toxic_blacklist": {
+    "PROMUSDT": 1779224463.767227,
+    "ONTUSDT": 1779225434.6395507,
+    "INJUSDT": 1779224463.767227,
+    "XMRUSDT": 1779224463.767227,
+    "XRPUSDT": 1779224463.767227,
+    "RONINUSDT": 1779225434.6395507,
+    "ONDOUSDT": 1779225434.6395507,
+    "XLMUSDT": 1779225434.6395507
+  },
+  "tickers": [
+    "ALGOUSDT",
+    "ATOMUSDT",
+    "BIOUSDT",
+    "BOMEUSDT",
+    "CHZUSDT",
+    "DASHUSDT",
+    "ENJUSDT",
+    "ETCUSDT",
+    "FARTCOINUSDT",
+    "FIDAUSDT",
+    "GOATUSDT",
+    "MBOXUSDT",
+    "NEARUSDT",
+    "PENGUUSDT",
+    "SIRENUSDT",
+    "STORJUSDT",
+    "TIAUSDT",
+    "TONUSDT",
+    "VVVUSDT",
+    "ZECUSDT"
+  ],
+  "base_ticker": "ALGOUSDT"
 }
