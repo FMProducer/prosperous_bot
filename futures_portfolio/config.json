@@ -51,7 +51,7 @@
     }
   ],
   "live_swarm": [
-    "ENJUSDT"
+    "MBOXUSDT"
   ],
   "use_real_whitelist": false,
   "real_whitelist": [
@@ -68,22 +68,22 @@
   "black_list": [],
   "toxic_cooldown_days": 0.042,
   "toxic_blacklist": {
-    "PROMUSDT": 1779230241.6595669,
-    "ONTUSDT": 1779233124.5597298,
-    "PROMPTUSDT": 1779233124.5597298,
-    "1000LUNCUSDT": 1779233124.5597298,
-    "ETCUSDT": 1779233124.5597298,
+    "ONTUSDT": 1779235046.7175074,
+    "PROMPTUSDT": 1779235046.7175074,
+    "1000LUNCUSDT": 1779235046.7175074,
+    "ETCUSDT": 1779234085.364173,
     "XLMUSDT": 1779232163.595112,
     "TONUSDT": 1779233124.5597298,
-    "XMRUSDT": 1779233124.5597298
+    "XMRUSDT": 1779235046.7175074,
+    "BIOUSDT": 1779235046.7175074,
+    "DASHUSDT": 1779234085.364173,
+    "ENJUSDT": 1779235046.7175074
   },
   "tickers": [
     "ALGOUSDT",
-    "BIOUSDT",
+    "ARBUSDT",
     "BOMEUSDT",
     "CHZUSDT",
-    "DASHUSDT",
-    "ENJUSDT",
     "FIDAUSDT",
     "FILUSDT",
     "GOATUSDT",
@@ -92,10 +92,12 @@
     "NEARUSDT",
     "ONDOUSDT",
     "PENGUUSDT",
+    "PROMUSDT",
     "RENDERUSDT",
     "RONINUSDT",
     "SIRENUSDT",
     "STORJUSDT",
+    "TRUMPUSDT",
     "VVVUSDT",
     "ZECUSDT"
   ],

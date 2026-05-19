@@ -96,21 +96,50 @@ class PortfolioExecutor:
             )
 
             # Извлекаем реальный исполненный объем из ответа биржи
+            order_id = result.get("orderId")
             executed_qty = Decimal(str(result.get("executedQty", "0.0")))
             avg_price = Decimal(str(result.get("avgPrice", "0.0")))
+            
+            # [POLLING] Если Бинанс вернул 0 (бывает при задержках в ядре)
+            if executed_qty == 0 and order_id:
+                logger.info(f"Market order {order_id} initial fill is 0. Polling status...")
+                for _ in range(5):
+                    await asyncio.sleep(0.3)
+                    status = await self.connector.get_order_status(symbol, order_id)
+                    executed_qty = Decimal(str(status.get("executedQty", "0.0")))
+                    avg_price = Decimal(str(status.get("avgPrice", "0.0")))
+                    if executed_qty > 0: break
+
             if avg_price == 0 and executed_qty > 0:
                 avg_price = price
 
             logger.info(f"Order EXECUTED on Binance: {side} {str_qty} {symbol} ({position_side}) | Fact Qty: {executed_qty}")
 
             if executed_qty == 0:
-                return {"status": "ERROR", "message": "Binance executed 0.0 contracts", "result": result}
+                return {"status": "ERROR", "message": f"Binance executed 0.0 contracts for order {order_id}", "result": result}
+
+            # --- REAL TRADE DATA SYNC ---
+            # Fetch actual trades to get real realized PnL and commission
+            real_pnl = Decimal('0.0')
+            real_commission = Decimal('0.0')
+            try:
+                # Даем бирже время на расчет трейдов
+                await asyncio.sleep(0.5)
+                trades = await self.connector.get_order_trades(symbol, order_id)
+                for t in trades:
+                    real_pnl += Decimal(str(t.get("realizedPnl", "0.0")))
+                    real_commission += Decimal(str(t.get("commission", "0.0")))
+                logger.info(f"Realized data for {symbol} Order {order_id}: PnL={float(real_pnl):+.4f}, Commission={float(real_commission):.4f}")
+            except Exception as e:
+                logger.warning(f"Could not fetch trade details for {symbol} {order_id}: {e}")
 
             return {
                 "status": "SUCCESS",
                 "result": result,
                 "executed_qty": executed_qty,
-                "avg_price": avg_price
+                "avg_price": avg_price,
+                "realized_pnl": real_pnl,
+                "commission": real_commission
             }
         except Exception as e:
             import traceback
@@ -191,90 +220,73 @@ class PortfolioExecutor:
                 avg_fill_price = Decimal(str(status.get("avgPrice", 0))) if status.get("avgPrice") else avg_fill_price
 
                 if status["status"] == "FILLED":
-                    # Расчёт выигрыша в цене
-                    price_improvement_pct = (avg_fill_price - mid_price) / mid_price * 100 if side == "SELL" else (mid_price - avg_fill_price) / mid_price * 100
-                    notional = filled_qty * avg_fill_price
-                    profit_usdt = notional * (price_improvement_pct / 100)
+                    # --- REAL DATA SYNC ---
+                    real_pnl = Decimal('0.0')
+                    real_commission = Decimal('0.0')
+                    try:
+                        await asyncio.sleep(0.5)
+                        trades = await self.connector.get_order_trades(symbol, order_id)
+                        for t in trades:
+                            real_pnl += Decimal(str(t.get("realizedPnl", "0.0")))
+                            real_commission += Decimal(str(t.get("commission", "0.0")))
+                    except: pass
 
-                    logger.info(f"Limit FILLED: {float(filled_qty)} @ {float(avg_fill_price):.6f} | mid={float(mid_price):.6f} | gain={float(price_improvement_pct):+.3f}% ({float(profit_usdt):+.2f} USDT)")
                     return {
                         "status": "SUCCESS_LIMIT",
                         "executed_qty": filled_qty,
                         "avg_price": avg_fill_price,
-                        "mid_price": mid_price,
-                        "price_improvement_pct": price_improvement_pct,
-                        "profit_usdt": profit_usdt,
+                        "realized_pnl": real_pnl,
+                        "commission": real_commission,
                         "order_type": "LIMIT_MAKER"
                     }
-
-                # Частичное исполнение — обновляем qty для fallback
-                if filled_qty > 0:
-                    pass # logic below uses filled_qty and original qty
 
             # 5. Timeout — отменяем и добиваем market
             logger.warning(f"Limit order timeout ({timeout_sec}s). Cancelling and fallback to market.")
             await self.connector.cancel_order(symbol, order_id)
 
-            # Если было частичное исполнение — логируем
-            if filled_qty > 0:
-                price_improvement_pct = (avg_fill_price - mid_price) / mid_price * 100 if side == "SELL" else (mid_price - avg_fill_price) / mid_price * 100
-                logger.info(f"Partial fill: {float(filled_qty)} @ {float(avg_fill_price):.6f} | gain={float(price_improvement_pct):+.3f}%")
-
             # Добиваем остаток market-ордером
             remaining_qty = qty - filled_qty
+            market_pnl = Decimal('0.0')
+            market_comm = Decimal('0.0')
+            total_executed = filled_qty
+            
             if remaining_qty > 0:
-                # CRITICAL: Re-verify notional value for the remaining snippet
-                if (abs(remaining_qty) * mid_price) < min_notional:
-                    logger.warning(f"Fallback snippet too small ({float(abs(remaining_qty) * mid_price):.2f} < {float(min_notional)}). Discarding remainder.")
-                    return {"status": "SUCCESS_PARTIAL", "executed_qty": filled_qty, "avg_price": avg_fill_price, "message": "Remainder dropped due to min_notional"}
+                if (abs(remaining_qty) * mid_price) >= min_notional:
+                    market_result = await self.execute_market_order(
+                        symbol=symbol, qty=remaining_qty, side=side, step_size=Decimal('0'),
+                        position_side=position_side, min_notional=min_notional, price=mid_price
+                    )
+                    if market_result["status"] == "SUCCESS":
+                        total_executed += Decimal(str(market_result["executed_qty"]))
+                        market_pnl = Decimal(str(market_result["realized_pnl"]))
+                        market_comm = Decimal(str(market_result["commission"]))
 
-                market_result = await self.execute_market_order(
-                    symbol=symbol,
-                    qty=remaining_qty,
-                    side=side,
-                    step_size=Decimal('0'),  # Уже округлено
-                    position_side=position_side,
-                    min_notional=min_notional,
-                    price=mid_price
-                )
+            limit_pnl = Decimal('0.0')
+            limit_comm = Decimal('0.0')
+            if filled_qty > 0:
+                try:
+                    await asyncio.sleep(0.3)
+                    trades = await self.connector.get_order_trades(symbol, order_id)
+                    for t in trades:
+                        limit_pnl += Decimal(str(t.get("realizedPnl", "0.0")))
+                        limit_comm += Decimal(str(t.get("commission", "0.0")))
+                except: pass
 
-                total_executed = filled_qty + market_result.get("executed_qty", Decimal('0'))
-                # Simplified avg price calculation for fallback
-                if total_executed > 0:
-                    avg_price = (filled_qty * avg_fill_price + market_result.get("executed_qty", Decimal('0')) * market_result.get("avg_price", mid_price)) / total_executed
-                else:
-                    avg_price = mid_price
-
-                return {
-                    "status": "SUCCESS_FALLBACK",
-                    "executed_qty": total_executed,
-                    "avg_price": avg_price,
-                    "limit_filled_qty": filled_qty,
-                    "limit_avg_price": avg_fill_price,
-                    "market_result": market_result,
-                    "order_type": "LIMIT_THEN_MARKET"
-                }
-
-            return {"status": "SUCCESS_LIMIT", "executed_qty": filled_qty, "avg_price": avg_fill_price}
+            return {
+                "status": "SUCCESS_FALLBACK",
+                "executed_qty": total_executed,
+                "realized_pnl": limit_pnl + market_pnl,
+                "commission": limit_comm + market_comm
+            }
 
         except Exception as e:
             logger.error(f"Limit+Fallback FAILED: {e}")
-            # Fallback на market в случае ошибки
-            try:
-                market_result = await self.execute_market_order(
-                    symbol=symbol,
-                    qty=qty,
-                    side=side,
-                    step_size=step_size,
-                    reduce_only=reduce_only,
-                    position_side=position_side,
-                    min_notional=min_notional,
-                    price=price
-                )
-                return {"status": "ERROR_FALLBACK", "market_result": market_result, "error": str(e), "executed_qty": market_result.get("executed_qty", Decimal('0')), "avg_price": market_result.get("avg_price", price)}
-            except Exception as e2:
-                logger.error(f"Market fallback also FAILED: {e2}")
-                return {"status": "ERROR", "message": f"{e}; Fallback: {e2}"}
+            return await self.execute_market_order(
+                symbol=symbol, qty=qty, side=side, step_size=step_size,
+                reduce_only=reduce_only, position_side=position_side,
+                min_notional=min_notional, price=price
+            )
+
 
     def get_limit_order_params(self, config: dict) -> Tuple[bool, Decimal, int]:
         """
@@ -421,6 +433,8 @@ class PortfolioExecutor:
                     # Берем строго то, что исполнила биржа
                     executed_qty = res.get("executed_qty", Decimal('0.0'))
                     avg_price = res.get("avg_price", dec_price)
+                    trade_pnl = res.get("realized_pnl", Decimal('0.0'))
+                    commission = res.get("commission", Decimal('0.0'))
 
                     if executed_qty == 0:
                         return {
@@ -428,24 +442,11 @@ class PortfolioExecutor:
                             "status": "ERROR", "message": "Fact executed qty is zero"
                         }
 
-                    # Calculate commission (0.04% for market, 0.02% for limit maker)
-                    comm_rate = Decimal('0.0002') if res["status"] == "SUCCESS_LIMIT" else Decimal('0.0004')
-                    commission = (executed_qty * avg_price) * comm_rate
-                    
-                    trade_pnl = Decimal('0.0')
-                    if paper_state and reduce_only:
-                        entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                        old_entry = Decimal(str(paper_state.get(entry_key, avg_price)))
-                        if pos_side == "LONG":
-                            trade_pnl = executed_qty * (avg_price - old_entry)
-                        else:
-                            trade_pnl = executed_qty * (old_entry - avg_price)
-
                     return {
                         "type": pos_side,
                         "symbol": symbol,
                         "side": side,
-                        "qty": float(executed_qty), # Возвращаем фактическое значение
+                        "qty": float(executed_qty),
                         "price": float(avg_price),
                         "status": "SUCCESS",
                         "reduce_only": reduce_only,
@@ -462,8 +463,8 @@ class PortfolioExecutor:
                     "status": res["status"],
                     "exec_res": res,
                     "reduce_only": reduce_only,
-                    "trade_pnl": 0.0,
-                    "commission": 0.0
+                    "trade_pnl": float(trade_pnl),
+                    "commission": float(commission)
                 }
 
     async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:

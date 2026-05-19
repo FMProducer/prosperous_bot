@@ -793,9 +793,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                                 # Расчет средней цены входа (только при увеличении позиции)
                                 if not reduce_only and (old_qty + qty) > 0:
-                                    dec_price = Decimal(str(price))
+                                    dec_price = Decimal(str(res.get("price", price)))
                                     new_entry = (old_qty * old_entry + qty * dec_price) / (old_qty + qty)
                                     paper_state[entry_key] = float(new_entry.quantize(Decimal('1e-8')))
+                                elif reduce_only and new_qty == 0:
+                                    # Если позиция закрыта полностью, сбрасываем цену входа
+                                    paper_state[entry_key] = 0.0
 
                                 # Запись обратно во float-структуру JSON
                                 paper_state["positions"][pos_key] = float(new_qty.quantize(Decimal('1e-8')))
