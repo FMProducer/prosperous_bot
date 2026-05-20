@@ -5,9 +5,9 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 7.0,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 3,
+  "min_cycles_for_rank": 5,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 18,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 75.0,
-      "paper_initial_capital": 75.0,
+      "initial_capital": 130.0,
+      "paper_initial_capital": 130.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -44,62 +44,77 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.025,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
-        "BTCUSDT": 0.025
+        "BTCUSDT": 0.02
       }
     }
   ],
-  "live_swarm": [
-    "MBOXUSDT"
-  ],
-  "use_real_whitelist": false,
+  "live_swarm": [],
+  "use_real_whitelist": true,
   "real_whitelist": [
-    "PROMUSDT",
+    "PROMPTUSDT",
+    "NILUSDT",
     "DYMUSDT",
-    "ONDOUSDT",
-    "INJUSDT",
+    "NFPUSDT",
+    "CGPTUSDT",
+    "SAGAUSDT",
+    "GTCUSDT",
+    "FHEUSDT",
+    "HYPERUSDT",
+    "JOEUSDT",
+    "AIOTUSDT",
+    "AKTUSDT",
+    "ZEREBROUSDT",
     "SIRENUSDT",
-    "TONUSDT",
-    "STORJUSDT",
-    "NEARUSDT",
-    "FIDAUSDT"
+    "KOMAUSDT",
+    "KERNELUSDT",
+    "BRUSDT",
+    "STGUSDT",
+    "ONDOUSDT",
+    "CHILLGUYUSDT",
+    "ALTUSDT",
+    "NEIROUSDT",
+    "DYDXUSDT",
+    "DODOXUSDT",
+    "INJUSDT",
+    "MBOXUSDT"
   ],
   "black_list": [],
   "toxic_cooldown_days": 0.042,
   "toxic_blacklist": {
-    "ONTUSDT": 1779235046.7175074,
-    "PROMPTUSDT": 1779235046.7175074,
-    "1000LUNCUSDT": 1779235046.7175074,
-    "ETCUSDT": 1779234085.364173,
-    "XLMUSDT": 1779232163.595112,
-    "TONUSDT": 1779233124.5597298,
-    "XMRUSDT": 1779235046.7175074,
-    "BIOUSDT": 1779235046.7175074,
-    "DASHUSDT": 1779234085.364173,
-    "ENJUSDT": 1779235046.7175074
+    "ALTUSDT": 1779300560.448396,
+    "ZECUSDT": 1779303446.7032695,
+    "ONTUSDT": 1779303446.7032695,
+    "JTOUSDT": 1779301522.3447022,
+    "WLDUSDT": 1779300560.448396,
+    "PENDLEUSDT": 1779300560.448396,
+    "PAXGUSDT": 1779300560.448396,
+    "XMRUSDT": 1779303446.7032695,
+    "BCHUSDT": 1779302482.7980082,
+    "NILUSDT": 1779303446.7032695
   },
   "tickers": [
     "ALGOUSDT",
-    "ARBUSDT",
-    "BOMEUSDT",
+    "BANANAS31USDT",
+    "BIOUSDT",
     "CHZUSDT",
+    "DASHUSDT",
+    "FARTCOINUSDT",
     "FIDAUSDT",
-    "FILUSDT",
-    "GOATUSDT",
     "INJUSDT",
-    "MBOXUSDT",
     "NEARUSDT",
     "ONDOUSDT",
     "PENGUUSDT",
-    "PROMUSDT",
+    "PROMPTUSDT",
     "RENDERUSDT",
     "RONINUSDT",
-    "SIRENUSDT",
-    "STORJUSDT",
-    "TRUMPUSDT",
+    "SAGAUSDT",
+    "SUIUSDT",
+    "TAOUSDT",
+    "TONUSDT",
     "VVVUSDT",
-    "ZECUSDT"
+    "ZENUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }
