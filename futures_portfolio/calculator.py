@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_EVEN
 
+class PortfolioRuinError(Exception):
+    """Raised when TPV is too low to sustain rebalancing logic safely."""
+    pass
+
 class PortfolioCalculator:
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
@@ -39,9 +43,14 @@ class PortfolioCalculator:
         self.pnl_s = (s_qty * (self.last_rebalance_price - self.price)) if s_qty > 0 else Decimal('0')
         self.pnl_v = (self.virt_qty * (self.price - self.last_rebalance_price)) if self.virt_qty > 0 else Decimal('0')
 
+        # [SAFETY] Zero Entry Price Guard (SSOT Audit v4.1)
+        # Fallback to current price if entry is missing to prevent infinite PnL artifacts
+        l_entry_safe = Decimal(str(long_entry_price)) if long_entry_price > 0 else self.price
+        s_entry_safe = Decimal(str(short_entry_price)) if short_entry_price > 0 else self.price
+
         # Real MTM PnL (for TPV) relative to entry prices for futures
-        mtm_pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
-        mtm_pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
+        mtm_pnl_l = (l_qty * (self.price - l_entry_safe)) if l_qty > 0 else Decimal('0')
+        mtm_pnl_s = (s_qty * (s_entry_safe - self.price)) if s_qty > 0 else Decimal('0')
         
         self.virt_value = self.virt_qty * self.price
         if virt_entry_price > 0:
@@ -54,7 +63,12 @@ class PortfolioCalculator:
 
         # [SSOT] TPV calculation
         self.tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + self.virt_value
-        if self.tpv <= 0: self.tpv = Decimal('1e-9')
+        
+        # [SAFETY] Singularity Guard: If TPV drops below $10, abort calculation and stop bot
+        # This prevents DivisionByZero and massive erratic order generation.
+        if self.tpv < Decimal('10.0'):
+            raise PortfolioRuinError(f"CRITICAL: TPV {float(self.tpv):.2f} is below safety floor of 10.0 USDT")
+
         self.total_tpv = self.tpv + self.siphoning_reserve
 
         self.total_pnl = self.tpv - self.initial_capital

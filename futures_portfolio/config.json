@@ -55,36 +55,7 @@
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.042,
-  "toxic_blacklist": {
-    "FIDAUSDT": 1779315651.446847,
-    "NILUSDT": 1779313730.3722296,
-    "BANANAS31USDT": 1779313730.3722296,
-    "ONTUSDT": 1779313730.3722296,
-    "ALTUSDT": 1779312769.896808,
-    "PENGUUSDT": 1779314690.8766854,
-    "TIAUSDT": 1779314690.8766854
-  },
-  "tickers": [
-    "ALGOUSDT",
-    "ARBUSDT",
-    "BIOUSDT",
-    "DASHUSDT",
-    "FARTCOINUSDT",
-    "INJUSDT",
-    "JTOUSDT",
-    "NEARUSDT",
-    "ONDOUSDT",
-    "PENDLEUSDT",
-    "PROMPTUSDT",
-    "RONINUSDT",
-    "SAGAUSDT",
-    "TAOUSDT",
-    "TONUSDT",
-    "VVVUSDT",
-    "WLDUSDT",
-    "XMRUSDT",
-    "ZECUSDT",
-    "ZENUSDT"
-  ],
-  "base_ticker": "ALGOUSDT"
+  "toxic_blacklist": {},
+  "tickers": [],
+  "base_ticker": ""
 }
