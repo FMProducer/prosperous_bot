@@ -7,7 +7,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 5,
   "max_bots": 20,
-  "paper_mode_bots": 18,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 130.0,
-      "paper_initial_capital": 130.0,
+      "initial_capital": 260.0,
+      "paper_initial_capital": 260.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -44,77 +44,48 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.02,
+      "rebalance_threshold": 0.01,
       "ticker_thresholds": {
-        "BTCUSDT": 0.02
+        "BTCUSDT": 0.01
       }
     }
   ],
   "live_swarm": [],
-  "use_real_whitelist": true,
-  "real_whitelist": [
-    "PROMPTUSDT",
-    "NILUSDT",
-    "DYMUSDT",
-    "NFPUSDT",
-    "CGPTUSDT",
-    "SAGAUSDT",
-    "GTCUSDT",
-    "FHEUSDT",
-    "HYPERUSDT",
-    "JOEUSDT",
-    "AIOTUSDT",
-    "AKTUSDT",
-    "ZEREBROUSDT",
-    "SIRENUSDT",
-    "KOMAUSDT",
-    "KERNELUSDT",
-    "BRUSDT",
-    "STGUSDT",
-    "ONDOUSDT",
-    "CHILLGUYUSDT",
-    "ALTUSDT",
-    "NEIROUSDT",
-    "DYDXUSDT",
-    "DODOXUSDT",
-    "INJUSDT",
-    "MBOXUSDT"
-  ],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.042,
   "toxic_blacklist": {
-    "ALTUSDT": 1779300560.448396,
-    "ZECUSDT": 1779303446.7032695,
-    "ONTUSDT": 1779303446.7032695,
-    "JTOUSDT": 1779301522.3447022,
-    "WLDUSDT": 1779300560.448396,
-    "PENDLEUSDT": 1779300560.448396,
-    "PAXGUSDT": 1779300560.448396,
-    "XMRUSDT": 1779303446.7032695,
-    "BCHUSDT": 1779302482.7980082,
-    "NILUSDT": 1779303446.7032695
+    "FIDAUSDT": 1779312769.896808,
+    "NILUSDT": 1779312769.896808,
+    "BANANAS31USDT": 1779312769.896808,
+    "ZECUSDT": 1779310849.9671166,
+    "ZENUSDT": 1779311810.7436628,
+    "ONTUSDT": 1779312769.896808,
+    "ALTUSDT": 1779312769.896808,
+    "PENGUUSDT": 1779312769.896808
   },
   "tickers": [
     "ALGOUSDT",
-    "BANANAS31USDT",
+    "ARBUSDT",
     "BIOUSDT",
     "CHZUSDT",
     "DASHUSDT",
     "FARTCOINUSDT",
-    "FIDAUSDT",
     "INJUSDT",
+    "JTOUSDT",
     "NEARUSDT",
     "ONDOUSDT",
-    "PENGUUSDT",
+    "PENDLEUSDT",
     "PROMPTUSDT",
-    "RENDERUSDT",
     "RONINUSDT",
     "SAGAUSDT",
-    "SUIUSDT",
     "TAOUSDT",
+    "TIAUSDT",
     "TONUSDT",
     "VVVUSDT",
-    "ZENUSDT"
+    "WLDUSDT",
+    "XMRUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }

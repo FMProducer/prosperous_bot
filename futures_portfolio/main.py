@@ -631,10 +631,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 valid_actions = []
                 fused_actions = []
                 if actions:
-                    # Внедряем Notional Value Guard для ВСЕХ ордеров
-                    # Проверяем и в портфеле, и в глобальном конфиге
-                    min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
+                    # Внедряем Notional Value Guard для ВСЕХ ордеров (REAL и PAPER)
+                    min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 7.0))
+                    
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
+                    
+                    if actions and not valid_actions:
+                        if i % 10 == 0:
+                            logger.info(f"⏳ Rebalance deferred: best action {abs(actions[0]['diff_usdt']):.2f} USDT < min {min_notional} USDT")
                     
                     # -------------------------------------------------------------------------
                     # [V3.6.0] ANTI-CHURN PRICE FUSE (Enforce BLSH)
@@ -658,18 +662,25 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             else: # SHORT
                                 side = "SELL" if diff_usdt > 0 else "BUY"
 
+                            lev = action.get("leverage", 1.0)
+                            # In Notional mode, the price trigger should be scaled by leverage.
+                            # We use 1.2x multiplier for safety to prevent excessive churn.
+                            effective_price_trigger = (threshold / lev) * 1.2
+
                             if side == "BUY":
-                                limit_price = last_reb_price * (1 - threshold)
+                                limit_price = last_reb_price * (1 - effective_price_trigger)
                                 if price <= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.info(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    if i % 20 == 0:
+                                        logger.info(f"🛡️ FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             elif side == "SELL":
-                                limit_price = last_reb_price * (1 + threshold)
+                                limit_price = last_reb_price * (1 + effective_price_trigger)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.info(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                                    if i % 20 == 0:
+                                        logger.info(f"🛡️ FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
 
                             else:
                                 fused_actions.append(action)

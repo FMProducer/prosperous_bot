@@ -32,7 +32,6 @@ class PortfolioCalculator:
         self.min_notional = Decimal(str(min_notional))
 
         # 1. PnL contributions for Heartbeat (RELATIVE to last rebalance)
-        # This ensures the sign of $ PnL always matches the sign of % deviation.
         l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
         s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
 
@@ -44,83 +43,61 @@ class PortfolioCalculator:
         mtm_pnl_l = (l_qty * (self.price - Decimal(str(long_entry_price)))) if l_qty > 0 else Decimal('0')
         mtm_pnl_s = (s_qty * (Decimal(str(short_entry_price)) - self.price)) if s_qty > 0 else Decimal('0')
         
-        # 1. Рассчитываем ЧИСТЫЙ PnL виртуальной ноги (MTM)
-        # Если есть цена входа, считаем по ней. Если нет — по дельте от долга.
         self.virt_value = self.virt_qty * self.price
         if virt_entry_price > 0:
-            self.pnl_v = (self.price - Decimal(str(virt_entry_price))) * self.virt_qty
+            self.pnl_v_mtm = (self.price - Decimal(str(virt_entry_price))) * self.virt_qty
         elif self.virt_debt > 0:
-            self.pnl_v = self.virt_value - self.virt_debt
+            self.pnl_v_mtm = self.virt_value - self.virt_debt
         else:
             v_target_share = Decimal(str(self.targets.get("VIRTUAL", {}).get("share", 0.35)))
-            self.pnl_v = self.virt_value - (self.initial_capital * v_target_share)
+            self.pnl_v_mtm = self.virt_value - (self.initial_capital * v_target_share)
 
-        # [SSOT] TPV = Доступный баланс (кэш) + PnL фьючерсов + Рыночная стоимость виртуальной ноги
-        # real_equity должен передаваться как "Чистый кэш" (Wallet Balance - virt_debt)
+        # [SSOT] TPV calculation
         self.tpv = self.real_equity + mtm_pnl_l + mtm_pnl_s + self.virt_value
-
-        if self.tpv <= 0:
-            self.tpv = Decimal('1e-9')
-
+        if self.tpv <= 0: self.tpv = Decimal('1e-9')
         self.total_tpv = self.tpv + self.siphoning_reserve
 
-        # Total PnL = Sum of all contributions
         self.total_pnl = self.tpv - self.initial_capital
-
-        # Total PnL % = (TPV / initial_capital - 1) * 100
         self.total_pnl_pct = ((self.tpv / self.initial_capital) - 1) * 100 if self.initial_capital > 0 else Decimal('0')
 
-        # 4. Calculate NAV for each leg
+        # 4. Calculate NOTIONAL Values for core logic
+        self.val_long_notional = (l_qty * self.price)
+        self.val_short_notional = (s_qty * self.price)
+        self.val_virt_notional = self.virt_value
+        
+        # Internal raw shares for rebalancing
+        self.share_long_raw = self.val_long_notional / self.tpv
+        self.share_short_raw = self.val_short_notional / self.tpv
+        self.share_virt_raw = self.val_virt_notional / self.tpv
+
+        # 5. DISPLAY SHARES (EQUITY-BASED) for Heartbeat readability
         l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
         s_lev = Decimal(str(self.targets.get("BASE_SHORT", {}).get("leverage", 5)))
-
-        # Value = Initial Margin + MTM PnL (Actual Liquidation Equity of the position)
-        self.val_long = ((l_qty * Decimal(str(long_entry_price)) / l_lev) + mtm_pnl_l) if l_qty > 0 else Decimal('0')
-        self.val_short = ((s_qty * Decimal(str(short_entry_price)) / s_lev) + mtm_pnl_s) if s_qty > 0 else Decimal('0')
-        self.val_virt = self.virt_value
         
-        # 5. Cash is the remaining liquidity (Free Wallet Balance)
-        self.val_cash = self.tpv - (self.val_long + self.val_short + self.val_virt)
-        if self.val_cash < 0 and abs(self.val_cash) < 0.1: self.val_cash = Decimal('0') # Rounding protection
-
-        # 6. Shares calculation (Capital weights against true TPV)
-        self.share_long_raw = (self.val_long / self.tpv)
-        self.share_short_raw = (self.val_short / self.tpv)
-        self.share_virt_raw = (self.val_virt / self.tpv)
-        self.share_cash_raw = (self.val_cash / self.tpv)
-
-        # Convert to percentages for display and rebalancing logic
-        self.share_long_pct = (self.share_long_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
-        self.share_short_pct = (self.share_short_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
-        self.share_virt_pct = (self.share_virt_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
-        self.share_cash_pct = (self.share_cash_raw * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
-
-        # Final correction to ensure exactly 100.00%
-        total_pct = self.share_long_pct + self.share_short_pct + self.share_virt_pct + self.share_cash_pct
-        if total_pct != Decimal('100.00'):
-            diff = Decimal('100.00') - total_pct
-            self.share_cash_pct += diff # Adjust cash by the sub-penny difference
+        self.l_margin_equity = (l_qty * Decimal(str(long_entry_price)) / l_lev) + mtm_pnl_l if l_qty > 0 else Decimal('0')
+        self.s_margin_equity = (s_qty * Decimal(str(short_entry_price)) / s_lev) + mtm_pnl_s if s_qty > 0 else Decimal('0')
+        
+        self.display_share_long = (self.l_margin_equity / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.display_share_short = (self.s_margin_equity / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.display_share_virt = (self.val_virt_notional / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.display_share_cash = (Decimal('100.00') - self.display_share_long - self.display_share_short - self.display_share_virt)
 
     def calculate_rebalance(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> Dict:
-        """
-        Calculate rebalance actions and return a summary of the current state.
-        """
+        """Calculate rebalance actions and return summary for display."""
         actions = self.calculate_deviations(targets, threshold, ignore_limits)
 
         return {
             "actions": actions,
-            "share_long_pct": float(self.share_long_pct),
-            "share_short_pct": float(self.share_short_pct),
-            "share_virt_pct": float(self.share_virt_pct),
-            "share_cash_pct": float(self.share_cash_pct),
-            "val_long": float(self.val_long),
-            "val_short": float(self.val_short),
-            "val_virt": float(self.val_virt),
-            "val_cash": float(self.val_cash),
+            "share_long_pct": float(self.display_share_long),
+            "share_short_pct": float(self.display_share_short),
+            "share_virt_pct": float(self.display_share_virt),
+            "share_cash_pct": float(self.display_share_cash),
+            "val_long": float(self.l_margin_equity),
+            "val_short": float(self.s_margin_equity),
+            "val_virt": float(self.val_virt_notional),
+            "val_cash": float(self.tpv - (self.l_margin_equity + self.s_margin_equity + self.val_virt_notional)),
             "tpv": float(self.tpv),
             "total_tpv": float(self.total_tpv),
-            "siphoning_reserve": float(self.siphoning_reserve),
-            "virt_current_value": float(self.val_virt),
             "pnl_l": float(self.pnl_l),
             "pnl_s": float(self.pnl_s),
             "pnl_v": float(self.pnl_v),
@@ -129,43 +106,33 @@ class PortfolioCalculator:
         }
 
     def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
-        """
-        Rebalance based on CAPITAL (Equity) deviations. 
-        This allows the portfolio to harvest volatility profit.
-        """
+        """Core logic: Rebalance based on NOTIONAL exposure."""
         dec_threshold = Decimal(str(threshold))
         min_notional = self.min_notional
         
-        # Actions split by intent
-        surplus_actions: List[Dict] = []
-        deficit_actions: List[Dict] = []
+        surplus_actions = []
+        deficit_actions = []
         
-        # Use raw ratios for maximum precision
-        shares: Dict[str, Decimal] = {
+        shares = {
             "BASE_LONG": self.share_long_raw,
             "BASE_SHORT": self.share_short_raw,
             "VIRTUAL": self.share_virt_raw
         }
 
-        # 1. Gather all legs that reached the threshold
         for key in ["BASE_LONG", "BASE_SHORT", "VIRTUAL"]:
-            target_share = Decimal(str(targets[key]["share"]))
-            current_share = shares[key]
-            diff_share = current_share - target_share # Positive if surplus (actual > target)
+            lev = Decimal(str(targets[key].get("leverage", 1)))
+            target_notional_share = Decimal(str(targets[key]["share"])) * lev
+            current_notional_share = shares[key]
+            
+            diff_share = current_notional_share - target_notional_share
             
             if not ignore_limits and abs(diff_share) < dec_threshold:
                 continue
 
-            # Calculate theoretical diff_usdt
-            # diff_usdt = -diff_share * self.tpv * leverage
-            # Surplus (+) -> Negative diff_usdt (SELL/Reduction)
-            # Deficit (-) -> Positive diff_usdt (BUY/Expansion)
-            lev = Decimal(str(targets[key].get("leverage", 1)))
-            diff_usdt = -diff_share * self.tpv * lev
-            diff_equity = -diff_share * self.tpv # Real cash (margin) movement
+            diff_usdt = (target_notional_share - current_notional_share) * self.tpv
+            diff_equity = diff_usdt / lev
 
-            if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
-                continue
+            if abs(diff_usdt) < Decimal('1.0'): continue
 
             action = {
                 "key": key,
@@ -184,10 +151,7 @@ class PortfolioCalculator:
             else:
                 deficit_actions.append(action)
 
-        # 2. Final actions list starts with all SELLs (Priority 0)
-        final_actions: List[Dict] = []
-        
-        # Proceeds must be calculated in pure Equity (Cash) terms
+        final_actions = []
         total_proceeds = Decimal('0')
         for act in surplus_actions:
             if abs(Decimal(str(act["diff_usdt"]))) >= min_notional or ignore_limits:
@@ -195,26 +159,22 @@ class PortfolioCalculator:
                 final_actions.append(act)
                 total_proceeds += abs(Decimal(str(act["diff_equity"])))
 
-        # 3. Calculate available funds for BUYs (Strict Cash Accounting)
-        available_funds = self.val_cash + total_proceeds
+        # Available cash = Current Cash (MTM based) + Proceeds from sells
+        l_lev = Decimal(str(targets["BASE_LONG"].get("leverage", 5)))
+        s_lev = Decimal(str(targets["BASE_SHORT"].get("leverage", 5)))
+        l_margin = (self.val_long_notional / l_lev)
+        s_margin = (self.val_short_notional / s_lev)
+        current_cash = self.tpv - (l_margin + s_margin + self.val_virt_notional)
+        available_funds = current_cash + total_proceeds
         
-        # 4. Process Deficits with Priority (VIRTUAL first)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
-        
         for act in deficit_actions:
             lev = Decimal(str(act["leverage"]))
             needed_equity = abs(Decimal(str(act["diff_equity"])))
             
-            if available_funds <= Decimal('0') and not ignore_limits:
-                continue
-
-            # Cap purchasing power by available cash (Equity)
-            if needed_equity > available_funds and not ignore_limits:
-                actual_buy_equity = available_funds
-            else:
-                actual_buy_equity = needed_equity
-                
-            # Convert approved Equity back to Notional for the executor
+            if available_funds <= Decimal('0') and not ignore_limits: continue
+            
+            actual_buy_equity = min(needed_equity, available_funds) if not ignore_limits else needed_equity
             actual_buy_usdt = actual_buy_equity * lev
 
             if actual_buy_usdt >= min_notional or ignore_limits:
