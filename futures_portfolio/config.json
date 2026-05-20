@@ -44,9 +44,9 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.01,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
-        "BTCUSDT": 0.01
+        "BTCUSDT": 0.02
       }
     }
   ],
@@ -56,20 +56,18 @@
   "black_list": [],
   "toxic_cooldown_days": 0.042,
   "toxic_blacklist": {
-    "FIDAUSDT": 1779312769.896808,
-    "NILUSDT": 1779312769.896808,
-    "BANANAS31USDT": 1779312769.896808,
-    "ZECUSDT": 1779310849.9671166,
-    "ZENUSDT": 1779311810.7436628,
-    "ONTUSDT": 1779312769.896808,
+    "FIDAUSDT": 1779315651.446847,
+    "NILUSDT": 1779313730.3722296,
+    "BANANAS31USDT": 1779313730.3722296,
+    "ONTUSDT": 1779313730.3722296,
     "ALTUSDT": 1779312769.896808,
-    "PENGUUSDT": 1779312769.896808
+    "PENGUUSDT": 1779314690.8766854,
+    "TIAUSDT": 1779314690.8766854
   },
   "tickers": [
     "ALGOUSDT",
     "ARBUSDT",
     "BIOUSDT",
-    "CHZUSDT",
     "DASHUSDT",
     "FARTCOINUSDT",
     "INJUSDT",
@@ -81,11 +79,12 @@
     "RONINUSDT",
     "SAGAUSDT",
     "TAOUSDT",
-    "TIAUSDT",
     "TONUSDT",
     "VVVUSDT",
     "WLDUSDT",
-    "XMRUSDT"
+    "XMRUSDT",
+    "ZECUSDT",
+    "ZENUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }
