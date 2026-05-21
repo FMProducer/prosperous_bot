@@ -93,13 +93,24 @@ class BacktestState:
     history: List[float] = field(default_factory=list)
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
-    def get_tpv(self, price: Decimal) -> Decimal:
-        unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
-        unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
-        margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
-        margin_short = (self.pos_short * self.short_entry_price) / Decimal('5') if self.pos_short > 0 else Decimal('0')
-        virtual_equity = (self.virt_qty * price) - self.virt_debt
-        return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
+    def get_tpv(self, price: Decimal, l_lev: Decimal, s_lev: Decimal) -> Decimal:
+        """
+        Calculates TPV based on SSOT (Single Source of Truth) from PortfolioCalculator.
+        TPV = Free Cash + Margin + Unrealized PnL + Virtual Equity.
+        """
+        # Margin currently locked in futures positions
+        margin_l = (self.pos_long * self.long_entry_price) / l_lev if self.pos_long > 0 else Decimal('0')
+        margin_s = (self.pos_short * self.short_entry_price) / s_lev if self.pos_short > 0 else Decimal('0')
+        
+        # Unrealized PnL relative to entry prices
+        mtm_pnl_l = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
+        mtm_pnl_s = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
+        
+        # Virtual Spot Equity (Market Value - Acquisition Debt)
+        virt_equity = (self.virt_qty * price) - self.virt_debt
+        
+        # Total Value = Available Cash + Equity of all positions
+        return self.val_cash + margin_l + mtm_pnl_l + margin_s + mtm_pnl_s + virt_equity
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
@@ -219,6 +230,38 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             actions = calc_res["actions"]
 
             if actions:
+                # --- [SYNC] Anti-Churn Price Fuse (BLSH) ---
+                if not state.rebalance_log:
+                    # Cold Start: Always allow first rebalance to form baseline
+                    fused_actions = actions
+                else:
+                    last_reb_price = Decimal(str(state.rebalance_log[-1]["price"]))
+                    fused_actions = []
+                    for action in actions:
+                        lev = Decimal(str(action.get("leverage", 1.0)))
+                        # Same logic as main.py: scale price trigger by leverage
+                        effective_price_trigger = (Decimal(str(threshold)) / lev) * Decimal('1.2')
+                        
+                        diff_usdt = Decimal(str(action["diff_usdt"]))
+                        pos_side = action["position_side"]
+                        
+                        if action["type"] == "VIRTUAL_ORDER":
+                            side = "BUY" if diff_usdt > 0 else "SELL"
+                        elif pos_side == "LONG":
+                            side = "BUY" if diff_usdt > 0 else "SELL"
+                        else: # SHORT
+                            side = "SELL" if diff_usdt > 0 else "BUY"
+                            
+                        if side == "BUY":
+                            limit_price = last_reb_price * (Decimal('1') - effective_price_trigger)
+                            if mid_price <= limit_price: fused_actions.append(action)
+                        else: # SELL
+                            limit_price = last_reb_price * (Decimal('1') + effective_price_trigger)
+                            if mid_price >= limit_price: fused_actions.append(action)
+                
+                actions = fused_actions
+
+            if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
                 expansions = [a for a in actions if not a.get("is_reduction", False)]
 
@@ -296,7 +339,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
                         margin_required = (qty * exec_price) / lev
                         state.val_cash -= margin_required + commission
-                        state.short_entry_price = ((state.pos_short * state.short_entry_price) + (qty * exec_price)) / (state.pos_short + qty)
+                        if state.pos_short == 0:
+                            state.short_entry_price = exec_price
+                        else:
+                            state.short_entry_price = ((state.pos_short * state.short_entry_price) + (qty * exec_price)) / (state.pos_short + qty)
                         state.pos_short += qty
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
@@ -311,7 +357,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
                 state.cycles += 1
                 state.rebalance_log.append({
-                    "step": i, "price": float(mid_price), "tpv": float(state.get_tpv(mid_price)),
+                    "step": i, "price": float(mid_price), "tpv": float(state.get_tpv(mid_price, l_lev, s_lev)),
                     "shares": {"L": calc_res["share_long_pct"], "S": calc_res["share_short_pct"], "V": calc_res["share_virt_pct"], "C": calc_res["share_cash_pct"]},
                     "actions": [f"{a['key']} {'SELL' if a['is_reduction'] else 'BUY'}" for a in actions]
                 })
@@ -344,7 +390,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 logger.warning(f"Bar {i}: SHORT leg liquidated!")
 
             # --- 4. SAFE Siphoning (Calculated on TPV) ---
-            tpv = state.get_tpv(mid_price)
+            tpv = state.get_tpv(mid_price, l_lev, s_lev)
             total_tpv_with_reserve = tpv + state.siphoning_reserve
             total_surplus = total_tpv_with_reserve - state.initial_capital
             siphoning_threshold_abs = state.initial_capital * (Decimal(str(siphoning_threshold_pct)) / 100)
@@ -359,14 +405,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     total_tpv_with_reserve -= siphon_amount
 
             # --- 5. Проверка математического инварианта (Sanity Check) ---
-            # Настоящий TPV = Свободный кэш + Чистая стоимость LONG + Чистая стоимость SHORT + Чистая стоимость VIRTUAL
-            unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
-            unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
-            margin_long = (state.pos_long * state.long_entry_price) / Decimal('5') if state.pos_long > 0 else Decimal('0')
-            margin_short = (state.pos_short * state.short_entry_price) / Decimal('5') if state.pos_short > 0 else Decimal('0')
-            virtual_equity = (state.virt_qty * mid_price) - state.virt_debt
-
-            current_tpv = state.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
+            current_tpv = state.get_tpv(mid_price, l_lev, s_lev)
             assert current_tpv > Decimal('0'), "Критический дефолт портфеля: TPV <= 0"
 
             state.history.append(float(total_tpv_with_reserve))

@@ -3,17 +3,17 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.3,
+  "min_notional_usdt": 7.0,
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 5,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 10.0,
-  "replacement_efficiency_threshold_pct": 20.0,
+  "replacement_efficiency_threshold_pct": 50.0,
   "equity_trailing_stop_pct": 5.0,
   "equity_trailing_stop_timeout_sec": 45,
   "telegram_enabled": true,
@@ -22,8 +22,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 81.0,
-      "paper_initial_capital": 81.0,
+      "initial_capital": 260.0,
+      "paper_initial_capital": 260.0,
       "siphoning_threshold_pct": 100.0,
       "targets": {
         "BASE_LONG": {
@@ -44,24 +44,18 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.001,
+      "rebalance_threshold": 0.02,
       "ticker_thresholds": {
-        "BTCUSDT": 0.001
+        "BTCUSDT": 0.02
       }
     }
   ],
   "live_swarm": [],
-  "real_whitelist": [
-    "ATOMUSDT",
-    "FHEUSDT",
-    "1000LUNCUSDT",
-    "JELLYJELLYUSDT",
-    "SYSUSDT"
-  ],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
   "black_list": [],
-  "tickers": [
-    "1000LUNCUSDT",
-    "ATOMUSDT"
-  ],
-  "base_ticker": "1000LUNCUSDT"
+  "toxic_cooldown_days": 0.042,
+  "toxic_blacklist": {},
+  "tickers": [],
+  "base_ticker": ""
 }

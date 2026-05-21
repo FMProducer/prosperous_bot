@@ -268,3 +268,12 @@ class BinanceConnector:
             positionSide=position_side
         )
         return result
+
+    @retry_on_network_error(retries=3, delay=2.0)
+    async def get_order_trades(self, symbol: str, order_id: int) -> List[Dict]:
+        """Получение списка сделок по конкретному ID ордера."""
+        return await asyncio.to_thread(
+            self.futures_client.futures_account_trades,
+            symbol=symbol,
+            orderId=order_id
+        )

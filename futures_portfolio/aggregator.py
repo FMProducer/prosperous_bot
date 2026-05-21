@@ -4,10 +4,17 @@ import os
 import logging
 import time
 import glob
+import sys
+import io
 from typing import Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
 from storage import safe_load_json
+
+# Force UTF-8 for Windows streams
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 load_dotenv()
 
@@ -19,7 +26,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
     handlers=[
         logging.FileHandler(os.path.join(log_dir, "aggregator.log"), encoding="utf-8"),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger("Aggregator")
@@ -207,12 +214,6 @@ class StatusAggregator:
 
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
-
-        # Инициализируем долгоживущие сессии перед входом в цикл
-        await self.init_services()
-
-        # Запускаем обработчик очереди как фоновую задачу
-        asyncio.create_task(self.process_telegram_queue())
         
         try:
             while True:

@@ -3,13 +3,19 @@ import sys
 import os
 import json
 import logging
+import io
 from datetime import datetime
 from dotenv import load_dotenv
+
+# Force UTF-8 for Windows streams
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Загрузка окружения
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", stream=sys.stdout)
 logger = logging.getLogger("SupervisorService")
 
 def get_sleep_interval():
@@ -51,11 +57,15 @@ async def main():
             if proc.returncode == 0:
                 logger.info("Cycle completed successfully.")
                 if stdout:
-                    logger.debug(f"STDOUT: {stdout.decode('utf-8', errors='replace').strip()}")
+                    output = stdout.decode('utf-8', errors='replace').strip()
+                    for line in output.split('\n'):
+                        logger.info(f"SUPERVISOR: {line}")
             else:
                 logger.error(f"Cycle failed with exit code {proc.returncode}")
                 if stderr:
-                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='replace').strip()}")
+                    error_output = stderr.decode('utf-8', errors='replace').strip()
+                    for line in error_output.split('\n'):
+                        logger.error(f"SUPERVISOR ERROR: {line}")
                     
         except Exception as e:
             logger.error(f"Unexpected error during cycle: {e}")
