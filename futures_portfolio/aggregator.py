@@ -6,10 +6,10 @@ import time
 import glob
 import sys
 import io
-from typing import Dict, Any
+from typing import Dict, Any, List, Set
 from datetime import datetime
 from dotenv import load_dotenv
-from storage import safe_load_json
+from storage import safe_load_json, safe_load_json_sync
 
 # Force UTF-8 for Windows streams
 if sys.platform == "win32":
@@ -33,11 +33,21 @@ logger = logging.getLogger("Aggregator")
 
 class StatusAggregator:
     def __init__(self, config_path="config.json"):
+        # If config_path is just a filename, assume it's in the same directory as this script
+        if not os.path.isabs(config_path) and not os.path.exists(config_path):
+            potential_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
+            if os.path.exists(potential_path):
+                config_path = potential_path
+
         self.config_path = config_path
         self.notifier = None
         self.connector = None  # Инициализируем один раз для повторного использования
         self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
         os.makedirs(self.queue_dir, exist_ok=True)
+
+    def load_config(self) -> Dict[str, Any]:
+        """Синхронная загрузка конфига для совместимости."""
+        return safe_load_json_sync(self.config_path, {})
 
     async def load_config_async(self) -> Dict[str, Any]:
         return await safe_load_json(self.config_path, {})
@@ -120,7 +130,7 @@ class StatusAggregator:
                 logger.error(f"Error in telegram queue processor: {e}")
                 await asyncio.sleep(5)
 
-    async def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
+    async def _generate_swarm_section(self, files: List[str], live_swarm: List[str], active_tickers: List[str], label: str, config: Dict[str, Any]):
         total_profit = 0.0
         total_safe = 0.0
         summary_lines = []
@@ -168,12 +178,11 @@ class StatusAggregator:
         return section_text, total_profit, total_safe
 
     async def collect_and_send(self):
-        config = self.load_config()
+        config = await self.load_config_async()
         if not config: return
         if not config.get("telegram_enabled", True): return
         
-        if self.notifier is None:
-            self.notifier = TelegramNotifier()
+        await self.init_services()
 
         wallet_usdt = 0.0
         wallet_bnb = 0.0
@@ -189,11 +198,13 @@ class StatusAggregator:
         live_swarm = config.get("live_swarm", [])
         active_tickers = config.get("tickers", [])
         
-        paper_files = glob.glob("paper_state_*.json")
-        real_files = glob.glob("real_state_*.json")
+        # Look for state files in the same directory as config if possible
+        state_dir = os.path.dirname(self.config_path) if self.config_path else "."
+        paper_files = glob.glob(os.path.join(state_dir, "paper_state_*.json"))
+        real_files = glob.glob(os.path.join(state_dir, "real_state_*.json"))
         
-        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
-        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
+        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT", config)
+        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR", config)
 
         working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
         roi = (c_profit / working_capital) * 100 if working_capital > 0 else 0
@@ -212,16 +223,30 @@ class StatusAggregator:
         message = header + combat_text + "\n" + incubator_text
         await self.notifier.send_message(message, force_direct=True)
 
+    def execute_aggregation_cycle(self) -> None:
+        """
+        Прокси-метод для обратной совместимости с внешним диспетчером PM2/Supervisor.
+        Направляет вызов на актуальную внутреннюю логику.
+        """
+        try:
+            asyncio.run(self.collect_and_send())
+        except Exception as e:
+            logger.error(f"Critical error inside explicit aggregation cycle: {e}")
+
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
         
+        # Запускаем обработчик очереди Telegram в фоновом режиме
+        asyncio.create_task(self.process_telegram_queue())
+
         try:
             while True:
                 config = await self.load_config_async()
                 interval_min = config.get("telegram_summary_interval_min", 1)
 
                 try:
-                    await self.execute_aggregation_cycle()
+                    # Within an async loop, we call the async method directly
+                    await self.collect_and_send()
                 except Exception as e:
                     logger.error(f"Error during aggregation cycle: {e}", exc_info=True)
 
