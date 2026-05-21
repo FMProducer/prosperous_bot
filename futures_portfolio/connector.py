@@ -86,6 +86,14 @@ class BinanceConnector:
         """No-op for compatibility with decorator if needed, but client is already init in __init__"""
         pass
 
+    async def close(self):
+        """Безопасное закрытие соединения с биржей"""
+        if self.client:
+            try:
+                await self.client.close_connection()
+            except Exception as e:
+                logger.error(f"Error closing Binance connection: {e}")
+
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:
         """Получение фьючерсных позиций с разделением на LONG и SHORT, включая цену входа."""

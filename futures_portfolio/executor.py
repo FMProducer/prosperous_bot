@@ -324,8 +324,10 @@ class PortfolioExecutor:
                 old_entry = Decimal(str(paper_state.get("long_entry_price" if pos_side == "LONG" else "short_entry_price", price)))
                 trade_pnl = qty_rounded * (dec_price - old_entry) if pos_side == "LONG" else qty_rounded * (old_entry - dec_price)
             
+            logger.info(f"PAPER ORDER EXECUTED: {side} {float(qty_rounded):.6g} {base_symbol} ({pos_side}) at {float(dec_price):.6g} | PnL: {float(trade_pnl):+.4f}$")
+
             return {
-                "status": "SUCCESS", "type": pos_side, "qty": float(qty_rounded), "executed_qty": float(qty_rounded),
+                "status": "SUCCESS", "type": pos_side, "side": side, "qty": float(qty_rounded), "executed_qty": float(qty_rounded),
                 "price": float(dec_price), "trade_pnl": float(trade_pnl), "commission": float(qty_rounded * dec_price * Decimal('0.0004'))
             }
         else:

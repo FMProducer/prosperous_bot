@@ -1,1 +1,87 @@
-{"telegram_enabled": false}
+{
+  "testnet": false,
+  "limit_order_enabled": false,
+  "limit_offset_pct": 0.1,
+  "limit_timeout_sec": 30,
+  "min_notional_usdt": 7.0,
+  "max_orders_per_second": 10,
+  "min_cycles_for_rank": 5,
+  "max_bots": 20,
+  "paper_mode_bots": 20,
+  "probation_period_days": 0.01,
+  "backtest_period_days": 0.125,
+  "supervisor_interval_days": 0.011,
+  "scanner_period_days": 0.125,
+  "max_drawdown_limit": 10.0,
+  "replacement_efficiency_threshold_pct": 50.0,
+  "equity_trailing_stop_pct": 5.0,
+  "equity_trailing_stop_timeout_sec": 45,
+  "telegram_enabled": true,
+  "telegram_use_queue": true,
+  "telegram_summary_interval_min": 1,
+  "portfolios": [
+    {
+      "name": "SyntheticMarketNeutral",
+      "initial_capital": 260.0,
+      "paper_initial_capital": 260.0,
+      "siphoning_threshold_pct": 100.0,
+      "targets": {
+        "BASE_LONG": {
+          "share": 0.27,
+          "leverage": 5
+        },
+        "BASE_SHORT": {
+          "share": 0.34,
+          "leverage": 5
+        },
+        "VIRTUAL": {
+          "share": 0.35,
+          "leverage": 1
+        }
+      },
+      "safety_guards": {
+        "max_spread_pct": 0.1,
+        "max_price_velocity_pct": 1.0,
+        "velocity_window_sec": 60
+      },
+      "rebalance_threshold": 0.02,
+      "ticker_thresholds": {
+        "BTCUSDT": 0.02
+      }
+    }
+  ],
+  "live_swarm": [],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
+  "black_list": [],
+  "toxic_cooldown_days": 0.042,
+  "toxic_blacklist": {
+    "NEARUSDT": 1779402884.6047246,
+    "1000CHEEMSUSDT": 1779400029.3396266,
+    "FIDAUSDT": 1779402572.7217264,
+    "NILUSDT": 1779403516.4332743
+  },
+  "tickers": [
+    "ARBUSDT",
+    "BANANAS31USDT",
+    "CHZUSDT",
+    "DASHUSDT",
+    "ENAUSDT",
+    "FARTCOINUSDT",
+    "FILUSDT",
+    "GRASSUSDT",
+    "ICPUSDT",
+    "INJUSDT",
+    "JTOUSDT",
+    "ONDOUSDT",
+    "ORDIUSDT",
+    "PENDLEUSDT",
+    "PENGUUSDT",
+    "PLUMEUSDT",
+    "SUIUSDT",
+    "TONUSDT",
+    "TSTUSDT",
+    "ZECUSDT"
+  ],
+  "base_ticker": "ARBUSDT"
+}

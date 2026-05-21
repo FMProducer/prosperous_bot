@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 import random
 import shutil
@@ -171,11 +172,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     )
                     calc_res = calc.calculate_rebalance(targets, threshold)
                 except PortfolioRuinError as e:
-                    logger.critical(f"💣 PORTFOLIO RUINED: {e}. Executing Emergency Stop.")
+                    logger.critical(f"PORTFOLIO RUINED: {e}. Executing Emergency Stop.")
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
                     return
 
                 tpv_total, actions = calc_res["total_tpv"], calc_res["actions"]
+
+                # Update paper_state with metrics for aggregator
+                if paper_mode:
+                    paper_state["tpv"] = float(tpv_total)
+                    paper_state["rebalance_cycles"] = cycles
+                    paper_state["total_pnl"] = float(Decimal(str(paper_state["balance"])) - Decimal(str(initial_tpv)))
+                    paper_state_dirty = True
 
                 # Heartbeat (Every 5 cycles)
                 if i % 5 == 0:
@@ -192,7 +200,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     fused_actions = valid_actions
 
                     if state.get("last_rebalance_price", 0.0) == 0:
-                        logger.info(f"❄️ Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
+                        logger.info(f"Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
 
                     if fused_actions:
                         logger.info(f"Rebalance needed ({len(fused_actions)} actions). TPV: {tpv_total:.2f}")
@@ -203,13 +211,45 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             if res.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                                 any_success = True
                                 if res.get("type") == "VIRTUAL_ORDER":
-                                    state["virt_debt"] += res["diff_usdt"]
-                                    state["virt_qty"] += (res["diff_usdt"] / price)
-                                    paper_state["balance"] -= res["diff_usdt"]
+                                    # Virtual "fiat-like" asset update
+                                    diff_usdt = Decimal(str(res["diff_usdt"]))
+                                    state["virt_debt"] = float(Decimal(str(state.get("virt_debt", 0.0))) + diff_usdt)
+                                    state["virt_qty"] = float(Decimal(str(state.get("virt_qty", 0.0))) + (diff_usdt / Decimal(str(price))))
+                                    paper_state["balance"] = float(Decimal(str(paper_state["balance"])) - diff_usdt)
                                 else:
-                                    pos_key = f"{base_ticker}_{res['type']}"
-                                    paper_state["positions"][pos_key] = res["executed_qty"] # Simplified for write_file safety
-                                    paper_state["balance"] += (res.get("realized_pnl", 0.0) - res.get("commission", 0.0))
+                                    pos_side = res['type']
+                                    pos_key = f"{base_ticker}_{pos_side}"
+                                    exec_qty = Decimal(str(res["executed_qty"]))
+                                    exec_price = Decimal(str(res["price"]))
+                                    side = res.get("side") # BUY or SELL
+                                    
+                                    # Update paper positions correctly (WAP logic)
+                                    old_qty = Decimal(str(paper_state["positions"].get(pos_key, 0.0)))
+                                    entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                                    old_entry = Decimal(str(paper_state.get(entry_key, price)))
+                                    
+                                    # Expansion (BUY for LONG, SELL for SHORT)
+                                    is_expansion = (pos_side == "LONG" and side == "BUY") or (pos_side == "SHORT" and side == "SELL")
+                                    
+                                    if is_expansion:
+                                        new_qty = old_qty + exec_qty
+                                        if new_qty > 0:
+                                            # Weighted Average Price update
+                                            new_entry = (old_qty * old_entry + exec_qty * exec_price) / new_qty
+                                            paper_state[entry_key] = float(new_entry)
+                                        paper_state["positions"][pos_key] = float(new_qty)
+                                    else:
+                                        # Reduction (SELL for LONG, BUY for SHORT)
+                                        new_qty = max(Decimal('0'), old_qty - exec_qty)
+                                        paper_state["positions"][pos_key] = float(new_qty)
+                                        if new_qty == 0:
+                                            paper_state[entry_key] = 0.0
+                                            
+                                    # Balance update (PnL realized on reduction, Commission on every trade)
+                                    pnl = Decimal(str(res.get("trade_pnl", 0.0)))
+                                    comm = Decimal(str(res.get("commission", 0.0)))
+                                    paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + pnl - comm)
+
                                 paper_state_dirty = True; state_dirty = True
 
                         if any_success:
@@ -227,10 +267,78 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         await notifier.close()
 
 async def emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=None, paper_mode=False):
-    logger.info("🛑 EMERGENCY STOP TRIGGERED")
+    logger.info("EMERGENCY STOP TRIGGERED")
     # Simplified stop logic for write_file brevity - actual implementation handles positions
     pass
 
 if __name__ == "__main__":
-    # Standard entry point logic...
-    pass
+    import argparse
+    parser = argparse.ArgumentParser(description="Prosperous Bot Rebalancer")
+    parser.add_argument("--config", default="config.json", help="Path to config file")
+    parser.add_argument("--ticker", default=None, help="Ticker override (e.g. BTCUSDT)")
+    parser.add_argument("--paper", action="store_true", help="Force paper mode")
+    parser.add_argument("--real", action="store_true", help="Force real mode")
+    parser.add_argument("--stop", action="store_true", help="Emergency stop and close positions")
+    args = parser.parse_args()
+
+    # Determine mode
+    paper_mode = True
+    if args.real:
+        paper_mode = False
+    elif args.paper:
+        paper_mode = True
+    
+    # Setup paths and ticker
+    base_ticker = args.ticker
+    if not base_ticker:
+        # Try to get from config
+        tmp_cfg = safe_load_json_sync(args.config, {})
+        base_ticker = tmp_cfg.get("base_ticker", "BTCUSDT")
+        
+    prefix = "paper" if paper_mode else "real"
+    state_file = f"bot_state_{base_ticker}.json" # Unique core state
+    paper_state_file = f"paper_state_{base_ticker}.json" # Unique paper state
+    
+    # Setup logger
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"{prefix}_{base_ticker.lower()}.log")
+    
+    # Clear handlers for clean setup
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+        
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s: %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    logger = logging.getLogger(f"Bot-{base_ticker}")
+    logger.info(f"--- Launching Bot: {base_ticker} ({prefix.upper()} Mode) ---")
+
+    async def main_async():
+        # Load config for keys inside the loop
+        config = safe_load_json_sync(args.config, {})
+        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+        testnet = config.get("testnet", True)
+
+        connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=testnet)
+        try:
+            if args.stop:
+                await emergency_stop(connector, args.config, state_file, paper_state_file, logger, ticker_override=base_ticker, paper_mode=paper_mode)
+            else:
+                await rebalance_loop(connector, args.config, state_file, paper_state_file, logger, ticker_override=base_ticker, paper_mode_override=paper_mode)
+        finally:
+            await connector.close()
+
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user.")
+    except Exception as e:
+        logger.error(f"Critical error in main: {e}", exc_info=True)
+

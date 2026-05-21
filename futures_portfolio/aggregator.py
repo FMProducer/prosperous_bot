@@ -33,231 +33,188 @@ logger = logging.getLogger("Aggregator")
 
 class StatusAggregator:
     def __init__(self, config_path="config.json"):
-        # If config_path is just a filename, assume it's in the same directory as this script
-        if not os.path.isabs(config_path) and not os.path.exists(config_path):
-            potential_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
-            if os.path.exists(potential_path):
-                config_path = potential_path
-
-        self.config_path = config_path
+        # Абсолютное разрешение путей для запуска из любого каталога (PM2 root safety)
+        if not os.path.isabs(config_path):
+            self.config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), config_path))
+        else:
+            self.config_path = config_path
+            
+        self.connector = None
         self.notifier = None
-        self.connector = None  # Инициализируем один раз для повторного использования
-        self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
-        os.makedirs(self.queue_dir, exist_ok=True)
+        self.telegram_queue: asyncio.Queue = asyncio.Queue()
 
     def load_config(self) -> Dict[str, Any]:
-        """Синхронная загрузка конфига для совместимости."""
+        """Синхронная загрузка конфигурации (SSOT)"""
         return safe_load_json_sync(self.config_path, {})
 
     async def load_config_async(self) -> Dict[str, Any]:
-        return await safe_load_json(self.config_path, {})
+        """Асинхронная обертка для совместимости"""
+        return await asyncio.to_thread(self.load_config)
 
-    async def init_services(self) -> None:
-        """Делегированная асинхронная инициализация долгоживущих клиентов."""
-        config = await self.load_config_async()
-
-        # Инициализируем TelegramNotifier, если еще не создан
-        if not self.notifier:
-            from notifier import TelegramNotifier
-            self.notifier = TelegramNotifier(config)
-
-        # Инициализируем BinanceConnector один раз (Keep-Alive)
-        if not self.connector:
+    async def init_services(self, config: Dict[str, Any]) -> None:
+        """Ленивая инициализация коннекторов и нотификаторов с защитой от дублирования"""
+        if self.connector is None:
+            # Импортируем локально, чтобы избежать циклических зависимостей при вызове из супервайзера
             from connector import BinanceConnector
-            api_key = config.get("api_key", "")
-            secret_key = config.get("secret_key", "")
-            testnet = config.get("testnet", True)
-            self.connector = BinanceConnector(
-                api_key=api_key,
-                secret_key=secret_key,
-                testnet=testnet
-            )
+            api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+            secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+            self.connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
+            logger.info("Binance Connector initialized in Aggregator.")
+
+        if self.notifier is None:
+            from notifier import TelegramNotifier
+            self.notifier = TelegramNotifier(config=config)
+            logger.info("Telegram Notifier initialized in Aggregator.")
 
     async def close_services(self) -> None:
-        """Детерминированное освобождение ресурсов при остановке агрегатора."""
-        if self.connector and hasattr(self.connector, 'futures_client') and self.connector.futures_client:
-            logger.info("Closing Binance AsyncClient session...")
-            try:
-                # Явное закрытие сессии aiohttp внутри python-binance AsyncClient
-                await self.connector.futures_client.close_connection()
-            except Exception as e:
-                logger.error(f"Failed to close futures_client connection cleanly: {e}")
-
+        """Безопасное закрытие ресурсов"""
         if self.notifier:
-            logger.info("Closing TelegramNotifier session...")
-            await self.notifier.close()
+            try:
+                await self.notifier.close()
+            except Exception as e:
+                logger.error(f"Error closing notifier: {e}")
+            self.notifier = None
+        if self.connector:
+            try:
+                if hasattr(self.connector, "close"):
+                    await self.connector.close()
+            except Exception as e:
+                logger.error(f"Error closing connector: {e}")
+            self.connector = None
 
-    async def process_telegram_queue(self):
-        """Обработка очереди сообщений от других ботов с соблюдением лимитов Telegram"""
-        logger.info("Telegram Queue Processor started.")
+    async def process_telegram_queue(self) -> None:
+        """Фоновый воркер обработки очереди Telegram сообщений"""
         while True:
             try:
-                if self.notifier is None:
-                    await asyncio.sleep(1)
-                    continue
-
-                msg_files = sorted(glob.glob(os.path.join(self.queue_dir, "*.json")))
-                if not msg_files:
-                    await asyncio.sleep(1)
-                    continue
-
-                # Обрабатываем по одному, чтобы не спамить
-                f_path = msg_files[0]
-                try:
-                    with open(f_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    success = False
-                    if data.get("type") == "text":
-                        success = await self.notifier.send_message(data["text"], force_direct=True)
-                    elif data.get("type") == "photo":
-                        success = await self.notifier.send_photo(data["path"], data.get("caption", ""), force_direct=True)
-                    
-                    if success:
-                        if os.path.exists(f_path): os.remove(f_path)
-                        # Пауза между сообщениями для соблюдения лимитов
-                        await asyncio.sleep(1.2)
-                    else:
-                        # Если не удалось отправить (например 429), ждем подольше
-                        logger.warning(f"Failed to send queued message {f_path}, retrying later...")
-                        await asyncio.sleep(5)
-                except Exception as e:
-                    logger.error(f"Error processing queued message {f_path}: {e}")
-                    # Если файл битый, удаляем его
-                    if os.path.exists(f_path): os.remove(f_path)
-
+                msg = await self.telegram_queue.get()
+                if self.notifier:
+                    await self.notifier.send_message(msg, force_direct=True)
+                self.telegram_queue.task_done()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Error in telegram queue processor: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
-    async def _generate_swarm_section(self, files: List[str], live_swarm: List[str], active_tickers: List[str], label: str, config: Dict[str, Any]):
-        total_profit = 0.0
-        total_safe = 0.0
-        summary_lines = []
-        
-        for f_path in files:
-            try:
-                # В асинхронном контексте читаем через safe_load_json
-                state = await safe_load_json(f_path, {})
-                if not state:
-                    continue
-                
-                ticker = state.get("base_ticker", "UNKNOWN")
-                profit = state.get("last_profit", 0.0)
-                cycles = state.get("rebalance_cycles", 0)
-                siphoned = state.get("siphoning_reserve", 0.0)
-                
-                # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
-                min_cycles = config.get("min_cycles_for_rank", 20)
-                efficiency = profit / max(cycles, min_cycles)
-                
-                total_profit += profit
-                total_safe += siphoned
-                
-                if label == "INCUBATOR":
-                    is_active = ticker in active_tickers
-                else:
-                    is_active = ticker in live_swarm
-                
-                status_icon = "🟢" if is_active else "💤"
-                real_whitelist = config.get("real_whitelist", [])
-                vetted_icon = " 🛡️" if ticker in real_whitelist else ""
-                
-                line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT {cycles} cyc"
-                if siphoned > 0:
-                    line += f" 🛡️<code>{siphoned:.2f}</code>"
-                summary_lines.append((efficiency, line))
-            except Exception as e:
-                logger.error(f"Error reading {f_path}: {e}")
-
-        if not summary_lines:
-            return "", 0.0, 0.0
-
-        summary_lines.sort(key=lambda x: x[0], reverse=True)
-        section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
-        return section_text, total_profit, total_safe
-
-    async def collect_and_send(self):
+    async def collect_and_send(self) -> None:
+        """Асинхронное ядро сбора метрик и отправки сводки"""
         config = await self.load_config_async()
-        if not config: return
-        if not config.get("telegram_enabled", True): return
-        
-        await self.init_services()
+        await self.init_services(config)
 
-        wallet_usdt = 0.0
-        wallet_bnb = 0.0
+        # Поиск стейтов в директории скрипта
+        base_dir = os.path.dirname(self.config_path)
+        state_files = glob.glob(os.path.join(base_dir, "paper_state_*.json"))
         
-        try:
-            # Переиспользуем существующий self.connector
-            wallet_usdt = await self.connector.get_free_balance()
-            wallet_bnb = await self.connector.get_bnb_balance()
-        except Exception as e:
-            logger.error(f"Failed to fetch real balances: {e}")
+        if not state_files:
+            logger.info("No active paper states found for aggregation.")
+            return
 
-        initial_per_bot = config.get('portfolios', [{}])[0].get('initial_capital', 60.0)
-        live_swarm = config.get("live_swarm", [])
-        active_tickers = config.get("tickers", [])
+        combat_lines: List[str] = []
+        incubator_lines: List[str] = []
         
-        # Look for state files in the same directory as config if possible
-        state_dir = os.path.dirname(self.config_path) if self.config_path else "."
-        paper_files = glob.glob(os.path.join(state_dir, "paper_state_*.json"))
-        real_files = glob.glob(os.path.join(state_dir, "real_state_*.json"))
-        
-        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT", config)
-        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR", config)
+        total_combat_tpv = 0.0
+        total_incubator_tpv = 0.0
 
-        working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
-        roi = (c_profit / working_capital) * 100 if working_capital > 0 else 0
+        live_swarm_set = set(config.get("live_swarm", []))
+
+        for sf in state_files:
+            filename = os.path.basename(sf)
+            ticker = filename.replace("paper_state_", "").replace(".json", "")
+            
+            state = safe_load_json_sync(sf, {})
+            if not state:
+                continue
+                
+            tpv = state.get("tpv", state.get("initial_capital", 0.0))
+            pnl = state.get("total_pnl", 0.0)
+            cycles = state.get("rebalance_cycles", 0)
+            
+            line = f" * {ticker}: TPV: {tpv:.2f}$ | PnL: {pnl:+.2f}$ | Cycles: {cycles}"
+            
+            if ticker in live_swarm_set:
+                combat_lines.append(line)
+                total_combat_tpv += tpv
+            else:
+                incubator_lines.append(line)
+                total_incubator_tpv += tpv
+
+        msg_lines = [f"STAT: SWARM REBALANCE SUMMARY\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"]
         
-        header = (
-            f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"⚔️ Combat PnL: <code>{c_profit:+.2f} USDT</code>\n"
-            f"🧪 Incubator PnL: <code>{i_profit:+.2f} USDT</code>\n"
-            f"📈 Combat ROI: <code>{roi:.2f}%</code>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💳 Wallet USDT: <code>{wallet_usdt:.2f}</code>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-        )
+        msg_lines.append(f"COMBAT SWARM (Active: {len(combat_lines)})")
+        if combat_lines:
+            msg_lines.extend(combat_lines)
+            msg_lines.append(f"-> Total Combat TPV: {total_combat_tpv:.2f}$")
+        else:
+            msg_lines.append("No active combat bots.")
+            
+        msg_lines.append(f"\nINCUBATOR SWARM (Testing: {len(incubator_lines)})")
+        if incubator_lines:
+            msg_lines.extend(incubator_lines)
+            msg_lines.append(f"-> Total Incubator TPV: {total_incubator_tpv:.2f}$")
+        else:
+            msg_lines.append("No bots in incubator.")
+
+        alloc_text = f"\nTotal Pool Capitalization: {total_combat_tpv + total_incubator_tpv:.2f}$"
+        msg_lines.append(alloc_text)
+
+        full_message = "\n".join(msg_lines)
         
-        message = header + combat_text + "\n" + incubator_text
-        await self.notifier.send_message(message, force_direct=True)
+        if config.get("telegram_enabled", True) and self.notifier:
+            await self.notifier.send_message(full_message, force_direct=True)
+        else:
+            logger.info(f"Aggregation complete (Telegram disabled):\n{full_message}")
 
     def execute_aggregation_cycle(self) -> None:
         """
-        Прокси-метод для обратной совместимости с внешним диспетчером PM2/Supervisor.
-        Направляет вызов на актуальную внутреннюю логику.
+        Главная точка входа для внешних менеджеров процессов (PM2 / Supervisor).
+        Она обязана быть синхронной, атомарной и полностью очищать ресурсы после выполнения.
         """
         try:
-            asyncio.run(self.collect_and_send())
+            # Создаем или получаем loop для синхронного запуска в рамках одного шага
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.collect_and_send())
+            finally:
+                # Гарантируем закрытие коннекторов и сессий aiohttp внутри этого вызова
+                loop.run_until_complete(self.close_services())
+                loop.close()
+            logger.info("Explicit aggregation cycle executed successfully via PM2 hook.")
         except Exception as e:
-            logger.error(f"Critical error inside explicit aggregation cycle: {e}")
+            logger.error(f"Critical failure inside execute_aggregation_cycle: {e}", exc_info=True)
 
     async def run(self) -> None:
-        logger.info("Status Aggregator started.")
+        """Точка входа для долгоживущего daemon-процесса (если запускается напрямую)"""
+        logger.info("Status Aggregator daemon mode started.")
+        config = await self.load_config_async()
+        await self.init_services(config)
         
-        # Запускаем обработчик очереди Telegram в фоновом режиме
-        asyncio.create_task(self.process_telegram_queue())
+        # Запускаем фоновый обработчик очереди Telegram
+        queue_task = asyncio.create_task(self.process_telegram_queue())
 
         try:
             while True:
-                config = await self.load_config_async()
-                interval_min = config.get("telegram_summary_interval_min", 1)
+                current_cfg = await self.load_config_async()
+                interval_min = current_cfg.get("telegram_summary_interval_min", 1)
 
                 try:
-                    # Within an async loop, we call the async method directly
                     await self.collect_and_send()
                 except Exception as e:
-                    logger.error(f"Error during aggregation cycle: {e}", exc_info=True)
+                    logger.error(f"Error during daemon aggregation loop: {e}", exc_info=True)
 
                 await asyncio.sleep(interval_min * 60)
+        except asyncio.CancelledError:
+            logger.info("Daemon loop canceled.")
         finally:
-            # Гарантируем закрытие при выходе из run
+            queue_task.cancel()
+            await asyncio.gather(queue_task, return_exceptions=True)
             await self.close_services()
 
 if __name__ == "__main__":
+    # Нам нужно проверить: если этот скрипт вызывается напрямую модулем, запускаем daemon.
+    # Если диспетчер импортирует класс и вызывает execute_aggregation_cycle, управление туда не дойдет.
     aggregator = StatusAggregator()
     try:
         asyncio.run(aggregator.run())
     except KeyboardInterrupt:
-        pass
+        logger.info("Aggregator shutdown manually.")
