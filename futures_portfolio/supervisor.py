@@ -62,10 +62,22 @@ async def get_running_bots_info() -> Dict[str, dict]:
         for app in data:
             name = app['name']
             if name.startswith(('paper-', 'real-')):
-                args = app.get('pm2_env', {}).get('args', [])
+                pm2_env = app.get('pm2_env', {})
+                args = pm2_env.get('args', [])
+                if not args:
+                    # PM2 sometimes hides args in different places depending on version
+                    args = app.get('pm2_env', {}).get('env', {}).get('PM2_REQ_ARGS', [])
+                
+                # Try to find ticker in name if args fail
                 ticker = next((args[i+1] for i, a in enumerate(args) if a == '--ticker'), None)
+                if not ticker:
+                    ticker = name.split('-', 1)[1].upper() + "USDT" if '-' in name else None
+                
                 is_paper = name.startswith('paper-')
                 if ticker:
+                    # Normalize ticker (e.g. BTCUSDT)
+                    ticker = ticker.upper()
+                    if not ticker.endswith("USDT"): ticker += "USDT"
                     bots[f"{'p' if is_paper else 'r'}_{ticker}"] = {"name": name, "paper": is_paper}
         return bots
     except Exception as e:
