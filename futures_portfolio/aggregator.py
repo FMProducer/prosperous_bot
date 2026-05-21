@@ -9,9 +9,7 @@ import io
 from typing import Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
-from notifier import TelegramNotifier
 from storage import safe_load_json
-from connector import BinanceConnector
 
 # Force UTF-8 for Windows streams
 if sys.platform == "win32":
@@ -37,25 +35,57 @@ class StatusAggregator:
     def __init__(self, config_path="config.json"):
         self.config_path = config_path
         self.notifier = None
+        self.connector = None  # Инициализируем один раз для повторного использования
         self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
         os.makedirs(self.queue_dir, exist_ok=True)
 
-    def load_config(self) -> Dict[str, Any]:
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to read config {self.config_path}: {e}")
-            return {}
+    async def load_config_async(self) -> Dict[str, Any]:
+        return await safe_load_json(self.config_path, {})
+
+    async def init_services(self) -> None:
+        """Делегированная асинхронная инициализация долгоживущих клиентов."""
+        config = await self.load_config_async()
+
+        # Инициализируем TelegramNotifier, если еще не создан
+        if not self.notifier:
+            from notifier import TelegramNotifier
+            self.notifier = TelegramNotifier(config)
+
+        # Инициализируем BinanceConnector один раз (Keep-Alive)
+        if not self.connector:
+            from connector import BinanceConnector
+            api_key = config.get("api_key", "")
+            secret_key = config.get("secret_key", "")
+            testnet = config.get("testnet", True)
+            self.connector = BinanceConnector(
+                api_key=api_key,
+                secret_key=secret_key,
+                testnet=testnet
+            )
+
+    async def close_services(self) -> None:
+        """Детерминированное освобождение ресурсов при остановке агрегатора."""
+        if self.connector and hasattr(self.connector, 'futures_client') and self.connector.futures_client:
+            logger.info("Closing Binance AsyncClient session...")
+            try:
+                # Явное закрытие сессии aiohttp внутри python-binance AsyncClient
+                await self.connector.futures_client.close_connection()
+            except Exception as e:
+                logger.error(f"Failed to close futures_client connection cleanly: {e}")
+
+        if self.notifier:
+            logger.info("Closing TelegramNotifier session...")
+            await self.notifier.close()
 
     async def process_telegram_queue(self):
         """Обработка очереди сообщений от других ботов с соблюдением лимитов Telegram"""
-        if self.notifier is None:
-            self.notifier = TelegramNotifier()
-            
         logger.info("Telegram Queue Processor started.")
         while True:
             try:
+                if self.notifier is None:
+                    await asyncio.sleep(1)
+                    continue
+
                 msg_files = sorted(glob.glob(os.path.join(self.queue_dir, "*.json")))
                 if not msg_files:
                     await asyncio.sleep(1)
@@ -95,9 +125,6 @@ class StatusAggregator:
         total_safe = 0.0
         summary_lines = []
         
-        # Получаем конфиг для расчета ROI в этой секции если нужно
-        config = self.load_config()
-
         for f_path in files:
             try:
                 # В асинхронном контексте читаем через safe_load_json
@@ -111,26 +138,21 @@ class StatusAggregator:
                 siphoned = state.get("siphoning_reserve", 0.0)
                 
                 # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
-                # Используем min_cycles=20 для стабилизации рейтинга новичков
                 min_cycles = config.get("min_cycles_for_rank", 20)
                 efficiency = profit / max(cycles, min_cycles)
                 
                 total_profit += profit
                 total_safe += siphoned
                 
-                # РЕЖИМ ОТОБРАЖЕНИЯ: 🟢 - работает, 💤 - остановлен (хранит историю)
                 if label == "INCUBATOR":
                     is_active = ticker in active_tickers
                 else:
                     is_active = ticker in live_swarm
                 
                 status_icon = "🟢" if is_active else "💤"
-                
-                # Показываем щит если тикер в белом списке (доверенный для реала)
                 real_whitelist = config.get("real_whitelist", [])
                 vetted_icon = " 🛡️" if ticker in real_whitelist else ""
                 
-                # Чистый формат без скобок и лишних слов
                 line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT {cycles} cyc"
                 if siphoned > 0:
                     line += f" 🛡️<code>{siphoned:.2f}</code>"
@@ -141,7 +163,6 @@ class StatusAggregator:
         if not summary_lines:
             return "", 0.0, 0.0
 
-        # Сортировка по ЭФФЕКТИВНОСТИ (x[0] теперь содержит efficiency)
         summary_lines.sort(key=lambda x: x[0], reverse=True)
         section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
         return section_text, total_profit, total_safe
@@ -154,36 +175,28 @@ class StatusAggregator:
         if self.notifier is None:
             self.notifier = TelegramNotifier()
 
-        # Получаем реальные балансы с биржи для "Reality Check"
-        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
-        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
-        testnet = config.get("testnet", False)
-        
         wallet_usdt = 0.0
         wallet_bnb = 0.0
         
         try:
-            connector = BinanceConnector(api_key, secret_key, testnet=testnet)
-            wallet_usdt = await connector.get_free_balance()
-            wallet_bnb = await connector.get_bnb_balance()
+            # Переиспользуем существующий self.connector
+            wallet_usdt = await self.connector.get_free_balance()
+            wallet_bnb = await self.connector.get_bnb_balance()
         except Exception as e:
             logger.error(f"Failed to fetch real balances: {e}")
 
-        # Параметры
-        initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
+        initial_per_bot = config.get('portfolios', [{}])[0].get('initial_capital', 60.0)
         live_swarm = config.get("live_swarm", [])
         active_tickers = config.get("tickers", [])
         
-        # Разделяем стейты
         paper_files = glob.glob("paper_state_*.json")
         real_files = glob.glob("real_state_*.json")
         
         combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
         incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
 
-        total_profit = c_profit # ROI считаем только по реальным деньгам
         working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
-        roi = (total_profit / working_capital) * 100 if working_capital > 0 else 0
+        roi = (c_profit / working_capital) * 100 if working_capital > 0 else 0
         
         header = (
             f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
@@ -197,23 +210,29 @@ class StatusAggregator:
         )
         
         message = header + combat_text + "\n" + incubator_text
-        
         await self.notifier.send_message(message, force_direct=True)
 
     async def run(self) -> None:
         logger.info("Status Aggregator started.")
         
-        while True:
-            config = self.load_config()
-            interval_min = config.get("telegram_summary_interval_min", 1)
-            
-            try:
-                await self.collect_and_send()
-            except Exception as e:
-                logger.error(f"Error in aggregator loop: {e}")
-            
-            await asyncio.sleep(interval_min * 60)
+        try:
+            while True:
+                config = await self.load_config_async()
+                interval_min = config.get("telegram_summary_interval_min", 1)
+
+                try:
+                    await self.execute_aggregation_cycle()
+                except Exception as e:
+                    logger.error(f"Error during aggregation cycle: {e}", exc_info=True)
+
+                await asyncio.sleep(interval_min * 60)
+        finally:
+            # Гарантируем закрытие при выходе из run
+            await self.close_services()
 
 if __name__ == "__main__":
     aggregator = StatusAggregator()
-    asyncio.run(aggregator.run())
+    try:
+        asyncio.run(aggregator.run())
+    except KeyboardInterrupt:
+        pass

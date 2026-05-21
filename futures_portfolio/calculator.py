@@ -13,6 +13,13 @@ class PortfolioRuinError(Exception):
     pass
 
 class PortfolioCalculator:
+    # Caching common constants to prevent redundant Decimal instantiations
+    _DEC_ZERO = Decimal('0')
+    _DEC_ONE = Decimal('1.0')
+    _DEC_MIN_NOTIONAL = Decimal('6.1')
+    _DEC_100 = Decimal('100')
+    _DEC_100_00 = Decimal('100.00')
+
     def __init__(self, positions: Dict[str, float], spot_price: float, real_equity: float, 
                  virt_qty: float, 
                  long_entry_price: float = 0.0, short_entry_price: float = 0.0,
@@ -31,7 +38,16 @@ class PortfolioCalculator:
         self.real_equity = Decimal(str(real_equity)) # Wallet Balance (Cash + Margin, NO PnL)
         self.virt_qty = Decimal(str(virt_qty))
         self.virt_debt = Decimal(str(virt_debt))
-        self.targets = targets or {}
+
+        # Pre-convert targets to Decimal once
+        self.targets = {}
+        if targets:
+            for k, v in targets.items():
+                self.targets[k] = {
+                    "share": Decimal(str(v.get("share", 0))),
+                    "leverage": Decimal(str(v.get("leverage", 1)))
+                }
+
         self.last_rebalance_price = Decimal(str(last_rebalance_price)) if last_rebalance_price > 0 else self.price
         self.min_notional = Decimal(str(min_notional))
 
@@ -39,9 +55,9 @@ class PortfolioCalculator:
         l_qty = abs(self.positions.get(f"{self.base_ticker}_LONG", Decimal('0')))
         s_qty = abs(self.positions.get(f"{self.base_ticker}_SHORT", Decimal('0')))
 
-        self.pnl_l = (l_qty * (self.price - self.last_rebalance_price)) if l_qty > 0 else Decimal('0')
-        self.pnl_s = (s_qty * (self.last_rebalance_price - self.price)) if s_qty > 0 else Decimal('0')
-        self.pnl_v = (self.virt_qty * (self.price - self.last_rebalance_price)) if self.virt_qty > 0 else Decimal('0')
+        self.pnl_l = (l_qty * (self.price - self.last_rebalance_price)) if l_qty > 0 else self._DEC_ZERO
+        self.pnl_s = (s_qty * (self.last_rebalance_price - self.price)) if s_qty > 0 else self._DEC_ZERO
+        self.pnl_v = (self.virt_qty * (self.price - self.last_rebalance_price)) if self.virt_qty > 0 else self._DEC_ZERO
 
         # [SAFETY] Zero Entry Price Guard (SSOT Audit v4.1)
         # Fallback to current price if entry is missing to prevent infinite PnL artifacts
@@ -168,7 +184,7 @@ class PortfolioCalculator:
         final_actions = []
         total_proceeds = Decimal('0')
         for act in surplus_actions:
-            if abs(Decimal(str(act["diff_usdt"]))) >= min_notional or ignore_limits:
+            if abs(Decimal(str(act["diff_usdt"]))) >= self._DEC_MIN_NOTIONAL or ignore_limits:
                 act["priority"] = 0
                 final_actions.append(act)
                 total_proceeds += abs(Decimal(str(act["diff_equity"])))
@@ -191,7 +207,7 @@ class PortfolioCalculator:
             actual_buy_equity = min(needed_equity, available_funds) if not ignore_limits else needed_equity
             actual_buy_usdt = actual_buy_equity * lev
 
-            if actual_buy_usdt >= min_notional or ignore_limits:
+            if actual_buy_usdt >= self._DEC_MIN_NOTIONAL or ignore_limits:
                 act["diff_usdt"] = float(abs(actual_buy_usdt))
                 act["priority"] = 2
                 final_actions.append(act)
