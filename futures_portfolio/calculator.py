@@ -100,15 +100,15 @@ class PortfolioCalculator:
         self.share_short_raw = self.val_short_notional / self.tpv
         self.share_virt_raw = self.val_virt_notional / self.tpv
 
-        # 5. DISPLAY SHARES (EQUITY-BASED) for Heartbeat readability
+        # 5. DISPLAY SHARES (NOTIONAL-BACKED EQUITY) for Heartbeat readability
         l_lev = Decimal(str(self.targets.get("BASE_LONG", {}).get("leverage", 5)))
         s_lev = Decimal(str(self.targets.get("BASE_SHORT", {}).get("leverage", 5)))
         
-        self.l_margin_equity = (l_qty * Decimal(str(long_entry_price)) / l_lev) + mtm_pnl_l if l_qty > 0 else Decimal('0')
-        self.s_margin_equity = (s_qty * Decimal(str(short_entry_price)) / s_lev) + mtm_pnl_s if s_qty > 0 else Decimal('0')
+        self.l_margin_notional = self.val_long_notional / l_lev
+        self.s_margin_notional = self.val_short_notional / s_lev
         
-        self.display_share_long = (self.l_margin_equity / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
-        self.display_share_short = (self.s_margin_equity / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.display_share_long = (self.l_margin_notional / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
+        self.display_share_short = (self.s_margin_notional / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
         self.display_share_virt = (self.val_virt_notional / self.tpv * 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_EVEN)
         self.display_share_cash = (Decimal('100.00') - self.display_share_long - self.display_share_short - self.display_share_virt)
 
@@ -122,10 +122,10 @@ class PortfolioCalculator:
             "share_short_pct": float(self.display_share_short),
             "share_virt_pct": float(self.display_share_virt),
             "share_cash_pct": float(self.display_share_cash),
-            "val_long": float(self.l_margin_equity),
-            "val_short": float(self.s_margin_equity),
+            "val_long": float(self.l_margin_notional),
+            "val_short": float(self.s_margin_notional),
             "val_virt": float(self.val_virt_notional),
-            "val_cash": float(self.tpv - (self.l_margin_equity + self.s_margin_equity + self.val_virt_notional)),
+            "val_cash": float(self.tpv - (self.l_margin_notional + self.s_margin_notional + self.val_virt_notional)),
             "tpv": float(self.tpv),
             "total_tpv": float(self.total_tpv),
             "pnl_l": float(self.pnl_l),
@@ -189,12 +189,12 @@ class PortfolioCalculator:
                 final_actions.append(act)
                 total_proceeds += abs(Decimal(str(act["diff_equity"])))
 
-        # Available cash = Current Cash (MTM based) + Proceeds from sells
+        # Available cash = Real Equity (Wallet Balance - VirtDebt) minus locked margin
         l_lev = Decimal(str(targets["BASE_LONG"].get("leverage", 5)))
         s_lev = Decimal(str(targets["BASE_SHORT"].get("leverage", 5)))
         l_margin = (self.val_long_notional / l_lev)
         s_margin = (self.val_short_notional / s_lev)
-        current_cash = self.tpv - (l_margin + s_margin + self.val_virt_notional)
+        current_cash = self.real_equity - (l_margin + s_margin)
         available_funds = current_cash + total_proceeds
         
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)

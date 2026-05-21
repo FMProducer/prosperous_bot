@@ -186,20 +186,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     min_notional = portfolio_cfg.get("min_notional_usdt", 7.0)
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
-                    # [SYNC] Price Fuse (Scaled by leverage)
-                    last_reb_price = state.get("last_rebalance_price", 0.0)
-                    fused_actions = []
-                    if last_reb_price == 0: fused_actions = valid_actions
-                    else:
-                        for action in valid_actions:
-                            lev = action.get("leverage", 1.0)
-                            trigger = (threshold / lev) * 1.2
-                            diff = action["diff_usdt"]
-                            side = "BUY" if (action["position_side"] == "LONG" and diff > 0) or (action["position_side"] == "SHORT" and diff < 0) else "SELL"
-                            
-                            if side == "BUY" and price <= last_reb_price * (1 - trigger): fused_actions.append(action)
-                            elif side == "SELL" and price >= last_reb_price * (1 + trigger): fused_actions.append(action)
-                            elif i % 20 == 0: logger.info(f"🛡️ FUSE: {side} blocked by price trigger {trigger*100:.2f}%")
+                    # -------------------------------------------------------------------------
+                    # NOTIONAL REBALANCE (No Price Fuse)
+                    # -------------------------------------------------------------------------
+                    fused_actions = valid_actions
+
+                    if state.get("last_rebalance_price", 0.0) == 0:
+                        logger.info(f"❄️ Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
 
                     if fused_actions:
                         logger.info(f"Rebalance needed ({len(fused_actions)} actions). TPV: {tpv_total:.2f}")
