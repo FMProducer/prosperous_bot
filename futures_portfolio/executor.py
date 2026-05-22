@@ -61,9 +61,14 @@ class PortfolioExecutor:
 
         try:
             # 1. Fetch current Mark Price for slippage anchor
-            prices = await self.connector.get_mark_prices([symbol])
-            mark_price = Decimal(str(prices.get(symbol, 0)))
-            if mark_price <= 0: 
+            try:
+                prices = await self.connector.get_mark_prices([symbol])
+                mark_price = Decimal(str(prices.get(symbol, 0)))
+            except Exception as e:
+                logger.warning(f"Price fetch failed for {symbol}, using fallback: {e}")
+                mark_price = Decimal('0')
+
+            if mark_price <= 0:
                 # Fallback to provided price if API fails
                 mark_price = price if price > 0 else Decimal('0')
             
@@ -137,10 +142,13 @@ class PortfolioExecutor:
             return {
                 "status": "SUCCESS",
                 "result": result,
-                "executed_qty": executed_qty,
-                "avg_price": avg_price,
-                "realized_pnl": real_pnl,
-                "commission": real_commission
+                "executed_qty": float(executed_qty),
+                "qty": float(executed_qty),
+                "avg_price": float(avg_price),
+                "price": float(avg_price),
+                "realized_pnl": float(real_pnl),
+                "trade_pnl": float(real_pnl),
+                "commission": float(real_commission)
             }
         except Exception as e:
             import traceback
@@ -223,10 +231,13 @@ class PortfolioExecutor:
 
                     return {
                         "status": "SUCCESS_LIMIT",
-                        "executed_qty": filled_qty,
-                        "avg_price": avg_fill_price,
-                        "realized_pnl": real_pnl,
-                        "commission": real_commission,
+                        "executed_qty": float(filled_qty),
+                        "qty": float(filled_qty),
+                        "avg_price": float(avg_fill_price),
+                        "price": float(avg_fill_price),
+                        "realized_pnl": float(real_pnl),
+                        "trade_pnl": float(real_pnl),
+                        "commission": float(real_commission),
                         "order_type": "LIMIT_MAKER"
                     }
 
@@ -262,9 +273,12 @@ class PortfolioExecutor:
 
             return {
                 "status": "SUCCESS_FALLBACK",
-                "executed_qty": total_executed,
-                "realized_pnl": limit_pnl + market_pnl,
-                "commission": limit_comm + market_comm
+                "executed_qty": float(total_executed),
+                "qty": float(total_executed),
+                "realized_pnl": float(limit_pnl + market_pnl),
+                "trade_pnl": float(limit_pnl + market_pnl),
+                "commission": float(limit_comm + market_comm),
+                "price": float(price)
             }
 
         except Exception as e:
@@ -328,7 +342,8 @@ class PortfolioExecutor:
 
             return {
                 "status": "SUCCESS", "type": pos_side, "side": side, "qty": float(qty_rounded), "executed_qty": float(qty_rounded),
-                "price": float(dec_price), "trade_pnl": float(trade_pnl), "commission": float(qty_rounded * dec_price * Decimal('0.0004'))
+                "price": float(dec_price), "trade_pnl": float(trade_pnl), "commission": float(qty_rounded * dec_price * Decimal('0.0004')),
+                "reduce_only": reduce_only
             }
         else:
             async with self.semaphore:
@@ -336,6 +351,7 @@ class PortfolioExecutor:
                     symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                     reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
                 )
-                if res["status"] == "SUCCESS":
+                if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                     res["type"] = pos_side
+                    res["reduce_only"] = reduce_only
                 return res
