@@ -124,7 +124,7 @@ class StatusAggregator:
                 continue
 
             tpv = state.get("tpv", state.get("initial_capital", 0.0))
-            profit = state.get("last_profit", 0.0)
+            profit = state.get("total_pnl", state.get("last_profit", 0.0))
             cycles = state.get("rebalance_cycles", 0)
             siphoned = state.get("siphoning_reserve", 0.0)
 

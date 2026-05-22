@@ -183,7 +183,17 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     paper_state["tpv"] = float(tpv_total)
                     paper_state["rebalance_cycles"] = cycles
                     paper_state["total_pnl"] = float(Decimal(str(paper_state["balance"])) - Decimal(str(initial_tpv)))
+                    paper_state["share_long_pct"] = float(calc_res['share_long_pct'])
+                    paper_state["share_short_pct"] = float(calc_res['share_short_pct'])
+                    paper_state["share_virt_pct"] = float(calc_res['share_virt_pct'])
                     paper_state_dirty = True
+                else:
+                    state["tpv"] = float(tpv_total)
+                    state["total_pnl"] = float(calc_res['total_pnl'])
+                    state["share_long_pct"] = float(calc_res['share_long_pct'])
+                    state["share_short_pct"] = float(calc_res['share_short_pct'])
+                    state["share_virt_pct"] = float(calc_res['share_virt_pct'])
+                    state_dirty = True
 
                 # Heartbeat (Every 5 cycles)
                 if i % 5 == 0:
