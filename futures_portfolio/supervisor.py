@@ -62,10 +62,22 @@ async def get_running_bots_info() -> Dict[str, dict]:
         for app in data:
             name = app['name']
             if name.startswith(('paper-', 'real-')):
-                args = app.get('pm2_env', {}).get('args', [])
+                pm2_env = app.get('pm2_env', {})
+                args = pm2_env.get('args', [])
+                if not args:
+                    # PM2 sometimes hides args in different places depending on version
+                    args = app.get('pm2_env', {}).get('env', {}).get('PM2_REQ_ARGS', [])
+                
+                # Try to find ticker in name if args fail
                 ticker = next((args[i+1] for i, a in enumerate(args) if a == '--ticker'), None)
+                if not ticker:
+                    ticker = name.split('-', 1)[1].upper() + "USDT" if '-' in name else None
+                
                 is_paper = name.startswith('paper-')
                 if ticker:
+                    # Normalize ticker (e.g. BTCUSDT)
+                    ticker = ticker.upper()
+                    if not ticker.endswith("USDT"): ticker += "USDT"
                     bots[f"{'p' if is_paper else 'r'}_{ticker}"] = {"name": name, "paper": is_paper}
         return bots
     except Exception as e:
@@ -123,7 +135,7 @@ async def manage_swarm():
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
 
     # 1. Запуск сканера (ЖЕСТКО 20M)
-    logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
+    logger.info("🔍 Running ticker scanner ranking...")
     try:
         scanner_results = await asyncio.wait_for(run_scanner(quiet=True, min_volume=20_000_000), timeout=60)
         if not scanner_results:
@@ -133,9 +145,10 @@ async def manage_swarm():
         logger.error(f"❌ Scanner failed: {e}")
         return
 
-    # 2. Формирование НОВОГО списка Инкубатора (Strictly from Scanner)
-    final_incubator = []
-    limit_bots = config.get("max_bots", 20)
+    # 2. Формирование НОВОГО списка Инкубатора (Hysteresis/Retention Strategy)
+    current_incubator: List[str] = config.get("tickers", [])  # Ранее запущенные PAPER боты
+    target_real_bots: List[str] = config.get("live_swarm", []) # Текущие боевые боты
+    max_paper_bots: int = config.get("paper_mode_bots", 20)
     
     # Persistent Toxic Blacklist Logic
     now = time.time()
@@ -155,16 +168,37 @@ async def manage_swarm():
 
     config["toxic_blacklist"] = toxic_blacklist
 
+    # Стратегия удержания (Retention Policy) для предотвращения черна пула
+    scanned_tickers: List[str] = [r['symbol'] for r in scanner_results]
+    final_incubator: List[str] = [t for t in current_incubator if t in scanned_tickers and t not in toxic_blacklist]
+
     for r in scanner_results:
         symbol = r['symbol']
-        if len(final_incubator) >= limit_bots: break
-        
+        if len(final_incubator) >= max_paper_bots:
+            break
         if symbol in toxic_blacklist:
             logger.info(f"⏳ {symbol} is in Toxic Quarantine. Skipping.")
             continue
-            
-        final_incubator.append(symbol)
-        logger.info(f"➕ Added to Incubator: {symbol} (Cycles: {r.get('cycles')})")
+        if symbol not in final_incubator:
+            final_incubator.append(symbol)
+
+    # Определение тикеров на остановку
+    for ticker in current_incubator:
+        if ticker not in final_incubator:
+            logger.info(f"🛑 Stopping De-ranked Incubator (PAPER): {ticker}")
+            cmd_stop = f'python "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --paper'
+            await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
+
+    for ticker in list(target_real_bots):
+        if ticker not in final_incubator:
+            logger.info(f"🚨 STOPPING COMBAT SWARM BOT (REAL): {ticker}")
+            cmd_stop = f'python "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
+            await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
+            if ticker in target_real_bots:
+                target_real_bots.remove(ticker)
+
+    # Пауза для стабильности дескрипторов PM2
+    await asyncio.sleep(1.5)
 
     # 3. Выбор Чемпионов для REAL
     # Собираем данные по эффективности для тех, кто прошел фильтры
