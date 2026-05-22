@@ -1,1 +1,0 @@
-{"portfolios": [{"initial_capital": 1000.0, "targets": {"BASE_LONG": {"share": 0.3, "leverage": 5}, "BASE_SHORT": {"share": 0.3, "leverage": 5}, "VIRTUAL": {"share": 0.4, "leverage": 1}}, "rebalance_threshold": 0.02}], "base_ticker": "BTCUSDT"}
