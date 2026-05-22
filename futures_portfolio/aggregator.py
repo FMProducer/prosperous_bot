@@ -6,7 +6,7 @@ import time
 import glob
 import sys
 import io
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Tuple
 from datetime import datetime
 from dotenv import load_dotenv
 from storage import safe_load_json, safe_load_json_sync
@@ -96,6 +96,67 @@ class StatusAggregator:
                 logger.error(f"Error in telegram queue processor: {e}")
                 await asyncio.sleep(1)
 
+    def _generate_swarm_section(self, state_files: List[str], config: Dict[str, Any], filter_set: Set[str], is_combat: bool = True) -> Tuple[List[str], float, float, float]:
+        """
+        Генерирует блок строк для определенной группы ботов (COMBAT или INCUBATOR).
+        Возвращает (список строк, общий TPV, общая прибыль, общий сейф).
+        """
+        summary_lines = []
+        total_tpv = 0.0
+        total_profit = 0.0
+        total_safe = 0.0
+
+        real_whitelist = config.get("real_whitelist", [])
+        active_tickers = set(config.get("tickers", []))
+
+        for sf in state_files:
+            filename = os.path.basename(sf)
+            ticker = filename.replace("paper_state_", "").replace(".json", "")
+
+            # Фильтр: если мы в режиме COMBAT, берем только тех, кто в filter_set
+            if is_combat:
+                if ticker not in filter_set: continue
+            else:
+                if ticker in filter_set: continue
+
+            state = safe_load_json_sync(sf, {})
+            if not state:
+                continue
+
+            tpv = state.get("tpv", state.get("initial_capital", 0.0))
+            profit = state.get("last_profit", 0.0)
+            cycles = state.get("rebalance_cycles", 0)
+            siphoned = state.get("siphoning_reserve", 0.0)
+
+            # Extract shares
+            share_long = state.get("share_long_pct", 0.0)
+            share_short = state.get("share_short_pct", 0.0)
+            share_virt = state.get("share_virt_pct", 0.0)
+
+            # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
+            min_cycles = config.get("min_cycles_for_rank", 20)
+            efficiency = profit / max(cycles, min_cycles)
+
+            total_tpv += tpv
+            total_profit += profit
+            total_safe += siphoned
+
+            is_active = ticker in active_tickers
+            status_icon = "🟢" if is_active else "💤"
+            vetted_icon = " 🛡️" if ticker in real_whitelist else ""
+
+            line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT | L:{share_long:.1f}% S:{share_short:.1f}% V:{share_virt:.1f}% | {cycles} cyc"
+            if siphoned > 0:
+                line += f" 🛡️<code>{siphoned:.2f}</code>"
+
+            summary_lines.append((efficiency, line))
+
+        # Сортировка по эффективности
+        summary_lines.sort(key=lambda x: x[0], reverse=True)
+        lines = [item[1] for item in summary_lines]
+
+        return lines, total_tpv, total_profit, total_safe
+
     async def collect_and_send(self) -> None:
         """Асинхронное ядро сбора метрик и отправки сводки"""
         config = await self.load_config_async()
@@ -109,52 +170,30 @@ class StatusAggregator:
             logger.info("No active paper states found for aggregation.")
             return
 
-        combat_lines: List[str] = []
-        incubator_lines: List[str] = []
-        
-        total_combat_tpv = 0.0
-        total_incubator_tpv = 0.0
-
         live_swarm_set = set(config.get("live_swarm", []))
 
-        for sf in state_files:
-            filename = os.path.basename(sf)
-            ticker = filename.replace("paper_state_", "").replace(".json", "")
-            
-            state = safe_load_json_sync(sf, {})
-            if not state:
-                continue
-                
-            tpv = state.get("tpv", state.get("initial_capital", 0.0))
-            pnl = state.get("total_pnl", 0.0)
-            cycles = state.get("rebalance_cycles", 0)
-            
-            line = f" * {ticker}: TPV: {tpv:.2f}$ | PnL: {pnl:+.2f}$ | Cycles: {cycles}"
-            
-            if ticker in live_swarm_set:
-                combat_lines.append(line)
-                total_combat_tpv += tpv
-            else:
-                incubator_lines.append(line)
-                total_incubator_tpv += tpv
+        combat_lines, combat_tpv, combat_profit, combat_safe = self._generate_swarm_section(state_files, config, live_swarm_set, is_combat=True)
+        incubator_lines, incubator_tpv, incubator_profit, incubator_safe = self._generate_swarm_section(state_files, config, live_swarm_set, is_combat=False)
 
         msg_lines = [f"STAT: SWARM REBALANCE SUMMARY\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"]
         
         msg_lines.append(f"COMBAT SWARM (Active: {len(combat_lines)})")
         if combat_lines:
             msg_lines.extend(combat_lines)
-            msg_lines.append(f"-> Total Combat TPV: {total_combat_tpv:.2f}$")
+            msg_lines.append(f"-> Total Combat TPV: {combat_tpv:.2f}$ | PnL: {combat_profit:+.2f}$")
+            if combat_safe > 0:
+                msg_lines.append(f"-> Total SAFE Reserve: {combat_safe:.2f} USDT")
         else:
             msg_lines.append("No active combat bots.")
             
         msg_lines.append(f"\nINCUBATOR SWARM (Testing: {len(incubator_lines)})")
         if incubator_lines:
             msg_lines.extend(incubator_lines)
-            msg_lines.append(f"-> Total Incubator TPV: {total_incubator_tpv:.2f}$")
+            msg_lines.append(f"-> Total Incubator TPV: {incubator_tpv:.2f}$ | PnL: {incubator_profit:+.2f}$")
         else:
             msg_lines.append("No bots in incubator.")
 
-        alloc_text = f"\nTotal Pool Capitalization: {total_combat_tpv + total_incubator_tpv:.2f}$"
+        alloc_text = f"\nTotal Pool Capitalization: {combat_tpv + incubator_tpv:.2f}$"
         msg_lines.append(alloc_text)
 
         full_message = "\n".join(msg_lines)
