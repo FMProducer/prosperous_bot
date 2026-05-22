@@ -96,12 +96,8 @@ class BacktestState:
     def get_tpv(self, price: Decimal, l_lev: Decimal, s_lev: Decimal) -> Decimal:
         """
         Calculates TPV based on SSOT (Single Source of Truth) from PortfolioCalculator.
-        TPV = Free Cash + Margin + Unrealized PnL + Virtual Equity.
+        TPV = WalletBalance + Unrealized PnL + Virtual Equity.
         """
-        # Margin currently locked in futures positions
-        margin_l = (self.pos_long * self.long_entry_price) / l_lev if self.pos_long > 0 else Decimal('0')
-        margin_s = (self.pos_short * self.short_entry_price) / s_lev if self.pos_short > 0 else Decimal('0')
-        
         # Unrealized PnL relative to entry prices
         mtm_pnl_l = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
         mtm_pnl_s = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
@@ -109,8 +105,8 @@ class BacktestState:
         # Virtual Spot Equity (Market Value - Acquisition Debt)
         virt_equity = (self.virt_qty * price) - self.virt_debt
         
-        # Total Value = Available Cash + Equity of all positions
-        return self.val_cash + margin_l + mtm_pnl_l + margin_s + mtm_pnl_s + virt_equity
+        # Total Value = Wallet Balance + Unrealized PnL + Virtual Equity
+        return self.val_cash + mtm_pnl_l + mtm_pnl_s + virt_equity
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
@@ -207,10 +203,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
             # --- 2. Portfolio Calculation ---
             # Согласно логике main.py, мы передаем в калькулятор real_equity = WalletBalance - virt_debt
-            # Wallet Balance = val_cash + margin_long + margin_short
-            margin_long_current = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
-            margin_short_current = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
-            wallet_balance = state.val_cash + margin_long_current + margin_short_current
+            # Wallet Balance = val_cash
+            wallet_balance = state.val_cash
             simulated_real_equity = wallet_balance - state.virt_debt
 
             calculator = PortfolioCalculator(
@@ -230,36 +224,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             actions = calc_res["actions"]
 
             if actions:
-                # --- [SYNC] Anti-Churn Price Fuse (BLSH) ---
-                if not state.rebalance_log:
-                    # Cold Start: Always allow first rebalance to form baseline
-                    fused_actions = actions
-                else:
-                    last_reb_price = Decimal(str(state.rebalance_log[-1]["price"]))
-                    fused_actions = []
-                    for action in actions:
-                        lev = Decimal(str(action.get("leverage", 1.0)))
-                        # Same logic as main.py: scale price trigger by leverage
-                        effective_price_trigger = (Decimal(str(threshold)) / lev) * Decimal('1.2')
-                        
-                        diff_usdt = Decimal(str(action["diff_usdt"]))
-                        pos_side = action["position_side"]
-                        
-                        if action["type"] == "VIRTUAL_ORDER":
-                            side = "BUY" if diff_usdt > 0 else "SELL"
-                        elif pos_side == "LONG":
-                            side = "BUY" if diff_usdt > 0 else "SELL"
-                        else: # SHORT
-                            side = "SELL" if diff_usdt > 0 else "BUY"
-                            
-                        if side == "BUY":
-                            limit_price = last_reb_price * (Decimal('1') - effective_price_trigger)
-                            if mid_price <= limit_price: fused_actions.append(action)
-                        else: # SELL
-                            limit_price = last_reb_price * (Decimal('1') + effective_price_trigger)
-                            if mid_price >= limit_price: fused_actions.append(action)
-                
-                actions = fused_actions
+                # -------------------------------------------------------------------------
+                # NOTIONAL REBALANCE (No Price Fuse)
+                # -------------------------------------------------------------------------
+                pass
 
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
@@ -278,17 +246,15 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     if key == "BASE_LONG":
                         exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
                         realized_pnl = qty * (exec_price - state.long_entry_price)
-                        released_margin = (qty * state.long_entry_price) / lev
                         state.pos_long -= qty
-                        state.val_cash += released_margin + realized_pnl - commission
+                        state.val_cash += realized_pnl - commission
                         if state.pos_long == Decimal('0'):
                             state.long_entry_price = Decimal('0')
                     elif key == "BASE_SHORT":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
                         realized_pnl = qty * (state.short_entry_price - exec_price)
-                        released_margin = (qty * state.short_entry_price) / lev
                         state.pos_short -= qty
-                        state.val_cash += released_margin + realized_pnl - commission
+                        state.val_cash += realized_pnl - commission
                         if state.pos_short == Decimal('0'):
                             state.short_entry_price = Decimal('0')
                     elif key == "VIRTUAL":
@@ -308,8 +274,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.virt_qty -= qty
                         state.virt_debt -= allocated_debt_reduction
                         
-                        # Деньги физически возвращаются в кэш: себестоимость + прибыль - комиссия
-                        state.val_cash += allocated_debt_reduction + realized_pnl - commission
+                        # Деньги физически возвращаются в кэш: только прибыль - комиссия
+                        state.val_cash += realized_pnl - commission
 
                 # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорта) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
@@ -331,14 +297,12 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
                     if key == "BASE_LONG":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
-                        margin_required = (qty * exec_price) / lev
-                        state.val_cash -= margin_required + commission
+                        state.val_cash -= commission
                         state.long_entry_price = ((state.pos_long * state.long_entry_price) + (qty * exec_price)) / (state.pos_long + qty)
                         state.pos_long += qty
                     elif key == "BASE_SHORT":
                         exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
-                        margin_required = (qty * exec_price) / lev
-                        state.val_cash -= margin_required + commission
+                        state.val_cash -= commission
                         if state.pos_short == 0:
                             state.short_entry_price = exec_price
                         else:
@@ -347,13 +311,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
                         
-                        # Сколько кэша реально тратится на добор спотовой ноги с учетом комиссии
-                        cash_spent = (qty * exec_price) + commission
-                        
                         # Изменяем балансы
-                        state.val_cash -= cash_spent
+                        state.val_cash -= commission
                         state.virt_qty += qty
-                        state.virt_debt += cash_spent
+                        state.virt_debt += (qty * exec_price)
 
                 state.cycles += 1
                 state.rebalance_log.append({
