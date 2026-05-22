@@ -24,7 +24,15 @@ except ImportError:
     from calculator import PortfolioCalculator
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+os.makedirs("logs", exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[
+        logging.FileHandler("logs/backtest_latest.log", mode="w"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger("Backtest")
 
 # Set decimal precision and rounding mode globally for financial calculations
@@ -322,6 +330,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     "shares": {"L": calc_res["share_long_pct"], "S": calc_res["share_short_pct"], "V": calc_res["share_virt_pct"], "C": calc_res["share_cash_pct"]},
                     "actions": [f"{a['key']} {'SELL' if a['is_reduction'] else 'BUY'}" for a in actions]
                 })
+                logger.info(f"Heartbeat: TPV={float(state.get_tpv(mid_price, l_lev, s_lev)):.2f} | Price={float(mid_price):.6f}")
 
             # --- Расчет Funding Drag (Удержание за фьючерсные плечи) ---
             long_notional = state.pos_long * mid_price
@@ -339,16 +348,30 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             val_s = margin_short + unrealized_pnl_short
 
             if val_l <= 0 and state.pos_long != 0:
+                # 1. Рассчитываем реализованный убыток (всю маржу, которая была в позиции)
+                realized_loss = (state.pos_long * state.long_entry_price) / l_lev
+                
+                # 2. Вычитаем этот убыток из кэша (реализация PnL)
+                state.val_cash -= realized_loss
+                
+                # 3. Обнуляем состояние
                 state.pos_long = Decimal('0')
                 state.long_entry_price = Decimal('0')
                 state.liquidations_counter += 1
-                logger.warning(f"Bar {i}: LONG leg liquidated!")
+                logger.warning(f"Bar {i}: LONG leg liquidated! Loss: {realized_loss:.2f}")
 
             if val_s <= 0 and state.pos_short != 0:
+                # 1. Рассчитываем реализованный убыток (всю маржу, которая была в позиции)
+                realized_loss = (state.pos_short * state.short_entry_price) / s_lev
+                
+                # 2. Вычитаем этот убыток из кэша (реализация PnL)
+                state.val_cash -= realized_loss
+                
+                # 3. Обнуляем состояние
                 state.pos_short = Decimal('0')
                 state.short_entry_price = Decimal('0')
                 state.liquidations_counter += 1
-                logger.warning(f"Bar {i}: SHORT leg liquidated!")
+                logger.warning(f"Bar {i}: SHORT leg liquidated! Loss: {realized_loss:.2f}")
 
             # --- 4. SAFE Siphoning (Calculated on TPV) ---
             tpv = state.get_tpv(mid_price, l_lev, s_lev)
