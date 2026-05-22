@@ -215,40 +215,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     diff_usdt = Decimal(str(res["diff_usdt"]))
                                     state["virt_debt"] = float(Decimal(str(state.get("virt_debt", 0.0))) + diff_usdt)
                                     state["virt_qty"] = float(Decimal(str(state.get("virt_qty", 0.0))) + (diff_usdt / Decimal(str(price))))
-                                    paper_state["balance"] = float(Decimal(str(paper_state["balance"])) - diff_usdt)
+                                    # paper_state["balance"] is NOT modified here; cash is accounted via virt_debt in PortfolioCalculator
                                 else:
                                     pos_side = res['type']
                                     pos_key = f"{base_ticker}_{pos_side}"
-                                    exec_qty = Decimal(str(res["executed_qty"]))
-                                    exec_price = Decimal(str(res["price"]))
-                                    side = res.get("side") # BUY or SELL
-                                    
-                                    # Update paper positions correctly (WAP logic)
+                                    trade_qty = Decimal(str(res.get("qty", 0.0)))
+                                    is_reduction = res.get("reduce_only", False)
                                     old_qty = Decimal(str(paper_state["positions"].get(pos_key, 0.0)))
-                                    entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                                    old_entry = Decimal(str(paper_state.get(entry_key, price)))
                                     
-                                    # Expansion (BUY for LONG, SELL for SHORT)
-                                    is_expansion = (pos_side == "LONG" and side == "BUY") or (pos_side == "SHORT" and side == "SELL")
+                                    new_qty = max(Decimal('0'), old_qty - trade_qty if is_reduction else old_qty + trade_qty)
+                                    paper_state["positions"][pos_key] = float(new_qty)
                                     
-                                    if is_expansion:
-                                        new_qty = old_qty + exec_qty
-                                        if new_qty > 0:
-                                            # Weighted Average Price update
-                                            new_entry = (old_qty * old_entry + exec_qty * exec_price) / new_qty
+                                    if not is_reduction and trade_qty > 0:
+                                        entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                                        old_entry = Decimal(str(paper_state.get(entry_key, price)))
+                                        trade_price = Decimal(str(res.get("price", price)))
+                                        if old_qty <= 0:
+                                            paper_state[entry_key] = float(trade_price)
+                                        else:
+                                            new_entry = ((old_qty * old_entry) + (trade_qty * trade_price)) / (old_qty + trade_qty)
                                             paper_state[entry_key] = float(new_entry)
-                                        paper_state["positions"][pos_key] = float(new_qty)
-                                    else:
-                                        # Reduction (SELL for LONG, BUY for SHORT)
-                                        new_qty = max(Decimal('0'), old_qty - exec_qty)
-                                        paper_state["positions"][pos_key] = float(new_qty)
-                                        if new_qty == 0:
-                                            paper_state[entry_key] = 0.0
-                                            
-                                    # Balance update (PnL realized on reduction, Commission on every trade)
-                                    pnl = Decimal(str(res.get("trade_pnl", 0.0)))
-                                    comm = Decimal(str(res.get("commission", 0.0)))
-                                    paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + pnl - comm)
+                                    elif is_reduction and new_qty == 0:
+                                        entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
+                                        paper_state[entry_key] = 0.0
+
+                                    paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + Decimal(str(res.get("trade_pnl", 0.0))) - Decimal(str(res.get("commission", 0.0))))
 
                                 paper_state_dirty = True; state_dirty = True
 
