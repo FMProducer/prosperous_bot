@@ -19,6 +19,13 @@ class PortfolioExecutor:
         self.base_ticker = base_ticker
         self.semaphore = asyncio.Semaphore(max_orders_per_second)
 
+    def get_limit_order_params(self, portfolio_cfg: Dict[str, Any]) -> Tuple[bool, Decimal, int]:
+        """Extract limit order parameters from config."""
+        enabled = portfolio_cfg.get("limit_order_enabled", False)
+        offset = Decimal(str(portfolio_cfg.get("limit_offset_pct", 0.1)))
+        timeout = int(portfolio_cfg.get("limit_timeout_sec", 30))
+        return enabled, offset, timeout
+
     def calculate_order_size(self, target_share: float, current_value: float, total_value: float, spot_price: float) -> Decimal:
         """Расчёт размера ордера в контрактах."""
         dec_target_share = Decimal(str(target_share))
@@ -347,10 +354,18 @@ class PortfolioExecutor:
             }
         else:
             async with self.semaphore:
-                res = await self.execute_market_order(
-                    symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
-                    reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
-                )
+                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg)
+                if limit_enabled:
+                    res = await self.execute_limit_with_fallback(
+                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
+                        reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
+                        timeout_sec=limit_timeout, min_notional=min_notional, price=dec_price
+                    )
+                else:
+                    res = await self.execute_market_order(
+                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
+                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
+                    )
                 if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                     res["type"] = pos_side
                     res["reduce_only"] = reduce_only

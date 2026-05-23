@@ -10,6 +10,7 @@ from collections import deque
 from typing import Dict, List, Any
 from decimal import Decimal
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Load .env file
 load_dotenv()
@@ -327,7 +328,21 @@ if __name__ == "__main__":
         secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
         testnet = config.get("testnet", True)
 
-        connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=testnet)
+        # Инициализация коннектора с защитой от сетевых сбоев
+        @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10),
+               before_sleep=lambda retry_state: logger.warning(f"Connection failed, retrying... (attempt {retry_state.attempt_number})"))
+        async def init_connector():
+            conn = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=testnet)
+            await conn.verify_connection()
+            return conn
+
+        try:
+            connector = await init_connector()
+            logger.info("BinanceConnector initialized and verified successfully.")
+        except Exception as e:
+            logger.critical(f"Failed to initialize or verify BinanceConnector after 5 attempts: {e}")
+            sys.exit(1)
+
         try:
             if args.stop:
                 await emergency_stop(connector, args.config, state_file, paper_state_file, logger, ticker_override=base_ticker, paper_mode=paper_mode)

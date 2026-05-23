@@ -77,10 +77,14 @@ class BinanceConnector:
             testnet=self.testnet,
             requests_params=requests_params
         )
-        if not self.testnet:
-            self.client.API_URL = 'https://api1.binance.com/api'
-            self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
         self.futures_client = self.client
+
+    async def verify_connection(self):
+        """Явная проверка связи перед началом работы бота."""
+        if asyncio.iscoroutinefunction(self.futures_client.ping):
+            await self.futures_client.ping()
+        else:
+            await asyncio.to_thread(self.futures_client.ping)
 
     async def _ensure_client(self):
         """No-op for compatibility with decorator if needed, but client is already init in __init__"""

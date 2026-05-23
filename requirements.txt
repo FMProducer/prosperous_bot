@@ -16,6 +16,7 @@ scikit-learn
 ta
 uvicorn
 xgboost-cpu
+tenacity
 pytest-cov
 pytest-mock
 asyncpg>=0.29.0
