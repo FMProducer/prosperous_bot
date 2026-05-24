@@ -8,6 +8,7 @@ import sys
 from typing import Dict, List, Set, Any
 from dotenv import load_dotenv
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 
 # Загрузка окружения
 load_dotenv()
@@ -100,27 +101,59 @@ async def start_bot(ticker: str, is_paper: bool = True):
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     """
-    Строгий расчет эффективности на основе непрерывного трека инкубатора.
-    Обеспечивает доктрину параллельного слежения без рассинхронизации.
+    Расчет риск-скорректированной эффективности Инкубатора.
+    Учитывает изъятый в SAFE капитал и штрафует за отклонение TPV от ATH.
+    Все расчеты выполняются в Decimal для математической строгости.
     """
     state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
-    min_cycles = config.get("min_cycles_for_rank", 10)
+    min_cycles = config.get("min_cycles_for_rank", 6)
 
     if not state:
         return {
             "profit": 0.0,
+            "tgv": 0.0,
             "cycles": 0,
             "eff": 0.0,
+            "pure_eff": 0.0,
             "trailing_stop_paper_timeout_end": 0.0
         }
 
-    profit_usdt = state.get("last_profit", 0.0)
-    cycles = state.get("rebalance_cycles", 0)
+    try:
+        last_profit = Decimal(str(state.get("last_profit", 0.0)))
+        siphoning_reserve = Decimal(str(state.get("siphoning_reserve", 0.0)))
+        cycles = int(state.get("rebalance_cycles", 0))
+
+        tpv_ath = Decimal(str(state.get("tpv_ath", 0.0)))
+        last_tpv = Decimal(str(state.get("last_tpv", 0.0)))
+
+        # Total Generated Value (TGV)
+        tgv = last_profit + siphoning_reserve
+
+        if tgv <= Decimal('0'):
+            pure_eff = Decimal('0')
+            risk_adjusted_eff = Decimal('0')
+        else:
+            effective_cycles = Decimal(max(cycles, min_cycles))
+            pure_eff = tgv / effective_cycles
+
+            # Dynamic Drawdown Penalty
+            drawdown_pct = Decimal('0')
+            if tpv_ath > Decimal('0') and last_tpv < tpv_ath:
+                drawdown_pct = ((tpv_ath - last_tpv) / tpv_ath) * Decimal('100')
+
+            dd_penalty = Decimal('1.0') + (drawdown_pct / Decimal('100.0'))
+            risk_adjusted_eff = pure_eff / dd_penalty
+
+    except (ValueError, InvalidOperation, TypeError) as e:
+        logger.error(f"Error calculating efficiency for {ticker}: {e}")
+        return {"profit": 0.0, "tgv": 0.0, "cycles": 0, "eff": 0.0, "pure_eff": 0.0, "trailing_stop_paper_timeout_end": 0.0}
 
     return {
-        "profit": profit_usdt,
+        "profit": float(last_profit),
+        "tgv": float(tgv),
         "cycles": cycles,
-        "eff": profit_usdt / max(cycles, min_cycles),
+        "eff": float(risk_adjusted_eff),
+        "pure_eff": float(pure_eff),
         "trailing_stop_paper_timeout_end": state.get("trailing_stop_paper_timeout_end", 0.0)
     }
 
@@ -219,34 +252,42 @@ async def manage_swarm():
         if use_whitelist and ticker not in real_whitelist: continue
         p = perf_map[ticker]
         if time.time() < p['trailing_stop_paper_timeout_end']: continue
-        
-        # Sticky logic (Drawdown Protection)
+
+        # Sticky logic: защита Combat-бота от преждевременного исключения (Combat Churn)
         is_running_real = ticker in current_real_tickers
         is_sticky = False
+
         if is_running_real:
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
-            if real_state.get("total_pnl_pct", 0.0) < 0:
+            real_cycles = real_state.get("rebalance_cycles", 0)
+            real_siphoning = real_state.get("siphoning_reserve", 0.0)
+
+            # Бот остается "липким", если он в процессе начального набора позы
+            # (менее 3 циклов) ИЛИ уже доказал реальную эффективность (добыл SAFE резерв)
+            if real_cycles < 3 or real_siphoning > 0:
                 is_sticky = True
-        
-        # Только прибыльные или Sticky
-        min_cycles_required = config.get("min_cycles_for_rank", 10)
+            elif real_state.get("total_pnl_pct", 0.0) < 0:
+                # Удержание в локальной просадке для закрытия цикла
+                is_sticky = True
+
+        min_cycles_required = config.get("min_cycles_for_rank", 6)
         has_enough_history = p['cycles'] >= min_cycles_required
 
-        # Бот допускается к оценке REAL, если он прошел карантин по циклам,
-        # ЛИБО если он уже торгует в реале (is_running_real), чтобы не дергать процессы зря.
-        if (p['profit'] > 0 and (has_enough_history or is_running_real)) or is_sticky:
-            pure_eff = p['eff']
+        # Оценка: допуск в пул, если TGV > 0 (а не просто profit), либо если бот Sticky
+        if (p['tgv'] > 0 and (has_enough_history or is_running_real)) or is_sticky:
+            pure_eff = p['eff'] # Риск-скорректированная метрика
             sort_eff = pure_eff
-            
+
             if is_sticky:
-                sort_eff += 1000000.0
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky (Total:{sort_eff:.2f})")
+                sort_eff += 1000000.0 # Абсолютный иммунитет
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky Immunity")
             elif is_running_real:
+                # Бонус за удержание слота
                 sort_eff *= (1 + replacement_threshold / 100.0)
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.2f})")
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.4f})")
             else:
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})")
-            
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f}")
+
             p['sort_eff'] = sort_eff
             ready_pool.append(ticker)
 
