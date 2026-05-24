@@ -22,7 +22,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 125.0,
+      "initial_capital": 130.0,
       "paper_initial_capital": 125.0,
       "siphoning_threshold_pct": 0.01,
       "targets": {
@@ -50,36 +50,33 @@
       }
     }
   ],
-  "live_swarm": [
-    "NEARUSDT",
-    "NILUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
   "tickers": [
-    "1000LUNCUSDT",
-    "ALTUSDT",
     "BANUSDT",
     "COSUSDT",
+    "DASHUSDT",
+    "DYMUSDT",
     "EIGENUSDT",
+    "FETUSDT",
     "FIDAUSDT",
     "GMTUSDT",
     "GRASSUSDT",
-    "INJUSDT",
+    "JTOUSDT",
     "MEUSDT",
-    "MTLUSDT",
     "NEARUSDT",
     "NILUSDT",
     "ONDOUSDT",
+    "PLUMEUSDT",
     "RIFUSDT",
     "SUPERUSDT",
-    "TAOUSDT",
     "VVVUSDT",
     "WLDUSDT",
     "ZECUSDT"
   ],
-  "base_ticker": "1000LUNCUSDT"
+  "base_ticker": "BANUSDT"
 }
