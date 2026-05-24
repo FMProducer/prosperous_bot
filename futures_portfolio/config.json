@@ -13,7 +13,7 @@
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 33.0,
-  "replacement_efficiency_threshold_pct": 20.0,
+  "replacement_efficiency_threshold_pct": 15.0,
   "equity_trailing_stop_pct": 100.0,
   "equity_trailing_stop_timeout_sec": 0,
   "telegram_enabled": true,
