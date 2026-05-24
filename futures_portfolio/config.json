@@ -50,7 +50,10 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "EIGENUSDT",
+    "RIFUSDT"
+  ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
@@ -62,10 +65,10 @@
     "DASHUSDT",
     "DYMUSDT",
     "EIGENUSDT",
-    "FETUSDT",
     "FIDAUSDT",
     "GMTUSDT",
     "GRASSUSDT",
+    "INJUSDT",
     "JTOUSDT",
     "MEUSDT",
     "NEARUSDT",
