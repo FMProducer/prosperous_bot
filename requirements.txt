@@ -25,3 +25,4 @@ psycopg2-binary
 torch
 gymnasium
 seaborn
+tenacity

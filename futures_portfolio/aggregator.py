@@ -164,6 +164,7 @@ class StatusAggregator:
         
         try:
             connector = BinanceConnector(api_key, secret_key, testnet=testnet)
+            await connector.verify_connection()
             wallet_usdt = await connector.get_free_balance()
             wallet_bnb = await connector.get_bnb_balance()
         except Exception as e:

@@ -9,6 +9,7 @@ from collections import deque
 from typing import Dict, List, Any
 from decimal import Decimal
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Load .env file
 load_dotenv()
@@ -1120,7 +1121,19 @@ if __name__ == "__main__":
         from connector import BinanceConnectorMock
         connector = BinanceConnectorMock()
     else:
-        connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
+        @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10),
+               before_sleep=lambda retry_state: logger.warning(f"Connection failed, retrying... (attempt {retry_state.attempt_number})"))
+        async def init_connector():
+            conn = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=cfg.get("testnet", True))
+            await conn.verify_connection()
+            return conn
+
+        try:
+            connector = asyncio.run(init_connector())
+            logger.info("BinanceConnector initialized and verified successfully.")
+        except Exception as e:
+            logger.critical(f"Failed to initialize BinanceConnector after 5 attempts: {e}")
+            exit(1)
 
     if args.stop:
         # КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: По умолчанию НЕ удаляем стейт при стопе. 

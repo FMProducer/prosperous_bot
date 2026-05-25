@@ -199,6 +199,7 @@ async def manage_swarm():
     api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
+    await connector.verify_connection()
 
     # !!! [SAFETY GATE] !!!
     # 0. Принудительная проверка согласованности роя с биржевыми позициями
