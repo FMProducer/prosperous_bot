@@ -9,6 +9,9 @@ import requests.exceptions
 def connector():
     with patch("futures_portfolio.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
+        # Mocking Client and futures_client as if verify_connection was called
+        conn.client = mock_client.return_value
+        conn.futures_client = mock_client.return_value
         return conn
 
 @pytest.mark.asyncio

@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 class BinanceConnectorMock:
     def __init__(self, *args, **kwargs):
         from unittest.mock import MagicMock
-        self.futures_client = MagicMock()
+        self.client = MagicMock()
+        self.futures_client = self.client
     async def get_exchange_info(self): return {"symbols": []}
     async def get_hedge_mode(self): return True
     async def set_leverage(self, *args): pass
@@ -20,6 +21,7 @@ class BinanceConnectorMock:
     async def get_mark_prices(self, tickers): return {t: 60000.0 for t in tickers}
     async def get_positions(self): return {}
     async def get_margin_ratio(self): return {"margin_ratio": 10.0}
+    async def verify_connection(self): pass
 
 # Подмена URL на уровне класса для обхода блокировок в РФ (до инициализации)
 Client.API_URL = 'https://api1.binance.com/api'
@@ -63,25 +65,37 @@ class BinanceConnector:
         self.testnet = testnet
         self.base_ticker = base_ticker
         self.api_key = api_key
-        
-        # Настройка сессии: отключаем доверие к системному окружению (прокси)
-        requests_params = {
-            'proxies': {'http': None, 'https': None},
-            'timeout': 15
-        }
-        
-        if testnet:
-            # Для тестнета зеркала обычно не нужны или не работают, но прокси отключаем
-            self.client = Client(api_key, secret_key, testnet=True, requests_params=requests_params)
-        else:
-            self.client = Client(api_key, secret_key, testnet=False, requests_params=requests_params)
-            # Дополнительная проверка, что URL подменились
-            self.client.API_URL = 'https://api1.binance.com/api'
-            self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
-            
-        self.futures_client = self.client
-        # Отключаем использование системных переменных в сессии requests
-        self.client.session.trust_env = False
+        self.secret_key = secret_key
+        self.client = None
+        self.futures_client = None
+
+    async def verify_connection(self):
+        """Явная проверка связи перед началом работы бота."""
+        if self.client is None:
+            def _init_client():
+                # Настройка сессии: отключаем доверие к системному окружению (прокси)
+                requests_params = {
+                    'proxies': {'http': None, 'https': None},
+                    'timeout': 15
+                }
+
+                if self.testnet:
+                    client = Client(self.api_key, self.secret_key, testnet=True, requests_params=requests_params)
+                else:
+                    client = Client(self.api_key, self.secret_key, testnet=False, requests_params=requests_params)
+                    # Дополнительная проверка, что URL подменились
+                    client.API_URL = 'https://api1.binance.com/api'
+                    client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+
+                # Отключаем использование системных переменных в сессии requests
+                client.session.trust_env = False
+                return client
+
+            # Делегируем блокирующий вызов (синхронный ping внутри конструктора Client) в отдельный поток
+            self.client = await asyncio.to_thread(_init_client)
+            self.futures_client = self.client
+
+        await asyncio.to_thread(self.futures_client.ping)
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:

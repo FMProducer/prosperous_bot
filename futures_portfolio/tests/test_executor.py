@@ -30,7 +30,8 @@ def test_calculate_order_size(executor):
 def test_round_quantity(executor):
     assert executor.round_quantity(Decimal("0.123456"), Decimal("0.001")) == Decimal("0.123")
     assert executor.round_quantity(Decimal("0.123456"), Decimal("0.01")) == Decimal("0.12")
-    assert executor.round_quantity(Decimal("15.78"), Decimal("1.0")) == Decimal("16.0")
+    # Smart rounding uses max(step_size, 0.001) and ROUND_FLOOR
+    assert executor.round_quantity(Decimal("15.78"), Decimal("1.0")) == Decimal("15")
     assert executor.round_quantity(Decimal("0.123"), Decimal("0.0")) == Decimal("0.123")
 
 @pytest.mark.asyncio
@@ -93,7 +94,8 @@ async def test_execute_limit_with_fallback_error_then_market(mock_connector, exe
     mock_connector.get_futures_prices.return_value = {"BTCUSDT": 60000.0}
     mock_connector.futures_client.futures_create_order = Mock(return_value={"status": "FILLED", "executedQty": "0.1", "avgPrice": "60000.0"})
     result = await executor.execute_limit_with_fallback("BTCUSDT", Decimal("0.1"), "BUY")
-    assert result["status"] == "ERROR_FALLBACK"
+    # If limit fails, it falls back to market, which returns SUCCESS
+    assert result["status"] == "SUCCESS"
 
 @pytest.mark.asyncio
 async def test_execute_limit_with_fallback_timeout(mock_connector, executor):

@@ -415,7 +415,12 @@ class PortfolioExecutor:
         else:
             # Real mode
             async with self.semaphore:
-                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
+                # Обеспечиваем инициализацию коннектора
+                if self.connector.client is None:
+                    await self.connector.verify_connection()
+
+                # Обеспечиваем, что используем настройки из актуального конфига
+                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg)
                 if limit_enabled:
                     res = await self.execute_limit_with_fallback(
                         symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
