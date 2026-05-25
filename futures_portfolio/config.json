@@ -24,7 +24,7 @@
       "name": "SyntheticMarketNeutral",
       "initial_capital": 130.0,
       "paper_initial_capital": 130.0,
-      "siphoning_threshold_pct": 100.0,
+      "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.27,
@@ -50,36 +50,12 @@
       }
     }
   ],
-  "live_swarm": [
-    "PHAUSDT",
-    "SAGAUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [
-    "DEXEUSDT",
-    "DOGSUSDT",
-    "DRIFTUSDT",
-    "EIGENUSDT",
-    "FETUSDT",
-    "FIDAUSDT",
-    "GRASSUSDT",
-    "INJUSDT",
-    "JTOUSDT",
-    "MORPHOUSDT",
-    "NEARUSDT",
-    "NILUSDT",
-    "ONDOUSDT",
-    "ORDIUSDT",
-    "PHAUSDT",
-    "RENDERUSDT",
-    "SAGAUSDT",
-    "TIAUSDT",
-    "TONUSDT",
-    "VVVUSDT"
-  ],
-  "base_ticker": "DEXEUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }
