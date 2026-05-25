@@ -250,11 +250,12 @@ async def manage_swarm():
         logger.info(f"➕ Added to Incubator: {symbol} (Cycles: {r.get('cycles')})")
 
     # 3. Выбор Чемпионов для REAL
-    # Собираем данные по эффективности для тех, кто прошел фильтры
-    perf_map = {}
-    for ticker in final_incubator:
-        perf_map[ticker] = await get_bot_efficiency(ticker, config)
-    
+    # Векторизованный сбор данных (Concurrent I/O)
+    logger.info("📊 Fetching performance data concurrently...")
+    eff_tasks = [get_bot_efficiency(t, config) for t in final_incubator]
+    eff_results = await asyncio.gather(*eff_tasks)
+    perf_map = dict(zip(final_incubator, eff_results))
+
     # Сортировка по эффективности
     replacement_threshold = config.get("replacement_efficiency_threshold_pct", 20.0)
     running_bots = await get_running_bots_info()
@@ -284,7 +285,7 @@ async def manage_swarm():
                 "eff": 0.0,
                 "trailing_stop_paper_timeout_end": 0.0,
             }
-            p['sort_eff'] = -1_000_000.0 # Extremely low score to ensure replacement
+            p['sort_eff'] = -float('inf')
             perf_map[ticker] = p # Add this low-priority entry to perf_map so sort can use it
             ready_pool.append(ticker)
             logger.info(f"⚖️ Scored {ticker}: Running REAL bot with no valid paper history. Assigning lowest priority for replacement.")
@@ -301,10 +302,13 @@ async def manage_swarm():
 
         # Sticky logic (Drawdown Protection)
         is_sticky = False
+        real_drawdown_usdt = 0.0
         if is_running_real:
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
             if real_state.get("total_pnl_pct", 0.0) < 0:
                 is_sticky = True
+                # Получаем абсолютное значение просадки (ожидаем отрицательное значение profit)
+                real_drawdown_usdt = abs(real_state.get("last_profit", 0.0))
 
         # Only profitable, or has enough history (for evaluation), or is sticky (for existing real bots)
         min_cycles_required = config.get("min_cycles_for_rank", 10)
@@ -317,14 +321,16 @@ async def manage_swarm():
             sort_eff = pure_eff
 
             if is_sticky:
-                sort_eff += 1_000_000.0 # High bonus for sticky bots
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky (Total:{sort_eff:.2f})")
+                # Умная липкость: Базовая защита, но если профит инкубатора перекрывает убыток с запасом — ротируем.
+                # Мы даем боту виртуальный профит равный его убытку * 1.5, чтобы защитить от микро-ротаций.
+                sort_eff = (real_drawdown_usdt * 1.5) / max(p.get('cycles', 1), min_cycles_required)
+                logger.info(f"⚖️ Scored {ticker} (STICKY): Drawdown: {real_drawdown_usdt:.2f}. Shield Score: {sort_eff:.4f}")
             elif is_running_real:
                 # Give existing real bots a bonus to prevent excessive churn if they are performing
                 sort_eff *= (1 + replacement_threshold / 100.0)
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.2f})")
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.4f})")
             else:
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})") # New incubator candidate
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.4f})") # New incubator candidate
 
             p['sort_eff'] = sort_eff
             perf_map[ticker] = p # Ensure updated p with sort_eff is in perf_map for sorting
@@ -332,7 +338,7 @@ async def manage_swarm():
         else:
             logger.info(f"❌ Skipping {ticker}: Not profitable ({p.get('profit', 0.0):.4f}) or insufficient history ({p.get('cycles', 0)}/{min_cycles_required}) and not sticky (running real: {is_running_real}).")
 
-    ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -2_000_000.0), reverse=True) # Ensure low-score bots are at the end
+    ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -float('inf')), reverse=True) # Ensure low-score bots are at the end
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
     target_real_bots = ready_pool[:max_real_slots]
     # -------------------------------------------------------------------------
