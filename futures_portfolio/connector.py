@@ -72,23 +72,28 @@ class BinanceConnector:
     async def verify_connection(self):
         """Явная проверка связи перед началом работы бота."""
         if self.client is None:
-            # Настройка сессии: отключаем доверие к системному окружению (прокси)
-            requests_params = {
-                'proxies': {'http': None, 'https': None},
-                'timeout': 15
-            }
-            
-            if self.testnet:
-                self.client = Client(self.api_key, self.secret_key, testnet=True, requests_params=requests_params)
-            else:
-                self.client = Client(self.api_key, self.secret_key, testnet=False, requests_params=requests_params)
-                # Дополнительная проверка, что URL подменились
-                self.client.API_URL = 'https://api1.binance.com/api'
-                self.client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+            def _init_client():
+                # Настройка сессии: отключаем доверие к системному окружению (прокси)
+                requests_params = {
+                    'proxies': {'http': None, 'https': None},
+                    'timeout': 15
+                }
 
+                if self.testnet:
+                    client = Client(self.api_key, self.secret_key, testnet=True, requests_params=requests_params)
+                else:
+                    client = Client(self.api_key, self.secret_key, testnet=False, requests_params=requests_params)
+                    # Дополнительная проверка, что URL подменились
+                    client.API_URL = 'https://api1.binance.com/api'
+                    client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+
+                # Отключаем использование системных переменных в сессии requests
+                client.session.trust_env = False
+                return client
+
+            # Делегируем блокирующий вызов (синхронный ping внутри конструктора Client) в отдельный поток
+            self.client = await asyncio.to_thread(_init_client)
             self.futures_client = self.client
-            # Отключаем использование системных переменных в сессии requests
-            self.client.session.trust_env = False
 
         await asyncio.to_thread(self.futures_client.ping)
 
