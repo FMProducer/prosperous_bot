@@ -80,6 +80,35 @@ async def stop_bot(ticker: str, is_paper: bool = False):
         await (await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")).wait()
     except: pass
 
+async def enforce_swarm_consistency(connector: BinanceConnector, config: dict):
+    logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions.")
+    
+    live_swarm_tickers = set(config.get("live_swarm", []))
+    active_positions = await connector.get_positions() # Получаем все открытые позиции с биржи
+
+    to_close_tickers = set()
+
+    # Если live_swarm пуст, закрываем все позиции
+    if not live_swarm_tickers:
+        if active_positions:
+            logger.warning("⚠️ live_swarm is empty. All open positions on exchange will be closed!")
+            for pos_key in active_positions.keys():
+                ticker = pos_key.split('_')[0]
+                to_close_tickers.add(ticker)
+    else:
+        # Если live_swarm не пуст, закрываем позиции по тикерам, которых нет в live_swarm
+        for pos_key in active_positions.keys():
+            ticker = pos_key.split('_')[0]
+            if ticker not in live_swarm_tickers:
+                logger.warning(f"⚠️ Unauthorized position found for {ticker} (not in live_swarm). It will be closed!")
+                to_close_tickers.add(ticker)
+
+    for ticker in to_close_tickers:
+        logger.info(f"🧹 Closing all positions for unauthorized ticker: {ticker}")
+        cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
+        await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
+        logger.info(f"✅ Positions for {ticker} closed successfully.")
+
 async def reset_real_state(ticker: str, config: dict):
     """Архивирует текущее состояние реального бота и сбрасывает его перед новым запуском."""
     base_state_path = BASE_PATH / f"real_state_{ticker}.json"
@@ -170,6 +199,10 @@ async def manage_swarm():
     api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
     connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
+
+    # !!! [SAFETY GATE] !!!
+    # 0. Принудительная проверка согласованности роя с биржевыми позициями
+    await enforce_swarm_consistency(connector, config)
 
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
