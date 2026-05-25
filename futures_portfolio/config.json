@@ -61,6 +61,7 @@
   "toxic_blacklist": {},
   "tickers": [
     "DEXEUSDT",
+    "DOGSUSDT",
     "DRIFTUSDT",
     "EIGENUSDT",
     "FETUSDT",
@@ -78,8 +79,7 @@
     "SAGAUSDT",
     "TIAUSDT",
     "TONUSDT",
-    "VVVUSDT",
-    "WLDUSDT"
+    "VVVUSDT"
   ],
   "base_ticker": "DEXEUSDT"
 }

@@ -259,51 +259,83 @@ async def manage_swarm():
     running_bots = await get_running_bots_info()
     current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
     real_whitelist = set(config.get("real_whitelist", []))
-    
+
     ready_pool = []
+    all_evaluated_tickers = set(final_incubator).union(current_real_tickers) # Consider all candidates and existing real bots
     use_whitelist = config.get("use_real_whitelist", True)
-    
-    for ticker in final_incubator:
-        if use_whitelist and ticker not in real_whitelist: continue
-        p = perf_map[ticker]
-        if time.time() < p['trailing_stop_paper_timeout_end']: continue
-        
-        # Sticky logic (Drawdown Protection)
+
+    for ticker in all_evaluated_tickers:
+        # Whitelist check: only apply to new candidates. Existing real bots are evaluated regardless of whitelist.
+        if use_whitelist and ticker not in real_whitelist and ticker not in current_real_tickers:
+            logger.info(f"🚫 Skipping {ticker}: Not in real_whitelist and not a currently running real bot.")
+            continue
+
+        p = perf_map.get(ticker) # Get performance data for incubator candidates. Could be None for existing real bots without paper history.
+
+        # Explicitly handle existing real bots that have no corresponding paper history (i.e., not in perf_map)
         is_running_real = ticker in current_real_tickers
+        if is_running_real and p is None:
+            # This is a real bot currently running but has no valid paper history (e.g., failed scanner/incubator)
+            # Assign a very low effective score to ensure it's replaced by any profitable paper bot.
+            p = {
+                "profit": 0.0,
+                "cycles": 0,
+                "eff": 0.0,
+                "trailing_stop_paper_timeout_end": 0.0,
+            }
+            p['sort_eff'] = -1_000_000.0 # Extremely low score to ensure replacement
+            perf_map[ticker] = p # Add this low-priority entry to perf_map so sort can use it
+            ready_pool.append(ticker)
+            logger.info(f"⚖️ Scored {ticker}: Running REAL bot with no valid paper history. Assigning lowest priority for replacement.")
+            continue # Move to the next ticker
+
+        if p is None:
+            logger.warning(f"Skipping {ticker}: No performance data found. This should not happen for an incubator candidate.")
+            continue
+
+        # Check for trailing stop timeout from paper mode, which would prevent promotion
+        if time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
+            logger.info(f"⏳ Skipping {ticker}: Still in trailing stop paper timeout (paper end: {time.ctime(p['trailing_stop_paper_timeout_end'])}).")
+            continue
+
+        # Sticky logic (Drawdown Protection)
         is_sticky = False
         if is_running_real:
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
             if real_state.get("total_pnl_pct", 0.0) < 0:
                 is_sticky = True
-        
-        # Только прибыльные или Sticky
-        min_cycles_required = config.get("min_cycles_for_rank", 10)
-        has_enough_history = p['cycles'] >= min_cycles_required
 
-        # Бот допускается к оценке REAL, если он прошел карантин по циклам,
-        # ЛИБО если он уже торгует в реале (is_running_real), чтобы не дергать процессы зря.
-        if (p['profit'] > 0 and (has_enough_history or is_running_real)) or is_sticky:
-            pure_eff = p['eff']
+        # Only profitable, or has enough history (for evaluation), or is sticky (for existing real bots)
+        min_cycles_required = config.get("min_cycles_for_rank", 10)
+        has_enough_history = p.get('cycles', 0) >= min_cycles_required
+        profit_condition = p.get('profit', 0.0) > 0
+
+        # Bot is considered for REAL if it's profitable AND has enough paper history OR is an existing real bot, OR it's sticky.
+        if (profit_condition and (has_enough_history or is_running_real)) or is_sticky:
+            pure_eff = p.get('eff', 0.0)
             sort_eff = pure_eff
-            
+
             if is_sticky:
-                sort_eff += 1000000.0
+                sort_eff += 1_000_000.0 # High bonus for sticky bots
                 logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky (Total:{sort_eff:.2f})")
             elif is_running_real:
+                # Give existing real bots a bonus to prevent excessive churn if they are performing
                 sort_eff *= (1 + replacement_threshold / 100.0)
                 logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.2f})")
             else:
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})")
-            
-            p['sort_eff'] = sort_eff
-            ready_pool.append(ticker)
+                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})") # New incubator candidate
 
-    ready_pool.sort(key=lambda x: perf_map[x].get('sort_eff', 0.0), reverse=True)
+            p['sort_eff'] = sort_eff
+            perf_map[ticker] = p # Ensure updated p with sort_eff is in perf_map for sorting
+            ready_pool.append(ticker)
+        else:
+            logger.info(f"❌ Skipping {ticker}: Not profitable ({p.get('profit', 0.0):.4f}) or insufficient history ({p.get('cycles', 0)}/{min_cycles_required}) and not sticky (running real: {is_running_real}).")
+
+    ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -2_000_000.0), reverse=True) # Ensure low-score bots are at the end
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
     target_real_bots = ready_pool[:max_real_slots]
-
     # -------------------------------------------------------------------------
-    # 3.5. [Authoritative Cleanup] Закрываем позиции на бирже для тех, кто не в live_swarm, 
+    # 3.5. [Authoritative Cleanup] Закрываем позиции на бирже для тех, кто не в live_swarm,  
     # даже если PM2 процесс уже не найден (застрявшие позиции).
     active_positions = await connector.get_positions()
     for pos_key in active_positions.keys():
