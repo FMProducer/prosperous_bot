@@ -5,6 +5,7 @@ import os
 import time
 import random
 import sys
+import shutil
 from typing import Dict, List, Set, Any
 from dotenv import load_dotenv
 from pathlib import Path
@@ -79,10 +80,58 @@ async def stop_bot(ticker: str, is_paper: bool = False):
         await (await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")).wait()
     except: pass
 
-async def start_bot(ticker: str, is_paper: bool = True):
+async def reset_real_state(ticker: str, config: dict):
+    """Архивирует текущее состояние реального бота и сбрасывает его перед новым запуском."""
+    base_state_path = BASE_PATH / f"real_state_{ticker}.json"
+    shadow_state_path = BASE_PATH / f"shadow_state_{ticker}.json"
+    history_dir = BASE_PATH / "history"
+    history_dir.mkdir(exist_ok=True)
+    
+    # Архивируем, если файлы существуют
+    for path in [base_state_path, shadow_state_path]:
+        if path.exists():
+            archive_path = history_dir / f"archive_{ticker}_{int(time.time())}_{path.name}"
+            shutil.copy(path, archive_path)
+            logger.info(f"💾 Archived state for {ticker}: {path.name} -> {archive_path.name}")
+            os.remove(path)
+            logger.info(f"🗑️ Deleted stale state file: {path.name}")
+
+    # Создаем базовые пустые файлы для чистого старта
+    portfolio_cfg = config.get("portfolios", [{}])[0]
+    initial_capital = portfolio_cfg.get("initial_capital", 100.0)
+    
+    await safe_save_json(str(base_state_path), {
+        "virt_qty": 0.0,
+        "base_ticker": ticker,
+        "siphoning_reserve": 0.0,
+        "balance": initial_capital,
+        "initial_tpv": 0.0,
+        "reference_tpv": 0.0,
+        "tpv_ath": 0.0,
+        "rebalance_cycles": 0,
+        "last_rebalance_price": 0.0,
+        "started_at": time.time()
+    })
+    
+    await safe_save_json(str(shadow_state_path), {
+        "balance": initial_capital,
+        "positions": {f"{ticker}_LONG": 0.0, f"{ticker}_SHORT": 0.0},
+        "last_price": 0.0,
+        "base_ticker": ticker,
+        "long_entry_price": 0.0,
+        "short_entry_price": 0.0
+    })
+    logger.info(f"✨ Reset real state files for {ticker} to clean initial values.")
+
+async def start_bot(ticker: str, is_paper: bool = True, config: dict = None):
     prefix = "paper" if is_paper else "real"
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
     mode_flag = "--paper" if is_paper else "--real"
+    
+    # Перед запуском реального бота сбрасываем состояние
+    if not is_paper and config:
+        await reset_real_state(ticker, config)
+
     cmd = f'pm2 start main.py --name "{proc_name}" --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" --instances 1 -- --config config.json --ticker {ticker} {mode_flag}'
     await (await asyncio.create_subprocess_shell(cmd)).wait()
 
@@ -274,7 +323,7 @@ async def manage_swarm():
         r_key = f"r_{ticker}"
         if r_key not in active_running_keys:
             logger.info(f"🔥 [A] LAUNCHING PARALLEL COMBAT (REAL): {ticker}")
-            await start_bot(ticker, is_paper=False)
+            await start_bot(ticker, is_paper=False, config=config)
             active_running_keys.add(r_key) # Жестко фиксируем запуск локально
 
     # 5. Сохранение конфига
