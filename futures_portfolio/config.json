@@ -7,7 +7,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 6,
   "max_bots": 20,
-  "paper_mode_bots": 18,
+  "paper_mode_bots": 20,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,

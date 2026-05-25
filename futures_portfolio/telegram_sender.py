@@ -26,13 +26,18 @@ async def send_to_telegram(session, message_data):
         "parse_mode": "HTML"
     }
     
-    # Использование локального SOCKS5 прокси
-    proxy = "socks5://127.0.0.1:10808"
+    # Использование локального SOCKS5 прокси (опционально)
+    proxy = os.environ.get("TELEGRAM_PROXY")
+    if proxy:
+        logger.info(f"Using Telegram proxy: {proxy}")
+    else:
+        logger.info("Connecting to Telegram directly (no proxy).")
     
     try:
         # Увеличиваем таймаут до 30 секунд для нестабильной сети
         async with session.post(url, json=payload, proxy=proxy, timeout=30) as response:
             if response.status == 200:
+                logger.info(f"Message sent successfully to chat {CHAT_ID}")
                 return True
             
             err_text = await response.text()

@@ -32,26 +32,20 @@ class PortfolioExecutor:
         return order_qty
 
     def round_quantity(self, qty: Decimal, step_size: Decimal) -> Decimal:
-        """
-        Умное округление: использует шаг биржи, но ограничивает точность до 3 знаков (0.001).
-        Это позволяет торговать дорогими монетами (TAO, BTC) и при этом избегать 'пыли'.
-        """
+        """Precision-perfect rounding using exchange stepSize mask."""
         if step_size <= 0:
             return qty.quantize(Decimal('1.000'), rounding="ROUND_FLOOR").normalize()
-
-        # Используем шаг биржи. Если он слишком мелкий (например, 0.000001), 
-        # укрупняем его до 0.001 для чистоты учета.
-        effective_step = max(step_size, Decimal('0.001'))
         
-        # Округляем ВНИЗ до ближайшего разрешенного шага
-        rounded = (qty / effective_step).quantize(Decimal('1'), rounding="ROUND_FLOOR") * effective_step
-        return rounded.normalize()
+        # Normalize step_size to avoid float representation artifacts
+        mask = step_size.normalize()
+        # Round DOWN to the nearest allowed step to ensure it fits within balance/limits
+        return qty.quantize(mask, rounding="ROUND_FLOOR").normalize()
 
     async def execute_market_order(self, symbol: str, qty: Any, side: str, step_size: Any = Decimal('0'), reduce_only: bool = False, position_side: str = "BOTH", min_notional: Any = Decimal('6.0'), price: Any = Decimal('0')) -> Dict:
         """
-        Отправка рыночного ордера на Binance Futures с полной точностью Decimal.
+        Executes an AGGRESSIVE LIMIT order (Mark Price +/- 1.0%) to simulate market execution
+        with slippage protection.
         """
-        # Ensure Decimal for all numeric inputs to prevent float errors
         qty = Decimal(str(qty))
         step_size = Decimal(str(step_size))
         min_notional = Decimal(str(min_notional))
@@ -65,28 +59,43 @@ class PortfolioExecutor:
             if qty == 0:
                 return {"status": "NO_ORDER", "message": "Округлилось до нуля"}
 
-        # Проверка минимальной стоимости (Notional Value)
         try:
-            if price <= 0:
-                prices = await self.connector.get_futures_prices([symbol])
-                price = Decimal(str(prices.get(symbol, 0.0)))
+            # 1. Fetch current Mark Price for slippage anchor
+            try:
+                prices = await self.connector.get_mark_prices([symbol])
+                mark_price = Decimal(str(prices.get(symbol, 0)))
+            except Exception as e:
+                logger.warning(f"Price fetch failed for {symbol}, using fallback: {e}")
+                mark_price = Decimal('0')
 
-            if price > 0 and (abs(qty) * price) < min_notional:
-                msg = f"Order too small: {float(abs(qty) * price):.2f} USDT < {float(min_notional)} USDT. Skipping."
+            if mark_price <= 0:
+                # Fallback to provided price if API fails
+                mark_price = price if price > 0 else Decimal('0')
+            
+            if mark_price <= 0:
+                raise Exception("Invalid mark price for slippage protection")
+
+            # Dust Guard check
+            if (abs(qty) * mark_price) < min_notional:
+                msg = f"Order too small: {float(abs(qty) * mark_price):.2f} USDT < {float(min_notional)} USDT. Skipping."
                 logger.info(msg)
                 return {"status": "SKIPPED", "message": msg}
-        except Exception as e:
-            logger.warning(f"Could not verify notional value: {e}")
 
-        try:
-            # Конвертируем в строку для API Binance, чтобы избежать float-погрешностей
+            # 2. Apply 1.0% aggressive offset (Safe ceiling/floor)
+            offset = mark_price * Decimal('0.01')
+            exec_price = (mark_price + offset) if side == "BUY" else (mark_price - offset)
+            
+            # [SAFETY] Format values strictly for Binance API
             str_qty = "{:f}".format(abs(qty).normalize())
+            str_price = "{:f}".format(exec_price.normalize())
 
             params = {
                 "symbol": symbol,
                 "side": side,
-                "type": "MARKET",
-                "quantity": str_qty,  # Передаем строкой! Binance API это отлично переваривает
+                "type": "LIMIT",
+                "timeInForce": "GTC", # Fill as much as possible at aggressive price
+                "quantity": str_qty,
+                "price": str_price,
                 "positionSide": position_side
             }
             
@@ -95,14 +104,13 @@ class PortfolioExecutor:
                 **params
             )
 
-            # Извлекаем реальный исполненный объем из ответа биржи
             order_id = result.get("orderId")
             executed_qty = Decimal(str(result.get("executedQty", "0.0")))
             avg_price = Decimal(str(result.get("avgPrice", "0.0")))
             
-            # [POLLING] Если Бинанс вернул 0 (бывает при задержках в ядре)
+            # [POLLING] Aggressive limit might take a few ms to fill
             if executed_qty == 0 and order_id:
-                logger.info(f"Market order {order_id} initial fill is 0. Polling status...")
+                logger.info(f"Aggressive limit order {order_id} initial fill is 0. Polling status...")
                 for _ in range(5):
                     await asyncio.sleep(0.3)
                     status = await self.connector.get_order_status(symbol, order_id)
@@ -111,7 +119,7 @@ class PortfolioExecutor:
                     if executed_qty > 0: break
 
             if avg_price == 0 and executed_qty > 0:
-                avg_price = price
+                avg_price = mark_price
 
             logger.info(f"Order EXECUTED on Binance: {side} {str_qty} {symbol} ({position_side}) | Fact Qty: {executed_qty}")
 
@@ -119,11 +127,9 @@ class PortfolioExecutor:
                 return {"status": "ERROR", "message": f"Binance executed 0.0 contracts for order {order_id}", "result": result}
 
             # --- REAL TRADE DATA SYNC ---
-            # Fetch actual trades to get real realized PnL and commission
             real_pnl = Decimal('0.0')
             real_commission = Decimal('0.0')
             try:
-                # Даем бирже время на расчет трейдов
                 await asyncio.sleep(0.5)
                 trades = await self.connector.get_order_trades(symbol, order_id)
                 for t in trades:
@@ -136,10 +142,13 @@ class PortfolioExecutor:
             return {
                 "status": "SUCCESS",
                 "result": result,
-                "executed_qty": executed_qty,
-                "avg_price": avg_price,
-                "realized_pnl": real_pnl,
-                "commission": real_commission
+                "executed_qty": float(executed_qty),
+                "qty": float(executed_qty),
+                "avg_price": float(avg_price),
+                "price": float(avg_price),
+                "realized_pnl": float(real_pnl),
+                "trade_pnl": float(real_pnl),
+                "commission": float(real_commission)
             }
         except Exception as e:
             import traceback
@@ -155,7 +164,7 @@ class PortfolioExecutor:
                                            min_notional: Any = Decimal('6.0'),
                                            price: Any = Decimal('0')) -> Dict:
         """
-        Limit + Fallback с проверкой минимальной стоимости с использованием Decimal.
+        Limit + Fallback with improved aggressive limit protection.
         """
         qty = Decimal(str(qty))
         step_size = Decimal(str(step_size))
@@ -172,7 +181,6 @@ class PortfolioExecutor:
                 return {"status": "NO_ORDER", "message": "Округлилось до нуля"}
 
         try:
-            # 1. Получаем mid-price и проверяем стоимость
             order_book = await self.connector.get_order_book(symbol, limit=5)
             best_bid = Decimal(str(order_book["bids"][0][0]))
             best_ask = Decimal(str(order_book["asks"][0][0]))
@@ -183,7 +191,6 @@ class PortfolioExecutor:
                 logger.info(msg)
                 return {"status": "SKIPPED", "message": msg}
 
-            # 2. Рассчитываем цену лимитки (выгоднее mid-price)
             if side == "SELL":
                 limit_price = mid_price * (1 + offset_pct / 100)
                 if limit_price > best_ask: limit_price = best_ask
@@ -191,11 +198,6 @@ class PortfolioExecutor:
                 limit_price = mid_price * (1 - offset_pct / 100)
                 if limit_price < best_bid: limit_price = best_bid
 
-            # Логирование для статистики
-            expected_improvement_pct = abs(limit_price - mid_price) / mid_price * 100
-            logger.info(f"Limit order: {side} {float(qty)} {symbol} @ {float(limit_price):.6f} (mid={float(mid_price):.6f}, expected_gain={float(expected_improvement_pct):.3f}%)")
-
-            # 3. Выставляем POST-ONLY лимитку (гарантия maker-комиссии 0.02%)
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -205,11 +207,8 @@ class PortfolioExecutor:
             }
             
             order = await self.connector.place_limit_maker_order(**params)
-
             order_id = order["orderId"]
-            logger.info(f"Limit order placed: {order_id}")
 
-            # 4. Ждём исполнения
             filled_qty = Decimal('0.0')
             avg_fill_price = Decimal('0.0')
 
@@ -220,7 +219,6 @@ class PortfolioExecutor:
                 avg_fill_price = Decimal(str(status.get("avgPrice", 0))) if status.get("avgPrice") else avg_fill_price
 
                 if status["status"] == "FILLED":
-                    # --- REAL DATA SYNC ---
                     real_pnl = Decimal('0.0')
                     real_commission = Decimal('0.0')
                     try:
@@ -233,33 +231,34 @@ class PortfolioExecutor:
 
                     return {
                         "status": "SUCCESS_LIMIT",
-                        "executed_qty": filled_qty,
-                        "avg_price": avg_fill_price,
-                        "realized_pnl": real_pnl,
-                        "commission": real_commission,
+                        "executed_qty": float(filled_qty),
+                        "qty": float(filled_qty),
+                        "avg_price": float(avg_fill_price),
+                        "price": float(avg_fill_price),
+                        "realized_pnl": float(real_pnl),
+                        "trade_pnl": float(real_pnl),
+                        "commission": float(real_commission),
                         "order_type": "LIMIT_MAKER"
                     }
 
-            # 5. Timeout — отменяем и добиваем market
-            logger.warning(f"Limit order timeout ({timeout_sec}s). Cancelling and fallback to market.")
+            logger.warning(f"Limit order timeout ({timeout_sec}s). Cancelling and fallback to aggressive market limit.")
             await self.connector.cancel_order(symbol, order_id)
 
-            # Добиваем остаток market-ордером
             remaining_qty = qty - filled_qty
             market_pnl = Decimal('0.0')
             market_comm = Decimal('0.0')
             total_executed = filled_qty
             
             if remaining_qty > 0:
-                if (abs(remaining_qty) * mid_price) >= min_notional:
-                    market_result = await self.execute_market_order(
-                        symbol=symbol, qty=remaining_qty, side=side, step_size=Decimal('0'),
-                        position_side=position_side, min_notional=min_notional, price=mid_price
-                    )
-                    if market_result["status"] == "SUCCESS":
-                        total_executed += Decimal(str(market_result["executed_qty"]))
-                        market_pnl = Decimal(str(market_result["realized_pnl"]))
-                        market_comm = Decimal(str(market_result["commission"]))
+                # Use AGGRESSIVE LIMIT for fallback instead of blind MARKET
+                market_result = await self.execute_market_order(
+                    symbol=symbol, qty=remaining_qty, side=side, step_size=Decimal('0'),
+                    position_side=position_side, min_notional=min_notional, price=mid_price
+                )
+                if market_result["status"] == "SUCCESS":
+                    total_executed += Decimal(str(market_result["executed_qty"]))
+                    market_pnl = Decimal(str(market_result["realized_pnl"]))
+                    market_comm = Decimal(str(market_result["commission"]))
 
             limit_pnl = Decimal('0.0')
             limit_comm = Decimal('0.0')
@@ -274,9 +273,12 @@ class PortfolioExecutor:
 
             return {
                 "status": "SUCCESS_FALLBACK",
-                "executed_qty": total_executed,
-                "realized_pnl": limit_pnl + market_pnl,
-                "commission": limit_comm + market_comm
+                "executed_qty": float(total_executed),
+                "qty": float(total_executed),
+                "realized_pnl": float(limit_pnl + market_pnl),
+                "trade_pnl": float(limit_pnl + market_pnl),
+                "commission": float(limit_comm + market_comm),
+                "price": float(price)
             }
 
         except Exception as e:
@@ -287,229 +289,69 @@ class PortfolioExecutor:
                 min_notional=min_notional, price=price
             )
 
-
-    def get_limit_order_params(self, config: dict) -> Tuple[bool, Decimal, int]:
-        """
-        Извлечение параметров лимитных ордеров из конфига.
-        Возвращает: (enabled, offset_pct, timeout_sec)
-        """
-        enabled = config.get("limit_order_enabled", False)
-        offset_pct = Decimal(str(config.get("limit_offset_pct", 0.2)))
-        timeout_sec = config.get("limit_timeout_sec", 30)
-        return enabled, offset_pct, timeout_sec
-
-    async def execute_rebalance(self, action: Dict[str, Any], price: float, step_size: float, limit_order: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None) -> bool:
-        """
-        Совместимость со старым кодом: выполнение одного действия ребалансировки.
-        """
-        symbol = action["symbol"]
-
-        base_symbol = action.get("base_symbol")
-        pos_side = action.get("position_side")
-
-        if not base_symbol or not pos_side:
-            symbol_parts = symbol.split('_')
-            base_symbol = symbol_parts[0]
-            pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
-
-        diff_usdt = Decimal(str(action["diff_usdt"]))
-        dec_price = Decimal(str(price))
-        side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-        order_qty = abs(diff_usdt / dec_price)
-        reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-
-        min_notional = Decimal(str(portfolio_cfg.get("min_notional_usdt", 6.0))) if portfolio_cfg else Decimal('6.0')
-        dec_step_size = Decimal(str(step_size))
-
-        if limit_order:
-            limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
-            res = await self.execute_limit_with_fallback(
-                symbol=base_symbol, qty=order_qty, side=side, step_size=dec_step_size,
-                reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
-                timeout_sec=limit_timeout, min_notional=min_notional, price=dec_price
-            )
-        else:
-            res = await self.execute_market_order(
-                symbol=base_symbol, qty=order_qty, side=side, step_size=dec_step_size,
-                reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
-            )
-
-        return res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]
-
-    async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None) -> Dict[str, Any]:
-        """Внутренний метод для выполнения одного действия (для gather)."""
-        if action["type"] == "VIRTUAL_ORDER":
-            diff_usdt = action["diff_usdt"]
-            side = "BUY" if diff_usdt > 0 else "SELL"
-            return {
-                "type": "VIRTUAL_ORDER",
-                "status": "SUCCESS",
-                "diff_usdt": diff_usdt,
-                "side": side
-            }
-
-        symbol = action["symbol"]
-
-        base_symbol = action.get("base_symbol")
-        pos_side = action.get("position_side")
-
-        if not base_symbol or not pos_side:
-            symbol_parts = symbol.split('_')
-            base_symbol = symbol_parts[0]
-            pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
-
-        diff_usdt = Decimal(str(action["diff_usdt"]))
-        dec_price = Decimal(str(price))
-        side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-        order_qty = abs(diff_usdt / dec_price)
-        reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
-        step_size = Decimal(str(step_sizes.get(base_symbol, 0.0))) if step_sizes else Decimal('0.0')
-        min_notional = Decimal(str(portfolio_cfg.get("min_notional_usdt", 6.0)))
-
-        if paper_mode:
-            qty_rounded = self.round_quantity(order_qty, step_size)
-            order_value = qty_rounded * dec_price
-            
-            if order_value < min_notional:
-                return {
-                    "type": pos_side,
-                    "symbol": symbol,
-                    "side": side,
-                    "qty": 0.0,
-                    "status": "SKIPPED",
-                    "message": f"Order too small: {float(order_value):.2f} USDT < {float(min_notional)} USDT"
-                }
-
-            if qty_rounded <= 0:
-                return {
-                    "type": pos_side,
-                    "symbol": symbol,
-                    "side": side,
-                    "qty": 0.0,
-                    "status": "SKIPPED",
-                    "message": "Округлено до нуля"
-                }
-            commission = order_value * Decimal('0.0004')
-
-            trade_pnl = Decimal('0.0')
-            if paper_state:
-                entry_key = "long_entry_price" if pos_side == "LONG" else "short_entry_price"
-                old_entry = Decimal(str(paper_state.get(entry_key, price)))
-                if reduce_only:
-                    if pos_side == "LONG":
-                        trade_pnl = qty_rounded * (dec_price - old_entry)
-                    else:
-                        trade_pnl = qty_rounded * (old_entry - dec_price)
-
-            return {
-                "type": pos_side,
-                "symbol": symbol,
-                "side": side,
-                "qty": float(qty_rounded),
-                "price": float(dec_price),
-                "status": "SUCCESS",
-                "trade_pnl": float(trade_pnl),
-                "commission": float(commission),
-                "reduce_only": reduce_only
-            }
-        else:
-            # Real mode
-            async with self.semaphore:
-                limit_enabled, limit_offset, limit_timeout = self.get_limit_order_params(portfolio_cfg or {})
-                if limit_enabled:
-                    res = await self.execute_limit_with_fallback(
-                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
-                        reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
-                        timeout_sec=limit_timeout, min_notional=min_notional, price=dec_price
-                    )
-                else:
-                    # Передаем Decimal напрямую без кастинга во float!
-                    res = await self.execute_market_order(
-                        symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
-                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
-                    )
-
-                if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
-                    # Берем строго то, что исполнила биржа
-                    executed_qty = res.get("executed_qty", Decimal('0.0'))
-                    avg_price = res.get("avg_price", dec_price)
-                    trade_pnl = res.get("realized_pnl", Decimal('0.0'))
-                    commission = res.get("commission", Decimal('0.0'))
-
-                    if executed_qty == 0:
-                        return {
-                            "type": pos_side, "symbol": symbol, "side": side, "qty": 0.0,
-                            "status": "ERROR", "message": "Fact executed qty is zero"
-                        }
-
-                    return {
-                        "type": pos_side,
-                        "symbol": symbol,
-                        "side": side,
-                        "qty": float(executed_qty),
-                        "price": float(avg_price),
-                        "status": "SUCCESS",
-                        "reduce_only": reduce_only,
-                        "trade_pnl": float(trade_pnl),
-                        "commission": float(commission)
-                    }
-                
-                return {
-                    "type": pos_side,
-                    "symbol": symbol,
-                    "side": side,
-                    "qty": float(res.get("executed_qty", Decimal('0.0'))),
-                    "price": float(res.get("avg_price", dec_price)),
-                    "status": res["status"],
-                    "exec_res": res,
-                    "reduce_only": reduce_only,
-                    "trade_pnl": float(trade_pnl),
-                    "commission": float(commission)
-                }
-
     async def execute_actions(self, actions: List[Dict[str, Any]], price: float, paper_mode: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None, step_sizes: Optional[Dict[str, float]] = None, paper_state: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """
-        Векторизованное (конкурентное) выполнение действий по ребалансировке с принудительным Market-only исполнением.
-        SURPLUS-FIRST: Reductions (SELLs) are executed before Expansions (BUYs).
+        Executes actions concurrently. Reductions before expansions.
         """
-        if not actions:
-            return []
-
-        if portfolio_cfg:
-            portfolio_cfg["limit_order_enabled"] = False
-
-        # Surplus-First Doctrine: Execute SELLs (reductions) before BUYs (expansions)
+        if not actions: return []
+        
         reductions = [a for a in actions if a.get("is_reduction")]
         expansions = [a for a in actions if not a.get("is_reduction")]
-
-        # Mapping for result tracking to maintain original order
         results_map = {}
 
         for group in [reductions, expansions]:
-            if not group:
-                continue
-
-            # Map action IDs to their results
+            if not group: continue
             group_action_ids = [id(a) for a in group]
             tasks = [
                 self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
                 for action in group
             ]
-
             group_results = await asyncio.gather(*tasks, return_exceptions=True)
-
             for action_id, r in zip(group_action_ids, group_results):
-                if isinstance(r, Exception):
-                    logger.error(f"Action execution failed with exception: {r}")
-                    results_map[action_id] = {"status": "ERROR", "message": str(r)}
-                else:
-                    results_map[action_id] = r
+                results_map[action_id] = r if not isinstance(r, Exception) else {"status": "ERROR", "message": str(r)}
 
-        # Reconstruct results in original order
-        final_results = [results_map[id(a)] for a in actions]
-        success_count = sum(1 for r in final_results if r.get("status") in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"])
+        return [results_map[id(a)] for a in actions]
 
-        if len(actions) > 0:
-            logger.info(f"Executed {success_count}/{len(actions)} actions in two phases (Surplus-First).")
+    async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None) -> Dict[str, Any]:
+        if action["type"] == "VIRTUAL_ORDER":
+            return {"type": "VIRTUAL_ORDER", "status": "SUCCESS", "diff_usdt": action["diff_usdt"]}
 
-        return final_results
+        symbol = action["symbol"]
+        base_symbol = action.get("base_symbol", symbol.split('_')[0])
+        pos_side = action.get("position_side", "LONG")
+        diff_usdt = Decimal(str(action["diff_usdt"]))
+        dec_price = Decimal(str(price))
+        side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
+        order_qty = abs(diff_usdt / dec_price)
+        reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
+        step_size = Decimal(str(step_sizes.get(base_symbol, 0.0)))
+        min_notional = Decimal(str(portfolio_cfg.get("min_notional_usdt", 7.0)))
+
+        if paper_mode:
+            qty_rounded = self.round_quantity(order_qty, step_size)
+            if qty_rounded <= 0: return {"status": "SKIPPED", "message": "Rounded to zero"}
+            if (qty_rounded * dec_price) < min_notional: return {"status": "SKIPPED", "message": "Too small"}
+            
+            # Simulated Profit/Loss logic
+            trade_pnl = Decimal('0.0')
+            if reduce_only and paper_state:
+                old_entry = Decimal(str(paper_state.get("long_entry_price" if pos_side == "LONG" else "short_entry_price", price)))
+                trade_pnl = qty_rounded * (dec_price - old_entry) if pos_side == "LONG" else qty_rounded * (old_entry - dec_price)
+            
+            logger.info(f"PAPER ORDER EXECUTED: {side} {float(qty_rounded):.6g} {base_symbol} ({pos_side}) at {float(dec_price):.6g} | PnL: {float(trade_pnl):+.4f}$")
+
+            return {
+                "status": "SUCCESS", "type": pos_side, "side": side, "qty": float(qty_rounded), "executed_qty": float(qty_rounded),
+                "price": float(dec_price), "trade_pnl": float(trade_pnl), "commission": float(qty_rounded * dec_price * Decimal('0.0004')),
+                "reduce_only": reduce_only
+            }
+        else:
+            async with self.semaphore:
+                res = await self.execute_market_order(
+                    symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
+                    reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
+                )
+                if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
+                    res["type"] = pos_side
+                    res["reduce_only"] = reduce_only
+                return res

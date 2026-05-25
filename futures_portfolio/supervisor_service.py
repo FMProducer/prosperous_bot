@@ -35,11 +35,11 @@ def get_sleep_interval():
 async def main():
     python_exe = sys.executable
     script_path = os.path.join(os.path.dirname(__file__), "supervisor.py")
-    
-    logger.info("Supervisor Service started (Async Mode).")
-    
+
+    logger.info("Starting Supervisor Continuous Service Loop...")
+
     while True:
-        # Считываем актуальный интервал перед каждым циклом
+        # Динамический перерасчет интервала на каждой итерации для поддержки Hot-Reload
         interval_sec = get_sleep_interval()
         
         logger.info(f"--- Running Supervisor Cycle at {datetime.now().strftime('%c')} ---")

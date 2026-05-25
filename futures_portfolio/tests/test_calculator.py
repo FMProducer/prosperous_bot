@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from futures_portfolio.calculator import PortfolioCalculator
+from futures_portfolio.calculator import PortfolioCalculator, PortfolioRuinError
 
 @pytest.fixture
 def targets():
@@ -31,13 +31,13 @@ def test_calculator_initialization(sample_params):
     assert float(calc.total_tpv) == pytest.approx(12000.0)
     
     # Notional Long = 0.5 * 60000 = 30000
-    # Val Long = Margin (30000/5=6000) + PnL (0) = 6000
+    # Val Long = Notional Margin (30000/5=6000) = 6000
     # Share Long = 6000 / 12000 = 50%
-    assert float(calc.share_long_pct) == 50.0
-    assert float(calc.share_short_pct) == 0.0
+    assert float(calc.display_share_long) == 50.0
+    assert float(calc.display_share_short) == 0.0
     # Notional Virt = 2000
     # Share Virt = 2000 / 12000 = 16.67%
-    assert float(calc.share_virt_pct) == pytest.approx(16.67, abs=0.1)
+    assert float(calc.display_share_virt) == pytest.approx(16.67, abs=0.1)
 
 def test_calculate_deviations(sample_params, targets):
     calc = PortfolioCalculator(**sample_params)
@@ -84,19 +84,18 @@ def test_price_change_impact(sample_params):
     # TPV = 10000 + 3000 + 2200 = 15200.
     calc = PortfolioCalculator(**params)
     assert float(calc.tpv) == pytest.approx(15200.0)
-    # val_long = (0.5 * 60000 / 5) + 3000 = 9000.
-    # Share Long = 9000 / 15200 * 100 = 59.21%
-    assert float(calc.share_long_pct) == pytest.approx(59.21, abs=0.1)
+    # val_long = (0.5 * 66000 / 5) = 6600.
+    # Share Long = 6600 / 15200 * 100 = 43.42%
+    assert float(calc.display_share_long) == pytest.approx(43.42, abs=0.1)
 
 def test_negative_tpv_protection():
-    calc = PortfolioCalculator(
-        positions={},
-        spot_price=60000.0,
-        real_equity=-1000.0,
-        virt_qty=0.01 # 600 USDT
-    )
-    # tpv = -1000 + 600 = -400 -> protected to 1e-9
-    assert float(calc.tpv) == pytest.approx(1e-9)
+    with pytest.raises(PortfolioRuinError):
+        calc = PortfolioCalculator(
+            positions={},
+            spot_price=60000.0,
+            real_equity=-1000.0,
+            virt_qty=0.01 # 600 USDT
+        )
 
 def test_ignore_limits_deviation(sample_params, targets):
     params = sample_params.copy()

@@ -6,12 +6,10 @@ import time
 import glob
 import sys
 import io
-from typing import Dict, Any
+from typing import Dict, Any, List, Set, Tuple
 from datetime import datetime
 from dotenv import load_dotenv
-from notifier import TelegramNotifier
-from storage import safe_load_json
-from connector import BinanceConnector
+from storage import safe_load_json, safe_load_json_sync
 
 # Force UTF-8 for Windows streams
 if sys.platform == "win32":
@@ -35,185 +33,227 @@ logger = logging.getLogger("Aggregator")
 
 class StatusAggregator:
     def __init__(self, config_path="config.json"):
-        self.config_path = config_path
+        # Абсолютное разрешение путей для запуска из любого каталога (PM2 root safety)
+        if not os.path.isabs(config_path):
+            self.config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), config_path))
+        else:
+            self.config_path = config_path
+            
+        self.connector = None
         self.notifier = None
-        self.queue_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signals", "telegram_queue")
-        os.makedirs(self.queue_dir, exist_ok=True)
+        self.telegram_queue: asyncio.Queue = asyncio.Queue()
 
     def load_config(self) -> Dict[str, Any]:
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to read config {self.config_path}: {e}")
-            return {}
+        """Синхронная загрузка конфигурации (SSOT)"""
+        return safe_load_json_sync(self.config_path, {})
 
-    async def process_telegram_queue(self):
-        """Обработка очереди сообщений от других ботов с соблюдением лимитов Telegram"""
+    async def load_config_async(self) -> Dict[str, Any]:
+        """Асинхронная обертка для совместимости"""
+        return await asyncio.to_thread(self.load_config)
+
+    async def init_services(self, config: Dict[str, Any]) -> None:
+        """Ленивая инициализация коннекторов и нотификаторов с защитой от дублирования"""
+        if self.connector is None:
+            # Импортируем локально, чтобы избежать циклических зависимостей при вызове из супервайзера
+            from connector import BinanceConnector
+            api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
+            secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
+            self.connector = BinanceConnector(api_key=api_key, secret_key=secret_key, testnet=config.get("testnet", True))
+            logger.info("Binance Connector initialized in Aggregator.")
+
         if self.notifier is None:
-            self.notifier = TelegramNotifier()
-            
-        logger.info("Telegram Queue Processor started.")
+            from notifier import TelegramNotifier
+            self.notifier = TelegramNotifier(config=config)
+            logger.info("Telegram Notifier initialized in Aggregator.")
+
+    async def close_services(self) -> None:
+        """Безопасное закрытие ресурсов"""
+        if self.notifier:
+            try:
+                await self.notifier.close()
+            except Exception as e:
+                logger.error(f"Error closing notifier: {e}")
+            self.notifier = None
+        if self.connector:
+            try:
+                if hasattr(self.connector, "close"):
+                    await self.connector.close()
+            except Exception as e:
+                logger.error(f"Error closing connector: {e}")
+            self.connector = None
+
+    async def process_telegram_queue(self) -> None:
+        """Фоновый воркер обработки очереди Telegram сообщений"""
         while True:
             try:
-                msg_files = sorted(glob.glob(os.path.join(self.queue_dir, "*.json")))
-                if not msg_files:
-                    await asyncio.sleep(1)
-                    continue
-
-                # Обрабатываем по одному, чтобы не спамить
-                f_path = msg_files[0]
-                try:
-                    with open(f_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    success = False
-                    if data.get("type") == "text":
-                        success = await self.notifier.send_message(data["text"], force_direct=True)
-                    elif data.get("type") == "photo":
-                        success = await self.notifier.send_photo(data["path"], data.get("caption", ""), force_direct=True)
-                    
-                    if success:
-                        if os.path.exists(f_path): os.remove(f_path)
-                        # Пауза между сообщениями для соблюдения лимитов
-                        await asyncio.sleep(1.2)
-                    else:
-                        # Если не удалось отправить (например 429), ждем подольше
-                        logger.warning(f"Failed to send queued message {f_path}, retrying later...")
-                        await asyncio.sleep(5)
-                except Exception as e:
-                    logger.error(f"Error processing queued message {f_path}: {e}")
-                    # Если файл битый, удаляем его
-                    if os.path.exists(f_path): os.remove(f_path)
-
+                msg = await self.telegram_queue.get()
+                if self.notifier:
+                    await self.notifier.send_message(msg, force_direct=True)
+                self.telegram_queue.task_done()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Error in telegram queue processor: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
-    async def _generate_swarm_section(self, files, live_swarm, active_tickers, label):
+    def _generate_swarm_section(self, state_files: List[str], config: Dict[str, Any], filter_set: Set[str], is_combat: bool = True) -> Tuple[List[str], float, float, float]:
+        """
+        Генерирует блок строк для определенной группы ботов (COMBAT или INCUBATOR).
+        Возвращает (список строк, общий TPV, общая прибыль, общий сейф).
+        """
+        summary_lines = []
+        total_tpv = 0.0
         total_profit = 0.0
         total_safe = 0.0
-        summary_lines = []
-        
-        # Получаем конфиг для расчета ROI в этой секции если нужно
-        config = self.load_config()
 
-        for f_path in files:
-            try:
-                # В асинхронном контексте читаем через safe_load_json
-                state = await safe_load_json(f_path, {})
-                if not state:
-                    continue
-                
-                ticker = state.get("base_ticker", "UNKNOWN")
-                profit = state.get("last_profit", 0.0)
-                cycles = state.get("rebalance_cycles", 0)
-                siphoned = state.get("siphoning_reserve", 0.0)
-                
-                # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
-                # Используем min_cycles=20 для стабилизации рейтинга новичков
-                min_cycles = config.get("min_cycles_for_rank", 20)
-                efficiency = profit / max(cycles, min_cycles)
-                
-                total_profit += profit
-                total_safe += siphoned
-                
-                # РЕЖИМ ОТОБРАЖЕНИЯ: 🟢 - работает, 💤 - остановлен (хранит историю)
-                if label == "INCUBATOR":
-                    is_active = ticker in active_tickers
-                else:
-                    is_active = ticker in live_swarm
-                
-                status_icon = "🟢" if is_active else "💤"
-                
-                # Показываем щит если тикер в белом списке (доверенный для реала)
-                real_whitelist = config.get("real_whitelist", [])
-                vetted_icon = " 🛡️" if ticker in real_whitelist else ""
-                
-                # Чистый формат без скобок и лишних слов
-                line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT {cycles} cyc"
-                if siphoned > 0:
-                    line += f" 🛡️<code>{siphoned:.2f}</code>"
-                summary_lines.append((efficiency, line))
-            except Exception as e:
-                logger.error(f"Error reading {f_path}: {e}")
+        real_whitelist = config.get("real_whitelist", [])
+        active_tickers = set(config.get("tickers", []))
 
-        if not summary_lines:
-            return "", 0.0, 0.0
+        for sf in state_files:
+            filename = os.path.basename(sf)
+            ticker = filename.replace("paper_state_", "").replace(".json", "")
 
-        # Сортировка по ЭФФЕКТИВНОСТИ (x[0] теперь содержит efficiency)
+            # Фильтр: если мы в режиме COMBAT, берем только тех, кто в filter_set
+            if is_combat:
+                if ticker not in filter_set: continue
+            else:
+                if ticker in filter_set: continue
+
+            state = safe_load_json_sync(sf, {})
+            if not state:
+                continue
+
+            tpv = state.get("tpv", state.get("initial_capital", 0.0))
+            profit = state.get("total_pnl", state.get("last_profit", 0.0))
+            cycles = state.get("rebalance_cycles", 0)
+            siphoned = state.get("siphoning_reserve", 0.0)
+
+            # Extract shares
+            share_long = state.get("share_long_pct", 0.0)
+            share_short = state.get("share_short_pct", 0.0)
+            share_virt = state.get("share_virt_pct", 0.0)
+
+            # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
+            min_cycles = config.get("min_cycles_for_rank", 20)
+            efficiency = profit / max(cycles, min_cycles)
+
+            total_tpv += tpv
+            total_profit += profit
+            total_safe += siphoned
+
+            is_active = ticker in active_tickers
+            status_icon = "🟢" if is_active else "💤"
+            vetted_icon = " 🛡️" if ticker in real_whitelist else ""
+
+            line = f"{status_icon} <b>{ticker}</b>{vetted_icon}: <code>{profit:+.2f}</code> USDT | L:{share_long:.1f}% S:{share_short:.1f}% V:{share_virt:.1f}% | {cycles} cyc"
+            if siphoned > 0:
+                line += f" 🛡️<code>{siphoned:.2f}</code>"
+
+            summary_lines.append((efficiency, line))
+
+        # Сортировка по эффективности
         summary_lines.sort(key=lambda x: x[0], reverse=True)
-        section_text = f"<b>{label} SWARM</b>\n" + "\n".join([x[1] for x in summary_lines]) + "\n"
-        return section_text, total_profit, total_safe
+        lines = [item[1] for item in summary_lines]
 
-    async def collect_and_send(self):
-        config = self.load_config()
-        if not config: return
-        if not config.get("telegram_enabled", True): return
-        
-        if self.notifier is None:
-            self.notifier = TelegramNotifier()
+        return lines, total_tpv, total_profit, total_safe
 
-        # Получаем реальные балансы с биржи для "Reality Check"
-        api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
-        secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
-        testnet = config.get("testnet", False)
+    async def collect_and_send(self) -> None:
+        """Асинхронное ядро сбора метрик и отправки сводки"""
+        config = await self.load_config_async()
+        await self.init_services(config)
+
+        # Поиск стейтов в директории скрипта
+        base_dir = os.path.dirname(self.config_path)
+        state_files = glob.glob(os.path.join(base_dir, "paper_state_*.json"))
         
-        wallet_usdt = 0.0
-        wallet_bnb = 0.0
+        if not state_files:
+            logger.info("No active paper states found for aggregation.")
+            return
+
+        live_swarm_set = set(config.get("live_swarm", []))
+
+        combat_lines, combat_tpv, combat_profit, combat_safe = self._generate_swarm_section(state_files, config, live_swarm_set, is_combat=True)
+        incubator_lines, incubator_tpv, incubator_profit, incubator_safe = self._generate_swarm_section(state_files, config, live_swarm_set, is_combat=False)
+
+        msg_lines = [f"STAT: SWARM REBALANCE SUMMARY\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"]
         
+        msg_lines.append(f"COMBAT SWARM (Active: {len(combat_lines)})")
+        if combat_lines:
+            msg_lines.extend(combat_lines)
+            msg_lines.append(f"-> Total Combat TPV: {combat_tpv:.2f}$ | PnL: {combat_profit:+.2f}$")
+            if combat_safe > 0:
+                msg_lines.append(f"-> Total SAFE Reserve: {combat_safe:.2f} USDT")
+        else:
+            msg_lines.append("No active combat bots.")
+            
+        msg_lines.append(f"\nINCUBATOR SWARM (Testing: {len(incubator_lines)})")
+        if incubator_lines:
+            msg_lines.extend(incubator_lines)
+            msg_lines.append(f"-> Total Incubator TPV: {incubator_tpv:.2f}$ | PnL: {incubator_profit:+.2f}$")
+        else:
+            msg_lines.append("No bots in incubator.")
+
+        alloc_text = f"\nTotal Pool Capitalization: {combat_tpv + incubator_tpv:.2f}$"
+        msg_lines.append(alloc_text)
+
+        full_message = "\n".join(msg_lines)
+        
+        if config.get("telegram_enabled", True) and self.notifier:
+            await self.notifier.send_message(full_message, force_direct=True)
+        else:
+            logger.info(f"Aggregation complete (Telegram disabled):\n{full_message}")
+
+    def execute_aggregation_cycle(self) -> None:
+        """
+        Главная точка входа для внешних менеджеров процессов (PM2 / Supervisor).
+        Она обязана быть синхронной, атомарной и полностью очищать ресурсы после выполнения.
+        """
         try:
-            connector = BinanceConnector(api_key, secret_key, testnet=testnet)
-            wallet_usdt = await connector.get_free_balance()
-            wallet_bnb = await connector.get_bnb_balance()
+            # Создаем или получаем loop для синхронного запуска в рамках одного шага
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.collect_and_send())
+            finally:
+                # Гарантируем закрытие коннекторов и сессий aiohttp внутри этого вызова
+                loop.run_until_complete(self.close_services())
+                loop.close()
+            logger.info("Explicit aggregation cycle executed successfully via PM2 hook.")
         except Exception as e:
-            logger.error(f"Failed to fetch real balances: {e}")
-
-        # Параметры
-        initial_per_bot = config['portfolios'][0].get('initial_capital', 60.0)
-        live_swarm = config.get("live_swarm", [])
-        active_tickers = config.get("tickers", [])
-        
-        # Разделяем стейты
-        paper_files = glob.glob("paper_state_*.json")
-        real_files = glob.glob("real_state_*.json")
-        
-        combat_text, c_profit, c_safe = await self._generate_swarm_section(real_files, live_swarm, active_tickers, "COMBAT")
-        incubator_text, i_profit, i_safe = await self._generate_swarm_section(paper_files, live_swarm, active_tickers, "INCUBATOR")
-
-        total_profit = c_profit # ROI считаем только по реальным деньгам
-        working_capital = initial_per_bot * len(live_swarm) if live_swarm else initial_per_bot
-        roi = (total_profit / working_capital) * 100 if working_capital > 0 else 0
-        
-        header = (
-            f"📊 <b>Swarm Summary</b> ({datetime.now().strftime('%H:%M')})\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"⚔️ Combat PnL: <code>{c_profit:+.2f} USDT</code>\n"
-            f"🧪 Incubator PnL: <code>{i_profit:+.2f} USDT</code>\n"
-            f"📈 Combat ROI: <code>{roi:.2f}%</code>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💳 Wallet USDT: <code>{wallet_usdt:.2f}</code>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-        )
-        
-        message = header + combat_text + "\n" + incubator_text
-        
-        await self.notifier.send_message(message, force_direct=True)
+            logger.error(f"Critical failure inside execute_aggregation_cycle: {e}", exc_info=True)
 
     async def run(self) -> None:
-        logger.info("Status Aggregator started.")
+        """Точка входа для долгоживущего daemon-процесса (если запускается напрямую)"""
+        logger.info("Status Aggregator daemon mode started.")
+        config = await self.load_config_async()
+        await self.init_services(config)
         
-        while True:
-            config = self.load_config()
-            interval_min = config.get("telegram_summary_interval_min", 1)
-            
-            try:
-                await self.collect_and_send()
-            except Exception as e:
-                logger.error(f"Error in aggregator loop: {e}")
-            
-            await asyncio.sleep(interval_min * 60)
+        # Запускаем фоновый обработчик очереди Telegram
+        queue_task = asyncio.create_task(self.process_telegram_queue())
+
+        try:
+            while True:
+                current_cfg = await self.load_config_async()
+                interval_min = current_cfg.get("telegram_summary_interval_min", 1)
+
+                try:
+                    await self.collect_and_send()
+                except Exception as e:
+                    logger.error(f"Error during daemon aggregation loop: {e}", exc_info=True)
+
+                await asyncio.sleep(interval_min * 60)
+        except asyncio.CancelledError:
+            logger.info("Daemon loop canceled.")
+        finally:
+            queue_task.cancel()
+            await asyncio.gather(queue_task, return_exceptions=True)
+            await self.close_services()
 
 if __name__ == "__main__":
+    # Нам нужно проверить: если этот скрипт вызывается напрямую модулем, запускаем daemon.
+    # Если диспетчер импортирует класс и вызывает execute_aggregation_cycle, управление туда не дойдет.
     aggregator = StatusAggregator()
-    asyncio.run(aggregator.run())
+    try:
+        asyncio.run(aggregator.run())
+    except KeyboardInterrupt:
+        logger.info("Aggregator shutdown manually.")
