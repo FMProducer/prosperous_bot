@@ -36,6 +36,20 @@ def emit_signal(signal_type: str, ticker: str) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
+async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: float, initial_tpv: float, safe_calc_res: dict, cycles: int, logger: logging.Logger):
+    """Updates and saves the final profit metrics in the state file before a bot exits."""
+    try:
+        state.update({
+            "last_tpv": total_tpv_final,
+            "last_profit": total_tpv_final - initial_tpv,
+            "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
+            "last_update": time.time(),
+            "rebalance_cycles": cycles # Ensure cycles are also updated
+        })
+        await save_json(state_file_path, state)
+        logger.info(f"✅ Final metrics saved before exit. Last Profit: {state['last_profit']:.2f}")
+    except Exception as e:
+        logger.error(f"Error saving final metrics before exit: {e}")
 
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
     # [SSOT] Absolute Scope Safety - Initialize all variables at function start
@@ -490,8 +504,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         probation_days = current_config.get("probation_period_days", 0.041)
                         state["trailing_stop_paper_timeout_end"] = now + probation_days * 86400
                         state["trailing_stop_triggered"] = True
-                        await save_json(state_file_path, state)
 
+                    # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
+                    await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                    # --------------------------------------------------------------------
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
                     return
 
@@ -550,6 +566,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             paper_state["short_entry_price"] = 0.0
                             await save_json(paper_state_file_path, paper_state)
                             
+                            # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
+                            await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                            # --------------------------------------------------------------------
+                            
                             # Set paper probation timeout (from probation_period_days)
                             probation_days = current_config.get("probation_period_days", 0.041)
                             timeout_end = now + probation_days * 86400
@@ -573,7 +593,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             state["virt_qty"] = 0.0
                             state["trailing_stop_triggered"] = True
                             state["trailing_stop_violation_start"] = 0.0
-                            await save_json(state_file_path, state)
                             
                             logger.info("Positions closed and state reset. Bot stopped.")
                             break
@@ -949,25 +968,32 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
     logger.info(f"🛑 EMERGENCY STOP for {base_ticker} (Paper: {paper_mode}, CloseOnly: {close_only})")
 
     # --- PERSISTENCE PROTOCOL: Archive state before reset ---
-    if not close_only:
-        try:
-            history_dir = Path("history")
-            history_dir.mkdir(exist_ok=True)
-            state = await load_json(state_file_path, {})
-            paper_state = await load_json(paper_state_file_path, {})
+    # --- PERSISTENCE PROTOCOL: Archive state before reset ---
+    try:
+        history_dir = Path("history")
+        history_dir.mkdir(exist_ok=True)
+        state = await load_json(state_file_path, {})
+        paper_state = await load_json(paper_state_file_path, {})
 
-            archive_data = {
-                "ticker": base_ticker,
-                "timestamp": time.time(),
-                "state": state,
-                "paper_state": paper_state,
-                "final_profit": state.get("last_profit", 0.0)
-            }
-            archive_path = history_dir / f"archive_{base_ticker}_{int(time.time())}.json"
-            await save_json(str(archive_path), archive_data)
-            logger.info(f"💾 State archived to {archive_path}")
-        except Exception as e:
-            logger.error(f"Failed to archive state: {e}")
+        # Ensure final profit is calculated from the *current* state before archiving
+        current_total_tpv_final = state.get("last_tpv", 0.0) # Assume last_tpv is latest TPV
+        current_initial_tpv = state.get("initial_tpv", 0.0)
+        final_calculated_profit = current_total_tpv_final - current_initial_tpv
+
+        archive_data = {
+            "ticker": base_ticker,
+            "timestamp": time.time(),
+            "state": state,
+            "paper_state": paper_state,
+            "final_profit": final_calculated_profit,
+            "final_total_tpv": current_total_tpv_final,
+            "final_pnl_pct": state.get("total_pnl_pct", 0.0)
+        }
+        archive_path = history_dir / f"archive_{base_ticker}_{int(time.time())}.json"
+        await save_json(str(archive_path), archive_data)
+        logger.info(f"💾 State archived to {archive_path}")
+    except Exception as e:
+        logger.error(f"Failed to archive state: {e}")
 
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}

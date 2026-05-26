@@ -68,18 +68,18 @@
     "FIDAUSDT",
     "FILUSDT",
     "GRASSUSDT",
-    "GRTUSDT",
     "HMSTRUSDT",
     "INJUSDT",
     "IOUSDT",
     "NEARUSDT",
     "NILUSDT",
+    "ONDOUSDT",
     "PHAUSDT",
     "RENDERUSDT",
-    "RIFUSDT",
     "TIAUSDT",
     "VIRTUALUSDT",
-    "WLDUSDT"
+    "WLDUSDT",
+    "ZECUSDT"
   ],
   "base_ticker": "ARKMUSDT"
 }
