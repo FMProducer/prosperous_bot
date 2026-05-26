@@ -7,13 +7,13 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 20,
+  "paper_mode_bots": 18,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 33.0,
-  "replacement_efficiency_threshold_pct": 33.0,
+  "replacement_efficiency_threshold_pct": 50.0,
   "equity_trailing_stop_pct": 100.0,
   "equity_trailing_stop_timeout_sec": 0,
   "telegram_enabled": true,
@@ -22,7 +22,7 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 130.0,
+      "initial_capital": 127.0,
       "paper_initial_capital": 130.0,
       "siphoning_threshold_pct": 1000.0,
       "targets": {
@@ -50,12 +50,36 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "NILUSDT",
+    "RENDERUSDT"
+  ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [],
-  "base_ticker": ""
+  "tickers": [
+    "ARKMUSDT",
+    "DRIFTUSDT",
+    "DYDXUSDT",
+    "EIGENUSDT",
+    "FETUSDT",
+    "FIDAUSDT",
+    "FILUSDT",
+    "GRASSUSDT",
+    "GRTUSDT",
+    "HMSTRUSDT",
+    "INJUSDT",
+    "IOUSDT",
+    "NEARUSDT",
+    "NILUSDT",
+    "PHAUSDT",
+    "RENDERUSDT",
+    "RIFUSDT",
+    "TIAUSDT",
+    "VIRTUALUSDT",
+    "WLDUSDT"
+  ],
+  "base_ticker": "ARKMUSDT"
 }

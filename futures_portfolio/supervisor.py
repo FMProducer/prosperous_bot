@@ -304,9 +304,10 @@ async def manage_swarm():
 
         if net_pnl > 0 and cycles > 0:
             base_score = (float(net_pnl) / cycles) * math.log1p(cycles)
-            # Hysteresis: +20% bonus for existing profitable real bots
-            sort_eff = base_score * 1.2 if is_running_real else base_score
-            logger.info(f"⚖️ Scored {ticker}: Net:{net_pnl:.2f}, Cyc:{cycles}, Score:{sort_eff:.4f}")
+            # Hysteresis: bonus for existing profitable real bots from config
+            multiplier = 1 + (replacement_threshold / 100.0)
+            sort_eff = base_score * multiplier if is_running_real else base_score
+            logger.info(f"⚖️ Scored {ticker}: Net:{net_pnl:.2f}, Cyc:{cycles}, Score:{sort_eff:.4f} (Mult:{multiplier if is_running_real else 1.0})")
         else:
             sort_eff = -float('inf')
             logger.info(f"❌ Scored {ticker}: Unprofitable or zero cycles. (Score: -INF)")
