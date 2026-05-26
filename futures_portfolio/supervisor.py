@@ -165,6 +165,33 @@ async def start_bot(ticker: str, is_paper: bool = True, config: dict = None):
     cmd = f'pm2 start main.py --name "{proc_name}" --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" --instances 1 -- --config config.json --ticker {ticker} {mode_flag}'
     await (await asyncio.create_subprocess_shell(cmd)).wait()
 
+def calculate_bot_score(ticker: str, p: dict, is_running_real: bool, is_in_drawdown: bool, min_cycles_required: int) -> float:
+    """
+    Рассчитывает скоринг для бота с учетом минимальных циклов и защиты от просадки.
+    """
+    if is_in_drawdown:
+        logger.info(f"🛡️ Scored {ticker}: REAL bot in drawdown. LOCKED IN COMBAT (Score: INF).")
+        return float('inf')
+
+    cycles = p.get('cycles', 0)
+    net_pnl = p.get('profit', 0.0)
+
+    # Фильтр по минимальным циклам для бумажных кандидатов
+    if not is_running_real and cycles < min_cycles_required:
+        logger.info(f"❌ Scored {ticker}: Rejected (Cycles {cycles} < {min_cycles_required}). (Score: -INF)")
+        return -float('inf')
+
+    if net_pnl > 0:
+        eff_cycles = max(cycles, min_cycles_required)
+        base_score = (float(net_pnl) / eff_cycles) * math.log1p(cycles)
+        # Hysteresis: +20% bonus for existing profitable real bots
+        sort_eff = base_score * 1.2 if is_running_real else base_score
+        logger.info(f"⚖️ Scored {ticker}: Net:{net_pnl:.2f}, Cyc:{cycles}, Score:{sort_eff:.4f}")
+        return sort_eff
+    else:
+        logger.info(f"❌ Scored {ticker}: Unprofitable. (Score: -INF)")
+        return -float('inf')
+
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     """
     Строгий расчет эффективности на основе непрерывного трека инкубатора.
@@ -259,6 +286,7 @@ async def manage_swarm():
     
     # Сортировка по эффективности
     replacement_threshold = config.get("replacement_efficiency_threshold_pct", 20.0)
+    min_cycles_required = config.get("min_cycles_for_rank", 10)
     running_bots = await get_running_bots_info()
     current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
     real_whitelist = set(config.get("real_whitelist", []))
@@ -286,31 +314,19 @@ async def manage_swarm():
             if real_state.get("last_profit", 0.0) < 0:
                 is_in_drawdown = True
 
-        if is_in_drawdown:
-            p['sort_eff'] = float('inf')
-            perf_map[ticker] = p
-            ready_pool.append(ticker)
-            logger.info(f"🛡️ Scored {ticker}: REAL bot in drawdown. LOCKED IN COMBAT (Score: INF).")
-            continue
-
         # 3. Trailing Stop Check (Only for paper candidates)
         if not is_running_real and time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
             logger.info(f"⏳ Skipping {ticker}: Still in trailing stop paper timeout.")
             continue
 
         # 4. Scoring Logic
-        cycles = p.get('cycles', 0)
-        net_pnl = p.get('profit', 0.0)
-
-        if net_pnl > 0 and cycles > 0:
-            base_score = (float(net_pnl) / cycles) * math.log1p(cycles)
-            # Hysteresis: bonus for existing profitable real bots from config
-            multiplier = 1 + (replacement_threshold / 100.0)
-            sort_eff = base_score * multiplier if is_running_real else base_score
-            logger.info(f"⚖️ Scored {ticker}: Net:{net_pnl:.2f}, Cyc:{cycles}, Score:{sort_eff:.4f} (Mult:{multiplier if is_running_real else 1.0})")
-        else:
-            sort_eff = -float('inf')
-            logger.info(f"❌ Scored {ticker}: Unprofitable or zero cycles. (Score: -INF)")
+        sort_eff = calculate_bot_score(
+            ticker=ticker,
+            p=p,
+            is_running_real=is_running_real,
+            is_in_drawdown=is_in_drawdown,
+            min_cycles_required=min_cycles_required
+        )
 
         p['sort_eff'] = sort_eff
         perf_map[ticker] = p
