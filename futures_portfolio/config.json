@@ -5,7 +5,7 @@
   "limit_timeout_sec": 30,
   "min_notional_usdt": 7.0,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 6,
+  "min_cycles_for_rank": 10,
   "max_bots": 20,
   "paper_mode_bots": 20,
   "probation_period_days": 0.01,
