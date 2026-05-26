@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import math
 import random
 import sys
 import shutil
@@ -250,10 +251,11 @@ async def manage_swarm():
         logger.info(f"➕ Added to Incubator: {symbol} (Cycles: {r.get('cycles')})")
 
     # 3. Выбор Чемпионов для REAL
-    # Собираем данные по эффективности для тех, кто прошел фильтры
-    perf_map = {}
-    for ticker in final_incubator:
-        perf_map[ticker] = await get_bot_efficiency(ticker, config)
+    # Векторизованный сбор данных
+    logger.info("📊 Fetching performance data concurrently...")
+    eff_tasks = [get_bot_efficiency(t, config) for t in final_incubator]
+    eff_results = await asyncio.gather(*eff_tasks)
+    perf_map = dict(zip(final_incubator, eff_results))
     
     # Сортировка по эффективности
     replacement_threshold = config.get("replacement_efficiency_threshold_pct", 20.0)
@@ -266,73 +268,55 @@ async def manage_swarm():
     use_whitelist = config.get("use_real_whitelist", True)
 
     for ticker in all_evaluated_tickers:
-        # Whitelist check: only apply to new candidates. Existing real bots are evaluated regardless of whitelist.
+        # Whitelist check
         if use_whitelist and ticker not in real_whitelist and ticker not in current_real_tickers:
             logger.info(f"🚫 Skipping {ticker}: Not in real_whitelist and not a currently running real bot.")
             continue
 
-        p = perf_map.get(ticker) # Get performance data for incubator candidates. Could be None for existing real bots without paper history.
-
-        # Explicitly handle existing real bots that have no corresponding paper history (i.e., not in perf_map)
+        # 1. Fetch data
         is_running_real = ticker in current_real_tickers
-        if is_running_real and p is None:
-            # This is a real bot currently running but has no valid paper history (e.g., failed scanner/incubator)
-            # Assign a very low effective score to ensure it's replaced by any profitable paper bot.
-            p = {
-                "profit": 0.0,
-                "cycles": 0,
-                "eff": 0.0,
-                "trailing_stop_paper_timeout_end": 0.0,
-            }
-            p['sort_eff'] = -1_000_000.0 # Extremely low score to ensure replacement
-            perf_map[ticker] = p # Add this low-priority entry to perf_map so sort can use it
-            ready_pool.append(ticker)
-            logger.info(f"⚖️ Scored {ticker}: Running REAL bot with no valid paper history. Assigning lowest priority for replacement.")
-            continue # Move to the next ticker
+        p = perf_map.get(ticker) or {
+            "profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0
+        }
 
-        if p is None:
-            logger.warning(f"Skipping {ticker}: No performance data found. This should not happen for an incubator candidate.")
-            continue
-
-        # Check for trailing stop timeout from paper mode, which would prevent promotion
-        if time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
-            logger.info(f"⏳ Skipping {ticker}: Still in trailing stop paper timeout (paper end: {time.ctime(p['trailing_stop_paper_timeout_end'])}).")
-            continue
-
-        # Sticky logic (Drawdown Protection)
-        is_sticky = False
+        # 2. Strict Drawdown Protection (Highest Priority)
+        is_in_drawdown = False
         if is_running_real:
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
-            if real_state.get("total_pnl_pct", 0.0) < 0:
-                is_sticky = True
+            if real_state.get("last_profit", 0.0) < 0:
+                is_in_drawdown = True
 
-        # Only profitable, or has enough history (for evaluation), or is sticky (for existing real bots)
-        min_cycles_required = config.get("min_cycles_for_rank", 10)
-        has_enough_history = p.get('cycles', 0) >= min_cycles_required
-        profit_condition = p.get('profit', 0.0) > 0
-
-        # Bot is considered for REAL if it's profitable AND has enough paper history OR is an existing real bot, OR it's sticky.
-        if (profit_condition and (has_enough_history or is_running_real)) or is_sticky:
-            pure_eff = p.get('eff', 0.0)
-            sort_eff = pure_eff
-
-            if is_sticky:
-                sort_eff += 1_000_000.0 # High bonus for sticky bots
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} + Sticky (Total:{sort_eff:.2f})")
-            elif is_running_real:
-                # Give existing real bots a bonus to prevent excessive churn if they are performing
-                sort_eff *= (1 + replacement_threshold / 100.0)
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} * ReplacementBonus (Total:{sort_eff:.2f})")
-            else:
-                logger.info(f"⚖️ Scored {ticker}: Pure:{pure_eff:.4f} (Total:{sort_eff:.2f})") # New incubator candidate
-
-            p['sort_eff'] = sort_eff
-            perf_map[ticker] = p # Ensure updated p with sort_eff is in perf_map for sorting
+        if is_in_drawdown:
+            p['sort_eff'] = float('inf')
+            perf_map[ticker] = p
             ready_pool.append(ticker)
-        else:
-            logger.info(f"❌ Skipping {ticker}: Not profitable ({p.get('profit', 0.0):.4f}) or insufficient history ({p.get('cycles', 0)}/{min_cycles_required}) and not sticky (running real: {is_running_real}).")
+            logger.info(f"🛡️ Scored {ticker}: REAL bot in drawdown. LOCKED IN COMBAT (Score: INF).")
+            continue
 
-    ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -2_000_000.0), reverse=True) # Ensure low-score bots are at the end
+        # 3. Trailing Stop Check (Only for paper candidates)
+        if not is_running_real and time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
+            logger.info(f"⏳ Skipping {ticker}: Still in trailing stop paper timeout.")
+            continue
+
+        # 4. Scoring Logic
+        cycles = p.get('cycles', 0)
+        net_pnl = p.get('profit', 0.0)
+
+        if net_pnl > 0 and cycles > 0:
+            base_score = (float(net_pnl) / cycles) * math.log1p(cycles)
+            # Hysteresis: +20% bonus for existing profitable real bots
+            sort_eff = base_score * 1.2 if is_running_real else base_score
+            logger.info(f"⚖️ Scored {ticker}: Net:{net_pnl:.2f}, Cyc:{cycles}, Score:{sort_eff:.4f}")
+        else:
+            sort_eff = -float('inf')
+            logger.info(f"❌ Scored {ticker}: Unprofitable or zero cycles. (Score: -INF)")
+
+        p['sort_eff'] = sort_eff
+        perf_map[ticker] = p
+        if sort_eff > -float('inf'):
+            ready_pool.append(ticker)
+
+    ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -float('inf')), reverse=True)
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
     target_real_bots = ready_pool[:max_real_slots]
     # -------------------------------------------------------------------------
