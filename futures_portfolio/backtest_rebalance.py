@@ -371,10 +371,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             # --- 4. SAFE Siphoning (Calculated on TPV) ---
             tpv_f = state.get_tpv_fast(float(mid_price))
             total_tpv_with_reserve = tpv_f + float(state.siphoning_reserve)
-            total_surplus = total_tpv_with_reserve - state.initial_capital
-            siphoning_threshold_abs = state.initial_capital * (Decimal(str(siphoning_threshold_pct)) / 100)
+            initial_capital_f = float(state.initial_capital)
+            total_surplus = total_tpv_with_reserve - initial_capital_f
+            siphoning_threshold_abs = initial_capital_f * (siphoning_threshold_pct / 100.0)
 
-            if total_surplus > float(state.siphoning_reserve) + max(0.1, float(siphoning_threshold_abs)):
+            if total_surplus > float(state.siphoning_reserve) + max(0.1, siphoning_threshold_abs):
                 new_profit = total_surplus - float(state.siphoning_reserve)
                 siphon_amount = new_profit * (1 - reinvestment_ratio)
                 if siphon_amount > 0.1:
