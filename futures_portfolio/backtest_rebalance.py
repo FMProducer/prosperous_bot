@@ -215,7 +215,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 initial_capital=float(state.initial_capital)
             )
 
-            calc_res = calculator.calculate_rebalance(targets, threshold)
+            calc_res = calculator.calculate_rebalance(targets, threshold, threshold)
             actions = calc_res["actions"]
 
             if actions:
