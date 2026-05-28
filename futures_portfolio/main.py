@@ -80,10 +80,20 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # Initial parameter load
     portfolio_cfg = config["portfolios"][0]
     targets = portfolio_cfg["targets"]
-    global_threshold = portfolio_cfg["rebalance_threshold"]
+    t_surplus = portfolio_cfg.get("rebalance_threshold_surplus", portfolio_cfg.get("rebalance_threshold", 0.02))
+    t_deficit = portfolio_cfg.get("rebalance_threshold_deficit", t_surplus)
+
     check_interval = portfolio_cfg.get("check_interval_sec", 15)
-    ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
-    threshold = ticker_thresholds.get(base_ticker, global_threshold)
+
+    t_cfg = portfolio_cfg.get("ticker_thresholds", {}).get(base_ticker)
+    if isinstance(t_cfg, dict):
+        threshold_surplus = float(t_cfg.get("surplus", t_surplus))
+        threshold_deficit = float(t_cfg.get("deficit", t_deficit))
+    elif isinstance(t_cfg, (float, int)):
+        threshold_surplus = threshold_deficit = float(t_cfg)
+    else:
+        threshold_surplus, threshold_deficit = float(t_surplus), float(t_deficit)
+
     siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
     reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
     
@@ -275,11 +285,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         
                         portfolio_cfg = current_config["portfolios"][0]
                         targets = portfolio_cfg["targets"]
-                        global_threshold = portfolio_cfg["rebalance_threshold"]
+                        t_surplus = portfolio_cfg.get("rebalance_threshold_surplus", portfolio_cfg.get("rebalance_threshold", 0.02))
+                        t_deficit = portfolio_cfg.get("rebalance_threshold_deficit", t_surplus)
                         check_interval = portfolio_cfg.get("check_interval_sec", 15)
-                        ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
-                        # [FIX] Гарантируем, что торговый порог не путается с порогами защиты
-                        threshold = float(ticker_thresholds.get(base_ticker, global_threshold))
+
+                        t_cfg = portfolio_cfg.get("ticker_thresholds", {}).get(base_ticker)
+                        if isinstance(t_cfg, dict):
+                            threshold_surplus = float(t_cfg.get("surplus", t_surplus))
+                            threshold_deficit = float(t_cfg.get("deficit", t_deficit))
+                        elif isinstance(t_cfg, (float, int)):
+                            threshold_surplus = threshold_deficit = float(t_cfg)
+                        else:
+                            threshold_surplus, threshold_deficit = float(t_surplus), float(t_deficit)
 
                         siphoning_threshold_pct = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
                         reinvestment_ratio = portfolio_cfg.get("reinvestment_ratio", 0.0)
@@ -300,10 +317,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         max_velocity = float(guards_cfg.get("max_price_velocity_pct", 1.0)) / 100.0
                         velocity_window = int(guards_cfg.get("velocity_window_sec", 60))
 
-                        logger.debug(f"⚙️ Config reloaded. Active Threshold for {base_ticker}: {threshold*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
+                        logger.debug(f"⚙️ Config reloaded. Active Thresholds for {base_ticker}: Surplus {threshold_surplus*100:.2f}%, Deficit {threshold_deficit*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
 
-                    if i % 20 == 0:
-                        logger.debug(f"Threshold running at: {threshold*100:.2f}%")
+                    if i % 60 == 0:
+                        logger.debug(f"Thresholds running at: Surplus {threshold_surplus*100:.2f}%, Deficit {threshold_deficit*100:.2f}%")
 
                 except Exception as e:
                     logger.error(f"Error reloading config: {e}. Using previous values.")
@@ -456,7 +473,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     wallet_balance = float(m_info.get("total_wallet_balance", 0.0))
 
                 # Direct synchronous call to PortfolioCalculator to reduce latency
-                current_threshold = -1.0 if (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0) else threshold
+                ignore_limits = (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0)
                 
                 # Fetch min_notional once to reuse
                 active_min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
@@ -476,7 +493,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     last_rebalance_price=state.get("last_rebalance_price", 0.0),
                     min_notional=active_min_notional
                 )
-                calc_res = calc.calculate_rebalance(targets, current_threshold, (current_threshold < 0))
+                calc_res = calc.calculate_rebalance(targets, threshold_surplus, threshold_deficit, ignore_limits)
                 
                 tpv_total = calc_res["total_tpv"]
                 tpv_active = calc_res["tpv"]
@@ -679,13 +696,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 side = "SELL" if diff_usdt > 0 else "BUY"
 
                             if side == "BUY":
-                                limit_price = last_reb_price * (1 - threshold)
+                                limit_price = last_reb_price * (1 - threshold_deficit)
                                 if price <= limit_price:
                                     fused_actions.append(action)
                                 else:
                                     logger.info(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             elif side == "SELL":
-                                limit_price = last_reb_price * (1 + threshold)
+                                limit_price = last_reb_price * (1 + threshold_surplus)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
@@ -710,8 +727,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             target_share = Decimal(str(targets.get(key, {}).get("share", 0)))
                             dev = (current_share - target_share) * 100
 
+                            active_thresh = threshold_surplus if dev > 0 else threshold_deficit
                             trigger_key = key.replace("BASE_", "")
-                            logger.info(f"Rebalance triggered: {trigger_key} deviation {dev:+.2f}% exceeds threshold {threshold*100:.2f}%")
+                            logger.info(f"Rebalance triggered: {trigger_key} deviation {dev:+.2f}% exceeds limit {active_thresh*100:.2f}%")
 
                         logger.info(f"Rebalance needed ({len(fused_actions)} fused actions). Shares: L:{calc_res['share_long_pct']:.1f}% S:{calc_res['share_short_pct']:.1f}% V:{calc_res['share_virt_pct']:.1f}%\nTPV: {tpv_active:.2f}")
                         
@@ -891,7 +909,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     last_rebalance_price=state.get("last_rebalance_price", 0.0),
                     min_notional=active_min_notional
                 )
-                safe_calc_res = safe_calc.calculate_rebalance(targets, -1.0, True)
+                safe_calc_res = safe_calc.calculate_rebalance(targets, 0.0, 0.0, True)
 
                 total_tpv_final = safe_calc_res["total_tpv"]
                 # SURPLUS = Current Total Capital (including reserve) - Initial Targeted Capital

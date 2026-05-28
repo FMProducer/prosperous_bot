@@ -44,9 +44,10 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold": 0.02,
+      "rebalance_threshold_surplus": 0.02,
+      "rebalance_threshold_deficit": 0.04,
       "ticker_thresholds": {
-        "BTCUSDT": 0.02
+        "BTCUSDT": {"surplus": 0.02, "deficit": 0.04}
       }
     }
   ],
