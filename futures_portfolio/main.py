@@ -695,19 +695,19 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             else: # SHORT
                                 side = "SELL" if diff_usdt > 0 else "BUY"
 
-                            if side == "BUY":
-                                limit_price = last_reb_price * (1 - threshold_deficit)
-                                if price <= limit_price:
-                                    fused_actions.append(action)
-                                else:
-                                    logger.info(f"🚫 FUSE ({act_type}): Buy blocked. {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
-                            elif side == "SELL":
+                            # Anti-churn protection based on deviation intent instead of raw order side
+                            if action["priority"] == 0:  # SURPLUS (Price moved UP)
                                 limit_price = last_reb_price * (1 + threshold_surplus)
                                 if price >= limit_price:
                                     fused_actions.append(action)
                                 else:
-                                    logger.info(f"🚫 FUSE ({act_type}): Sell blocked. {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
-
+                                    logger.info(f"🚫 FUSE (SURPLUS/{act_type}): Blocked. Price {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
+                            elif action["priority"] == 2:  # DEFICIT (Price moved DOWN)
+                                limit_price = last_reb_price * (1 - threshold_deficit)
+                                if price <= limit_price:
+                                    fused_actions.append(action)
+                                else:
+                                    logger.info(f"🚫 FUSE (DEFICIT/{act_type}): Blocked. Price {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
                             else:
                                 fused_actions.append(action)
                     
