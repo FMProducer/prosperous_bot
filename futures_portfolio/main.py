@@ -673,43 +673,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
                     valid_actions = [a for a in actions if abs(a.get("diff_usdt", 0)) >= min_notional]
                     
-                    # -------------------------------------------------------------------------
-                    # [V3.6.0] ANTI-CHURN PRICE FUSE (Enforce BLSH)
-                    # -------------------------------------------------------------------------
-                    last_reb_price = state.get("last_rebalance_price", 0.0)
-
-                    if last_reb_price == 0:
-                        fused_actions = valid_actions
-                        logger.info(f"❄️ Cold Start: Allowing all actions to form portfolio baseline at {price:.6g}")
-                    else:
-                        for action in valid_actions:
-                            pos_side = action.get("position_side") # LONG или SHORT
-                            diff_usdt = action.get("diff_usdt", 0)
-                            act_type = action.get("type", "REAL")
-
-                            # Вычисляем side ордера (BUY/SELL) аналогично экзекутору
-                            if act_type == "VIRTUAL_ORDER":
-                                side = "BUY" if diff_usdt > 0 else "SELL"
-                            elif pos_side == "LONG":
-                                side = "BUY" if diff_usdt > 0 else "SELL"
-                            else: # SHORT
-                                side = "SELL" if diff_usdt > 0 else "BUY"
-
-                            # Anti-churn protection based on deviation intent instead of raw order side
-                            if action["priority"] == 0:  # SURPLUS (Price moved UP)
-                                limit_price = last_reb_price * (1 + threshold_surplus)
-                                if price >= limit_price:
-                                    fused_actions.append(action)
-                                else:
-                                    logger.info(f"🚫 FUSE (SURPLUS/{act_type}): Blocked. Price {price:.6g} < {limit_price:.6g} (Last: {last_reb_price:.6g})")
-                            elif action["priority"] == 2:  # DEFICIT (Price moved DOWN)
-                                limit_price = last_reb_price * (1 - threshold_deficit)
-                                if price <= limit_price:
-                                    fused_actions.append(action)
-                                else:
-                                    logger.info(f"🚫 FUSE (DEFICIT/{act_type}): Blocked. Price {price:.6g} > {limit_price:.6g} (Last: {last_reb_price:.6g})")
-                            else:
-                                fused_actions.append(action)
+                    fused_actions = valid_actions
                     
                     if fused_actions:
                         # Log specific trigger reasons

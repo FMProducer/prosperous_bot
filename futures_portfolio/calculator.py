@@ -188,21 +188,42 @@ class PortfolioCalculator:
             else:
                 deficit_actions.append(action)
 
-        # 2. Final actions list starts with all SELLs (Priority 0)
+        # 2. Assemble final actions with Anti-Churn FUSE logic
         final_actions: List[Dict] = []
-        
-        # Proceeds must be calculated in pure Equity (Cash) terms
         total_proceeds = Decimal('0')
+
+        # Last rebalance price for FUSE checks
+        last_reb = self.last_rebalance_price
+        # Cold start check: if last_reb is current price or ignore_limits is True, bypass FUSE
+        bypass_fuse = ignore_limits or last_reb == self.price
+
+        # Phase 1: Process SURPLUS (Priority 0)
         for act in surplus_actions:
-            if abs(Decimal(str(act["diff_usdt"]))) >= min_notional or ignore_limits:
-                act["priority"] = 0
+            if abs(Decimal(str(act["diff_usdt"]))) < min_notional and not ignore_limits:
+                continue
+
+            act["priority"] = 0
+            is_valid = True
+
+            if not bypass_fuse:
+                is_inverse = (act["position_side"] == "SHORT")
+                if not is_inverse:
+                    limit_price = last_reb * (1 + dec_threshold_surplus)
+                    is_valid = self.price >= limit_price
+                else:
+                    limit_price = last_reb * (1 - dec_threshold_surplus)
+                    is_valid = self.price <= limit_price
+
+            if is_valid:
                 final_actions.append(act)
                 total_proceeds += abs(Decimal(str(act["diff_equity"])))
+            else:
+                logger.debug(f"🚫 FUSE (SURPLUS): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
 
         # 3. Calculate available funds for BUYs (Strict Cash Accounting)
         available_funds = self.val_cash + total_proceeds
         
-        # 4. Process Deficits with Priority (VIRTUAL first)
+        # 4. Process Deficits with Priority (VIRTUAL first, Priority 2)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
         
         for act in deficit_actions:
@@ -210,6 +231,21 @@ class PortfolioCalculator:
             needed_equity = abs(Decimal(str(act["diff_equity"])))
             
             if available_funds <= Decimal('0') and not ignore_limits:
+                continue
+
+            # FUSE Check for Deficits
+            is_valid = True
+            if not bypass_fuse:
+                is_inverse = (act["position_side"] == "SHORT")
+                if not is_inverse:
+                    limit_price = last_reb * (1 - dec_threshold_deficit)
+                    is_valid = self.price <= limit_price
+                else:
+                    limit_price = last_reb * (1 + dec_threshold_deficit)
+                    is_valid = self.price >= limit_price
+
+            if not is_valid:
+                logger.debug(f"🚫 FUSE (DEFICIT): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
                 continue
 
             # Cap purchasing power by available cash (Equity)

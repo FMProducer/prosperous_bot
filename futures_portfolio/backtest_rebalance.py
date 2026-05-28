@@ -90,16 +90,37 @@ class BacktestState:
     cycles: int = 0
     skipped_expansions_counter: int = 0
     liquidations_counter: int = 0
+    last_rebalance_price: Decimal = Decimal('0')
     history: List[float] = field(default_factory=list)
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
     def get_tpv(self, price: Decimal) -> Decimal:
+        """Calculate TPV using precise Decimal arithmetic."""
         unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
         unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
         margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
         margin_short = (self.pos_short * self.short_entry_price) / Decimal('5') if self.pos_short > 0 else Decimal('0')
         virtual_equity = (self.virt_qty * price) - self.virt_debt
         return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
+
+    def get_tpv_fast(self, price: float) -> float:
+        """Calculate TPV using fast float arithmetic for performance."""
+        pos_l = float(self.pos_long)
+        pos_s = float(self.pos_short)
+        p = float(price)
+        l_entry = float(self.long_entry_price)
+        s_entry = float(self.short_entry_price)
+        v_qty = float(self.virt_qty)
+        v_debt = float(self.virt_debt)
+        cash = float(self.val_cash)
+
+        upnl_l = pos_l * (p - l_entry) if pos_l > 0 else 0.0
+        upnl_s = pos_s * (s_entry - p) if pos_s > 0 else 0.0
+        m_l = (pos_l * l_entry) / 5.0 if pos_l > 0 else 0.0
+        m_s = (pos_s * s_entry) / 5.0 if pos_s > 0 else 0.0
+        v_eq = (v_qty * p) - v_debt
+        
+        return cash + m_l + upnl_l + m_s + upnl_s + v_eq
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
@@ -184,6 +205,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
         # First bar initialization (align with main.py)
         start_price = Decimal(str(close_prices[0]))
+        state.last_rebalance_price = start_price
         target_v_share = Decimal(str(targets["VIRTUAL"]["share"]))
         virt_cost = target_v_share * state.initial_capital
         state.virt_qty = virt_cost / start_price
@@ -212,10 +234,12 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 short_entry_price=float(state.short_entry_price),
                 base_ticker=base_ticker,
                 targets=targets,
-                initial_capital=float(state.initial_capital)
+                initial_capital=float(state.initial_capital),
+                last_rebalance_price=float(state.last_rebalance_price)
             )
 
-            calc_res = calculator.calculate_rebalance(targets, threshold, threshold)
+            # Pass asymmetric thresholds if they exist in config
+            calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold, threshold_deficit=threshold)
             actions = calc_res["actions"]
 
             if actions:
@@ -310,6 +334,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.virt_debt += cash_spent
 
                 state.cycles += 1
+                state.last_rebalance_price = mid_price
                 state.rebalance_log.append({
                     "step": i, "price": float(mid_price), "tpv": float(state.get_tpv(mid_price)),
                     "shares": {"L": calc_res["share_long_pct"], "S": calc_res["share_short_pct"], "V": calc_res["share_virt_pct"], "C": calc_res["share_cash_pct"]},
@@ -344,18 +369,17 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 logger.warning(f"Bar {i}: SHORT leg liquidated!")
 
             # --- 4. SAFE Siphoning (Calculated on TPV) ---
-            tpv = state.get_tpv(mid_price)
-            total_tpv_with_reserve = tpv + state.siphoning_reserve
+            tpv_f = state.get_tpv_fast(float(mid_price))
+            total_tpv_with_reserve = tpv_f + float(state.siphoning_reserve)
             total_surplus = total_tpv_with_reserve - state.initial_capital
             siphoning_threshold_abs = state.initial_capital * (Decimal(str(siphoning_threshold_pct)) / 100)
 
-            if total_surplus > state.siphoning_reserve + max(Decimal('0.1'), siphoning_threshold_abs):
-                new_profit = total_surplus - state.siphoning_reserve
-                siphon_amount = new_profit * (1 - Decimal(str(reinvestment_ratio)))
-                if siphon_amount > Decimal('0.1'):
-                    state.siphoning_reserve += siphon_amount
-                    state.val_cash -= siphon_amount
-                    tpv -= siphon_amount
+            if total_surplus > float(state.siphoning_reserve) + max(0.1, float(siphoning_threshold_abs)):
+                new_profit = total_surplus - float(state.siphoning_reserve)
+                siphon_amount = new_profit * (1 - reinvestment_ratio)
+                if siphon_amount > 0.1:
+                    state.siphoning_reserve += Decimal(str(siphon_amount))
+                    state.val_cash -= Decimal(str(siphon_amount))
                     total_tpv_with_reserve -= siphon_amount
 
             # --- 5. Проверка математического инварианта (Sanity Check) ---
