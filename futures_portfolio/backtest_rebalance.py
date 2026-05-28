@@ -90,6 +90,10 @@ class BacktestState:
     cycles: int = 0
     skipped_expansions_counter: int = 0
     liquidations_counter: int = 0
+    # Trailing stop state
+    tpv_ath: float = 0.0
+    trailing_stop_violation_start: float = 0.0
+    trailing_stop_triggered: bool = False
     last_rebalance_price: Decimal = Decimal('0')
     history: List[float] = field(default_factory=list)
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
@@ -124,14 +128,42 @@ class BacktestState:
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
-    logger.info(f"Downloading live data for {symbol}...")
-    params = {"symbol": symbol, "interval": "1m", "limit": 1500}
+    logger.info(f"Downloading live data for {symbol} ({days} days)...")
+
+    # Calculate how many 1m candles we need (Binance limit: 1500 per request)
+    total_minutes = int(days * 24 * 60)
+    limit_per_request = 1500
+    num_requests = math.ceil(total_minutes / limit_per_request)
+
+    all_data = []
+    end_time_ms = int(time.time() * 1000)
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(endpoint, params=params) as resp:
-            if resp.status == 200:
-                all_data = await resp.json()
-            else:
-                raise Exception(f"Binance API error: {resp.status}")
+        for i in range(num_requests):
+            batch = min(limit_per_request, total_minutes - len(all_data))
+            if batch <= 0:
+                break
+            params = {"symbol": symbol, "interval": "1m", "limit": batch}
+            if i > 0:
+                params["endTime"] = end_time_ms
+
+            async with session.get(endpoint, params=params) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if not data:
+                        break
+                    all_data = data + all_data  # prepend earlier data
+                    # Next batch ends where this one starts
+                    end_time_ms = data[0][0] - 1
+                else:
+                    raise Exception(f"Binance API error: {resp.status}")
+
+            # Rate limit courtesy between requests
+            if i < num_requests - 1:
+                await asyncio.sleep(0.25)
+
+    if not all_data:
+        raise Exception(f"No data returned for {symbol}")
 
     df = pd.DataFrame(all_data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
     df = df[['open', 'high', 'low', 'close', 'volume']]
@@ -146,7 +178,9 @@ async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> s
 
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
                         days: float = 2.0, commission: float = 0.0004, slippage: float = 0.0002,
-                        quiet: bool = False, threshold_override: Optional[float] = None,
+                        quiet: bool = False,
+                        threshold_surplus_override: Optional[float] = None,
+                        threshold_deficit_override: Optional[float] = None,
                         capital_override: Optional[float] = None) -> Optional[Dict[str, Any]]:
     try:
         if quiet:
@@ -175,17 +209,42 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         df = df[['open', 'high', 'low', 'close', 'volume']]
         
         portfolio_cfg: Dict[str, Any] = config["portfolios"][0]
+        
+        # Trim data to the specified lookback window (days -> minutes -> bars)
+        bars_per_day = 1440  # 1-minute bars
+        max_bars = int(days * bars_per_day)
+        if len(df) > max_bars:
+            df = df.iloc[-max_bars:]
+        
         initial_capital: float = capital_override if capital_override is not None else portfolio_cfg.get("initial_capital", 1000.0)
         targets: Dict[str, Any] = portfolio_cfg["targets"]
-        ticker_thresholds: Dict[str, float] = portfolio_cfg.get("ticker_thresholds", {})
+        ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
         
-        if threshold_override is not None:
-            threshold = threshold_override
+        # Resolve asymmetric thresholds: overrides > config > defaults
+        if threshold_surplus_override is not None:
+            t_surplus = threshold_surplus_override
+            t_deficit = threshold_deficit_override if threshold_deficit_override is not None else threshold_surplus_override
         else:
-            threshold = ticker_thresholds.get(base_ticker, portfolio_cfg.get("rebalance_threshold", 0.02))
+            t_surplus = portfolio_cfg.get("rebalance_threshold_surplus", portfolio_cfg.get("rebalance_threshold", 0.02))
+            t_deficit = portfolio_cfg.get("rebalance_threshold_deficit", t_surplus)
+        
+        # Per-ticker override (supports both dict {"surplus": x, "deficit": y} and legacy float)
+        t_cfg = ticker_thresholds.get(base_ticker)
+        if isinstance(t_cfg, dict):
+            threshold_surplus = float(t_cfg.get("surplus", t_surplus))
+            threshold_deficit = float(t_cfg.get("deficit", t_deficit))
+        elif isinstance(t_cfg, (float, int)):
+            threshold_surplus = threshold_deficit = float(t_cfg)
+        else:
+            threshold_surplus = float(t_surplus)
+            threshold_deficit = float(t_deficit)
             
         siphoning_threshold_pct: float = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
         reinvestment_ratio: float = portfolio_cfg.get("reinvestment_ratio", 0.0)
+        # Trailing stop parameters (config-based)
+        trailing_stop_pct: float = config.get("equity_trailing_stop_pct", 0.0)
+        trailing_stop_activation_pct: float = config.get("equity_trailing_stop_activation_pct", 0.0)
+        trailing_stop_timeout_sec: int = int(config.get("equity_trailing_stop_timeout_sec", 0))
         min_notional_usdt: Decimal = Decimal(str(config.get("min_notional_usdt", 6.0)))
         
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
@@ -238,8 +297,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 last_rebalance_price=float(state.last_rebalance_price)
             )
 
-            # Pass asymmetric thresholds if they exist in config
-            calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold, threshold_deficit=threshold)
+            # Pass asymmetric thresholds
+            calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold_surplus, threshold_deficit=threshold_deficit)
             actions = calc_res["actions"]
 
             if actions:
@@ -383,6 +442,46 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     state.val_cash -= Decimal(str(siphon_amount))
                     total_tpv_with_reserve -= siphon_amount
 
+            # --- 4b. Trailing Stop (Equity-based) ---
+            # Update ATH
+            if total_tpv_with_reserve > state.tpv_ath:
+                state.tpv_ath = total_tpv_with_reserve
+                state.trailing_stop_violation_start = 0.0
+
+            # Check trailing stop only if ATH is above activation threshold
+            if (trailing_stop_pct > 0
+                    and state.tpv_ath > initial_capital_f * (1 + trailing_stop_activation_pct / 100.0)):
+                drawdown_from_ath = (1 - total_tpv_with_reserve / state.tpv_ath) * 100.0
+                if drawdown_from_ath >= trailing_stop_pct:
+                    if state.trailing_stop_violation_start == 0:
+                        state.trailing_stop_violation_start = float(i)
+                        logger.warning(
+                            f"Bar {i}: Trailing Stop threshold breached "
+                            f"(DD {drawdown_from_ath:.2f}% from ATH). "
+                            f"Timeout: {trailing_stop_timeout_sec}s"
+                        )
+                    else:
+                        elapsed_bars = i - int(state.trailing_stop_violation_start)
+                        # Convert timeout_sec to bars (1 bar = 1 minute)
+                        timeout_bars = max(1, trailing_stop_timeout_sec // 60)
+                        if elapsed_bars >= timeout_bars:
+                            logger.warning(
+                                f"Bar {i}: Trailing Stop triggered "
+                                f"(DD {drawdown_from_ath:.2f}% for {elapsed_bars} bars / {trailing_stop_timeout_sec}s). "
+                                f"Stopping backtest."
+                            )
+                            state.trailing_stop_triggered = True
+                            state.history.append(float(total_tpv_with_reserve))
+                            break
+                else:
+                    # Recovery: reset violation timer if drawdown is back under threshold
+                    if state.trailing_stop_violation_start > 0:
+                        logger.info(
+                            f"Bar {i}: Trailing Stop recovered "
+                            f"(DD {drawdown_from_ath:.2f}% < {trailing_stop_pct}%)"
+                        )
+                        state.trailing_stop_violation_start = 0.0
+
             # --- 5. Проверка математического инварианта (Sanity Check) ---
             # Настоящий TPV = Свободный кэш + Чистая стоимость LONG + Чистая стоимость SHORT + Чистая стоимость VIRTUAL
             unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
@@ -409,7 +508,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
             logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Liquidations: {state.liquidations_counter}")
-            
+            if state.trailing_stop_triggered:
+                logger.info(f"*** TRAILING STOP TRIGGERED at bar {len(state.history)} ***")
+
             if sim:
                 s = sim.get_summary()
                 logger.info(f"Market Orders: {s['filled']}/{s['attempted']} filled")
@@ -421,7 +522,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "asset_chg_pct": float(asset_chg_pct),
             "siphoning_reserve": float(state.siphoning_reserve),
             "skipped_expansions": int(state.skipped_expansions_counter),
-            "liquidations": int(state.liquidations_counter)
+            "liquidations": int(state.liquidations_counter),
+            "trailing_stop_triggered": state.trailing_stop_triggered
         }
     except Exception as e:
         logger.error(f"Backtest failed: {e}")
@@ -435,8 +537,12 @@ if __name__ == "__main__":
     parser.add_argument("--days", type=float, default=1.0)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--capital", type=float, default=None)
-    parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument("--threshold-surplus", type=float, default=None)
+    parser.add_argument("--threshold-deficit", type=float, default=None)
     args = parser.parse_args()
     # Assuming the script is in 'futures_portfolio' and 'data' is a subfolder
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-    asyncio.run(run_backtest(args.config, data_dir, args.live, args.ticker, args.days, capital_override=args.capital, threshold_override=args.threshold))
+    asyncio.run(run_backtest(args.config, data_dir, args.live, args.ticker, args.days,
+                             capital_override=args.capital,
+                             threshold_surplus_override=args.threshold_surplus,
+                             threshold_deficit_override=args.threshold_deficit))

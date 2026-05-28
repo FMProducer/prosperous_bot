@@ -14,7 +14,8 @@
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 33.0,
   "replacement_efficiency_threshold_pct": 50.0,
-  "equity_trailing_stop_pct": 100.0,
+  "equity_trailing_stop_pct": 10.0,
+  "equity_trailing_stop_activation_pct": 2.0,
   "equity_trailing_stop_timeout_sec": 0,
   "telegram_enabled": true,
   "telegram_use_queue": true,
@@ -44,12 +45,12 @@
         "max_price_velocity_pct": 1.0,
         "velocity_window_sec": 60
       },
-      "rebalance_threshold_surplus": 0.02,
-      "rebalance_threshold_deficit": 0.04,
+      "rebalance_threshold_surplus": 0.015,
+      "rebalance_threshold_deficit": 0.03,
       "ticker_thresholds": {
         "BTCUSDT": {
-          "surplus": 0.02,
-          "deficit": 0.04
+          "surplus": 0.015,
+          "deficit": 0.03
         }
       }
     }
@@ -60,27 +61,6 @@
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [
-    "ALGOUSDT",
-    "ARUSDT",
-    "EIGENUSDT",
-    "ETHFIUSDT",
-    "FETUSDT",
-    "GRASSUSDT",
-    "HBARUSDT",
-    "ICPUSDT",
-    "INJUSDT",
-    "JTOUSDT",
-    "NEARUSDT",
-    "NILUSDT",
-    "RIFUSDT",
-    "SEIUSDT",
-    "STRKUSDT",
-    "SWARMSUSDT",
-    "VVVUSDT",
-    "WLDUSDT",
-    "XLMUSDT",
-    "ZECUSDT"
-  ],
-  "base_ticker": "ALGOUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }

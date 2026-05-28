@@ -215,6 +215,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
     
     equity_trailing_stop_pct = config.get("equity_trailing_stop_pct", 0.0)
+    equity_trailing_stop_activation_pct = config.get("equity_trailing_stop_activation_pct", 0.0)
     max_drawdown_limit = config.get("max_drawdown_limit", 0.5)
     margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
     margin_critical = portfolio_cfg.get("margin_ratio_critical", 2.0)
@@ -534,93 +535,102 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     state_dirty = True
 
                 if equity_trailing_stop_pct > 0 and tpv_ath > 0:
-                    drawdown_pct = (1 - tpv_total / tpv_ath) * 100
-                    if drawdown_pct >= equity_trailing_stop_pct:
-                        violation_start = state.get("trailing_stop_violation_start", 0.0)
-                        if violation_start == 0:
-                            violation_start = now
-                            state["trailing_stop_violation_start"] = violation_start
-                            state_dirty = True
-                            logger.warning(f"Trailing Stop threshold breached ({drawdown_pct:.2f}%). Timeout: {equity_trailing_stop_timeout_sec}s")
-                        
-                        elapsed = now - violation_start
-                        if elapsed >= equity_trailing_stop_timeout_sec:
-                            msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH for {elapsed:.1f}s. Closing all positions for {base_ticker}."
-                            logger.warning(f"!!! [STOP] {msg}")
-                            asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
-                            
-                            # Realize PnL and close positions
-                            for pos_key, qty in positions.items():
-                                if qty == 0 or base_ticker not in pos_key: continue
-                                side = "SELL" if qty > 0 else "BUY"
-                                step_size = step_sizes.get(base_ticker, 0.0)
-                                
-                                # Calculate realized PnL for shadow balance
-                                p_qty = abs(paper_state["positions"].get(pos_key, 0.0))
-                                if p_qty > 0:
-                                    if "LONG" in pos_key:
-                                        pnl = p_qty * (price - paper_state.get("long_entry_price", price))
-                                    else:
-                                        pnl = p_qty * (paper_state.get("short_entry_price", price) - price)
-                                    paper_state["balance"] += pnl
-                                    paper_state["positions"][pos_key] = 0.0
-
-                                if not paper_mode:
-                                    # In REAL mode, close real position
-                                    await PortfolioExecutor(connector).execute_market_order(
-                                        symbol=pos_key.split('_')[0],
-                                        qty=Decimal(str(abs(qty))),
-                                        side=side,
-                                        step_size=Decimal(str(step_size)),
-                                        reduce_only=True,
-                                        position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
-                                        min_notional=Decimal('0')
-                                    )
-                                    
-                            # Reset shadow balance to initial capital to avoid loop on restart
-                            paper_state["balance"] = portfolio_cfg.get("initial_capital", 60.0)
-                            paper_state["long_entry_price"] = 0.0
-                            paper_state["short_entry_price"] = 0.0
-                            await save_json(paper_state_file_path, paper_state)
-                            
-                            # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
-                            await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
-                            # --------------------------------------------------------------------
-                            
-                            # Set paper probation timeout (from probation_period_days)
-                            probation_days = current_config.get("probation_period_days", 0.041)
-                            timeout_end = now + probation_days * 86400
-                            state["trailing_stop_paper_timeout_end"] = timeout_end
-                            logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
-
-                            # Эмитируем сигнал остановки для супервайзера
-                            # Проверяем прибыль относительно глобального начального капитала
-                            global_initial = portfolio_cfg.get("initial_capital", 60.0)
-                            if tpv_total < global_initial:
-                                emit_signal("stop", base_ticker)
-                                logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
-                            else:
-                                emit_signal("exit", base_ticker)
-                                logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}. Ticker remains available (Probation).")
-                            
-                            # Сбрасываем ATH и начальные значения
-                            state["tpv_ath"] = 0.0
-                            state["initial_tpv"] = 0.0
-                            state["reference_tpv"] = 0.0
-                            state["virt_qty"] = 0.0
-                            state["trailing_stop_triggered"] = True
-                            state["trailing_stop_violation_start"] = 0.0
-                            
-                            logger.info("Positions closed and state reset. Bot stopped.")
-                            break
-                        else:
-                            if i % 5 == 0:
-                                logger.info(f"Trailing Stop Pending: {drawdown_pct:.2f}% (Wait {equity_trailing_stop_timeout_sec - elapsed:.1f}s more)")
-                    else:
+                    # Trailing stop activates only when ATH exceeds activation threshold
+                    activation_threshold = initial_tpv * (1 + equity_trailing_stop_activation_pct / 100)
+                    if tpv_ath < activation_threshold:
+                        # Not yet activated — reset violation and skip
                         if state.get("trailing_stop_violation_start", 0.0) > 0:
-                            logger.info(f"Trailing Stop Recovered: drawdown {drawdown_pct:.2f}% is back below {equity_trailing_stop_pct}%")
                             state["trailing_stop_violation_start"] = 0.0
                             state_dirty = True
+                    else:
+                        drawdown_pct = (1 - tpv_total / tpv_ath) * 100
+                        if drawdown_pct >= equity_trailing_stop_pct:
+                            violation_start = state.get("trailing_stop_violation_start", 0.0)
+                            if violation_start == 0:
+                                violation_start = now
+                                state["trailing_stop_violation_start"] = violation_start
+                                state_dirty = True
+                                logger.warning(f"Trailing Stop threshold breached ({drawdown_pct:.2f}%). Timeout: {equity_trailing_stop_timeout_sec}s")
+
+                            elapsed = now - violation_start
+                            if elapsed >= equity_trailing_stop_timeout_sec:
+                                msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH for {elapsed:.1f}s. Closing all positions for {base_ticker}."
+                                logger.warning(f"!!! [STOP] {msg}")
+                                asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
+
+                                # Realize PnL and close positions
+                                for pos_key, qty in positions.items():
+                                    if qty == 0 or base_ticker not in pos_key: continue
+                                    side = "SELL" if qty > 0 else "BUY"
+                                    step_size = step_sizes.get(base_ticker, 0.0)
+
+                                    # Calculate realized PnL for shadow balance
+                                    p_qty = abs(paper_state["positions"].get(pos_key, 0.0))
+                                    if p_qty > 0:
+                                        if "LONG" in pos_key:
+                                            pnl = p_qty * (price - paper_state.get("long_entry_price", price))
+                                        else:
+                                            pnl = p_qty * (paper_state.get("short_entry_price", price) - price)
+                                        paper_state["balance"] += pnl
+                                        paper_state["positions"][pos_key] = 0.0
+
+                                    if not paper_mode:
+                                        # In REAL mode, close real position
+                                        await PortfolioExecutor(connector).execute_market_order(
+                                            symbol=pos_key.split('_')[0],
+                                            qty=Decimal(str(abs(qty))),
+                                            side=side,
+                                            step_size=Decimal(str(step_size)),
+                                            reduce_only=True,
+                                            position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
+                                            min_notional=Decimal('0')
+                                        )
+
+                                # Reset shadow balance to initial capital to avoid loop on restart
+                                paper_state["balance"] = portfolio_cfg.get("initial_capital", 60.0)
+                                paper_state["long_entry_price"] = 0.0
+                                paper_state["short_entry_price"] = 0.0
+                                await save_json(paper_state_file_path, paper_state)
+
+                                # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
+                                await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                                # --------------------------------------------------------------------
+
+                                # Set paper probation timeout (from probation_period_days)
+                                probation_days = current_config.get("probation_period_days", 0.041)
+                                timeout_end = now + probation_days * 86400
+                                state["trailing_stop_paper_timeout_end"] = timeout_end
+                                logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
+
+                                # Эмитируем сигнал остановки для супервайзера
+                                global_initial = portfolio_cfg.get("initial_capital", 60.0)
+                                if tpv_total < global_initial:
+                                    emit_signal("stop", base_ticker)
+                                    logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
+                                else:
+                                    emit_signal("exit", base_ticker)
+                                    logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}. Ticker remains available (Probation).")
+
+                                # Сбрасываем ATH и начальные значения
+                                state["tpv_ath"] = 0.0
+                                state["initial_tpv"] = 0.0
+                                state["reference_tpv"] = 0.0
+                                state["virt_qty"] = 0.0
+                                state["trailing_stop_triggered"] = True
+                                state["trailing_stop_violation_start"] = 0.0
+
+                                logger.info("Positions closed and state reset. Bot stopped.")
+                                break
+                            else:
+                                # Timeout not yet reached — still pending
+                                if i % 5 == 0:
+                                    logger.info(f"Trailing Stop Pending: {drawdown_pct:.2f}% (Wait {equity_trailing_stop_timeout_sec - elapsed:.1f}s more)")
+                        else:
+                            # Drawdown back below threshold — recovery
+                            if state.get("trailing_stop_violation_start", 0.0) > 0:
+                                logger.info(f"Trailing Stop Recovered: drawdown {drawdown_pct:.2f}% is back below {equity_trailing_stop_pct}%")
+                                state["trailing_stop_violation_start"] = 0.0
+                                state_dirty = True
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:

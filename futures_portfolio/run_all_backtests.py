@@ -21,11 +21,12 @@ async def main():
         print(f"Running backtest for {ticker}...")
         try:
             res = await run_backtest(
-                config_path="config.json",
-                data_dir=data_dir,
-                ticker_override=ticker,
-                live_mode=True,
-                quiet=True
+            config_path="config.json",
+            data_dir=data_dir,
+            ticker_override=ticker,
+            live_mode=True,
+            days=0.125,
+            quiet=True
             )
             if res:
                 res['ticker'] = ticker
