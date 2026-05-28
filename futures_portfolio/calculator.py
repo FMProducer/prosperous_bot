@@ -101,11 +101,11 @@ class PortfolioCalculator:
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
-    def calculate_rebalance(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> Dict:
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False) -> Dict:
         """
         Calculate rebalance actions and return a summary of the current state.
         """
-        actions = self.calculate_deviations(targets, threshold, ignore_limits)
+        actions = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits)
 
         return {
             "actions": actions,
@@ -128,12 +128,13 @@ class PortfolioCalculator:
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold: float, ignore_limits: bool = False) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False) -> List[Dict]:
         """
         Rebalance based on CAPITAL (Equity) deviations. 
         This allows the portfolio to harvest volatility profit.
         """
-        dec_threshold = Decimal(str(threshold))
+        dec_threshold_surplus = Decimal(str(threshold_surplus))
+        dec_threshold_deficit = Decimal(str(threshold_deficit))
         min_notional = self.min_notional
         
         # Actions split by intent
@@ -153,8 +154,11 @@ class PortfolioCalculator:
             current_share = shares[key]
             diff_share = current_share - target_share # Positive if surplus (actual > target)
             
-            if not ignore_limits and abs(diff_share) < dec_threshold:
-                continue
+            if not ignore_limits:
+                if diff_share > 0 and abs(diff_share) < dec_threshold_surplus:
+                    continue
+                elif diff_share < 0 and abs(diff_share) < dec_threshold_deficit:
+                    continue
 
             # Calculate theoretical diff_usdt
             # diff_usdt = -diff_share * self.tpv * leverage

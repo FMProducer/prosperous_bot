@@ -42,7 +42,7 @@ def test_calculator_initialization(sample_params):
 def test_calculate_deviations(sample_params, targets):
     calc = PortfolioCalculator(**sample_params)
     threshold = 0.05
-    actions = calc.calculate_deviations(targets, threshold)
+    actions = calc.calculate_deviations(targets, threshold_surplus=threshold, threshold_deficit=threshold)
     
     # Shares: L:50%, S:0%, V:16.7%. Targets: L:40%, S:40%, V:20%.
     # Deviations: L: +10% (BREACH), S: -40% (BREACH), V: -3.3% (NO BREACH)
@@ -110,7 +110,7 @@ def test_ignore_limits_deviation(sample_params, targets):
     # diff_share = 1.2 - 0.4 = 0.8
     # diff_usdt = -0.8 * 100000 * 5 = -400000.
     calc = PortfolioCalculator(**params)
-    actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=True)
+    actions = calc.calculate_deviations(targets, threshold_surplus=0.01, threshold_deficit=0.01, ignore_limits=True)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     assert long_action["diff_usdt"] == pytest.approx(-400000.0)
 
@@ -120,7 +120,7 @@ def test_limits_deviation(sample_params, targets):
     params["virt_qty"] = 0.0
     params["positions"] = {"BTCUSDT_LONG": 10.0}
     calc = PortfolioCalculator(**params)
-    actions = calc.calculate_deviations(targets, threshold=0.01, ignore_limits=False)
+    actions = calc.calculate_deviations(targets, threshold_surplus=0.01, threshold_deficit=0.01, ignore_limits=False)
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     # TPV is 100,000. diff_usdt is -400,000 as calculated above.
     assert long_action["diff_usdt"] == pytest.approx(-400000.0)
