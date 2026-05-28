@@ -4,116 +4,185 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sys
 import os
+import glob
 from datetime import datetime
 
 def parse_rebalance_log(file_path):
     data = []
     rebalances = []
-    
+
     # Regex patterns
-    heartbeat_ptrn = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Heartbeat: Balance=([\d.]+) \| (?:SAFE:([\d.]+) \| )?([A-Z]+)=([\d.e-]+) \| L:([\d.]+)% S:([\d.]+)% V:([\d.]+)% C:([\d.]+)%")
-    tpv_update_ptrn = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Rebalance #(\d+) complete\. TPV: ([\d.]+)")
-    trade_ptrn = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO .* PAPER: (BUY|SELL) ([\d.]+) ([A-Z_]+) @ ([\d.e-]+)")
-    tpv_heartbeat_ptrn = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Heartbeat: TPV=([\d.]+) \| PnL=([+\d.-]+) \| Cycles=(\d+)")
-    safe_activated_ptrn = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO .* SAFE ACTIVATED: Siphoned ([\d.]+) USDT\. New Reserve: ([\d.]+)")
+    # New detailed heartbeat: TPV=114.86 | PnL=-0.14 | ARUSDT=2.263 | L:26.8% [-0.2%] {+30.77$} | S:34.3% [+0.3%] {+39.40$} | V:35.0% [+0.0%] {+40.21$} | C:3.9% {4.50$}
+    heartbeat_full_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Heartbeat: "
+        r"TPV=([\d.]+) \| PnL=([+\d.-]+) \| ([A-Z]+)=([\d.]+) \| "
+        r"L:([\d.]+)%.*?\| S:([\d.]+)%.*?\| V:([\d.]+)%.*?\| C:([\d.]+)%"
+    )
+    # Simplified heartbeat (no weights): TPV=114.86 | PnL=-0.14 | ARUSDT=2.25576 | Cycles=1
+    heartbeat_simple_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Heartbeat: "
+        r"TPV=([\d.]+) \| PnL=([+\d.-]+) \| ([A-Z]+)=([\d.]+) \| Cycles=(\d+)"
+    )
+    # Old-style heartbeat (Balance=...): Balance=xxx | SAFE:xxx | TICKER=price | L:x% S:y% V:z% C:w%
+    heartbeat_old_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Heartbeat: "
+        r"Balance=([\d.]+) \| (?:SAFE:([\d.]+) \| )?([A-Z]+)=([\d.e-]+) \| "
+        r"L:([\d.]+)% S:([\d.]+)% V:([\d.]+)% C:([\d.]+)%"
+    )
+    tpv_update_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO Rebalance #(\d+) complete\. TPV: ([\d.]+)"
+    )
+    # TPV standalone line (no timestamp — use last known timestamp)
+    tpv_standalone_ptrn = re.compile(r"^TPV: ([\d.]+)")
+    # Trade: 📝 PAPER: BUY 68.6 ARUSDT_LONG @ 2.263  OR  PAPER: SELL ...
+    trade_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO .*PAPER: (BUY|SELL) ([\d.]+) ([A-Z_]+) @ ([\d.eE+-]+)"
+    )
+    safe_activated_ptrn = re.compile(
+        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO .* SAFE ACTIVATED: Siphoned ([\d.]+) USDT\. New Reserve: ([\d.]+)"
+    )
 
     if not os.path.exists(file_path):
         print(f"Log file not found: {file_path}")
-        return None, None, None
+        return None, None
+
+    last_ts = None
 
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            # 1. Heartbeat with weights and SAFE
-            m = heartbeat_ptrn.search(line)
-            if m:
-                ts, balance, safe_bal, ticker, price, l_weight, s_weight, v_weight, c_weight = m.groups()
+            line = line.strip()
+
+            # 0. Standalone TPV line (no timestamp)
+            m = tpv_standalone_ptrn.match(line)
+            if m and last_ts:
+                tpv_val = float(m.group(1))
                 data.append({
-                    'timestamp': pd.to_datetime(ts),
+                    'timestamp': last_ts,
+                    'tpv': tpv_val,
+                    'type': 'tpv_standalone'
+                })
+                continue
+
+            # 1. Full heartbeat with weights
+            m = heartbeat_full_ptrn.search(line)
+            if m:
+                ts_str, tpv, pnl, ticker, price, l_w, s_w, v_w, c_w = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
+                data.append({
+                    'timestamp': ts,
+                    'tpv': float(tpv),
+                    'pnl': float(pnl),
+                    'price': float(price),
+                    'L': float(l_w),
+                    'S': float(s_w),
+                    'V': float(v_w),
+                    'C': float(c_w),
+                    'type': 'heartbeat_full'
+                })
+                continue
+
+            # 2. Simple heartbeat (no weights)
+            m = heartbeat_simple_ptrn.search(line)
+            if m:
+                ts_str, tpv, pnl, ticker, price, cycles = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
+                data.append({
+                    'timestamp': ts,
+                    'tpv': float(tpv),
+                    'pnl': float(pnl),
+                    'price': float(price),
+                    'cycle': int(cycles),
+                    'type': 'heartbeat_simple'
+                })
+                continue
+
+            # 3. Old-style heartbeat
+            m = heartbeat_old_ptrn.search(line)
+            if m:
+                ts_str, balance, safe_bal, ticker, price, l_w, s_w, v_w, c_w = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
+                data.append({
+                    'timestamp': ts,
                     'balance': float(balance),
                     'safe': float(safe_bal) if safe_bal else 0.0,
                     'price': float(price),
-                    'L': float(l_weight),
-                    'S': float(s_weight),
-                    'V': float(v_weight),
-                    'C': float(c_weight),
+                    'L': float(l_w),
+                    'S': float(s_w),
+                    'V': float(v_w),
+                    'C': float(c_w),
                     'type': 'heartbeat'
                 })
                 continue
-            
-            # 5. SAFE Activated Event
+
+            # 4. SAFE Activated Event
             m = safe_activated_ptrn.search(line)
             if m:
-                ts, siphoned, reserve = m.groups()
+                ts_str, siphoned, reserve = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
                 rebalances.append({
-                    'timestamp': pd.to_datetime(ts),
+                    'timestamp': ts,
                     'action': 'SAFE_SIPHON',
                     'qty': float(siphoned),
                     'asset': 'SAFE',
-                    'price': float(reserve), # Store reserve as "price" for TPV plot positioning
+                    'price': float(reserve),
                     'type': 'safe_event'
                 })
                 continue
-            
-            # 2. TPV update after rebalance
+
+            # 5. TPV update after rebalance
             m = tpv_update_ptrn.search(line)
             if m:
-                ts, cycle, tpv = m.groups()
+                ts_str, cycle, tpv = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
                 data.append({
-                    'timestamp': pd.to_datetime(ts),
+                    'timestamp': ts,
                     'tpv': float(tpv),
                     'cycle': int(cycle),
                     'type': 'tpv_update'
                 })
                 continue
 
-            # 3. TPV heartbeat
-            m = tpv_heartbeat_ptrn.search(line)
-            if m:
-                ts, tpv, pnl, cycles = m.groups()
-                data.append({
-                    'timestamp': pd.to_datetime(ts),
-                    'tpv': float(tpv),
-                    'pnl': float(pnl),
-                    'cycle': int(cycles),
-                    'type': 'tpv_heartbeat'
-                })
-                continue
-            
-            # 4. Trades
+            # 6. Trades
             m = trade_ptrn.search(line)
             if m:
-                ts, action, qty, asset, price = m.groups()
+                ts_str, action, qty, asset, price = m.groups()
+                ts = pd.to_datetime(ts_str)
+                last_ts = ts
                 rebalances.append({
-                    'timestamp': pd.to_datetime(ts),
+                    'timestamp': ts,
                     'action': action,
                     'qty': float(qty),
                     'asset': asset,
                     'price': float(price)
                 })
+                continue
 
     if not data:
         return None, None
 
     df = pd.DataFrame(data).sort_values('timestamp')
-    
-    # 1. Handle outliers in TPV to prevent scale distortion
+
+    # Handle outliers in TPV to prevent scale distortion
     if not df.empty:
-        # Initial TPV is usually around the first valid TPV
         initial_tpv = df[df['tpv'].notna()]['tpv'].iloc[0] if not df[df['tpv'].notna()].empty else 65.0
-        
-        # Define reasonable bounds (e.g., 50% to 200% of initial)
-        # Values outside this are likely parsing errors or transient state resets
         df.loc[(df['tpv'] < initial_tpv * 0.5) | (df['tpv'] > initial_tpv * 2.0), 'tpv'] = None
 
     # Forward fill TPV and Price to have them on all rows
     df['tpv'] = df['tpv'].ffill()
     df['price'] = df['price'].ffill()
     df['balance'] = df['balance'].ffill()
-    
+
     return df, pd.DataFrame(rebalances)
 
 def visualize_bot(log_path):
-    ticker = os.path.basename(log_path).replace("rebalance_", "").replace(".log", "")
+    base = os.path.basename(log_path).replace(".log", "")
+    # Support both "rebalance_TICKER" and "paper_TICKER" naming
+    ticker = base.replace("rebalance_", "").replace("paper_", "")
     df, df_trades = parse_rebalance_log(log_path)
     
     if df is None or df.empty:
@@ -234,7 +303,13 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         log_file = sys.argv[1]
     else:
-        # Default for testing
-        log_file = "logs/rebalance_DOGSUSDT.log"
+        # Auto-detect first paper_ log
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        candidates = sorted(glob.glob(os.path.join(log_dir, "paper_*.log")))
+        if candidates:
+            log_file = candidates[0]
+            print(f"Auto-selected: {log_file}")
+        else:
+            log_file = os.path.join(log_dir, "rebalance_DOGSUSDT.log")
     
     visualize_bot(log_file)

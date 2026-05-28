@@ -61,6 +61,27 @@
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [],
-  "base_ticker": ""
+  "tickers": [
+    "ALGOUSDT",
+    "ARUSDT",
+    "BATUSDT",
+    "EIGENUSDT",
+    "ETHFIUSDT",
+    "FETUSDT",
+    "FIDAUSDT",
+    "FILUSDT",
+    "GRASSUSDT",
+    "HBARUSDT",
+    "ICPUSDT",
+    "INJUSDT",
+    "NEARUSDT",
+    "NILUSDT",
+    "RIFUSDT",
+    "SWARMSUSDT",
+    "VVVUSDT",
+    "WLDUSDT",
+    "XLMUSDT",
+    "ZECUSDT"
+  ],
+  "base_ticker": "ALGOUSDT"
 }

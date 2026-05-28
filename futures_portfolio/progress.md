@@ -282,3 +282,39 @@ python phase1_validate.py    # Запуск бэтч-валидации
 ### 🛠 Рефакторинг Telegram:
 1.  **Telegram Sender Worker:** Централизованный сервис отправки сообщений.
 2.  **Rate Limit Management:** Задержка 1.2с, поддержка SOCKS5 прокси (10808).
+
+---
+
+## 🗓 29 мая 2026: Протокол «Voice STT» (Hermes Gateway)
+
+### 🎤 Распознавание голосовых сообщений в Telegram Hermes
+
+**Задача:** Настроить распознавание голосовых сообщений от пользователя в Telegram бот Hermes.
+
+**Что сделано:**
+1. **Vosk STT** — установлен в venv Hermes Gateway (`D:\Hermes-USB-Portable-main\.cache
+untimes\windows-x64\venv`) и venv проекта
+2. **Модель** — `vosk-model-small-ru-0.22` (~50 МБ RAM), путь: `C:\Python\Prosperous_Bot\vosk-model-small-ru-0.22`
+3. **ffmpeg** — скачан статический бинарник для конвертации OGG→WAV, путь: `C:\Python\Prosperous_Bot\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe`
+4. **Патч telegram.py** — добавлен STT блок в `_handle_media_message()` (строки 5262-5313):
+   - Скачивание голосового OGG из Telegram
+   - Конвертация OGG→WAV 16kHz 16-bit mono через ffmpeg
+   - Распознавание через Vosk KaldiRecognizer (метод `AcceptWaveform`)
+   - Кэширование модели в `self._stt_model` (загрузка один раз)
+   - Распознанный текст записывается в `event.text` и передаётся агенту
+5. **voice_recognizer.py** — создан в `futures_portfolio/` как standalone-версия для тестирования
+
+**Известные проблемы:**
+- Качество распознавания среднее — модель `small` компактная, но неточная
+- Рекомендация: заменить на `vosk-model-ru-0.42` (~1.5 ГБ RAM) для лучшей точности
+- Агент иногда зависает на генерации — требует `/new` для сброса сессии
+- Метод `AcceptWaveData` → `AcceptWaveform` (различие версий vosk между venv)
+
+**Переменные окружения (опционально):**
+- `HERMES_VOSK_MODEL` — путь к модели (по умолчанию `C:/Python/Prosperous_Bot/vosk-model-small-ru-0.22`)
+- `HERMES_FFMPEG` — путь к ffmpeg.exe
+
+**Результаты тестирования:**
+- Голосовые сообщения приходят ✅
+- STT распознаёт ✅
+- Качество приемлемое для коротких команд ⚠️
