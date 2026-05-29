@@ -1,320 +1,166 @@
-# 🛡 Логика ребалансировки «Гамма-Насос» (Версия 3.9.5)
+# Progress Log — Market-Neutral Futures Portfolio Rebalancer
 
-## Выполненные задачи
-- [x] **Ротация Combat-ботов без paper-истории:** В логике `supervisor.py` обновлен механизм отбора Combat-ботов. Боты, работающие без подтвержденной paper-истории, теперь явно идентифицируются и получают минимальный приоритет, гарантируя их замену более эффективными кандидатами из инкубатора. Это предотвращает «застревание» неэффективных ботов в боевых слотах.
-- [x] **Принудительная согласованность роя (Safety Gate):** Внедрена функция `enforce_swarm_consistency()` в `supervisor.py`. Она запускается в начале каждого цикла и проверяет все открытые позиции на бирже. Любые позиции по тикерам, отсутствующим в `live_swarm`, или если `live_swarm` пуст, будут немедленно закрыты. Это гарантирует, что на счете всегда будут только разрешенные позиции.
-- [x] **Логика чистого старта для Combat-ботов:** Перед запуском любого REAL-бота `supervisor.py` теперь вызывает `reset_real_state()`. Эта функция архивирует существующие файлы `real_state_<ticker>.json` и `shadow_state_<ticker>.json` в папку `history/`, а затем создает новые, чистые файлы стейта. Это гарантирует, что каждый REAL-бот начинает работу с корректным начальным капиталом и без устаревших позиций.
-- [x] **Синхронизация с Реальностью (SSOT):** Бот в REAL режиме теперь получает фактический `realizedPnl` и `commission` напрямую из API сделок Binance, исключая расчетные погрешности.
-- [x] **Надежное исполнение (Order Polling):** Внедрен механизм опроса статуса ордера. Если биржа возвращает 0 исполненных контрактов в момент создания, бот дожидается подтверждения перед обновлением стейта.
-- [x] **Исправление Счётчика Циклов:** Устранена ошибка `Action failed: None`, блокировавшая инкремент циклов. Статистика в Telegram теперь корректно отображает прогресс REAL-ботов.
-- [x] **Настраиваемый карантин (Toxic Cooldown):** Внедрен параметр `toxic_cooldown_days` и персистентный черный список в `config.json` для защиты от волатильных тикеров.
-- [x] **Гибкое управление вайтлистом:** Добавлен флаг `use_real_whitelist`, позволяющий отключать фильтрацию по вайтлисту для исследовательских запусков.
-- [x] **Полная Изоляция Капитала:** Реальный TPV теперь считается только от выделенных 75 USDT (shadow balance), игнорируя внешние изменения на кошельке Binance.
-- [x] **Строгое соблюдение min_notional:** Ордера меньше 5.9 USDT блокируются на уровне исполнителя, исключая убыточные микро-сделки и эрозию баланса.
-- [x] **Исправление Decimal/float TypeError:** В `backtest_rebalance.py` устранена ошибка `unsupported operand type(s) for -: 'float' and 'decimal.Decimal'` в блоке siphoning (строки 374-383). Весь блок приведен к единому float типу для корректных арифметических операций.
-- [x] **Direct Trade API Integration:** В `connector.py` добавлен метод `get_order_trades`. Теперь после каждого ордера бот запрашивает у Бинанса реальные цифры прибыли и комиссии.
-- [x] **Market Order Polling:** Решена проблема "пустых" ответов от API. Если Бинанс не успевает пробросить исполнение, `executor.py` делает до 5 попыток уточнения статуса.
-- [x] **Shadow Balance Auto-Sync:** Любая прибыль, зафиксированная на бирже, мгновенно добавляется к теневому балансу (`shadow_state`).
-- [x] **Persistent Toxic Blacklist:** Реализована память "токсичности" с авточисткой по истечении cooldown.
-- [x] **Strict Notional Enforcement:** Адаптивная точность `min(exchange_step, 0.001)` для дорогих активов.
-- [x] **Real Shadow Balance:** Реальный бот ведет свой учет профита от стартовых 75 USDT абсолютно автономно.
-- [x] **Authoritative Cleanup:** Принудительное закрытие позиций для тикеров, отсутствующих в `live_swarm`.
-- [x] **Telegram Sender Worker:** Централизованный сервис `telegram_sender.py` с rate limit 1.2с и SOCKS5 прокси.
+## 2026-05-31 — Local Memory System & Documentation
 
----
+### Memory System Created
+- **Location**: `D:\\Hermes-USB-Portable-main\\data\\memory_db\\` (on USB flash drive)
+- **Two-level architecture**:
+  - Level 1: `memories/MEMORY.md` + `memories/USER.md` — auto-loaded at startup (~4KB)
+  - Level 2: `memory_db/` — full details on demand (search/read)
+- **memory_mgr.py**: Python script for memory management (add/list/search/compact/show)
+- **No external dependencies**: all local files, no cloud/API/subscriptions
+- **No compression needed anymore**: detailed memory in memory_db/, compact navigation in memories/
 
-## 🗓 28 мая 2026: Дорожная карта «Безопасная валидация»
+### Documentation Updated
+- `MEMORY.md` — rewritten as navigation index with links to memory_db/
+- `USER.md` — deduplicated, added memory_db reference
+- `docs/progress.md` — this file
+- `docs/README.md` — system description and rules
 
-### Контекст
-Система уже показала +4% Real ROI за первые боевые дни. Бэктест отсканировал 20+ тикеров с положительными результатами. Пора переходить от первых успехов к **систематической валидации** перед масштабированием.
-
-### Принципы
-- **Каждая фаза должна завершиться перед началом следующей** — никакого параллельного скакания
-- **Критерий перехода** — четкий, измеримый, однозначный
-- **Безопасность > скорость** — лучше потерять день на проверку, чем потерять деньги
-- **Логировать ВСЁ** — каждое решение должно быть объяснимо по записям
+### Clarifications from FMProducer
+- docs/ is inside `futures_portfolio/`, NOT in project root
+- filesystem operations use `execute_code` + Python (not bash with Windows paths)
+- `dir /b` doesn't work in MSYS bash — use `ls` or Python `os.listdir()`
 
 ---
 
-## ФАЗА 1: Валидация бэктеста (Day 1-14)
-**Статус:** ✅ Завершена (28.05.2026)
+## 2026-05-30 — Rebalancing Logic Fix: No Free Margin Usage
 
-### Что делаем
-| # | Задача | Как | Критерий |
-|---|--------|-----|----------|
-| 1.1 | **Расширенный бэктест** | Запустить `--days 2, 7, 30` для топ-10 тикеров из сканера. Фиксировать Profit, MaxDD, количество циклов | Минимум 70% тикеров показывают прибыль на 7+ днях |
-| 1.2 | **Стресс-тест** | Запустить бэктест на тикерах, которые были в дампах (NEAR, и подобные из апреля) | Стратегя не должна терять >15% на одном тикере за 48ч |
-| 1.3 | **Slippage sensitivity** | Запустить бэктест с увеличенным slippage (0.1%, 0.3%, 0.5%) | Определить максимальный slippage, при котором стратегия остаётся прибыльной |
-| 1.4 | **Фильтр ликвидности** | Для каждого тикера из топ-20 проверить средний дневной объём на Binance. Отсечь тикеры с < $5M дневного объёма | Только ликвидные тикеры идут дальше |
-| 1.5 | **Документация** | Записать результаты в формате: `ticker | дни | profit | maxDD | slippage_tolerance | volume_OK` | Таблица с результатами для принятия решения |
+### Problem Identified
+`calculator.py` line 224 used `self.val_cash + total_proceeds` as available funds for deficit purchases. This meant bots could spend **free margin from the Binance account** to buy deficits — violating the core principle that each bot must operate only with its own initial capital and profits.
 
-### Критерий перехода в Фазу 2
-- [ ] Таблица 1.5 заполнена
-- [ ] Минимум 5 тикеров проходят все фильтры
-- [ ] Slippage < 0.2% сохраняет прибыльность для этих 5+
-- [ ] Есть хотя бы 3 тикера с Profit Factor > 1.5 на 7+ дневных бэктестах
+### Root Cause
+- `val_cash` = residual cash in the bot's shadow balance (free margin)
+- `total_proceeds` = equity harvested from surplus sales
+- Combined, this allowed averaging into losing positions using external funds
 
-### Ожидаемые риски
-- Некоторые тикеры из топ-20 (ZEREBRO, KOMA, DODOX) могут оказаться неликвидными
-- Slippage может быть серьёзной проблемой — будем честно фиксировать
+### Fix Applied
+**File:** `calculator.py`, function `calculate_deviations()`, line 224
 
-### Команды
-```bash
-python phase1_validate.py    # Запуск бэтч-валидации
+**Before:**
+```python
+available_funds = self.val_cash + total_proceeds
 ```
 
-### 📊 Результаты (28.05.2026)
-
-**Итого: 16 PASS / 4 FAIL из 20 тестов (10 тикеров × 2 периода)**
-
-| Ticker | 2d | 7d | Лучший Профит | Причина FAIL |
-|--------|----|----|---------------|--------------|
-| ZEREBROUSDT | ✅ | ✅ | +4.73% | — |
-| JELLYJELLYUSDT | ✅ | ✅ | +6.38% | — |
-| GMTUSDT | ✅ | ✅ | +4.95% | — |
-| HMSTRUSDT | ✅ | ✅ | +5.24% | — |
-| SEIUSDT | ✅ | ✅ | +1.48% | — |
-| GRASSUSDT | ✅ | ✅ | +2.84% | — |
-| RSRUSDT | ✅ | ✅ | +2.76% | — |
-| INJUSDT | ✅ | ✅ | +2.37% | — |
-| KOMAUSDT | ❌ | ❌ | +9.51% | Объём $3.4M < $5M |
-| DODOXUSDT | ❌ | ❌ | +2.91% | Объём $2.4M < $5M |
-
-**Критерии PASS:** profit > 0.5% AND maxDD < 10% AND liquidations == 0 AND volume_24h > $5M
-
-**Ключевые наблюдения:**
-- 8 из 10 тикеров прошли ВСЕ фильтры
-- KOMA (+9.51%) и DODOX (+2.91%) провалились ТОЛЬКО из-за низкого объёма
-- Нулевые ликвидации во всех 20 тестах
-- Максимальная просадка всего 4.49% (KOMA) — далеко от лимита 10%
-- ⚠️ **БАГ:** результаты 2d и 7d идентичны — параметр `days` не влияет на объём загружаемых данных (всегда 1500 свечей = ~25ч). Нужно исправить `download_live_data()`.
-
-### Выводы
-1. **Результаты ~25ч НЕПРЕДСКАЗУЕМЫ на 7 днях** — корреляция между коротким и длинным периодом слабая
-2. **GRASSUSDT и JELLYJELLYUSDT — убыточны на 7 днях** несмотря на +2.84%/+6.38% на коротком
-3. **HMSTRUSDT и INJUSDT — стабильно прибыльны** на обоих периодах
-4. **SEIUSDT — стабильно слабо прибыльный** но с MaxDD 12% на 7д
-5. **Проблема MaxDD: 36-46% просадки** на некоторых тикерах — trailing stop 10% должен спасать
-6. **HMSTRUSDT и INJUSDT — лучшие кандидаты для Фазы 2 (paper)**
-7. **KOMA/DODOX остаются FAIL** из-за объёма
-
-### Рекомендация
-Перед Фазой 2 нужно:
-- HMSTRUSDT и INJUSDT — приоритетные для paper trading
-- Количество циклов на 7д очень высокое (50-113) — проверить что это не избыточная торговля
-
-### 🛡 Trailing Stop Validation (28.05.2026)
-
-**Что было сделано:**
-1. Добавлена полная реализация trailing stop в `backtest_rebalance.py` (раньше отсутствовал)
-2. Добавлен параметр `equity_trailing_stop_activation_pct` — минимальный профит для активации стопа
-3. Обновлён `main.py` — trailing stop активируется только когда ATH превышает `initial_capital * (1 + activation_pct/100)`
-4. Исправлен timeout: секунды конвертируются в бары (1 бар = 1 минута)
-
-**Текущие параметры (config.json):**
-```json
-"equity_trailing_stop_pct": 10.0,
-"equity_trailing_stop_activation_pct": 2.0,
-"equity_trailing_stop_timeout_sec": 0
+**After:**
+```python
+if ignore_limits and total_proceeds == 0:
+    available_funds = self.val_cash  # First startup: build positions from initial capital
+else:
+    available_funds = total_proceeds  # Only own profit from surplus sales
 ```
 
-**Результаты тестирования (7 дней):**
+### Rules Established
+1. **Each bot manages only its own initial capital** — no spending free margin from the Binance account
+2. **Deficit purchases ONLY from surplus proceeds** — "not a single cent from free margin"
+3. **First startup exception** — `ignore_limits=True` and `total_proceeds==0` → use `val_cash` to build initial positions
+4. **Surplus threshold filter** — if `diff_usdt < min_notional` (7 USDT), skip silently
+5. **Deficit threshold filter** — same logic, no forced purchases
+6. **TPV must NOT decrease during rebalancing** — all profit stays inside the bot and reinvested
+7. **Trailing stop and max drawdown** apply to **total TPV of the bot** (all legs combined), NOT individual positions
+8. **NO hard stop from initial_tpv** — breaks market-neutral portfolio logic
+9. **NO per-ticker stops in config** — single stop for entire bot portfolio
 
-| Ticker | Без TS | С TS (10%, act 2%, t=0) | С TS (10%, act 2%, t=600s) |
-|--------|--------|-------------------------|---------------------------|
-| HMSTRUSDT | +22.96%, DD 10.69% | +22.95%, DD 10.69% | +22.95%, DD 10.69% |
-| INJUSDT | +13.86%, DD 10.78% | +13.86%, DD 10.78% | +13.86%, DD 10.78% |
-| JELLYJELLYUSDT | -3.70%, DD 38.41% | -6.81%, DD 10.85% ✅ | -6.72%, DD 12.15% ✅ |
-| GRASSUSDT | +0.58%, DD 32.22% | -2.38%, DD 11.77% ✅ | -2.33%, DD 13.23% ✅ |
+### Tests Passed
+- Test 1: Normal rebalance (price 0.506) — SHORT surplus sold, LONG deficit below threshold → no purchase ✅
+- Test 2: First startup — all three legs (VIRTUAL, LONG, SHORT) built from initial capital ✅
+- Test 3: Strong price drop (0.480) — SHORT surplus → proceeds → LONG deficit purchased entirely from proceeds ✅
 
-**Выводы:**
-- ✅ Trailing stop **ограничивает DD на убыточных тикерах** (38% → 11-12%, 32% → 12-13%)
-- ✅ На прибыльных тикерах (HMSTR, INJ) стоп **не мешает** — DD и так в пределах нормы
-- ✅ Activation threshold 2% **защищает от преждевременного закрытия** при малом PnL
-- ⚠️ При timeout=0 стоп срабатывает мгновенно — нет буфера на отскок
-- ⚠️ При timeout=600s (10 мин) стоп срабатывает после 10 баров — небольшой запас на восстановление
-- **Рекомендация: timeout=600s предпочтительнее** — даёт 10 минут на отскок
+### Related Analysis: GRASSUSDT Loss Post-Mortem
+- 8 rebalance cycles, all SHORT expansions on surplus threshold breach
+- Price fell 0.514 → 0.447 (-13%), TPV: 115 → 108.74 (-5.5%)
+- Old behavior: deficit LONG purchases were funded by free margin (averaging into loss)
+- New behavior: LONG deficit won't be bought unless SHORT surplus generates enough proceeds
+- Result: bot may do nothing if thresholds aren't met — this is correct behavior
 
-### Чеклист критериев перехода в Фазу 2
-- [x] Минимум 5 тикеров проходят все фильтры на ~25ч ✅ (8 из 10)
-- [x] Баг с `days` исправлен ✅
-- [x] На 7 днях найдены 2+ стабильных тикера ✅ (HMSTR, INJ)
-- [x] Trailing stop реализован и протестирован ✅
-- [ ] Проверить причину высокого количества циклов (50-113 за 7 дней)
-
----
-
-## ФАЗА 2: Paper Trading (Day 15-21)
-**Статус:** 🔄 Готова к запуску (ожидает фикса бага days)
-
-### Что делаем
-| # | Задача | Как | Критерий |
-|---|--------|-----|----------|
-| 2.1 | **Начальный paper** | Запустить supervisor.py в paper mode для 3-5 лучших тикеров из Фазы 1. Длительность: 72 часа | Боты не падают, ребалансировка происходит |
-| 2.2 | **Сравнение backtest vs paper** | Каждые 12 часов: фиксировать paper PnL. Сравнить с прогнозом бэктеста | Paper показывает > 40% от backtest прогноза |
-| 2.3 | **Мониторинг ордеров** | Проверять логи: частичные заполнения, отказы, неожиданные slippage | < 5% ордеров с проблемами |
-| 2.4 | **Проверка Telegram** | Убедиться, что все отчёты приходят корректно, нет пропусков | Сообщения каждые N минут без пропусков |
-| 2.5 | **Margin ratio monitoring** | Убедиться, что бот корректно отслеживает маржинальное соотношение | Warning/Critical срабатывают как ожидается |
-
-### Критерий перехода в Фазу 3
-- [ ] Paper PnL > 40% от backtest прогноза (за 72 часа)
-- [ ] Нет критических ошибок в логах
-- [ ] Telegram работает стабильно
-- [ ] Минимум 2 тикера подтвердили работоспособность
-
-### Ожидаемые риски
-- Paper может значительно отличаться от backtest из-за задержек API
-- Возможны проблемы с частичным заполнением на низколиквидных тикерах
+### Trailing Stop Known Issues
+- `tpv_ath` initialized to 0 (not `initial_tpv`) — trailing stop won't activate on losing starts
+- `activation_pct=2%` too high for paper — TPV must exceed 102% of initial before trailing activates
+- **Decision:** defer trailing stop fix to future task — current focus is rebalancing logic correctness
 
 ---
 
-## ФАЗА 3: Live Trading — Минимальный баланс (Day 22-26)
-**Статус:** ⏳ Ожидает Фазы 2
+## 2026-05-31 — Trailing Stop Fix, Toxic Blacklist, Backtest Sync
 
-### Что делаем
-| # | Задача | Как | Критерий |
-|---|--------|-----|----------|
-| 3.1 | **Выбор тикера** | Взять ЛУЧШИЙ тикер из Фазы 2 (paper). Только ОДИН тикер | Чёткий выбор по метрикам |
-| 3.2 | **Минимальная позиция** | Запустить `--real` с минимуальным капиталом (можно начать с имеющихся 75 USDT) | Бот работает 24 часа без критических ошибок |
-| 3.3 | **Ежедневная сверка** | Каждое утро: сравнить real PnL с paper прогнозом. Проверить ордера на Binance | Real PnL в пределах 30-70% от прогноза |
-| 3.4 | **Проверка безопасности** | Деактивировать ботов из фазы 3.5 ниже. Проверить что siphoning работает корректно | Нет утечки капитала |
-| 3.5 | **Стресс-выход** | Намеренно выключить бота. Проверить: все позиции закрыты, стейт корректен | Полная остановка за < 5 минут |
+### Trailing Stop Bug Fix
+**File:** `main.py`
 
-### Критерий перехода в Фазу 4
-- [ ] Real PnL > 0 за 72+ часа
-- [ ] Все позиции закрываются корректно
-- [ ] Trailing stop протестирован (хотя бы один раз)
-- [ ] Уверенность в стратегии > 70%
+**Problem:** `tpv_ath` was initialized to `0.0` instead of `target_initial_capital`. This caused trailing stop to not activate on losing starts and ghost ATH from first rebalance commission drop.
 
-### ⚠️ ЧТО НЕЛЬЗЯ ДЕЛАТЬ
-- Запускать на всю сумму до завершения Фазы 3
-- Добавлять новые тикеры, пока не подтвержден один
-- Игнорировать расхождение real vs paper > 50%
+**Fix:**
+- `tpv_ath` initialized to `target_initial_capital` instead of `0.0`
+- `timeout_sec` changed from `0` to `60` (interim value, Optuna will optimize later)
+- `emergency_stop` updated: state files archived to `history/` with timestamp, then originals deleted
 
----
+### State Archive on Stop
+**File:** `main.py` (emergency_stop / trailing stop handler)
 
-## ФАЗА 4: Масштабирование (Day 27+)
-**Статус:** ⏳ Ожидает Фазы 3
+After trailing stop or stop-loss:
+1. State files copied to `history/` with timestamp suffix
+2. Originals deleted
+3. Prevents restart loop with stale `tpv_ah`
 
-### Что делаем
-| # | Задача | Как | Критерий |
-|---|--------|-----|----------|
-| 4.1 | **Добавление тикеров** | По одному, с интервалом 3 дня между каждым новым | Каждый новый тикер > 0 за 72 часа |
-| 4.2 | **Увеличение капитала** | +25% от текущего, если 14 дней без минуса | Маржа безопасности остаётся > 3x |
-| 4.3 | **Оптимизация порогов** | На основе реальных данных подобрать оптимальные пороги ребалансировки | Улучшение PF на 10%+ |
-| 4.4 | **Combat Swarm** | Запустить супервайзер в автоматическом режиме с ротацией | 3+ тикера работают параллельно 7+ дней |
+### Paper Restart Logic
+**File:** `supervisor.py`
 
-### Ожидаемые риски
-- Корреляция между тикерами: если все тикеры в одной секторе — стратегия не диверсифицирует
-- Риск одной сделки: потеря не должна превышать 2% от портфеля
+- `reset_paper_state()` added — creates clean state files, archives old ones
+- `start_bot` for paper always resets state (fresh start each time)
+- For real mode: only reset if state files don't exist
 
----
+### Toxic Blacklist Logic — Formal Rules
+**File:** `supervisor.py` + `main.py`
 
-## 📊 Сводная таблица прогресса
+| Signal | Condition | Paper | Real |
+|--------|-----------|-------|------|
+| `"exit"` | Trailing stop, PnL ≥ 0 | Bot stops, waits for scanner approval | Bot stops → moves to paper (incubator), waits for scanner |
+| `"stop"` | Stop-loss, PnL < 0 | Bot stops → added to `toxic_blacklist` → cooldown | Bot stops → added to `black_list` → cooldown |
 
-| Фаза | Название | Статус | Дней | Критерий выхода |
-|------|----------|--------|------|-----------------|
-| 1 | Валидация бэктеста | 🔄 В процессе | 7-14 | 5+ тикеров проходят фильтры |
-| 2 | Paper Trading | ⏳ Ожидает | 7 | Paper > 40% от backtest |
-| 3 | Live минимальный | ⏳ Ожидает | 5 | Real PnL > 0 за 72ч |
-| 4 | Масштабирование | ⏳ Ожидает | ∞ | Работает стабильно |
+**Key principle:** Only `stop` (negative PnL) goes to blacklist. `exit` (positive PnL) — bot just stops and waits.
 
----
+### Supervisor Signal Reading (NEW)
+**File:** `supervisor.py`, function `manage_swarm()`, step 0.5
 
-## 🗓 24 мая 2026: Протокол «Первые +4% Real ROI» (v3.9.5)
+Added signal reading **before** scanner runs:
+- Reads `signals/stop_*.flag` files → adds ticker to `toxic_blacklist` with `toxic_cooldown_days` expiry
+- Reads `signals/exit_*.flag` files → just deletes (no blacklist)
+- Prunes expired entries from `toxic_blacklist`
+- If `signals/` doesn't exist → silently skips
 
-### 📈 Результаты REAL-торговли:
-1.  **Доходность:** Зафиксирован прирост реального баланса фьючерсного аккаунта на +4% (273.25 USDT).
-2.  **Ключевые драйверы роста:**
-    *   **RIFUSDT:** Основной драйвер прибыли. Удачное исполнение стратегии сбора волатильности.
-    *   **NILUSDT:** Стабильный "микро-генератор", обеспечивающий постоянный приток кэша.
-    *   **GRASSUSDT:** Отлично отработал на высокой волатильности в начале сессии.
-3.  **Архитектурная валидация:** Стратегия ребалансировки доказала свою состоятельность.
+This ensures that after stop-loss with negative PnL, the ticker is **guaranteed** to be blacklisted even if the scanner doesn't mark it as `is_toxic`.
 
----
+### Backtest Synchronization
+**File:** `calculator.py` + `backtest_rebalance.py`
 
-## 🗓 20 мая 2026: Протокол «Синхронизация с Биржей» (v3.9.5)
+**Problem:** `backtest_rebalance.py` used `state.val_cash <= 0` as a guard for expansions. This was incorrect because:
+1. `val_cash` could go negative from commissions/slippage
+2. It didn't reflect the new `available_funds = total_proceeds` logic
 
-### 🛠 Стабилизация REAL-торговли и отчетности:
-1.  **Direct Trade API Integration:** В `connector.py` добавлен метод `get_order_trades`.
-2.  **Market Order Polling:** Решена проблема "пустых" ответов от API.
-3.  **Fix "Action failed: None":** Устранена критическая ошибка инициализации.
-4.  **Shadow Balance Auto-Sync:** Прибыль мгновенно добавляется к теневому балансу.
+**Fixes:**
 
----
+1. **`calculate_deviations()` return format changed:**
+   - Was: `List[Dict]` (actions list only)
+   - Now: `Dict` with keys: `actions`, `available_funds`, `tpv`, `total_tpv`, `share_long_pct`, `share_short_pct`, `share_virt_pct`, `share_cash_pct`
 
-## 🗓 19 мая 2026: Протокол «Токсичный Барьер» (v3.9.4)
+2. **`calculate_rebalance()` updated:**
+   - Unwraps dict from `calculate_deviations()`
+   - Returns consistent dict with all fields
 
-### 🛠 Улучшение системы ротации и безопасности:
-1.  **Persistent Toxic Blacklist:** Память "токсичности" с авточисткой.
-2.  **Whitelist Bypass Toggle:** Параметр `use_real_whitelist`.
-3.  **Автоматическая очистка карантина:** Автовозврат тикеров по истечении срока.
+3. **`backtest_rebalance.py` expansions:**
+   - Replaced `state.val_cash <= 0` with `remaining_funds <= 0` (from `calc_res["available_funds"]`)
+   - If `needed_usdt > remaining_funds * lev` → qty is reduced to available limit
+   - After each expansion: `remaining_funds -= actual_equity_spent`
 
-## 🗓 19 мая 2026: Протокол «Изолированный Рост» (v3.9.3)
+4. **`min_notional_usdt` enforced for:**
+   - Reductions (surplus sales) ✅ — `validate_notional()` at line 315
+   - Expansions (deficit purchases) ✅ — `validate_notional()` at line 377
+   - Calculator also filters: surplus at line 202, deficits at line 265
 
-### 🛠 Фикс эрозии капитала и лимитов:
-1.  **Strict Notional Enforcement:** min_notional как "закон".
-2.  **Smart Rounding Logic:** Адаптивная точность для дорогих активов.
-3.  **Real Shadow Balance:** Автономный учет профита от 75 USDT.
+### Bug Fixed: `'str' object has no attribute 'get'`
+**Root cause:** `calculate_deviations()` was changed to return dict, but `calculate_rebalance()` still treated result as a list. This caused `actions` to be a dict instead of list, and `for a in actions` iterated over string keys.
 
-### 🛠 Глобальный патч логирования:
-1.  **Logger Restoration:** Индивидуальные файлы логов для каждого тикера.
-2.  **UTF-8 Streams:** Решение проблемы UnicodeEncodeError на Windows.
+**Fix:** `calculate_rebalance()` now correctly extracts `actions` from the dict returned by `calculate_deviations()`.
 
----
-
-## 🗓 18 мая 2026: Протокол «Авторитетный Надзор» (v3.9.2)
-
-### 🛠 Стабилизация ротации и очистки:
-1. **Authoritative Cleanup:** Принудительное закрытие "сиротских" позиций.
-2. **Фикс логики рейтинга:** Возвращена оригинальная логика с детализированным логированием.
-3. **Исправление ошибок исполнения:** Устранена ошибка `NameError` в `supervisor.py`.
-4. **State Isolation Protocol:** Принудительное разнесение путей стейтов PAPER/REAL.
-
----
-
-## 🗓 17 мая 2026: Протокол «Централизация и Стабильность» (v3.9.2)
-
-### 🛠 Фикс критического бага ротации (Real Rotation Fix):
-1.  **Decimal Type Mismatch:** Исправлена ошибка передачи float.
-2.  **Explicit Stop Flag:** Явная передача флага `--real` при остановке.
-
-### 🛠 Рефакторинг Telegram:
-1.  **Telegram Sender Worker:** Централизованный сервис отправки сообщений.
-2.  **Rate Limit Management:** Задержка 1.2с, поддержка SOCKS5 прокси (10808).
-
----
-
-## 🗓 29 мая 2026: Протокол «Voice STT» (Hermes Gateway)
-
-### 🎤 Распознавание голосовых сообщений в Telegram Hermes
-
-**Задача:** Настроить распознавание голосовых сообщений от пользователя в Telegram бот Hermes.
-
-**Что сделано:**
-1. **Vosk STT** — установлен в venv Hermes Gateway (`D:\Hermes-USB-Portable-main\.cache
-untimes\windows-x64\venv`) и venv проекта
-2. **Модель** — `vosk-model-small-ru-0.22` (~50 МБ RAM), путь: `C:\Python\Prosperous_Bot\vosk-model-small-ru-0.22`
-3. **ffmpeg** — скачан статический бинарник для конвертации OGG→WAV, путь: `C:\Python\Prosperous_Bot\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe`
-4. **Патч telegram.py** — добавлен STT блок в `_handle_media_message()` (строки 5262-5313):
-   - Скачивание голосового OGG из Telegram
-   - Конвертация OGG→WAV 16kHz 16-bit mono через ffmpeg
-   - Распознавание через Vosk KaldiRecognizer (метод `AcceptWaveform`)
-   - Кэширование модели в `self._stt_model` (загрузка один раз)
-   - Распознанный текст записывается в `event.text` и передаётся агенту
-5. **voice_recognizer.py** — создан в `futures_portfolio/` как standalone-версия для тестирования
-
-**Известные проблемы:**
-- Качество распознавания среднее — модель `small` компактная, но неточная
-- Рекомендация: заменить на `vosk-model-ru-0.42` (~1.5 ГБ RAM) для лучшей точности
-- Агент иногда зависает на генерации — требует `/new` для сброса сессии
-- Метод `AcceptWaveData` → `AcceptWaveform` (различие версий vosk между venv)
-
-**Переменные окружения (опционально):**
-- `HERMES_VOSK_MODEL` — путь к модели (по умолчанию `C:/Python/Prosperous_Bot/vosk-model-small-ru-0.22`)
-- `HERMES_FFMPEG` — путь к ffmpeg.exe
-
-**Результаты тестирования:**
-- Голосовые сообщения приходят ✅
-- STT распознаёт ✅
-- Качество приемлемое для коротких команд ⚠️
+### Verification
+- `run_all_backtests.py` — 345 tickers processed, no errors ✅
+- `log.md` analysis: 22 bots online, TPV stable at 114.86, Trend Guard working on RIF/ALGO/DYDX ✅
+- All syntax checks passed ✅

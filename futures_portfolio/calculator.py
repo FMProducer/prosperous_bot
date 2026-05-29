@@ -105,20 +105,23 @@ class PortfolioCalculator:
         """
         Calculate rebalance actions and return a summary of the current state.
         """
-        actions = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits)
+        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits)
+        # calculate_deviations возвращает dict с actions, available_funds, tpv, share_*
+        actions = dev_res["actions"]
 
         return {
             "actions": actions,
-            "share_long_pct": float(self.share_long_pct),
-            "share_short_pct": float(self.share_short_pct),
-            "share_virt_pct": float(self.share_virt_pct),
-            "share_cash_pct": float(self.share_cash_pct),
+            "available_funds": dev_res["available_funds"],
+            "share_long_pct": dev_res["share_long_pct"],
+            "share_short_pct": dev_res["share_short_pct"],
+            "share_virt_pct": dev_res["share_virt_pct"],
+            "share_cash_pct": dev_res["share_cash_pct"],
             "val_long": float(self.val_long),
             "val_short": float(self.val_short),
             "val_virt": float(self.val_virt),
             "val_cash": float(self.val_cash),
-            "tpv": float(self.tpv),
-            "total_tpv": float(self.total_tpv),
+            "tpv": dev_res["tpv"],
+            "total_tpv": dev_res["total_tpv"],
             "siphoning_reserve": float(self.siphoning_reserve),
             "virt_current_value": float(self.val_virt),
             "pnl_l": float(self.pnl_l),
@@ -221,7 +224,12 @@ class PortfolioCalculator:
                 logger.debug(f"🚫 FUSE (SURPLUS): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
 
         # 3. Calculate available funds for BUYs (Strict Cash Accounting)
-        available_funds = self.val_cash + total_proceeds
+        # Only use proceeds from surplus sales — never spend free margin.
+        # Exception: first startup (ignore_limits=True, no positions) to build initial positions.
+        if ignore_limits and total_proceeds == 0:
+            available_funds = self.val_cash  # Initial capital for first position building
+        else:
+            available_funds = total_proceeds  # Only own profit from surplus sales
         
         # 4. Process Deficits with Priority (VIRTUAL first, Priority 2)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
@@ -263,4 +271,13 @@ class PortfolioCalculator:
                 final_actions.append(act)
                 available_funds -= actual_buy_equity
 
-        return final_actions
+        return {
+            "actions": final_actions,
+            "available_funds": float(available_funds),
+            "tpv": float(self.tpv),
+            "total_tpv": float(self.total_tpv),
+            "share_long_pct": float(self.share_long_pct),
+            "share_short_pct": float(self.share_short_pct),
+            "share_virt_pct": float(self.share_virt_pct),
+            "share_cash_pct": float(self.share_cash_pct)
+        }

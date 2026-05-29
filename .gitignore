@@ -308,3 +308,8 @@ ffmpeg-master-latest-win64-gpl/presets/libvpx-720p.ffpreset
 ffmpeg-master-latest-win64-gpl/presets/libvpx-720p50_60.ffpreset
 ffmpeg-master-latest-win64-gpl/presets/libvpx-1080p.ffpreset
 ffmpeg-master-latest-win64-gpl/presets/libvpx-1080p50_60.ffpreset
+futures_portfolio/main.py
+.gitignore
+futures_portfolio/nul
+futures_portfolio/history/manual_*USDT_*_paper_state_*USDT.json
+futures_portfolio/history/manual_*USDT_*_paper_shadow_*USDT.json

@@ -113,7 +113,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         "balance": target_initial_cap, # SSOT Balance
         "initial_tpv": 0.0,
         "reference_tpv": 0.0,  # Фиксированная база для гистерезиса
-        "tpv_ath": 0.0,
+        "tpv_ath": target_initial_cap,  # FIX: start ATH at initial_capital, not 0
         "trailing_stop_violation_start": 0.0,
         "trailing_stop_paper_timeout_end": 0.0,
         "rebalance_cycles": 0,
@@ -618,6 +618,18 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 state["virt_qty"] = 0.0
                                 state["trailing_stop_triggered"] = True
                                 state["trailing_stop_violation_start"] = 0.0
+
+                                # Save state files to history before deletion
+                                import shutil
+                                history_dir = os.path.join(os.path.dirname(state_file_path), "history")
+                                os.makedirs(history_dir, exist_ok=True)
+                                ts = time.strftime("%Y%m%d_%H%M%S")
+                                for fp in [state_file_path, paper_state_file_path]:
+                                    if os.path.exists(fp):
+                                        dest = os.path.join(history_dir, f"{os.path.basename(fp)}.{ts}")
+                                        shutil.copy2(fp, dest)
+                                        os.remove(fp)
+                                        logger.info(f"State archived: {dest}")
 
                                 logger.info("Positions closed and state reset. Bot stopped.")
                                 break

@@ -351,23 +351,35 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         # Деньги физически возвращаются в кэш: себестоимость + прибыль - комиссия
                         state.val_cash += allocated_debt_reduction + realized_pnl - commission
 
-                # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорта) ---
+                # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорт) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
+
+                # Используем available_funds от calculator (total_proceeds), а не val_cash
+                remaining_funds = Decimal(str(calc_res.get("available_funds", 0.0)))
 
                 for act in expansions:
                     key = act["key"]
                     lev = Decimal(str(act["leverage"]))
                     needed_usdt = abs(Decimal(str(act["diff_usdt"])))
 
-                    if state.val_cash <= Decimal('0'):
+                    if remaining_funds <= Decimal('0'):
                         state.skipped_expansions_counter += 1
                         continue
+
+                    # Урезаем qty если не хватает средств
+                    max_usdt = remaining_funds * lev
+                    if needed_usdt > max_usdt:
+                        needed_usdt = max_usdt
 
                     raw_qty = needed_usdt / mid_price
                     qty = quantize_qty(raw_qty, Decimal(str(step_sizes.get(base_ticker, 0.001))))
 
                     if qty <= Decimal('0') or not validate_notional(qty, mid_price, min_notional_usdt):
                         continue
+
+                    # Списываем equity из remaining_funds (до расчёта exec_price)
+                    # Equity = notional / leverage (VIRTUAL: lev=1, equity = cash_spent)
+                    actual_equity_spent = needed_usdt / lev
 
                     if key == "BASE_LONG":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
@@ -383,14 +395,13 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.pos_short += qty
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("BUY", qty, mid_price)
-                        
-                        # Сколько кэша реально тратится на добор спотовой ноги с учетом комиссии
                         cash_spent = (qty * exec_price) + commission
-                        
-                        # Изменяем балансы
                         state.val_cash -= cash_spent
                         state.virt_qty += qty
                         state.virt_debt += cash_spent
+                        actual_equity_spent = cash_spent
+
+                    remaining_funds -= actual_equity_spent
 
                 state.cycles += 1
                 state.last_rebalance_price = mid_price

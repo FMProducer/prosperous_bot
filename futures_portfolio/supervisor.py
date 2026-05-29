@@ -153,14 +153,65 @@ async def reset_real_state(ticker: str, config: dict):
     })
     logger.info(f"✨ Reset real state files for {ticker} to clean initial values.")
 
+async def reset_paper_state(ticker: str, config: dict):
+    """Архивирует текущее состояние paper-бота и сбрасывает его перед новым запуском."""
+    base_state_path = BASE_PATH / f"paper_state_{ticker}.json"
+    shadow_state_path = BASE_PATH / f"paper_shadow_{ticker}.json"
+    history_dir = BASE_PATH / "history"
+    history_dir.mkdir(exist_ok=True)
+    
+    # Архивируем, если файлы существуют
+    for path in [base_state_path, shadow_state_path]:
+        if path.exists():
+            archive_path = history_dir / f"archive_{ticker}_{int(time.time())}_{path.name}"
+            shutil.copy(path, archive_path)
+            logger.info(f"💾 Archived paper state for {ticker}: {path.name} -> {archive_path.name}")
+            os.remove(path)
+            logger.info(f"🗑️ Deleted stale paper state file: {path.name}")
+    
+    # Создаем чистые файлы для нового старта
+    portfolio_cfg = config.get("portfolios", [{}])[0]
+    initial_capital = portfolio_cfg.get("paper_initial_capital", portfolio_cfg.get("initial_capital", 115.0))
+    
+    await safe_save_json(str(base_state_path), {
+        "virt_qty": 0.0,
+        "base_ticker": ticker,
+        "siphoning_reserve": 0.0,
+        "balance": initial_capital,
+        "initial_tpv": 0.0,
+        "reference_tpv": 0.0,
+        "tpv_ath": 0.0,
+        "trailing_stop_violation_start": 0.0,
+        "trailing_stop_paper_timeout_end": 0.0,
+        "trailing_stop_triggered": False,
+        "rebalance_cycles": 0,
+        "last_rebalance_price": 0.0,
+        "started_at": time.time()
+    })
+    
+    await safe_save_json(str(shadow_state_path), {
+        "balance": initial_capital,
+        "positions": {f"{ticker}_LONG": 0.0, f"{ticker}_SHORT": 0.0},
+        "last_price": 0.0,
+        "base_ticker": ticker,
+        "long_entry_price": 0.0,
+        "short_entry_price": 0.0
+    })
+    logger.info(f"✨ Reset paper state files for {ticker} to clean initial values (capital: {initial_capital}).")
+
 async def start_bot(ticker: str, is_paper: bool = True, config: dict = None):
     prefix = "paper" if is_paper else "real"
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
     mode_flag = "--paper" if is_paper else "--real"
     
-    # Перед запуском реального бота сбрасываем состояние
-    if not is_paper and config:
-        await reset_real_state(ticker, config)
+    # Перед запуском: сбрасываем state для paper (чистый старт), для real — только если файлов нет
+    if config:
+        if is_paper:
+            await reset_paper_state(ticker, config)  # Paper always starts fresh
+        else:
+            state_path = BASE_PATH / f"real_state_{ticker}.json"
+            if not state_path.exists():
+                await reset_real_state(ticker, config)
 
     cmd = f'pm2 start main.py --name "{proc_name}" --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" --instances 1 -- --config config.json --ticker {ticker} {mode_flag}'
     await (await asyncio.create_subprocess_shell(cmd)).wait()
@@ -233,6 +284,37 @@ async def manage_swarm():
     # 0. Принудительная проверка согласованности роя с биржевыми позициями
     await enforce_swarm_consistency(connector, config)
 
+    # 0.5. Чтение сигналов от ботов (stop/exit flags)
+    signals_dir = BASE_PATH / "signals"
+    now_ts = time.time()
+    toxic_blacklist = config.get("toxic_blacklist", {})
+    cooldown_days = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0))
+    cooldown_sec = cooldown_days * 86400
+
+    if signals_dir.exists():
+        # Собираем тикеры с stop-сигналом (отрицательный PnL → toxic)
+        for flag_file in signals_dir.glob("stop_*.flag"):
+            ticker = flag_file.stem[5:]  # убираем префикс "stop_"
+            expiry = now_ts + cooldown_sec
+            toxic_blacklist[ticker] = expiry
+            logger.info(f"🚫 STOP signal received for {ticker}. Blacklisted until {time.ctime(expiry)}")
+
+        # Удаляем все прочитанные флаги (stop и exit)
+        for flag_file in signals_dir.glob("stop_*.flag"):
+            try:
+                flag_file.unlink()
+            except Exception:
+                pass
+        for flag_file in signals_dir.glob("exit_*.flag"):
+            try:
+                flag_file.unlink()
+            except Exception:
+                pass
+
+        # Prune expired entries from toxic_blacklist
+        toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now_ts}
+        config["toxic_blacklist"] = toxic_blacklist
+
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
     try:
@@ -245,24 +327,21 @@ async def manage_swarm():
         return
 
     # 2. Формирование НОВОГО списка Инкубатора (Strictly from Scanner)
+    # toxic_blacklist уже обновлён на шаге 0.5 (stop-сигналы + prune)
+    # Здесь только дополняем is_toxic от самого сканера
+    toxic_blacklist = config.get("toxic_blacklist", {})
+    now = time.time()
+    cooldown_sec = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0)) * 86400
+
     final_incubator = []
     limit_bots = config.get("max_bots", 20)
-    
-    # Persistent Toxic Blacklist Logic
-    now = time.time()
-    toxic_blacklist = config.get("toxic_blacklist", {})
-    # Prune expired
-    toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now}
-    
-    cooldown_days = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0))
-    cooldown_sec = cooldown_days * 86400
 
     for r in scanner_results:
         symbol = r['symbol']
-        if r.get('is_toxic'):
+        if r.get('is_toxic') and symbol not in toxic_blacklist:
             expiry = now + cooldown_sec
             toxic_blacklist[symbol] = expiry
-            logger.info(f"🚫 {symbol} marked toxic. Blacklisted until {time.ctime(expiry)}")
+            logger.info(f"🚫 {symbol} marked toxic by scanner. Blacklisted until {time.ctime(expiry)}")
 
     config["toxic_blacklist"] = toxic_blacklist
 
@@ -382,7 +461,7 @@ async def manage_swarm():
         p_key = f"p_{ticker}"
         if p_key not in active_running_keys:
             logger.info(f"🚀 [A] Launching Continuous Incubator (PAPER): {ticker}")
-            await start_bot(ticker, is_paper=True)
+            await start_bot(ticker, is_paper=True, config=config)
             active_running_keys.add(p_key) # Жестко фиксируем запуск локально
 
     # ЗАПУСК: Боевые боты (REAL) включаются ПАРАЛЛЕЛЬНО к бумажным
