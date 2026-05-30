@@ -1,0 +1,219 @@
+{
+  "params": {
+    "max_drawdown_limit": 22.0,
+    "equity_trailing_stop_pct": 24.0,
+    "equity_trailing_stop_activation_pct": 7.5,
+    "equity_trailing_stop_timeout_sec": 60,
+    "days": 7.0
+  },
+  "summary": {
+    "tickers_total": 20,
+    "tickers_ok": 20,
+    "profitable": 18,
+    "avg_profit": 9.7783,
+    "avg_max_dd": 7.9868,
+    "trailing_stop_count": 0
+  },
+  "results": [
+    {
+      "ticker": "XLMUSDT",
+      "profit_pct": 31.719386093434544,
+      "max_dd_pct": 7.93136040934735,
+      "cycles": 9,
+      "trailing_stop": false,
+      "asset_chg_pct": 73.01003695030373,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "IDUSDT",
+      "profit_pct": 17.102750180015434,
+      "max_dd_pct": 8.729278621104127,
+      "cycles": 5,
+      "trailing_stop": false,
+      "asset_chg_pct": 34.97157689830905,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "INJUSDT",
+      "profit_pct": 15.784008251378179,
+      "max_dd_pct": 5.409804049171865,
+      "cycles": 4,
+      "trailing_stop": false,
+      "asset_chg_pct": 31.39651369837777,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "FETUSDT",
+      "profit_pct": 15.016349390011108,
+      "max_dd_pct": 5.917058151533633,
+      "cycles": 7,
+      "trailing_stop": false,
+      "asset_chg_pct": 28.893441962636036,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "DYDXUSDT",
+      "profit_pct": 14.67791387710118,
+      "max_dd_pct": 6.73884152858321,
+      "cycles": 13,
+      "trailing_stop": false,
+      "asset_chg_pct": 28.262385706473214,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "IOUSDT",
+      "profit_pct": 13.155012152007561,
+      "max_dd_pct": 9.198377378529944,
+      "cycles": 3,
+      "trailing_stop": false,
+      "asset_chg_pct": 22.27793608683426,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "BATUSDT",
+      "profit_pct": 13.081697728884102,
+      "max_dd_pct": 4.968480259296321,
+      "cycles": 4,
+      "trailing_stop": false,
+      "asset_chg_pct": 21.55625529383538,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "NILUSDT",
+      "profit_pct": 12.611283597612477,
+      "max_dd_pct": 13.13207711721959,
+      "cycles": 4,
+      "trailing_stop": false,
+      "asset_chg_pct": 20.770043787176906,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "IOTAUSDT",
+      "profit_pct": 12.12930537098853,
+      "max_dd_pct": 3.287549844898935,
+      "cycles": 12,
+      "trailing_stop": false,
+      "asset_chg_pct": 19.38405580825986,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "GRASSUSDT",
+      "profit_pct": 11.490476465009735,
+      "max_dd_pct": 10.698394108906651,
+      "cycles": 3,
+      "trailing_stop": false,
+      "asset_chg_pct": 16.974707886734652,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "NEARUSDT",
+      "profit_pct": 10.845518286422152,
+      "max_dd_pct": 8.616571665445319,
+      "cycles": 3,
+      "trailing_stop": false,
+      "asset_chg_pct": 14.8895292435689,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "HBARUSDT",
+      "profit_pct": 10.350432717254222,
+      "max_dd_pct": 4.196079248876945,
+      "cycles": 3,
+      "trailing_stop": false,
+      "asset_chg_pct": 13.728221675630415,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "WLDUSDT",
+      "profit_pct": 9.782188935596414,
+      "max_dd_pct": 12.272719305832519,
+      "cycles": 6,
+      "trailing_stop": false,
+      "asset_chg_pct": 11.098737523761182,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "ARUSDT",
+      "profit_pct": 5.359102243472869,
+      "max_dd_pct": 5.6959805457014525,
+      "cycles": 0,
+      "trailing_stop": false,
+      "asset_chg_pct": 15.311720640742287,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "ALGOUSDT",
+      "profit_pct": 4.959128064482399,
+      "max_dd_pct": 4.205981840804454,
+      "cycles": 4,
+      "trailing_stop": false,
+      "asset_chg_pct": 14.168936292743538,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "JTOUSDT",
+      "profit_pct": 4.600496790644981,
+      "max_dd_pct": 8.665361584453395,
+      "cycles": 0,
+      "trailing_stop": false,
+      "asset_chg_pct": 13.144276313094029,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "SEIUSDT",
+      "profit_pct": 3.7762533866314785,
+      "max_dd_pct": 5.592470411612201,
+      "cycles": 1,
+      "trailing_stop": false,
+      "asset_chg_pct": 10.78929351644149,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "XMRUSDT",
+      "profit_pct": 1.811051929873675,
+      "max_dd_pct": 4.972207594598234,
+      "cycles": 0,
+      "trailing_stop": false,
+      "asset_chg_pct": 5.174434087602742,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "VVVUSDT",
+      "profit_pct": -3.0640527302666087,
+      "max_dd_pct": 11.155191970117185,
+      "cycles": 0,
+      "trailing_stop": false,
+      "asset_chg_pct": -8.754436374922303,
+      "siphoning": 0.0,
+      "liquidations": 0
+    },
+    {
+      "ticker": "SWARMSUSDT",
+      "profit_pct": -9.623044788505696,
+      "max_dd_pct": 18.35300535822108,
+      "cycles": 0,
+      "trailing_stop": false,
+      "asset_chg_pct": -27.494420723363376,
+      "siphoning": 0.0,
+      "liquidations": 0
+    }
+  ]
+}

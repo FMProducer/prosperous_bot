@@ -6,9 +6,9 @@
   "min_notional_usdt": 7.0,
   "paper_mode": true,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 20,
+  "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 20,
+  "paper_mode_bots": 18,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -58,7 +58,10 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "PORTALUSDT",
+    "VTHOUSDT"
+  ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
@@ -83,8 +86,8 @@
     "NILUSDT",
     "PORTALUSDT",
     "VTHOUSDT",
-    "XLMUSDT",
-    "XMRUSDT"
+    "WLDUSDT",
+    "XLMUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }

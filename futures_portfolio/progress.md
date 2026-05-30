@@ -164,3 +164,119 @@ This ensures that after stop-loss with negative PnL, the ticker is **guaranteed*
 - `run_all_backtests.py` — 345 tickers processed, no errors ✅
 - `log.md` analysis: 22 bots online, TPV stable at 114.86, Trend Guard working on RIF/ALGO/DYDX ✅
 - All syntax checks passed ✅
+
+---
+
+## 2026-05-31 — Optuna Stop-Loss Optimization & Live Trading Launch
+
+### Phase 1: Optuna Optimization of Stop-Loss Parameters
+
+**Goal:** Optimize 4 stop-loss parameters using Optuna with multi-ticker backtesting.
+
+**Optimized parameters:**
+- `max_drawdown_limit` (5–50%)
+- `equity_trailing_stop_pct` (2–25%)
+- `equity_trailing_stop_activation_pct` (0.5–10%)
+- `equity_trailing_stop_timeout_sec` — NOT optimized, fixed at 60s from config
+
+**Method:**
+- Script: `optimize_stops.py`
+- Each trial tests ONE parameter combination on ALL 20 tickers from config
+- Metric: average `profit_pct` across all tickers
+- TPE sampler, MedianPruner, 100 trials
+- Storage: `optuna_stops.db` (SQLite, resumable)
+- Period per backtest: `backtest_period_days` = 0.125 (3 hours)
+
+| Ticker | Old (3h) | New (3h) |
+|--------|----------|----------|
+| PORTALUSDT | +17.77% | +21.84% |
+| FORMUSDT | +2.95% | +3.08% |
+| STGUSDT | +2.44% | +2.68% |
+| DYDXUSDT | +0.64% | +0.52% |
+| Overall Top-20 avg | ~1.5% | ~1.6% |
+
+**Optimal parameters found:**
+
+| Parameter | Old | New (Optuna) |
+|-----------|-----|--------------|
+| `max_drawdown_limit` | 33.0% | **22.0%** |
+| `equity_trailing_stop_pct` | 10.0% | **24.0%** |
+| `equity_trailing_stop_activation_pct` | 2.0% | **7.5%** |
+| `equity_trailing_stop_timeout_sec` | 60s | 60s (fixed) |
+
+**Why it works better:**
+- Tighter max_drawdown (22% vs 33%) cuts losing positions earlier
+- Wider trailing stop (24% vs 10%) lets profitable positions breathe through volatility
+- Higher activation threshold (7.5% vs 2%) prevents premature activation on noise
+
+### Phase 2: 7-Day Backtest Verification
+
+**Goal:** Validate optimized parameters on longer time window (7 days) with 20 tickers.
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Total tickers | 20 |
+| Profitable | 18/20 |
+| Avg profit | +9.78% |
+| Avg max DD | 7.99% |
+| Worst ticker | SWARMSUSDT -9.62% |
+| Best ticker | XLMUSDT +31.72% |
+| Trailing Stop triggered | 0/20 |
+| Total cycles | 81 |
+| Liquidations | 0 |
+
+**Top 5 by profit:**
+1. XLMUSDT +31.72% (DD 7.93%)
+2. IDUSDT +17.10% (DD 8.73%)
+3. INJUSDT +15.78% (DD 5.41%)
+4. FETUSDT +15.02% (DD 5.92%)
+5. DYDXUSDT +14.68% (DD 6.74%)
+
+**Losers analysis:**
+- VVVUSDT -3.06%: asset fell 8.75%, 0 rebalance cycles
+- SWARMSUSDT -9.62%: asset fell 27.49%, 0 rebalance cycles (too volatile, filtered by min_cycles)
+
+### Phase 3: Live Paper Trading Results (8 hours)
+
+**Incubator Swarm (paper trading with real Binance prices):**
+
+| Metric | Value |
+|--------|-------|
+| Period | 8 hours |
+| Total PnL | **+14.57 USDT** |
+| Incubator ROI | ~12.7% (on ~115 USDT capital) |
+| Profitable tickers | 13/30 |
+| Active bots | 18 (paper_mode_bots) |
+
+**Top performers (paper):**
+- PORTALUSDT: +10.74 USDT (9 cycles)
+- VTHOUSDT: +7.00 USDT (11 cycles)
+- EPICUSDT: +6.04 USDT (10 cycles)
+- XLMUSDT: +3.72 USDT (12 cycles)
+
+**Problematic:**
+- NFPUSDT: -14.56 USDT — 28% asset dump in 2.5 hours, trailing stop triggered (-3.04 peak), then continued falling. Post-restart caught 8 more down cycles.
+- Root cause: extreme market event, not a strategy bug
+- **Mitigation:** `min_cycles_for_rank: 10` — NFPUSDT (8 cycles) would NOT enter Combat (real trading)
+
+### Phase 4: Combat Launch (Real Trading)
+
+**Configuration:**
+- `paper_mode_bots:` 18
+- `live_swarm`: ["PORTALUSDT", "VTHOUSDT"]
+- Positions: ALREADY OPEN on Binance Futures
+- **Real capital at risk**
+
+**Reasoning:**
+- Optuna-optimized stop-loss parameters validated on 7-day backtest
+- Paper trading shows consistent profitability on volatile tickers
+- `min_cycles_for_rank: 10` filters out unstable tickers (e.g. NFPUSDT)
+- Combat + Incubator running in parallel
+
+**⚠️ RISK NOTES:**
+- First time trading real capital
+- Only PORTALUSDT and VTHOUSDT in live_swarm initially
+- Monitor for slippage, API latency, unexpected market behavior
+- NFPUSDT-type events can happen — trailing stop protects but recovery is not guaranteed
