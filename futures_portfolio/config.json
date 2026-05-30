@@ -66,12 +66,13 @@
     "ARUSDT",
     "BATUSDT",
     "DYDXUSDT",
-    "EIGENUSDT",
     "FETUSDT",
     "GRASSUSDT",
+    "HBARUSDT",
     "HEIUSDT",
     "IDUSDT",
     "INJUSDT",
+    "IOTAUSDT",
     "IOUSDT",
     "JTOUSDT",
     "NEARUSDT",
@@ -79,9 +80,8 @@
     "RIFUSDT",
     "SWARMSUSDT",
     "VVVUSDT",
-    "WLDUSDT",
     "XLMUSDT",
-    "ZECUSDT"
+    "XMRUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }

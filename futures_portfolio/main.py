@@ -898,6 +898,14 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 safe_calc_res = safe_calc.calculate_rebalance(targets, 0.0, 0.0, True)
 
                 total_tpv_final = safe_calc_res["total_tpv"]
+
+                # ВСЕГДА обновляем last_tpv и last_profit для актуального PnL в summary
+                state["last_tpv"] = total_tpv_final
+                state["last_profit"] = total_tpv_final - initial_tpv
+                state["total_pnl_pct"] = safe_calc_res.get("total_pnl_pct", 0.0)
+                state["last_update"] = time.time()
+                state_dirty = True
+
                 # SURPLUS = Current Total Capital (including reserve) - Initial Targeted Capital
                 total_surplus: float = total_tpv_final - initial_tpv
                 siphoning_threshold_abs: float = initial_tpv * (siphoning_threshold_pct / 100)
@@ -935,12 +943,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     else:
                         logger.info(f"ℹ️ Rebalance #1 (Baseline) notification suppressed in Telegram.")
 
-                # Всегда обновляем стейт для агрегатора статусов в конце каждого цикла
+                # Обновляем cycles в стейте (если были действия)
                 state.update({
-                    "last_tpv": total_tpv_final,
-                    "last_profit": total_tpv_final - initial_tpv,
-                    "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
-                    "last_update": time.time(),
                     "rebalance_cycles": cycles
                 })
                 state_dirty = True
