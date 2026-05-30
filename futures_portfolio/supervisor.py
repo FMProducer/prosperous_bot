@@ -255,65 +255,91 @@ async def selective_merge_incubator(
     perf_map: dict,
 ) -> list:
     """
-    Bottom-N Selective Rotation: сохраняет топ-N лучших по PnL из старого инкубатора,
-    заменяет худших на лучших кандидатов из сканера.
+    Ротация инкубатора (paper):
+    1. Из текущих 20 ботов Супервайзер ранжирует по calculate_bot_score
+       (перспективность для реальной торговли: profit/cycles * log(cycles))
+    2. Лучшие 10 остаются ВСЕГДА
+    3. Худшие 10 могут быть заменены новыми из сканера,
+       но не более max_replace_per_cycle (10) за цикл
+    4. Сканер уже ранжирован по волатильности — берём первых из топа
+    5. При первом старте (old=[]) — запускаем всех max_bots из сканера
     """
     max_bots = config.get("max_bots", 20)
     max_replace = config.get("max_replace_per_cycle", max_bots // 2)
+    min_cycles = config.get("min_cycles_for_rank", 10)
 
-    # 1. Собираем PnL для каждого старого тикера из perf_map
+    # Топ-max_bots из сканера (ранжированы по волатильности)
+    scanner_top = [r['symbol'] for r in scanner_results[:max_bots]]
+    scanner_set = set(scanner_top)
+
+    # Первый старт: берём max_bots из сканера
+    if not old_incubator:
+        final = scanner_top[:max_bots]
+        logger.info(f"🚀 First-start: launching {len(final)} bots from scanner: {final}")
+        return final
+
+    # 1. Ранжируем ТЕКУЩИХ ботов по calculate_bot_score (перспективность для REAL)
     scored_old = []
-    for ticker in old_incubator:
-        p = perf_map.get(ticker, {"profit": 0.0, "cycles": 0})
-        profit = p.get("profit", 0.0)
-        cycles = p.get("cycles", 0)
-        eff = profit / max(cycles, 1) if cycles > 0 else profit
-        scored_old.append((ticker, profit, cycles, eff))
+    for t in old_incubator:
+        p = perf_map.get(t, {"profit": 0.0, "cycles": 0})
+        score = _calc_rotation_score(t, p, min_cycles)
+        scored_old.append((t, score))
 
-    # 2. Сортируем по эффективности (лучшие первыми)
-    scored_old.sort(key=lambda x: x[3], reverse=True)
+    # Сортируем по score: лучшие первыми
+    scored_old.sort(key=lambda x: x[1], reverse=True)
 
-    # 3. Разделяем: топ оставляем, боттом — на замену
+    # 2. Лучшие (max_bots - max_replace) = 10 остаются ВСЕГДА
     keep_count = max(0, max_bots - max_replace)
-    keepers = scored_old[:keep_count]
-    to_replace = scored_old[keep_count:]
+    to_keep = [t for t, _ in scored_old[:keep_count]]
 
-    kept_tickers = {t[0] for t in keepers}
-    replace_count = len(to_replace)
+    # 3. Слоты для новых: max_replace (10)
+    # Берём из сканера тех, кого нет в старом инкубаторе, в порядке сканера
+    old_set = set(old_incubator)
+    to_add = []
+    for t in scanner_top:
+        if t not in old_set:
+            to_add.append(t)
+            if len(to_add) >= max_replace:
+                break
 
-    kept_names = ', '.join(t[0] for t in keepers)
-    replace_names = ', '.join(t[0] for t in to_replace)
-    logger.info(f"🔄 Selective Rotation: keeping top-{len(keepers)} ({kept_names})")
-    logger.info(f"🔄 Replacing bottom-{replace_count} ({replace_names})")
+    # 4. Финальный инкубатор
+    final = to_keep + to_add
 
-    # 4. Новые кандидаты из сканера (которых нет среди оставленных)
-    # Сканер возвращает: symbol, cycles, net_change, max_spurt, trend, funding
-    # Сортируем новых по net_change (лучшие аномалии первыми)
-    new_candidates = []
-    for r in scanner_results:
-        symbol = r['symbol']
-        if symbol in kept_tickers:
-            continue
-        scanner_cycles = r.get('cycles', 0)
-        # net_change — общий % движения за период, используем как скор
-        scanner_score = r.get('net_change', 0.0)
-        new_candidates.append((symbol, scanner_cycles, scanner_score))
+    # 5. Только старшие (которых нет в финале) — на остановку
+    final_set = set(final)
+    to_remove = [t for t in old_incubator if t not in final_set]
+    # Ограничиваем удаление max_replace (не убиваем больше, чем добавляем)
+    to_remove = to_remove[:max_replace]
 
-    # 5. Сортируем новых по скору сканера (лучшие первыми)
-    new_candidates.sort(key=lambda x: x[2], reverse=True)
-
-    # 6. Берём TOP-K новых (K = кол-во замен)
-    selected_new = new_candidates[:replace_count]
-    new_tickers = [t[0] for t in selected_new]
-
-    logger.info(f"🆕 New candidates: {new_tickers} (from {len(new_candidates)} available)")
-
-    # 7. Финальный инкубатор
-    final = [t[0] for t in keepers] + new_tickers
-    final = final[:max_bots]
-
+    logger.info(f"🔄 Rotation: keep={len(to_keep)}, add={len(to_add)}, remove={len(to_remove)}")
+    if to_remove:
+        logger.info(f"🔄   removing (worst by score): {to_remove}")
+    if to_add:
+        logger.info(f"🔄   adding (best from scanner): {to_add}")
     logger.info(f"📋 Final incubator ({len(final)} bots): {final}")
     return final
+
+
+def _calc_rotation_score(ticker: str, p: dict, min_cycles: int) -> float:
+    """
+    Рассчитывает score для ротации инкубатора (упрощённый calculate_bot_score).
+    Для ботов без paper-state (новых) используется proxy данных от сканера.
+    """
+    cycles = p.get("cycles", 0)
+    net_pnl = p.get("profit", 0.0)
+
+    # Фильтр: если cycles < min_cycles и net_pnl <= 0 — скор = -inf
+    if cycles < min_cycles and net_pnl <= 0:
+        return -float('inf')
+
+    if net_pnl > 0:
+        eff_cycles = max(cycles, min_cycles)
+        base_score = (float(net_pnl) / eff_cycles) * math.log1p(cycles)
+        return base_score
+    else:
+        # Бот без прибыли — получает низкий, но не бесконечно низкий скор
+        # Чтобы новые тикеры с proxy > 0 могли вытеснить убыточных
+        return net_pnl * 0.01  # маленький отрицательный скор
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     """
