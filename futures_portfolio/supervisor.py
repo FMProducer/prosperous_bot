@@ -149,7 +149,9 @@ async def reset_real_state(ticker: str, config: dict):
         "last_price": 0.0,
         "base_ticker": ticker,
         "long_entry_price": 0.0,
-        "short_entry_price": 0.0
+        "short_entry_price": 0.0,
+        "long_liquidation_price": 0.0,
+        "short_liquidation_price": 0.0
     })
     logger.info(f"✨ Reset real state files for {ticker} to clean initial values.")
 
@@ -195,7 +197,9 @@ async def reset_paper_state(ticker: str, config: dict):
         "last_price": 0.0,
         "base_ticker": ticker,
         "long_entry_price": 0.0,
-        "short_entry_price": 0.0
+        "short_entry_price": 0.0,
+        "long_liquidation_price": 0.0,
+        "short_liquidation_price": 0.0
     })
     logger.info(f"✨ Reset paper state files for {ticker} to clean initial values (capital: {initial_capital}).")
 
@@ -242,6 +246,74 @@ def calculate_bot_score(ticker: str, p: dict, is_running_real: bool, is_in_drawd
     else:
         logger.info(f"❌ Scored {ticker}: Unprofitable. (Score: -INF)")
         return -float('inf')
+
+
+async def selective_merge_incubator(
+    old_incubator: list,
+    scanner_results: list,
+    config: dict,
+    perf_map: dict,
+) -> list:
+    """
+    Bottom-N Selective Rotation: сохраняет топ-N лучших по PnL из старого инкубатора,
+    заменяет худших на лучших кандидатов из сканера.
+    """
+    max_bots = config.get("max_bots", 20)
+    max_replace = config.get("max_replace_per_cycle", max_bots // 2)
+
+    # 1. Собираем PnL для каждого старого тикера из perf_map
+    scored_old = []
+    for ticker in old_incubator:
+        p = perf_map.get(ticker, {"profit": 0.0, "cycles": 0})
+        profit = p.get("profit", 0.0)
+        cycles = p.get("cycles", 0)
+        eff = profit / max(cycles, 1) if cycles > 0 else profit
+        scored_old.append((ticker, profit, cycles, eff))
+
+    # 2. Сортируем по эффективности (лучшие первыми)
+    scored_old.sort(key=lambda x: x[3], reverse=True)
+
+    # 3. Разделяем: топ оставляем, боттом — на замену
+    keep_count = max(0, max_bots - max_replace)
+    keepers = scored_old[:keep_count]
+    to_replace = scored_old[keep_count:]
+
+    kept_tickers = {t[0] for t in keepers}
+    replace_count = len(to_replace)
+
+    kept_names = ', '.join(t[0] for t in keepers)
+    replace_names = ', '.join(t[0] for t in to_replace)
+    logger.info(f"🔄 Selective Rotation: keeping top-{len(keepers)} ({kept_names})")
+    logger.info(f"🔄 Replacing bottom-{replace_count} ({replace_names})")
+
+    # 4. Новые кандидаты из сканера (которых нет среди оставленных)
+    # Сканер возвращает: symbol, cycles, net_change, max_spurt, trend, funding
+    # Сортируем новых по net_change (лучшие аномалии первыми)
+    new_candidates = []
+    for r in scanner_results:
+        symbol = r['symbol']
+        if symbol in kept_tickers:
+            continue
+        scanner_cycles = r.get('cycles', 0)
+        # net_change — общий % движения за период, используем как скор
+        scanner_score = r.get('net_change', 0.0)
+        new_candidates.append((symbol, scanner_cycles, scanner_score))
+
+    # 5. Сортируем новых по скору сканера (лучшие первыми)
+    new_candidates.sort(key=lambda x: x[2], reverse=True)
+
+    # 6. Берём TOP-K новых (K = кол-во замен)
+    selected_new = new_candidates[:replace_count]
+    new_tickers = [t[0] for t in selected_new]
+
+    logger.info(f"🆕 New candidates: {new_tickers} (from {len(new_candidates)} available)")
+
+    # 7. Финальный инкубатор
+    final = [t[0] for t in keepers] + new_tickers
+    final = final[:max_bots]
+
+    logger.info(f"📋 Final incubator ({len(final)} bots): {final}")
+    return final
 
 async def get_bot_efficiency(ticker: str, config: dict) -> dict:
     """
@@ -326,16 +398,13 @@ async def manage_swarm():
         logger.error(f"❌ Scanner failed: {e}")
         return
 
-    # 2. Формирование НОВОГО списка Инкубатора (Strictly from Scanner)
-    # toxic_blacklist уже обновлён на шаге 0.5 (stop-сигналы + prune)
-    # Здесь только дополняем is_toxic от самого сканера
+    # 2. Формирование списка Инкубатора (Selective Rotation)
+    # Сначала фильтруем сканер от toxic, потом мержим с текущим инкубатором
     toxic_blacklist = config.get("toxic_blacklist", {})
     now = time.time()
     cooldown_sec = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0)) * 86400
 
-    final_incubator = []
-    limit_bots = config.get("max_bots", 20)
-
+    # Обновляем toxic_blacklist от сканера
     for r in scanner_results:
         symbol = r['symbol']
         if r.get('is_toxic') and symbol not in toxic_blacklist:
@@ -345,16 +414,33 @@ async def manage_swarm():
 
     config["toxic_blacklist"] = toxic_blacklist
 
+    # "Чистый" результат сканера (без toxic) — для selective_merge
+    clean_scanner = []
     for r in scanner_results:
         symbol = r['symbol']
-        if len(final_incubator) >= limit_bots: break
-        
         if symbol in toxic_blacklist:
             logger.info(f"⏳ {symbol} is in Toxic Quarantine. Skipping.")
             continue
-            
-        final_incubator.append(symbol)
-        logger.info(f"➕ Added to Incubator: {symbol} (Cycles: {r.get('cycles')})")
+        clean_scanner.append(r)
+
+    # Старый инкубатор из конфига (предыдущий цикл)
+    old_incubator = list(config.get("tickers", []))
+
+    # Собираем perf_map для старых тикеров (для оценки PnL)
+    old_perf_tasks = [get_bot_efficiency(t, config) for t in old_incubator]
+    old_perf_results = await asyncio.gather(*old_perf_tasks)
+    perf_map = dict(zip(old_incubator, old_perf_results))
+
+    # Selective Rotation: мержим старых + новых
+    limit_bots = config.get("max_bots", 20)
+    final_incubator = await selective_merge_incubator(
+        old_incubator=old_incubator,
+        scanner_results=clean_scanner,
+        config=config,
+        perf_map=perf_map,
+    )
+
+    logger.info(f"📋 Incubator ready: {final_incubator}")
 
     # 3. Выбор Чемпионов для REAL
     # Векторизованный сбор данных
@@ -479,6 +565,39 @@ async def manage_swarm():
     await safe_save_json(CONFIG_PATH, config)
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
     logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")
+
+    # -------------------------------------------------------------------------
+    # 5.5. [GUARD] Ensure real bots from live_swarm are actually running in PM2.
+    # After supervisor restart, PM2 may have lost processes but config still has
+    # them in live_swarm. This detects missing processes and relaunches them.
+    # -------------------------------------------------------------------------
+    await _ensure_real_bots_alive(config)
+
+
+async def _ensure_real_bots_alive(config: dict):
+    """
+    Verifies that all tickers in live_swarm have running PM2 processes.
+    If a real bot is missing from PM2, relaunches it.
+    This handles the case where supervisor restart kills all PM2 processes
+    but live_swarm config still lists them.
+    """
+    live_swarm = config.get("live_swarm", [])
+    if not live_swarm:
+        return
+
+    running_bots = await get_running_bots_info()
+    running_real = {k.replace("r_", "") for k in running_bots if k.startswith("r_")}
+
+    for ticker in live_swarm:
+        if ticker not in running_real:
+            logger.warning(
+                f"🔄 Real bot {ticker} is in live_swarm but not running in PM2. Restarting..."
+            )
+            try:
+                await start_bot(ticker, is_paper=False, config=config)
+                logger.info(f"✅ Restarted real bot {ticker}")
+            except Exception as e:
+                logger.error(f"❌ Failed to restart real bot {ticker}: {e}")
 
 if __name__ == "__main__":
     asyncio.run(manage_swarm())

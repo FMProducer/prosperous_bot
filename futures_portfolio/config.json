@@ -8,7 +8,8 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 18,
+  "paper_mode_bots": 20,
+  "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
@@ -50,6 +51,8 @@
       "rebalance_threshold_deficit": 0.03,
       "margin_ratio_warning": 5.0,
       "margin_ratio_critical": 2.0,
+      "liquidation_distance_warn_pct": 15.0,
+      "liquidation_distance_crit_pct": 8.0,
       "ticker_thresholds": {
         "BTCUSDT": {
           "surplus": 0.015,
@@ -58,36 +61,33 @@
       }
     }
   ],
-  "live_swarm": [
-    "PORTALUSDT",
-    "VTHOUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
   "tickers": [
-    "ALGOUSDT",
-    "AXSUSDT",
-    "DYDXUSDT",
+    "APTUSDT",
+    "BNBUSDT",
+    "DASHUSDT",
     "EPICUSDT",
+    "FARTCOINUSDT",
     "FETUSDT",
     "GRASSUSDT",
-    "HBARUSDT",
-    "HEIUSDT",
     "IDUSDT",
     "INJUSDT",
     "IOUSDT",
-    "JTOUSDT",
-    "MBOXUSDT",
-    "NEARUSDT",
-    "NFPUSDT",
-    "NILUSDT",
+    "ONDOUSDT",
     "PORTALUSDT",
+    "STGUSDT",
+    "TIAUSDT",
+    "TONUSDT",
     "VTHOUSDT",
+    "VVVUSDT",
     "WLDUSDT",
-    "XLMUSDT"
+    "XLMUSDT",
+    "ZECUSDT"
   ],
-  "base_ticker": "ALGOUSDT"
+  "base_ticker": "APTUSDT"
 }

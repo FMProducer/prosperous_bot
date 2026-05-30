@@ -417,7 +417,46 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             total_drag = (long_notional + short_notional) * funding_drag_step
             state.val_cash -= total_drag
 
-            # --- 3. Liquidation Check (Per Leg) ---
+            # --- 2.5 Predictive Liquidation Guard ---
+            # Mirror live Guard #4: close position BEFORE exchange liquidation.
+            # Uses Binance isolated margin formula for liquidation price estimation.
+            liq_distance_warn_pct = portfolio_cfg.get("liquidation_distance_warn_pct", 15.0)
+            liq_distance_crit_pct = portfolio_cfg.get("liquidation_distance_crit_pct", 8.0)
+            # Binance maintenance margin rate for 5x leverage ≈ 0.4%
+            mmr = Decimal('0.004')
+
+            if state.pos_long > 0 and state.long_entry_price > 0:
+                liq_long = state.long_entry_price * (Decimal('1') - Decimal(str(1/l_lev)) + mmr)
+                dist_long = (mid_price - liq_long) / mid_price * Decimal('100')
+                if dist_long <= Decimal(str(liq_distance_crit_pct)):
+                    logger.warning(f"Bar {i}: Predictive LONG liq guard! dist={float(dist_long):.1f}%, closing.")
+                    # Close at market: recover remaining margin after unrealized loss
+                    notional = state.pos_long * state.long_entry_price
+                    unrealized_pnl = state.pos_long * (mid_price - state.long_entry_price)
+                    margin = notional / l_lev
+                    state.val_cash += margin + unrealized_pnl
+                    state.pos_long = Decimal('0')
+                    state.long_entry_price = Decimal('0')
+                    state.liquidations_counter += 1
+                elif dist_long <= Decimal(str(liq_distance_warn_pct)):
+                    logger.debug(f"Bar {i}: LONG liq warning, dist={float(dist_long):.1f}%")
+
+            if state.pos_short > 0 and state.short_entry_price > 0:
+                liq_short = state.short_entry_price * (Decimal('1') + Decimal(str(1/s_lev)) - mmr)
+                dist_short = (liq_short - mid_price) / mid_price * Decimal('100')
+                if dist_short <= Decimal(str(liq_distance_crit_pct)):
+                    logger.warning(f"Bar {i}: Predictive SHORT liq guard! dist={float(dist_short):.1f}%, closing.")
+                    notional = state.pos_short * state.short_entry_price
+                    unrealized_pnl = state.pos_short * (state.short_entry_price - mid_price)
+                    margin = notional / s_lev
+                    state.val_cash += margin + unrealized_pnl
+                    state.pos_short = Decimal('0')
+                    state.short_entry_price = Decimal('0')
+                    state.liquidations_counter += 1
+                elif dist_short <= Decimal(str(liq_distance_warn_pct)):
+                    logger.debug(f"Bar {i}: SHORT liq warning, dist={float(dist_short):.1f}%")
+
+            # --- 3. Post-Factum Liquidation Check (Per Leg) ---
             unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
             unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
             margin_long = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')

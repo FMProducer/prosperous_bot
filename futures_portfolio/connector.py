@@ -117,6 +117,60 @@ class BinanceConnector:
         return result
 
     @retry_on_network_error(retries=5, delay=3.0)
+    async def get_position_risk(self) -> Dict[str, Dict]:
+        """
+        Получение данных о риске ликвидации для каждой позиции.
+        Работает только при ISOLATED margin (Binance не даёт liquidationPrice для CROSS).
+        
+        Returns:
+            {
+                "SYMBOL_LONG": {
+                    "liq_price": float,       # Цена ликвидации
+                    "distance_pct": float,     # Расстояние от текущей цены до ликвидации (%)
+                    "unrealized_pnl": float,   # Нереализованный PnL (USDT)
+                    "margin": float           # Изолированная маржа (USDT)
+                },
+                ...
+            }
+        """
+        positions = await asyncio.to_thread(self.futures_client.futures_position_information)
+        mark_prices_raw = await asyncio.to_thread(self.futures_client.futures_mark_price)
+        if isinstance(mark_prices_raw, dict):
+            mark_prices_raw = [mark_prices_raw]
+        mark_price_map = {p["symbol"]: float(p["markPrice"]) for p in mark_prices_raw}
+
+        result = {}
+        for pos in positions:
+            qty = float(pos["positionAmt"])
+            if qty == 0:
+                continue
+
+            symbol = pos["symbol"]
+            side = pos["positionSide"]
+            key = f"{symbol}_{side}" if side != "BOTH" else symbol
+
+            entry_price = float(pos.get("entryPrice", 0.0))
+            liq_price = float(pos.get("liquidationPrice", 0.0))
+            unrealized_pnl = float(pos.get("unrealizedProfit", 0.0))
+            margin = float(pos.get("isolatedMargin", 0.0))
+            mark_price = mark_price_map.get(symbol, entry_price)
+
+            distance_pct = 0.0
+            if liq_price > 0 and mark_price > 0:
+                if side == "LONG" or (side == "BOTH" and qty > 0):
+                    distance_pct = (mark_price - liq_price) / mark_price * 100.0
+                elif side == "SHORT" or (side == "BOTH" and qty < 0):
+                    distance_pct = (liq_price - mark_price) / mark_price * 100.0
+
+            result[key] = {
+                "liq_price": liq_price,
+                "distance_pct": max(distance_pct, 0.0),
+                "unrealized_pnl": unrealized_pnl,
+                "margin": abs(margin)
+            }
+        return result
+
+    @retry_on_network_error(retries=5, delay=3.0)
     async def get_futures_prices(self, tickers: List[str] = None) -> Dict[str, float]:
         """Получение фьючерсных цен (Last Price) для заданных тикеров."""
         prices = await asyncio.to_thread(self.futures_client.futures_symbol_ticker)

@@ -51,6 +51,82 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
     except Exception as e:
         logger.error(f"Error saving final metrics before exit: {e}")
 
+
+async def _handle_liquidation_guard(
+    pos_key: str, dist: float, liq_price: float,
+    liquidation_distance_warn: float, liquidation_distance_crit: float,
+    is_paper: bool, raw_positions, paper_state, connector,
+    base_ticker: str, step_sizes: dict, notifier, logger
+):
+    """
+    Shared liquidation guard handler for both paper and real modes.
+    Paper: simulates price-based close (adjusts shadow_state balance).
+    Real: sends actual market close order via Binance.
+    """
+    if dist <= liquidation_distance_crit:
+        logger.critical(
+            f"🚨 LIQUIDATION CRITICAL [{'PAPER' if is_paper else 'REAL'}]: "
+            f"{pos_key} distance {dist:.1f}% (liq_price={liq_price:.8f}). Emergency close!"
+        )
+        try:
+            asyncio.create_task(notifier.send_alert(
+                "🚨 LIQUIDATION IMMINENT",
+                f"{pos_key}: distance {dist:.1f}% to liq @ {liq_price:.8f}. Closing!"
+            ))
+        except Exception:
+            pass
+
+        if is_paper:
+            # Paper mode: simulate closing at current price
+            entry_key = "long_entry_price" if "LONG" in pos_key else "short_entry_price"
+            old_entry = paper_state.get(entry_key, 0.0)
+            old_qty = paper_state["positions"].get(pos_key, 0.0)
+            if old_qty == 0:
+                return
+            # Calculate PnL from price movement
+            if "LONG" in pos_key:
+                # For LONG at critical distance, we lost almost all margin
+                # Simulate: close at liq_price, recover tiny remaining margin
+                pnl = old_qty * (liq_price - old_entry)
+            else:
+                pnl = old_qty * (old_entry - liq_price)
+            paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + Decimal(str(pnl)))
+            paper_state["positions"][pos_key] = 0.0
+            paper_state[entry_key] = 0.0
+            paper_state[f"{'long' if 'LONG' in pos_key else 'short'}_liquidation_price"] = 0.0
+            mode_tag = "PAPER"
+        else:
+            # Real mode: send actual close order
+            side = "SELL" if "LONG" in pos_key else "BUY"
+            position_side = "LONG" if "LONG" in pos_key else "SHORT"
+            close_qty = abs(raw_positions.get(pos_key, {}).get("qty", 0.0))
+            if close_qty > 0:
+                try:
+                    await PortfolioExecutor(connector).execute_market_order(
+                        symbol=base_ticker,
+                        side=side,
+                        qty=close_qty,
+                        position_side=position_side,
+                        reduce_only=True
+                    )
+                    paper_state["positions"][pos_key] = 0.0
+                    logger.info(f"✅ Emergency closed {pos_key} to avoid liquidation")
+                except Exception as close_err:
+                    logger.error(f"Failed to emergency close {pos_key}: {close_err}")
+            mode_tag = "REAL"
+
+        logger.info(
+            f"✅ [{'PAPER' if is_paper else 'REAL'}] Emergency closed {pos_key} "
+            f"(dist={dist:.1f}%, liq={liq_price:.8f})"
+        )
+
+    elif dist <= liquidation_distance_warn:
+        logger.warning(
+            f"⚠️ LIQUIDATION WARNING [{'PAPER' if is_paper else 'REAL'}]: "
+            f"{pos_key} distance {dist:.1f}% (liq_price={liq_price:.8f})"
+        )
+
+
 async def rebalance_loop(connector: BinanceConnector, config_path: str, state_file_path: str, paper_state_file_path: str, logger: logging.Logger, ticker_override: str = None, paper_mode_override: bool = None):
     # [SSOT] Absolute Scope Safety - Initialize all variables at function start
     i = 0
@@ -418,7 +494,72 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     
                     # For logging and safety only
                     m_info = await connector.get_margin_ratio()
-                    
+
+                # -------------------------------------------------------------------------
+                # [SAFETY] GUARD #4: LIQUIDATION DISTANCE MONITOR
+                # -------------------------------------------------------------------------
+                # Checks how close each position is to its liquidation price.
+                # If distance < threshold → emergency close that specific position.
+                # Works for BOTH paper (simulated liq price) and real (exchange liq price).
+                liquidation_distance_warn = portfolio_cfg.get("liquidation_distance_warn_pct", 15.0)
+                liquidation_distance_crit = portfolio_cfg.get("liquidation_distance_crit_pct", 8.0)
+
+                if not paper_mode and raw_positions:
+                    # REAL mode: get liquidation data from exchange
+                    try:
+                        risk_data = await connector.get_position_risk()
+                        for pos_key, risk in risk_data.items():
+                            if base_ticker not in pos_key:
+                                continue
+                            dist = risk.get("distance_pct", 100.0)
+                            liq_price = risk.get("liq_price", 0.0)
+                            _handle_liquidation_guard(
+                                pos_key=pos_key, dist=dist, liq_price=liq_price,
+                                liquidation_distance_warn=liquidation_distance_warn,
+                                liquidation_distance_crit=liquidation_distance_crit,
+                                is_paper=False, raw_positions=raw_positions,
+                                paper_state=paper_state, connector=connector,
+                                base_ticker=base_ticker, step_sizes=step_sizes,
+                                notifier=notifier, logger=logger
+                            )
+                            if dist <= liquidation_distance_crit:
+                                paper_state_dirty = True
+                    except Exception as e:
+                        logger.error(f"Real liquidation guard check failed: {e}")
+
+                elif paper_mode:
+                    # PAPER mode: use simulated liquidation price from shadow_state
+                    try:
+                        for pos_side in ("LONG", "SHORT"):
+                            pos_key = f"{base_ticker}_{pos_side}"
+                            qty = abs(paper_state["positions"].get(pos_key, 0.0))
+                            if qty == 0:
+                                continue
+                            liq_price_key = f"{pos_side.lower()}_liquidation_price"
+                            liq_price = paper_state.get(liq_price_key, 0.0)
+                            if liq_price <= 0:
+                                continue
+                            # Calculate distance from current price to simulated liq price
+                            if pos_side == "LONG":
+                                dist = (price - liq_price) / price * 100.0 if price > 0 else 100.0
+                            else:
+                                dist = (liq_price - price) / price * 100.0 if price > 0 else 100.0
+                            dist = max(dist, 0.0)
+
+                            _handle_liquidation_guard(
+                                pos_key=pos_key, dist=dist, liq_price=liq_price,
+                                liquidation_distance_warn=liquidation_distance_warn,
+                                liquidation_distance_crit=liquidation_distance_crit,
+                                is_paper=True, raw_positions=None,
+                                paper_state=paper_state, connector=None,
+                                base_ticker=base_ticker, step_sizes=step_sizes,
+                                notifier=notifier, logger=logger
+                            )
+                            if dist <= liquidation_distance_crit:
+                                paper_state_dirty = True
+                    except Exception as e:
+                        logger.error(f"Paper liquidation guard check failed: {e}")
+
                 # Calculate isolated PnL and Equity
                 # [SSOT] TPV = Cash + Virtual Value. Cash is paper_state["balance"].
                 # In calculator.py, real_equity is treated as Wallet Balance.
@@ -820,9 +961,26 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     dec_price = Decimal(str(res.get("price", price)))
                                     new_entry = (old_qty * old_entry + qty * dec_price) / (old_qty + qty)
                                     paper_state[entry_key] = float(new_entry.quantize(Decimal('1e-8')))
+
+                                    # [LIQUIDATION GUARD] Calculate simulated liquidation price for paper mode
+                                    # Uses Binance isolated margin formula:
+                                    #   LONG liq  = entry × (1 - 1/leverage + mmr)
+                                    #   SHORT liq = entry × (1 + 1/leverage - mmr)
+                                    # mmr (maintenance margin rate) for 5x leverage ≈ 0.4%
+                                    _leverage = Decimal(str(targets.get(f"BASE_{pos_side}", {}).get("leverage", 5)))
+                                    _mmr = Decimal('0.004')  # 0.4% maintenance margin rate
+                                    if pos_side == "LONG":
+                                        liq_price = new_entry * (Decimal('1') - Decimal('1') / _leverage + _mmr)
+                                        paper_state["long_liquidation_price"] = float(liq_price.quantize(Decimal('1e-8')))
+                                    else:
+                                        liq_price = new_entry * (Decimal('1') + Decimal('1') / _leverage - _mmr)
+                                        paper_state["short_liquidation_price"] = float(liq_price.quantize(Decimal('1e-8')))
+
                                 elif reduce_only and new_qty == 0:
                                     # Если позиция закрыта полностью, сбрасываем цену входа
                                     paper_state[entry_key] = 0.0
+                                    paper_state["long_liquidation_price"] = 0.0
+                                    paper_state["short_liquidation_price"] = 0.0
 
                                 # Запись обратно во float-структуру JSON
                                 paper_state["positions"][pos_key] = float(new_qty.quantize(Decimal('1e-8')))
