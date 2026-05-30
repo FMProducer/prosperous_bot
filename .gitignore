@@ -313,3 +313,6 @@ futures_portfolio/main.py
 futures_portfolio/nul
 futures_portfolio/history/manual_*USDT_*_paper_state_*USDT.json
 futures_portfolio/history/manual_*USDT_*_paper_shadow_*USDT.json
+futures_portfolio/history/paper_state_*USDT.json.*
+futures_portfolio/history/paper_shadow_*USDT.json.*
+futures_portfolio/best_stops.json

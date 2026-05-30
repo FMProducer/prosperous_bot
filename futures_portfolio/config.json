@@ -4,6 +4,7 @@
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
   "min_notional_usdt": 7.0,
+  "paper_mode": true,
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 20,
   "max_bots": 20,
@@ -12,10 +13,10 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.011,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 33.0,
+  "max_drawdown_limit": 22.0,
   "replacement_efficiency_threshold_pct": 50.0,
-  "equity_trailing_stop_pct": 10.0,
-  "equity_trailing_stop_activation_pct": 2.0,
+  "equity_trailing_stop_pct": 24.0,
+  "equity_trailing_stop_activation_pct": 7.5,
   "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,
   "telegram_use_queue": true,
@@ -28,11 +29,11 @@
       "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
-          "share": 0.27,
+          "share": 0.29,
           "leverage": 5
         },
         "BASE_SHORT": {
-          "share": 0.34,
+          "share": 0.36,
           "leverage": 5
         },
         "VIRTUAL": {
@@ -47,6 +48,8 @@
       },
       "rebalance_threshold_surplus": 0.015,
       "rebalance_threshold_deficit": 0.03,
+      "margin_ratio_warning": 5.0,
+      "margin_ratio_critical": 2.0,
       "ticker_thresholds": {
         "BTCUSDT": {
           "surplus": 0.015,
@@ -63,23 +66,23 @@
   "toxic_blacklist": {},
   "tickers": [
     "ALGOUSDT",
-    "ARUSDT",
-    "BATUSDT",
+    "AXSUSDT",
     "DYDXUSDT",
+    "EPICUSDT",
     "FETUSDT",
     "GRASSUSDT",
     "HBARUSDT",
     "HEIUSDT",
     "IDUSDT",
     "INJUSDT",
-    "IOTAUSDT",
     "IOUSDT",
     "JTOUSDT",
+    "MBOXUSDT",
     "NEARUSDT",
+    "NFPUSDT",
     "NILUSDT",
-    "RIFUSDT",
-    "SWARMSUSDT",
-    "VVVUSDT",
+    "PORTALUSDT",
+    "VTHOUSDT",
     "XLMUSDT",
     "XMRUSDT"
   ],
