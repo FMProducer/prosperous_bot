@@ -1,793 +1,1034 @@
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,798 INFO: SUPERVISOR: │ 13 │ paper-fil             │ default     │ N/A     │ fork    │ 13408    │ 5s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,798 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 4s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,798 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 3s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 3s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 17 │ paper-op              │ default     │ N/A     │ fork    │ 11432    │ 2s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 2s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 1s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 20 │ paper-tia             │ default     │ N/A     │ fork    │ 14128    │ 0s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 0s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 21s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 21s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 21s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: [PM2] Starting C:\Python\Prosperous_Bot\futures_portfolio\main.py in fork_mode (1 instance)
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: [PM2] Done.
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 3  │ paper-1000lunc        │ default     │ N/A     │ fork    │ 1648     │ 11s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 10s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 10s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 9s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 9s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 8s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 8s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 7s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 6s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,799 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 6s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 13 │ paper-fil             │ default     │ N/A     │ fork    │ 13408    │ 5s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 5s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 4s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 4s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 17 │ paper-op              │ default     │ N/A     │ fork    │ 11432    │ 3s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 2s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 2s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 20 │ paper-tia             │ default     │ N/A     │ fork    │ 14128    │ 1s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 0s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 0s     │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 22s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 22s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 22s    │ 0    │ online    │ 0%       │ 3.7mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: [PM2] Saving current process list...
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: [PM2] Successfully saved in C:\Users\svsma\.pm2\dump.pm2
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: SUPERVISOR: 2026-05-22 20:44:52,619 INFO: Cycle Complete. REAL Swarm: []
-0|supervisor-service  | 2026-05-22 20:44:52: 2026-05-22 20:44:52,800 INFO: Sleeping for 0.3 hours...
-21|paper-virtual      | 2026-05-22 20:44:52: 2026-05-22 20:44:52,809 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-22|paper-wld          | 2026-05-22 20:44:52: 2026-05-22 20:44:52,980 INFO: --- Launching Bot: WLDUSDT (PAPER Mode) ---
-21|paper-virtual      | 2026-05-22 20:44:53: 2026-05-22 20:44:53,113 INFO: Heartbeat: TPV=260.00 | VIRTUALUSDT=0.762371 | L:0.0% S:0.0% V:35.0%
-21|paper-virtual      | 2026-05-22 20:44:53: 2026-05-22 20:44:53,113 INFO: Cold Start: Allowing all actions to form portfolio baseline at 0.762371
-21|paper-virtual      | 2026-05-22 20:44:53: 2026-05-22 20:44:53,113 INFO: Rebalance needed (2 actions). TPV: 260.00
-21|paper-virtual      | 2026-05-22 20:44:53: 2026-05-22 20:44:53,114 INFO: PAPER ORDER EXECUTED: BUY 460.4 VIRTUALUSDT (LONG) at 0.762371 | PnL: +0.0000$
-21|paper-virtual      | 2026-05-22 20:44:53: 2026-05-22 20:44:53,114 INFO: PAPER ORDER EXECUTED: SELL 579.7 VIRTUALUSDT (SHORT) at 0.762371 | PnL: +0.0000$
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,457 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,772 INFO: Heartbeat: TPV=260.00 | WLDUSDT=0.281 | L:0.0% S:0.0% V:35.0%
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,772 INFO: Cold Start: Allowing all actions to form portfolio baseline at 0.281
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,772 INFO: Rebalance needed (2 actions). TPV: 260.00
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,773 INFO: PAPER ORDER EXECUTED: BUY 1249 WLDUSDT (LONG) at 0.281 | PnL: +0.0000$
-22|paper-wld          | 2026-05-22 20:44:53: 2026-05-22 20:44:53,773 INFO: PAPER ORDER EXECUTED: SELL 1572 WLDUSDT (SHORT) at 0.281 | PnL: +0.0000$
-3|paper-1000lunc      | 2026-05-22 20:46:00: 2026-05-22 20:46:00,159 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.08023 | L:26.9% S:33.87% V:34.87%
-4|paper-aero          | 2026-05-22 20:46:00: 2026-05-22 20:46:00,670 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4493 | L:26.77% S:33.71% V:34.7%
-5|paper-algo          | 2026-05-22 20:46:01: 2026-05-22 20:46:01,309 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.114767 | L:26.87% S:33.83% V:34.83%
-9|paper-dodox         | 2026-05-22 20:46:03: 2026-05-22 20:46:03,361 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.018539 | L:26.83% S:33.79% V:34.79%
-12|paper-fida         | 2026-05-22 20:46:05: 2026-05-22 20:46:05,029 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.03739 | L:26.8% S:33.75% V:34.75%
-14|paper-grass        | 2026-05-22 20:46:06: 2026-05-22 20:46:06,221 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.426291 | L:26.92% S:33.91% V:34.9%
-18|paper-pendle       | 2026-05-22 20:46:08: 2026-05-22 20:46:08,648 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.8825 | L:26.68% S:33.64% V:34.64%
-19|paper-plume        | 2026-05-22 20:46:09: 2026-05-22 20:46:09,299 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.01427 | L:26.82% S:33.77% V:34.77%
-22|paper-wld          | 2026-05-22 20:46:11: 2026-05-22 20:46:11,125 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.278622 | L:26.8% S:33.73% V:34.75%
-7|paper-arb           | 2026-05-22 20:46:18: 2026-05-22 20:46:18,208 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.109207 | L:26.64% S:33.55% V:34.54%
-10|paper-ena          | 2026-05-22 20:46:19: 2026-05-22 20:46:19,332 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.102938 | L:26.7% S:33.63% V:34.62%
-11|paper-fet          | 2026-05-22 20:46:20: 2026-05-22 20:46:20,043 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.203742 | L:26.72% S:33.66% V:34.66%
-15|paper-icp          | 2026-05-22 20:46:22: 2026-05-22 20:46:22,243 INFO: Rebalance needed (1 actions). TPV: 259.66
-15|paper-icp          | 2026-05-22 20:46:22: 2026-05-22 20:46:22,244 INFO: PAPER ORDER EXECUTED: SELL 3 ICPUSDT (SHORT) at 2.581 | PnL: +0.0000$
-17|paper-op           | 2026-05-22 20:46:23: 2026-05-22 20:46:23,357 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1298 | L:26.74% S:33.68% V:34.67%
-21|paper-virtual      | 2026-05-22 20:46:26: 2026-05-22 20:46:26,056 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7549 | L:26.77% S:33.7% V:34.7%
-6|paper-alt           | 2026-05-22 20:46:32: 2026-05-22 20:46:32,680 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008749 | L:26.85% S:33.82% V:34.81%
-8|paper-bio           | 2026-05-22 20:46:33: 2026-05-22 20:46:33,526 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.03504 | L:26.67% S:33.58% V:34.57%
-13|paper-fil          | 2026-05-22 20:46:36: 2026-05-22 20:46:36,586 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.988499 | L:26.8% S:33.75% V:34.74%
-15|paper-icp          | 2026-05-22 20:46:37: 2026-05-22 20:46:37,688 INFO: Heartbeat: TPV=259.65 | ICPUSDT=2.582 | L:26.65% S:34.01% V:34.59%
-16|paper-near         | 2026-05-22 20:46:38: 2026-05-22 20:46:38,271 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.151 | L:26.84% S:33.8% V:34.81%
-20|paper-tia          | 2026-05-22 20:46:56: 2026-05-22 20:46:56,352 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.426173 | L:26.68% S:33.61% V:34.61%
-3|paper-1000lunc      | 2026-05-22 20:47:17: 2026-05-22 20:47:17,509 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0796493 | L:26.7% S:33.63% V:34.62%
-4|paper-aero          | 2026-05-22 20:47:18: 2026-05-22 20:47:18,002 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4483 | L:26.71% S:33.64% V:34.63%
-5|paper-algo          | 2026-05-22 20:47:18: 2026-05-22 20:47:18,669 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1151 | L:26.95% S:33.93% V:34.93%
-9|paper-dodox         | 2026-05-22 20:47:20: 2026-05-22 20:47:20,670 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0185999 | L:26.92% S:33.9% V:34.9%
-12|paper-fida         | 2026-05-22 20:47:22: 2026-05-22 20:47:22,378 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.0372 | L:26.66% S:33.58% V:34.57%
-14|paper-grass        | 2026-05-22 20:47:23: 2026-05-22 20:47:23,479 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.4238 | L:26.76% S:33.71% V:34.7%
-18|paper-pendle       | 2026-05-22 20:47:26: 2026-05-22 20:47:26,091 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.883 | L:26.68% S:33.64% V:34.65%
-19|paper-plume        | 2026-05-22 20:47:26: 2026-05-22 20:47:26,607 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.01438 | L:27.03% S:34.03% V:35.03%
-22|paper-wld          | 2026-05-22 20:47:28: 2026-05-22 20:47:28,422 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.279642 | L:26.9% S:33.86% V:34.87%
-7|paper-arb           | 2026-05-22 20:47:35: 2026-05-22 20:47:35,583 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1095 | L:26.72% S:33.64% V:34.63%
-10|paper-ena          | 2026-05-22 20:47:36: 2026-05-22 20:47:36,669 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10304 | L:26.73% S:33.66% V:34.66%
-11|paper-fet          | 2026-05-22 20:47:37: 2026-05-22 20:47:37,391 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2037 | L:26.72% S:33.65% V:34.65%
-17|paper-op           | 2026-05-22 20:47:40: 2026-05-22 20:47:40,721 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.129808 | L:26.75% S:33.68% V:34.67%
-21|paper-virtual      | 2026-05-22 20:47:43: 2026-05-22 20:47:43,381 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7541 | L:26.74% S:33.67% V:34.66%
-6|paper-alt           | 2026-05-22 20:47:50: 2026-05-22 20:47:50,150 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008762 | L:26.89% S:33.87% V:34.86%
-8|paper-bio           | 2026-05-22 20:47:51: 2026-05-22 20:47:51,029 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0350248 | L:26.66% S:33.57% V:34.56%
-13|paper-fil          | 2026-05-22 20:47:53: 2026-05-22 20:47:53,887 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.986318 | L:26.74% S:33.67% V:34.67%
-15|paper-icp          | 2026-05-22 20:47:55: 2026-05-22 20:47:55,066 INFO: Heartbeat: TPV=259.67 | ICPUSDT=2.57401 | L:26.57% S:33.9% V:34.48%
-16|paper-near         | 2026-05-22 20:47:55: 2026-05-22 20:47:55,611 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.14907 | L:26.81% S:33.77% V:34.77%
-20|paper-tia          | 2026-05-22 20:48:13: 2026-05-22 20:48:13,757 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.4265 | L:26.71% S:33.64% V:34.63%
-3|paper-1000lunc      | 2026-05-22 20:48:34: 2026-05-22 20:48:34,991 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0795343 | L:26.66% S:33.58% V:34.57%
-4|paper-aero          | 2026-05-22 20:48:35: 2026-05-22 20:48:35,313 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4505 | L:26.84% S:33.8% V:34.8%
-5|paper-algo          | 2026-05-22 20:48:35: 2026-05-22 20:48:35,968 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1151 | L:26.95% S:33.93% V:34.93%
-9|paper-dodox         | 2026-05-22 20:48:37: 2026-05-22 20:48:37,966 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0186404 | L:26.98% S:33.98% V:34.98%
-12|paper-fida         | 2026-05-22 20:48:39: 2026-05-22 20:48:39,721 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.0373356 | L:26.76% S:33.7% V:34.69%
-14|paper-grass        | 2026-05-22 20:48:40: 2026-05-22 20:48:40,812 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.425527 | L:26.87% S:33.84% V:34.84%
-18|paper-pendle       | 2026-05-22 20:48:43: 2026-05-22 20:48:43,400 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.8857 | L:26.72% S:33.69% V:34.7%
-19|paper-plume        | 2026-05-22 20:48:43: 2026-05-22 20:48:43,962 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.01443 | L:27.12% S:34.15% V:35.16%
-22|paper-wld          | 2026-05-22 20:48:45: 2026-05-22 20:48:45,828 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280544 | L:26.99% S:33.97% V:34.99%
-7|paper-arb           | 2026-05-22 20:48:52: 2026-05-22 20:48:52,863 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.109992 | L:26.84% S:33.79% V:34.79%
-10|paper-ena          | 2026-05-22 20:48:54: 2026-05-22 20:48:54,051 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103288 | L:26.79% S:33.74% V:34.74%
-11|paper-fet          | 2026-05-22 20:48:54: 2026-05-22 20:48:54,708 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204306 | L:26.8% S:33.75% V:34.75%
-17|paper-op           | 2026-05-22 20:48:58: 2026-05-22 20:48:58,131 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.130176 | L:26.82% S:33.78% V:34.77%
-21|paper-virtual      | 2026-05-22 20:49:00: 2026-05-22 20:49:00,698 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.756098 | L:26.81% S:33.76% V:34.75%
-6|paper-alt           | 2026-05-22 20:49:07: 2026-05-22 20:49:07,503 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008825 | L:27.09% S:34.11% V:35.11%
-8|paper-bio           | 2026-05-22 20:49:08: 2026-05-22 20:49:08,297 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0350744 | L:26.69% S:33.62% V:34.61%
-13|paper-fil          | 2026-05-22 20:49:11: 2026-05-22 20:49:11,341 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.989 | L:26.81% S:33.77% V:34.76%
-15|paper-icp          | 2026-05-22 20:49:12: 2026-05-22 20:49:12,393 INFO: Heartbeat: TPV=259.66 | ICPUSDT=2.57758 | L:26.6% S:33.95% V:34.53%
-16|paper-near         | 2026-05-22 20:49:13: 2026-05-22 20:49:13,237 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.15405 | L:26.88% S:33.84% V:34.85%
-20|paper-tia          | 2026-05-22 20:49:31: 2026-05-22 20:49:31,174 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.426057 | L:26.68% S:33.6% V:34.6%
-3|paper-1000lunc      | 2026-05-22 20:49:52: 2026-05-22 20:49:52,313 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.07967 | L:26.71% S:33.64% V:34.63%
-4|paper-aero          | 2026-05-22 20:49:52: 2026-05-22 20:49:52,694 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.449594 | L:26.79% S:33.73% V:34.73%
-5|paper-algo          | 2026-05-22 20:49:53: 2026-05-22 20:49:53,312 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.115037 | L:26.93% S:33.91% V:34.91%
-9|paper-dodox         | 2026-05-22 20:49:55: 2026-05-22 20:49:55,278 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0186861 | L:27.05% S:34.06% V:35.06%
-12|paper-fida         | 2026-05-22 20:49:57: 2026-05-22 20:49:57,145 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.03718 | L:26.65% S:33.56% V:34.55%
-14|paper-grass        | 2026-05-22 20:49:58: 2026-05-22 20:49:58,160 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.425499 | L:26.87% S:33.84% V:34.84%
-18|paper-pendle       | 2026-05-22 20:50:00: 2026-05-22 20:50:00,781 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.88135 | L:26.66% S:33.62% V:34.62%
-19|paper-plume        | 2026-05-22 20:50:01: 2026-05-22 20:50:01,313 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0144106 | L:27.08% S:34.11% V:35.11%
-22|paper-wld          | 2026-05-22 20:50:03: 2026-05-22 20:50:03,468 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280318 | L:26.97% S:33.94% V:34.96%
-7|paper-arb           | 2026-05-22 20:50:10: 2026-05-22 20:50:10,127 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1098 | L:26.79% S:33.73% V:34.73%
-10|paper-ena          | 2026-05-22 20:50:11: 2026-05-22 20:50:11,369 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10313 | L:26.75% S:33.69% V:34.69%
-11|paper-fet          | 2026-05-22 20:50:11: 2026-05-22 20:50:11,999 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2037 | L:26.72% S:33.65% V:34.65%
-17|paper-op           | 2026-05-22 20:50:15: 2026-05-22 20:50:15,665 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.13 | L:26.79% S:33.73% V:34.72%
-21|paper-virtual      | 2026-05-22 20:50:18: 2026-05-22 20:50:18,011 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7543 | L:26.75% S:33.68% V:34.67%
-6|paper-alt           | 2026-05-22 20:50:25: 2026-05-22 20:50:25,084 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008815 | L:27.06% S:34.07% V:35.07%
-8|paper-bio           | 2026-05-22 20:50:25: 2026-05-22 20:50:25,695 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0349904 | L:26.63% S:33.53% V:34.52%
-13|paper-fil          | 2026-05-22 20:50:28: 2026-05-22 20:50:28,686 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.988 | L:26.78% S:33.73% V:34.73%
-15|paper-icp          | 2026-05-22 20:50:29: 2026-05-22 20:50:29,790 INFO: Heartbeat: TPV=259.66 | ICPUSDT=2.577 | L:26.6% S:33.94% V:34.52%
-16|paper-near         | 2026-05-22 20:50:30: 2026-05-22 20:50:30,568 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.163 | L:26.99% S:33.98% V:35.0%
-20|paper-tia          | 2026-05-22 20:50:48: 2026-05-22 20:50:48,417 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.426 | L:26.67% S:33.6% V:34.59%
-3|paper-1000lunc      | 2026-05-22 20:51:09: 2026-05-22 20:51:09,709 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0797657 | L:26.74% S:33.68% V:34.67%
-4|paper-aero          | 2026-05-22 20:51:10: 2026-05-22 20:51:10,005 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.450525 | L:26.84% S:33.8% V:34.8%
-5|paper-algo          | 2026-05-22 20:51:10: 2026-05-22 20:51:10,941 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1149 | L:26.9% S:33.87% V:34.87%
-9|paper-dodox         | 2026-05-22 20:51:12: 2026-05-22 20:51:12,909 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0187689 | L:27.17% S:34.21% V:35.22%
-12|paper-fida         | 2026-05-22 20:51:14: 2026-05-22 20:51:14,415 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.0374333 | L:26.83% S:33.79% V:34.79%
-14|paper-grass        | 2026-05-22 20:51:15: 2026-05-22 20:51:15,417 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.425724 | L:26.89% S:33.86% V:34.86%
-18|paper-pendle       | 2026-05-22 20:51:18: 2026-05-22 20:51:18,144 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.8834 | L:26.69% S:33.65% V:34.66%
-19|paper-plume        | 2026-05-22 20:51:18: 2026-05-22 20:51:18,659 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143862 | L:27.04% S:34.05% V:35.05%
-22|paper-wld          | 2026-05-22 20:51:20: 2026-05-22 20:51:20,741 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280565 | L:26.99% S:33.97% V:34.99%
-7|paper-arb           | 2026-05-22 20:51:27: 2026-05-22 20:51:27,530 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110062 | L:26.85% S:33.81% V:34.81%
-10|paper-ena          | 2026-05-22 20:51:28: 2026-05-22 20:51:28,601 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103277 | L:26.79% S:33.74% V:34.74%
-11|paper-fet          | 2026-05-22 20:51:29: 2026-05-22 20:51:29,287 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.20364 | L:26.71% S:33.64% V:34.64%
-17|paper-op           | 2026-05-22 20:51:32: 2026-05-22 20:51:32,966 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1304 | L:26.87% S:33.83% V:34.83%
-21|paper-virtual      | 2026-05-22 20:51:35: 2026-05-22 20:51:35,425 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7559 | L:26.8% S:33.75% V:34.75%
-6|paper-alt           | 2026-05-22 20:51:42: 2026-05-22 20:51:42,532 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008824 | L:27.08% S:34.11% V:35.11%
-8|paper-bio           | 2026-05-22 20:51:43: 2026-05-22 20:51:43,016 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.03508 | L:26.7% S:33.62% V:34.61%
-13|paper-fil          | 2026-05-22 20:51:46: 2026-05-22 20:51:46,006 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.991 | L:26.87% S:33.83% V:34.83%
-15|paper-icp          | 2026-05-22 20:51:47: 2026-05-22 20:51:47,173 INFO: Heartbeat: TPV=259.66 | ICPUSDT=2.577 | L:26.6% S:33.94% V:34.52%
-16|paper-near         | 2026-05-22 20:51:47: 2026-05-22 20:51:47,975 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16778 | L:27.05% S:34.06% V:35.08%
-20|paper-tia          | 2026-05-22 20:52:05: 2026-05-22 20:52:05,697 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.427113 | L:26.74% S:33.68% V:34.68%
-3|paper-1000lunc      | 2026-05-22 20:52:27: 2026-05-22 20:52:27,123 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0798246 | L:26.76% S:33.7% V:34.7%
-4|paper-aero          | 2026-05-22 20:52:27: 2026-05-22 20:52:27,279 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.450317 | L:26.83% S:33.79% V:34.78%
-5|paper-algo          | 2026-05-22 20:52:28: 2026-05-22 20:52:28,225 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.115052 | L:26.93% S:33.92% V:34.91%
-9|paper-dodox         | 2026-05-22 20:52:30: 2026-05-22 20:52:30,205 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.018838 | L:27.27% S:34.34% V:35.35%
-12|paper-fida         | 2026-05-22 20:52:31: 2026-05-22 20:52:31,797 INFO: Heartbeat: TPV=259.68 | FIDAUSDT=0.0373612 | L:26.78% S:33.73% V:34.72%
-14|paper-grass        | 2026-05-22 20:52:32: 2026-05-22 20:52:32,815 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.425122 | L:26.85% S:33.81% V:34.81%
-18|paper-pendle       | 2026-05-22 20:52:35: 2026-05-22 20:52:35,519 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.8852 | L:26.71% S:33.68% V:34.69%
-19|paper-plume        | 2026-05-22 20:52:35: 2026-05-22 20:52:35,992 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.01435 | L:26.97% S:33.96% V:34.96%
-22|paper-wld          | 2026-05-22 20:52:38: 2026-05-22 20:52:38,081 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.281121 | L:27.04% S:34.04% V:35.06%
-7|paper-arb           | 2026-05-22 20:52:44: 2026-05-22 20:52:44,749 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1103 | L:26.91% S:33.89% V:34.88%
-10|paper-ena          | 2026-05-22 20:52:45: 2026-05-22 20:52:45,888 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10353 | L:26.85% S:33.82% V:34.82%
-11|paper-fet          | 2026-05-22 20:52:46: 2026-05-22 20:52:46,963 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2039 | L:26.74% S:33.68% V:34.69%
-17|paper-op           | 2026-05-22 20:52:50: 2026-05-22 20:52:50,289 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.130585 | L:26.91% S:33.88% V:34.88%
-21|paper-virtual      | 2026-05-22 20:52:52: 2026-05-22 20:52:52,933 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.757155 | L:26.85% S:33.8% V:34.8%
-6|paper-alt           | 2026-05-22 20:52:59: 2026-05-22 20:52:59,777 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00883252 | L:27.11% S:34.14% V:35.14%
-8|paper-bio           | 2026-05-22 20:53:00: 2026-05-22 20:53:00,373 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.03518 | L:26.77% S:33.72% V:34.71%
-13|paper-fil          | 2026-05-22 20:53:03: 2026-05-22 20:53:03,338 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.991 | L:26.87% S:33.83% V:34.83%
-15|paper-icp          | 2026-05-22 20:53:04: 2026-05-22 20:53:04,488 INFO: Heartbeat: TPV=259.65 | ICPUSDT=2.58294 | L:26.66% S:34.02% V:34.6%
-16|paper-near         | 2026-05-22 20:53:05: 2026-05-22 20:53:05,278 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16756 | L:27.04% S:34.06% V:35.07%
-20|paper-tia          | 2026-05-22 20:53:22: 2026-05-22 20:53:22,955 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.428 | L:26.8% S:33.75% V:34.75%
-3|paper-1000lunc      | 2026-05-22 20:53:44: 2026-05-22 20:53:44,414 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0801 | L:26.85% S:33.82% V:34.82%
-4|paper-aero          | 2026-05-22 20:53:44: 2026-05-22 20:53:44,711 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4504 | L:26.83% S:33.79% V:34.79%
-5|paper-algo          | 2026-05-22 20:53:45: 2026-05-22 20:53:45,511 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1153 | L:26.99% S:33.99% V:34.99%
-9|paper-dodox         | 2026-05-22 20:53:47: 2026-05-22 20:53:47,525 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0188765 | L:27.32% S:34.41% V:35.42%
-14|paper-grass        | 2026-05-22 20:53:50: 2026-05-22 20:53:50,498 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.4253 | L:26.86% S:33.83% V:34.82%
-18|paper-pendle       | 2026-05-22 20:53:52: 2026-05-22 20:53:52,778 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.883 | L:26.68% S:33.64% V:34.65%
-19|paper-plume        | 2026-05-22 20:53:53: 2026-05-22 20:53:53,516 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143501 | L:26.97% S:33.96% V:34.96%
-22|paper-wld          | 2026-05-22 20:53:55: 2026-05-22 20:53:55,434 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.281204 | L:27.05% S:34.05% V:35.07%
-7|paper-arb           | 2026-05-22 20:54:02: 2026-05-22 20:54:02,003 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110347 | L:26.92% S:33.9% V:34.9%
-10|paper-ena          | 2026-05-22 20:54:03: 2026-05-22 20:54:03,254 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103564 | L:26.86% S:33.83% V:34.83%
-11|paper-fet          | 2026-05-22 20:54:04: 2026-05-22 20:54:04,319 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204112 | L:26.77% S:33.72% V:34.72%
-17|paper-op           | 2026-05-22 20:54:07: 2026-05-22 20:54:07,622 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.130577 | L:26.9% S:33.88% V:34.88%
-21|paper-virtual      | 2026-05-22 20:54:10: 2026-05-22 20:54:10,340 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7573 | L:26.85% S:33.81% V:34.81%
-6|paper-alt           | 2026-05-22 20:54:17: 2026-05-22 20:54:17,143 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008849 | L:27.16% S:34.2% V:35.21%
-8|paper-bio           | 2026-05-22 20:54:17: 2026-05-22 20:54:17,711 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0352136 | L:26.8% S:33.75% V:34.74%
-12|paper-fida         | 2026-05-22 20:54:20: 2026-05-22 20:54:20,087 INFO: Rebalance needed (2 actions). TPV: 259.68
-12|paper-fida         | 2026-05-22 20:54:20: 2026-05-22 20:54:20,088 INFO: PAPER ORDER EXECUTED: BUY 232 FIDAUSDT (LONG) at 0.03675 | PnL: +0.0000$
-12|paper-fida         | 2026-05-22 20:54:20: 2026-05-22 20:54:20,088 INFO: PAPER ORDER EXECUTED: SELL 291 FIDAUSDT (SHORT) at 0.03675 | PnL: +0.0000$
-13|paper-fil          | 2026-05-22 20:54:20: 2026-05-22 20:54:20,591 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.992 | L:26.89% S:33.87% V:34.87%
-15|paper-icp          | 2026-05-22 20:54:21: 2026-05-22 20:54:21,937 INFO: Heartbeat: TPV=259.63 | ICPUSDT=2.591 | L:26.75% S:34.13% V:34.71%
-16|paper-near         | 2026-05-22 20:54:22: 2026-05-22 20:54:22,550 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16492 | L:27.01% S:34.01% V:35.03%
-12|paper-fida         | 2026-05-22 20:54:35: 2026-05-22 20:54:35,528 INFO: Heartbeat: TPV=259.67 | FIDAUSDT=0.0368544 | L:27.08% S:34.1% V:34.25%
-20|paper-tia          | 2026-05-22 20:54:40: 2026-05-22 20:54:40,344 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.428785 | L:26.85% S:33.82% V:34.82%
-3|paper-1000lunc      | 2026-05-22 20:55:01: 2026-05-22 20:55:01,829 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0801038 | L:26.86% S:33.82% V:34.82%
-4|paper-aero          | 2026-05-22 20:55:02: 2026-05-22 20:55:02,013 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.450882 | L:26.86% S:33.83% V:34.83%
-5|paper-algo          | 2026-05-22 20:55:02: 2026-05-22 20:55:02,802 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.115263 | L:26.98% S:33.98% V:34.98%
-9|paper-dodox         | 2026-05-22 20:55:04: 2026-05-22 20:55:04,835 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.018818 | L:27.24% S:34.3% V:35.31%
-14|paper-grass        | 2026-05-22 20:55:07: 2026-05-22 20:55:07,736 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.423308 | L:26.73% S:33.67% V:34.66%
-18|paper-pendle       | 2026-05-22 20:55:10: 2026-05-22 20:55:10,051 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.88547 | L:26.72% S:33.69% V:34.7%
-19|paper-plume        | 2026-05-22 20:55:10: 2026-05-22 20:55:10,952 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143801 | L:27.03% S:34.03% V:35.04%
-22|paper-wld          | 2026-05-22 20:55:12: 2026-05-22 20:55:12,891 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2805 | L:26.98% S:33.96% V:34.98%
-7|paper-arb           | 2026-05-22 20:55:19: 2026-05-22 20:55:19,307 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110291 | L:26.91% S:33.88% V:34.88%
-10|paper-ena          | 2026-05-22 20:55:20: 2026-05-22 20:55:20,529 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103585 | L:26.87% S:33.84% V:34.84%
-11|paper-fet          | 2026-05-22 20:55:21: 2026-05-22 20:55:21,699 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204368 | L:26.8% S:33.76% V:34.76%
-17|paper-op           | 2026-05-22 20:55:24: 2026-05-22 20:55:24,944 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1306 | L:26.91% S:33.89% V:34.88%
-21|paper-virtual      | 2026-05-22 20:55:27: 2026-05-22 20:55:27,704 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7563 | L:26.82% S:33.77% V:34.76%
-6|paper-alt           | 2026-05-22 20:55:34: 2026-05-22 20:55:34,434 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008859 | L:27.19% S:34.24% V:35.25%
-8|paper-bio           | 2026-05-22 20:55:34: 2026-05-22 20:55:34,976 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0352 | L:26.79% S:33.74% V:34.73%
-13|paper-fil          | 2026-05-22 20:55:37: 2026-05-22 20:55:37,982 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.991 | L:26.87% S:33.83% V:34.83%
-15|paper-icp          | 2026-05-22 20:55:39: 2026-05-22 20:55:39,213 INFO: Heartbeat: TPV=259.64 | ICPUSDT=2.58804 | L:26.71% S:34.09% V:34.67%
-16|paper-near         | 2026-05-22 20:55:39: 2026-05-22 20:55:39,874 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16415 | L:27.0% S:34.0% V:35.02%
-12|paper-fida         | 2026-05-22 20:55:52: 2026-05-22 20:55:52,926 INFO: Heartbeat: TPV=259.66 | FIDAUSDT=0.0369706 | L:27.16% S:34.21% V:34.36%
-20|paper-tia          | 2026-05-22 20:55:57: 2026-05-22 20:55:57,661 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.4293 | L:26.88% S:33.86% V:34.86%
-3|paper-1000lunc      | 2026-05-22 20:56:19: 2026-05-22 20:56:19,164 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.08018 | L:26.88% S:33.85% V:34.85%
-4|paper-aero          | 2026-05-22 20:56:19: 2026-05-22 20:56:19,354 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.451139 | L:26.88% S:33.85% V:34.84%
-5|paper-algo          | 2026-05-22 20:56:20: 2026-05-22 20:56:20,141 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.11537 | L:27.01% S:34.01% V:35.01%
-9|paper-dodox         | 2026-05-22 20:56:22: 2026-05-22 20:56:22,137 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.018821 | L:27.24% S:34.3% V:35.31%
-14|paper-grass        | 2026-05-22 20:56:25: 2026-05-22 20:56:25,220 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.4234 | L:26.74% S:33.68% V:34.67%
-18|paper-pendle       | 2026-05-22 20:56:27: 2026-05-22 20:56:27,383 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.8903 | L:26.79% S:33.78% V:34.78%
-19|paper-plume        | 2026-05-22 20:56:28: 2026-05-22 20:56:28,248 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0144107 | L:27.08% S:34.11% V:35.11%
-22|paper-wld          | 2026-05-22 20:56:30: 2026-05-22 20:56:30,287 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2809 | L:27.02% S:34.01% V:35.03%
-7|paper-arb           | 2026-05-22 20:56:36: 2026-05-22 20:56:36,703 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110529 | L:26.97% S:33.96% V:34.96%
-10|paper-ena          | 2026-05-22 20:56:37: 2026-05-22 20:56:37,886 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10388 | L:26.95% S:33.94% V:34.94%
-11|paper-fet          | 2026-05-22 20:56:39: 2026-05-22 20:56:39,030 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204965 | L:26.88% S:33.86% V:34.87%
-17|paper-op           | 2026-05-22 20:56:42: 2026-05-22 20:56:42,417 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1308 | L:26.95% S:33.94% V:34.94%
-21|paper-virtual      | 2026-05-22 20:56:45: 2026-05-22 20:56:45,076 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.758896 | L:26.91% S:33.88% V:34.88%
-6|paper-alt           | 2026-05-22 20:56:51: 2026-05-22 20:56:51,718 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00886224 | L:27.2% S:34.25% V:35.26%
-8|paper-bio           | 2026-05-22 20:56:52: 2026-05-22 20:56:52,307 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.035236 | L:26.82% S:33.77% V:34.77%
-13|paper-fil          | 2026-05-22 20:56:55: 2026-05-22 20:56:55,267 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.992478 | L:26.91% S:33.88% V:34.88%
-15|paper-icp          | 2026-05-22 20:56:56: 2026-05-22 20:56:56,464 INFO: Heartbeat: TPV=259.63 | ICPUSDT=2.593 | L:26.77% S:34.16% V:34.74%
-16|paper-near         | 2026-05-22 20:56:57: 2026-05-22 20:56:57,227 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.17066 | L:27.08% S:34.1% V:35.12%
-12|paper-fida         | 2026-05-22 20:57:10: 2026-05-22 20:57:10,238 INFO: Heartbeat: TPV=259.65 | FIDAUSDT=0.03719 | L:27.33% S:34.41% V:34.56%
-20|paper-tia          | 2026-05-22 20:57:15: 2026-05-22 20:57:15,021 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.4291 | L:26.87% S:33.84% V:34.84%
-3|paper-1000lunc      | 2026-05-22 20:57:36: 2026-05-22 20:57:36,655 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0800545 | L:26.84% S:33.8% V:34.8%
-4|paper-aero          | 2026-05-22 20:57:36: 2026-05-22 20:57:36,706 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.450656 | L:26.85% S:33.81% V:34.81%
-5|paper-algo          | 2026-05-22 20:57:37: 2026-05-22 20:57:37,569 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.115366 | L:27.01% S:34.01% V:35.01%
-9|paper-dodox         | 2026-05-22 20:57:39: 2026-05-22 20:57:39,469 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0188208 | L:27.24% S:34.3% V:35.31%
-14|paper-grass        | 2026-05-22 20:57:42: 2026-05-22 20:57:42,561 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.4236 | L:26.75% S:33.69% V:34.68%
-18|paper-pendle       | 2026-05-22 20:57:44: 2026-05-22 20:57:44,666 INFO: Heartbeat: TPV=259.69 | PENDLEUSDT=1.88839 | L:26.76% S:33.74% V:34.75%
-19|paper-plume        | 2026-05-22 20:57:45: 2026-05-22 20:57:45,615 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143911 | L:27.05% S:34.06% V:35.06%
-22|paper-wld          | 2026-05-22 20:57:47: 2026-05-22 20:57:47,703 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.281 | L:27.03% S:34.02% V:35.04%
-7|paper-arb           | 2026-05-22 20:57:54: 2026-05-22 20:57:54,139 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110452 | L:26.95% S:33.93% V:34.93%
-10|paper-ena          | 2026-05-22 20:57:55: 2026-05-22 20:57:55,273 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103674 | L:26.89% S:33.87% V:34.87%
-11|paper-fet          | 2026-05-22 20:57:56: 2026-05-22 20:57:56,460 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204665 | L:26.84% S:33.81% V:34.82%
-17|paper-op           | 2026-05-22 20:57:59: 2026-05-22 20:57:59,711 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1307 | L:26.93% S:33.91% V:34.91%
-21|paper-virtual      | 2026-05-22 20:58:02: 2026-05-22 20:58:02,510 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.758 | L:26.88% S:33.84% V:34.84%
-6|paper-alt           | 2026-05-22 20:58:09: 2026-05-22 20:58:09,148 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008822 | L:27.08% S:34.1% V:35.1%
-8|paper-bio           | 2026-05-22 20:58:09: 2026-05-22 20:58:09,634 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0351477 | L:26.75% S:33.69% V:34.68%
-12|paper-fida         | 2026-05-22 20:58:12: 2026-05-22 20:58:12,033 INFO: Rebalance needed (1 actions). TPV: 259.64
-12|paper-fida         | 2026-05-22 20:58:12: 2026-05-22 20:58:12,033 INFO: PAPER ORDER EXECUTED: BUY 202 FIDAUSDT (SHORT) at 0.0373768 | PnL: +0.0626$
-13|paper-fil          | 2026-05-22 20:58:12: 2026-05-22 20:58:12,594 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.992 | L:26.89% S:33.87% V:34.87%
-15|paper-icp          | 2026-05-22 20:58:13: 2026-05-22 20:58:13,784 INFO: Heartbeat: TPV=259.63 | ICPUSDT=2.58957 | L:26.73% S:34.11% V:34.7%
-16|paper-near         | 2026-05-22 20:58:14: 2026-05-22 20:58:14,582 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.168 | L:27.05% S:34.06% V:35.08%
-12|paper-fida         | 2026-05-22 20:58:27: 2026-05-22 20:58:27,493 INFO: Heartbeat: TPV=259.63 | FIDAUSDT=0.0373269 | L:27.43% S:33.96% V:34.69%
-20|paper-tia          | 2026-05-22 20:58:32: 2026-05-22 20:58:32,316 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.428358 | L:26.82% S:33.78% V:34.78%
-3|paper-1000lunc      | 2026-05-22 20:58:53: 2026-05-22 20:58:53,933 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0797342 | L:26.73% S:33.66% V:34.66%
-4|paper-aero          | 2026-05-22 20:58:54: 2026-05-22 20:58:54,015 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4498 | L:26.8% S:33.75% V:34.74%
-5|paper-algo          | 2026-05-22 20:58:54: 2026-05-22 20:58:54,996 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.11535 | L:27.0% S:34.0% V:35.0%
-9|paper-dodox         | 2026-05-22 20:58:56: 2026-05-22 20:58:56,894 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0188611 | L:27.3% S:34.38% V:35.39%
-14|paper-grass        | 2026-05-22 20:58:59: 2026-05-22 20:58:59,963 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.42294 | L:26.71% S:33.64% V:34.63%
-18|paper-pendle       | 2026-05-22 20:59:02: 2026-05-22 20:59:02,023 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.89581 | L:26.87% S:33.87% V:34.89%
-19|paper-plume        | 2026-05-22 20:59:02: 2026-05-22 20:59:02,865 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143451 | L:26.96% S:33.95% V:34.95%
-22|paper-wld          | 2026-05-22 20:59:05: 2026-05-22 20:59:05,140 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2807 | L:27.0% S:33.98% V:35.01%
-7|paper-arb           | 2026-05-22 20:59:11: 2026-05-22 20:59:11,463 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110257 | L:26.9% S:33.87% V:34.87%
-10|paper-ena          | 2026-05-22 20:59:12: 2026-05-22 20:59:12,535 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10345 | L:26.83% S:33.8% V:34.79%
-11|paper-fet          | 2026-05-22 20:59:13: 2026-05-22 20:59:13,824 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2045 | L:26.82% S:33.78% V:34.79%
-17|paper-op           | 2026-05-22 20:59:17: 2026-05-22 20:59:17,078 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.1306 | L:26.91% S:33.89% V:34.88%
-21|paper-virtual      | 2026-05-22 20:59:19: 2026-05-22 20:59:19,842 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.757174 | L:26.85% S:33.81% V:34.8%
-6|paper-alt           | 2026-05-22 20:59:26: 2026-05-22 20:59:26,575 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008849 | L:27.16% S:34.2% V:35.21%
-8|paper-bio           | 2026-05-22 20:59:26: 2026-05-22 20:59:26,929 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.03509 | L:26.71% S:33.63% V:34.62%
-13|paper-fil          | 2026-05-22 20:59:29: 2026-05-22 20:59:29,884 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.991 | L:26.87% S:33.83% V:34.83%
-14|paper-grass        | 2026-05-22 20:59:30: 2026-05-22 20:59:30,864 INFO: Rebalance needed (1 actions). TPV: 259.68
-14|paper-grass        | 2026-05-22 20:59:30: 2026-05-22 20:59:30,865 INFO: PAPER ORDER EXECUTED: SELL 17.8 GRASSUSDT (SHORT) at 0.4202 | PnL: +0.0000$
-15|paper-icp          | 2026-05-22 20:59:31: 2026-05-22 20:59:31,146 INFO: Heartbeat: TPV=259.63 | ICPUSDT=2.59 | L:26.73% S:34.12% V:34.7%
-16|paper-near         | 2026-05-22 20:59:32: 2026-05-22 20:59:32,035 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16522 | L:27.01% S:34.02% V:35.04%
-12|paper-fida         | 2026-05-22 20:59:44: 2026-05-22 20:59:44,899 INFO: Heartbeat: TPV=259.61 | FIDAUSDT=0.0371888 | L:27.33% S:33.84% V:34.57%
-20|paper-tia          | 2026-05-22 20:59:49: 2026-05-22 20:59:49,630 INFO: Heartbeat: TPV=259.68 | TIAUSDT=0.427759 | L:26.78% S:33.74% V:34.74%
-4|paper-aero          | 2026-05-22 21:00:11: 2026-05-22 21:00:11,369 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.448772 | L:26.74% S:33.67% V:34.66%
-3|paper-1000lunc      | 2026-05-22 21:00:11: 2026-05-22 21:00:11,391 INFO: Heartbeat: TPV=259.68 | 1000LUNCUSDT=0.0798703 | L:26.78% S:33.72% V:34.72%
-5|paper-algo          | 2026-05-22 21:00:12: 2026-05-22 21:00:12,266 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.115307 | L:26.99% S:33.99% V:34.99%
-9|paper-dodox         | 2026-05-22 21:00:14: 2026-05-22 21:00:14,229 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0188461 | L:27.28% S:34.35% V:35.36%
-14|paper-grass        | 2026-05-22 21:00:17: 2026-05-22 21:00:17,448 INFO: Heartbeat: TPV=259.68 | GRASSUSDT=0.420058 | L:26.53% S:33.99% V:34.39%
-18|paper-pendle       | 2026-05-22 21:00:19: 2026-05-22 21:00:19,335 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.89803 | L:26.9% S:33.91% V:34.93%
-19|paper-plume        | 2026-05-22 21:00:20: 2026-05-22 21:00:20,181 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.014337 | L:26.95% S:33.93% V:34.93%
-22|paper-wld          | 2026-05-22 21:00:22: 2026-05-22 21:00:22,398 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280804 | L:27.01% S:34.0% V:35.02%
-7|paper-arb           | 2026-05-22 21:00:28: 2026-05-22 21:00:28,873 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1101 | L:26.86% S:33.83% V:34.82%
-10|paper-ena          | 2026-05-22 21:00:29: 2026-05-22 21:00:29,859 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103424 | L:26.83% S:33.79% V:34.79%
-11|paper-fet          | 2026-05-22 21:00:31: 2026-05-22 21:00:31,503 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2042 | L:26.78% S:33.73% V:34.74%
-14|paper-grass        | 2026-05-22 21:00:32: 2026-05-22 21:00:32,895 INFO: Rebalance needed (1 actions). TPV: 259.72
-14|paper-grass        | 2026-05-22 21:00:32: 2026-05-22 21:00:32,895 INFO: PAPER ORDER EXECUTED: BUY 18.3 GRASSUSDT (LONG) at 0.418237 | PnL: +0.0000$
-17|paper-op           | 2026-05-22 21:00:34: 2026-05-22 21:00:34,397 INFO: Heartbeat: TPV=259.68 | OPUSDT=0.130301 | L:26.85% S:33.81% V:34.8%
-21|paper-virtual      | 2026-05-22 21:00:37: 2026-05-22 21:00:37,172 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.755364 | L:26.78% S:33.72% V:34.72%
-0|supervisor-service  | 2026-05-22 21:00:42: 2026-05-22 21:00:42,817 INFO: --- Running Supervisor Cycle at Fri May 22 21:00:42 2026 ---
-6|paper-alt           | 2026-05-22 21:00:44: 2026-05-22 21:00:44,070 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008846 | L:27.15% S:34.19% V:35.2%
-8|paper-bio           | 2026-05-22 21:00:44: 2026-05-22 21:00:44,273 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.035004 | L:26.64% S:33.55% V:34.54%
-13|paper-fil          | 2026-05-22 21:00:47: 2026-05-22 21:00:47,306 INFO: Heartbeat: TPV=259.68 | FILUSDT=0.987218 | L:26.76% S:33.71% V:34.7%
-15|paper-icp          | 2026-05-22 21:00:48: 2026-05-22 21:00:48,553 INFO: Heartbeat: TPV=259.65 | ICPUSDT=2.583 | L:26.66% S:34.02% V:34.61%
-16|paper-near         | 2026-05-22 21:00:49: 2026-05-22 21:00:49,664 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.1643 | L:27.0% S:34.0% V:35.02%
-PM2                   | Stopping app:paper-1000lunc id:3
-PM2                   | App [paper-1000lunc:3] exited with code [1] via signal [SIGINT]
-PM2                   | pid=1648 msg=process killed
-PM2                   | Stopping app:paper-fil id:13
-PM2                   | App [paper-fil:13] exited with code [1] via signal [SIGINT]
-PM2                   | pid=13408 msg=process killed
-PM2                   | Stopping app:paper-op id:17
-PM2                   | App [paper-op:17] exited with code [1] via signal [SIGINT]
-PM2                   | pid=11432 msg=process killed
-PM2                   | Stopping app:paper-tia id:20
-PM2                   | App [paper-tia:20] exited with code [1] via signal [SIGINT]
-PM2                   | pid=14128 msg=process killed
-PM2                   | App [paper-inj:23] starting in -fork mode-
-PM2                   | App [paper-inj:23] online
-PM2                   | App [paper-sui:24] starting in -fork mode-
-PM2                   | App [paper-sui:24] online
-23|paper-inj          | 2026-05-22 21:00:59: 2026-05-22 21:00:59,487 INFO: --- Launching Bot: INJUSDT (PAPER Mode) ---
-PM2                   | App [paper-uni:25] starting in -fork mode-
-PM2                   | App [paper-uni:25] online
-23|paper-inj          | 2026-05-22 21:00:59: 2026-05-22 21:00:59,969 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,061 INFO: --- Launching Bot: SUIUSDT (PAPER Mode) ---
-PM2                   | App [paper-lpt:26] starting in -fork mode-
-PM2                   | App [paper-lpt:26] online
-23|paper-inj          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,283 INFO: Heartbeat: TPV=260.00 | INJUSDT=5.31827 | L:0.0% S:0.0% V:35.0%
-23|paper-inj          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,283 INFO: Cold Start: Allowing all actions to form portfolio baseline at 5.31827
-23|paper-inj          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,283 INFO: Rebalance needed (2 actions). TPV: 260.00
-23|paper-inj          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,283 INFO: PAPER ORDER EXECUTED: BUY 65.9 INJUSDT (LONG) at 5.31827 | PnL: +0.0000$
-23|paper-inj          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,283 INFO: PAPER ORDER EXECUTED: SELL 83.1 INJUSDT (SHORT) at 5.31827 | PnL: +0.0000$
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,550 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-25|paper-uni          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,654 INFO: --- Launching Bot: UNIUSDT (PAPER Mode) ---
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,873 INFO: Heartbeat: TPV=260.00 | SUIUSDT=1.07498 | L:0.0% S:0.0% V:35.0%
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,873 INFO: Cold Start: Allowing all actions to form portfolio baseline at 1.07498
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,873 INFO: Rebalance needed (2 actions). TPV: 260.00
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,873 INFO: PAPER ORDER EXECUTED: BUY 326.5 SUIUSDT (LONG) at 1.07498 | PnL: +0.0000$
-24|paper-sui          | 2026-05-22 21:01:00: 2026-05-22 21:01:00,873 INFO: PAPER ORDER EXECUTED: SELL 411.1 SUIUSDT (SHORT) at 1.07498 | PnL: +0.0000$
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: Cycle completed successfully.
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:44,038 INFO: --- Starting Pure Live Supervisor (Strict Scanner Sync) ---
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:48,847 INFO: --- Launching Bot: 1000LUNCUSDT (PAPER Mode) ---
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:48,848 INFO: EMERGENCY STOP TRIGGERED
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:49,789 INFO: --- Launching Bot: FILUSDT (PAPER Mode) ---
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:49,790 INFO: EMERGENCY STOP TRIGGERED
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:50,718 INFO: --- Launching Bot: OPUSDT (PAPER Mode) ---
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:50,719 INFO: EMERGENCY STOP TRIGGERED
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:51,643 INFO: --- Launching Bot: TIAUSDT (PAPER Mode) ---
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: 2026-05-22 21:00:51,644 INFO: EMERGENCY STOP TRIGGERED
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,035 INFO: SUPERVISOR: [PM2] Applying action deleteProcessId on app [paper-1000lunc](ids: [ 3 ])
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: [PM2] [paper-1000lunc](3) ✓
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 13 │ paper-fil             │ default     │ N/A     │ fork    │ 13408    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,036 INFO: SUPERVISOR: │ 17 │ paper-op              │ default     │ N/A     │ fork    │ 11432    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 20 │ paper-tia             │ default     │ N/A     │ fork    │ 14128    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: [PM2] Applying action deleteProcessId on app [paper-fil](ids: [ 13 ])
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: [PM2] [paper-fil](13) ✓
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,037 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 17 │ paper-op              │ default     │ N/A     │ fork    │ 11432    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 20 │ paper-tia             │ default     │ N/A     │ fork    │ 14128    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,038 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: [PM2] Applying action deleteProcessId on app [paper-op](ids: [ 17 ])
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: [PM2] [paper-op](17) ✓
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,039 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 20 │ paper-tia             │ default     │ N/A     │ fork    │ 14128    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: [PM2] Applying action deleteProcessId on app [paper-tia](ids: [ 20 ])
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: [PM2] [paper-tia](20) ✓
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,040 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: [PM2] Starting C:\Python\Prosperous_Bot\futures_portfolio\main.py in fork_mode (1 instance)
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: [PM2] Done.
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,041 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 23 │ paper-inj             │ default     │ N/A     │ fork    │ 4084     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,042 INFO: SUPERVISOR: [PM2] Starting C:\Python\Prosperous_Bot\futures_portfolio\main.py in fork_mode (1 instance)
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: [PM2] Done.
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 23 │ paper-inj             │ default     │ N/A     │ fork    │ 4084     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,043 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 24 │ paper-sui             │ default     │ N/A     │ fork    │ 8824     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: [PM2] Starting C:\Python\Prosperous_Bot\futures_portfolio\main.py in fork_mode (1 instance)
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: [PM2] Done.
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,044 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 23 │ paper-inj             │ default     │ N/A     │ fork    │ 4084     │ 1s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 24 │ paper-sui             │ default     │ N/A     │ fork    │ 8824     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 25 │ paper-uni             │ default     │ N/A     │ fork    │ 2072     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,045 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: [PM2] Starting C:\Python\Prosperous_Bot\futures_portfolio\main.py in fork_mode (1 instance)
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: [PM2] Done.
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: ┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: ├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 4  │ paper-aero            │ default     │ N/A     │ fork    │ 12932    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 5  │ paper-algo            │ default     │ N/A     │ fork    │ 1432     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 6  │ paper-alt             │ default     │ N/A     │ fork    │ 17312    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 7  │ paper-arb             │ default     │ N/A     │ fork    │ 13760    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 8  │ paper-bio             │ default     │ N/A     │ fork    │ 10464    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 9  │ paper-dodox           │ default     │ N/A     │ fork    │ 5788     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 10 │ paper-ena             │ default     │ N/A     │ fork    │ 12360    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 11 │ paper-fet             │ default     │ N/A     │ fork    │ 2228     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 12 │ paper-fida            │ default     │ N/A     │ fork    │ 14532    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 14 │ paper-grass           │ default     │ N/A     │ fork    │ 3000     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 15 │ paper-icp             │ default     │ N/A     │ fork    │ 13304    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 23 │ paper-inj             │ default     │ N/A     │ fork    │ 4084     │ 1s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 26 │ paper-lpt             │ default     │ N/A     │ fork    │ 6284     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,046 INFO: SUPERVISOR: │ 16 │ paper-near            │ default     │ N/A     │ fork    │ 16480    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 18 │ paper-pendle          │ default     │ N/A     │ fork    │ 16456    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 19 │ paper-plume           │ default     │ N/A     │ fork    │ 1744     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 24 │ paper-sui             │ default     │ N/A     │ fork    │ 8824     │ 1s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 25 │ paper-uni             │ default     │ N/A     │ fork    │ 2072     │ 0s     │ 0    │ online    │ 0%       │ 3.9mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 21 │ paper-virtual         │ default     │ N/A     │ fork    │ 14116    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 22 │ paper-wld             │ default     │ N/A     │ fork    │ 4536     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 0  │ supervisor-service    │ default     │ N/A     │ fork    │ 2664     │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 1  │ swarm-aggregator      │ default     │ N/A     │ fork    │ 14612    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: │ 2  │ telegram-sender       │ default     │ N/A     │ fork    │ 16768    │ 16m    │ 0    │ online    │ 0%       │ 3.8mb    │ svsma    │ disabled │
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: └────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: [PM2] Saving current process list...
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: [PM2] Successfully saved in C:\Users\svsma\.pm2\dump.pm2
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: SUPERVISOR: 2026-05-22 21:01:00,887 INFO: Cycle Complete. REAL Swarm: []
-0|supervisor-service  | 2026-05-22 21:01:01: 2026-05-22 21:01:01,047 INFO: Sleeping for 0.3 hours...
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,135 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-26|paper-lpt          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,225 INFO: --- Launching Bot: LPTUSDT (PAPER Mode) ---
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,439 INFO: Heartbeat: TPV=260.00 | UNIUSDT=3.53 | L:0.0% S:0.0% V:35.0%
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,439 INFO: Cold Start: Allowing all actions to form portfolio baseline at 3.53
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,439 INFO: Rebalance needed (2 actions). TPV: 260.00
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,439 INFO: PAPER ORDER EXECUTED: BUY 99 UNIUSDT (LONG) at 3.53 | PnL: +0.0000$
-25|paper-uni          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,439 INFO: PAPER ORDER EXECUTED: SELL 125 UNIUSDT (SHORT) at 3.53 | PnL: +0.0000$
-26|paper-lpt          | 2026-05-22 21:01:01: 2026-05-22 21:01:01,766 INFO: Telegram Queue ENABLED: C:\Python\Prosperous_Bot\futures_portfolio\signals\telegram_queue
-26|paper-lpt          | 2026-05-22 21:01:02: 2026-05-22 21:01:02,084 INFO: Heartbeat: TPV=260.00 | LPTUSDT=2.159 | L:0.0% S:0.0% V:35.0%
-26|paper-lpt          | 2026-05-22 21:01:02: 2026-05-22 21:01:02,085 INFO: Cold Start: Allowing all actions to form portfolio baseline at 2.159
-26|paper-lpt          | 2026-05-22 21:01:02: 2026-05-22 21:01:02,085 INFO: Rebalance needed (2 actions). TPV: 260.00
-26|paper-lpt          | 2026-05-22 21:01:02: 2026-05-22 21:01:02,085 INFO: PAPER ORDER EXECUTED: BUY 162.5 LPTUSDT (LONG) at 2.159 | PnL: +0.0000$
-26|paper-lpt          | 2026-05-22 21:01:02: 2026-05-22 21:01:02,085 INFO: PAPER ORDER EXECUTED: SELL 204.7 LPTUSDT (SHORT) at 2.159 | PnL: +0.0000$
-12|paper-fida         | 2026-05-22 21:01:02: 2026-05-22 21:01:02,316 INFO: Heartbeat: TPV=259.61 | FIDAUSDT=0.0371906 | L:27.33% S:33.84% V:34.57%
-4|paper-aero          | 2026-05-22 21:01:28: 2026-05-22 21:01:28,775 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4503 | L:26.83% S:33.79% V:34.78%
-5|paper-algo          | 2026-05-22 21:01:29: 2026-05-22 21:01:29,687 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1152 | L:26.97% S:33.96% V:34.96%
-9|paper-dodox         | 2026-05-22 21:01:31: 2026-05-22 21:01:31,533 INFO: Heartbeat: TPV=259.68 | DODOXUSDT=0.0189189 | L:27.38% S:34.48% V:35.5%
-14|paper-grass        | 2026-05-22 21:01:34: 2026-05-22 21:01:34,827 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.41844 | L:27.01% S:33.85% V:34.26%
-18|paper-pendle       | 2026-05-22 21:01:36: 2026-05-22 21:01:36,729 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.91164 | L:27.09% S:34.16% V:35.18%
-19|paper-plume        | 2026-05-22 21:01:37: 2026-05-22 21:01:37,491 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0143506 | L:26.97% S:33.96% V:34.96%
-22|paper-wld          | 2026-05-22 21:01:39: 2026-05-22 21:01:39,805 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.281921 | L:27.12% S:34.13% V:35.16%
-7|paper-arb           | 2026-05-22 21:01:46: 2026-05-22 21:01:46,153 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.110542 | L:26.97% S:33.96% V:34.96%
-9|paper-dodox         | 2026-05-22 21:01:47: 2026-05-22 21:01:47,012 INFO: Rebalance needed (1 actions). TPV: 259.68
-9|paper-dodox         | 2026-05-22 21:01:47: 2026-05-22 21:01:47,013 INFO: PAPER ORDER EXECUTED: BUY 373 DODOXUSDT (SHORT) at 0.0189528 | PnL: -0.1033$
-10|paper-ena          | 2026-05-22 21:01:47: 2026-05-22 21:01:47,115 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103722 | L:26.9% S:33.89% V:34.89%
-11|paper-fet          | 2026-05-22 21:01:48: 2026-05-22 21:01:48,884 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.204529 | L:26.83% S:33.79% V:34.79%
-21|paper-virtual      | 2026-05-22 21:01:54: 2026-05-22 21:01:54,558 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7583 | L:26.89% S:33.86% V:34.86%
-6|paper-alt           | 2026-05-22 21:02:01: 2026-05-22 21:02:01,506 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008898 | L:27.31% S:34.39% V:35.4%
-8|paper-bio           | 2026-05-22 21:02:01: 2026-05-22 21:02:01,559 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0349929 | L:26.63% S:33.54% V:34.53%
-15|paper-icp          | 2026-05-22 21:02:06: 2026-05-22 21:02:06,336 INFO: Heartbeat: TPV=259.63 | ICPUSDT=2.593 | L:26.77% S:34.16% V:34.74%
-16|paper-near         | 2026-05-22 21:02:07: 2026-05-22 21:02:07,000 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16667 | L:27.03% S:34.04% V:35.06%
-23|paper-inj          | 2026-05-22 21:02:17: 2026-05-22 21:02:17,585 INFO: Heartbeat: TPV=259.68 | INJUSDT=5.34025 | L:27.1% S:34.18% V:35.19%
-24|paper-sui          | 2026-05-22 21:02:18: 2026-05-22 21:02:18,137 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.07628 | L:27.06% S:34.08% V:35.09%
-25|paper-uni          | 2026-05-22 21:02:19: 2026-05-22 21:02:19,078 INFO: Heartbeat: TPV=259.68 | UNIUSDT=3.53486 | L:26.95% S:34.03% V:35.09%
-26|paper-lpt          | 2026-05-22 21:02:19: 2026-05-22 21:02:19,480 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.16388 | L:27.08% S:34.11% V:35.12%
-12|paper-fida         | 2026-05-22 21:02:19: 2026-05-22 21:02:19,718 INFO: Heartbeat: TPV=259.62 | FIDAUSDT=0.0372979 | L:27.41% S:33.93% V:34.67%
-4|paper-aero          | 2026-05-22 21:02:46: 2026-05-22 21:02:46,067 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4503 | L:26.83% S:33.79% V:34.78%
-5|paper-algo          | 2026-05-22 21:02:47: 2026-05-22 21:02:47,034 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1151 | L:26.95% S:33.93% V:34.93%
-9|paper-dodox         | 2026-05-22 21:02:48: 2026-05-22 21:02:48,928 INFO: Heartbeat: TPV=259.67 | DODOXUSDT=0.0189262 | L:27.4% S:33.95% V:35.51%
-14|paper-grass        | 2026-05-22 21:02:52: 2026-05-22 21:02:52,119 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.4209 | L:27.17% S:34.05% V:34.46%
-18|paper-pendle       | 2026-05-22 21:02:54: 2026-05-22 21:02:54,090 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.91015 | L:27.07% S:34.13% V:35.15%
-19|paper-plume        | 2026-05-22 21:02:54: 2026-05-22 21:02:54,907 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0142791 | L:26.84% S:33.79% V:34.79%
-22|paper-wld          | 2026-05-22 21:02:57: 2026-05-22 21:02:57,137 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280898 | L:27.02% S:34.01% V:35.03%
-7|paper-arb           | 2026-05-22 21:03:03: 2026-05-22 21:03:03,468 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.109995 | L:26.84% S:33.79% V:34.79%
-10|paper-ena          | 2026-05-22 21:03:04: 2026-05-22 21:03:04,474 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.103129 | L:26.75% S:33.69% V:34.69%
-11|paper-fet          | 2026-05-22 21:03:06: 2026-05-22 21:03:06,261 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.202917 | L:26.61% S:33.52% V:34.52%
-21|paper-virtual      | 2026-05-22 21:03:12: 2026-05-22 21:03:12,203 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7532 | L:26.71% S:33.63% V:34.62%
-6|paper-alt           | 2026-05-22 21:03:18: 2026-05-22 21:03:18,792 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00883664 | L:27.12% S:34.16% V:35.16%
-8|paper-bio           | 2026-05-22 21:03:18: 2026-05-22 21:03:18,946 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0348316 | L:26.51% S:33.38% V:34.37%
-8|paper-bio           | 2026-05-22 21:03:18: 2026-05-22 21:03:18,946 INFO: Rebalance needed (1 actions). TPV: 259.68
-8|paper-bio           | 2026-05-22 21:03:18: 2026-05-22 21:03:18,946 INFO: PAPER ORDER EXECUTED: SELL 230 BIOUSDT (SHORT) at 0.0348316 | PnL: +0.0000$
-15|paper-icp          | 2026-05-22 21:03:23: 2026-05-22 21:03:23,757 INFO: Heartbeat: TPV=259.67 | ICPUSDT=2.575 | L:26.58% S:33.91% V:34.5%
-16|paper-near         | 2026-05-22 21:03:24: 2026-05-22 21:03:24,304 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.159 | L:26.94% S:33.92% V:34.93%
-23|paper-inj          | 2026-05-22 21:03:35: 2026-05-22 21:03:35,155 INFO: Heartbeat: TPV=259.68 | INJUSDT=5.30474 | L:26.92% S:33.95% V:34.95%
-24|paper-sui          | 2026-05-22 21:03:35: 2026-05-22 21:03:35,396 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.07075 | L:26.93% S:33.9% V:34.91%
-25|paper-uni          | 2026-05-22 21:03:36: 2026-05-22 21:03:36,512 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.51661 | L:26.81% S:33.85% V:34.91%
-26|paper-lpt          | 2026-05-22 21:03:36: 2026-05-22 21:03:36,957 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.1506 | L:26.92% S:33.9% V:34.91%
-12|paper-fida         | 2026-05-22 21:03:37: 2026-05-22 21:03:37,072 INFO: Heartbeat: TPV=259.58 | FIDAUSDT=0.0369853 | L:27.18% S:33.65% V:34.38%
-4|paper-aero          | 2026-05-22 21:04:03: 2026-05-22 21:04:03,349 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.44724 | L:26.65% S:33.56% V:34.54%
-5|paper-algo          | 2026-05-22 21:04:04: 2026-05-22 21:04:04,370 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.114507 | L:26.81% S:33.76% V:34.75%
-9|paper-dodox         | 2026-05-22 21:04:06: 2026-05-22 21:04:06,228 INFO: Heartbeat: TPV=259.64 | DODOXUSDT=0.0188481 | L:27.29% S:33.82% V:35.37%
-14|paper-grass        | 2026-05-22 21:04:09: 2026-05-22 21:04:09,420 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.4213 | L:27.2% S:34.08% V:34.49%
-18|paper-pendle       | 2026-05-22 21:04:11: 2026-05-22 21:04:11,491 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.9104 | L:27.07% S:34.14% V:35.15%
-19|paper-plume        | 2026-05-22 21:04:12: 2026-05-22 21:04:12,335 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0142 | L:26.69% S:33.61% V:34.6%
-22|paper-wld          | 2026-05-22 21:04:14: 2026-05-22 21:04:14,412 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.280505 | L:26.98% S:33.96% V:34.98%
-7|paper-arb           | 2026-05-22 21:04:20: 2026-05-22 21:04:20,832 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1099 | L:26.81% S:33.76% V:34.76%
-10|paper-ena          | 2026-05-22 21:04:21: 2026-05-22 21:04:21,775 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10296 | L:26.71% S:33.64% V:34.63%
-11|paper-fet          | 2026-05-22 21:04:23: 2026-05-22 21:04:23,589 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.2032 | L:26.65% S:33.57% V:34.57%
-21|paper-virtual      | 2026-05-22 21:04:29: 2026-05-22 21:04:29,472 INFO: Heartbeat: TPV=259.68 | VIRTUALUSDT=0.7505 | L:26.61% S:33.51% V:34.5%
-6|paper-alt           | 2026-05-22 21:04:36: 2026-05-22 21:04:36,138 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00886031 | L:27.2% S:34.25% V:35.25%
-8|paper-bio           | 2026-05-22 21:04:36: 2026-05-22 21:04:36,238 INFO: Heartbeat: TPV=259.66 | BIOUSDT=0.03491 | L:26.57% S:34.08% V:34.45%
-15|paper-icp          | 2026-05-22 21:04:41: 2026-05-22 21:04:41,169 INFO: Heartbeat: TPV=259.66 | ICPUSDT=2.57641 | L:26.59% S:33.93% V:34.52%
-16|paper-near         | 2026-05-22 21:04:41: 2026-05-22 21:04:41,779 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.16479 | L:27.01% S:34.01% V:35.03%
-23|paper-inj          | 2026-05-22 21:04:52: 2026-05-22 21:04:52,387 INFO: Heartbeat: TPV=259.68 | INJUSDT=5.30268 | L:26.91% S:33.94% V:34.94%
-24|paper-sui          | 2026-05-22 21:04:52: 2026-05-22 21:04:52,700 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.06999 | L:26.91% S:33.88% V:34.88%
-25|paper-uni          | 2026-05-22 21:04:53: 2026-05-22 21:04:53,793 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.51544 | L:26.8% S:33.84% V:34.9%
-26|paper-lpt          | 2026-05-22 21:04:54: 2026-05-22 21:04:54,241 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.15261 | L:26.94% S:33.94% V:34.94%
-12|paper-fida         | 2026-05-22 21:04:54: 2026-05-22 21:04:54,446 INFO: Heartbeat: TPV=259.60 | FIDAUSDT=0.0371589 | L:27.31% S:33.81% V:34.54%
-21|paper-virtual      | 2026-05-22 21:05:15: 2026-05-22 21:05:15,814 INFO: Rebalance needed (1 actions). TPV: 259.68
-21|paper-virtual      | 2026-05-22 21:05:15: 2026-05-22 21:05:15,814 INFO: PAPER ORDER EXECUTED: SELL 10 VIRTUALUSDT (SHORT) at 0.7485 | PnL: +0.0000$
-4|paper-aero          | 2026-05-22 21:05:20: 2026-05-22 21:05:20,820 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4471 | L:26.64% S:33.55% V:34.53%
-5|paper-algo          | 2026-05-22 21:05:21: 2026-05-22 21:05:21,751 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1145 | L:26.8% S:33.75% V:34.75%
-9|paper-dodox         | 2026-05-22 21:05:23: 2026-05-22 21:05:23,641 INFO: Heartbeat: TPV=259.63 | DODOXUSDT=0.0188257 | L:27.25% S:33.78% V:35.33%
-14|paper-grass        | 2026-05-22 21:05:26: 2026-05-22 21:05:26,745 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.42077 | L:27.16% S:34.04% V:34.45%
-18|paper-pendle       | 2026-05-22 21:05:29: 2026-05-22 21:05:29,002 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.9111 | L:27.08% S:34.15% V:35.17%
-19|paper-plume        | 2026-05-22 21:05:29: 2026-05-22 21:05:29,556 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.01418 | L:26.65% S:33.56% V:34.55%
-22|paper-wld          | 2026-05-22 21:05:31: 2026-05-22 21:05:31,740 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2804 | L:26.97% S:33.95% V:34.97%
-7|paper-arb           | 2026-05-22 21:05:38: 2026-05-22 21:05:38,134 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1099 | L:26.81% S:33.76% V:34.76%
-10|paper-ena          | 2026-05-22 21:05:39: 2026-05-22 21:05:39,181 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10294 | L:26.7% S:33.63% V:34.62%
-11|paper-fet          | 2026-05-22 21:05:40: 2026-05-22 21:05:40,952 INFO: Heartbeat: TPV=259.68 | FETUSDT=0.202825 | L:26.6% S:33.51% V:34.5%
-21|paper-virtual      | 2026-05-22 21:05:46: 2026-05-22 21:05:46,688 INFO: Heartbeat: TPV=259.67 | VIRTUALUSDT=0.7492 | L:26.57% S:34.03% V:34.44%
-8|paper-bio           | 2026-05-22 21:05:53: 2026-05-22 21:05:53,390 INFO: Heartbeat: TPV=259.67 | BIOUSDT=0.03487 | L:26.54% S:34.04% V:34.41%
-6|paper-alt           | 2026-05-22 21:05:53: 2026-05-22 21:05:53,450 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.008852 | L:27.17% S:34.22% V:35.22%
-15|paper-icp          | 2026-05-22 21:05:58: 2026-05-22 21:05:58,303 INFO: Heartbeat: TPV=259.67 | ICPUSDT=2.572 | L:26.54% S:33.87% V:34.45%
-16|paper-near         | 2026-05-22 21:05:58: 2026-05-22 21:05:58,961 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.15514 | L:26.89% S:33.86% V:34.87%
-23|paper-inj          | 2026-05-22 21:06:09: 2026-05-22 21:06:09,586 INFO: Heartbeat: TPV=259.68 | INJUSDT=5.30491 | L:26.92% S:33.95% V:34.95%
-24|paper-sui          | 2026-05-22 21:06:10: 2026-05-22 21:06:10,292 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.06966 | L:26.9% S:33.87% V:34.87%
-25|paper-uni          | 2026-05-22 21:06:10: 2026-05-22 21:06:10,906 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.51439 | L:26.8% S:33.83% V:34.89%
-26|paper-lpt          | 2026-05-22 21:06:11: 2026-05-22 21:06:11,363 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.15175 | L:26.93% S:33.92% V:34.93%
-12|paper-fida         | 2026-05-22 21:06:11: 2026-05-22 21:06:11,899 INFO: Heartbeat: TPV=259.59 | FIDAUSDT=0.0370462 | L:27.23% S:33.71% V:34.44%
-15|paper-icp          | 2026-05-22 21:06:13: 2026-05-22 21:06:13,726 INFO: Rebalance needed (1 actions). TPV: 259.70
-11|paper-fet          | 2026-05-22 21:06:27: 2026-05-22 21:06:27,145 INFO: Rebalance needed (1 actions). TPV: 259.68
-11|paper-fet          | 2026-05-22 21:06:27: 2026-05-22 21:06:27,145 INFO: PAPER ORDER EXECUTED: SELL 36 FETUSDT (SHORT) at 0.2024 | PnL: +0.0000$
-15|paper-icp          | 2026-05-22 21:06:29: 2026-05-22 21:06:29,141 INFO: Rebalance needed (1 actions). TPV: 259.69
-4|paper-aero          | 2026-05-22 21:06:37: 2026-05-22 21:06:37,871 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4474 | L:26.66% S:33.57% V:34.56%
-5|paper-algo          | 2026-05-22 21:06:38: 2026-05-22 21:06:38,876 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.114344 | L:26.77% S:33.71% V:34.7%
-9|paper-dodox         | 2026-05-22 21:06:40: 2026-05-22 21:06:40,966 INFO: Heartbeat: TPV=259.62 | DODOXUSDT=0.018797 | L:27.21% S:33.73% V:35.28%
-14|paper-grass        | 2026-05-22 21:06:43: 2026-05-22 21:06:43,887 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.420393 | L:27.14% S:34.01% V:34.42%
-15|paper-icp          | 2026-05-22 21:06:44: 2026-05-22 21:06:44,603 INFO: Rebalance needed (1 actions). TPV: 259.69
-18|paper-pendle       | 2026-05-22 21:06:46: 2026-05-22 21:06:46,112 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.9082 | L:27.04% S:34.1% V:35.11%
-19|paper-plume        | 2026-05-22 21:06:46: 2026-05-22 21:06:46,992 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0141594 | L:26.61% S:33.51% V:34.5%
-22|paper-wld          | 2026-05-22 21:06:48: 2026-05-22 21:06:48,866 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.279406 | L:26.88% S:33.83% V:34.84%
-7|paper-arb           | 2026-05-22 21:06:55: 2026-05-22 21:06:55,249 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1098 | L:26.79% S:33.73% V:34.73%
-10|paper-ena          | 2026-05-22 21:06:56: 2026-05-22 21:06:56,637 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10291 | L:26.69% S:33.62% V:34.61%
-11|paper-fet          | 2026-05-22 21:06:58: 2026-05-22 21:06:58,013 INFO: Heartbeat: TPV=259.69 | FETUSDT=0.202043 | L:26.5% S:33.94% V:34.37%
-15|paper-icp          | 2026-05-22 21:07:00: 2026-05-22 21:07:00,048 INFO: Rebalance needed (1 actions). TPV: 259.70
-15|paper-icp          | 2026-05-22 21:07:00: 2026-05-22 21:07:00,048 INFO: PAPER ORDER EXECUTED: BUY 3 ICPUSDT (LONG) at 2.5591 | PnL: +0.0000$
-21|paper-virtual      | 2026-05-22 21:07:03: 2026-05-22 21:07:03,905 INFO: Heartbeat: TPV=259.67 | VIRTUALUSDT=0.748946 | L:26.56% S:34.02% V:34.43%
-6|paper-alt           | 2026-05-22 21:07:10: 2026-05-22 21:07:10,580 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00885139 | L:27.17% S:34.21% V:35.22%
-8|paper-bio           | 2026-05-22 21:07:10: 2026-05-22 21:07:10,623 INFO: Heartbeat: TPV=259.68 | BIOUSDT=0.0348338 | L:26.51% S:34.0% V:34.37%
-15|paper-icp          | 2026-05-22 21:07:15: 2026-05-22 21:07:15,482 INFO: Heartbeat: TPV=259.69 | ICPUSDT=2.554 | L:26.95% S:33.63% V:34.21%
-16|paper-near         | 2026-05-22 21:07:16: 2026-05-22 21:07:16,112 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.14282 | L:26.74% S:33.67% V:34.67%
-23|paper-inj          | 2026-05-22 21:07:26: 2026-05-22 21:07:26,738 INFO: Heartbeat: TPV=259.68 | INJUSDT=5.31167 | L:26.96% S:34.0% V:35.0%
-24|paper-sui          | 2026-05-22 21:07:27: 2026-05-22 21:07:27,511 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.07019 | L:26.91% S:33.88% V:34.89%
-25|paper-uni          | 2026-05-22 21:07:28: 2026-05-22 21:07:28,185 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.517 | L:26.82% S:33.86% V:34.91%
-26|paper-lpt          | 2026-05-22 21:07:28: 2026-05-22 21:07:28,740 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.15 | L:26.91% S:33.9% V:34.9%
-12|paper-fida         | 2026-05-22 21:07:29: 2026-05-22 21:07:29,123 INFO: Heartbeat: TPV=259.59 | FIDAUSDT=0.03707 | L:27.24% S:33.73% V:34.46%
-19|paper-plume        | 2026-05-22 21:07:48: 2026-05-22 21:07:48,740 INFO: Rebalance needed (1 actions). TPV: 259.68
-19|paper-plume        | 2026-05-22 21:07:48: 2026-05-22 21:07:48,740 INFO: PAPER ORDER EXECUTED: SELL 568 PLUMEUSDT (SHORT) at 0.014105 | PnL: +0.0000$
-4|paper-aero          | 2026-05-22 21:07:55: 2026-05-22 21:07:55,387 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.447668 | L:26.67% S:33.59% V:34.58%
-5|paper-algo          | 2026-05-22 21:07:56: 2026-05-22 21:07:56,199 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.11432 | L:26.76% S:33.7% V:34.69%
-9|paper-dodox         | 2026-05-22 21:07:58: 2026-05-22 21:07:58,435 INFO: Heartbeat: TPV=259.61 | DODOXUSDT=0.018757 | L:27.16% S:33.66% V:35.2%
-14|paper-grass        | 2026-05-22 21:08:01: 2026-05-22 21:08:01,132 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.4195 | L:27.08% S:33.94% V:34.34%
-18|paper-pendle       | 2026-05-22 21:08:03: 2026-05-22 21:08:03,367 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.91 | L:27.07% S:34.13% V:35.15%
-19|paper-plume        | 2026-05-22 21:08:04: 2026-05-22 21:08:04,186 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0141 | L:26.5% S:33.99% V:34.35%
-22|paper-wld          | 2026-05-22 21:08:06: 2026-05-22 21:08:06,157 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.279 | L:26.84% S:33.78% V:34.79%
-7|paper-arb           | 2026-05-22 21:08:12: 2026-05-22 21:08:12,507 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.109679 | L:26.76% S:33.7% V:34.69%
-10|paper-ena          | 2026-05-22 21:08:13: 2026-05-22 21:08:13,993 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.102898 | L:26.69% S:33.62% V:34.61%
-11|paper-fet          | 2026-05-22 21:08:15: 2026-05-22 21:08:15,205 INFO: Heartbeat: TPV=259.70 | FETUSDT=0.2019 | L:26.48% S:33.91% V:34.34%
-21|paper-virtual      | 2026-05-22 21:08:21: 2026-05-22 21:08:21,164 INFO: Heartbeat: TPV=259.70 | VIRTUALUSDT=0.7465 | L:26.47% S:33.9% V:34.31%
-6|paper-alt           | 2026-05-22 21:08:27: 2026-05-22 21:08:27,818 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00885687 | L:27.19% S:34.23% V:35.24%
-8|paper-bio           | 2026-05-22 21:08:27: 2026-05-22 21:08:27,968 INFO: Heartbeat: TPV=259.69 | BIOUSDT=0.0348027 | L:26.49% S:33.97% V:34.34%
-15|paper-icp          | 2026-05-22 21:08:32: 2026-05-22 21:08:32,789 INFO: Heartbeat: TPV=259.69 | ICPUSDT=2.54702 | L:26.87% S:33.54% V:34.12%
-16|paper-near         | 2026-05-22 21:08:33: 2026-05-22 21:08:33,668 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.13124 | L:26.59% S:33.49% V:34.49%
-8|paper-bio           | 2026-05-22 21:08:43: 2026-05-22 21:08:43,397 INFO: Rebalance needed (1 actions). TPV: 259.70
-8|paper-bio           | 2026-05-22 21:08:43: 2026-05-22 21:08:43,397 INFO: PAPER ORDER EXECUTED: BUY 209 BIOUSDT (LONG) at 0.03474 | PnL: +0.0000$
-23|paper-inj          | 2026-05-22 21:08:44: 2026-05-22 21:08:44,032 INFO: Heartbeat: TPV=259.69 | INJUSDT=5.28289 | L:26.81% S:33.81% V:34.81%
-24|paper-sui          | 2026-05-22 21:08:44: 2026-05-22 21:08:44,839 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.06616 | L:26.81% S:33.76% V:34.76%
-25|paper-uni          | 2026-05-22 21:08:45: 2026-05-22 21:08:45,612 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.504 | L:26.72% S:33.73% V:34.78%
-26|paper-lpt          | 2026-05-22 21:08:45: 2026-05-22 21:08:45,933 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.144 | L:26.83% S:33.8% V:34.8%
-12|paper-fida         | 2026-05-22 21:08:46: 2026-05-22 21:08:46,333 INFO: Heartbeat: TPV=259.56 | FIDAUSDT=0.0368492 | L:27.08% S:33.53% V:34.26%
-21|paper-virtual      | 2026-05-22 21:09:07: 2026-05-22 21:09:07,579 INFO: Rebalance needed (1 actions). TPV: 259.72
-21|paper-virtual      | 2026-05-22 21:09:07: 2026-05-22 21:09:07,579 INFO: PAPER ORDER EXECUTED: BUY 10.9 VIRTUALUSDT (LONG) at 0.743891 | PnL: +0.0000$
-4|paper-aero          | 2026-05-22 21:09:12: 2026-05-22 21:09:12,687 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.4469 | L:26.63% S:33.53% V:34.52%
-5|paper-algo          | 2026-05-22 21:09:13: 2026-05-22 21:09:13,571 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1137 | L:26.62% S:33.52% V:34.5%
-9|paper-dodox         | 2026-05-22 21:09:15: 2026-05-22 21:09:15,720 INFO: Heartbeat: TPV=259.57 | DODOXUSDT=0.018665 | L:27.03% S:33.5% V:35.04%
-11|paper-fet          | 2026-05-22 21:09:16: 2026-05-22 21:09:16,957 INFO: Rebalance needed (1 actions). TPV: 259.71
-11|paper-fet          | 2026-05-22 21:09:16: 2026-05-22 21:09:16,957 INFO: PAPER ORDER EXECUTED: BUY 35 FETUSDT (LONG) at 0.201677 | PnL: +0.0000$
-12|paper-fida         | 2026-05-22 21:09:17: 2026-05-22 21:09:17,214 INFO: Rebalance needed (1 actions). TPV: 259.55
-12|paper-fida         | 2026-05-22 21:09:17: 2026-05-22 21:09:17,214 INFO: PAPER ORDER EXECUTED: SELL 196 FIDAUSDT (SHORT) at 0.03675 | PnL: +0.0000$
-14|paper-grass        | 2026-05-22 21:09:18: 2026-05-22 21:09:18,350 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.4182 | L:27.0% S:33.83% V:34.24%
-18|paper-pendle       | 2026-05-22 21:09:20: 2026-05-22 21:09:20,773 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.9096 | L:27.06% S:34.12% V:35.14%
-19|paper-plume        | 2026-05-22 21:09:21: 2026-05-22 21:09:21,476 INFO: Heartbeat: TPV=259.69 | PLUMEUSDT=0.01409 | L:26.48% S:33.96% V:34.33%
-22|paper-wld          | 2026-05-22 21:09:23: 2026-05-22 21:09:23,375 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2779 | L:26.73% S:33.65% V:34.66%
-7|paper-arb           | 2026-05-22 21:09:29: 2026-05-22 21:09:29,670 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.1096 | L:26.74% S:33.67% V:34.66%
-10|paper-ena          | 2026-05-22 21:09:31: 2026-05-22 21:09:31,186 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.102703 | L:26.64% S:33.55% V:34.54%
-11|paper-fet          | 2026-05-22 21:09:32: 2026-05-22 21:09:32,341 INFO: Heartbeat: TPV=259.70 | FETUSDT=0.201585 | L:26.98% S:33.86% V:34.29%
-21|paper-virtual      | 2026-05-22 21:09:38: 2026-05-22 21:09:38,491 INFO: Heartbeat: TPV=259.72 | VIRTUALUSDT=0.7426 | L:26.95% S:33.72% V:34.13%
-6|paper-alt           | 2026-05-22 21:09:45: 2026-05-22 21:09:45,070 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00884166 | L:27.14% S:34.18% V:35.18%
-8|paper-bio           | 2026-05-22 21:09:45: 2026-05-22 21:09:45,084 INFO: Heartbeat: TPV=259.70 | BIOUSDT=0.03472 | L:26.98% S:33.89% V:34.25%
-15|paper-icp          | 2026-05-22 21:09:50: 2026-05-22 21:09:50,020 INFO: Heartbeat: TPV=259.69 | ICPUSDT=2.548 | L:26.88% S:33.56% V:34.13%
-16|paper-near         | 2026-05-22 21:09:50: 2026-05-22 21:09:50,967 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.13164 | L:26.6% S:33.49% V:34.49%
-23|paper-inj          | 2026-05-22 21:10:01: 2026-05-22 21:10:01,230 INFO: Heartbeat: TPV=259.69 | INJUSDT=5.23465 | L:26.57% S:33.5% V:34.49%
-24|paper-sui          | 2026-05-22 21:10:02: 2026-05-22 21:10:02,001 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.06548 | L:26.79% S:33.74% V:34.73%
-25|paper-uni          | 2026-05-22 21:10:02: 2026-05-22 21:10:02,939 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.50238 | L:26.7% S:33.72% V:34.77%
-26|paper-lpt          | 2026-05-22 21:10:03: 2026-05-22 21:10:03,021 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.14354 | L:26.83% S:33.79% V:34.79%
-12|paper-fida         | 2026-05-22 21:10:03: 2026-05-22 21:10:03,642 INFO: Heartbeat: TPV=259.54 | FIDAUSDT=0.0368648 | L:27.1% S:34.11% V:34.28%
-4|paper-aero          | 2026-05-22 21:10:29: 2026-05-22 21:10:29,833 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.44732 | L:26.65% S:33.56% V:34.55%
-5|paper-algo          | 2026-05-22 21:10:30: 2026-05-22 21:10:30,615 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.1138 | L:26.64% S:33.55% V:34.53%
-9|paper-dodox         | 2026-05-22 21:10:32: 2026-05-22 21:10:32,726 INFO: Heartbeat: TPV=259.60 | DODOXUSDT=0.0187474 | L:27.14% S:33.64% V:35.19%
-14|paper-grass        | 2026-05-22 21:10:35: 2026-05-22 21:10:35,615 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.4183 | L:27.0% S:33.84% V:34.24%
-18|paper-pendle       | 2026-05-22 21:10:37: 2026-05-22 21:10:37,838 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.90441 | L:26.99% S:34.03% V:35.04%
-19|paper-plume        | 2026-05-22 21:10:38: 2026-05-22 21:10:38,482 INFO: Heartbeat: TPV=259.68 | PLUMEUSDT=0.0141114 | L:26.52% S:34.02% V:34.38%
-22|paper-wld          | 2026-05-22 21:10:40: 2026-05-22 21:10:40,402 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.278407 | L:26.78% S:33.71% V:34.72%
-7|paper-arb           | 2026-05-22 21:10:46: 2026-05-22 21:10:46,630 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.10984 | L:26.8% S:33.75% V:34.74%
-10|paper-ena          | 2026-05-22 21:10:48: 2026-05-22 21:10:48,186 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10285 | L:26.68% S:33.6% V:34.59%
-11|paper-fet          | 2026-05-22 21:10:49: 2026-05-22 21:10:49,417 INFO: Heartbeat: TPV=259.70 | FETUSDT=0.2018 | L:27.01% S:33.89% V:34.33%
-21|paper-virtual      | 2026-05-22 21:10:55: 2026-05-22 21:10:55,489 INFO: Heartbeat: TPV=259.72 | VIRTUALUSDT=0.7432 | L:26.97% S:33.75% V:34.16%
-6|paper-alt           | 2026-05-22 21:11:02: 2026-05-22 21:11:02,224 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00885 | L:27.16% S:34.21% V:35.21%
-8|paper-bio           | 2026-05-22 21:11:02: 2026-05-22 21:11:02,284 INFO: Heartbeat: TPV=259.69 | BIOUSDT=0.03488 | L:27.11% S:34.05% V:34.41%
-15|paper-icp          | 2026-05-22 21:11:07: 2026-05-22 21:11:07,090 INFO: Heartbeat: TPV=259.69 | ICPUSDT=2.55362 | L:26.94% S:33.63% V:34.21%
-16|paper-near         | 2026-05-22 21:11:08: 2026-05-22 21:11:08,040 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.13889 | L:26.69% S:33.61% V:34.61%
-23|paper-inj          | 2026-05-22 21:11:18: 2026-05-22 21:11:18,194 INFO: Heartbeat: TPV=259.69 | INJUSDT=5.262 | L:26.71% S:33.68% V:34.67%
-24|paper-sui          | 2026-05-22 21:11:19: 2026-05-22 21:11:19,098 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.0693 | L:26.89% S:33.86% V:34.86%
-26|paper-lpt          | 2026-05-22 21:11:20: 2026-05-22 21:11:20,034 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.148 | L:26.88% S:33.86% V:34.86%
-12|paper-fida         | 2026-05-22 21:11:20: 2026-05-22 21:11:20,712 INFO: Heartbeat: TPV=259.53 | FIDAUSDT=0.0369481 | L:27.16% S:34.18% V:34.35%
-25|paper-uni          | 2026-05-22 21:11:20: 2026-05-22 21:11:20,790 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.51269 | L:26.78% S:33.82% V:34.87%
-4|paper-aero          | 2026-05-22 21:11:47: 2026-05-22 21:11:47,228 INFO: Heartbeat: TPV=259.68 | AEROUSDT=0.447685 | L:26.67% S:33.59% V:34.58%
-5|paper-algo          | 2026-05-22 21:11:47: 2026-05-22 21:11:47,760 INFO: Heartbeat: TPV=259.68 | ALGOUSDT=0.114 | L:26.69% S:33.61% V:34.6%
-9|paper-dodox         | 2026-05-22 21:11:49: 2026-05-22 21:11:49,876 INFO: Heartbeat: TPV=259.60 | DODOXUSDT=0.0187413 | L:27.14% S:33.63% V:35.18%
-14|paper-grass        | 2026-05-22 21:11:52: 2026-05-22 21:11:52,858 INFO: Heartbeat: TPV=259.71 | GRASSUSDT=0.417454 | L:26.95% S:33.77% V:34.18%
-18|paper-pendle       | 2026-05-22 21:11:54: 2026-05-22 21:11:54,994 INFO: Heartbeat: TPV=259.68 | PENDLEUSDT=1.9103 | L:27.07% S:34.13% V:35.15%
-19|paper-plume        | 2026-05-22 21:11:55: 2026-05-22 21:11:55,677 INFO: Heartbeat: TPV=259.67 | PLUMEUSDT=0.0141281 | L:26.55% S:34.06% V:34.42%
-22|paper-wld          | 2026-05-22 21:11:57: 2026-05-22 21:11:57,714 INFO: Heartbeat: TPV=259.68 | WLDUSDT=0.2782 | L:26.76% S:33.68% V:34.69%
-7|paper-arb           | 2026-05-22 21:12:03: 2026-05-22 21:12:03,937 INFO: Heartbeat: TPV=259.68 | ARBUSDT=0.109993 | L:26.84% S:33.79% V:34.79%
-10|paper-ena          | 2026-05-22 21:12:05: 2026-05-22 21:12:05,339 INFO: Heartbeat: TPV=259.68 | ENAUSDT=0.10295 | L:26.7% S:33.63% V:34.63%
-11|paper-fet          | 2026-05-22 21:12:06: 2026-05-22 21:12:06,798 INFO: Heartbeat: TPV=259.70 | FETUSDT=0.2024 | L:27.09% S:34.0% V:34.43%
-21|paper-virtual      | 2026-05-22 21:12:12: 2026-05-22 21:12:12,803 INFO: Heartbeat: TPV=259.72 | VIRTUALUSDT=0.744653 | L:27.03% S:33.81% V:34.22%
-6|paper-alt           | 2026-05-22 21:12:19: 2026-05-22 21:12:19,420 INFO: Heartbeat: TPV=259.68 | ALTUSDT=0.00887 | L:27.23% S:34.28% V:35.29%
-8|paper-bio           | 2026-05-22 21:12:19: 2026-05-22 21:12:19,501 INFO: Heartbeat: TPV=259.69 | BIOUSDT=0.03496 | L:27.17% S:34.12% V:34.49%
-15|paper-icp          | 2026-05-22 21:12:24: 2026-05-22 21:12:24,288 INFO: Heartbeat: TPV=259.70 | ICPUSDT=2.55886 | L:27.0% S:33.7% V:34.28%
-16|paper-near         | 2026-05-22 21:12:25: 2026-05-22 21:12:25,375 INFO: Heartbeat: TPV=259.68 | NEARUSDT=2.13819 | L:26.68% S:33.59% V:34.6%
-23|paper-inj          | 2026-05-22 21:12:35: 2026-05-22 21:12:35,456 INFO: Heartbeat: TPV=259.69 | INJUSDT=5.27704 | L:26.78% S:33.77% V:34.77%
-9|paper-dodox         | 2026-05-22 21:12:36: 2026-05-22 21:12:36,360 INFO: Rebalance needed (1 actions). TPV: 259.56
-9|paper-dodox         | 2026-05-22 21:12:36: 2026-05-22 21:12:36,360 INFO: PAPER ORDER EXECUTED: SELL 391 DODOXUSDT (SHORT) at 0.0186303 | PnL: +0.0000$
-24|paper-sui          | 2026-05-22 21:12:36: 2026-05-22 21:12:36,377 INFO: Heartbeat: TPV=259.68 | SUIUSDT=1.07037 | L:26.92% S:33.89% V:34.89%
-26|paper-lpt          | 2026-05-22 21:12:37: 2026-05-22 21:12:37,372 INFO: Heartbeat: TPV=259.68 | LPTUSDT=2.147 | L:26.87% S:33.85% V:34.85%
-12|paper-fida         | 2026-05-22 21:12:37: 2026-05-22 21:12:37,967 INFO: Heartbeat: TPV=259.52 | FIDAUSDT=0.03713 | L:27.29% S:34.35% V:34.53%
-25|paper-uni          | 2026-05-22 21:12:38: 2026-05-22 21:12:38,070 INFO: Heartbeat: TPV=259.69 | UNIUSDT=3.51436 | L:26.8% S:33.83% V:34.89%
+33|paper-hive          | 2026-05-31 12:53:49: 2026-05-31 12:53:49,408 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.36 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:53:49: 2026-05-31 12:53:49,408 INFO: Heartbeat: TPV=114.47 | PnL=-0.53 | HIVEUSDT=0.06772 | L:15.9% [-34.1%] {+18.23$} | S:84.1% [+34.1%] {+96.24$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+6|paper-hei            | 2026-05-31 12:53:50: 2026-05-31 12:53:50,050 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:53:50: 2026-05-31 12:53:50,050 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:53:51: 2026-05-31 12:53:51,343 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:53:52: 2026-05-31 12:53:52,360 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:53:52: 2026-05-31 12:53:52,360 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.74 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:53:55: 2026-05-31 12:53:55,117 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:53:55: 2026-05-31 12:53:55,117 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:53:55: 2026-05-31 12:53:55,119 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0107875 | Cycles=5
+35|paper-algo          | 2026-05-31 12:53:56: 2026-05-31 12:53:56,705 INFO: Heartbeat: TPV=115.41 | PnL=+0.41 | ALGOUSDT=0.127631 | L:48.9% [-1.1%] {+56.39$} | S:51.1% [+1.2%] {+59.03$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+13|paper-wld           | 2026-05-31 12:53:57: 2026-05-31 12:53:57,626 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:53:57: 2026-05-31 12:53:57,626 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:53:57: 2026-05-31 12:53:57,626 INFO: Heartbeat: TPV=115.85 | PnL=+0.85 | WLDUSDT=0.332822 | L:42.8% [-7.2%] {+49.54$} | S:56.8% [+6.8%] {+65.79$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+3|paper-portal         | 2026-05-31 12:53:57: 2026-05-31 12:53:57,777 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:53:57: 2026-05-31 12:53:57,777 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.57 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:53:57: 2026-05-31 12:53:57,895 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.19 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:53:58: 2026-05-31 12:53:58,310 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:53:58: 2026-05-31 12:53:58,310 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.14 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:53:58: 2026-05-31 12:53:58,310 INFO: Heartbeat: TPV=113.73 | PnL=-1.27 | MEMEUSDT=0.0006025 | L:80.1% [+30.1%] {+91.07$} | S:19.9% [-30.1%] {+22.66$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+37|paper-zec           | 2026-05-31 12:53:59: 2026-05-31 12:53:59,221 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:53:59: 2026-05-31 12:53:59,803 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:53:59: 2026-05-31 12:53:59,804 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.22 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:53:59: 2026-05-31 12:53:59,804 INFO: Heartbeat: TPV=113.57 | PnL=-1.43 | ONDOUSDT=0.364 | L:42.7% [-7.3%] {+48.52$} | S:56.5% [+6.5%] {+64.21$} | V:0.0% [+0.0%] {+0.00$} | C:0.7% {0.84$}
+14|paper-fet           | 2026-05-31 12:54:02: 2026-05-31 12:54:02,547 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:54:02: 2026-05-31 12:54:02,548 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:54:03: 2026-05-31 12:54:03,056 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:54:03: 2026-05-31 12:54:03,057 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.77 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:54:03: 2026-05-31 12:54:03,329 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:54:03: 2026-05-31 12:54:03,329 INFO: Heartbeat: TPV=114.64 | PnL=-0.36 | SIGNUSDT=0.0125442 | L:50.2% [+0.2%] {+57.54$} | S:49.4% [-0.6%] {+56.61$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+10|paper-xlm           | 2026-05-31 12:54:04: 2026-05-31 12:54:04,297 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:54:04: 2026-05-31 12:54:04,298 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:54:04: 2026-05-31 12:54:04,712 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.32 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:54:04: 2026-05-31 12:54:04,787 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.34 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:54:05: 2026-05-31 12:54:05,358 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:54:05: 2026-05-31 12:54:05,359 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:54:06: 2026-05-31 12:54:06,641 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:07: 2026-05-31 12:54:07,657 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:07: 2026-05-31 12:54:07,657 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.75 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:54:07: 2026-05-31 12:54:07,657 INFO: Heartbeat: TPV=113.72 | PnL=-1.28 | VVVUSDT=18.1873 | L:59.7% [+9.7%] {+67.87$} | S:40.0% [-10.0%] {+45.46$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+4|paper-nfp            | 2026-05-31 12:54:10: 2026-05-31 12:54:10,416 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:54:10: 2026-05-31 12:54:10,416 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:54:10: 2026-05-31 12:54:10,416 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0108 | L:23.7% [-26.3%] {+27.31$} | S:76.3% [+26.3%] {+88.06$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+7|paper-stg            | 2026-05-31 12:54:12: 2026-05-31 12:54:12,248 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:12: 2026-05-31 12:54:12,928 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:12: 2026-05-31 12:54:12,928 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:54:13: 2026-05-31 12:54:13,079 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:54:13: 2026-05-31 12:54:13,080 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.66 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:54:13: 2026-05-31 12:54:13,204 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.19 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:54:13: 2026-05-31 12:54:13,637 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:54:13: 2026-05-31 12:54:13,637 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.08 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:54:13: 2026-05-31 12:54:13,640 INFO: Heartbeat: TPV=113.80 | PnL=-1.20 | MEMEUSDT=0.0006005 | Cycles=5
+37|paper-zec           | 2026-05-31 12:54:14: 2026-05-31 12:54:14,534 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:54:15: 2026-05-31 12:54:15,114 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:54:15: 2026-05-31 12:54:15,114 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.22 < 0, surplus selling blocked
+42|paper-ton           | 2026-05-31 12:54:16: 2026-05-31 12:54:16,829 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.87299 | L:49.4% [-0.6%] {+56.64$} | S:50.8% [+0.8%] {+58.33$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+14|paper-fet           | 2026-05-31 12:54:17: 2026-05-31 12:54:17,850 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:54:17: 2026-05-31 12:54:17,851 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:54:18: 2026-05-31 12:54:18,372 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:54:18: 2026-05-31 12:54:18,372 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.74 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:54:18: 2026-05-31 12:54:18,647 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:54:19: 2026-05-31 12:54:19,609 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:54:19: 2026-05-31 12:54:19,609 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:54:20: 2026-05-31 12:54:20,016 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.34 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:54:20: 2026-05-31 12:54:20,166 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.27 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:54:20: 2026-05-31 12:54:20,166 INFO: Heartbeat: TPV=112.33 | PnL=-2.67 | PUNDIXUSDT=0.148948 | L:29.5% [-20.5%] {+33.14$} | S:70.0% [+20.0%] {+78.62$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+6|paper-hei            | 2026-05-31 12:54:20: 2026-05-31 12:54:20,677 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:54:20: 2026-05-31 12:54:20,677 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:54:21: 2026-05-31 12:54:21,940 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:22: 2026-05-31 12:54:22,956 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:22: 2026-05-31 12:54:22,956 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.76 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:54:25: 2026-05-31 12:54:25,716 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:54:25: 2026-05-31 12:54:25,716 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:54:27: 2026-05-31 12:54:27,548 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:28: 2026-05-31 12:54:28,226 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:28: 2026-05-31 12:54:28,226 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:54:28: 2026-05-31 12:54:28,382 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:54:28: 2026-05-31 12:54:28,382 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.69 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:54:28: 2026-05-31 12:54:28,503 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.19 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:54:28: 2026-05-31 12:54:28,947 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:54:28: 2026-05-31 12:54:28,948 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.02 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:54:29: 2026-05-31 12:54:29,836 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 12:54:29: 2026-05-31 12:54:29,958 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.479 | L:48.7% [-1.3%] {+55.87$} | S:51.5% [+1.4%] {+59.05$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+11|paper-ondo          | 2026-05-31 12:54:30: 2026-05-31 12:54:30,436 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:54:30: 2026-05-31 12:54:30,437 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.17 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:54:33: 2026-05-31 12:54:33,158 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:54:33: 2026-05-31 12:54:33,158 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:54:33: 2026-05-31 12:54:33,688 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:54:33: 2026-05-31 12:54:33,688 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.73 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:54:34: 2026-05-31 12:54:34,919 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:54:34: 2026-05-31 12:54:34,919 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:54:35: 2026-05-31 12:54:35,319 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.36 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:54:35: 2026-05-31 12:54:35,548 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.26 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:54:35: 2026-05-31 12:54:35,982 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:54:35: 2026-05-31 12:54:35,982 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:54:37: 2026-05-31 12:54:37,238 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 12:54:37: 2026-05-31 12:54:37,239 INFO: Heartbeat: TPV=115.40 | PnL=+0.40 | NEARUSDT=2.25117 | L:50.3% [+0.3%] {+58.09$} | S:49.3% [-0.7%] {+56.88$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+16|paper-vvv           | 2026-05-31 12:54:38: 2026-05-31 12:54:38,253 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:38: 2026-05-31 12:54:38,254 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.72 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:54:41: 2026-05-31 12:54:41,016 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:54:41: 2026-05-31 12:54:41,017 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:54:42: 2026-05-31 12:54:42,865 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:54:43: 2026-05-31 12:54:43,698 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:54:43: 2026-05-31 12:54:43,698 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.73 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:54:43: 2026-05-31 12:54:43,757 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:43: 2026-05-31 12:54:43,757 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:54:43: 2026-05-31 12:54:43,816 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.15 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:54:44: 2026-05-31 12:54:44,257 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:54:44: 2026-05-31 12:54:44,257 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.01 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:54:45: 2026-05-31 12:54:45,134 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:54:45: 2026-05-31 12:54:45,134 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=550.34 | L:51.2% [+1.2%] {+59.08$} | S:48.8% [-1.2%] {+56.34$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 12:54:45: 2026-05-31 12:54:45,743 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:54:45: 2026-05-31 12:54:45,743 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.16 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:54:48: 2026-05-31 12:54:48,460 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:54:48: 2026-05-31 12:54:48,460 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:54:49: 2026-05-31 12:54:49,003 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:54:49: 2026-05-31 12:54:49,004 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.71 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:54:50: 2026-05-31 12:54:50,232 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:54:50: 2026-05-31 12:54:50,232 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:54:50: 2026-05-31 12:54:50,623 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.35 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:54:50: 2026-05-31 12:54:50,939 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.24 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:54:51: 2026-05-31 12:54:51,287 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:54:51: 2026-05-31 12:54:51,287 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:54:51: 2026-05-31 12:54:51,287 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.10593 | L:44.0% [-6.0%] {+51.21$} | S:55.9% [+5.9%] {+65.17$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+17|paper-near          | 2026-05-31 12:54:52: 2026-05-31 12:54:52,549 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:53: 2026-05-31 12:54:53,552 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:54:53: 2026-05-31 12:54:53,552 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.78 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:54:56: 2026-05-31 12:54:56,328 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:54:56: 2026-05-31 12:54:56,328 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:54:58: 2026-05-31 12:54:58,167 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 12:54:58: 2026-05-31 12:54:58,168 INFO: Heartbeat: TPV=118.04 | PnL=+3.04 | STGUSDT=0.240433 | L:51.7% [+1.7%] {+61.05$} | S:47.8% [-2.2%] {+56.43$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.56$}
+3|paper-portal         | 2026-05-31 12:54:59: 2026-05-31 12:54:59,001 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:54:59: 2026-05-31 12:54:59,001 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.70 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:54:59: 2026-05-31 12:54:59,001 INFO: Heartbeat: TPV=113.89 | PnL=-1.11 | PORTALUSDT=0.0140373 | L:-2.8% [-52.8%] {-3.20$} | S:101.6% [+51.6%] {+115.71$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+13|paper-wld           | 2026-05-31 12:54:59: 2026-05-31 12:54:59,057 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:54:59: 2026-05-31 12:54:59,057 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:54:59: 2026-05-31 12:54:59,115 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.15 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:54:59: 2026-05-31 12:54:59,115 INFO: Heartbeat: TPV=115.29 | PnL=+0.29 | RENDERUSDT=2.082 | L:49.2% [-0.8%] {+56.67$} | S:50.5% [+0.5%] {+58.19$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+22|paper-meme          | 2026-05-31 12:54:59: 2026-05-31 12:54:59,568 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:54:59: 2026-05-31 12:54:59,568 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.04 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:55:00: 2026-05-31 12:55:00,527 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:55:01: 2026-05-31 12:55:01,068 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:55:01: 2026-05-31 12:55:01,068 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.14 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:55:03: 2026-05-31 12:55:03,778 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:55:03: 2026-05-31 12:55:03,778 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:55:03: 2026-05-31 12:55:03,778 INFO: Heartbeat: TPV=115.34 | PnL=+0.34 | FETUSDT=0.27095 | L:46.7% [-3.3%] {+53.85$} | S:53.1% [+3.1%] {+61.29$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+5|paper-id             | 2026-05-31 12:55:04: 2026-05-31 12:55:04,321 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:55:04: 2026-05-31 12:55:04,321 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.71 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:55:04: 2026-05-31 12:55:04,321 INFO: Heartbeat: TPV=115.46 | PnL=+0.46 | IDUSDT=0.03949 | L:35.6% [-14.4%] {+41.13$} | S:64.4% [+14.4%] {+74.33$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+10|paper-xlm           | 2026-05-31 12:55:05: 2026-05-31 12:55:05,531 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:55:05: 2026-05-31 12:55:05,531 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:55:05: 2026-05-31 12:55:05,531 INFO: Heartbeat: TPV=115.38 | PnL=+0.38 | XLMUSDT=0.24403 | L:63.2% [+13.2%] {+72.97$} | S:36.7% [-13.3%] {+42.39$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+33|paper-hive          | 2026-05-31 12:55:06: 2026-05-31 12:55:06,167 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.36 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:55:06: 2026-05-31 12:55:06,167 INFO: Heartbeat: TPV=114.46 | PnL=-0.54 | HIVEUSDT=0.0676916 | L:15.8% [-34.2%] {+18.13$} | S:84.2% [+34.2%] {+96.34$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+25|paper-pundix        | 2026-05-31 12:55:06: 2026-05-31 12:55:06,317 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.39 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:55:06: 2026-05-31 12:55:06,605 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:55:06: 2026-05-31 12:55:06,605 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:55:07: 2026-05-31 12:55:07,848 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:08: 2026-05-31 12:55:08,860 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:08: 2026-05-31 12:55:08,861 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.85 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:55:11: 2026-05-31 12:55:11,628 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:55:11: 2026-05-31 12:55:11,628 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:55:13: 2026-05-31 12:55:13,227 INFO: Heartbeat: TPV=115.40 | PnL=+0.40 | ALGOUSDT=0.128 | L:49.6% [-0.4%] {+57.21$} | S:50.4% [+0.4%] {+58.19$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+7|paper-stg            | 2026-05-31 12:55:13: 2026-05-31 12:55:13,469 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:14: 2026-05-31 12:55:14,315 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:14: 2026-05-31 12:55:14,315 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.61 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:55:14: 2026-05-31 12:55:14,359 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:55:14: 2026-05-31 12:55:14,359 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:55:14: 2026-05-31 12:55:14,359 INFO: Heartbeat: TPV=115.85 | PnL=+0.85 | WLDUSDT=0.332959 | L:42.9% [-7.1%] {+49.65$} | S:56.7% [+6.7%] {+65.68$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+36|paper-render        | 2026-05-31 12:55:14: 2026-05-31 12:55:14,415 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.21 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:55:14: 2026-05-31 12:55:14,880 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:55:14: 2026-05-31 12:55:14,880 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.09 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:55:14: 2026-05-31 12:55:14,880 INFO: Heartbeat: TPV=113.78 | PnL=-1.22 | MEMEUSDT=0.00060097 | L:79.3% [+29.3%] {+90.28$} | S:20.7% [-29.3%] {+23.51$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+37|paper-zec           | 2026-05-31 12:55:15: 2026-05-31 12:55:15,837 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:55:16: 2026-05-31 12:55:16,628 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:55:16: 2026-05-31 12:55:16,628 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.16 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:55:16: 2026-05-31 12:55:16,628 INFO: Heartbeat: TPV=113.63 | PnL=-1.37 | ONDOUSDT=0.3646 | L:43.1% [-6.9%] {+49.00$} | S:56.1% [+6.1%] {+63.79$} | V:0.0% [+0.0%] {+0.00$} | C:0.7% {0.84$}
+14|paper-fet           | 2026-05-31 12:55:19: 2026-05-31 12:55:19,079 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:55:19: 2026-05-31 12:55:19,079 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:55:19: 2026-05-31 12:55:19,637 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:55:19: 2026-05-31 12:55:19,637 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.68 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:55:20: 2026-05-31 12:55:20,162 INFO: Heartbeat: TPV=114.78 | PnL=-0.22 | SIGNUSDT=0.01251 | L:49.5% [-0.5%] {+56.81$} | S:50.1% [+0.1%] {+57.48$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+10|paper-xlm           | 2026-05-31 12:55:20: 2026-05-31 12:55:20,843 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:55:20: 2026-05-31 12:55:20,843 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:55:21: 2026-05-31 12:55:21,483 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:55:21: 2026-05-31 12:55:21,708 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.44 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:55:21: 2026-05-31 12:55:21,910 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:55:21: 2026-05-31 12:55:21,910 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:55:23: 2026-05-31 12:55:23,409 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:24: 2026-05-31 12:55:24,173 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:24: 2026-05-31 12:55:24,173 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.83 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:55:24: 2026-05-31 12:55:24,173 INFO: Heartbeat: TPV=113.63 | PnL=-1.37 | VVVUSDT=18.2205 | L:60.2% [+10.2%] {+68.38$} | S:39.5% [-10.5%] {+44.86$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+4|paper-nfp            | 2026-05-31 12:55:26: 2026-05-31 12:55:26,927 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:55:26: 2026-05-31 12:55:26,927 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:55:26: 2026-05-31 12:55:26,927 INFO: Heartbeat: TPV=115.36 | PnL=+0.36 | NFPUSDT=0.010834 | L:24.4% [-25.6%] {+28.12$} | S:75.6% [+25.6%] {+87.25$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+7|paper-stg            | 2026-05-31 12:55:28: 2026-05-31 12:55:28,783 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:29: 2026-05-31 12:55:29,615 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:29: 2026-05-31 12:55:29,615 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.56 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:55:29: 2026-05-31 12:55:29,659 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:55:29: 2026-05-31 12:55:29,660 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:55:29: 2026-05-31 12:55:29,713 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:55:30: 2026-05-31 12:55:30,189 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:55:30: 2026-05-31 12:55:30,190 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:55:31: 2026-05-31 12:55:31,150 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:55:31: 2026-05-31 12:55:31,949 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:55:31: 2026-05-31 12:55:31,950 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.16 < 0, surplus selling blocked
+42|paper-ton           | 2026-05-31 12:55:33: 2026-05-31 12:55:33,651 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.87299 | L:49.4% [-0.6%] {+56.64$} | S:50.8% [+0.8%] {+58.33$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+14|paper-fet           | 2026-05-31 12:55:34: 2026-05-31 12:55:34,379 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:55:34: 2026-05-31 12:55:34,379 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:55:34: 2026-05-31 12:55:34,968 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:55:34: 2026-05-31 12:55:34,968 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.69 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:55:36: 2026-05-31 12:55:36,159 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:55:36: 2026-05-31 12:55:36,159 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:55:36: 2026-05-31 12:55:36,787 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.35 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:55:37: 2026-05-31 12:55:37,248 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.41 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:55:37: 2026-05-31 12:55:37,248 INFO: Heartbeat: TPV=112.20 | PnL=-2.80 | PUNDIXUSDT=0.1484 | L:28.6% [-21.4%] {+32.11$} | S:70.9% [+20.9%] {+79.51$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+17|paper-near          | 2026-05-31 12:55:38: 2026-05-31 12:55:38,707 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:39: 2026-05-31 12:55:39,482 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:39: 2026-05-31 12:55:39,482 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.80 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:55:42: 2026-05-31 12:55:42,225 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:55:42: 2026-05-31 12:55:42,226 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:55:44: 2026-05-31 12:55:44,084 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:44: 2026-05-31 12:55:44,916 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:55:44: 2026-05-31 12:55:44,916 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.50 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:55:44: 2026-05-31 12:55:44,959 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:55:44: 2026-05-31 12:55:44,960 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:55:45: 2026-05-31 12:55:45,024 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:55:45: 2026-05-31 12:55:45,516 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:55:45: 2026-05-31 12:55:45,516 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.10 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:55:46: 2026-05-31 12:55:46,447 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 12:55:46: 2026-05-31 12:55:46,613 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.485 | L:48.9% [-1.1%] {+56.14$} | S:51.2% [+1.2%] {+58.79$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+11|paper-ondo          | 2026-05-31 12:55:47: 2026-05-31 12:55:47,256 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:55:47: 2026-05-31 12:55:47,256 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.15 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:55:49: 2026-05-31 12:55:49,679 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:55:49: 2026-05-31 12:55:49,679 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:55:50: 2026-05-31 12:55:50,298 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:55:50: 2026-05-31 12:55:50,298 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:55:50: 2026-05-31 12:55:50,800 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:55:51: 2026-05-31 12:55:51,457 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:55:51: 2026-05-31 12:55:51,457 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:55:52: 2026-05-31 12:55:52,092 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.34 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:55:52: 2026-05-31 12:55:52,515 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:55:52: 2026-05-31 12:55:52,515 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:55:52: 2026-05-31 12:55:52,625 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.41 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:55:54: 2026-05-31 12:55:54,005 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 12:55:54: 2026-05-31 12:55:54,006 INFO: Heartbeat: TPV=115.40 | PnL=+0.40 | NEARUSDT=2.25618 | L:50.9% [+0.9%] {+58.73$} | S:48.7% [-1.3%] {+56.25$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+16|paper-vvv           | 2026-05-31 12:55:54: 2026-05-31 12:55:54,782 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:55:54: 2026-05-31 12:55:54,782 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.79 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:55:57: 2026-05-31 12:55:57,535 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:55:57: 2026-05-31 12:55:57,535 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:55:59: 2026-05-31 12:55:59,399 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:56:00: 2026-05-31 12:56:00,217 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:56:00: 2026-05-31 12:56:00,217 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.46 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:56:00: 2026-05-31 12:56:00,261 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:56:00: 2026-05-31 12:56:00,261 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:56:00: 2026-05-31 12:56:00,333 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.21 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:56:00: 2026-05-31 12:56:00,826 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:56:00: 2026-05-31 12:56:00,826 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:56:01: 2026-05-31 12:56:01,745 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:56:01: 2026-05-31 12:56:01,745 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=550.245 | L:51.1% [+1.1%] {+59.03$} | S:48.9% [-1.2%] {+56.39$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 12:56:02: 2026-05-31 12:56:02,564 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:56:02: 2026-05-31 12:56:02,565 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.13 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:56:04: 2026-05-31 12:56:04,983 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:56:04: 2026-05-31 12:56:04,984 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:56:05: 2026-05-31 12:56:05,613 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:56:05: 2026-05-31 12:56:05,614 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:56:06: 2026-05-31 12:56:06,120 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.03 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:56:08: 2026-05-31 12:56:08,162 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.40 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:56:15: 2026-05-31 12:56:15,865 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 12:56:15: 2026-05-31 12:56:15,865 INFO: Heartbeat: TPV=117.85 | PnL=+2.85 | STGUSDT=0.239465 | L:50.7% [+0.7%] {+59.79$} | S:48.8% [-1.2%] {+57.49$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.56$}
+10|paper-xlm           | 2026-05-31 12:56:21: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+33|paper-hive          | 2026-05-31 12:56:22: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+6|paper-hei            | 2026-05-31 12:56:22: C:\Python\Prosperous_Bot\futures_portfolio\main.py:549: RuntimeWarning: coroutine '_handle_liquidation_guard' was never awaited
+6|paper-hei            | 2026-05-31 12:56:22:   _handle_liquidation_guard(
+6|paper-hei            | 2026-05-31 12:56:22: RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+6|paper-hei            | 2026-05-31 12:56:22: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+17|paper-near          | 2026-05-31 12:56:24: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+16|paper-vvv           | 2026-05-31 12:56:24: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+4|paper-nfp            | 2026-05-31 12:56:28: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out.. Retrying in 3.0s...
+35|paper-algo          | 2026-05-31 12:56:29: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+3|paper-portal         | 2026-05-31 12:56:30: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+13|paper-wld           | 2026-05-31 12:56:30: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+36|paper-render        | 2026-05-31 12:56:30: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+22|paper-meme          | 2026-05-31 12:56:30: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+37|paper-zec           | 2026-05-31 12:56:31: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+34|paper-inj           | 2026-05-31 12:56:31: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+7|paper-stg            | 2026-05-31 12:56:32: 2026-05-31 12:56:32,220 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:56:32: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+4|paper-nfp            | 2026-05-31 12:56:33: 2026-05-31 12:56:33,021 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:56:33: 2026-05-31 12:56:33,021 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+1|swarm-aggregator     | 2026-05-31 12:56:33: 2026-05-31 12:56:33,160 ERROR: Failed to fetch real balances: HTTPSConnectionPool(host='api1.binance.com', port=443): Read timed out. (read timeout=15)
+16|paper-vvv           | 2026-05-31 12:56:33: 2026-05-31 12:56:33,583 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:56:33: 2026-05-31 12:56:33,583 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.86 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:56:34: 2026-05-31 12:56:34,105 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:56:34: 2026-05-31 12:56:34,105 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.26 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:56:34: 2026-05-31 12:56:34,124 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:56:34: 2026-05-31 12:56:34,124 INFO: Heartbeat: TPV=115.19 | PnL=+0.19 | RENDERUSDT=2.07762 | L:48.6% [-1.4%] {+56.03$} | S:51.0% [+1.0%] {+58.74$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+42|paper-ton           | 2026-05-31 12:56:34: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+22|paper-meme          | 2026-05-31 12:56:34: 2026-05-31 12:56:34,578 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:56:34: 2026-05-31 12:56:34,578 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.96 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:56:34: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+37|paper-zec           | 2026-05-31 12:56:35: 2026-05-31 12:56:35,481 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:56:35: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+41|paper-sign          | 2026-05-31 12:56:36: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+11|paper-ondo          | 2026-05-31 12:56:36: 2026-05-31 12:56:36,269 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:56:36: 2026-05-31 12:56:36,269 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.18 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:56:36: 2026-05-31 12:56:36,360 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:56:36: 2026-05-31 12:56:36,360 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.32 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:56:36: 2026-05-31 12:56:36,360 INFO: Heartbeat: TPV=114.27 | PnL=-0.73 | PORTALUSDT=0.0142447 | L:0.3% [-49.7%] {+0.38$} | S:98.5% [+48.5%] {+112.51$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+33|paper-hive          | 2026-05-31 12:56:36: 2026-05-31 12:56:36,510 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:56:38: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out.. Retrying in 3.0s...
+14|paper-fet           | 2026-05-31 12:56:38: 2026-05-31 12:56:38,786 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:56:38: 2026-05-31 12:56:38,786 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:56:38: 2026-05-31 12:56:38,786 INFO: Heartbeat: TPV=115.33 | PnL=+0.33 | FETUSDT=0.27043 | L:46.2% [-3.8%] {+53.30$} | S:53.6% [+3.6%] {+61.83$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+17|paper-near          | 2026-05-31 12:56:39: 2026-05-31 12:56:39,400 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+41|paper-sign          | 2026-05-31 12:56:39: 2026-05-31 12:56:39,820 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:56:40: 2026-05-31 12:56:40,191 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:56:40: 2026-05-31 12:56:40,191 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:56:42: 2026-05-31 12:56:42,250 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.41 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:56:42: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+7|paper-stg            | 2026-05-31 12:56:47: 2026-05-31 12:56:47,526 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:56:48: 2026-05-31 12:56:48,343 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:56:48: 2026-05-31 12:56:48,343 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:56:48: 2026-05-31 12:56:48,909 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:56:48: 2026-05-31 12:56:48,909 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.82 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:56:49: 2026-05-31 12:56:49,419 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:56:49: 2026-05-31 12:56:49,420 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.25 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:56:49: 2026-05-31 12:56:49,420 INFO: Heartbeat: TPV=115.86 | PnL=+0.86 | WLDUSDT=0.333025 | L:42.9% [-7.1%] {+49.71$} | S:56.6% [+6.6%] {+65.63$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+36|paper-render        | 2026-05-31 12:56:49: 2026-05-31 12:56:49,429 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.21 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:56:49: 2026-05-31 12:56:49,897 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:56:49: 2026-05-31 12:56:49,897 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.97 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:56:49: 2026-05-31 12:56:49,897 INFO: Heartbeat: TPV=113.90 | PnL=-1.10 | MEMEUSDT=0.00059727 | L:77.6% [+27.6%] {+88.34$} | S:22.4% [-27.6%] {+25.57$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+35|paper-algo          | 2026-05-31 12:56:50: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out.. Retrying in 3.0s...
+37|paper-zec           | 2026-05-31 12:56:50: 2026-05-31 12:56:50,809 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:56:51: 2026-05-31 12:56:51,577 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:56:51: 2026-05-31 12:56:51,577 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.19 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:56:51: 2026-05-31 12:56:51,577 INFO: Heartbeat: TPV=113.60 | PnL=-1.40 | ONDOUSDT=0.364251 | L:42.9% [-7.1%] {+48.72$} | S:56.4% [+6.4%] {+64.03$} | V:0.0% [+0.0%] {+0.00$} | C:0.7% {0.84$}
+42|paper-ton           | 2026-05-31 12:56:52: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+14|paper-fet           | 2026-05-31 12:56:54: 2026-05-31 12:56:54,119 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:56:54: 2026-05-31 12:56:54,119 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.10 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:56:54: 2026-05-31 12:56:54,121 INFO: Heartbeat: TPV=115.33 | PnL=+0.33 | FETUSDT=0.2704 | Cycles=5
+41|paper-sign          | 2026-05-31 12:56:55: 2026-05-31 12:56:55,137 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:56:55: 2026-05-31 12:56:55,137 INFO: Heartbeat: TPV=114.68 | PnL=-0.32 | SIGNUSDT=0.0125336 | L:50.0% [-0.0%] {+57.31$} | S:49.6% [-0.4%] {+56.88$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+10|paper-xlm           | 2026-05-31 12:56:55: 2026-05-31 12:56:55,513 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:56:55: 2026-05-31 12:56:55,513 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:56:55: 2026-05-31 12:56:55,513 INFO: Heartbeat: TPV=115.37 | PnL=+0.37 | XLMUSDT=0.24575 | L:65.1% [+15.1%] {+75.10$} | S:34.9% [-15.1%] {+40.24$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+17|paper-near          | 2026-05-31 12:56:55: 2026-05-31 12:56:55,987 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 12:56:57: 2026-05-31 12:56:57,578 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.43 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:56:59: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+33|paper-hive          | 2026-05-31 12:56:59: 2026-05-31 12:56:59,641 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:56:59: 2026-05-31 12:56:59,642 INFO: Heartbeat: TPV=114.50 | PnL=-0.50 | HIVEUSDT=0.0679395 | L:16.6% [-33.4%] {+19.05$} | S:83.4% [+33.4%] {+95.45$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+3|paper-portal         | 2026-05-31 12:57:00: 2026-05-31 12:57:00,212 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:57:00: 2026-05-31 12:57:00,212 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.51 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:57:00: 2026-05-31 12:57:00,337 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:57:00: 2026-05-31 12:57:00,338 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:57:00: 2026-05-31 12:57:00,338 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.10727 | L:47.0% [-3.0%] {+54.79$} | S:52.9% [+2.9%] {+61.60$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+5|paper-id             | 2026-05-31 12:57:02: 2026-05-31 12:57:02,715 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:57:02: 2026-05-31 12:57:02,715 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.69 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:57:02: 2026-05-31 12:57:02,715 INFO: Heartbeat: TPV=115.49 | PnL=+0.49 | IDUSDT=0.0395672 | L:36.1% [-13.9%] {+41.67$} | S:63.9% [+13.9%] {+73.82$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+35|paper-algo          | 2026-05-31 12:57:03: 2026-05-31 12:57:03,254 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:57:04: 2026-05-31 12:57:04,236 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:57:04: 2026-05-31 12:57:04,236 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.79 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:57:04: 2026-05-31 12:57:04,236 INFO: Heartbeat: TPV=113.68 | PnL=-1.32 | VVVUSDT=18.204 | L:59.9% [+9.9%] {+68.12$} | S:39.7% [-10.3%] {+45.16$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+13|paper-wld           | 2026-05-31 12:57:04: 2026-05-31 12:57:04,735 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:57:04: 2026-05-31 12:57:04,735 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.25 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:57:05: 2026-05-31 12:57:05,219 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:57:05: 2026-05-31 12:57:05,219 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.93 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:57:05: 2026-05-31 12:57:05,699 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.17 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:57:06: 2026-05-31 12:57:06,120 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:57:06: 2026-05-31 12:57:06,880 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:57:06: 2026-05-31 12:57:06,880 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.16 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:57:07: 2026-05-31 12:57:07,287 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 12:57:07: 2026-05-31 12:57:07,287 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.03 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:57:08: 2026-05-31 12:57:08,199 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:57:08: 2026-05-31 12:57:08,200 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:57:08: 2026-05-31 12:57:08,200 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0108008 | L:23.7% [-26.3%] {+27.32$} | S:76.3% [+26.3%] {+88.04$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+14|paper-fet           | 2026-05-31 12:57:09: 2026-05-31 12:57:09,443 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:57:09: 2026-05-31 12:57:09,443 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:57:10: 2026-05-31 12:57:10,435 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:57:10: 2026-05-31 12:57:10,840 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:57:10: 2026-05-31 12:57:10,840 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:57:11: 2026-05-31 12:57:11,300 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 12:57:12: 2026-05-31 12:57:12,913 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.43 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:57:12: 2026-05-31 12:57:12,913 INFO: Heartbeat: TPV=112.18 | PnL=-2.82 | PUNDIXUSDT=0.148337 | L:28.5% [-21.5%] {+31.99$} | S:71.0% [+21.0%] {+79.62$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+33|paper-hive          | 2026-05-31 12:57:15: 2026-05-31 12:57:15,182 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:57:15: 2026-05-31 12:57:15,526 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:57:15: 2026-05-31 12:57:15,526 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.50 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:57:15: 2026-05-31 12:57:15,680 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:57:15: 2026-05-31 12:57:15,680 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:57:18: 2026-05-31 12:57:18,013 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:57:18: 2026-05-31 12:57:18,014 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.69 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:57:18: 2026-05-31 12:57:18,552 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:57:18: 2026-05-31 12:57:18,553 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | ALGOUSDT=0.129257 | L:52.0% [+2.0%] {+60.01$} | S:48.0% [-2.0%] {+55.34$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+16|paper-vvv           | 2026-05-31 12:57:19: 2026-05-31 12:57:19,563 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:57:19: 2026-05-31 12:57:19,564 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.77 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:57:20: 2026-05-31 12:57:20,040 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:57:20: 2026-05-31 12:57:20,040 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:57:20: 2026-05-31 12:57:20,532 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:57:20: 2026-05-31 12:57:20,533 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.85 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:57:20: 2026-05-31 12:57:20,999 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:57:21: 2026-05-31 12:57:21,425 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:57:22: 2026-05-31 12:57:22,182 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:57:22: 2026-05-31 12:57:22,182 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.09 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:57:22: 2026-05-31 12:57:22,607 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:57:23: 2026-05-31 12:57:23,506 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:57:23: 2026-05-31 12:57:23,506 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:57:24: 2026-05-31 12:57:24,767 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:57:24: 2026-05-31 12:57:24,767 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:57:25: 2026-05-31 12:57:25,758 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:57:26: 2026-05-31 12:57:26,153 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:57:26: 2026-05-31 12:57:26,153 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:57:26: 2026-05-31 12:57:26,604 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+42|paper-ton           | 2026-05-31 12:57:26: 2026-05-31 12:57:26,924 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.8777 | L:50.0% [-0.0%] {+57.36$} | S:50.2% [+0.2%] {+57.60$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+25|paper-pundix        | 2026-05-31 12:57:28: 2026-05-31 12:57:28,234 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.41 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 12:57:29: 2026-05-31 12:57:29,140 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.51607 | Cycles=1
+33|paper-hive          | 2026-05-31 12:57:30: 2026-05-31 12:57:30,675 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.36 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:57:30: 2026-05-31 12:57:30,839 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:57:30: 2026-05-31 12:57:30,839 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.49 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:57:31: 2026-05-31 12:57:31,030 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:57:31: 2026-05-31 12:57:31,030 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:57:33: 2026-05-31 12:57:33,338 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:57:33: 2026-05-31 12:57:33,338 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:57:33: 2026-05-31 12:57:33,874 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:57:34: 2026-05-31 12:57:34,893 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:57:34: 2026-05-31 12:57:34,894 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.77 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:57:35: 2026-05-31 12:57:35,353 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:57:35: 2026-05-31 12:57:35,353 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:57:35: 2026-05-31 12:57:35,835 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:57:35: 2026-05-31 12:57:35,835 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.84 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:57:36: 2026-05-31 12:57:36,310 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:57:36: 2026-05-31 12:57:36,735 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:57:36: 2026-05-31 12:57:36,735 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=550.134 | L:51.1% [+1.1%] {+58.97$} | S:48.9% [-1.1%] {+56.45$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 12:57:37: 2026-05-31 12:57:37,489 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:57:37: 2026-05-31 12:57:37,489 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.06 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:57:37: 2026-05-31 12:57:37,914 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 12:57:37: 2026-05-31 12:57:37,914 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:57:37: 2026-05-31 12:57:37,914 INFO: Heartbeat: TPV=117.57 | PnL=+2.57 | STGUSDT=0.238093 | L:49.3% [-0.7%] {+58.01$} | S:50.2% [+0.2%] {+59.00$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.56$}
+4|paper-nfp            | 2026-05-31 12:57:38: 2026-05-31 12:57:38,808 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:57:38: 2026-05-31 12:57:38,808 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:57:40: 2026-05-31 12:57:40,112 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:57:40: 2026-05-31 12:57:40,113 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:57:41: 2026-05-31 12:57:41,459 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:57:41: 2026-05-31 12:57:41,460 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:57:41: 2026-05-31 12:57:41,918 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 12:57:41: 2026-05-31 12:57:41,918 INFO: Heartbeat: TPV=115.41 | PnL=+0.41 | NEARUSDT=2.26614 | L:52.0% [+2.0%] {+60.01$} | S:47.6% [-2.4%] {+54.98$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+25|paper-pundix        | 2026-05-31 12:57:43: 2026-05-31 12:57:43,548 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.44 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 12:57:44: 2026-05-31 12:57:44,465 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.51906 | L:50.2% [+0.2%] {+57.64$} | S:49.9% [-0.1%] {+57.28$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+33|paper-hive          | 2026-05-31 12:57:46: 2026-05-31 12:57:46,114 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.32 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:57:46: 2026-05-31 12:57:46,153 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:57:46: 2026-05-31 12:57:46,153 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.48 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:57:46: 2026-05-31 12:57:46,359 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:57:46: 2026-05-31 12:57:46,360 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:57:48: 2026-05-31 12:57:48,649 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:57:48: 2026-05-31 12:57:48,649 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.71 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:57:49: 2026-05-31 12:57:49,173 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:57:50: 2026-05-31 12:57:50,216 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:57:50: 2026-05-31 12:57:50,216 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.79 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:57:50: 2026-05-31 12:57:50,665 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:57:50: 2026-05-31 12:57:50,665 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:57:51: 2026-05-31 12:57:51,139 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:57:51: 2026-05-31 12:57:51,139 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.89 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:57:51: 2026-05-31 12:57:51,619 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:57:51: 2026-05-31 12:57:51,619 INFO: Heartbeat: TPV=115.33 | PnL=+0.33 | RENDERUSDT=2.084 | L:49.4% [-0.6%] {+56.97$} | S:50.2% [+0.2%] {+57.94$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+37|paper-zec           | 2026-05-31 12:57:52: 2026-05-31 12:57:52,046 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:57:52: 2026-05-31 12:57:52,818 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:57:52: 2026-05-31 12:57:52,818 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.02 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:57:53: 2026-05-31 12:57:53,213 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 12:57:53: 2026-05-31 12:57:53,214 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:57:54: 2026-05-31 12:57:54,132 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:57:54: 2026-05-31 12:57:54,132 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:57:55: 2026-05-31 12:57:55,445 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:57:55: 2026-05-31 12:57:55,445 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:57:55: 2026-05-31 12:57:55,445 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | FETUSDT=0.271105 | L:46.8% [-3.2%] {+54.01$} | S:53.0% [+3.0%] {+61.14$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+10|paper-xlm           | 2026-05-31 12:57:56: 2026-05-31 12:57:56,777 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:57:56: 2026-05-31 12:57:56,777 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:57:57: 2026-05-31 12:57:57,236 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 12:57:58: 2026-05-31 12:57:58,874 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.51 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:58:01: 2026-05-31 12:58:01,459 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:58:01: 2026-05-31 12:58:01,459 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.50 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:58:01: 2026-05-31 12:58:01,459 INFO: Heartbeat: TPV=114.09 | PnL=-0.91 | PORTALUSDT=0.0141456 | L:-1.2% [-51.2%] {-1.33$} | S:100.0% [+50.0%] {+114.04$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+33|paper-hive          | 2026-05-31 12:58:01: 2026-05-31 12:58:01,563 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:58:01: 2026-05-31 12:58:01,696 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:58:01: 2026-05-31 12:58:01,696 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:58:03: 2026-05-31 12:58:03,948 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:58:03: 2026-05-31 12:58:03,948 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:58:04: 2026-05-31 12:58:04,471 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:58:05: 2026-05-31 12:58:05,533 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:58:05: 2026-05-31 12:58:05,534 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.84 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:58:05: 2026-05-31 12:58:05,964 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:58:05: 2026-05-31 12:58:05,964 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:58:05: 2026-05-31 12:58:05,964 INFO: Heartbeat: TPV=115.87 | PnL=+0.87 | WLDUSDT=0.33353 | L:43.3% [-6.7%] {+50.14$} | S:56.3% [+6.3%] {+65.21$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+22|paper-meme          | 2026-05-31 12:58:06: 2026-05-31 12:58:06,450 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:58:06: 2026-05-31 12:58:06,450 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.78 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:58:06: 2026-05-31 12:58:06,450 INFO: Heartbeat: TPV=114.09 | PnL=-0.91 | MEMEUSDT=0.00059147 | L:74.8% [+24.8%] {+85.32$} | S:25.2% [-24.8%] {+28.79$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+36|paper-render        | 2026-05-31 12:58:06: 2026-05-31 12:58:06,938 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:58:07: 2026-05-31 12:58:07,361 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:58:08: 2026-05-31 12:58:08,118 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:58:08: 2026-05-31 12:58:08,118 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.08 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:58:08: 2026-05-31 12:58:08,119 INFO: Heartbeat: TPV=113.71 | PnL=-1.29 | ONDOUSDT=0.365302 | L:43.6% [-6.4%] {+49.57$} | S:55.7% [+5.7%] {+63.30$} | V:0.0% [+0.0%] {+0.00$} | C:0.7% {0.84$}
+7|paper-stg            | 2026-05-31 12:58:08: 2026-05-31 12:58:08,521 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:58:09: 2026-05-31 12:58:09,441 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:58:09: 2026-05-31 12:58:09,442 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:58:10: 2026-05-31 12:58:10,767 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:58:10: 2026-05-31 12:58:10,767 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:58:11: 2026-05-31 12:58:11,703 INFO: Heartbeat: TPV=114.80 | PnL=-0.20 | SIGNUSDT=0.0125047 | L:49.4% [-0.6%] {+56.70$} | S:50.2% [+0.2%] {+57.61$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+10|paper-xlm           | 2026-05-31 12:58:12: 2026-05-31 12:58:12,077 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:58:12: 2026-05-31 12:58:12,078 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:58:12: 2026-05-31 12:58:12,078 INFO: Heartbeat: TPV=115.37 | PnL=+0.37 | XLMUSDT=0.24545 | L:64.8% [+14.8%] {+74.73$} | S:35.2% [-14.8%] {+40.62$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+17|paper-near          | 2026-05-31 12:58:12: 2026-05-31 12:58:12,540 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 12:58:14: 2026-05-31 12:58:14,187 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.56 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:58:16: 2026-05-31 12:58:16,757 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:58:16: 2026-05-31 12:58:16,757 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.51 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:58:16: 2026-05-31 12:58:16,995 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.34 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:58:16: 2026-05-31 12:58:16,995 INFO: Heartbeat: TPV=114.48 | PnL=-0.52 | HIVEUSDT=0.0678204 | L:16.2% [-33.8%] {+18.61$} | S:83.8% [+33.8%] {+95.88$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+6|paper-hei            | 2026-05-31 12:58:17: 2026-05-31 12:58:17,046 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:58:17: 2026-05-31 12:58:17,047 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:58:17: 2026-05-31 12:58:17,047 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.10748 | L:47.5% [-2.5%] {+55.35$} | S:52.4% [+2.4%] {+61.04$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+5|paper-id             | 2026-05-31 12:58:19: 2026-05-31 12:58:19,258 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:58:19: 2026-05-31 12:58:19,258 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:58:19: 2026-05-31 12:58:19,259 INFO: Heartbeat: TPV=115.47 | PnL=+0.47 | IDUSDT=0.03952 | L:35.8% [-14.2%] {+41.34$} | S:64.2% [+14.2%] {+74.13$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+35|paper-algo          | 2026-05-31 12:58:19: 2026-05-31 12:58:19,784 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:58:20: 2026-05-31 12:58:20,855 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:58:20: 2026-05-31 12:58:20,855 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.84 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:58:20: 2026-05-31 12:58:20,855 INFO: Heartbeat: TPV=113.63 | PnL=-1.37 | VVVUSDT=18.2232 | L:60.2% [+10.2%] {+68.42$} | S:39.4% [-10.6%] {+44.81$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+13|paper-wld           | 2026-05-31 12:58:21: 2026-05-31 12:58:21,266 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:58:21: 2026-05-31 12:58:21,267 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:58:21: 2026-05-31 12:58:21,754 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:58:21: 2026-05-31 12:58:21,755 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.82 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:58:22: 2026-05-31 12:58:22,246 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:58:22: 2026-05-31 12:58:22,747 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:58:24: 2026-05-31 12:58:24,759 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:58:24: 2026-05-31 12:58:24,760 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:58:24: 2026-05-31 12:58:24,760 INFO: Heartbeat: TPV=115.36 | PnL=+0.36 | NFPUSDT=0.0108397 | L:24.5% [-25.5%] {+28.25$} | S:75.5% [+25.5%] {+87.11$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+14|paper-fet           | 2026-05-31 12:58:30: 2026-05-31 12:58:30,878 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:58:30: 2026-05-31 12:58:30,878 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:58:31: 2026-05-31 12:58:31,593 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:58:31: 2026-05-31 12:58:31,593 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.07 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:58:31: 2026-05-31 12:58:31,704 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.51 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:58:31: 2026-05-31 12:58:31,705 INFO: Heartbeat: TPV=112.10 | PnL=-2.90 | PUNDIXUSDT=0.148 | L:28.0% [-22.0%] {+31.36$} | S:71.5% [+21.5%] {+80.16$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+6|paper-hei            | 2026-05-31 12:58:32: 2026-05-31 12:58:32,396 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:58:32: 2026-05-31 12:58:32,396 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:58:32: 2026-05-31 12:58:32,438 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:58:34: 2026-05-31 12:58:34,566 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:58:34: 2026-05-31 12:58:34,566 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:58:35: 2026-05-31 12:58:35,089 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:58:35: 2026-05-31 12:58:35,089 INFO: Heartbeat: TPV=115.34 | PnL=+0.34 | ALGOUSDT=0.129467 | L:52.4% [+2.4%] {+60.48$} | S:47.6% [-2.4%] {+54.87$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+16|paper-vvv           | 2026-05-31 12:58:36: 2026-05-31 12:58:36,182 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:58:36: 2026-05-31 12:58:36,182 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.86 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:58:36: 2026-05-31 12:58:36,576 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:58:36: 2026-05-31 12:58:36,577 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:58:37: 2026-05-31 12:58:37,242 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:58:37: 2026-05-31 12:58:37,242 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.79 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:58:38: C:\Python\Prosperous_Bot\futures_portfolio\main.py:549: RuntimeWarning: coroutine '_handle_liquidation_guard' was never awaited
+7|paper-stg            | 2026-05-31 12:58:38:   _handle_liquidation_guard(
+7|paper-stg            | 2026-05-31 12:58:38: RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+7|paper-stg            | 2026-05-31 12:58:38: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+4|paper-nfp            | 2026-05-31 12:58:40: 2026-05-31 12:58:40,067 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:58:40: 2026-05-31 12:58:40,067 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:58:40: 2026-05-31 12:58:40,442 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:58:40: 2026-05-31 12:58:40,443 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.51 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:58:42: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+37|paper-zec           | 2026-05-31 12:58:42: 2026-05-31 12:58:42,444 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:58:42: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+7|paper-stg            | 2026-05-31 12:58:43: 2026-05-31 12:58:43,238 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+42|paper-ton           | 2026-05-31 12:58:43: 2026-05-31 12:58:43,453 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.87878 | L:50.1% [+0.1%] {+57.53$} | S:50.0% [+0.0%] {+57.44$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+10|paper-xlm           | 2026-05-31 12:58:45: 2026-05-31 12:58:45,829 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:58:45: 2026-05-31 12:58:45,830 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:58:46: 2026-05-31 12:58:46,145 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:58:46: 2026-05-31 12:58:46,908 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:58:46: 2026-05-31 12:58:46,908 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.06 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:58:49: 2026-05-31 12:58:49,879 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:58:49: 2026-05-31 12:58:49,880 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:58:55: 2026-05-31 12:58:55,752 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:58:55: 2026-05-31 12:58:55,752 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.48 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:58:58: 2026-05-31 12:58:58,768 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:59:00: 2026-05-31 12:59:00,386 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:59:00: 2026-05-31 12:59:00,386 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:59:01: 2026-05-31 12:59:01,152 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:59:01: 2026-05-31 12:59:01,152 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:01: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+22|paper-meme          | 2026-05-31 12:59:01: 2026-05-31 12:59:01,359 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:59:01: 2026-05-31 12:59:01,360 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.83 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:59:01: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out.. Retrying in 3.0s...
+25|paper-pundix        | 2026-05-31 12:59:01: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+37|paper-zec           | 2026-05-31 12:59:02: 2026-05-31 12:59:02,182 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:59:02: 2026-05-31 12:59:02,183 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=550.909 | L:51.4% [+1.4%] {+59.38$} | S:48.5% [-1.4%] {+56.04$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 12:59:02: 2026-05-31 12:59:02,208 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:59:02: 2026-05-31 12:59:02,209 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.08 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:59:02: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+33|paper-hive          | 2026-05-31 12:59:02: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+14|paper-fet           | 2026-05-31 12:59:05: 2026-05-31 12:59:05,169 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:59:05: 2026-05-31 12:59:05,169 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:59:05: 2026-05-31 12:59:05,185 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:59:05: 2026-05-31 12:59:05,185 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:59:05: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+6|paper-hei            | 2026-05-31 12:59:06: 2026-05-31 12:59:06,175 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:59:06: 2026-05-31 12:59:06,176 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:59:06: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+33|paper-hive          | 2026-05-31 12:59:06: 2026-05-31 12:59:06,281 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.31 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:07: 2026-05-31 12:59:07,079 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:07: 2026-05-31 12:59:07,082 INFO: Heartbeat: TPV=114.72 | PnL=-0.28 | SIGNUSDT=0.0125253 | Cycles=3
+17|paper-near          | 2026-05-31 12:59:09: 2026-05-31 12:59:09,634 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:09: 2026-05-31 12:59:09,887 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:09: 2026-05-31 12:59:09,888 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.63 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:59:10: 2026-05-31 12:59:10,015 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:59:10: Network error in get_mark_prices (attempt 1/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+34|paper-inj           | 2026-05-31 12:59:10: 2026-05-31 12:59:10,270 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.51181 | L:49.9% [-0.1%] {+57.32$} | S:50.2% [+0.2%] {+57.60$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+3|paper-portal         | 2026-05-31 12:59:11: 2026-05-31 12:59:11,066 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:59:11: 2026-05-31 12:59:11,066 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.44 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:59:13: 2026-05-31 12:59:13,784 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:59:13: 2026-05-31 12:59:13,785 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:59:14: 2026-05-31 12:59:14,864 WARNING: 🚀 Velocity Guard: STGUSDT is moving too fast (1.29% in 31s). Blocking trades.
+13|paper-wld           | 2026-05-31 12:59:15: 2026-05-31 12:59:15,692 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:59:15: 2026-05-31 12:59:15,692 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:59:16: 2026-05-31 12:59:16,458 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:59:16: 2026-05-31 12:59:16,458 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:59:17: 2026-05-31 12:59:17,592 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:59:17: 2026-05-31 12:59:17,616 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:59:17: 2026-05-31 12:59:17,616 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.88 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:59:18: 2026-05-31 12:59:18,431 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:59:18: 2026-05-31 12:59:18,432 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.09 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:59:20: 2026-05-31 12:59:20,498 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:59:20: 2026-05-31 12:59:20,498 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:59:21: Network error in get_mark_prices (attempt 2/5): HTTPSConnectionPool(host='fapi.binance.com', port=443): Read timed out. (read timeout=15). Retrying in 3.0s...
+5|paper-id             | 2026-05-31 12:59:21: 2026-05-31 12:59:21,404 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:59:21: 2026-05-31 12:59:21,404 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:59:21: 2026-05-31 12:59:21,672 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.33 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:22: 2026-05-31 12:59:22,412 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:59:23: 2026-05-31 12:59:23,441 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:59:23: 2026-05-31 12:59:23,530 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:59:23: 2026-05-31 12:59:23,530 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:59:24: 2026-05-31 12:59:24,732 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.42 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:59:24: 2026-05-31 12:59:24,938 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:25: 2026-05-31 12:59:25,201 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:25: 2026-05-31 12:59:25,201 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.65 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:59:25: 2026-05-31 12:59:25,347 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 12:59:25: 2026-05-31 12:59:25,347 INFO: Heartbeat: TPV=115.37 | PnL=+0.37 | RENDERUSDT=2.086 | L:49.6% [-0.4%] {+57.26$} | S:50.0% [+0.0%] {+57.69$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+3|paper-portal         | 2026-05-31 12:59:26: 2026-05-31 12:59:26,375 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:59:26: 2026-05-31 12:59:26,375 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.31 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:59:26: 2026-05-31 12:59:26,376 INFO: Heartbeat: TPV=114.28 | PnL=-0.72 | PORTALUSDT=0.01425 | L:0.4% [-49.6%] {+0.47$} | S:98.4% [+48.4%] {+112.42$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+4|paper-nfp            | 2026-05-31 12:59:29: 2026-05-31 12:59:29,084 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:59:29: 2026-05-31 12:59:29,084 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:59:31: 2026-05-31 12:59:31,006 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:59:31: 2026-05-31 12:59:31,006 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 12:59:31: 2026-05-31 12:59:31,006 INFO: Heartbeat: TPV=115.87 | PnL=+0.87 | WLDUSDT=0.3335 | L:43.2% [-6.8%] {+50.11$} | S:56.3% [+6.3%] {+65.23$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+10|paper-xlm           | 2026-05-31 12:59:31: 2026-05-31 12:59:31,765 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:59:31: 2026-05-31 12:59:31,766 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 12:59:32: 2026-05-31 12:59:32,900 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:59:32: 2026-05-31 12:59:32,929 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:59:32: 2026-05-31 12:59:32,929 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.88 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:59:32: 2026-05-31 12:59:32,929 INFO: Heartbeat: TPV=114.00 | PnL=-1.00 | MEMEUSDT=0.0005944 | L:76.2% [+26.2%] {+86.85$} | S:23.8% [-26.2%] {+27.16$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+11|paper-ondo          | 2026-05-31 12:59:33: 2026-05-31 12:59:33,739 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:59:33: 2026-05-31 12:59:33,739 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.10 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:59:33: 2026-05-31 12:59:33,740 INFO: Heartbeat: TPV=113.69 | PnL=-1.31 | ONDOUSDT=0.3651 | L:43.5% [-6.6%] {+49.40$} | S:55.8% [+5.8%] {+63.44$} | V:0.0% [+0.0%] {+0.00$} | C:0.8% {0.84$}
+14|paper-fet           | 2026-05-31 12:59:35: 2026-05-31 12:59:35,812 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:59:35: 2026-05-31 12:59:35,812 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:59:35: 2026-05-31 12:59:35,812 INFO: Heartbeat: TPV=115.34 | PnL=+0.34 | FETUSDT=0.270726 | L:46.5% [-3.5%] {+53.61$} | S:53.3% [+3.3%] {+61.53$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+5|paper-id             | 2026-05-31 12:59:36: 2026-05-31 12:59:36,710 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:59:36: 2026-05-31 12:59:36,710 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:59:36: 2026-05-31 12:59:36,711 INFO: Heartbeat: TPV=115.48 | PnL=+0.48 | IDUSDT=0.0395318 | L:35.9% [-14.1%] {+41.42$} | S:64.1% [+14.1%] {+74.05$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+33|paper-hive          | 2026-05-31 12:59:37: 2026-05-31 12:59:37,228 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.34 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:37: 2026-05-31 12:59:37,734 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 12:59:38: 2026-05-31 12:59:38,773 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:59:38: 2026-05-31 12:59:38,828 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:59:38: 2026-05-31 12:59:38,828 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 12:59:40: 2026-05-31 12:59:40,042 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.37 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:59:40: 2026-05-31 12:59:40,246 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 12:59:40: 2026-05-31 12:59:40,246 INFO: Heartbeat: TPV=115.41 | PnL=+0.41 | NEARUSDT=2.26411 | L:51.8% [+1.8%] {+59.75$} | S:47.9% [-2.1%] {+55.24$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+16|paper-vvv           | 2026-05-31 12:59:40: 2026-05-31 12:59:40,511 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:40: 2026-05-31 12:59:40,511 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.68 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:59:40: 2026-05-31 12:59:40,513 INFO: Heartbeat: TPV=113.79 | PnL=-1.21 | VVVUSDT=18.1582 | Cycles=7
+36|paper-render        | 2026-05-31 12:59:40: 2026-05-31 12:59:40,653 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:59:41: 2026-05-31 12:59:41,684 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:59:41: 2026-05-31 12:59:41,685 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.33 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:59:44: 2026-05-31 12:59:44,393 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:59:44: 2026-05-31 12:59:44,394 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 12:59:45: 2026-05-31 12:59:45,475 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:59:46: 2026-05-31 12:59:46,319 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 12:59:46: 2026-05-31 12:59:46,319 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.25 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:59:47: 2026-05-31 12:59:47,142 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 12:59:47: 2026-05-31 12:59:47,143 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 12:59:47: 2026-05-31 12:59:47,143 INFO: Heartbeat: TPV=115.37 | PnL=+0.37 | XLMUSDT=0.245844 | L:65.2% [+15.2%] {+75.22$} | S:34.8% [-15.2%] {+40.13$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+37|paper-zec           | 2026-05-31 12:59:48: 2026-05-31 12:59:48,216 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 12:59:48: 2026-05-31 12:59:48,251 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 12:59:48: 2026-05-31 12:59:48,252 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.94 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 12:59:49: 2026-05-31 12:59:49,054 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 12:59:49: 2026-05-31 12:59:49,055 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.10 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 12:59:51: 2026-05-31 12:59:51,128 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 12:59:51: 2026-05-31 12:59:51,128 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 12:59:52: 2026-05-31 12:59:52,021 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 12:59:52: 2026-05-31 12:59:52,021 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:59:52: 2026-05-31 12:59:52,532 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.34 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 12:59:52: 2026-05-31 12:59:52,532 INFO: Heartbeat: TPV=114.48 | PnL=-0.52 | HIVEUSDT=0.0678119 | L:16.2% [-33.8%] {+18.58$} | S:83.8% [+33.8%] {+95.91$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+41|paper-sign          | 2026-05-31 12:59:53: 2026-05-31 12:59:53,041 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.15 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 12:59:53: 2026-05-31 12:59:53,041 INFO: Heartbeat: TPV=114.62 | PnL=-0.38 | SIGNUSDT=0.01255 | L:50.3% [+0.3%] {+57.66$} | S:49.3% [-0.7%] {+56.46$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+35|paper-algo          | 2026-05-31 12:59:54: 2026-05-31 12:59:54,076 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:59:54: 2026-05-31 12:59:54,136 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 12:59:54: 2026-05-31 12:59:54,136 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 12:59:54: 2026-05-31 12:59:54,137 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.10764 | L:47.9% [-2.1%] {+55.77$} | S:52.0% [+2.0%] {+60.61$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+25|paper-pundix        | 2026-05-31 12:59:55: 2026-05-31 12:59:55,353 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.29 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 12:59:55: 2026-05-31 12:59:55,553 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:55: 2026-05-31 12:59:55,831 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 12:59:55: 2026-05-31 12:59:55,832 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.68 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 12:59:55: 2026-05-31 12:59:55,832 INFO: Heartbeat: TPV=113.78 | PnL=-1.22 | VVVUSDT=18.1618 | L:59.3% [+9.3%] {+67.47$} | S:40.4% [-9.6%] {+45.92$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+36|paper-render        | 2026-05-31 12:59:56: 2026-05-31 12:59:56,182 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.04 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 12:59:56: 2026-05-31 12:59:56,996 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 12:59:56: 2026-05-31 12:59:56,996 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.29 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:59:59: 2026-05-31 12:59:59,705 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 12:59:59: 2026-05-31 12:59:59,705 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 12:59:59: 2026-05-31 12:59:59,705 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0108236 | L:24.2% [-25.8%] {+27.87$} | S:75.8% [+25.8%] {+87.50$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+7|paper-stg            | 2026-05-31 13:00:01: 2026-05-31 13:00:01,102 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:01: 2026-05-31 13:00:01,725 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:01: 2026-05-31 13:00:01,726 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.25 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:00:02: 2026-05-31 13:00:02,481 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:00:02: 2026-05-31 13:00:02,481 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.11 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:00:03: 2026-05-31 13:00:03,558 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:00:03: 2026-05-31 13:00:03,558 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.95 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:00:03: 2026-05-31 13:00:03,581 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:00:04: 2026-05-31 13:00:04,363 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:00:04: 2026-05-31 13:00:04,363 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.10 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:00:06: 2026-05-31 13:00:06,688 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:00:06: 2026-05-31 13:00:06,688 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:00:07: 2026-05-31 13:00:07,333 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:00:07: 2026-05-31 13:00:07,334 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.71 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:00:08: 2026-05-31 13:00:08,071 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.37 < 0, surplus selling blocked
+42|paper-ton           | 2026-05-31 13:00:08: 2026-05-31 13:00:08,553 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.88 | L:50.3% [+0.3%] {+57.71$} | S:49.9% [-0.1%] {+57.25$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+41|paper-sign          | 2026-05-31 13:00:08: 2026-05-31 13:00:08,620 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.22 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:00:09: 2026-05-31 13:00:09,436 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:00:09: 2026-05-31 13:00:09,436 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:00:09: 2026-05-31 13:00:09,612 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:00:09: 2026-05-31 13:00:09,612 INFO: Heartbeat: TPV=115.34 | PnL=+0.34 | ALGOUSDT=0.1295 | L:52.5% [+2.5%] {+60.55$} | S:47.5% [-2.5%] {+54.79$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+25|paper-pundix        | 2026-05-31 13:00:10: 2026-05-31 13:00:10,659 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.32 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:00:10: 2026-05-31 13:00:10,865 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:00:11: 2026-05-31 13:00:11,154 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:00:11: 2026-05-31 13:00:11,154 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.72 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 13:00:11: 2026-05-31 13:00:11,491 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.02 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:00:12: 2026-05-31 13:00:12,291 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:00:12: 2026-05-31 13:00:12,292 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.41 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:00:15: 2026-05-31 13:00:15,018 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:00:15: 2026-05-31 13:00:15,018 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:00:16: 2026-05-31 13:00:16,401 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:17: 2026-05-31 13:00:17,031 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:17: 2026-05-31 13:00:17,031 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:00:17: 2026-05-31 13:00:17,781 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:00:17: 2026-05-31 13:00:17,782 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:00:18: 2026-05-31 13:00:18,859 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:00:18: 2026-05-31 13:00:18,859 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.94 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:00:18: 2026-05-31 13:00:18,882 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:00:18: 2026-05-31 13:00:18,882 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=552.509 | L:52.2% [+2.2%] {+60.22$} | S:47.8% [-2.2%] {+55.20$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 13:00:19: 2026-05-31 13:00:19,676 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:00:19: 2026-05-31 13:00:19,677 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.08 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:00:22: 2026-05-31 13:00:22,003 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:00:22: 2026-05-31 13:00:22,003 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:00:22: 2026-05-31 13:00:22,656 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:00:22: 2026-05-31 13:00:22,656 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:00:23: 2026-05-31 13:00:23,387 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.36 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:00:23: 2026-05-31 13:00:23,939 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.28 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:00:24: 2026-05-31 13:00:24,737 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:00:24: 2026-05-31 13:00:24,737 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:00:24: 2026-05-31 13:00:24,907 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:00:26: 2026-05-31 13:00:26,163 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:00:26: 2026-05-31 13:00:26,196 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.37 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 13:00:26: 2026-05-31 13:00:26,196 INFO: Heartbeat: TPV=112.24 | PnL=-2.76 | PUNDIXUSDT=0.148581 | L:28.9% [-21.1%] {+32.45$} | S:70.6% [+20.6%] {+79.22$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+16|paper-vvv           | 2026-05-31 13:00:26: 2026-05-31 13:00:26,474 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:00:26: 2026-05-31 13:00:26,475 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.80 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 13:00:26: 2026-05-31 13:00:26,983 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.50173 | L:49.6% [-0.4%] {+56.88$} | S:50.6% [+0.6%] {+58.05$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+3|paper-portal         | 2026-05-31 13:00:27: 2026-05-31 13:00:27,608 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:00:27: 2026-05-31 13:00:27,608 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.44 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:00:30: 2026-05-31 13:00:30,323 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:00:30: 2026-05-31 13:00:30,323 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:00:31: 2026-05-31 13:00:31,710 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 13:00:31: 2026-05-31 13:00:31,710 INFO: Heartbeat: TPV=118.19 | PnL=+3.19 | STGUSDT=0.241182 | L:52.5% [+2.5%] {+62.02$} | S:47.0% [-3.0%] {+55.61$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.56$}
+13|paper-wld           | 2026-05-31 13:00:32: 2026-05-31 13:00:32,338 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:32: 2026-05-31 13:00:32,338 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:00:33: 2026-05-31 13:00:33,083 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:00:33: 2026-05-31 13:00:33,084 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:00:34: 2026-05-31 13:00:34,164 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:00:34: 2026-05-31 13:00:34,164 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.92 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:00:34: 2026-05-31 13:00:34,181 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:00:34: 2026-05-31 13:00:34,978 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:00:34: 2026-05-31 13:00:34,978 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.08 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:00:37: 2026-05-31 13:00:37,302 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:00:37: 2026-05-31 13:00:37,302 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:00:37: 2026-05-31 13:00:37,953 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:00:37: 2026-05-31 13:00:37,954 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.69 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:00:38: 2026-05-31 13:00:38,689 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.37 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:00:39: 2026-05-31 13:00:39,246 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.27 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:00:40: 2026-05-31 13:00:40,208 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.05 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:00:40: 2026-05-31 13:00:40,297 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:00:40: 2026-05-31 13:00:40,298 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:00:41: 2026-05-31 13:00:41,461 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:00:41: 2026-05-31 13:00:41,509 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.34 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:00:41: 2026-05-31 13:00:41,795 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:00:41: 2026-05-31 13:00:41,796 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.88 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 13:00:42: 2026-05-31 13:00:42,094 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.02 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 13:00:42: 2026-05-31 13:00:42,094 INFO: Heartbeat: TPV=115.42 | PnL=+0.42 | RENDERUSDT=2.08825 | L:49.9% [-0.1%] {+57.59$} | S:49.7% [-0.3%] {+57.41$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+3|paper-portal         | 2026-05-31 13:00:42: 2026-05-31 13:00:42,904 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:00:42: 2026-05-31 13:00:42,904 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.47 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:00:42: 2026-05-31 13:00:42,905 INFO: Heartbeat: TPV=114.12 | PnL=-0.88 | PORTALUSDT=0.0141645 | L:-0.9% [-50.9%] {-1.00$} | S:99.7% [+49.7%] {+113.75$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+4|paper-nfp            | 2026-05-31 13:00:45: 2026-05-31 13:00:45,659 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:00:45: 2026-05-31 13:00:45,659 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:00:47: 2026-05-31 13:00:47,028 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:47: 2026-05-31 13:00:47,637 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:00:47: 2026-05-31 13:00:47,637 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 13:00:47: 2026-05-31 13:00:47,637 INFO: Heartbeat: TPV=115.87 | PnL=+0.87 | WLDUSDT=0.33358 | L:43.3% [-6.7%] {+50.18$} | S:56.2% [+6.2%] {+65.17$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+10|paper-xlm           | 2026-05-31 13:00:48: 2026-05-31 13:00:48,392 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:00:48: 2026-05-31 13:00:48,392 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:00:49: 2026-05-31 13:00:49,464 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:00:49: 2026-05-31 13:00:49,465 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.95 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:00:49: 2026-05-31 13:00:49,465 INFO: Heartbeat: TPV=113.92 | PnL=-1.08 | MEMEUSDT=0.0005967 | L:77.3% [+27.3%] {+88.05$} | S:22.7% [-27.3%] {+25.88$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+37|paper-zec           | 2026-05-31 13:00:49: 2026-05-31 13:00:49,497 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:00:50: 2026-05-31 13:00:50,561 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:00:50: 2026-05-31 13:00:50,561 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.06 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:00:50: 2026-05-31 13:00:50,561 INFO: Heartbeat: TPV=113.73 | PnL=-1.27 | ONDOUSDT=0.365504 | L:43.7% [-6.3%] {+49.73$} | S:55.5% [+5.5%] {+63.16$} | V:0.0% [+0.0%] {+0.00$} | C:0.8% {0.84$}
+14|paper-fet           | 2026-05-31 13:00:52: 2026-05-31 13:00:52,606 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:00:52: 2026-05-31 13:00:52,607 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:00:52: 2026-05-31 13:00:52,607 INFO: Heartbeat: TPV=115.34 | PnL=+0.34 | FETUSDT=0.2708 | L:46.5% [-3.4%] {+53.69$} | S:53.3% [+3.3%] {+61.45$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+5|paper-id             | 2026-05-31 13:00:53: 2026-05-31 13:00:53,263 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:00:53: 2026-05-31 13:00:53,263 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.70 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:00:53: 2026-05-31 13:00:53,263 INFO: Heartbeat: TPV=115.48 | PnL=+0.48 | IDUSDT=0.0395349 | L:35.9% [-14.1%] {+41.44$} | S:64.1% [+14.1%] {+74.03$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+33|paper-hive          | 2026-05-31 13:00:53: 2026-05-31 13:00:53,995 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.38 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:00:54: 2026-05-31 13:00:54,560 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:00:55: 2026-05-31 13:00:55,501 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:00:55: 2026-05-31 13:00:55,609 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:00:55: 2026-05-31 13:00:55,609 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:00:56: 2026-05-31 13:00:56,765 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 13:00:56: 2026-05-31 13:00:56,765 INFO: Heartbeat: TPV=115.41 | PnL=+0.41 | NEARUSDT=2.267 | L:52.1% [+2.1%] {+60.12$} | S:47.5% [-2.5%] {+54.87$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+25|paper-pundix        | 2026-05-31 13:00:56: 2026-05-31 13:00:56,819 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.29 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:00:57: 2026-05-31 13:00:57,100 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:00:57: 2026-05-31 13:00:57,100 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.87 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:00:58: 2026-05-31 13:00:58,220 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:00:58: 2026-05-31 13:00:58,221 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.55 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:01:00: 2026-05-31 13:01:00,960 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:01:00: 2026-05-31 13:01:00,960 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:01:02: 2026-05-31 13:01:02,327 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:02: 2026-05-31 13:01:02,965 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:02: 2026-05-31 13:01:02,965 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:01:03: 2026-05-31 13:01:03,706 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:01:03: 2026-05-31 13:01:03,706 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:01:03: 2026-05-31 13:01:03,707 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | XLMUSDT=0.247515 | L:67.0% [+17.0%] {+77.29$} | S:33.0% [-17.0%] {+38.04$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+22|paper-meme          | 2026-05-31 13:01:04: 2026-05-31 13:01:04,774 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:01:04: 2026-05-31 13:01:04,774 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.96 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:01:04: 2026-05-31 13:01:04,808 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:01:05: 2026-05-31 13:01:05,875 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:01:05: 2026-05-31 13:01:05,876 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.05 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:01:07: 2026-05-31 13:01:07,908 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:01:07: 2026-05-31 13:01:07,908 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:01:08: 2026-05-31 13:01:08,562 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:01:08: 2026-05-31 13:01:08,562 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.68 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:01:09: 2026-05-31 13:01:09,299 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.38 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:01:09: 2026-05-31 13:01:09,299 INFO: Heartbeat: TPV=114.44 | PnL=-0.56 | HIVEUSDT=0.06751 | L:15.2% [-34.8%] {+17.45$} | S:84.8% [+34.8%] {+96.99$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+41|paper-sign          | 2026-05-31 13:01:09: 2026-05-31 13:01:09,874 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:01:09: 2026-05-31 13:01:09,875 INFO: Heartbeat: TPV=114.54 | PnL=-0.46 | SIGNUSDT=0.01257 | L:50.7% [+0.7%] {+58.09$} | S:48.9% [-1.1%] {+55.96$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+35|paper-algo          | 2026-05-31 13:01:10: 2026-05-31 13:01:10,810 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:01:10: 2026-05-31 13:01:10,911 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:01:10: 2026-05-31 13:01:10,911 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:01:10: 2026-05-31 13:01:10,911 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.107631 | L:47.9% [-2.2%] {+55.75$} | S:52.0% [+2.0%] {+60.64$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+17|paper-near          | 2026-05-31 13:01:12: 2026-05-31 13:01:12,084 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:01:12: 2026-05-31 13:01:12,130 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.28 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:01:12: 2026-05-31 13:01:12,401 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:01:12: 2026-05-31 13:01:12,401 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.90 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:01:12: 2026-05-31 13:01:12,402 INFO: Heartbeat: TPV=113.57 | PnL=-1.43 | VVVUSDT=18.246 | L:60.5% [+10.6%] {+68.77$} | S:39.1% [-10.9%] {+44.40$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+3|paper-portal         | 2026-05-31 13:01:13: 2026-05-31 13:01:13,517 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:01:13: 2026-05-31 13:01:13,517 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.60 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:01:16: 2026-05-31 13:01:16,271 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:01:16: 2026-05-31 13:01:16,271 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:01:16: 2026-05-31 13:01:16,272 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0107505 | L:22.6% [-27.4%] {+26.13$} | S:77.4% [+27.4%] {+89.23$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+7|paper-stg            | 2026-05-31 13:01:17: 2026-05-31 13:01:17,652 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:18: 2026-05-31 13:01:18,278 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:18: 2026-05-31 13:01:18,278 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:01:19: 2026-05-31 13:01:19,007 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:01:19: 2026-05-31 13:01:19,007 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:01:20: 2026-05-31 13:01:20,081 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:01:20: 2026-05-31 13:01:20,082 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.96 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:01:20: 2026-05-31 13:01:20,138 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:01:21: 2026-05-31 13:01:21,190 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:01:21: 2026-05-31 13:01:21,190 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.03 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:01:21: 2026-05-31 13:01:21,193 INFO: Heartbeat: TPV=113.76 | PnL=-1.24 | ONDOUSDT=0.365742 | Cycles=3
+14|paper-fet           | 2026-05-31 13:01:23: 2026-05-31 13:01:23,208 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:01:23: 2026-05-31 13:01:23,208 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.09 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:01:23: 2026-05-31 13:01:23,860 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:01:23: 2026-05-31 13:01:23,860 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.66 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:01:24: 2026-05-31 13:01:24,621 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.38 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:01:25: 2026-05-31 13:01:25,186 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+42|paper-ton           | 2026-05-31 13:01:25: 2026-05-31 13:01:25,279 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.8848 | L:50.9% [+0.9%] {+58.45$} | S:49.2% [-0.8%] {+56.52$} | V:0.0% [+0.0%] {+0.00$} | C:-0.2% {-0.19$}
+35|paper-algo          | 2026-05-31 13:01:26: 2026-05-31 13:01:26,119 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:01:26: 2026-05-31 13:01:26,119 INFO: Heartbeat: TPV=115.33 | PnL=+0.33 | ALGOUSDT=0.129775 | L:53.0% [+3.0%] {+61.17$} | S:47.0% [-3.0%] {+54.17$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+6|paper-hei            | 2026-05-31 13:01:26: 2026-05-31 13:01:26,211 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:01:26: 2026-05-31 13:01:26,211 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:01:27: 2026-05-31 13:01:27,393 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:01:27: 2026-05-31 13:01:27,455 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.31 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:01:27: 2026-05-31 13:01:27,715 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:01:27: 2026-05-31 13:01:27,716 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.86 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:01:28: 2026-05-31 13:01:28,824 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:01:28: 2026-05-31 13:01:28,824 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.62 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:01:31: 2026-05-31 13:01:31,570 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:01:31: 2026-05-31 13:01:31,571 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:01:32: 2026-05-31 13:01:32,951 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:33: 2026-05-31 13:01:33,594 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:33: 2026-05-31 13:01:33,594 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:01:34: 2026-05-31 13:01:34,313 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:01:34: 2026-05-31 13:01:34,313 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:01:35: 2026-05-31 13:01:35,390 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:01:35: 2026-05-31 13:01:35,390 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.95 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:01:35: 2026-05-31 13:01:35,438 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:01:35: 2026-05-31 13:01:35,439 INFO: Heartbeat: TPV=115.43 | PnL=+0.43 | ZECUSDT=552.77 | L:52.3% [+2.3%] {+60.35$} | S:47.7% [-2.3%] {+55.06$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.01$}
+11|paper-ondo          | 2026-05-31 13:01:36: 2026-05-31 13:01:36,502 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:01:36: 2026-05-31 13:01:36,503 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.04 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:01:38: 2026-05-31 13:01:38,508 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:01:38: 2026-05-31 13:01:38,508 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:01:39: 2026-05-31 13:01:39,164 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:01:39: 2026-05-31 13:01:39,165 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.63 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:01:39: 2026-05-31 13:01:39,942 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.43 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:01:40: 2026-05-31 13:01:40,510 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.21 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:01:41: 2026-05-31 13:01:41,415 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:01:41: 2026-05-31 13:01:41,523 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:01:41: 2026-05-31 13:01:41,524 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:01:42: 2026-05-31 13:01:42,701 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:01:43: 2026-05-31 13:01:43,003 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.31 < 0, surplus selling blocked
+25|paper-pundix        | 2026-05-31 13:01:43: 2026-05-31 13:01:43,004 INFO: Heartbeat: TPV=112.30 | PnL=-2.70 | PUNDIXUSDT=0.1488 | L:29.3% [-20.7%] {+32.86$} | S:70.2% [+20.2%] {+78.86$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.57$}
+16|paper-vvv           | 2026-05-31 13:01:43: 2026-05-31 13:01:43,018 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:01:43: 2026-05-31 13:01:43,018 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.78 < 0, surplus selling blocked
+34|paper-inj           | 2026-05-31 13:01:43: 2026-05-31 13:01:43,568 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | INJUSDT=6.51394 | L:50.0% [+0.0%] {+57.42$} | S:50.1% [+0.1%] {+57.51$} | V:0.0% [+0.0%] {+0.00$} | C:-0.1% {-0.15$}
+3|paper-portal         | 2026-05-31 13:01:44: 2026-05-31 13:01:44,121 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:01:44: 2026-05-31 13:01:44,122 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.58 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:01:46: 2026-05-31 13:01:46,868 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:01:46: 2026-05-31 13:01:46,869 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:01:48: 2026-05-31 13:01:48,260 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+7|paper-stg            | 2026-05-31 13:01:48: 2026-05-31 13:01:48,261 INFO: Heartbeat: TPV=118.28 | PnL=+3.28 | STGUSDT=0.241624 | L:52.9% [+2.9%] {+62.59$} | S:46.6% [-3.4%] {+55.12$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.56$}
+13|paper-wld           | 2026-05-31 13:01:48: 2026-05-31 13:01:48,908 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:01:48: 2026-05-31 13:01:48,908 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:01:49: 2026-05-31 13:01:49,614 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:01:49: 2026-05-31 13:01:49,614 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:01:50: 2026-05-31 13:01:50,692 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:01:50: 2026-05-31 13:01:50,692 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.04 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:01:50: 2026-05-31 13:01:50,740 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:01:51: 2026-05-31 13:01:51,803 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:01:51: 2026-05-31 13:01:51,803 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.01 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:01:53: 2026-05-31 13:01:53,808 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:01:53: 2026-05-31 13:01:53,808 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:01:54: 2026-05-31 13:01:54,478 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:01:54: 2026-05-31 13:01:54,478 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.65 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:01:55: 2026-05-31 13:01:55,247 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.46 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:01:55: 2026-05-31 13:01:55,846 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.12 < 0, surplus selling blocked
+35|paper-algo          | 2026-05-31 13:01:56: 2026-05-31 13:01:56,720 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:01:56: 2026-05-31 13:01:56,824 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:01:56: 2026-05-31 13:01:56,824 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:01:58: 2026-05-31 13:01:58,011 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:01:58: 2026-05-31 13:01:58,301 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.25 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:01:58: 2026-05-31 13:01:58,319 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:01:58: 2026-05-31 13:01:58,319 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.76 < 0, surplus selling blocked
+36|paper-render        | 2026-05-31 13:01:58: 2026-05-31 13:01:58,588 INFO: Heartbeat: TPV=115.48 | PnL=+0.48 | RENDERUSDT=2.091 | L:50.2% [+0.2%] {+57.99$} | S:49.4% [-0.6%] {+57.07$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+3|paper-portal         | 2026-05-31 13:01:59: 2026-05-31 13:01:59,417 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:01:59: 2026-05-31 13:01:59,418 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.62 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:01:59: 2026-05-31 13:01:59,418 INFO: Heartbeat: TPV=113.97 | PnL=-1.03 | PORTALUSDT=0.01408 | L:-2.2% [-52.2%] {-2.46$} | S:101.0% [+51.0%] {+115.05$} | V:0.0% [+0.0%] {+0.00$} | C:1.2% {1.38$}
+4|paper-nfp            | 2026-05-31 13:02:02: 2026-05-31 13:02:02,167 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:02:02: 2026-05-31 13:02:02,167 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:02:03: 2026-05-31 13:02:03,579 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:04: 2026-05-31 13:02:04,219 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:04: 2026-05-31 13:02:04,219 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.24 < 0, surplus selling blocked
+13|paper-wld           | 2026-05-31 13:02:04: 2026-05-31 13:02:04,219 INFO: Heartbeat: TPV=115.87 | PnL=+0.87 | WLDUSDT=0.333514 | L:43.3% [-6.7%] {+50.12$} | S:56.3% [+6.3%] {+65.22$} | V:0.0% [+0.0%] {+0.00$} | C:0.5% {0.52$}
+10|paper-xlm           | 2026-05-31 13:02:04: 2026-05-31 13:02:04,930 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:02:04: 2026-05-31 13:02:04,930 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:02:05: 2026-05-31 13:02:05,992 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:02:05: 2026-05-31 13:02:05,993 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.04 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:02:05: 2026-05-31 13:02:05,993 INFO: Heartbeat: TPV=113.83 | PnL=-1.17 | MEMEUSDT=0.00059933 | L:78.5% [+28.6%] {+89.42$} | S:21.5% [-28.5%] {+24.42$} | V:0.0% [+0.0%] {+0.00$} | C:-0.0% {0.00$}
+37|paper-zec           | 2026-05-31 13:02:06: 2026-05-31 13:02:06,041 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:02:07: 2026-05-31 13:02:07,120 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:02:07: 2026-05-31 13:02:07,120 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.02 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:02:07: 2026-05-31 13:02:07,120 INFO: Heartbeat: TPV=113.77 | PnL=-1.23 | ONDOUSDT=0.365859 | L:44.0% [-6.0%] {+50.02$} | S:55.3% [+5.3%] {+62.91$} | V:0.0% [+0.0%] {+0.00$} | C:0.7% {0.84$}
+14|paper-fet           | 2026-05-31 13:02:09: 2026-05-31 13:02:09,107 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:02:09: 2026-05-31 13:02:09,107 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:02:09: 2026-05-31 13:02:09,107 INFO: Heartbeat: TPV=115.36 | PnL=+0.36 | FETUSDT=0.271774 | L:47.4% [-2.6%] {+54.72$} | S:52.4% [+2.4%] {+60.44$} | V:0.0% [+0.0%] {+0.00$} | C:0.2% {0.20$}
+5|paper-id             | 2026-05-31 13:02:09: 2026-05-31 13:02:09,789 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:02:09: 2026-05-31 13:02:09,789 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.66 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:02:09: 2026-05-31 13:02:09,789 INFO: Heartbeat: TPV=115.51 | PnL=+0.51 | IDUSDT=0.03965 | L:36.6% [-13.4%] {+42.25$} | S:63.4% [+13.4%] {+73.26$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+33|paper-hive          | 2026-05-31 13:02:10: 2026-05-31 13:02:10,563 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.44 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:02:11: 2026-05-31 13:02:11,163 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+42|paper-ton           | 2026-05-31 13:02:11: 2026-05-31 13:02:11,165 INFO: Heartbeat: TPV=114.77 | PnL=-0.23 | TONUSDT=1.88366 | Cycles=1
+35|paper-algo          | 2026-05-31 13:02:12: 2026-05-31 13:02:12,037 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.06 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:02:12: 2026-05-31 13:02:12,125 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:02:12: 2026-05-31 13:02:12,125 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+17|paper-near          | 2026-05-31 13:02:13: 2026-05-31 13:02:13,310 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+17|paper-near          | 2026-05-31 13:02:13: 2026-05-31 13:02:13,310 INFO: Heartbeat: TPV=115.42 | PnL=+0.42 | NEARUSDT=2.269 | L:52.3% [+2.3%] {+60.38$} | S:47.3% [-2.7%] {+54.62$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.42$}
+25|paper-pundix        | 2026-05-31 13:02:13: 2026-05-31 13:02:13,610 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.26 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:02:13: 2026-05-31 13:02:13,622 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:02:13: 2026-05-31 13:02:13,622 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.77 < 0, surplus selling blocked
+3|paper-portal         | 2026-05-31 13:02:14: 2026-05-31 13:02:14,712 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:02:14: 2026-05-31 13:02:14,712 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.57 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:02:17: 2026-05-31 13:02:17,479 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:02:17: 2026-05-31 13:02:17,479 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+7|paper-stg            | 2026-05-31 13:02:18: 2026-05-31 13:02:18,899 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:19: 2026-05-31 13:02:19,540 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:19: 2026-05-31 13:02:19,541 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:02:20: 2026-05-31 13:02:20,247 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:02:20: 2026-05-31 13:02:20,248 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:02:20: 2026-05-31 13:02:20,248 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | XLMUSDT=0.24797 | L:67.5% [+17.5%] {+77.85$} | S:32.5% [-17.5%] {+37.48$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.02$}
+22|paper-meme          | 2026-05-31 13:02:21: 2026-05-31 13:02:21,294 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:02:21: 2026-05-31 13:02:21,294 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.08 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:02:21: 2026-05-31 13:02:21,340 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+11|paper-ondo          | 2026-05-31 13:02:22: 2026-05-31 13:02:22,432 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+11|paper-ondo          | 2026-05-31 13:02:22: 2026-05-31 13:02:22,432 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.03 < 0, surplus selling blocked
+14|paper-fet           | 2026-05-31 13:02:24: 2026-05-31 13:02:24,416 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+14|paper-fet           | 2026-05-31 13:02:24: 2026-05-31 13:02:24,417 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.08 < 0, surplus selling blocked
+5|paper-id             | 2026-05-31 13:02:25: 2026-05-31 13:02:25,094 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+5|paper-id             | 2026-05-31 13:02:25: 2026-05-31 13:02:25,094 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.67 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:02:25: 2026-05-31 13:02:25,867 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.44 < 0, surplus selling blocked
+33|paper-hive          | 2026-05-31 13:02:25: 2026-05-31 13:02:25,867 INFO: Heartbeat: TPV=114.39 | PnL=-0.61 | HIVEUSDT=0.06709 | L:13.9% [-36.1%] {+15.88$} | S:86.1% [+36.1%] {+98.51$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+41|paper-sign          | 2026-05-31 13:02:26: 2026-05-31 13:02:26,480 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.03 < 0, surplus selling blocked
+41|paper-sign          | 2026-05-31 13:02:26: 2026-05-31 13:02:26,480 INFO: Heartbeat: TPV=114.73 | PnL=-0.27 | SIGNUSDT=0.012522 | L:49.7% [-0.3%] {+57.07$} | S:49.8% [-0.2%] {+57.17$} | V:0.0% [+0.0%] {+0.00$} | C:0.4% {0.49$}
+35|paper-algo          | 2026-05-31 13:02:27: 2026-05-31 13:02:27,359 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:02:27: 2026-05-31 13:02:27,435 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+6|paper-hei            | 2026-05-31 13:02:27: 2026-05-31 13:02:27,436 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.00 < 0, surplus selling blocked
+6|paper-hei            | 2026-05-31 13:02:27: 2026-05-31 13:02:27,436 INFO: Heartbeat: TPV=116.51 | PnL=+1.51 | HEIUSDT=0.10733 | L:47.2% [-2.8%] {+54.95$} | S:52.7% [+2.7%] {+61.44$} | V:0.0% [+0.0%] {+0.00$} | C:0.1% {0.13$}
+17|paper-near          | 2026-05-31 13:02:28: 2026-05-31 13:02:28,620 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+25|paper-pundix        | 2026-05-31 13:02:28: 2026-05-31 13:02:28,922 INFO: 🛡️ PnL GUARD active: hedge PnL=-3.26 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:02:28: 2026-05-31 13:02:28,936 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+16|paper-vvv           | 2026-05-31 13:02:28: 2026-05-31 13:02:28,936 INFO: 🛡️ PnL GUARD active: hedge PnL=-1.80 < 0, surplus selling blocked
+16|paper-vvv           | 2026-05-31 13:02:28: 2026-05-31 13:02:28,937 INFO: Heartbeat: TPV=113.67 | PnL=-1.33 | VVVUSDT=18.2079 | L:60.0% [+10.0%] {+68.18$} | S:39.7% [-10.3%] {+45.09$} | V:0.0% [+0.0%] {+0.00$} | C:0.3% {0.40$}
+3|paper-portal         | 2026-05-31 13:02:30: 2026-05-31 13:02:30,008 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+3|paper-portal         | 2026-05-31 13:02:30: 2026-05-31 13:02:30,008 INFO: 🛡️ PnL GUARD active: hedge PnL=-6.57 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:02:32: 2026-05-31 13:02:32,791 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+4|paper-nfp            | 2026-05-31 13:02:32: 2026-05-31 13:02:32,791 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.07 < 0, surplus selling blocked
+4|paper-nfp            | 2026-05-31 13:02:32: 2026-05-31 13:02:32,792 INFO: Heartbeat: TPV=115.35 | PnL=+0.35 | NFPUSDT=0.0107977 | L:23.6% [-26.4%] {+27.25$} | S:76.4% [+26.4%] {+88.11$} | V:0.0% [+0.0%] {+0.00$} | C:0.0% {0.00$}
+7|paper-stg            | 2026-05-31 13:02:34: 2026-05-31 13:02:34,219 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:34: 2026-05-31 13:02:34,863 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+13|paper-wld           | 2026-05-31 13:02:34: 2026-05-31 13:02:34,863 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.23 < 0, surplus selling blocked
+10|paper-xlm           | 2026-05-31 13:02:35: 2026-05-31 13:02:35,550 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+10|paper-xlm           | 2026-05-31 13:02:35: 2026-05-31 13:02:35,551 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.13 < 0, surplus selling blocked
+22|paper-meme          | 2026-05-31 13:02:36: 2026-05-31 13:02:36,616 INFO: 🚀 Initialized Virtual: 0.0 units (Cost: 0.00 USDT added to virt_debt)
+22|paper-meme          | 2026-05-31 13:02:36: 2026-05-31 13:02:36,616 INFO: 🛡️ PnL GUARD active: hedge PnL=-2.15 < 0, surplus selling blocked
+37|paper-zec           | 2026-05-31 13:02:36: 2026-05-31 13:02:36,652 INFO: 🛡️ PnL GUARD active: hedge PnL=-0.01 < 0, surplus selling blocked
+
+
