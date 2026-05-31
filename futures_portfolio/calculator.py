@@ -101,13 +101,16 @@ class PortfolioCalculator:
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
-    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True) -> Dict:
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> Dict:
         """
         Calculate rebalance actions and return a summary of the current state.
         allow_surplus_sell: if False, surplus (profit-taking) actions are blocked.
             Used when total PnL is negative to prevent "selling winners" while "losers" accumulate.
+        force_block: if True, ALL actions are blocked (Net Move Guard active).
+            Used during fast unidirectional price movements (pump/dump) to prevent
+            closing positions at fake profit/loss.
         """
-        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell)
+        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell, force_block)
         # calculate_deviations возвращает dict с actions, available_funds, tpv, share_*
         actions = dev_res["actions"]
 
@@ -133,12 +136,26 @@ class PortfolioCalculator:
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> List[Dict]:
         """
         Rebalance based on CAPITAL (Equity) deviations. 
         This allows the portfolio to harvest volatility profit.
         allow_surplus_sell: if False, surplus actions are excluded (PnL protection mode).
+        force_block: if True, ALL actions are blocked (Net Move Guard).
         """
+        if force_block:
+            # Net Move Guard active — block ALL actions during fast price movement
+            return {
+                "actions": [],
+                "available_funds": float(max(Decimal('0'), self.val_cash)),
+                "share_long_pct": float(self.share_long_pct),
+                "share_short_pct": float(self.share_short_pct),
+                "share_virt_pct": float(self.share_virt_pct),
+                "share_cash_pct": float(self.share_cash_pct),
+                "tpv": float(self.tpv),
+                "total_tpv": float(self.total_tpv),
+            }
+
         dec_threshold_surplus = Decimal(str(threshold_surplus))
         dec_threshold_deficit = Decimal(str(threshold_deficit))
         min_notional = self.min_notional

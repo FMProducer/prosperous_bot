@@ -393,6 +393,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         max_spread = float(guards_cfg.get("max_spread_pct", 0.15)) / 100.0
                         max_velocity = float(guards_cfg.get("max_price_velocity_pct", 1.0)) / 100.0
                         velocity_window = int(guards_cfg.get("velocity_window_sec", 60))
+                        net_move_block_pct = float(guards_cfg.get("net_move_block_pct", 1.5)) / 100.0
+                        net_move_window = int(guards_cfg.get("net_move_window_sec", 30))
 
                         logger.debug(f"⚙️ Config reloaded. Active Thresholds for {base_ticker}: Surplus {threshold_surplus*100:.2f}%, Deficit {threshold_deficit*100:.2f}%, Max Spread: {max_spread*100:.2f}%")
 
@@ -446,6 +448,24 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         if (net_move / p_list[0] > 0.005) and trend_eff > 0.85:
                             if i % 5 == 0:
                                 logger.warning(f"🚫 Trend Guard: {base_ticker} toxic move (Eff: {trend_eff:.2f}, Move: {net_move/p_list[0]*100:.2f}%). Freezing.")
+                            await asyncio.sleep(check_interval); i += 1; continue
+
+                # -------------------------------------------------------------------------
+                # [SAFETY] NET MOVE GUARD (NMG) — Pump/Dump Protection
+                # -------------------------------------------------------------------------
+                # If price moved > threshold in one direction within short window,
+                # block ALL rebalance actions. Prevents closing positions at fake
+                # profit/loss during fast unidirectional moves.
+                nmg_triggered = False
+                if len(price_history) > 1:
+                    nmg_point = next((p for p in price_history if now - p[0] <= net_move_window), None)
+                    if nmg_point:
+                        nmg_old_t, nmg_old_p = nmg_point
+                        net_move = abs(price - nmg_old_p) / nmg_old_p
+                        if net_move > net_move_block_pct:
+                            nmg_triggered = True
+                            if i % 5 == 0:
+                                logger.warning(f"🛡️ Net Move Guard: {base_ticker} moved {net_move*100:.2f}% in {int(now-nmg_old_t)}s (limit {net_move_block_pct*100:.1f}%). Blocking ALL actions.")
                             await asyncio.sleep(check_interval); i += 1; continue
 
                 # -------------------------------------------------------------------------

@@ -4,6 +4,38 @@
 
 ## [Unreleased] — 2026-06-03
 
+### Net Move Guard (NMG) — Pump/Dump Protection
+
+**Problem:** During fast unidirectional price movements (pump/dump), the hedge legs move in opposite directions. LONG surplus looks like profit, SHORT deficit looks like loss. Without protection, the bot sells LONG "profit" and buys SHORT "loss" — then the price reverts and the bot locked in a loss.
+
+**Solution:** Added Net Move Guard — if price moves >1.5% in one direction within 30 seconds, ALL rebalance actions are blocked. The bot waits for stabilization before resuming.
+
+**Changes:**
+
+1. **main.py** — New guard in heartbeat loop (after Trend Guard, before Spread Guard):
+   - Tracks price history with 300s window (existing deque)
+   - Compares current price to price 30s ago
+   - If move > 1.5% → `🛡️ Net Move Guard` + `continue` (skip heartbeat)
+   - Log throttled: every 5th tick only
+
+2. **config.json** — New parameters in `safety_guards`:
+   - `net_move_block_pct`: 1.5 (percent, triggers block)
+   - `net_move_window_sec`: 30 (lookback window)
+
+3. **calculator.py** — `force_block` parameter added:
+   - `calculate_rebalance()` and `calculate_deviations()` accept `force_block: bool`
+   - When True, returns empty actions but preserves TPV/metrics
+   - Used by NMG for clean separation (guard in loop, block in calculator)
+
+**Protection layers for pump/dump:**
+- Velocity Guard: >1% in 60s → block (existing)
+- Trend Guard: >0.5% with >85% efficiency → block (existing)
+- Net Move Guard: >1.5% in 30s → block (NEW)
+- PnL Guard: hedge PnL < 0 → no surplus selling (previous)
+- Combined: covers both fast spikes and sustained trends
+
+---
+
 ### PnL Guard — Surplus Sell Block in Drawdown
 
 **Problem:** When hedge portfolio is in drawdown (LONG PnL + SHORT PnL < 0), surplus selling on one side locks in profits while losses accumulate on the other side. Portfolio value melts.
