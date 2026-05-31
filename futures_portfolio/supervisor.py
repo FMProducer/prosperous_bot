@@ -591,6 +591,12 @@ async def manage_swarm():
 
     # 5. Сохранение конфига (НЕ перезаписываем tickers — они задаются вручную в config.json)
     config["live_swarm"] = sorted(target_real_bots)
+    # Safety: if tickers is empty, restore from scanner to avoid losing all tickers
+    if not config.get("tickers"):
+        fallback = [r['symbol'] for r in scanner_results[:config.get("max_bots", 20)]]
+        config["tickers"] = sorted(fallback)
+        config["base_ticker"] = config["tickers"][0] if config["tickers"] else "ALGOUSDT"
+        logger.warning(f"⚠️ tickers was empty — restored {len(config['tickers'])} tickers from scanner")
     await safe_save_json(CONFIG_PATH, config)
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
     logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")
