@@ -69,6 +69,7 @@
   "toxic_blacklist": {},
   "tickers": [
     "ALGOUSDT",
+    "AXSUSDT",
     "BNBUSDT",
     "EPICUSDT",
     "FETUSDT",
@@ -80,8 +81,13 @@
     "MEMEUSDT",
     "NEARUSDT",
     "NFPUSDT",
+    "ONDOUSDT",
     "PORTALUSDT",
-    "XLMUSDT"
+    "RENDERUSDT",
+    "STGUSDT",
+    "VTHOUSDT",
+    "VVVUSDT",
+    "WLDUSDT"
   ],
   "base_ticker": "ALGOUSDT"
 }
