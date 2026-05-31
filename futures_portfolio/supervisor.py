@@ -279,39 +279,44 @@ async def selective_merge_incubator(
         return final
 
     # 1. Ранжируем ТЕКУЩИХ ботов по calculate_bot_score (перспективность для REAL)
-    scored_old = []
+    scored_old = {}
     for t in old_incubator:
         p = perf_map.get(t, {"profit": 0.0, "cycles": 0})
         score = _calc_rotation_score(t, p, min_cycles)
-        scored_old.append((t, score))
+        scored_old[t] = score
 
-    # Сортируем по score: лучшие первыми
-    scored_old.sort(key=lambda x: x[1], reverse=True)
-
-    # 2. Лучшие (max_bots - max_replace) = 10 остаются ВСЕГДА
-    keep_count = max(0, max_bots - max_replace)
-    to_keep = [t for t, _ in scored_old[:keep_count]]
-
-    # 3. Слоты для новых: max_replace (10)
-    # Берём из сканера тех, кого нет в старом инкубаторе, в порядке сканера
+    # 2. Новые тикеры из сканера получают score 0 (нейтральный — пока не заработали)
     old_set = set(old_incubator)
-    to_add = []
-    for t in scanner_top:
-        if t not in old_set:
-            to_add.append(t)
-            if len(to_add) >= max_replace:
-                break
+    scanner_new = [t for t in scanner_top if t not in old_set]
 
-    # 4. Финальный инкубатор
-    final = to_keep + to_add
+    # 3. Объединяем всех: старые с их score + новые с score 0
+    #    Сортируем: старые с positive score > новые (score 0) > старые с negative score
+    all_candidates = []
+    for t in old_incubator:
+        all_candidates.append((t, scored_old[t], "old"))
+    for t in scanner_new:
+        all_candidates.append((t, 0.0, "new"))
 
-    # 5. Только старшие (которых нет в финале) — на остановку
+    # Сортируем по score убыванию
+    all_candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # 4. Берём топ-max_bots, но не более max_replace новых
+    final = []
+    new_count = 0
+    for t, score, role in all_candidates:
+        if len(final) >= max_bots:
+            break
+        if role == "new" and new_count >= max_replace:
+            continue  # пропускаем лишних новых
+        final.append(t)
+        if role == "new":
+            new_count += 1
+
     final_set = set(final)
     to_remove = [t for t in old_incubator if t not in final_set]
-    # Ограничиваем удаление max_replace (не убиваем больше, чем добавляем)
-    to_remove = to_remove[:max_replace]
+    to_add = [t for t in final if t not in old_set]
 
-    logger.info(f"🔄 Rotation: keep={len(to_keep)}, add={len(to_add)}, remove={len(to_remove)}")
+    logger.info(f"🔄 Rotation: keep={len(final) - len(to_add)}, add={len(to_add)}, remove={len(to_remove)}")
     if to_remove:
         logger.info(f"🔄   removing (worst by score): {to_remove}")
     if to_add:
@@ -584,10 +589,8 @@ async def manage_swarm():
             await start_bot(ticker, is_paper=False, config=config)
             active_running_keys.add(r_key) # Жестко фиксируем запуск локально
 
-    # 5. Сохранение конфига
-    config["tickers"] = sorted(final_incubator)
+    # 5. Сохранение конфига (НЕ перезаписываем tickers — они задаются вручную в config.json)
     config["live_swarm"] = sorted(target_real_bots)
-    config["base_ticker"] = config["tickers"][0] if config["tickers"] else "BTCUSDT"
     await safe_save_json(CONFIG_PATH, config)
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
     logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")

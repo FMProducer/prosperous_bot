@@ -6,13 +6,13 @@
   "min_notional_usdt": 7.0,
   "paper_mode": true,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 10,
+  "min_cycles_for_rank": 3,
   "max_bots": 20,
   "paper_mode_bots": 20,
   "max_replace_per_cycle": 7,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.011,
+  "supervisor_interval_days": 0.02,
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 22.0,
   "replacement_efficiency_threshold_pct": 50.0,
@@ -30,15 +30,15 @@
       "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
-          "share": 0.29,
+          "share": 0.5,
           "leverage": 5
         },
         "BASE_SHORT": {
-          "share": 0.36,
+          "share": 0.5,
           "leverage": 5
         },
         "VIRTUAL": {
-          "share": 0.35,
+          "share": 0.0,
           "leverage": 1
         }
       },
@@ -67,27 +67,6 @@
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [
-    "ALGOUSDT",
-    "AXSUSDT",
-    "BNBUSDT",
-    "EPICUSDT",
-    "FETUSDT",
-    "FILUSDT",
-    "HEIUSDT",
-    "IDUSDT",
-    "INJUSDT",
-    "IOUSDT",
-    "MEMEUSDT",
-    "NEARUSDT",
-    "NFPUSDT",
-    "ONDOUSDT",
-    "PORTALUSDT",
-    "RENDERUSDT",
-    "STGUSDT",
-    "VTHOUSDT",
-    "VVVUSDT",
-    "WLDUSDT"
-  ],
-  "base_ticker": "ALGOUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }

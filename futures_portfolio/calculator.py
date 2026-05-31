@@ -101,11 +101,13 @@ class PortfolioCalculator:
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
-    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False) -> Dict:
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True) -> Dict:
         """
         Calculate rebalance actions and return a summary of the current state.
+        allow_surplus_sell: if False, surplus (profit-taking) actions are blocked.
+            Used when total PnL is negative to prevent "selling winners" while "losers" accumulate.
         """
-        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits)
+        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell)
         # calculate_deviations возвращает dict с actions, available_funds, tpv, share_*
         actions = dev_res["actions"]
 
@@ -131,10 +133,11 @@ class PortfolioCalculator:
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True) -> List[Dict]:
         """
         Rebalance based on CAPITAL (Equity) deviations. 
         This allows the portfolio to harvest volatility profit.
+        allow_surplus_sell: if False, surplus actions are excluded (PnL protection mode).
         """
         dec_threshold_surplus = Decimal(str(threshold_surplus))
         dec_threshold_deficit = Decimal(str(threshold_deficit))
@@ -201,7 +204,14 @@ class PortfolioCalculator:
         bypass_fuse = ignore_limits or last_reb == self.price
 
         # Phase 1: Process SURPLUS (Priority 0)
+        # PnL PROTECTION: If allow_surplus_sell is False, skip all surplus actions.
+        # This prevents selling "winners" while the portfolio is in drawdown,
+        # which would lock in profits on one side while losses accumulate on the other.
         for act in surplus_actions:
+            if not allow_surplus_sell:
+                logger.debug(f"🛡️ PnL GUARD: Surplus {act['key']} blocked (portfolio PnL < 0)")
+                continue
+
             if abs(Decimal(str(act["diff_usdt"]))) < min_notional and not ignore_limits:
                 continue
 

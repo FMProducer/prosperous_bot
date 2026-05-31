@@ -573,25 +573,30 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         logger.info(f"Initialized TPV base: {initial_tpv:.2f} (Isolated Shadow Balance)")
 
                     if virt_qty == 0:
-                        # КОРРЕКТНАЯ ИНИЦИАЛИЗАЦИЯ:
-                        # 1. Считаем сколько монет купить на целевую долю
                         target_v_share = Decimal(str(targets["VIRTUAL"]["share"]))
-                        initial_cap = Decimal(str(initial_tpv))
-                        dec_price = Decimal(str(price))
-                        
-                        virt_qty_dec = (target_v_share * initial_cap) / dec_price
-                        virt_cost = float(virt_qty_dec * dec_price)
-                        
-                        # 2. Фиксируем ДОЛГ виртуальной ноги (стоимость покупки)
-                        # Мы НЕ вычитаем это из balance в paper_state, так как balance
-                        # представляет полный Wallet Balance (как на бирже).
-                        state["virt_debt"] = state.get("virt_debt", 0.0) + virt_cost
-                        state_dirty = True
+                        if target_v_share <= 0:
+                            # VIRTUAL is disabled (share=0) — skip initialization spam
+                            virt_qty = 0.0
+                            state["virt_debt"] = 0.0
+                        else:
+                            # КОРРЕКТНАЯ ИНИЦИАЛИЗАЦИЯ:
+                            # 1. Считаем сколько монет купить на целевую долю
+                            initial_cap = Decimal(str(initial_tpv))
+                            dec_price = Decimal(str(price))
 
-                        # 3. Фиксируем количество
-                        virt_qty = float(virt_qty_dec)
+                            virt_qty_dec = (target_v_share * initial_cap) / dec_price
+                            virt_cost = float(virt_qty_dec * dec_price)
 
-                        logger.info(f"🚀 Initialized Virtual: {virt_qty} units (Cost: {virt_cost:.2f} USDT added to virt_debt)")
+                            # 2. Фиксируем ДОЛГ виртуальной ноги (стоимость покупки)
+                            # Мы НЕ вычитаем это из balance в paper_state, так как balance
+                            # представляет полный Wallet Balance (как на бирже).
+                            state["virt_debt"] = state.get("virt_debt", 0.0) + virt_cost
+                            state_dirty = True
+
+                            # 3. Фиксируем количество
+                            virt_qty = float(virt_qty_dec)
+
+                            logger.info(f"🚀 Initialized Virtual: {virt_qty} units (Cost: {virt_cost:.2f} USDT added to virt_debt)")
 
                     state.update({
                         "virt_qty": virt_qty,
@@ -635,7 +640,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     last_rebalance_price=state.get("last_rebalance_price", 0.0),
                     min_notional=active_min_notional
                 )
-                calc_res = calc.calculate_rebalance(targets, threshold_surplus, threshold_deficit, ignore_limits)
+                # PnL GUARD: Block surplus selling when portfolio is in drawdown.
+                # Prevents "harvesting winners" while losses accumulate on the other side.
+                # pnl_l and pnl_s are computed in __init__ (relative to last rebalance price)
+                hedge_pnl = float(calc.pnl_l) + float(calc.pnl_s)
+                allow_surplus_sell = hedge_pnl >= 0.0
+                if not allow_surplus_sell:
+                    logger.info(f"🛡️ PnL GUARD active: hedge PnL={hedge_pnl:.2f} < 0, surplus selling blocked")
+
+                calc_res = calc.calculate_rebalance(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell)
                 
                 tpv_total = calc_res["total_tpv"]
                 tpv_active = calc_res["tpv"]
