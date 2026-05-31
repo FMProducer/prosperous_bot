@@ -224,12 +224,13 @@ class PortfolioCalculator:
                 logger.debug(f"🚫 FUSE (SURPLUS): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
 
         # 3. Calculate available funds for BUYs (Strict Cash Accounting)
-        # Only use proceeds from surplus sales — never spend free margin.
+        # Use only bot's internal cash (val_cash = TPV - positions).
+        # val_cash is NOT exchange margin — it's the bot's free equity reserve.
         # Exception: first startup (ignore_limits=True, no positions) to build initial positions.
         if ignore_limits and total_proceeds == 0:
             available_funds = self.val_cash  # Initial capital for first position building
         else:
-            available_funds = total_proceeds  # Only own profit from surplus sales
+            available_funds = max(Decimal('0'), self.val_cash)  # Bot cash reserve only
         
         # 4. Process Deficits with Priority (VIRTUAL first, Priority 2)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
@@ -241,20 +242,11 @@ class PortfolioCalculator:
             if available_funds <= Decimal('0') and not ignore_limits:
                 continue
 
-            # FUSE Check for Deficits
+            # FUSE Check for Deficits — DISABLED.
+            # Deficit purchases are driven by cash reserve (val_cash), not margin.
+            # Buying deficit legs immediately restores balance; waiting for a
+            # further price move (FUSE) only lets the imbalance grow.
             is_valid = True
-            if not bypass_fuse:
-                is_inverse = (act["position_side"] == "SHORT")
-                if not is_inverse:
-                    limit_price = last_reb * (1 - dec_threshold_deficit)
-                    is_valid = self.price <= limit_price
-                else:
-                    limit_price = last_reb * (1 + dec_threshold_deficit)
-                    is_valid = self.price >= limit_price
-
-            if not is_valid:
-                logger.debug(f"🚫 FUSE (DEFICIT): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
-                continue
 
             # Cap purchasing power by available cash (Equity)
             if needed_equity > available_funds and not ignore_limits:
