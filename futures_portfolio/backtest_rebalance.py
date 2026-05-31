@@ -354,8 +354,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорт) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
 
-                # Используем available_funds от calculator (total_proceeds), а не val_cash
-                remaining_funds = Decimal(str(calc_res.get("available_funds", 0.0)))
+                # Use val_cash (initial cash) for backtest, not available_funds (remaining after internal calc)
+                remaining_funds = Decimal(str(calc_res.get("val_cash", calc_res.get("available_funds", 0.0))))
 
                 for act in expansions:
                     key = act["key"]

@@ -285,32 +285,35 @@ async def selective_merge_incubator(
         score = _calc_rotation_score(t, p, min_cycles)
         scored_old[t] = score
 
-    # 2. Новые тикеры из сканера получают score 0 (нейтральный — пока не заработали)
+    # 2. Боты с положительным PnL — ВСЕГДА остаются в рое (не подлежат замене)
     old_set = set(old_incubator)
+    profitable = {t for t in old_incubator if perf_map.get(t, {}).get("profit", 0) > 0}
+    # Боты с отрицательным PnL — кандидаты на замену (конкурируют с новыми)
+    unprofitable = old_set - profitable
+
+    # 3. Новые тикеры из сканера получают score 0 (нейтральный)
     scanner_new = [t for t in scanner_top if t not in old_set]
 
-    # 3. Объединяем всех: старые с их score + новые с score 0
-    #    Сортируем: старые с positive score > новые (score 0) > старые с negative score
-    all_candidates = []
-    for t in old_incubator:
-        all_candidates.append((t, scored_old[t], "old"))
-    for t in scanner_new:
-        all_candidates.append((t, 0.0, "new"))
+    # 4. Формируем финал: сначала прибыльные (всегда остаются), потом лучшие из остальных
+    final = list(profitable)  # Прибыльные боты — бессрочно в рое
 
-    # Сортируем по score убыванию
-    all_candidates.sort(key=lambda x: x[1], reverse=True)
+    # 5. Слоты для остальных: конкуренция между убыточными старыми и новыми
+    # Ранжируем убыточных по score
+    unprofiled_scored = [(t, scored_old[t]) for t in unprofitable]
+    unprofiled_scored.sort(key=lambda x: x[1], reverse=True)
 
-    # 4. Берём топ-max_bots, но не более max_replace новых
-    final = []
-    new_count = 0
-    for t, score, role in all_candidates:
+    # Новые с score 0
+    new_scored = [(t, 0.0) for t in scanner_new]
+
+    # Объединяем и сортируем
+    competitors = unprofiled_scored + new_scored
+    competitors.sort(key=lambda x: x[1], reverse=True)
+
+    # Заполняем оставшиеся слоты
+    for t, score in competitors:
         if len(final) >= max_bots:
             break
-        if role == "new" and new_count >= max_replace:
-            continue  # пропускаем лишних новых
         final.append(t)
-        if role == "new":
-            new_count += 1
 
     final_set = set(final)
     to_remove = [t for t in old_incubator if t not in final_set]
