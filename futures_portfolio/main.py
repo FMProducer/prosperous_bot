@@ -323,8 +323,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 logger.warning(f"Could not set leverage for {base_ticker}: {e}")
 
             try:
-                await connector.set_margin_type(base_ticker, "ISOLATED")
-                logger.info(f"Margin Type set to ISOLATED for {base_ticker}")
+                await connector.set_margin_type(base_ticker, "CROSS")
+                logger.info(f"Margin Type set to CROSS for {base_ticker}")
             except Exception as e:
                 logger.warning(f"Could not set margin type for {base_ticker}: {e}")
 
