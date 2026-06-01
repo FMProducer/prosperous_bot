@@ -660,21 +660,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     last_rebalance_price=state.get("last_rebalance_price", 0.0),
                     min_notional=active_min_notional
                 )
-                # PnL GUARD: Block surplus selling when portfolio is in drawdown.
-                # Prevents "harvesting winners" while losses accumulate on the other side.
-                # pnl_l and pnl_s are computed in __init__ (relative to last rebalance price)
-                hedge_pnl = float(calc.pnl_l) + float(calc.pnl_s)
-                allow_surplus_sell = hedge_pnl >= 0.0
-                # Log only on state change to avoid spamming every heartbeat
-                prev_guard = state.get("pnl_guard_active", False)
-                if not allow_surplus_sell and not prev_guard:
-                    logger.info(f"🛡️ PnL GUARD ON: hedge PnL={hedge_pnl:.2f} < 0, surplus selling blocked")
-                    state["pnl_guard_active"] = True
-                    state_dirty = True
-                elif allow_surplus_sell and prev_guard:
-                    logger.info(f"✅ PnL GUARD OFF: hedge PnL={hedge_pnl:.2f} >= 0, surplus selling resumed")
-                    state["pnl_guard_active"] = False
-                    state_dirty = True
+                # PnL Guard removed — in 50/50 hedge, one leg is always negative when price moves
+                # Blocking surplus sell prevents profit-taking during normal hedge operation
+                allow_surplus_sell = True
 
                 calc_res = calc.calculate_rebalance(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell)
                 

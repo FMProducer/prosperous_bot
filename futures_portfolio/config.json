@@ -8,7 +8,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 3,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -26,7 +26,7 @@
     {
       "name": "SyntheticMarketNeutral",
       "initial_capital": 180.0,
-      "paper_initial_capital": 115.0,
+      "paper_initial_capital": 180.0,
       "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
@@ -63,41 +63,33 @@
       }
     }
   ],
-  "live_swarm": [
-    "HEIUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": true,
-  "real_whitelist": [
-    "HEIUSDT"
-  ],
+  "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
   "tickers": [
-    "HIVEUSDT",
-    "PORTALUSDT",
-    "BNBUSDT",
+    "AERGOUSDT",
+    "DRIFTUSDT",
+    "EPICUSDT",
+    "FETUSDT",
+    "FHEUSDT",
     "GUNUSDT",
-    "SEIUSDT",
-    "ZECUSDT",
-    "HBARUSDT",
     "HEIUSDT",
-    "IDUSDT",
+    "ICPUSDT",
     "INJUSDT",
-    "IOUSDT",
-    "MEMEUSDT",
+    "JTOUSDT",
+    "MBOXUSDT",
     "NEARUSDT",
-    "NFPUSDT",
-    "ONDOUSDT",
-    "RENDERUSDT",
-    "PUNDIXUSDT",
-    "TONUSDT",
-    "VIRTUALUSDT",
-    "VTHOUSDT",
+    "ORDIUSDT",
+    "PORTALUSDT",
+    "SIRENUSDT",
+    "STGUSDT",
+    "VICUSDT",
     "VVVUSDT",
     "WLDUSDT",
-    "XLMUSDT",
-    "XMRUSDT"
+    "XLMUSDT"
   ],
-  "base_ticker": "ALGOUSDT"
+  "base_ticker": "AERGOUSDT"
 }

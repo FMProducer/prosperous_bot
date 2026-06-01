@@ -202,8 +202,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             file_path = next((p for p in possible_files if os.path.exists(p)), None)
 
         if not file_path or not os.path.exists(file_path):
-            logger.error(f"Data file not found for {base_ticker}")
-            return None
+            logger.info(f"Data file not found for {base_ticker}, downloading {days} days from Binance...")
+            file_path = await download_live_data(base_ticker, data_dir, days)
 
         df: pd.DataFrame = pd.read_feather(file_path)
         df = df[['open', 'high', 'low', 'close', 'volume']]

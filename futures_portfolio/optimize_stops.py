@@ -63,6 +63,11 @@ def load_config():
 
 
 def get_tickers(cfg):
+    """Читаем тикеры из tickers.txt (приоритет) или config.json."""
+    tickers_file = PROJECT_DIR / "tickers.txt"
+    if tickers_file.exists():
+        with open(tickers_file, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
     return cfg.get("tickers", ["ALGOUSDT"])
 
 
@@ -71,7 +76,7 @@ def get_timeout_sec(cfg):
 
 
 def get_days(cfg):
-    return float(cfg.get("backtest_period_days", 0.125))
+    return float(cfg.get("backtest_period_days", 2.0))
 
 
 def run_backtest_for_ticker(config, ticker, days):
