@@ -51,6 +51,94 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
     except Exception as e:
         logger.error(f"Error saving final metrics before exit: {e}")
 
+async def _handle_liquidation_recovery(connector, base_ticker, state, state_file_path,
+                                        paper_state, paper_state_file_path,
+                                        config_path, logger, notifier):
+    """Handles liquidation: closes remaining position, stops bot, adds to blacklist."""
+    try:
+        logger.critical(f"🚨 LIQUIDATION RECOVERY for {base_ticker}: Closing remaining positions...")
+
+        from decimal import Decimal
+        executor = PortfolioExecutor(connector, base_ticker=base_ticker)
+
+        # Get real positions
+        real_pos_dict = await connector.get_position_risk()
+        # Convert dict to list for uniform processing
+        # Dict format: {"SYMBOL_LONG": {"liq_price": ..., "unrealized_pnl": ..., "positionAmt": ...}, ...}
+        real_pos = []
+        for key, val in real_pos_dict.items():
+            entry = dict(val)
+            entry["symbol"] = key.split("_")[0] if "_" in key else key
+            entry["positionSide"] = key.split("_")[1] if "_" in key else "BOTH"
+            entry["positionAmt"] = entry.get("qty", 0) or entry.get("positionAmt", 0)
+            real_pos.append(entry)
+        real_pos = [p for p in real_pos if base_ticker in p.get("symbol", "")]
+
+        for p in real_pos:
+            amt = float(p.get("positionAmt", 0))
+            if abs(amt) < 1e-10:
+                continue
+            ps = p.get("positionSide", "")
+            side = "SELL" if amt > 0 else "BUY"
+            logger.critical(f"Closing {ps} position: {amt} @ market")
+
+            try:
+                symbol = p.get("symbol", base_ticker)
+                await executor.execute_market_order(
+                    symbol=symbol,
+                    qty=Decimal(str(abs(amt))),
+                    side=side,
+                    step_size=Decimal("0.1"),
+                    reduce_only=True,
+                    position_side=ps if ps in ("LONG", "SHORT") else "BOTH",
+                    min_notional=Decimal("0"),
+                )
+                logger.critical(f"✅ Closed {ps} position")
+            except Exception as e:
+                logger.error(f"Failed to close {ps}: {e}")
+
+        # Update state
+        state["positions"] = {}
+        state["last_tpv"] = 0.0
+        state["last_profit"] = -state.get("initial_tpv", 180.0)
+        state["total_pnl_pct"] = -100.0
+        state["trailing_stop_triggered"] = True
+        await save_json(state_file_path, state)
+
+        # Remove from live_swarm and add to toxic_blacklist
+        try:
+            import json as _json
+            from pathlib import Path
+            cfg_path = Path(config_path)
+            if cfg_path.exists():
+                cfg_data = _json.loads(cfg_path.read_text())
+                live_swarm = cfg_data.get("live_swarm", [])
+                if base_ticker in live_swarm:
+                    live_swarm.remove(base_ticker)
+                    cfg_data["live_swarm"] = live_swarm
+                toxic = cfg_data.get("toxic_blacklist", {})
+                cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
+                expiry = time.time() + cooldown_days * 86400
+                toxic[base_ticker] = expiry
+                cfg_data["toxic_blacklist"] = toxic
+                cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
+                logger.info(f"{base_ticker} removed from live_swarm, added to toxic_blacklist")
+        except Exception as e:
+            logger.error(f"Failed to update config: {e}")
+
+        emit_signal("stop", base_ticker)
+
+        try:
+            await notifier.send_alert("🚨 LIQUIDATION",
+                f"{base_ticker}: Position liquidated! Bot stopped. Remaining positions closed.")
+        except:
+            pass
+
+        logger.critical(f"🚨 LIQUIDATION RECOVERY complete for {base_ticker}")
+
+    except Exception as e:
+        logger.error(f"Liquidation recovery failed: {e}")
+
 
 async def _handle_liquidation_guard(
     pos_key: str, dist: float, liq_price: float,
@@ -69,10 +157,10 @@ async def _handle_liquidation_guard(
             f"{pos_key} distance {dist:.1f}% (liq_price={liq_price:.8f}). Emergency close!"
         )
         try:
-            asyncio.create_task(notifier.send_alert(
+            await notifier.send_alert(
                 "🚨 LIQUIDATION IMMINENT",
                 f"{pos_key}: distance {dist:.1f}% to liq @ {liq_price:.8f}. Closing!"
-            ))
+            )
         except Exception:
             pass
 
@@ -533,7 +621,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 continue
                             dist = risk.get("distance_pct", 100.0)
                             liq_price = risk.get("liq_price", 0.0)
-                            _handle_liquidation_guard(
+                            await _handle_liquidation_guard(
                                 pos_key=pos_key, dist=dist, liq_price=liq_price,
                                 liquidation_distance_warn=liquidation_distance_warn,
                                 liquidation_distance_crit=liquidation_distance_crit,
@@ -566,7 +654,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 dist = (liq_price - price) / price * 100.0 if price > 0 else 100.0
                             dist = max(dist, 0.0)
 
-                            _handle_liquidation_guard(
+                            await _handle_liquidation_guard(
                                 pos_key=pos_key, dist=dist, liq_price=liq_price,
                                 liquidation_distance_warn=liquidation_distance_warn,
                                 liquidation_distance_crit=liquidation_distance_crit,
@@ -579,6 +667,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 paper_state_dirty = True
                     except Exception as e:
                         logger.error(f"Paper liquidation guard check failed: {e}")
+
+                # Cross-margin free margin check for paper mode
+                # Paper bots share a real account — ensure enough free margin exists
+                if paper_mode:
+                    try:
+                        account_free_margin = portfolio_cfg.get("paper_account_free_margin", 0.0)
+                        min_free_pct = portfolio_cfg.get("paper_min_free_margin_pct", 15.0)
+                        if account_free_margin > 0:
+                            # Each paper bot needs: notional / leverage margin per side
+                            side_margin = initial_tpv / 2  # half_capital as margin needed per side
+                            total_margin_needed = side_margin * 2  # both sides
+                            # margin_ratio = free margin / margin needed for this bot
+                            margin_ratio = account_free_margin / total_margin_needed if total_margin_needed > 0 else 999
+                            min_ratio = min_free_pct / 100.0
+                            if margin_ratio < min_ratio:
+                                logger.warning(
+                                    f"⚠️ CROSS MARGIN [PAPER]: Free margin ${account_free_margin:.2f} "
+                                    f"insufficient for {base_ticker} (need ${total_margin_needed:.2f}, "
+                                    f"ratio={margin_ratio:.2f}x < min {min_ratio:.2f}x). "
+                                    f"Skipping rebalance."
+                                )
+                                # Skip this cycle — don't rebalance when margin is thin
+                                continue
+                    except Exception as e:
+                        logger.error(f"Paper cross-margin check failed: {e}")
 
                 # Calculate isolated PnL and Equity
                 # [SSOT] TPV = Cash + Virtual Value. Cash is paper_state["balance"].
@@ -778,8 +891,31 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     emit_signal("stop", base_ticker)
                                     logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
                                 else:
+                                    # Trailing stop triggered with PROFIT
+                                    # Add to toxic_blacklist directly (not just exit flag)
                                     emit_signal("exit", base_ticker)
-                                    logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}. Ticker remains available (Probation).")
+                                    # Also write to toxic_blacklist in config for cooldown
+                                    try:
+                                        import json as _json
+                                        cfg_path = Path(config_path)
+                                        if cfg_path.exists():
+                                            cfg_data = _json.loads(cfg_path.read_text())
+                                            toxic = cfg_data.get("toxic_blacklist", {})
+                                            cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
+                                            expiry = time.time() + cooldown_days * 86400
+                                            toxic[base_ticker] = expiry
+                                            cfg_data["toxic_blacklist"] = toxic
+                                            # Remove from live_swarm
+                                            live_swarm = cfg_data.get("live_swarm", [])
+                                            if base_ticker in live_swarm:
+                                                live_swarm.remove(base_ticker)
+                                                cfg_data["live_swarm"] = live_swarm
+                                                logger.info(f"❌ {base_ticker} removed from live_swarm")
+                                            cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
+                                            logger.info(f"✅ {base_ticker} added to toxic_blacklist until {time.ctime(expiry)} ({cooldown_days} days)")
+                                    except Exception as e:
+                                        logger.error(f"Failed to add {base_ticker} to toxic_blacklist: {e}")
+                                    logger.info(f"Sent EXIT signal (with toxic). Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}.")
 
                                 # Сбрасываем ATH и начальные значения
                                 state["tpv_ath"] = 0.0
@@ -808,11 +944,16 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 if i % 5 == 0:
                                     logger.info(f"Trailing Stop Pending: {drawdown_pct:.2f}% (Wait {equity_trailing_stop_timeout_sec - elapsed:.1f}s more)")
                         else:
-                            # Drawdown back below threshold — recovery
+                            # Drawdown back below threshold — NO RECOVERY
+                            # Trailing stop is ONE-SHOT: once triggered, never resets
                             if state.get("trailing_stop_violation_start", 0.0) > 0:
-                                logger.info(f"Trailing Stop Recovered: drawdown {drawdown_pct:.2f}% is back below {equity_trailing_stop_pct}%")
-                                state["trailing_stop_violation_start"] = 0.0
-                                state_dirty = True
+                                logger.info(f"Trailing Stop: drawdown {drawdown_pct:.2f}% but already triggered — NO recovery")
+
+                # Check if trailing stop was previously triggered (one-shot)
+                if state.get("trailing_stop_triggered", False):
+                    logger.info(f"Trailing Stop already triggered for {base_ticker}. Skipping trailing stop check.")
+                    # Skip to next iteration — bot should be stopped by supervisor
+                    # But we still need to check margin
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:
@@ -1135,6 +1276,49 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     "rebalance_cycles": cycles
                 })
                 state_dirty = True
+
+                # [LIQUIDATION GUARD] Verify real positions after rebalance
+                if not paper_mode and any_success:
+                    try:
+                        real_pos_dict = await connector.get_position_risk()
+                        # Convert dict {"SYMBOL_LONG": {...}, "SYMBOL_SHORT": {...}} to list
+                        real_pos = []
+                        for key, val in real_pos_dict.items():
+                            entry = dict(val)
+                            entry["symbol"] = key.split("_")[0] if "_" in key else key
+                            entry["positionSide"] = key.split("_")[1] if "_" in key else "BOTH"
+                            real_pos.append(entry)
+                        real_pos = [p for p in real_pos if base_ticker in p.get("symbol", "")]
+                        has_long = False
+                        has_short = False
+                        for p in real_pos:
+                            amt = float(p.get("positionAmt", 0))
+                            if abs(amt) < 1e-10:
+                                continue
+                            ps = p.get("positionSide", "")
+                            if "LONG" in ps or (ps == "BOTH" and amt > 0):
+                                has_long = True
+                            elif "SHORT" in ps or (ps == "BOTH" and amt < 0):
+                                has_short = True
+
+                        # Check if one side is missing (liquidated)
+                        expected_long = float(state.get("positions", {}).get(f"{base_ticker}_LONG", 0))
+                        expected_short = float(state.get("positions", {}).get(f"{base_ticker}_SHORT", 0))
+
+                        if expected_long != 0 and not has_long:
+                            logger.error(f"🚨 LIQUIDATION DETECTED: {base_ticker}_LONG is MISSING on exchange!")
+                            await _handle_liquidation_recovery(connector, base_ticker, state, state_file_path,
+                                                                paper_state, paper_state_file_path,
+                                                                config_path, logger, notifier)
+                            return
+                        if expected_short != 0 and not has_short:
+                            logger.error(f"🚨 LIQUIDATION DETECTED: {base_ticker}_SHORT is MISSING on exchange!")
+                            await _handle_liquidation_recovery(connector, base_ticker, state, state_file_path,
+                                                                paper_state, paper_state_file_path,
+                                                                config_path, logger, notifier)
+                            return
+                    except Exception as e:
+                        logger.warning(f"Liquidation guard check failed: {e}")
 
                 if state_dirty:
                     await save_json(state_file_path, state)

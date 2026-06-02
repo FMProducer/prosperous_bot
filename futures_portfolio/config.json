@@ -3,10 +3,10 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 7.0,
+  "min_notional_usdt": 5.5,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 12,
+  "min_cycles_for_rank": 3,
   "max_bots": 20,
   "paper_mode_bots": 19,
   "max_replace_per_cycle": 10,
@@ -14,9 +14,9 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.02,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 22.0,
+  "max_drawdown_limit": 30.0,
   "replacement_efficiency_threshold_pct": 50.0,
-  "equity_trailing_stop_pct": 22.0,
+  "equity_trailing_stop_pct": 20.0,
   "equity_trailing_stop_activation_pct": 6.5,
   "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,
@@ -25,17 +25,23 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 180.0,
-      "paper_initial_capital": 180.0,
+      "initial_capital": 80.0,
+      "paper_initial_capital": 80.0,
+      "paper_account_free_margin": 100.0,
+      "paper_min_free_margin_pct": 15.0,
+      "margin_ratio_warning": 3.0,
+      "margin_ratio_critical": 1.5,
+      "liquidation_distance_warn_pct": 10.0,
+      "liquidation_distance_crit_pct": 5.0,
       "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
           "share": 0.5,
-          "leverage": 5
+          "leverage": 7
         },
         "BASE_SHORT": {
           "share": 0.5,
-          "leverage": 5
+          "leverage": 7
         },
         "VIRTUAL": {
           "share": 0.0,
@@ -44,15 +50,11 @@
       },
       "safety_guards": {
         "max_spread_pct": 0.15,
-        "max_price_velocity_pct": 1.0,
+        "max_price_velocity_pct": 2.0,
         "velocity_window_sec": 60,
         "net_move_block_pct": 1.5,
         "net_move_window_sec": 30
       },
-      "margin_ratio_warning": 3.0,
-      "margin_ratio_critical": 1.5,
-      "liquidation_distance_warn_pct": 15.0,
-      "liquidation_distance_crit_pct": 8.0,
       "rebalance_threshold_surplus": 0.01,
       "rebalance_threshold_deficit": 0.04,
       "ticker_thresholds": {
@@ -63,41 +65,14 @@
       }
     }
   ],
-  "live_swarm": [
-    "GUNUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": true,
   "real_whitelist": [
-    "EPICUSDT",
-    "SIRENUSDT",
-    "GUNUSDT",
-    "MBOXUSDT",
-    "DRIFTUSDT"
+    "EPICUSDT"
   ],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [
-    "AERGOUSDT",
-    "DRIFTUSDT",
-    "EPICUSDT",
-    "FETUSDT",
-    "FHEUSDT",
-    "GUNUSDT",
-    "HEIUSDT",
-    "ICPUSDT",
-    "INJUSDT",
-    "JTOUSDT",
-    "MBOXUSDT",
-    "NEARUSDT",
-    "ORDIUSDT",
-    "PORTALUSDT",
-    "SIRENUSDT",
-    "STGUSDT",
-    "VICUSDT",
-    "VVVUSDT",
-    "WLDUSDT",
-    "XLMUSDT"
-  ],
-  "base_ticker": "AERGOUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }
