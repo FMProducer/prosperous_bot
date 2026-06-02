@@ -16,7 +16,7 @@
   "scanner_period_days": 0.125,
   "max_drawdown_limit": 30.0,
   "replacement_efficiency_threshold_pct": 50.0,
-  "equity_trailing_stop_pct": 20.0,
+  "equity_trailing_stop_pct": 15.0,
   "equity_trailing_stop_activation_pct": 6.5,
   "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,

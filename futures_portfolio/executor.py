@@ -116,7 +116,7 @@ class PortfolioExecutor:
             logger.info(f"Order EXECUTED on Binance: {side} {str_qty} {symbol} ({position_side}) | Fact Qty: {executed_qty}")
 
             if executed_qty == 0:
-                return {"status": "ERROR", "message": f"Binance executed 0.0 contracts for order {order_id}", "result": result}
+                return {"status": "ERROR", "message": f"Binance executed 0.0 contracts for order {order_id}", "result": result, "trade_pnl": 0.0, "commission": 0.0}
 
             # --- REAL TRADE DATA SYNC ---
             # Fetch actual trades to get real realized PnL and commission
@@ -145,7 +145,7 @@ class PortfolioExecutor:
             import traceback
             logger.error(f"Order FAILED for {symbol}: {e}")
             logger.error(traceback.format_exc())
-            return {"status": "ERROR", "message": str(e) if str(e) else f"Unknown error of type {type(e).__name__}"}
+            return {"status": "ERROR", "message": str(e) if str(e) else f"Unknown error of type {type(e).__name__}", "trade_pnl": 0.0, "commission": 0.0}
 
     async def execute_limit_with_fallback(self, symbol: str, qty: Any, side: str,
                                            step_size: Any = Decimal('0'), reduce_only: bool = False,
@@ -434,6 +434,10 @@ class PortfolioExecutor:
                         reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
                     )
 
+                # Initialize defaults (fixes UnboundLocalError when res status is not SUCCESS)
+                trade_pnl = Decimal('0.0')
+                commission = Decimal('0.0')
+
                 if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                     # Берем строго то, что исполнила биржа
                     executed_qty = res.get("executed_qty", Decimal('0.0'))
@@ -444,7 +448,8 @@ class PortfolioExecutor:
                     if executed_qty == 0:
                         return {
                             "type": pos_side, "symbol": symbol, "side": side, "qty": 0.0,
-                            "status": "ERROR", "message": "Fact executed qty is zero"
+                            "status": "ERROR", "message": "Fact executed qty is zero",
+                            "trade_pnl": 0.0, "commission": 0.0
                         }
 
                     return {

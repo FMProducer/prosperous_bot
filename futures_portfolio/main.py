@@ -678,14 +678,37 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 elif paper_mode:
                     # PAPER mode: use simulated liquidation price from shadow_state
+                    # Recalculate liq_price every cycle (cross-margin aware)
                     try:
+                        _free_margin_val = Decimal(str(portfolio_cfg.get("paper_account_free_margin", 0.0)))
+                        _mmr_val = Decimal('0.004')
+                        _lv_l = Decimal(str(targets.get("BASE_LONG", {}).get("leverage", 7)))
+                        _lv_s = Decimal(str(targets.get("BASE_SHORT", {}).get("leverage", 7)))
+                        
                         for pos_side in ("LONG", "SHORT"):
                             pos_key = f"{base_ticker}_{pos_side}"
                             qty = abs(paper_state["positions"].get(pos_key, 0.0))
                             if qty == 0:
                                 continue
+                            
+                            # Recalculate liq price using cross-margin formula
+                            entry_key = f"{pos_side.lower()}_entry_price"
+                            entry = Decimal(str(paper_state.get(entry_key, price)))
+                            _lv = _lv_l if pos_side == "LONG" else _lv_s
+                            _qty = Decimal(str(qty)) + Decimal('1e-10')
+                            
                             liq_price_key = f"{pos_side.lower()}_liquidation_price"
-                            liq_price = paper_state.get(liq_price_key, 0.0)
+                            if pos_side == "LONG":
+                                _iso = entry * (Decimal('1') - Decimal('1') / _lv + _mmr_val)
+                                _cross = max(_iso - _free_margin_val / _qty, Decimal('0'))
+                            else:
+                                _iso = entry * (Decimal('1') + Decimal('1') / _lv - _mmr_val)
+                                _cross = _iso + _free_margin_val / _qty
+                            
+                            liq_price = float(_cross.quantize(Decimal('1e-8')))
+                            paper_state[liq_price_key] = liq_price
+                            paper_state_dirty = True
+                            
                             if liq_price <= 0:
                                 continue
                             # Calculate distance from current price to simulated liq price
