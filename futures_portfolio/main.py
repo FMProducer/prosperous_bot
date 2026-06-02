@@ -438,18 +438,23 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 return
             logger.info("Hedge Mode verified.")
 
-            # Force Leverage 5x and Isolated Margin
+            # Set leverage from config (targets.BASE_LONG.leverage)
             try:
-                await connector.set_leverage(base_ticker, 5)
-                logger.info(f"Leverage set to 5x for {base_ticker}")
+                _lev = int(targets.get("BASE_LONG", {}).get("leverage", 7))
+                await connector.set_leverage(base_ticker, _lev)
+                logger.info(f"Leverage set to {_lev}x for {base_ticker}")
             except Exception as e:
                 logger.warning(f"Could not set leverage for {base_ticker}: {e}")
 
             try:
-                await connector.set_margin_type(base_ticker, "CROSS")
+                await connector.set_margin_type(base_ticker, "CROSSED")
                 logger.info(f"Margin Type set to CROSS for {base_ticker}")
             except Exception as e:
-                logger.warning(f"Could not set margin type for {base_ticker}: {e}")
+                logger.error(f"Could not set margin type for {base_ticker}: {e}")
+                # CRITICAL: without correct margin type, liq_price from Binance is unreliable
+                # Do NOT trade if margin type cannot be set
+                asyncio.create_task(notifier.send_alert("STARTUP ERROR", f"Could not set margin type for {base_ticker}: {e}. Bot will NOT start."))
+                return
 
         except Exception as e:
             logger.error(f"Failed to verify exchange settings: {e}")
@@ -652,13 +657,28 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if not paper_mode and raw_positions:
                     # REAL mode: get liquidation data from exchange
+                    # NOTE: For CROSSED margin, Binance returns unreliable liq_price
+                    # Use margin ratio check instead (m_info below)
                     try:
                         risk_data = await connector.get_position_risk()
                         for pos_key, risk in risk_data.items():
                             if base_ticker not in pos_key:
                                 continue
-                            dist = risk.get("distance_pct", 100.0)
                             liq_price = risk.get("liq_price", 0.0)
+                            dist = risk.get("distance_pct", 100.0)
+                            
+                            # For CROSSED margin, only act if distance is realistic
+                            # Binance returns garbage liq_price for cross margin
+                            entry = raw_positions.get(pos_key, {}).get("entry_price", 0.0)
+                            is_long = "LONG" in pos_key
+                            if entry > 0 and liq_price > 0:
+                                if is_long and liq_price >= entry:
+                                    logger.info(f"  {pos_key}: skipping cross-margin liq={liq_price} >= entry={entry}")
+                                    continue
+                                if not is_long and liq_price <= entry:
+                                    logger.info(f"  {pos_key}: skipping cross-margin liq={liq_price} <= entry={entry}")
+                                    continue
+                            
                             await _handle_liquidation_guard(
                                 pos_key=pos_key, dist=dist, liq_price=liq_price,
                                 liquidation_distance_warn=liquidation_distance_warn,
@@ -1199,24 +1219,27 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     new_entry = (old_qty * old_entry + qty * dec_price) / (old_qty + qty)
                                     paper_state[entry_key] = float(new_entry.quantize(Decimal('1e-8')))
 
-                                    # [LIQUIDATION GUARD] Calculate simulated liquidation price for paper mode
-                                    # Cross-margin: free margin from account pushes liq price further away
-                                    # Isolated formula: LONG liq = entry × (1 - 1/lev + mmr), SHORT liq = entry × (1 + 1/lev - mmr)
-                                    # Cross adjustment: free_margin / qty shifts liq price away = safer
-                                    _leverage = Decimal(str(targets.get(f"BASE_{pos_side}", {}).get("leverage", 5)))
-                                    _mmr = Decimal('0.004')  # 0.4% maintenance margin rate
+                                    # [LIQUIDATION GUARD] Calculate simulated liquidation price
+                                    # For LONG: liq_price < entry (price must drop to liq)
+                                    # For SHORT: liq_price > entry (price must rise to liq)
+                                    # Isolated margin formula: liq = entry × (1 ± 1/leverage ∓ mmr)
+                                    # Cross-margin: free margin pushes liq further away (safer)
+                                    _leverage = Decimal(str(targets.get(f"BASE_{pos_side}", {}).get("leverage", 7)))
+                                    _mmr = Decimal('0.004')
                                     _free_margin = Decimal(str(portfolio_cfg.get("paper_account_free_margin", 0.0)))
                                     _pos_qty = Decimal(str(abs(paper_state["positions"].get(pos_key, 0.0)))) + Decimal('1e-10')
                                     
                                     if pos_side == "LONG":
-                                        _isolated_liq = new_entry * (Decimal('1') - Decimal('1') / _leverage + _mmr)
-                                        # Free margin pushes LONG liq DOWN = further from current price = safer
-                                        _cross_liq = max(_isolated_liq - _free_margin / _pos_qty, Decimal('0'))
+                                        # LONG liq = entry × (1 - 1/leverage + mmr) — below entry
+                                        _iso_liq = new_entry * (Decimal('1') - Decimal('1') / _leverage + _mmr)
+                                        # Free margin pushes liq DOWN (further from current price = safer)
+                                        _cross_liq = max(_iso_liq - _free_margin / _pos_qty, Decimal('0'))
                                         paper_state["long_liquidation_price"] = float(_cross_liq.quantize(Decimal('1e-8')))
                                     else:
-                                        _isolated_liq = new_entry * (Decimal('1') + Decimal('1') / _leverage - _mmr)
-                                        # Free margin pushes SHORT liq UP = further from current price = safer
-                                        _cross_liq = _isolated_liq + _free_margin / _pos_qty
+                                        # SHORT liq = entry × (1 + 1/leverage - mmr) — above entry
+                                        _iso_liq = new_entry * (Decimal('1') + Decimal('1') / _leverage - _mmr)
+                                        # Free margin pushes liq UP (further from current price = safer)
+                                        _cross_liq = _iso_liq + _free_margin / _pos_qty
                                         paper_state["short_liquidation_price"] = float(_cross_liq.quantize(Decimal('1e-8')))
 
                                 elif reduce_only and new_qty == 0:
