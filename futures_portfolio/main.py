@@ -165,48 +165,83 @@ async def _handle_liquidation_guard(
             pass
 
         if is_paper:
-            # Paper mode: simulate closing at current price
-            entry_key = "long_entry_price" if "LONG" in pos_key else "short_entry_price"
-            old_entry = paper_state.get(entry_key, 0.0)
-            old_qty = paper_state["positions"].get(pos_key, 0.0)
-            if old_qty == 0:
-                return
-            # Calculate PnL from price movement
-            if "LONG" in pos_key:
-                # For LONG at critical distance, we lost almost all margin
-                # Simulate: close at liq_price, recover tiny remaining margin
-                pnl = old_qty * (liq_price - old_entry)
-            else:
-                pnl = old_qty * (old_entry - liq_price)
-            paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + Decimal(str(pnl)))
-            paper_state["positions"][pos_key] = 0.0
-            paper_state[entry_key] = 0.0
-            paper_state[f"{'long' if 'LONG' in pos_key else 'short'}_liquidation_price"] = 0.0
+            # Paper mode: simulate closing BOTH sides at current price
+            for _side in ("LONG", "SHORT"):
+                _pos_key = f"{base_ticker}_{_side}"
+                _entry_key = f"{_side.lower()}_entry_price"
+                _old_entry = paper_state.get(_entry_key, 0.0)
+                _old_qty = paper_state["positions"].get(_pos_key, 0.0)
+                if _old_qty == 0:
+                    continue
+                # Calculate PnL from price movement
+                if _side == "LONG":
+                    _pnl = _old_qty * (liq_price - _old_entry)
+                else:
+                    _pnl = _old_qty * (_old_entry - liq_price)
+                paper_state["balance"] = float(Decimal(str(paper_state["balance"])) + Decimal(str(_pnl)))
+                paper_state["positions"][_pos_key] = 0.0
+                paper_state[_entry_key] = 0.0
+                paper_state[f"{_side.lower()}_liquidation_price"] = 0.0
+                logger.info(f"✅ PAPER: Emergency closed {_pos_key} (PnL={_pnl:+.4f})")
             mode_tag = "PAPER"
         else:
-            # Real mode: send actual close order
-            side = "SELL" if "LONG" in pos_key else "BUY"
-            position_side = "LONG" if "LONG" in pos_key else "SHORT"
-            close_qty = abs(raw_positions.get(pos_key, {}).get("qty", 0.0))
-            if close_qty > 0:
-                try:
-                    await PortfolioExecutor(connector).execute_market_order(
-                        symbol=base_ticker,
-                        side=side,
-                        qty=close_qty,
-                        position_side=position_side,
-                        reduce_only=True
-                    )
-                    paper_state["positions"][pos_key] = 0.0
-                    logger.info(f"✅ Emergency closed {pos_key} to avoid liquidation")
-                except Exception as close_err:
-                    logger.error(f"Failed to emergency close {pos_key}: {close_err}")
+            # Real mode: send actual close order for BOTH sides
+            for _side in ("LONG", "SHORT"):
+                _pos_key = f"{base_ticker}_{_side}"
+                _close_side = "SELL" if _side == "LONG" else "BUY"
+                _close_qty = abs(raw_positions.get(_pos_key, {}).get("qty", 0.0))
+                if _close_qty > 0:
+                    try:
+                        await PortfolioExecutor(connector).execute_market_order(
+                            symbol=base_ticker,
+                            side=_close_side,
+                            qty=_close_qty,
+                            position_side=_side,
+                            reduce_only=True
+                        )
+                        paper_state["positions"][_pos_key] = 0.0
+                        logger.info(f"✅ Emergency closed {_pos_key} to avoid liquidation")
+                    except Exception as close_err:
+                        logger.error(f"Failed to emergency close {_pos_key}: {close_err}")
             mode_tag = "REAL"
 
         logger.info(
             f"✅ [{'PAPER' if is_paper else 'REAL'}] Emergency closed {pos_key} "
             f"(dist={dist:.1f}%, liq={liq_price:.8f})"
         )
+
+        # After closing one side in critical zone → add to blacklist
+        # This prevents the bot from continuing on a failing ticker
+        try:
+            import json as _json
+            from pathlib import Path
+            # Find config path from notifier or use default
+            _cfg_path = Path("config.json")
+            if _cfg_path.exists():
+                cfg_data = _json.loads(_cfg_path.read_text())
+                # Add to black_list (permanent) — ticker is too volatile for this strategy
+                bl = cfg_data.get("black_list", [])
+                if base_ticker not in bl:
+                    bl.append(base_ticker)
+                    cfg_data["black_list"] = bl
+                # Also add to toxic_blacklist with cooldown
+                toxic = cfg_data.get("toxic_blacklist", {})
+                cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
+                expiry = time.time() + cooldown_days * 86400
+                toxic[base_ticker] = expiry
+                cfg_data["toxic_blacklist"] = toxic
+                # Remove from live_swarm
+                live_swarm = cfg_data.get("live_swarm", [])
+                if base_ticker in live_swarm:
+                    live_swarm.remove(base_ticker)
+                    cfg_data["live_swarm"] = live_swarm
+                _cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
+                logger.critical(
+                    f"🚫 {base_ticker} added to black_list + toxic_blacklist. "
+                    f"Removed from live_swarm."
+                )
+        except Exception as e:
+            logger.error(f"Failed to blacklist {base_ticker}: {e}")
 
     elif dist <= liquidation_distance_warn:
         logger.warning(
@@ -532,8 +567,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         total_path = sum(abs(p_list[j] - p_list[j-1]) for j in range(1, len(p_list)))
                         trend_eff = (net_move / total_path) if total_path > 0 else 0
                         
-                        # Если прошли > 0.5% и более 85% пути в одну сторону - это "палка"
-                        if (net_move / p_list[0] > 0.005) and trend_eff > 0.85:
+                        trend_min_move = guards_cfg.get("trend_min_move_pct", 0.7) / 100.0
+                        trend_eff_thresh = guards_cfg.get("trend_eff_threshold", 0.35)
+                        
+                        # Trend Guard: если прошли > min_move% и эффективность > threshold — это тренде
+                        if (net_move / p_list[0] > trend_min_move) and trend_eff > trend_eff_thresh:
                             if i % 5 == 0:
                                 logger.warning(f"🚫 Trend Guard: {base_ticker} toxic move (Eff: {trend_eff:.2f}, Move: {net_move/p_list[0]*100:.2f}%). Freezing.")
                             await asyncio.sleep(check_interval); i += 1; continue
@@ -632,6 +670,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             )
                             if dist <= liquidation_distance_crit:
                                 paper_state_dirty = True
+                                # Stop bot after liquidation critical — ticker is blacklisted
+                                emit_signal("stop", base_ticker)
+                                logger.critical(f"🛑 Stopping {base_ticker} after liquidation critical. Ticker blacklisted.")
                     except Exception as e:
                         logger.error(f"Real liquidation guard check failed: {e}")
 
@@ -665,6 +706,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             )
                             if dist <= liquidation_distance_crit:
                                 paper_state_dirty = True
+                                # Stop bot after liquidation critical — ticker is blacklisted
+                                emit_signal("stop", base_ticker)
+                                logger.critical(f"🛑 Stopping {base_ticker} after liquidation critical (PAPER). Ticker blacklisted.")
                     except Exception as e:
                         logger.error(f"Paper liquidation guard check failed: {e}")
 

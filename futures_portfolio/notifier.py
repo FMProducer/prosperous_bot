@@ -1,6 +1,7 @@
 import os
 import asyncio
 import aiohttp
+from aiohttp_socks import ProxyConnector
 import json
 import logging
 import time
@@ -59,8 +60,13 @@ class TelegramNotifier:
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(trust_env=True)
+            connector = ProxyConnector.from_url(self._proxy, ssl=False)
+            self._session = aiohttp.ClientSession(connector=connector, trust_env=False)
         return self._session
+
+    @property
+    def _proxy(self):
+        return os.environ.get("TG_PROXY", "socks5://127.0.0.1:10808")
 
     async def close(self):
         if self._session and not self._session.closed:
@@ -85,7 +91,7 @@ class TelegramNotifier:
             try:
                 session = await self._get_session()
                 headers = {'User-Agent': 'ProsperousBot/1.0'}
-                async with session.post(url, json=payload, headers=headers, timeout=10) as response:
+                async with session.post(url, json=payload, headers=headers, timeout=10, proxy=self._proxy) as response:
                     if response.status == 200:
                         return True
                     
@@ -136,7 +142,7 @@ class TelegramNotifier:
                     data.add_field('photo', f.read(), filename=os.path.basename(photo_path))
                 
                 headers = {'User-Agent': 'ProsperousBot/1.0'}
-                async with session.post(url, data=data, headers=headers, timeout=20) as response:
+                async with session.post(url, data=data, headers=headers, timeout=20, proxy=self._proxy) as response:
                     if response.status == 200:
                         return True
                     

@@ -1,0 +1,15 @@
+{
+  "ticker": "EPICUSDT",
+  "days": 2.0,
+  "trials": 300,
+  "elapsed_sec": 45.5,
+  "best_params": {
+    "trend_min_move_pct": 0.7000000000000001,
+    "trend_eff_threshold": 0.35,
+    "net_move_block_pct": 2.2,
+    "net_move_window_sec": 60
+  },
+  "best_profit_pct": 18.3407,
+  "best_max_dd_pct": 25.94,
+  "best_liquidations": 1
+}

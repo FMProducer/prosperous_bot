@@ -3,6 +3,7 @@ import time
 import json
 import asyncio
 import aiohttp
+from aiohttp_socks import ProxyConnector
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -63,8 +64,8 @@ async def worker():
 
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Игнорируем системные переменные прокси
-    connector = aiohttp.TCPConnector(ssl=False)
+    # Используем SOCKS5 прокси для обхода блокировки
+    connector = ProxyConnector.from_url("socks5://127.0.0.1:10808", ssl=False)
     async with aiohttp.ClientSession(connector=connector, trust_env=False) as session:
         while True:
             files = sorted(list(QUEUE_DIR.glob("msg_*.json")))

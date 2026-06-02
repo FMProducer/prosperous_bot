@@ -39,9 +39,42 @@ async def main():
 
     # Sort and print top 20
     results.sort(key=lambda x: x['profit_pct'], reverse=True)
-    print("\nTop 20 Results (Sorted by Profit):")
+    
+    print("\n" + "=" * 60)
+    print("Top 20 Results (Sorted by Profit):")
+    print("=" * 60)
+    print(f"{'Ticker':<18s} {'Profit':>8s} {'MaxDD':>7s} {'Cycles':>7s} {'Liq':>4s} {'TG':>5s}")
+    print("-" * 50)
     for r in results[:20]:
-        print(f"{r['ticker']}: {r['profit_pct']:.2f}%")
+        liq = r.get('liquidations', 0)
+        tg = r.get('trend_guard_blocks', 0)
+        ts = " TS" if r.get('trailing_stop_triggered') else ""
+        print(f"{r['ticker']:<18s} {r['profit_pct']:>+7.2f}% {r['max_dd_pct']:>6.2f}% {r['cycles']:>6d} {liq:>3d} {tg:>4d}{ts}")
+
+    # Bottom 20
+    print("\n" + "=" * 60)
+    print("Bottom 20 Results (Worst Performers):")
+    print("=" * 60)
+    print(f"{'Ticker':<18s} {'Profit':>8s} {'MaxDD':>7s} {'Cycles':>7s} {'Liq':>4s} {'TG':>5s}")
+    print("-" * 50)
+    for r in results[-20:]:
+        liq = r.get('liquidations', 0)
+        tg = r.get('trend_guard_blocks', 0)
+        ts = " TS" if r.get('trailing_stop_triggered') else ""
+        print(f"{r['ticker']:<18s} {r['profit_pct']:>+7.2f}% {r['max_dd_pct']:>6.2f}% {r['cycles']:>6d} {liq:>3d} {tg:>4d}{ts}")
+
+    # Summary
+    n = len(results)
+    profitable = sum(1 for r in results if r['profit_pct'] > 0)
+    avg_profit = sum(r['profit_pct'] for r in results) / n if n else 0
+    avg_dd = sum(r['max_dd_pct'] for r in results) / n if n else 0
+    total_liqs = sum(r.get('liquidations', 0) for r in results)
+    total_tg = sum(r.get('trend_guard_blocks', 0) for r in results)
+    
+    print("\n" + "=" * 60)
+    print(f"Summary: {n} tickers | Profitable: {profitable}/{n} ({profitable/n*100:.0f}%)")
+    print(f"Avg Profit: {avg_profit:+.2f}% | Avg MaxDD: {avg_dd:.2f}% | Total Liqs: {total_liqs} | Total TG blocks: {total_tg}")
+    print("=" * 60)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,9 +6,9 @@
   "min_notional_usdt": 5.5,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 3,
+  "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -52,8 +52,10 @@
         "max_spread_pct": 0.15,
         "max_price_velocity_pct": 2.0,
         "velocity_window_sec": 60,
-        "net_move_block_pct": 1.5,
-        "net_move_window_sec": 30
+        "net_move_block_pct": 2.2,
+        "net_move_window_sec": 60,
+        "trend_min_move_pct": 0.7,
+        "trend_eff_threshold": 0.35
       },
       "rebalance_threshold_surplus": 0.01,
       "rebalance_threshold_deficit": 0.04,
@@ -66,13 +68,38 @@
     }
   ],
   "live_swarm": [],
-  "use_real_whitelist": true,
+  "use_real_whitelist": false,
   "real_whitelist": [
     "EPICUSDT"
   ],
-  "black_list": [],
+  "black_list": [
+    "PORTALUSDT"
+  ],
   "toxic_cooldown_days": 0.021,
-  "toxic_blacklist": {},
-  "tickers": [],
-  "base_ticker": ""
+  "toxic_blacklist": {
+    "PORTALUSDT": 1780423333.5850027
+  },
+  "tickers": [
+    "APEUSDT",
+    "BIOUSDT",
+    "DASHUSDT",
+    "ENAUSDT",
+    "EPICUSDT",
+    "FETUSDT",
+    "ICPUSDT",
+    "INJUSDT",
+    "JTOUSDT",
+    "NEARUSDT",
+    "ONDOUSDT",
+    "ORDIUSDT",
+    "RENDERUSDT",
+    "RIFUSDT",
+    "STGUSDT",
+    "VICUSDT",
+    "VVVUSDT",
+    "WLDUSDT",
+    "XLMUSDT",
+    "ZECUSDT"
+  ],
+  "base_ticker": "APEUSDT"
 }

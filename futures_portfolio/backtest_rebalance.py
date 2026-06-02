@@ -272,6 +272,18 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         # ВАЖНО: В бэктесте согласно Патчу №2 покупка Virtual не уменьшает val_cash напрямую
         # val_cash остается равным initial_capital, а Virtual живет в своем "долге".
 
+        # --- Trend Guard params (from config) ---
+        trend_guard_cfg = config.get("trend_guard", {})
+        guards_cfg = portfolio_cfg.get("safety_guards", {})
+        tg_min_move_pct = trend_guard_cfg.get("min_move_pct", guards_cfg.get("trend_min_move_pct", 0.5)) / 100.0
+        tg_eff_threshold = trend_guard_cfg.get("eff_threshold", guards_cfg.get("trend_eff_threshold", 0.85))
+        tg_nmg_pct = trend_guard_cfg.get("net_move_block_pct", guards_cfg.get("net_move_block_pct", 1.5)) / 100.0
+        tg_nmg_window = trend_guard_cfg.get("net_move_window_sec", guards_cfg.get("net_move_window_sec", 30))
+        # Since bars are 1-minute, convert seconds to bars
+        tg_nmg_bars = max(1, tg_nmg_window // 60)
+        tg_trend_bars = 30  # lookback for trend efficiency (30 bars = 30 min)
+        tg_blocked_count = 0  # count how many times trend guard blocked
+
         for i in range(len(df)):
             mid_price = Decimal(str(close_prices[i]))
 
@@ -300,6 +312,33 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             # Pass asymmetric thresholds
             calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold_surplus, threshold_deficit=threshold_deficit)
             actions = calc_res["actions"]
+
+            # --- Trend Guard: block rebalance during one-directional move ---
+            if actions and i >= tg_trend_bars:
+                # Calculate trend efficiency over lookback window
+                lookback_prices = close_prices[max(0, i - tg_trend_bars):i + 1]
+                if len(lookback_prices) >= 2:
+                    p_start = lookback_prices[0]
+                    p_end = lookback_prices[-1]
+                    net_move = abs(p_end - p_start)
+                    total_path = sum(abs(lookback_prices[j] - lookback_prices[j-1]) for j in range(1, len(lookback_prices)))
+                    trend_eff = (net_move / total_path) if total_path > 0 else 0
+                    net_move_pct = net_move / p_start if p_start > 0 else 0
+                    
+                    # Trend Guard: high efficiency + significant move → freeze
+                    if net_move_pct > tg_min_move_pct and trend_eff > tg_eff_threshold:
+                        actions = []  # block rebalance
+                        tg_blocked_count += 1
+                
+                # NMG: short-window net move check
+                if actions and i >= tg_nmg_bars:
+                    nmg_prices = close_prices[max(0, i - tg_nmg_bars):i + 1]
+                    if len(nmg_prices) >= 2:
+                        nmg_old = nmg_prices[0]
+                        nmg_move = abs(close_prices[i] - nmg_old) / nmg_old if nmg_old > 0 else 0
+                        if nmg_move > tg_nmg_pct:
+                            actions = []  # block rebalance
+                            tg_blocked_count += 1
 
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
@@ -524,13 +563,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             state.history.append(float(total_tpv_with_reserve))
                             break
                 else:
-                    # Recovery: reset violation timer if drawdown is back under threshold
-                    if state.trailing_stop_violation_start > 0:
-                        logger.info(
-                            f"Bar {i}: Trailing Stop recovered "
-                            f"(DD {drawdown_from_ath:.2f}% < {trailing_stop_pct}%)"
-                        )
-                        state.trailing_stop_violation_start = 0.0
+                    # One-shot trailing stop: NO recovery reset
+                    # If DD dropped below threshold, we still keep the violation timer
+                    # Trailing stop triggers once and that's it
+                    pass
 
             # --- 5. Проверка математического инварианта (Sanity Check) ---
             # Настоящий TPV = Свободный кэш + Чистая стоимость LONG + Чистая стоимость SHORT + Чистая стоимость VIRTUAL
@@ -573,7 +609,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "siphoning_reserve": float(state.siphoning_reserve),
             "skipped_expansions": int(state.skipped_expansions_counter),
             "liquidations": int(state.liquidations_counter),
-            "trailing_stop_triggered": state.trailing_stop_triggered
+            "trailing_stop_triggered": state.trailing_stop_triggered,
+            "trend_guard_blocks": int(tg_blocked_count)
         }
     except Exception as e:
         logger.error(f"Backtest failed: {e}")
