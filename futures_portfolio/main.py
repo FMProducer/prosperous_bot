@@ -1177,18 +1177,24 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     paper_state[entry_key] = float(new_entry.quantize(Decimal('1e-8')))
 
                                     # [LIQUIDATION GUARD] Calculate simulated liquidation price for paper mode
-                                    # Uses Binance isolated margin formula:
-                                    #   LONG liq  = entry × (1 - 1/leverage + mmr)
-                                    #   SHORT liq = entry × (1 + 1/leverage - mmr)
-                                    # mmr (maintenance margin rate) for 5x leverage ≈ 0.4%
+                                    # Cross-margin: free margin from account pushes liq price further away
+                                    # Isolated formula: LONG liq = entry × (1 - 1/lev + mmr), SHORT liq = entry × (1 + 1/lev - mmr)
+                                    # Cross adjustment: free_margin / qty shifts liq price away = safer
                                     _leverage = Decimal(str(targets.get(f"BASE_{pos_side}", {}).get("leverage", 5)))
                                     _mmr = Decimal('0.004')  # 0.4% maintenance margin rate
+                                    _free_margin = Decimal(str(portfolio_cfg.get("paper_account_free_margin", 0.0)))
+                                    _pos_qty = Decimal(str(abs(paper_state["positions"].get(pos_key, 0.0)))) + Decimal('1e-10')
+                                    
                                     if pos_side == "LONG":
-                                        liq_price = new_entry * (Decimal('1') - Decimal('1') / _leverage + _mmr)
-                                        paper_state["long_liquidation_price"] = float(liq_price.quantize(Decimal('1e-8')))
+                                        _isolated_liq = new_entry * (Decimal('1') - Decimal('1') / _leverage + _mmr)
+                                        # Free margin pushes LONG liq DOWN = further from current price = safer
+                                        _cross_liq = max(_isolated_liq - _free_margin / _pos_qty, Decimal('0'))
+                                        paper_state["long_liquidation_price"] = float(_cross_liq.quantize(Decimal('1e-8')))
                                     else:
-                                        liq_price = new_entry * (Decimal('1') + Decimal('1') / _leverage - _mmr)
-                                        paper_state["short_liquidation_price"] = float(liq_price.quantize(Decimal('1e-8')))
+                                        _isolated_liq = new_entry * (Decimal('1') + Decimal('1') / _leverage - _mmr)
+                                        # Free margin pushes SHORT liq UP = further from current price = safer
+                                        _cross_liq = _isolated_liq + _free_margin / _pos_qty
+                                        paper_state["short_liquidation_price"] = float(_cross_liq.quantize(Decimal('1e-8')))
 
                                 elif reduce_only and new_qty == 0:
                                     # Если позиция закрыта полностью, сбрасываем цену входа

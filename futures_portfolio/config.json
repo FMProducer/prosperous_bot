@@ -76,9 +76,7 @@
     "PORTALUSDT"
   ],
   "toxic_cooldown_days": 0.021,
-  "toxic_blacklist": {
-    "PORTALUSDT": 1780423333.5850027
-  },
+  "toxic_blacklist": {},
   "tickers": [
     "APEUSDT",
     "BIOUSDT",
