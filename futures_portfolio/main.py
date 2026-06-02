@@ -656,45 +656,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 liquidation_distance_crit = portfolio_cfg.get("liquidation_distance_crit_pct", 8.0)
 
                 if not paper_mode and raw_positions:
-                    # REAL mode: get liquidation data from exchange
-                    # NOTE: For CROSSED margin, Binance returns unreliable liq_price
-                    # Use margin ratio check instead (m_info below)
-                    try:
-                        risk_data = await connector.get_position_risk()
-                        for pos_key, risk in risk_data.items():
-                            if base_ticker not in pos_key:
-                                continue
-                            liq_price = risk.get("liq_price", 0.0)
-                            dist = risk.get("distance_pct", 100.0)
-                            
-                            # For CROSSED margin, only act if distance is realistic
-                            # Binance returns garbage liq_price for cross margin
-                            entry = raw_positions.get(pos_key, {}).get("entry_price", 0.0)
-                            is_long = "LONG" in pos_key
-                            if entry > 0 and liq_price > 0:
-                                if is_long and liq_price >= entry:
-                                    logger.info(f"  {pos_key}: skipping cross-margin liq={liq_price} >= entry={entry}")
-                                    continue
-                                if not is_long and liq_price <= entry:
-                                    logger.info(f"  {pos_key}: skipping cross-margin liq={liq_price} <= entry={entry}")
-                                    continue
-                            
-                            await _handle_liquidation_guard(
-                                pos_key=pos_key, dist=dist, liq_price=liq_price,
-                                liquidation_distance_warn=liquidation_distance_warn,
-                                liquidation_distance_crit=liquidation_distance_crit,
-                                is_paper=False, raw_positions=raw_positions,
-                                paper_state=paper_state, connector=connector,
-                                base_ticker=base_ticker, step_sizes=step_sizes,
-                                notifier=notifier, logger=logger
-                            )
-                            if dist <= liquidation_distance_crit:
-                                paper_state_dirty = True
-                                # Stop bot after liquidation critical — ticker is blacklisted
-                                emit_signal("stop", base_ticker)
-                                logger.critical(f"🛑 Stopping {base_ticker} after liquidation critical. Ticker blacklisted.")
-                    except Exception as e:
-                        logger.error(f"Real liquidation guard check failed: {e}")
+                    # REAL mode + CROSSED margin: Binance returns unreliable liq_price
+                    # Skip exchange liq check — use margin ratio (m_info) instead
+                    # Liquidation risk is managed by max_drawdown_limit + trailing stop
+                    pass
 
                 elif paper_mode:
                     # PAPER mode: use simulated liquidation price from shadow_state
