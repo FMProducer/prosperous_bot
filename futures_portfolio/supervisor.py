@@ -421,6 +421,9 @@ async def manage_swarm():
         toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now_ts}
         config["toxic_blacklist"] = toxic_blacklist
 
+    # [CACHE] Один вызов pm2 jlist на цикл — результат переиспользуется везде
+    running_bots = await get_running_bots_info()
+
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
     try:
@@ -457,13 +460,16 @@ async def manage_swarm():
             continue
         clean_scanner.append(r)
 
-    # Старый инкубатор из конфига (предыдущий цикл)
-    old_incubator = list(config.get("tickers", []))
+    # [FIX-1] Старый инкубатор: статический список из конфига + реально запущенные paper-боты из PM2
+    # Раньше брался ТОЛЬКО из config.json — если тикер был добавлен вручную через PM2 (как DEXEUSDT),
+    # он терялся при ротации и мог быть убит супервайзером
+    running_paper_from_pm2 = [k.replace("p_", "") for k in running_bots.keys() if k.startswith("p_")]
+    old_incubator = list(set(config.get("tickers", [])).union(running_paper_from_pm2))
 
-    # Собираем perf_map для старых тикеров (для оценки PnL)
+    # Собираем метрики для старых тикеров (для оценки PnL в ротации)
     old_perf_tasks = [get_bot_efficiency(t, config) for t in old_incubator]
     old_perf_results = await asyncio.gather(*old_perf_tasks)
-    perf_map = dict(zip(old_incubator, old_perf_results))
+    global_perf_map = dict(zip(old_incubator, old_perf_results))
 
     # Selective Rotation: мержим старых + новых
     limit_bots = config.get("max_bots", 20)
@@ -471,27 +477,35 @@ async def manage_swarm():
         old_incubator=old_incubator,
         scanner_results=clean_scanner,
         config=config,
-        perf_map=perf_map,
+        perf_map=global_perf_map,
     )
 
     logger.info(f"📋 Incubator ready: {final_incubator}")
 
     # 3. Выбор Чемпионов для REAL
-    # Векторизованный сбор данных
-    logger.info("📊 Fetching performance data concurrently...")
-    eff_tasks = [get_bot_efficiency(t, config) for t in final_incubator]
-    eff_results = await asyncio.gather(*eff_tasks)
-    perf_map = dict(zip(final_incubator, eff_results))
-    
+    # [FIX-2] Собираем метрики для ВСЕХ кандидатов (final_incubator + текущие REAL боты),
+    # а не только для final_incubator. Иначе REAL бот, выпавший из инкубатора,
+    # получает fallback profit=0.0 → -INF → автоматический стоп.
+    # [OPTIMIZATION] Повторно используем running_bots из начала цикла (строка ~424) —
+    # читаем с диска только тикеров, которых ещё нет в global_perf_map.
+    current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
+    all_evaluated_tickers = set(final_incubator).union(current_real_tickers)
+
+    missing_tickers = [t for t in all_evaluated_tickers if t not in global_perf_map]
+    if missing_tickers:
+        logger.info(f"📊 Fetching missing performance data for {len(missing_tickers)} candidates...")
+        missing_tasks = [get_bot_efficiency(t, config) for t in missing_tickers]
+        missing_results = await asyncio.gather(*missing_tasks)
+        global_perf_map.update(dict(zip(missing_tickers, missing_results)))
+
+    perf_map = global_perf_map
+
     # Сортировка по эффективности
     replacement_threshold = config.get("replacement_efficiency_threshold_pct", 20.0)
     min_cycles_required = config.get("min_cycles_for_rank", 10)
-    running_bots = await get_running_bots_info()
-    current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
     real_whitelist = set(config.get("real_whitelist", []))
 
     ready_pool = []
-    all_evaluated_tickers = set(final_incubator).union(current_real_tickers) # Consider all candidates and existing real bots
     use_whitelist = config.get("use_real_whitelist", True)
 
     for ticker in all_evaluated_tickers:
@@ -502,9 +516,24 @@ async def manage_swarm():
 
         # 1. Fetch data
         is_running_real = ticker in current_real_tickers
-        p = perf_map.get(ticker) or {
-            "profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0
-        }
+        p = perf_map.get(ticker)
+
+        # [FIX-3] Fallback Guard: если REAL бот не попал в perf_map,
+        # читаем real_state вместо fallback на нули.
+        if p is None and is_running_real:
+            real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
+            if real_state:
+                p = {
+                    "profit": real_state.get("last_profit", 0.0),
+                    "cycles": real_state.get("rebalance_cycles", 0),
+                    "eff": 0.0,
+                    "trailing_stop_paper_timeout_end": 0.0,
+                }
+                logger.info(f"🛡️ Fallback to real_state for {ticker}: profit={p['profit']:.2f}")
+            else:
+                p = {"profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0}
+        elif p is None:
+            p = {"profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0}
 
         # 2. Strict Drawdown Protection (Highest Priority)
         is_in_drawdown = False

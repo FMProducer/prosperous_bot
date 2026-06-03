@@ -37,15 +37,15 @@ async def main():
         except Exception as e:
             print(f"Error running backtest for {ticker}: {e}")
 
-    # Sort and print top 20
+    # Sort and print top 50
     results.sort(key=lambda x: x['profit_pct'], reverse=True)
     
     print("\n" + "=" * 60)
-    print("Top 20 Results (Sorted by Profit):")
+    print("Top 50 Results (Sorted by Profit):")
     print("=" * 60)
     print(f"{'Ticker':<18s} {'Profit':>8s} {'MaxDD':>7s} {'Cycles':>7s} {'Liq':>4s} {'TG':>5s}")
     print("-" * 50)
-    for r in results[:20]:
+    for r in results[:50]:
         liq = r.get('liquidations', 0)
         tg = r.get('trend_guard_blocks', 0)
         ts = " TS" if r.get('trailing_stop_triggered') else ""
