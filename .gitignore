@@ -316,3 +316,5 @@ futures_portfolio/history/manual_*USDT_*_paper_shadow_*USDT.json
 futures_portfolio/history/paper_state_*USDT.json.*
 futures_portfolio/history/paper_shadow_*USDT.json.*
 futures_portfolio/best_stops.json
+futures_portfolio/config.json
+futures_portfolio/best_takeprofit_stop.json
