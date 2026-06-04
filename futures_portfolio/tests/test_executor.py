@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
 from decimal import Decimal
 
@@ -117,3 +117,166 @@ def test_get_limit_order_params(executor):
     assert enabled is True
     assert offset == Decimal("0.5")
     assert timeout == 60
+
+@pytest.mark.asyncio
+async def test_execute_actions_surplus_first(executor, mock_connector):
+    # Setup actions
+    actions = [
+        {"symbol": "ETHUSDT_LONG", "diff_usdt": 100.0, "is_reduction": False, "type": "ORDER"}, # Expansion
+        {"symbol": "BTCUSDT_LONG", "diff_usdt": -100.0, "is_reduction": True, "type": "ORDER"} # Reduction
+    ]
+    
+    # Track order of execution by mocking _execute_single_action
+    execution_order = []
+    
+    async def mock_execute_single_action(action, price, paper_mode, portfolio_cfg, step_sizes, paper_state):
+        execution_order.append(action["symbol"])
+        return {"status": "SUCCESS", "symbol": action["symbol"]}
+
+    with patch.object(PortfolioExecutor, "_execute_single_action", side_effect=mock_execute_single_action):
+        await executor.execute_actions(actions, price=60000.0, paper_mode=True)
+    
+    # BTCUSDT (reduction) should be first
+    assert execution_order == ["BTCUSDT_LONG", "ETHUSDT_LONG"]
+
+@pytest.mark.asyncio
+async def test_execute_single_action_paper_mode(executor):
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 100.0, "type": "ORDER", "is_reduction": False}
+    paper_state = {"long_entry_price": 50000.0}
+    # price 60000. diff_usdt 100. qty = 100 / 60000 = 0.001666...
+    # qty_rounded (step 0.001) = 0.001
+    # reduce_only = False (side BUY, pos LONG)
+    res = await executor._execute_single_action(
+        action, price=60000.0, paper_mode=True, 
+        portfolio_cfg={"min_notional_usdt": 6.0}, 
+        step_sizes={"BTCUSDT": 0.001},
+        paper_state=paper_state
+    )
+    assert res["status"] == "SUCCESS"
+    assert res["qty"] == 0.001
+    assert res["commission"] == pytest.approx(0.001 * 60000.0 * 0.0004)
+    assert res["trade_pnl"] == 0.0 # expansion
+
+    # Test reduce_only
+    action_reduce = {"symbol": "BTCUSDT_LONG", "diff_usdt": -100.0, "type": "ORDER", "is_reduction": True}
+    res = await executor._execute_single_action(
+        action_reduce, price=60000.0, paper_mode=True, 
+        portfolio_cfg={"min_notional_usdt": 6.0}, 
+        step_sizes={"BTCUSDT": 0.001},
+        paper_state=paper_state
+    )
+    assert res["reduce_only"] is True
+    # trade_pnl = 0.001 * (60000 - 50000) = 10.0
+    assert res["trade_pnl"] == 10.0
+
+@pytest.mark.asyncio
+async def test_execute_single_action_real_mode(executor, mock_connector):
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 100.0, "type": "ORDER", "is_reduction": False}
+    mock_connector.client = None
+    mock_connector.verify_connection = AsyncMock()
+    mock_connector.get_futures_prices.return_value = {"BTCUSDT": 60000.0}
+    mock_connector.futures_client.futures_create_order = Mock(return_value={"status": "FILLED", "executedQty": "0.001", "avgPrice": "60000.0"})
+    
+    with patch("asyncio.sleep", return_value=None), \
+         patch.object(mock_connector, "get_order_trades", AsyncMock(return_value=[{"realizedPnl": "0.1", "commission": "0.05"}])):
+        res = await executor._execute_single_action(
+            action, price=60000.0, paper_mode=False, 
+            portfolio_cfg={"min_notional_usdt": 6.0, "limit_order_enabled": False}, 
+            step_sizes={"BTCUSDT": 0.001}
+        )
+    
+    assert mock_connector.verify_connection.called
+    assert res["status"] == "SUCCESS"
+    assert res["trade_pnl"] == 0.1
+    assert res["commission"] == 0.05
+
+@pytest.mark.asyncio
+async def test_execute_market_order_polling(executor, mock_connector):
+    mock_connector.get_futures_prices.return_value = {"BTCUSDT": 60000.0}
+    # First returns 0, then 0.1
+    mock_connector.futures_client.futures_create_order = Mock(return_value={"orderId": 123, "executedQty": "0", "avgPrice": "0"})
+    mock_connector.get_order_status.side_effect = [
+        {"executedQty": "0", "avgPrice": "0"},
+        {"executedQty": "0.1", "avgPrice": "60000.0"}
+    ]
+    
+    with patch("asyncio.sleep", return_value=None), \
+         patch.object(mock_connector, "get_order_trades", AsyncMock(return_value=[])):
+        res = await executor.execute_market_order("BTCUSDT", 0.1, "BUY")
+    
+    assert res["status"] == "SUCCESS"
+    assert res["executed_qty"] == Decimal("0.1")
+
+@pytest.mark.asyncio
+async def test_error_returns_contain_pnl_comm(executor, mock_connector):
+    # Test market order error
+    mock_connector.get_futures_prices.return_value = {"BTCUSDT": 60000.0}
+    with patch("asyncio.to_thread", side_effect=Exception("API FAIL")):
+        res = await executor.execute_market_order("BTCUSDT", 0.1, "BUY")
+        assert "trade_pnl" in res
+        assert "commission" in res
+    
+    # Test _execute_single_action error in real mode
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 100.0, "type": "ORDER", "is_reduction": False}
+    mock_connector.client = MagicMock()
+    with patch.object(executor, "execute_market_order", AsyncMock(return_value={"status": "ERROR", "trade_pnl": 0.0, "commission": 0.0})):
+        res = await executor._execute_single_action(
+            action, price=60000.0, paper_mode=False, 
+            portfolio_cfg={"limit_order_enabled": False}, 
+            step_sizes={}
+        )
+        assert res["status"] == "ERROR"
+        assert res["trade_pnl"] == 0.0
+        assert res["commission"] == 0.0
+
+@pytest.mark.asyncio
+async def test_execute_rebalance(executor, mock_connector):
+    mock_connector.get_futures_prices.return_value = {"BTCUSDT": 60000.0}
+    mock_connector.futures_client.futures_create_order = Mock(return_value={"status": "FILLED", "executedQty": "0.1", "avgPrice": "60000.0"})
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 6000.0}
+    res = await executor.execute_rebalance(action, price=60000.0, step_size=0.001, limit_order=False)
+    assert res is True
+
+@pytest.mark.asyncio
+async def test_execute_single_action_virtual(executor):
+    action = {"type": "VIRTUAL_ORDER", "diff_usdt": 100.0}
+    res = await executor._execute_single_action(action, 60000.0, True, {}, {})
+    assert res["type"] == "VIRTUAL_ORDER"
+    assert res["status"] == "SUCCESS"
+
+@pytest.mark.asyncio
+async def test_execute_limit_immediate_fill(executor, mock_connector):
+    mock_connector.get_order_book.return_value = {
+        "bids": [["59990", "1"]],
+        "asks": [["60010", "1"]]
+    }
+    mock_connector.place_limit_maker_order.return_value = {"orderId": 123}
+    # Immediate fill
+    mock_connector.get_order_status.return_value = {"status": "FILLED", "executedQty": "0.1", "avgPrice": "60000"}
+    
+    with patch.object(mock_connector, "get_order_trades", AsyncMock(return_value=[])):
+        res = await executor.execute_limit_with_fallback("BTCUSDT", 0.1, "BUY", timeout_sec=30)
+    
+    assert res["status"] == "SUCCESS_LIMIT"
+
+@pytest.mark.asyncio
+async def test_execute_single_action_skipped_dust(executor):
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 1.0, "type": "ORDER"}
+    res = await executor._execute_single_action(
+        action, 60000.0, True, {"min_notional_usdt": 6.0}, {"BTCUSDT": 0.001}
+    )
+    assert res["status"] == "SKIPPED"
+    assert "too small" in res["message"]
+
+@pytest.mark.asyncio
+async def test_execute_single_action_real_limit(executor, mock_connector):
+    action = {"symbol": "BTCUSDT_LONG", "diff_usdt": 100.0, "type": "ORDER", "is_reduction": False}
+    mock_connector.client = MagicMock()
+    
+    with patch.object(executor, "get_limit_order_params", return_value=(True, Decimal("0.2"), 30)), \
+         patch.object(executor, "execute_limit_with_fallback", AsyncMock(return_value={"status": "SUCCESS_LIMIT", "executed_qty": Decimal("0.001"), "avg_price": Decimal("60000.0"), "realized_pnl": Decimal("0"), "commission": Decimal("0.02")})):
+        res = await executor._execute_single_action(
+            action, 60000.0, False, {}, {"BTCUSDT": 0.001}
+        )
+    assert res["status"] == "SUCCESS"
+    assert res["commission"] == 0.02

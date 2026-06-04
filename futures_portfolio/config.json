@@ -8,7 +8,7 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 20,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 20,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -67,37 +67,27 @@
       }
     }
   ],
-  "live_swarm": [
-    "ICPUSDT"
-  ],
-  "use_real_whitelist": false,
-  "real_whitelist": [
-    "EPICUSDT"
-  ],
+  "live_swarm": [],
+  "use_real_whitelist": true,
+  "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
   "tickers": [
-    "APEUSDT",
     "BIOUSDT",
+    "CHZUSDT",
     "DASHUSDT",
-    "ENAUSDT",
-    "EPICUSDT",
-    "FETUSDT",
+    "ETCUSDT",
+    "HEIUSDT",
     "ICPUSDT",
-    "INJUSDT",
-    "JTOUSDT",
     "NEARUSDT",
-    "ONDOUSDT",
-    "ORDIUSDT",
+    "POLUSDT",
     "RENDERUSDT",
-    "RIFUSDT",
-    "STGUSDT",
-    "VICUSDT",
+    "TONUSDT",
+    "VIRTUALUSDT",
     "VVVUSDT",
-    "WLDUSDT",
     "XLMUSDT",
-    "ZECUSDT"
+    "ZROUSDT"
   ],
-  "base_ticker": "APEUSDT"
+  "base_ticker": "BIOUSDT"
 }
