@@ -194,6 +194,7 @@ def run_one(enable_velocity, enable_trend, enable_nmg, enable_pnl_guard):
                     pnl_blocks += 1
 
             calc_res = calc.calculate_rebalance(targets, threshold_surplus, threshold_surplus,
+                                                current_equity=calc.tpv,
                                                 allow_surplus_sell=allow_surplus_sell)
             actions = calc_res["actions"]
 

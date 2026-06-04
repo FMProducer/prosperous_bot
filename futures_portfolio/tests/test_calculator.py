@@ -42,7 +42,7 @@ def test_calculator_initialization(sample_params):
 def test_calculate_deviations(sample_params, targets):
     calc = PortfolioCalculator(**sample_params)
     threshold = 0.05
-    res = calc.calculate_deviations(targets, threshold_surplus=threshold, threshold_deficit=threshold)
+    res = calc.calculate_deviations(targets, threshold_surplus=threshold, threshold_deficit=threshold, current_equity=calc.tpv)
     actions = res["actions"]
     
     # Shares: L:50%, S:0%, V:16.7%. Targets: L:40%, S:40%, V:20%.
@@ -62,8 +62,9 @@ def test_calculate_deviations(sample_params, targets):
     # BUT: val_cash = 12000 - 6000 (long margin) - 2000 (virt) = 4000.
     # available_funds starts at 4000.
     # Needed equity for short = 0.4 * 12000 = 4800.
-    # Since 4800 > 4000, and ignore_limits is False, it should be capped at 4000 * 5 = 20000.
-    assert short_action["diff_usdt"] == pytest.approx(20000.0)
+    # available_funds = 4000 (cash) + 1200 (proceeds from long reduction) = 5200.
+    # Since 5200 >= 4800, we get full size: 0.4 * 12000 * 5 = 24000.
+    assert short_action["diff_usdt"] == pytest.approx(24000.0)
     
     # Virtual should not be here since 3.3% < 5%
     assert not any(a["symbol"] == "VIRTUAL" for a in actions)
@@ -110,7 +111,7 @@ def test_ignore_limits_deviation(sample_params, targets):
     # diff_share = 1.2 - 0.4 = 0.8
     # diff_usdt = -0.8 * 100000 * 5 = -400000.
     calc = PortfolioCalculator(**params)
-    res = calc.calculate_deviations(targets, threshold_surplus=0.01, threshold_deficit=0.01, ignore_limits=True)
+    res = calc.calculate_deviations(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv, ignore_limits=True)
     actions = res["actions"]
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     assert long_action["diff_usdt"] == pytest.approx(-400000.0)
@@ -121,7 +122,7 @@ def test_limits_deviation(sample_params, targets):
     params["virt_qty"] = 0.0
     params["positions"] = {"BTCUSDT_LONG": 10.0}
     calc = PortfolioCalculator(**params)
-    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, ignore_limits=False)
+    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv, ignore_limits=False)
     actions = res["actions"]
     long_action = next(a for a in actions if a["symbol"] == "BTCUSDT_LONG")
     # TPV is 100,000. diff_usdt is -400,000 as calculated above.
@@ -148,13 +149,13 @@ def test_anti_churn_fuse(targets):
     # limit_price = 60000 * 1.01 = 60600.
     # spot_price 60300 < 60600 -> Surplus action should be BLOCKED.
     calc = PortfolioCalculator(**params)
-    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01)
+    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv)
     assert not any(a["symbol"] == "BTCUSDT_LONG" for a in res["actions"])
     
     # Now price at 60700 (> 60600)
     params["spot_price"] = 60700.0
     calc = PortfolioCalculator(**params)
-    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01)
+    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv)
     assert any(a["symbol"] == "BTCUSDT_LONG" for a in res["actions"])
 
 def test_pnl_protection_mode(targets):
@@ -171,7 +172,7 @@ def test_pnl_protection_mode(targets):
     }
     calc = PortfolioCalculator(**params)
     # share_long = 6000 / 5000 = 120%. target=40%. surplus=80%.
-    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, allow_surplus_sell=False)
+    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv, allow_surplus_sell=False)
     assert not any(a["is_reduction"] for a in res["actions"])
 
 def test_force_block_net_move_guard(targets):
@@ -183,7 +184,7 @@ def test_force_block_net_move_guard(targets):
         "targets": targets
     }
     calc = PortfolioCalculator(**params)
-    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, force_block=True)
+    res = calc.calculate_rebalance(targets, threshold_surplus=0.01, threshold_deficit=0.01, current_equity=calc.tpv, force_block=True)
     assert len(res["actions"]) == 0
 
 def test_edge_cases(targets):
