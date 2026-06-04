@@ -566,7 +566,104 @@ async def manage_swarm():
 
     ready_pool.sort(key=lambda x: perf_map.get(x, {}).get('sort_eff', -float('inf')), reverse=True)
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
-    target_real_bots = ready_pool[:max_real_slots]
+
+    # Sophisticated substitution logic: hysteresis, profit protection, and score cushion
+    current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
+
+    # 1. Start with currently running bots
+    target_real_bots = list(current_real_tickers)
+
+    # 2. Identify candidates from incubator (ready_pool)
+    # Candidates are those in ready_pool NOT currently running as REAL
+    incubator_candidates = [t for t in ready_pool if t not in current_real_tickers]
+
+    # 3. Filling empty slots
+    while len(target_real_bots) < max_real_slots and incubator_candidates:
+        best_cand = incubator_candidates.pop(0)
+        if best_cand not in target_real_bots:
+            target_real_bots.append(best_cand)
+            logger.info(f"✅ Filling empty REAL slot with {best_cand}")
+
+    # 2. Evaluate replacing existing REAL bots with better candidates
+    if incubator_candidates:
+        real_bots_scoring = []
+        for t in current_real_tickers:
+            p = perf_map.get(t, {})
+            score = p.get('sort_eff', -float('inf'))
+            profit = p.get('profit', 0.0)
+            cycles = p.get('cycles', 0)
+            real_bots_scoring.append((t, score, profit, cycles))
+
+        # Sort: worst score first for potential replacement
+        real_bots_sorted = sorted(real_bots_scoring, key=lambda x: x[1])
+
+        max_replace = config.get("max_replace_per_cycle", 1)
+        replacements_count = 0
+
+        for ticker, score, profit, cycles in real_bots_sorted:
+            if not incubator_candidates:
+                break
+
+            # Skip if score is INF (drawdown protection - locked in combat)
+            if score == float('inf'):
+                continue
+
+            # Сбор метрик времени жизни бота для гистерезиса
+            state_path = BASE_PATH / f"real_state_{ticker}.json"
+            started_at = time.time()
+            if state_path.exists():
+                try:
+                    with open(state_path, "r", encoding="utf-8") as f:
+                        sdata = json.load(f)
+                        started_at = sdata.get("started_at", time.time())
+                except Exception:
+                    pass
+
+            age_hours = (time.time() - started_at) / 3600.0
+            probation_days = config.get("probation_period_days", 0.25)
+            probation_hours = probation_days * 24.0
+
+            best_cand = incubator_candidates[0]
+            cand_score = perf_map.get(best_cand, {}).get('sort_eff', -float('inf'))
+
+            logger.info(
+                f"🧐 Evaluating REAL {ticker} [Score: {score:.4f}, Profit: ${profit:.2f}, Age: {age_hours:.2f}h] "
+                f"vs Candidate {best_cand} [Score: {cand_score:.4f}]"
+            )
+
+            # Защита 1: Временной гистерезис (Испытательный срок)
+            if age_hours < probation_hours:
+                logger.info(f"🛡️ Hysteresis Guard: Protecting {ticker}. Running time ({age_hours:.2f}h) < Probation ({probation_hours:.2f}h)")
+                continue
+
+            # Защита 2: Защита прибыльных позиций
+            if profit > 0.0:
+                logger.info(f"🛡️ Profit Guard: Protecting {ticker} from replacement because it has positive profit (${profit:.2f})")
+                continue
+
+            # Защита 3: Порог изменения скоринга (Score Cushion)
+            SCORE_CUSHION = 0.25
+            if cand_score > (score + SCORE_CUSHION):
+                logger.info(f"♻️ Substitution Triggered: Replacing {ticker} with {best_cand} (Score delta {cand_score - score:.4f} > Cushion {SCORE_CUSHION})")
+                if ticker in target_real_bots:
+                    target_real_bots.remove(ticker)
+                target_real_bots.append(best_cand)
+                incubator_candidates.pop(0)
+                replacements_count += 1
+                if replacements_count >= max_replace:
+                    break
+            else:
+                logger.info(f"⏭️ Skipping Replacement: Candidate {best_cand} score is not high enough to warrant rotation (Required cushion: +{SCORE_CUSHION})")
+
+    # 3. Final safety check: if we somehow have more bots than slots (e.g. config change), trim the worst ones
+    if len(target_real_bots) > max_real_slots:
+        target_real_bots_scored = []
+        for t in target_real_bots:
+            target_real_bots_scored.append((t, perf_map.get(t, {}).get('sort_eff', -float('inf'))))
+        # Keep INF scores (drawdown protection) and then best scores
+        target_real_bots_scored.sort(key=lambda x: x[1], reverse=True)
+        target_real_bots = [t for t, s in target_real_bots_scored[:max_real_slots]]
+        logger.info(f"✂️ Reduced REAL swarm to {max_real_slots} slots by removing least efficient bots.")
     # -------------------------------------------------------------------------
     # 3.5. [Authoritative Cleanup] Close exchange positions for those not in live_swarm/whitelist,
     # even if PM2 process is missing (stray positions).
