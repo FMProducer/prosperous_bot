@@ -82,26 +82,29 @@ async def stop_bot(ticker: str, is_paper: bool = False):
     except: pass
 
 async def enforce_swarm_consistency(connector: BinanceConnector, config: dict):
-    logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions.")
+    logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions (respecting whitelist).")
     
     live_swarm_tickers = set(config.get("live_swarm", []))
-    active_positions = await connector.get_positions() # Получаем все открытые позиции с биржи
+    real_whitelist = set(config.get("real_whitelist", []))
+    allowed_tickers = live_swarm_tickers.union(real_whitelist)
+
+    active_positions = await connector.get_positions() # Get all open positions from exchange
 
     to_close_tickers = set()
 
-    # Если live_swarm пуст, закрываем все позиции
-    if not live_swarm_tickers:
+    # If allowed_tickers is empty, close all positions
+    if not allowed_tickers:
         if active_positions:
-            logger.warning("⚠️ live_swarm is empty. All open positions on exchange will be closed!")
+            logger.warning("⚠️ live_swarm and real_whitelist are empty. All open positions on exchange will be closed!")
             for pos_key in active_positions.keys():
                 ticker = pos_key.split('_')[0]
                 to_close_tickers.add(ticker)
     else:
-        # Если live_swarm не пуст, закрываем позиции по тикерам, которых нет в live_swarm
+        # If allowed_tickers is not empty, close positions for tickers not in allowed_tickers
         for pos_key in active_positions.keys():
             ticker = pos_key.split('_')[0]
-            if ticker not in live_swarm_tickers:
-                logger.warning(f"⚠️ Unauthorized position found for {ticker} (not in live_swarm). It will be closed!")
+            if ticker not in allowed_tickers:
+                logger.warning(f"⚠️ Unauthorized position found for {ticker} (not in live_swarm or real_whitelist). It will be closed!")
                 to_close_tickers.add(ticker)
 
     for ticker in to_close_tickers:
@@ -565,16 +568,18 @@ async def manage_swarm():
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
     target_real_bots = ready_pool[:max_real_slots]
     # -------------------------------------------------------------------------
-    # 3.5. [Authoritative Cleanup] Закрываем позиции на бирже для тех, кто не в live_swarm,  
-    # даже если PM2 процесс уже не найден (застрявшие позиции).
+    # 3.5. [Authoritative Cleanup] Close exchange positions for those not in live_swarm/whitelist,
+    # even if PM2 process is missing (stray positions).
+    real_whitelist = config.get("real_whitelist", [])
     active_positions = await connector.get_positions()
+    allowed_cleanup_tickers = set(target_real_bots).union(set(real_whitelist))
     for pos_key in active_positions.keys():
-        # pos_key имеет вид "SYMBOL_SIDE"
+        # pos_key is like "SYMBOL_SIDE"
         ticker = pos_key.split('_')[0]
-        if ticker not in target_real_bots:
+        if ticker not in allowed_cleanup_tickers:
             qty = active_positions[pos_key].get("qty", 0.0)
             if float(qty) != 0:
-                logger.warning(f"🧹 Authoritative Cleanup: Found stray position for {ticker}. Closing it!")
+                logger.warning(f"🧹 Authoritative Cleanup: Found stray position for {ticker} (not in live_swarm or whitelist). Closing it!")
                 cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
                 await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
 
@@ -585,6 +590,7 @@ async def manage_swarm():
     active_running_keys = set(running_bots.keys())
 
     # Сначала гасим тех, кто вылетел
+    real_whitelist = config.get("real_whitelist", [])
     for key, info in list(running_bots.items()):
         ticker = key.split("_")[1]
 
@@ -594,6 +600,10 @@ async def manage_swarm():
             active_running_keys.discard(key)
 
         if key.startswith("r_") and ticker not in target_real_bots:
+            if ticker in real_whitelist:
+                logger.info(f"🛡️ Whitelist Guard: {ticker} is not in target_real_bots but is explicitly whitelisted. Skipping termination.")
+                continue
+
             logger.info(f"🛑 Stopping Combat REAL process: {ticker} (Rolling back to pure paper tracking)")
             await stop_bot(ticker, is_paper=False)
             active_running_keys.discard(key)
