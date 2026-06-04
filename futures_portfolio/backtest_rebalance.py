@@ -285,7 +285,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 last_rebalance_price=float(state.last_rebalance_price)
             )
 
-            calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold_surplus, threshold_deficit=threshold_deficit)
+            calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold_surplus, threshold_deficit=threshold_deficit, current_equity=float(state.val_cash))
             actions = calc_res["actions"]
 
             if actions and i >= tg_trend_bars:

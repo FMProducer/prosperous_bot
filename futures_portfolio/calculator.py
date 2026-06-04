@@ -101,16 +101,18 @@ class PortfolioCalculator:
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
-    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> Dict:
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, 
+                           ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False,
+                           current_equity: float = None) -> Dict:
         """
         Calculate rebalance actions and return a summary of the current state.
+        current_equity: if provided, use this value for order sizing instead of self.initial_capital.
+                        This allows dynamic scaling of order sizes with account growth.
         allow_surplus_sell: if False, surplus (profit-taking) actions are blocked.
-            Used when total PnL is negative to prevent "selling winners" while "losers" accumulate.
         force_block: if True, ALL actions are blocked (Net Move Guard active).
-            Used during fast unidirectional price movements (pump/dump) to prevent
-            closing positions at fake profit/loss.
         """
-        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell, force_block)
+        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, 
+                                           ignore_limits, allow_surplus_sell, force_block, current_equity)
         # calculate_deviations возвращает dict с actions, available_funds, tpv, share_*
         actions = dev_res["actions"]
 
@@ -136,15 +138,15 @@ class PortfolioCalculator:
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, 
+                            ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False,
+                            current_equity: float = None) -> Dict:
         """
-        Rebalance based on CAPITAL (Equity) deviations. 
-        This allows the portfolio to harvest volatility profit.
-        allow_surplus_sell: if False, surplus actions are excluded (PnL protection mode).
-        force_block: if True, ALL actions are blocked (Net Move Guard).
+        Rebalance based on CAPITAL (Equity) deviations.
+        current_equity: if provided, use this value instead of self.initial_capital for order sizing.
+                        This allows dynamic scaling of order sizes with account growth.
         """
         if force_block:
-            # Net Move Guard active — block ALL actions during fast price movement
             return {
                 "actions": [],
                 "available_funds": float(max(Decimal('0'), self.val_cash)),
@@ -155,6 +157,9 @@ class PortfolioCalculator:
                 "tpv": float(self.tpv),
                 "total_tpv": float(self.total_tpv),
             }
+
+        # Use dynamic equity for order sizing instead of static initial_capital
+        equity_base = Decimal(str(current_equity)) if current_equity is not None else self.initial_capital
 
         dec_threshold_surplus = Decimal(str(threshold_surplus))
         dec_threshold_deficit = Decimal(str(threshold_deficit))
@@ -184,12 +189,11 @@ class PortfolioCalculator:
                     continue
 
             # Calculate theoretical diff_usdt
-            # Use initial_capital instead of TPV to avoid positive feedback loop:
-            # TPV grows → orders grow → positions inflate → TPV grows more
-            # Using initial_capital keeps order sizes stable regardless of PnL
+            # Use dynamic equity_base (current_equity or initial_capital) for order sizing
+            # This ensures positions scale with account growth
             lev = Decimal(str(targets[key].get("leverage", 1)))
-            diff_usdt = -diff_share * self.initial_capital * lev
-            diff_equity = -diff_share * self.initial_capital # Real cash (margin) movement
+            diff_usdt = -diff_share * equity_base * lev
+            diff_equity = -diff_share * equity_base
 
             if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
                 continue
