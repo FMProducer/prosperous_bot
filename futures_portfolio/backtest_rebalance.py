@@ -14,8 +14,6 @@ import argparse
 import traceback
 from decimal import Decimal, ROUND_HALF_EVEN, getcontext
 
-# Import the live calculator to ensure perfect logic synchronization
-# Ensure PYTHONPATH is set or we are in the correct directory
 try:
     from calculator import PortfolioCalculator
 except ImportError:
@@ -23,11 +21,9 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from calculator import PortfolioCalculator
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("Backtest")
 
-# Set decimal precision and rounding mode globally for financial calculations
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_EVEN
 
@@ -39,10 +35,6 @@ class MarketOrderSlippageSimulator:
         self.stats: Dict[str, int] = {"attempted": 0, "filled": 0}
 
     def simulate_market_execution(self, side: str, qty: Decimal, mid_price: Decimal) -> Tuple[Decimal, Decimal]:
-        """
-        Возвращает (exec_price, commission).
-        Применяет проскальзывание в зависимости от направления сделки.
-        """
         self.stats["attempted"] += 1
         dec_qty = abs(Decimal(str(qty)))
         dec_mid = Decimal(str(mid_price))
@@ -60,26 +52,21 @@ class MarketOrderSlippageSimulator:
         return self.stats
 
 def quantize_qty(qty: Decimal, step_size: Decimal) -> Decimal:
-    """Округление объема ордера строго вниз до параметров stepSize биржи."""
     if step_size <= Decimal('0'):
         return qty
     remainder = qty % step_size
     return qty - remainder
 
 def validate_notional(qty: Decimal, price: Decimal, min_notional: Decimal) -> bool:
-    """
-    Проверка Dust Guard: ордер отбрасывается, если его номинальная стоимость
-    ниже установленного биржевого лимита min_notional_usdt.
-    """
-    notional = abs(qty * price)
-    return notional >= min_notional
+    return abs(qty * price) >= min_notional
 
 @dataclass
 class BacktestState:
-    """Управление состоянием портфеля во время бэктеста."""
+    """Управление состоянием портфеля и кросс-маржинального аккаунта."""
     initial_capital: Decimal
     base_ticker: str
     val_cash: Decimal
+    account_free_margin: Decimal = Decimal('0')  # Внешняя кросс-маржинальная подушка
     pos_long: Decimal = Decimal('0')
     pos_short: Decimal = Decimal('0')
     virt_qty: Decimal = Decimal('0')
@@ -90,7 +77,7 @@ class BacktestState:
     cycles: int = 0
     skipped_expansions_counter: int = 0
     liquidations_counter: int = 0
-    # Trailing stop state
+    
     tpv_ath: float = 0.0
     trailing_stop_violation_start: float = 0.0
     trailing_stop_triggered: bool = False
@@ -99,7 +86,6 @@ class BacktestState:
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
     def get_tpv(self, price: Decimal) -> Decimal:
-        """Calculate TPV using precise Decimal arithmetic."""
         unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
         unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
         margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
@@ -108,7 +94,6 @@ class BacktestState:
         return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
 
     def get_tpv_fast(self, price: float) -> float:
-        """Calculate TPV using fast float arithmetic for performance."""
         pos_l = float(self.pos_long)
         pos_s = float(self.pos_short)
         p = float(price)
@@ -123,18 +108,14 @@ class BacktestState:
         m_l = (pos_l * l_entry) / 5.0 if pos_l > 0 else 0.0
         m_s = (pos_s * s_entry) / 5.0 if pos_s > 0 else 0.0
         v_eq = (v_qty * p) - v_debt
-        
         return cash + m_l + upnl_l + m_s + upnl_s + v_eq
 
 async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> str:
     endpoint = "https://fapi.binance.com/fapi/v1/klines"
     logger.info(f"Downloading live data for {symbol} ({days} days)...")
-
-    # Calculate how many 1m candles we need (Binance limit: 1500 per request)
     total_minutes = int(days * 24 * 60)
     limit_per_request = 1500
     num_requests = math.ceil(total_minutes / limit_per_request)
-
     all_data = []
     end_time_ms = int(time.time() * 1000)
 
@@ -152,18 +133,12 @@ async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> s
                     data = await resp.json()
                     if not data:
                         break
-                    all_data = data + all_data  # prepend earlier data
-                    # Next batch ends where this one starts
+                    all_data = data + all_data
                     end_time_ms = data[0][0] - 1
                 else:
                     raise Exception(f"Binance API error: {resp.status}")
-
-            # Rate limit courtesy between requests
             if i < num_requests - 1:
                 await asyncio.sleep(0.25)
-
-    if not all_data:
-        raise Exception(f"No data returned for {symbol}")
 
     df = pd.DataFrame(all_data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'q_vol', 'trades', 't_base', 't_quote', 'ignore'])
     df = df[['open', 'high', 'low', 'close', 'volume']]
@@ -202,7 +177,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             file_path = next((p for p in possible_files if os.path.exists(p)), None)
 
         if not file_path or not os.path.exists(file_path):
-            logger.info(f"Data file not found for {base_ticker}, downloading {days} days from Binance...")
             file_path = await download_live_data(base_ticker, data_dir, days)
 
         df: pd.DataFrame = pd.read_feather(file_path)
@@ -210,17 +184,20 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         
         portfolio_cfg: Dict[str, Any] = config["portfolios"][0]
         
-        # Trim data to the specified lookback window (days -> minutes -> bars)
-        bars_per_day = 1440  # 1-minute bars
+        bars_per_day = 1440
         max_bars = int(days * bars_per_day)
         if len(df) > max_bars:
             df = df.iloc[-max_bars:]
         
         initial_capital: float = capital_override if capital_override is not None else portfolio_cfg.get("initial_capital", 1000.0)
+        
+        # Инъекция параметров Кросс-Маржи из конфигурации
+        paper_initial_capital: float = portfolio_cfg.get("paper_initial_capital", initial_capital)
+        paper_account_free_margin: float = portfolio_cfg.get("paper_account_free_margin", 0.0)
+        
         targets: Dict[str, Any] = portfolio_cfg["targets"]
         ticker_thresholds = portfolio_cfg.get("ticker_thresholds", {})
         
-        # Resolve asymmetric thresholds: overrides > config > defaults
         if threshold_surplus_override is not None:
             t_surplus = threshold_surplus_override
             t_deficit = threshold_deficit_override if threshold_deficit_override is not None else threshold_surplus_override
@@ -228,7 +205,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             t_surplus = portfolio_cfg.get("rebalance_threshold_surplus", portfolio_cfg.get("rebalance_threshold", 0.02))
             t_deficit = portfolio_cfg.get("rebalance_threshold_deficit", t_surplus)
         
-        # Per-ticker override (supports both dict {"surplus": x, "deficit": y} and legacy float)
         t_cfg = ticker_thresholds.get(base_ticker)
         if isinstance(t_cfg, dict):
             threshold_surplus = float(t_cfg.get("surplus", t_surplus))
@@ -241,55 +217,51 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             
         siphoning_threshold_pct: float = portfolio_cfg.get("siphoning_threshold_pct", 0.0)
         reinvestment_ratio: float = portfolio_cfg.get("reinvestment_ratio", 0.0)
-        # Trailing stop parameters (config-based)
         trailing_stop_pct: float = config.get("equity_trailing_stop_pct", 0.0)
         trailing_stop_activation_pct: float = config.get("equity_trailing_stop_activation_pct", 0.0)
         trailing_stop_timeout_sec: int = int(config.get("equity_trailing_stop_timeout_sec", 0))
         min_notional_usdt: Decimal = Decimal(str(config.get("min_notional_usdt", 6.0)))
         
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
-
-        # Step sizes (mocked for backtest, usually from exchange_info)
         step_sizes = {base_ticker: 0.001}
 
         sim = MarketOrderSlippageSimulator(commission_pct=commission, slippage_pct=slippage)
-        state = BacktestState(initial_capital=Decimal(str(initial_capital)), base_ticker=base_ticker, val_cash=Decimal(str(initial_capital)))
+        
+        # Инициализация состояния с учетом внешней кросс-маржи
+        state = BacktestState(
+            initial_capital=Decimal(str(initial_capital)), 
+            val_cash=Decimal(str(initial_capital)),
+            account_free_margin=Decimal(str(paper_account_free_margin)),
+            base_ticker=base_ticker
+        )
 
-        # Pre-calculate constants
         daily_funding_rate = Decimal('0.0002')
-        bars_per_day = Decimal('1440') # Assuming 1-minute bars
+        bars_per_day = Decimal('1440')
         funding_drag_step = daily_funding_rate / bars_per_day
         l_lev = Decimal(str(targets["BASE_LONG"]["leverage"]))
         s_lev = Decimal(str(targets["BASE_SHORT"]["leverage"]))
 
-        # First bar initialization (align with main.py)
         start_price = Decimal(str(close_prices[0]))
         state.last_rebalance_price = start_price
         target_v_share = Decimal(str(targets["VIRTUAL"]["share"]))
         virt_cost = target_v_share * state.initial_capital
         state.virt_qty = virt_cost / start_price
         state.virt_debt = virt_cost
-        # ВАЖНО: В бэктесте согласно Патчу №2 покупка Virtual не уменьшает val_cash напрямую
-        # val_cash остается равным initial_capital, а Virtual живет в своем "долге".
 
-        # --- Trend Guard params (from config) ---
         trend_guard_cfg = config.get("trend_guard", {})
         guards_cfg = portfolio_cfg.get("safety_guards", {})
         tg_min_move_pct = trend_guard_cfg.get("min_move_pct", guards_cfg.get("trend_min_move_pct", 0.5)) / 100.0
         tg_eff_threshold = trend_guard_cfg.get("eff_threshold", guards_cfg.get("trend_eff_threshold", 0.85))
         tg_nmg_pct = trend_guard_cfg.get("net_move_block_pct", guards_cfg.get("net_move_block_pct", 1.5)) / 100.0
         tg_nmg_window = trend_guard_cfg.get("net_move_window_sec", guards_cfg.get("net_move_window_sec", 30))
-        # Since bars are 1-minute, convert seconds to bars
         tg_nmg_bars = max(1, tg_nmg_window // 60)
-        tg_trend_bars = 30  # lookback for trend efficiency (30 bars = 30 min)
-        tg_blocked_count = 0  # count how many times trend guard blocked
+        tg_trend_bars = 30
+        tg_blocked_count = 0
 
         for i in range(len(df)):
             mid_price = Decimal(str(close_prices[i]))
 
             # --- 2. Portfolio Calculation ---
-            # Согласно логике main.py, мы передаем в калькулятор real_equity = WalletBalance - virt_debt
-            # Wallet Balance = val_cash + margin_long + margin_short
             margin_long_current = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
             margin_short_current = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
             wallet_balance = state.val_cash + margin_long_current + margin_short_current
@@ -309,13 +281,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 last_rebalance_price=float(state.last_rebalance_price)
             )
 
-            # Pass asymmetric thresholds
             calc_res = calculator.calculate_rebalance(targets, threshold_surplus=threshold_surplus, threshold_deficit=threshold_deficit)
             actions = calc_res["actions"]
 
-            # --- Trend Guard: block rebalance during one-directional move ---
             if actions and i >= tg_trend_bars:
-                # Calculate trend efficiency over lookback window
                 lookback_prices = close_prices[max(0, i - tg_trend_bars):i + 1]
                 if len(lookback_prices) >= 2:
                     p_start = lookback_prices[0]
@@ -324,27 +293,23 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     total_path = sum(abs(lookback_prices[j] - lookback_prices[j-1]) for j in range(1, len(lookback_prices)))
                     trend_eff = (net_move / total_path) if total_path > 0 else 0
                     net_move_pct = net_move / p_start if p_start > 0 else 0
-                    
-                    # Trend Guard: high efficiency + significant move → freeze
                     if net_move_pct > tg_min_move_pct and trend_eff > tg_eff_threshold:
-                        actions = []  # block rebalance
+                        actions = []
                         tg_blocked_count += 1
                 
-                # NMG: short-window net move check
                 if actions and i >= tg_nmg_bars:
                     nmg_prices = close_prices[max(0, i - tg_nmg_bars):i + 1]
                     if len(nmg_prices) >= 2:
                         nmg_old = nmg_prices[0]
                         nmg_move = abs(close_prices[i] - nmg_old) / nmg_old if nmg_old > 0 else 0
                         if nmg_move > tg_nmg_pct:
-                            actions = []  # block rebalance
+                            actions = []
                             tg_blocked_count += 1
 
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
                 expansions = [a for a in actions if not a.get("is_reduction", False)]
 
-                # --- Фаза 1: Выполнение Reductions (SELL для Лонга, BUY для Шорта) ---
                 for act in reductions:
                     key = act["key"]
                     lev = Decimal(str(act["leverage"]))
@@ -372,28 +337,14 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             state.short_entry_price = Decimal('0')
                     elif key == "VIRTUAL":
                         exec_price, commission = sim.simulate_market_execution("SELL", qty, mid_price)
-                        
-                        # Вычисляем среднюю историческую цену входа виртуальной ноги перед продажей
-                        # Если virt_qty равен 0 (защита от ZeroDivision), берем текущую цену
                         v_entry_price = (state.virt_debt / state.virt_qty) if state.virt_qty > 0 else exec_price
-                        
-                        # Историческая себестоимость продаваемых монет (то, на сколько реально уменьшается долг)
                         allocated_debt_reduction = qty * v_entry_price
-                        
-                        # Физическая прибыль от фиксации профицита на споте (MTM Realized PnL)
                         realized_pnl = qty * (exec_price - v_entry_price)
-                        
-                        # Обновляем состояние виртуальной ноги
                         state.virt_qty -= qty
                         state.virt_debt -= allocated_debt_reduction
-                        
-                        # Деньги физически возвращаются в кэш: себестоимость + прибыль - комиссия
                         state.val_cash += allocated_debt_reduction + realized_pnl - commission
 
-                # --- Фаза 2: Выполнение Expansions (BUY для Лонга, SELL для Шорт) ---
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
-
-                # Use val_cash (initial cash) for backtest, not available_funds (remaining after internal calc)
                 remaining_funds = Decimal(str(calc_res.get("val_cash", calc_res.get("available_funds", 0.0))))
 
                 for act in expansions:
@@ -405,7 +356,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.skipped_expansions_counter += 1
                         continue
 
-                    # Урезаем qty если не хватает средств
                     max_usdt = remaining_funds * lev
                     if needed_usdt > max_usdt:
                         needed_usdt = max_usdt
@@ -416,8 +366,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     if qty <= Decimal('0') or not validate_notional(qty, mid_price, min_notional_usdt):
                         continue
 
-                    # Списываем equity из remaining_funds (до расчёта exec_price)
-                    # Equity = notional / leverage (VIRTUAL: lev=1, equity = cash_spent)
                     actual_equity_spent = needed_usdt / lev
 
                     if key == "BASE_LONG":
@@ -450,73 +398,86 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     "actions": [f"{a['key']} {'SELL' if a['is_reduction'] else 'BUY'}" for a in actions]
                 })
 
-            # --- Расчет Funding Drag (Удержание за фьючерсные плечи) ---
             long_notional = state.pos_long * mid_price
             short_notional = state.pos_short * mid_price
             total_drag = (long_notional + short_notional) * funding_drag_step
             state.val_cash -= total_drag
 
-            # --- 2.5 Predictive Liquidation Guard ---
-            # Mirror live Guard #4: close position BEFORE exchange liquidation.
-            # Uses Binance isolated margin formula for liquidation price estimation.
-            liq_distance_warn_pct = portfolio_cfg.get("liquidation_distance_warn_pct", 15.0)
-            liq_distance_crit_pct = portfolio_cfg.get("liquidation_distance_crit_pct", 8.0)
-            # Binance maintenance margin rate for 5x leverage ≈ 0.4%
-            mmr = Decimal('0.004')
+            # --- 2.5 Unified Predictive Cross-Margin Liquidation Guard ---
+            # Расчет метрик Кросс-Маржи согласно спецификации Binance Futures
+            mmr = Decimal('0.004')  # Maintenance Margin Rate для плеча <= 5x
+            
+            upnl_l = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
+            upnl_s = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
+            m_long = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
+            m_short = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
+            
+            # Совокупный Margin Balance суб-счета + внешняя подушка обеспечения аккаунта
+            futures_margin_balance = state.val_cash + m_long + upnl_l + m_short + upnl_s
+            total_margin_balance = futures_margin_balance + state.account_free_margin
+            
+            # Общий Maintenance Margin Requirement для обеих фьючерсных позиций
+            total_mm = (long_notional + short_notional) * mmr
 
-            if state.pos_long > 0 and state.long_entry_price > 0:
-                liq_long = state.long_entry_price * (Decimal('1') - Decimal(str(1/l_lev)) + mmr)
-                dist_long = (mid_price - liq_long) / mid_price * Decimal('100')
-                if dist_long <= Decimal(str(liq_distance_crit_pct)):
-                    logger.warning(f"Bar {i}: Predictive LONG liq guard! dist={float(dist_long):.1f}%, closing.")
-                    # Close at market: recover remaining margin after unrealized loss
-                    notional = state.pos_long * state.long_entry_price
-                    unrealized_pnl = state.pos_long * (mid_price - state.long_entry_price)
-                    margin = notional / l_lev
-                    state.val_cash += margin + unrealized_pnl
+            if state.pos_long > 0 or state.pos_short > 0:
+                if total_margin_balance > 0:
+                    cross_liq_dist_pct = ((total_margin_balance - total_mm) / total_margin_balance) * Decimal('100')
+                else:
+                    cross_liq_dist_pct = Decimal('-100')
+
+                liq_distance_warn_pct = Decimal(str(portfolio_cfg.get("liquidation_distance_warn_pct", 15.0)))
+                liq_distance_crit_pct = Decimal(str(portfolio_cfg.get("liquidation_distance_crit_pct", 8.0)))
+
+                if cross_liq_dist_pct <= liq_distance_crit_pct:
+                    logger.warning(f"Bar {i}: Predictive CROSS Liquidation Guard triggered! Distance={float(cross_liq_dist_pct):.1f}%. Экстренное закрытие фьючерсных позиций.")
+                    
+                    # Закрытие Long
+                    if state.pos_long > 0:
+                        exec_p, comm = sim.simulate_market_execution("SELL", state.pos_long, mid_price)
+                        realized_pnl = state.pos_long * (exec_p - state.long_entry_price)
+                        state.val_cash += m_long + realized_pnl - comm
+                        state.pos_long = Decimal('0')
+                        state.long_entry_price = Decimal('0')
+
+                    # Закрытие Short
+                    if state.pos_short > 0:
+                        exec_p, comm = sim.simulate_market_execution("BUY", state.pos_short, mid_price)
+                        realized_pnl = state.pos_short * (state.short_entry_price - exec_p)
+                        state.val_cash += m_short + realized_pnl - comm
+                        state.pos_short = Decimal('0')
+                        state.short_entry_price = Decimal('0')
+
+                    state.liquidations_counter += 1
+                elif cross_liq_dist_pct <= liq_distance_warn_pct:
+                    logger.debug(f"Bar {i}: CROSS Liquidation Warning! Distance={float(cross_liq_dist_pct):.1f}%")
+
+            # --- 3. Post-Factum Cross-Margin Liquidation Check (Абсолютный Фоллбэк) ---
+            if state.pos_long > 0 or state.pos_short > 0:
+                upnl_l = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
+                upnl_s = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
+                m_long = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
+                m_short = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
+                
+                futures_margin_balance = state.val_cash + m_long + upnl_l + m_short + upnl_s
+                total_margin_balance = futures_margin_balance + state.account_free_margin
+                total_mm = (state.pos_long * mid_price + state.pos_short * mid_price) * mmr
+
+                if total_margin_balance <= total_mm:
+                    logger.warning(f"Bar {i}: HARD CROSS LIQUIDATION! Весь баланс суб-аккаунта уничтожен.")
+                    # Если баланс суб-аккаунта отрицательный, списываем убыток из внешней кросс-маржи аккаунта
+                    if futures_margin_balance < 0:
+                        state.account_free_margin += futures_margin_balance
+                        if state.account_free_margin < 0:
+                            state.account_free_margin = Decimal('0')
+                    
+                    state.val_cash = Decimal('0')
                     state.pos_long = Decimal('0')
                     state.long_entry_price = Decimal('0')
-                    state.liquidations_counter += 1
-                elif dist_long <= Decimal(str(liq_distance_warn_pct)):
-                    logger.debug(f"Bar {i}: LONG liq warning, dist={float(dist_long):.1f}%")
-
-            if state.pos_short > 0 and state.short_entry_price > 0:
-                liq_short = state.short_entry_price * (Decimal('1') + Decimal(str(1/s_lev)) - mmr)
-                dist_short = (liq_short - mid_price) / mid_price * Decimal('100')
-                if dist_short <= Decimal(str(liq_distance_crit_pct)):
-                    logger.warning(f"Bar {i}: Predictive SHORT liq guard! dist={float(dist_short):.1f}%, closing.")
-                    notional = state.pos_short * state.short_entry_price
-                    unrealized_pnl = state.pos_short * (state.short_entry_price - mid_price)
-                    margin = notional / s_lev
-                    state.val_cash += margin + unrealized_pnl
                     state.pos_short = Decimal('0')
                     state.short_entry_price = Decimal('0')
                     state.liquidations_counter += 1
-                elif dist_short <= Decimal(str(liq_distance_warn_pct)):
-                    logger.debug(f"Bar {i}: SHORT liq warning, dist={float(dist_short):.1f}%")
 
-            # --- 3. Post-Factum Liquidation Check (Per Leg) ---
-            unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
-            unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
-            margin_long = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
-            margin_short = (state.pos_short * state.short_entry_price) / s_lev if state.pos_short > 0 else Decimal('0')
-
-            val_l = margin_long + unrealized_pnl_long
-            val_s = margin_short + unrealized_pnl_short
-
-            if val_l <= 0 and state.pos_long != 0:
-                state.pos_long = Decimal('0')
-                state.long_entry_price = Decimal('0')
-                state.liquidations_counter += 1
-                logger.warning(f"Bar {i}: LONG leg liquidated!")
-
-            if val_s <= 0 and state.pos_short != 0:
-                state.pos_short = Decimal('0')
-                state.short_entry_price = Decimal('0')
-                state.liquidations_counter += 1
-                logger.warning(f"Bar {i}: SHORT leg liquidated!")
-
-            # --- 4. SAFE Siphoning (Calculated on TPV) ---
+            # --- 4. SAFE Siphoning ---
             tpv_f = state.get_tpv_fast(float(mid_price))
             total_tpv_with_reserve = tpv_f + float(state.siphoning_reserve)
             initial_capital_f = float(state.initial_capital)
@@ -531,52 +492,30 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     state.val_cash -= Decimal(str(siphon_amount))
                     total_tpv_with_reserve -= siphon_amount
 
-            # --- 4b. Trailing Stop (Equity-based) ---
-            # Update ATH
+            # --- 4b. Trailing Stop ---
             if total_tpv_with_reserve > state.tpv_ath:
                 state.tpv_ath = total_tpv_with_reserve
                 state.trailing_stop_violation_start = 0.0
 
-            # Check trailing stop only if ATH is above activation threshold
             if (trailing_stop_pct > 0
                     and state.tpv_ath > initial_capital_f * (1 + trailing_stop_activation_pct / 100.0)):
                 drawdown_from_ath = (1 - total_tpv_with_reserve / state.tpv_ath) * 100.0
                 if drawdown_from_ath >= trailing_stop_pct:
                     if state.trailing_stop_violation_start == 0:
                         state.trailing_stop_violation_start = float(i)
-                        logger.warning(
-                            f"Bar {i}: Trailing Stop threshold breached "
-                            f"(DD {drawdown_from_ath:.2f}% from ATH). "
-                            f"Timeout: {trailing_stop_timeout_sec}s"
-                        )
+                        logger.warning(f"Bar {i}: Trailing Stop threshold breached (DD {drawdown_from_ath:.2f}% from ATH).")
                     else:
                         elapsed_bars = i - int(state.trailing_stop_violation_start)
-                        # Convert timeout_sec to bars (1 bar = 1 minute)
                         timeout_bars = max(1, trailing_stop_timeout_sec // 60)
                         if elapsed_bars >= timeout_bars:
-                            logger.warning(
-                                f"Bar {i}: Trailing Stop triggered "
-                                f"(DD {drawdown_from_ath:.2f}% for {elapsed_bars} bars / {trailing_stop_timeout_sec}s). "
-                                f"Stopping backtest."
-                            )
+                            logger.warning(f"Bar {i}: Trailing Stop triggered. Stopping backtest.")
                             state.trailing_stop_triggered = True
                             state.history.append(float(total_tpv_with_reserve))
                             break
-                else:
-                    # One-shot trailing stop: NO recovery reset
-                    # If DD dropped below threshold, we still keep the violation timer
-                    # Trailing stop triggers once and that's it
-                    pass
 
-            # --- 5. Проверка математического инварианта (Sanity Check) ---
-            # Настоящий TPV = Свободный кэш + Чистая стоимость LONG + Чистая стоимость SHORT + Чистая стоимость VIRTUAL
-            unrealized_pnl_long = state.pos_long * (mid_price - state.long_entry_price) if state.pos_long > 0 else Decimal('0')
-            unrealized_pnl_short = state.pos_short * (state.short_entry_price - mid_price) if state.pos_short > 0 else Decimal('0')
-            margin_long = (state.pos_long * state.long_entry_price) / Decimal('5') if state.pos_long > 0 else Decimal('0')
-            margin_short = (state.pos_short * state.short_entry_price) / Decimal('5') if state.pos_short > 0 else Decimal('0')
+            # --- 5. Проверка математического инварианта ---
             virtual_equity = (state.virt_qty * mid_price) - state.virt_debt
-
-            current_tpv = state.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
+            current_tpv = state.val_cash + m_long + upnl_l + m_short + upnl_s + virtual_equity
             assert current_tpv > Decimal('0'), "Критический дефолт портфеля: TPV <= 0"
 
             state.history.append(float(total_tpv_with_reserve))
@@ -586,17 +525,16 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         max_eq: npt.NDArray[np.float64] = np.maximum.accumulate(equity_curve)
         dd: npt.NDArray[np.float64] = (max_eq - equity_curve) / (max_eq + 1e-9)
         max_dd_pct: float = np.max(dd) * 100 if len(dd) > 0 else 0.0
-
         asset_chg_pct: float = (close_prices[-1] / (close_prices[0] + 1e-9) - 1) * 100
 
         if not quiet:
-            logger.info(f"Refactored Synchronized Backtest for {base_ticker}:")
+            logger.info(f"Refactored Cross-Margin Backtest for {base_ticker}:")
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
-            logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Liquidations: {state.liquidations_counter}")
+            logger.info(f"Remained Account Free Margin: {state.account_free_margin:.2f} USDT")
+            logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Total Liquidations/Stops: {state.liquidations_counter}")
             if state.trailing_stop_triggered:
-                logger.info(f"*** TRAILING STOP TRIGGERED at bar {len(state.history)} ***")
-
+                logger.info(f"*** TRAILING STOP TRIGGERED ***")
             if sim:
                 s = sim.get_summary()
                 logger.info(f"Market Orders: {s['filled']}/{s['attempted']} filled")
@@ -627,7 +565,6 @@ if __name__ == "__main__":
     parser.add_argument("--threshold-surplus", type=float, default=None)
     parser.add_argument("--threshold-deficit", type=float, default=None)
     args = parser.parse_args()
-    # Assuming the script is in 'futures_portfolio' and 'data' is a subfolder
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     asyncio.run(run_backtest(args.config, data_dir, args.live, args.ticker, args.days,
                              capital_override=args.capital,

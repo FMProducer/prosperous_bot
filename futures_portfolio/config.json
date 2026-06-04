@@ -6,7 +6,7 @@
   "min_notional_usdt": 5.5,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 20,
+  "min_cycles_for_rank": 19,
   "max_bots": 20,
   "paper_mode_bots": 20,
   "max_replace_per_cycle": 10,
@@ -14,7 +14,7 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.02,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 50.0,
+  "max_drawdown_limit": 30.0,
   "replacement_efficiency_threshold_pct": 50.0,
   "equity_trailing_stop_pct": 5.7,
   "equity_trailing_stop_activation_pct": 6.5,
@@ -31,8 +31,9 @@
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
       "margin_ratio_critical": 1.5,
-      "liquidation_distance_warn_pct": 10.0,
-      "liquidation_distance_crit_pct": 5.0,
+      "liquidation_distance_warn_pct": 0.0,
+      "liquidation_distance_crit_pct": 0.0,
+      "post_factum_liquidation_check": false,
       "siphoning_threshold_pct": 1000.0,
       "targets": {
         "BASE_LONG": {
@@ -69,8 +70,17 @@
   ],
   "live_swarm": [],
   "use_real_whitelist": true,
-  "real_whitelist": [],
-  "black_list": [],
+  "real_whitelist": [
+    "HEIUSDT"
+  ],
+  "black_list": [
+    "VVVUSDT",
+    "VIRTUALUSDT",
+    "XLMUSDT",
+    "DASHUSDT",
+    "POLUSDT",
+    "ICPUSDT"
+  ],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
   "tickers": [
