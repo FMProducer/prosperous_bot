@@ -184,12 +184,12 @@ class PortfolioCalculator:
                     continue
 
             # Calculate theoretical diff_usdt
-            # diff_usdt = -diff_share * self.tpv * leverage
-            # Surplus (+) -> Negative diff_usdt (SELL/Reduction)
-            # Deficit (-) -> Positive diff_usdt (BUY/Expansion)
+            # Use initial_capital instead of TPV to avoid positive feedback loop:
+            # TPV grows → orders grow → positions inflate → TPV grows more
+            # Using initial_capital keeps order sizes stable regardless of PnL
             lev = Decimal(str(targets[key].get("leverage", 1)))
-            diff_usdt = -diff_share * self.tpv * lev
-            diff_equity = -diff_share * self.tpv # Real cash (margin) movement
+            diff_usdt = -diff_share * self.initial_capital * lev
+            diff_equity = -diff_share * self.initial_capital # Real cash (margin) movement
 
             if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
                 continue

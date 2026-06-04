@@ -58,11 +58,11 @@
         "trend_min_move_pct": 0.7,
         "trend_eff_threshold": 0.35
       },
-      "rebalance_threshold_surplus": 0.01,
+      "rebalance_threshold_surplus": 0.04,
       "rebalance_threshold_deficit": 0.04,
       "ticker_thresholds": {
         "BTCUSDT": {
-          "surplus": 0.01,
+          "surplus": 0.04,
           "deficit": 0.04
         }
       }
@@ -70,34 +70,10 @@
   ],
   "live_swarm": [],
   "use_real_whitelist": true,
-  "real_whitelist": [
-    "HEIUSDT"
-  ],
-  "black_list": [
-    "VVVUSDT",
-    "VIRTUALUSDT",
-    "XLMUSDT",
-    "DASHUSDT",
-    "POLUSDT",
-    "ICPUSDT"
-  ],
+  "real_whitelist": [],
+  "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {},
-  "tickers": [
-    "BIOUSDT",
-    "CHZUSDT",
-    "DASHUSDT",
-    "ETCUSDT",
-    "HEIUSDT",
-    "ICPUSDT",
-    "NEARUSDT",
-    "POLUSDT",
-    "RENDERUSDT",
-    "TONUSDT",
-    "VIRTUALUSDT",
-    "VVVUSDT",
-    "XLMUSDT",
-    "ZROUSDT"
-  ],
-  "base_ticker": "BIOUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }

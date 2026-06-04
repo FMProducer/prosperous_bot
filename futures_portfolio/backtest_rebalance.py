@@ -81,19 +81,21 @@ class BacktestState:
     tpv_ath: float = 0.0
     trailing_stop_violation_start: float = 0.0
     trailing_stop_triggered: bool = False
+    cooldown_until_bar: int = 0
     last_rebalance_price: Decimal = Decimal('0')
     history: List[float] = field(default_factory=list)
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
-    def get_tpv(self, price: Decimal) -> Decimal:
+    def get_tpv(self, price: Decimal, l_lev: Decimal = Decimal('7'), s_lev: Decimal = Decimal('7')) -> Decimal:
+        """Calculate TPV using precise Decimal arithmetic."""
         unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
         unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
-        margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
-        margin_short = (self.pos_short * self.short_entry_price) / Decimal('5') if self.pos_short > 0 else Decimal('0')
+        margin_long = (self.pos_long * self.long_entry_price) / l_lev if self.pos_long > 0 else Decimal('0')
+        margin_short = (self.pos_short * self.short_entry_price) / s_lev if self.pos_short > 0 else Decimal('0')
         virtual_equity = (self.virt_qty * price) - self.virt_debt
         return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
 
-    def get_tpv_fast(self, price: float) -> float:
+    def get_tpv_fast(self, price: float, l_lev: float = 7.0, s_lev: float = 7.0) -> float:
         pos_l = float(self.pos_long)
         pos_s = float(self.pos_short)
         p = float(price)
@@ -105,8 +107,8 @@ class BacktestState:
 
         upnl_l = pos_l * (p - l_entry) if pos_l > 0 else 0.0
         upnl_s = pos_s * (s_entry - p) if pos_s > 0 else 0.0
-        m_l = (pos_l * l_entry) / 5.0 if pos_l > 0 else 0.0
-        m_s = (pos_s * s_entry) / 5.0 if pos_s > 0 else 0.0
+        m_l = (pos_l * l_entry) / float(l_lev) if pos_l > 0 else 0.0
+        m_s = (pos_s * s_entry) / float(s_lev) if pos_s > 0 else 0.0
         v_eq = (v_qty * p) - v_debt
         return cash + m_l + upnl_l + m_s + upnl_s + v_eq
 
@@ -220,6 +222,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         trailing_stop_pct: float = config.get("equity_trailing_stop_pct", 0.0)
         trailing_stop_activation_pct: float = config.get("equity_trailing_stop_activation_pct", 0.0)
         trailing_stop_timeout_sec: int = int(config.get("equity_trailing_stop_timeout_sec", 0))
+        toxic_cooldown_days: float = config.get("toxic_cooldown_days", 0.021)
+        toxic_cooldown_bars: int = int(toxic_cooldown_days * 1440)
         min_notional_usdt: Decimal = Decimal(str(config.get("min_notional_usdt", 6.0)))
         
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
@@ -306,6 +310,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                             actions = []
                             tg_blocked_count += 1
 
+            # Reset trailing stop flag after cooldown expires
+            if state.trailing_stop_triggered and i >= state.cooldown_until_bar:
+                state.trailing_stop_triggered = False
+
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
                 expansions = [a for a in actions if not a.get("is_reduction", False)]
@@ -344,6 +352,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.virt_debt -= allocated_debt_reduction
                         state.val_cash += allocated_debt_reduction + realized_pnl - commission
 
+                # Skip expansions during cooldown after trailing stop
+                if i < state.cooldown_until_bar:
+                    expansions = []
                 expansions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)
                 remaining_funds = Decimal(str(calc_res.get("val_cash", calc_res.get("available_funds", 0.0))))
 
@@ -392,8 +403,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
                 state.cycles += 1
                 state.last_rebalance_price = mid_price
+                # Log positions after opening
+                if i < 100 or i % 5000 == 0 or (i > 950 and i < 960) or (i > 2045 and i < 2060):
+                    logger.warning(f"  [DEBUG] Bar {i}: pos_l={float(state.pos_long):.4f} @ {float(state.long_entry_price):.6f}, pos_s={float(state.pos_short):.4f} @ {float(state.short_entry_price):.6f}, cash={float(state.val_cash):.2f}")
                 state.rebalance_log.append({
-                    "step": i, "price": float(mid_price), "tpv": float(state.get_tpv(mid_price)),
+                    "step": i, "price": float(mid_price), "tpv": float(state.get_tpv(mid_price, l_lev, s_lev)),
                     "shares": {"L": calc_res["share_long_pct"], "S": calc_res["share_short_pct"], "V": calc_res["share_virt_pct"], "C": calc_res["share_cash_pct"]},
                     "actions": [f"{a['key']} {'SELL' if a['is_reduction'] else 'BUY'}" for a in actions]
                 })
@@ -478,7 +492,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     state.liquidations_counter += 1
 
             # --- 4. SAFE Siphoning ---
-            tpv_f = state.get_tpv_fast(float(mid_price))
+            tpv_f = state.get_tpv_fast(float(mid_price), float(l_lev), float(s_lev))
+            # Debug: log TPV on every bar
+            if i < 200 or (i > 920 and i < 960) or (i > 2050 and i < 2070):
+                logger.warning(f"  [TPV] Bar {i}: TPV={tpv_f:.2f}, pos_l={float(state.pos_long):.2f}, pos_s={float(state.pos_short):.2f}, cash={float(state.val_cash):.2f}, price={float(mid_price):.6f}")
             total_tpv_with_reserve = tpv_f + float(state.siphoning_reserve)
             initial_capital_f = float(state.initial_capital)
             total_surplus = total_tpv_with_reserve - initial_capital_f
@@ -508,15 +525,45 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         elapsed_bars = i - int(state.trailing_stop_violation_start)
                         timeout_bars = max(1, trailing_stop_timeout_sec // 60)
                         if elapsed_bars >= timeout_bars:
-                            logger.warning(f"Bar {i}: Trailing Stop triggered. Stopping backtest.")
+                            logger.warning(f"Bar {i}: Trailing Stop triggered. Closing positions. Cooldown: {toxic_cooldown_bars} bars.")
                             state.trailing_stop_triggered = True
-                            state.history.append(float(total_tpv_with_reserve))
-                            break
+                            # Log TPV before close
+                            tpv_before = float(state.val_cash)
+                            logger.warning(f"  TPV before close: {tpv_before:.2f}")
+                            # Close all positions
+                            if state.pos_long > 0:
+                                exec_price, commission = sim.simulate_market_execution("SELL", state.pos_long, mid_price)
+                                realized_pnl = state.pos_long * (exec_price - state.long_entry_price)
+                                released_margin = (state.pos_long * state.long_entry_price) / l_lev
+                                state.val_cash += released_margin + realized_pnl - commission
+                                state.pos_long = Decimal('0')
+                                state.long_entry_price = Decimal('0')
+                            if state.pos_short > 0:
+                                exec_price, commission = sim.simulate_market_execution("BUY", state.pos_short, mid_price)
+                                realized_pnl = state.pos_short * (state.short_entry_price - exec_price)
+                                released_margin = (state.pos_short * state.short_entry_price) / s_lev
+                                state.val_cash += released_margin + realized_pnl - commission
+                                state.pos_short = Decimal('0')
+                                state.short_entry_price = Decimal('0')
+                            # Update initial_capital to current TPV
+                            current_tpv_after_close = float(state.val_cash)
+                            logger.warning(f"  TPV after close: {current_tpv_after_close:.2f} (delta: {current_tpv_after_close - tpv_before:+.2f})")
+                            state.initial_capital = Decimal(str(current_tpv_after_close))
+                            # Reset trailing stop state
+                            state.tpv_ath = 0.0
+                            state.trailing_stop_violation_start = 0.0
+                            # Cooldown: skip expansions
+                            state.cooldown_until_bar = i + toxic_cooldown_bars
+                            state.history.append(current_tpv_after_close)
+                            continue
 
             # --- 5. Проверка математического инварианта ---
             virtual_equity = (state.virt_qty * mid_price) - state.virt_debt
             current_tpv = state.val_cash + m_long + upnl_l + m_short + upnl_s + virtual_equity
-            assert current_tpv > Decimal('0'), "Критический дефолт портфеля: TPV <= 0"
+            if current_tpv <= Decimal('0'):
+                logger.warning(f"Bar {i}: Portfolio default! TPV={float(current_tpv):.2f}. Stopping backtest.")
+                state.history.append(float(total_tpv_with_reserve))
+                break
 
             state.history.append(float(total_tpv_with_reserve))
 
