@@ -81,8 +81,12 @@ async def stop_bot(ticker: str, is_paper: bool = False):
         await (await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")).wait()
     except: pass
 
-async def enforce_swarm_consistency(connector: BinanceConnector, config: dict):
-    logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions (respecting whitelist).")
+async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -> None:
+    """
+    Checks for unauthorized positions on the exchange and closes them.
+    Respects live_swarm and real_whitelist from config.
+    """
+    logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions.")
     
     live_swarm_tickers = set(config.get("live_swarm", []))
     real_whitelist = set(config.get("real_whitelist", []))
@@ -595,7 +599,7 @@ async def manage_swarm():
             real_bots_scoring.append((t, score, profit, cycles))
 
         # Sort: worst score first for potential replacement
-        real_bots_sorted = sorted(real_bots_scoring, key=lambda x: x[1])
+        real_bots_sorted = sorted(real_bots_scoring, key=lambda x: (x[1], x[2]))
 
         max_replace = config.get("max_replace_per_cycle", 1)
         replacements_count = 0
@@ -620,8 +624,11 @@ async def manage_swarm():
                     pass
 
             age_hours = (time.time() - started_at) / 3600.0
-            probation_days = config.get("probation_period_days", 0.25)
+            probation_days = config.get("probation_period_days", 0.01)
             probation_hours = probation_days * 24.0
+
+            # Если у бота много циклов, он не на испытательном сроке, даже если стейт файл новый
+            is_probation = age_hours < probation_hours and cycles < config.get("min_cycles_for_rank", 20)
 
             best_cand = incubator_candidates[0]
             cand_score = perf_map.get(best_cand, {}).get('sort_eff', -float('inf'))
@@ -632,8 +639,8 @@ async def manage_swarm():
             )
 
             # Защита 1: Временной гистерезис (Испытательный срок)
-            if age_hours < probation_hours:
-                logger.info(f"🛡️ Hysteresis Guard: Protecting {ticker}. Running time ({age_hours:.2f}h) < Probation ({probation_hours:.2f}h)")
+            if is_probation:
+                logger.info(f"🛡️ Hysteresis Guard: Protecting {ticker}. Age: {age_hours:.2f}h, Cycles: {cycles} < Min Cycles.")
                 continue
 
             # Защита 2: Защита прибыльных позиций
