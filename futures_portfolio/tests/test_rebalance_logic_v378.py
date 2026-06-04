@@ -28,7 +28,7 @@ def test_rebalance_logic_v378():
         initial_capital=initial_cap,
         targets=targets
     )
-    res = calc.calculate_rebalance(targets, threshold, threshold)
+    res = calc.calculate_rebalance(targets, threshold, threshold, current_equity=calc.tpv)
     print(f"DEBUG: L:{res['share_long_pct']}% S:{res['share_short_pct']}% V:{res['share_virt_pct']}% C:{res['share_cash_pct']}%")
     if res["actions"]:
         print(f"DEBUG Actions: {res['actions']}")
@@ -67,7 +67,7 @@ def test_rebalance_logic_v378():
     # TPV = 65 + 29 - 36 + 42 = 100. (Neutral!)
     # V Share = 42 / 100 = 42%. Threshold 3.5%. Target 35%. 42-35 = 7% > 3.5%. SHOULD TRIGGER.
     
-    res = calc.calculate_rebalance(targets, threshold, threshold)
+    res = calc.calculate_rebalance(targets, threshold, threshold, current_equity=calc.tpv)
     print(f"DEBUG Case 2: L:{res['share_long_pct']}% S:{res['share_short_pct']}% V:{res['share_virt_pct']}% C:{res['share_cash_pct']}%")
     actions = res["actions"]
     if actions:
@@ -98,7 +98,7 @@ def test_rebalance_logic_v378():
     calc.val_cash = Decimal('1.0') # Force low cash
     calc.tpv = calc.val_long + calc.val_short + calc.val_virt + calc.val_cash
     
-    res = calc.calculate_rebalance(targets, threshold, threshold)
+    res = calc.calculate_rebalance(targets, threshold, threshold, current_equity=calc.tpv)
     assert len(res["actions"]) == 0 
 
     print("--- CASE 4: Priority BUY (Virtual gets cash first) ---")
@@ -129,7 +129,7 @@ def test_rebalance_logic_v378():
     
     # Available Cash is 7. V needs 15, S needs 16.
     calc.val_cash = Decimal('7.0')
-    res = calc.calculate_rebalance(targets, threshold, threshold)
+    res = calc.calculate_rebalance(targets, threshold, threshold, current_equity=calc.tpv)
     actions = res["actions"]
     print(f"DEBUG Case 4 Shares: L:{res['share_long_pct']}% S:{res['share_short_pct']}% V:{res['share_virt_pct']}% C:{res['share_cash_pct']}%")
     print(f"DEBUG Case 4 Actions: {actions}")
@@ -151,7 +151,7 @@ def test_rebalance_logic_v378():
         initial_capital=100.0,
         targets=targets
     )
-    res = calc.calculate_rebalance(targets, threshold, threshold)
+    res = calc.calculate_rebalance(targets, threshold, threshold, current_equity=calc.tpv)
     sum_vals = res["val_long"] + res["val_short"] + res["val_virt"] + res["val_cash"]
     assert abs(sum_vals - res["tpv"]) < 0.001
     

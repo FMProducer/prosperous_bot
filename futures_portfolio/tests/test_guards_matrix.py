@@ -137,7 +137,7 @@ def run_ticker(ticker, enable_trend, enable_nmg, enable_pnl):
                 if float(c.pnl_l) + float(c.pnl_s) < 0:
                     allow_surplus = False
                     blocks_p += 1
-                cr = c.calculate_rebalance(TARGETS, ts, ts, allow_surplus_sell=allow_surplus)
+                cr = c.calculate_rebalance(TARGETS, ts, ts, current_equity=c.tpv, allow_surplus_sell=allow_surplus)
             else:
                 ml = (pos_l * l_entry) / l_lev if pos_l > 0 else Decimal('0')
                 ms = (pos_s * s_entry) / s_lev if pos_s > 0 else Decimal('0')
@@ -151,7 +151,7 @@ def run_ticker(ticker, enable_trend, enable_nmg, enable_pnl):
                     base_ticker=ticker, targets=TARGETS,
                     initial_capital=INITIAL_CAP,
                     last_rebalance_price=float(reb_l_entry))
-                cr = c.calculate_rebalance(TARGETS, ts, ts, allow_surplus_sell=True)
+                cr = c.calculate_rebalance(TARGETS, ts, ts, current_equity=c.tpv, allow_surplus_sell=True)
 
             actions = cr.get("actions", [])
             if actions:

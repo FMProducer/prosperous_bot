@@ -101,7 +101,7 @@ class PortfolioCalculator:
             diff = Decimal('100.00') - total_pct
             self.share_cash_pct += diff # Adjust cash by the sub-penny difference
 
-    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> Dict:
+    def calculate_rebalance(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, current_equity: Decimal, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> Dict:
         """
         Calculate rebalance actions and return a summary of the current state.
         allow_surplus_sell: if False, surplus (profit-taking) actions are blocked.
@@ -110,7 +110,7 @@ class PortfolioCalculator:
             Used during fast unidirectional price movements (pump/dump) to prevent
             closing positions at fake profit/loss.
         """
-        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, ignore_limits, allow_surplus_sell, force_block)
+        dev_res = self.calculate_deviations(targets, threshold_surplus, threshold_deficit, current_equity, ignore_limits, allow_surplus_sell, force_block)
         # calculate_deviations возвращает dict с actions, available_funds, tpv, share_*
         actions = dev_res["actions"]
 
@@ -136,7 +136,7 @@ class PortfolioCalculator:
             "total_pnl_pct": float(self.total_pnl_pct)
         }
 
-    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> List[Dict]:
+    def calculate_deviations(self, targets: Dict[str, Dict], threshold_surplus: float, threshold_deficit: float, current_equity: Decimal, ignore_limits: bool = False, allow_surplus_sell: bool = True, force_block: bool = False) -> List[Dict]:
         """
         Rebalance based on CAPITAL (Equity) deviations. 
         This allows the portfolio to harvest volatility profit.
@@ -184,12 +184,10 @@ class PortfolioCalculator:
                     continue
 
             # Calculate theoretical diff_usdt
-            # diff_usdt = -diff_share * self.tpv * leverage
-            # Surplus (+) -> Negative diff_usdt (SELL/Reduction)
-            # Deficit (-) -> Positive diff_usdt (BUY/Expansion)
+            # USE dynamic current_equity to ensure proportional rebalancing
             lev = Decimal(str(targets[key].get("leverage", 1)))
-            diff_usdt = -diff_share * self.tpv * lev
-            diff_equity = -diff_share * self.tpv # Real cash (margin) movement
+            diff_usdt = -diff_share * current_equity * lev
+            diff_equity = -diff_share * current_equity # Real cash (margin) movement
 
             if abs(diff_usdt) < Decimal('1.0'): # Fundamental rounding filter
                 continue
@@ -257,7 +255,7 @@ class PortfolioCalculator:
         if ignore_limits and total_proceeds == 0:
             available_funds = self.val_cash  # Initial capital for first position building
         else:
-            available_funds = max(Decimal('0'), self.val_cash)  # Bot cash reserve only
+            available_funds = max(Decimal('0'), self.val_cash) + total_proceeds
         
         # 4. Process Deficits with Priority (VIRTUAL first, Priority 2)
         deficit_actions.sort(key=lambda x: 0 if x["key"] == "VIRTUAL" else 1)

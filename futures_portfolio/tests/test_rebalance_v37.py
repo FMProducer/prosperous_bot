@@ -54,7 +54,8 @@ def test_portfolio_convergence_and_churn():
         total_share = (calc.val_long + calc.val_short + calc.val_virt + calc.val_cash) / calc.tpv
         assert abs(total_share - 1) < 0.0001, f"Sum of shares {total_share} != 1.0 at price {p}"
 
-        actions = calc.calculate_deviations(targets, threshold_surplus=0.025, threshold_deficit=0.025)
+        res = calc.calculate_deviations(targets, threshold_surplus=0.025, threshold_deficit=0.025, current_equity=calc.tpv)
+        actions = res["actions"]
 
         for a in actions:
             leg = "VIRTUAL" if a['type'] == 'VIRTUAL_ORDER' else a['symbol'].split('_')[1]
