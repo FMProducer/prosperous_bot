@@ -8,6 +8,7 @@ import random
 import sys
 import shutil
 from typing import Dict, List, Set, Any
+from decimal import Decimal, InvalidOperation
 from dotenv import load_dotenv
 from pathlib import Path
 
