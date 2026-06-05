@@ -539,6 +539,8 @@ async def manage_swarm():
     # [OPTIMIZATION] Повторно используем running_bots из начала цикла (строка ~424) —
     # читаем с диска только тикеров, которых ещё нет в global_perf_map.
     current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
+    # Объединяем с только что восстановленными ботами для компенсации задержки старта PM2
+    current_real_tickers = list(set(current_real_tickers).union(healed_tickers))
     all_evaluated_tickers = set(final_incubator).union(current_real_tickers)
 
     missing_tickers = [t for t in all_evaluated_tickers if t not in global_perf_map]
@@ -777,6 +779,18 @@ async def manage_swarm():
             logger.info(f"🔥 [A] LAUNCHING PARALLEL COMBAT (REAL): {ticker}")
             await start_bot(ticker, is_paper=False, config=config)
             active_running_keys.add(r_key) # Жестко фиксируем запуск локально
+
+    # --- [INVARIANT GATE] ---
+    # Гарантия непрерывности данных: никогда не удаляем тикер из live_swarm, если по нему открыта позиция на бирже
+    try:
+        final_positions = await connector.get_positions()
+        final_active_tickers = {k.split('_')[0] for k in final_positions.keys()}
+        for act_t in final_active_tickers:
+            if act_t not in target_real_bots:
+                target_real_bots.append(act_t)
+                logger.warning(f"🛡️ Invariant Protection Gate: Forced retention of {act_t} in live_swarm due to active exchange exposure.")
+    except Exception as e:
+        logger.error(f"Failed to verify exchange exposure tracking before saving configuration: {e}")
 
     # 5. Сохранение конфига (НЕ перезаписываем tickers — они задаются вручную в config.json)
     config["live_swarm"] = sorted(target_real_bots)
