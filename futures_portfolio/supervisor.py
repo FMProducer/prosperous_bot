@@ -81,10 +81,11 @@ async def stop_bot(ticker: str, is_paper: bool = False):
         await (await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")).wait()
     except: pass
 
-async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -> None:
+async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -> Set[str]:
     """
-    Checks for unauthorized positions on the exchange and closes them.
-    Respects live_swarm and real_whitelist from config.
+    Checks for unauthorized positions on the exchange.
+    If a position exists but the PM2 process is missing, attempts to HEAL (relaunch)
+    the bot instead of closing its positions, provided a valid state file exists.
     """
     logger.info("🛡️ Enforcing Swarm Consistency: Checking for unauthorized positions.")
     
@@ -93,29 +94,65 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
     allowed_tickers = live_swarm_tickers.union(real_whitelist)
 
     active_positions = await connector.get_positions() # Get all open positions from exchange
+    if not active_positions:
+        return set()
+
+    # Федчим состояние процессов прямо сейчас для выявления упавших юнитов
+    running_bots = await get_running_bots_info()
+    running_real = {k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")}
 
     to_close_tickers = set()
+    to_heal_tickers = set()
 
-    # If allowed_tickers is empty, close all positions
-    if not allowed_tickers:
-        if active_positions:
-            logger.warning("⚠️ live_swarm and real_whitelist are empty. All open positions on exchange will be closed!")
-            for pos_key in active_positions.keys():
-                ticker = pos_key.split('_')[0]
-                to_close_tickers.add(ticker)
-    else:
-        # If allowed_tickers is not empty, close positions for tickers not in allowed_tickers
-        for pos_key in active_positions.keys():
-            ticker = pos_key.split('_')[0]
-            if ticker not in allowed_tickers:
-                logger.warning(f"⚠️ Unauthorized position found for {ticker} (not in live_swarm or real_whitelist). It will be closed!")
-                to_close_tickers.add(ticker)
+    for pos_key in active_positions.keys():
+        ticker = pos_key.split('_')[0]
+
+        # Ситуация нормальная: позиция разрешена и процесс работает
+        if ticker in allowed_tickers and ticker in running_real:
+            continue
+
+        # Аномалия: Позиция активна, но процесс в PM2 отсутствует
+        state_path = BASE_PATH / f"real_state_{ticker}.json"
+        if state_path.exists():
+            try:
+                with open(state_path, "r", encoding="utf-8") as f:
+                    state_data = json.load(f)
+
+                # Инвариант легитимности: у бота есть история или открытый виртуальный объем
+                if state_data.get("rebalance_cycles", 0) > 0 or abs(state_data.get("virt_qty", 0.0)) > 0:
+                    logger.warning(f"🚨 HEAL TRIGGERED: Active position for {ticker} detected on exchange, but PM2 process is dead. Real state file is valid. Initiating recovery...")
+                    to_heal_tickers.add(ticker)
+                    continue
+            except Exception as e:
+                logger.error(f"Failed to verify state data integrity for {ticker}: {e}")
+
+        # Если вайтлисты пусты или это действительно чужая позиция (нет стейт файла)
+        if not allowed_tickers:
+            logger.warning(f"⚠️ Unauthorized stray position for {ticker} (allowed pools are empty). Scheduled for liquidation.")
+            to_close_tickers.add(ticker)
+        elif ticker not in allowed_tickers:
+            logger.warning(f"⚠️ Unauthorized position found for {ticker} (not in live_swarm or real_whitelist). Scheduled for liquidation.")
+            to_close_tickers.add(ticker)
+
+    # Выполняем регенерацию процессов
+    for ticker in to_heal_tickers:
+        logger.info(f"⚡ Relaunching crashed REAL process for {ticker} from saved state.")
+        if "live_swarm" not in config:
+            config["live_swarm"] = []
+        if ticker not in config["live_swarm"]:
+            config["live_swarm"].append(ticker)
+
+        # Перезапускаем. Так как real_state_{ticker}.json существует, start_bot НЕ сотрет его данные
+        await start_bot(ticker, is_paper=False, config=config)
+        logger.info(f"✅ Relaunch command sent for {ticker}.")
 
     for ticker in to_close_tickers:
         logger.info(f"🧹 Closing all positions for unauthorized ticker: {ticker}")
         cmd_stop = f'"{sys.executable}" "{BASE_PATH / "main.py"}" --config config.json --ticker {ticker} --stop --real'
         await (await asyncio.create_subprocess_shell(cmd_stop)).wait()
         logger.info(f"✅ Positions for {ticker} closed successfully.")
+
+    return to_heal_tickers
 
 async def reset_real_state(ticker: str, config: dict):
     """Архивирует текущее состояние реального бота и сбрасывает его перед новым запуском."""
@@ -395,7 +432,7 @@ async def manage_swarm():
 
     # !!! [SAFETY GATE] !!!
     # 0. Принудительная проверка согласованности роя с биржевыми позициями
-    await enforce_swarm_consistency(connector, config)
+    healed_tickers = await enforce_swarm_consistency(connector, config)
 
     # 0.5. Чтение сигналов от ботов (stop/exit flags)
     signals_dir = BASE_PATH / "signals"
@@ -430,6 +467,12 @@ async def manage_swarm():
 
     # [CACHE] Один вызов pm2 jlist на цикл — результат переиспользуется везде
     running_bots = await get_running_bots_info()
+
+    # Дополняем кэш процессов "оздоровленными" тикерами, чтобы защитить их от PM2 latency
+    for t in healed_tickers:
+        r_key = f"r_{t}"
+        if r_key not in running_bots:
+            running_bots[r_key] = {"name": f"real-{t.replace('USDT', '').lower()}", "paper": False}
 
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
