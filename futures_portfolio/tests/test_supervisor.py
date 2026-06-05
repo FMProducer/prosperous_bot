@@ -144,14 +144,15 @@ async def test_enforce_swarm_consistency():
         "ETHUSDT_SHORT": {"qty": -1.0}
     })
     
-    with patch("supervisor.asyncio.create_subprocess_shell", AsyncMock()) as mock_shell:
+    with patch("supervisor.asyncio.create_subprocess_shell", AsyncMock()) as mock_shell, \
+         patch("supervisor.get_running_bots_info", AsyncMock(return_value={"r_BTCUSDT": {}})):
         mock_process = AsyncMock()
         mock_process.wait = AsyncMock()
         mock_shell.return_value = mock_process
         
         await enforce_swarm_consistency(connector, config)
         
-        # Should close ETHUSDT
+        # Should close ETHUSDT (get_running_bots_info is mocked, so only 1 shell call for closing)
         assert mock_shell.call_count == 1
         cmd = mock_shell.call_args[0][0]
         assert "--ticker ETHUSDT" in cmd
