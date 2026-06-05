@@ -3,7 +3,7 @@ import math
 import json
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
 import supervisor
-from supervisor import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_real_state, reset_paper_state, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
+from supervisor import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_bot_state_files, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
 
 def test_calculate_bot_score():
     # is_in_drawdown=True -> INF
@@ -103,14 +103,15 @@ async def test_get_bot_efficiency():
         assert res["trailing_stop_paper_timeout_end"] == 123456789.0
 
 @pytest.mark.asyncio
-async def test_reset_real_state():
+async def test_reset_bot_state_files_real():
     config = {"portfolios": [{"initial_capital": 200.0}]}
     ticker = "BTCUSDT"
     with patch("supervisor.shutil.copy") as mock_copy, \
          patch("supervisor.os.remove") as mock_remove, \
          patch("supervisor.Path.exists", return_value=True), \
+         patch("supervisor.safe_load_json", AsyncMock(return_value={})), \
          patch("supervisor.safe_save_json", AsyncMock()) as mock_save:
-        await reset_real_state(ticker, config)
+        await reset_bot_state_files(ticker, is_paper=False, config=config)
         assert mock_copy.call_count == 2
         assert mock_remove.call_count == 2
         assert mock_save.call_count == 2
@@ -120,14 +121,15 @@ async def test_reset_real_state():
         assert args[1]["base_ticker"] == ticker
 
 @pytest.mark.asyncio
-async def test_reset_paper_state():
+async def test_reset_bot_state_files_paper():
     config = {"portfolios": [{"paper_initial_capital": 150.0}]}
     ticker = "BTCUSDT"
     with patch("supervisor.shutil.copy") as mock_copy, \
          patch("supervisor.os.remove") as mock_remove, \
          patch("supervisor.Path.exists", return_value=True), \
+         patch("supervisor.safe_load_json", AsyncMock(return_value={})), \
          patch("supervisor.safe_save_json", AsyncMock()) as mock_save:
-        await reset_paper_state(ticker, config)
+        await reset_bot_state_files(ticker, is_paper=True, config=config)
         assert mock_copy.call_count == 2
         assert mock_remove.call_count == 2
         assert mock_save.call_count == 2
@@ -244,7 +246,7 @@ async def test_stop_bot():
 async def test_start_bot():
     config = {"portfolios": [{"initial_capital": 100}]}
     with patch("supervisor.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock())) as mock_shell, \
-         patch("supervisor.reset_paper_state", AsyncMock()) as mock_reset:
+         patch("supervisor.reset_bot_state_files", AsyncMock()) as mock_reset:
         await supervisor.start_bot("BTCUSDT", is_paper=True, config=config)
         assert mock_reset.called
         assert "pm2 start main.py" in mock_shell.call_args[0][0]

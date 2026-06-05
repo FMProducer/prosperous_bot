@@ -155,117 +155,70 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
 
     return to_heal_tickers
 
-async def reset_real_state(ticker: str, config: dict):
-    """Архивирует текущее состояние реального бота и сбрасывает его перед новым запуском."""
-    base_state_path = BASE_PATH / f"real_state_{ticker}.json"
-    shadow_state_path = BASE_PATH / f"shadow_state_{ticker}.json"
-    history_dir = BASE_PATH / "history"
-    history_dir.mkdir(exist_ok=True)
-    
-    # Попытка извлечь динамический капитал (ребазирование)
+async def reset_bot_state_files(ticker: str, is_paper: bool, config: dict) -> None:
+    """
+    Сбрасывает файлы состояния к чистым начальным значениям, используя
+    динамическое ребазирование капитала для предотвращения инфляции баланса.
+    """
     portfolio_cfg = config.get("portfolios", [{}])[0]
-    initial_capital = Decimal(str(portfolio_cfg.get("initial_capital", 100.0)))
-
-    if base_state_path.exists():
-        try:
-            old_state = await safe_load_json(str(base_state_path), {})
-            if old_state and ("last_tpv" in old_state):
-                last_tpv = Decimal(str(old_state["last_tpv"]))
-                if last_tpv > 0:
-                    logger.info(f"📈 Dynamic Re-baselining: Using last_tpv {last_tpv} as new initial capital for {ticker}")
-                    initial_capital = last_tpv
-        except (InvalidOperation, ValueError, KeyError) as e:
-            logger.error(f"Failed to read old state for re-baselining {ticker}: {e}")
-
-    # Архивируем, если файлы существуют
-    for path in [base_state_path, shadow_state_path]:
-        if path.exists():
-            archive_path = history_dir / f"archive_{ticker}_{int(time.time())}_{path.name}"
-            shutil.copy(path, archive_path)
-            logger.info(f"💾 Archived state for {ticker}: {path.name} -> {archive_path.name}")
-            os.remove(path)
-            logger.info(f"🗑️ Deleted stale state file: {path.name}")
-
-    # Создаем базовые пустые файлы для чистого старта
-    initial_capital_float = float(initial_capital)
     
-    await safe_save_json(str(base_state_path), {
-        "virt_qty": 0.0,
-        "base_ticker": ticker,
-        "siphoning_reserve": 0.0,
-        "balance": initial_capital_float,
-        "initial_tpv": initial_capital_float,
-        "reference_tpv": initial_capital_float,
-        "tpv_ath": initial_capital_float,
-        "rebalance_cycles": 0,
-        "last_rebalance_price": 0.0,
-        "started_at": time.time()
-    })
-    
-    await safe_save_json(str(shadow_state_path), {
-        "balance": initial_capital_float,
-        "positions": {f"{ticker}_LONG": 0.0, f"{ticker}_SHORT": 0.0},
-        "last_price": 0.0,
-        "base_ticker": ticker,
-        "long_entry_price": 0.0,
-        "short_entry_price": 0.0,
-        "long_liquidation_price": 0.0,
-        "short_liquidation_price": 0.0
-    })
-    logger.info(f"✨ Reset real state files for {ticker} to clean initial values (Capital: {initial_capital_float}).")
+    if is_paper:
+        config_capital = portfolio_cfg.get("paper_initial_capital", portfolio_cfg.get("initial_capital", 115.0))
+        base_state_file = f"paper_state_{ticker}.json"
+        shadow_state_file = f"paper_shadow_{ticker}.json"
+    else:
+        config_capital = portfolio_cfg.get("initial_capital", 80.0)
+        base_state_file = f"real_state_{ticker}.json"
+        shadow_state_file = f"shadow_state_{ticker}.json"
 
-async def reset_paper_state(ticker: str, config: dict):
-    """Архивирует текущее состояние paper-бота и сбрасывает его перед новым запуском."""
-    base_state_path = BASE_PATH / f"paper_state_{ticker}.json"
-    shadow_state_path = BASE_PATH / f"paper_shadow_{ticker}.json"
+    base_state_path = BASE_PATH / base_state_file
+    shadow_state_path = BASE_PATH / shadow_state_file
     history_dir = BASE_PATH / "history"
     history_dir.mkdir(exist_ok=True)
 
-    # Попытка извлечь динамический капитал (ребазирование)
-    portfolio_cfg = config.get("portfolios", [{}])[0]
-    initial_capital = Decimal(str(portfolio_cfg.get("paper_initial_capital", portfolio_cfg.get("initial_capital", 115.0))))
+    old_state = await safe_load_json(str(base_state_path), {})
+    
+    # Динамическое ребазирование: сохраняем накопленный или урезанный стопом капитал
+    final_capital = old_state.get("last_tpv", config_capital) if old_state else config_capital
 
-    if base_state_path.exists():
-        try:
-            old_state = await safe_load_json(str(base_state_path), {})
-            if old_state and ("last_tpv" in old_state):
-                last_tpv = Decimal(str(old_state["last_tpv"]))
-                if last_tpv > 0:
-                    logger.info(f"📈 Dynamic Re-baselining (PAPER): Using last_tpv {last_tpv} as new baseline for {ticker}")
-                    initial_capital = last_tpv
-        except (InvalidOperation, ValueError, KeyError) as e:
-            logger.error(f"Failed to read old paper state for re-baselining {ticker}: {e}")
+    if old_state and (old_state.get("trailing_stop_triggered") or old_state.get("trailing_stop_violation_start", 0.0) > 0.0):
+        logger.warning(f"📉 Обнаружен Trailing Stop для {ticker}. Капитал ребазирован: {config_capital} -> {final_capital}")
 
-    # Архивируем, если файлы существуют
+    # Архивируем старые файлы
     for path in [base_state_path, shadow_state_path]:
         if path.exists():
             archive_path = history_dir / f"archive_{ticker}_{int(time.time())}_{path.name}"
-            shutil.copy(path, archive_path)
-            logger.info(f"💾 Archived paper state for {ticker}: {path.name} -> {archive_path.name}")
-            os.remove(path)
-            logger.info(f"🗑️ Deleted stale paper state file: {path.name}")
-    
-    # Создаем чистые файлы для нового старта
-    initial_capital_float = float(initial_capital)
-    
-    await safe_save_json(str(base_state_path), {
+            try:
+                shutil.copy(path, archive_path)
+                logger.info(f"💾 Archived {'paper ' if is_paper else ''}state for {ticker}: {path.name} -> {archive_path.name}")
+                os.remove(path)
+                logger.info(f"🗑️ Deleted stale state file: {path.name}")
+            except Exception as e:
+                logger.error(f"Failed to archive {path}: {e}")
+
+    new_state = {
         "virt_qty": 0.0,
         "base_ticker": ticker,
         "siphoning_reserve": 0.0,
-        "balance": initial_capital_float,
-        "initial_tpv": initial_capital_float,
-        "reference_tpv": initial_capital_float,
-        "tpv_ath": initial_capital_float,
+        "balance": final_capital,
+        "initial_tpv": final_capital,
+        "reference_tpv": final_capital,
+        "tpv_ath": final_capital,
         "trailing_stop_violation_start": 0.0,
         "trailing_stop_paper_timeout_end": 0.0,
         "trailing_stop_triggered": False,
         "rebalance_cycles": 0,
         "last_rebalance_price": 0.0,
-        "started_at": time.time()
-    })
+        "started_at": time.time(),
+        "virt_debt": 0.0,
+        "last_tpv": final_capital,
+        "last_profit": 0.0,
+        "total_pnl_pct": 0.0,
+        "last_update": time.time()
+    }
     
-    await safe_save_json(str(shadow_state_path), {
-        "balance": initial_capital_float,
+    new_shadow_state = {
+        "balance": final_capital,
         "positions": {f"{ticker}_LONG": 0.0, f"{ticker}_SHORT": 0.0},
         "last_price": 0.0,
         "base_ticker": ticker,
@@ -273,8 +226,11 @@ async def reset_paper_state(ticker: str, config: dict):
         "short_entry_price": 0.0,
         "long_liquidation_price": 0.0,
         "short_liquidation_price": 0.0
-    })
-    logger.info(f"✨ Reset paper state files for {ticker} to clean initial values (Capital: {initial_capital_float}).")
+    }
+
+    await safe_save_json(str(base_state_path), new_state)
+    await safe_save_json(str(shadow_state_path), new_shadow_state)
+    logger.info(f"✨ Reset {'paper' if is_paper else 'real'} state files for {ticker} to clean initial values (capital: {final_capital}).")
 
 async def start_bot(ticker: str, is_paper: bool = True, config: dict = None):
     prefix = "paper" if is_paper else "real"
@@ -284,11 +240,11 @@ async def start_bot(ticker: str, is_paper: bool = True, config: dict = None):
     # Перед запуском: сбрасываем state для paper (чистый старт), для real — только если файлов нет
     if config:
         if is_paper:
-            await reset_paper_state(ticker, config)  # Paper always starts fresh
+            await reset_bot_state_files(ticker, is_paper=True, config=config)  # Paper always starts fresh
         else:
             state_path = BASE_PATH / f"real_state_{ticker}.json"
             if not state_path.exists():
-                await reset_real_state(ticker, config)
+                await reset_bot_state_files(ticker, is_paper=False, config=config)
 
     cmd = f'pm2 start main.py --name "{proc_name}" --cwd "{BASE_PATH}" --update-env --interpreter "{sys.executable}" --instances 1 -- --config config.json --ticker {ticker} {mode_flag}'
     await (await asyncio.create_subprocess_shell(cmd)).wait()
