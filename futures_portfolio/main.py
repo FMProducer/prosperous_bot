@@ -36,16 +36,27 @@ def emit_signal(signal_type: str, ticker: str) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
-async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: float, initial_tpv: float, safe_calc_res: dict, cycles: int, logger: logging.Logger):
+async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: float, initial_tpv: float, safe_calc_res: dict, cycles: int, logger: logging.Logger) -> None:
     """Updates and saves the final profit metrics in the state file before a bot exits."""
     try:
+        logger.info(f"🔄 Санитизация состояния перед выходом. Финальный TPV: {total_tpv_final:.4f}")
+
+        # Полное ребазирование метрик под финальное значение TPV
         state.update({
             "last_tpv": total_tpv_final,
+            "initial_tpv": total_tpv_final,
+            "reference_tpv": total_tpv_final,
+            "tpv_ath": total_tpv_final,
             "last_profit": total_tpv_final - initial_tpv,
             "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
             "last_update": time.time(),
-            "rebalance_cycles": cycles # Ensure cycles are also updated
+            "rebalance_cycles": cycles,
+            # Очистка триггеров скользящего стопа для предотвращения повторного ложного срабатывания
+            "trailing_stop_violation_start": 0.0,
+            "trailing_stop_paper_timeout_end": 0.0,
+            "trailing_stop_triggered": False
         })
+
         await save_json(state_file_path, state)
         logger.info(f"✅ Final metrics saved before exit. Last Profit: {state['last_profit']:.2f}")
     except Exception as e:
@@ -861,7 +872,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
                     await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
                     # --------------------------------------------------------------------
-                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
+                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
                     return
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
@@ -921,8 +932,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                             min_notional=Decimal('0')
                                         )
 
-                                # Reset shadow balance to initial capital to avoid loop on restart
-                                paper_state["balance"] = portfolio_cfg.get("initial_capital", 60.0)
+                                # Realize state in shadow balance
                                 paper_state["long_entry_price"] = 0.0
                                 paper_state["short_entry_price"] = 0.0
                                 await save_json(paper_state_file_path, paper_state)
@@ -934,8 +944,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # Set paper probation timeout (from probation_period_days)
                                 probation_days = current_config.get("probation_period_days", 0.041)
                                 timeout_end = now + probation_days * 86400
-                                state["trailing_stop_paper_timeout_end"] = timeout_end
-                                logger.info(f"Setting post-stop paper probation until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
+                                # Trailing stop timeout end should be set AFTER _update_final_metrics_for_exit if we want it to persist,
+                                # but _update_final_metrics_for_exit clears it.
+                                # Actually, requirements say: "Fully reset trailing stop tracking fields ... to 0.0/False to ensure clean state generation."
+                                # So supervisor should handle the timeout if needed.
+                                logger.info(f"Post-stop paper probation end: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
 
                                 # Эмитируем сигнал остановки для супервайзера
                                 global_initial = portfolio_cfg.get("initial_capital", 60.0)
@@ -969,27 +982,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                         logger.error(f"Failed to add {base_ticker} to toxic_blacklist: {e}")
                                     logger.info(f"Sent EXIT signal (with toxic). Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}.")
 
-                                # Сбрасываем ATH и начальные значения
-                                state["tpv_ath"] = 0.0
-                                state["initial_tpv"] = 0.0
-                                state["reference_tpv"] = 0.0
-                                state["virt_qty"] = 0.0
-                                state["trailing_stop_triggered"] = True
-                                state["trailing_stop_violation_start"] = 0.0
-
-                                # Save state files to history before deletion
-                                import shutil
-                                history_dir = os.path.join(os.path.dirname(state_file_path), "history")
-                                os.makedirs(history_dir, exist_ok=True)
-                                ts = time.strftime("%Y%m%d_%H%M%S")
-                                for fp in [state_file_path, paper_state_file_path]:
-                                    if os.path.exists(fp):
-                                        dest = os.path.join(history_dir, f"{os.path.basename(fp)}.{ts}")
-                                        shutil.copy2(fp, dest)
-                                        os.remove(fp)
-                                        logger.info(f"State archived: {dest}")
-
-                                logger.info("Positions closed and state reset. Bot stopped.")
+                                logger.info("Positions closed and state sanitized for supervisor. Bot stopping.")
                                 break
                             else:
                                 # Timeout not yet reached — still pending
@@ -1016,7 +1009,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.error(msg)
                                 asyncio.create_task(notifier.send_alert("CRITICAL MARGIN", msg))
                                 emit_signal("stop", base_ticker)
-                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode)
+                                # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
+                                await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                                # --------------------------------------------------------------------
+                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
                                 return
                             elif m_ratio < portfolio_cfg.get("margin_ratio_warning", 5.0):
                                 msg = f"Low margin ratio: {m_ratio:.2f}"
@@ -1502,7 +1498,25 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         await save_json(state_file_path, state)
         logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
     else:
-        logger.info(f"✅ Positions closed for {base_ticker}. State preserved.")
+        # При close_only (например, при ротации супервайзером) выполняем санитарию ATH и базы,
+        # чтобы при следующем запуске бот не стартанул с глубокой просадки относительно старого ATH.
+        try:
+            state = await load_json(state_file_path, {})
+            if state:
+                current_tpv = state.get("last_tpv", 0.0)
+                if current_tpv > 0:
+                    logger.info(f"🔄 Санитизация состояния при плановом стопе ({base_ticker}). Ребазирование на {current_tpv:.4f}")
+                    state.update({
+                        "initial_tpv": current_tpv,
+                        "reference_tpv": current_tpv,
+                        "tpv_ath": current_tpv,
+                        "trailing_stop_violation_start": 0.0,
+                        "trailing_stop_triggered": False
+                    })
+                    await save_json(state_file_path, state)
+        except Exception as e:
+            logger.error(f"Failed to sanitize state during emergency_stop: {e}")
+        logger.info(f"✅ Positions closed for {base_ticker}. State preserved and sanitized.")
 
 if __name__ == "__main__":
     import argparse
