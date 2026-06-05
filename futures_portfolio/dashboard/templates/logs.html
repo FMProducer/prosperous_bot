@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Логи {{ ticker }} ({{ mode }})</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="logs-page">
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Prosperous Bot</div>
+        <div class="nav-links">
+            <a href="/">Обзор</a>
+            <a href="/ticker/{{ mode }}/{{ ticker }}">{{ ticker }}</a>
+            <a href="/logs/{{ mode }}/{{ ticker }}" class="active">Логи</a>
+        </div>
+        <div class="nav-user">
+            <a href="/logout" class="btn btn-sm btn-outline">Выход</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h1>📜 Логи: {{ ticker }} ({{ mode }})</h1>
+
+        <div class="log-controls">
+            <button class="btn btn-sm btn-outline" onclick="refreshLogs()">🔄 Обновить</button>
+            <button class="btn btn-sm btn-outline" onclick="toggleAutoScroll()" id="autoscroll-btn">📜 Авто-скролл: ВКЛ</button>
+            <span class="log-info" id="log-info"></span>
+        </div>
+
+        <div class="log-viewer" id="log-viewer">
+            <pre id="log-content">Загрузка...</pre>
+        </div>
+    </main>
+
+    <script>
+        const TICKER = "{{ ticker }}";
+        const MODE = "{{ mode }}";
+        const REFRESH_SEC = {{ refresh_sec }};
+    </script>
+    <script src="/static/logs.js"></script>
+</body>
+</html>

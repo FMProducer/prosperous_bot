@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки — Prosperous Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Prosperous Bot</div>
+        <div class="nav-links">
+            <a href="/">Обзор</a>
+            <a href="/history">История</a>
+            <a href="/settings" class="active">Настройки</a>
+        </div>
+        <div class="nav-user">
+            <a href="/logout" class="btn btn-sm btn-outline">Выход</a>
+        </div>
+        <button class="nav-toggle" onclick="toggleNav()">☰</button>
+    </nav>
+
+    <main class="container">
+        <h1>⚙️ Настройки</h1>
+
+        <section class="section">
+            <h2 class="section-title">Dashboard</h2>
+            <div class="config-list">
+                <div class="config-item">
+                    <span class="config-key">Port</span>
+                    <span class="config-value">{{ config.server.port }}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-key">Debug</span>
+                    <span class="config-value">{{ config.server.debug }}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-key">Refresh (dashboard)</span>
+                    <span class="config-value">{{ config.refresh.dashboard_sec }}s</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-key">Control enabled</span>
+                    <span class="config-value">{{ config.control.enabled }}</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        function toggleNav() {
+            document.querySelector('.nav-links').classList.toggle('show');
+        }
+    </script>
+</body>
+</html>

@@ -6,15 +6,15 @@
   "min_notional_usdt": 5.5,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 19,
+  "min_cycles_for_rank": 10,
   "max_bots": 20,
-  "paper_mode_bots": 20,
+  "paper_mode_bots": 19,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.02,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 30.0,
+  "max_drawdown_limit": 100.0,
   "replacement_efficiency_threshold_pct": 50.0,
   "equity_trailing_stop_pct": 5.7,
   "equity_trailing_stop_activation_pct": 6.5,
@@ -25,8 +25,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 80.0,
-      "paper_initial_capital": 80.0,
+      "initial_capital": 75.0,
+      "paper_initial_capital": 75.0,
       "paper_account_free_margin": 100.0,
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
@@ -58,22 +58,44 @@
         "trend_min_move_pct": 0.7,
         "trend_eff_threshold": 0.35
       },
-      "rebalance_threshold_surplus": 0.04,
-      "rebalance_threshold_deficit": 0.04,
+      "rebalance_threshold_surplus": 0.01,
+      "rebalance_threshold_deficit": 0.01,
       "ticker_thresholds": {
         "BTCUSDT": {
-          "surplus": 0.04,
-          "deficit": 0.04
+          "surplus": 0.01,
+          "deficit": 0.01
         }
       }
     }
   ],
-  "live_swarm": [],
-  "use_real_whitelist": true,
+  "live_swarm": [
+    "INJUSDT"
+  ],
+  "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
-  "toxic_blacklist": {},
-  "tickers": [],
-  "base_ticker": ""
+  "toxic_blacklist": {
+    "INJUSDT": 1780687973.0829604
+  },
+  "tickers": [
+    "1000SHIBUSDT",
+    "ATOMUSDT",
+    "BIOUSDT",
+    "CHZUSDT",
+    "DASHUSDT",
+    "DEXEUSDT",
+    "DOTUSDT",
+    "ETCUSDT",
+    "HBARUSDT",
+    "ICPUSDT",
+    "INJUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "POLUSDT",
+    "PORTALUSDT",
+    "XLMUSDT",
+    "XRPUSDT"
+  ],
+  "base_ticker": "1000SHIBUSDT"
 }

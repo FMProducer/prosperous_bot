@@ -1,0 +1,38 @@
+# Dashboard — настройки
+# ⚠️ НЕ хранить реальные пароли в открытом виде!
+# Пароль генерируется при первом запуске (bcrypt hash)
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  debug: false
+  secret_key: "CHANGE_ME_RANDOM_32_CHARS_MIN"  # Сессионный ключ Flask
+
+auth:
+  username: "admin"
+  # Пароль по умолчанию: "prosperous2026"
+  # Для смены: python -c "import bcrypt; print(bcrypt.hashpw(b'NEW_PASSWORD', bcrypt.gensalt()).decode())"
+  password_hash: "$2b$12$LJ3m4ys3Lk0TSHhPOhQE6OQDMwBqXx0Zz0Zz0Zz0Zz0Zz0Zz0Zz0Z"  # Заменить при первом запуске
+
+paths:
+  project: "C:\\Python\\Prosperous_Bot\\futures_portfolio"
+  logs: "C:\\Python\\Prosperous_Bot\\futures_portfolio\\logs"
+  data: "C:\\Python\\Prosperous_Bot\\futures_portfolio\\data"
+  pm2_logs: "C:\\Users\\svsma\\.pm2\\logs"
+  state_pattern: "{mode}_state_{ticker}.json"
+  shadow_pattern: "{mode}_shadow_{ticker}.json"
+
+refresh:
+  dashboard_sec: 15       # Автообновление дашборда
+  logs_sec: 10            # Обновление логов
+  ticker_sec: 10          # Обновление деталей тикера
+
+control:
+  enabled: true           # Включить кнопки управления
+  confirm_actions: true   # Подтверждение критических действий
+  allowed_commands:
+    - pm2_start
+    - pm2_stop
+    - pm2_restart
+    - pm2_delete
+    - emergency_stop      # Остановка бота + закрытие позиций

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prosperous Bot — Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Prosperous Bot</div>
+        <div class="nav-links">
+            <a href="/" class="active">Обзор</a>
+            <a href="/history">История</a>
+            <a href="/settings">Настройки</a>
+        </div>
+        <div class="nav-user">
+            <span>{{ session.username }}</span>
+            <a href="/logout" class="btn btn-sm btn-outline">Выход</a>
+        </div>
+        <!-- Mobile menu toggle -->
+        <button class="nav-toggle" onclick="toggleNav()">☰</button>
+    </nav>
+
+    <!-- Main content -->
+    <main class="container">
+        <!-- Alerts -->
+        <div id="alerts-container"></div>
+
+        <!-- Summary cards -->
+        <section class="cards-grid">
+            <div class="card card-summary" id="card-supervisor">
+                <div class="card-icon">⚙️</div>
+                <div class="card-body">
+                    <h3>Supervisor</h3>
+                    <p class="card-value" id="supervisor-status">—</p>
+                </div>
+            </div>
+            <div class="card card-summary" id="card-total-tpv">
+                <div class="card-icon">💰</div>
+                <div class="card-body">
+                    <h3>Total TPV</h3>
+                    <p class="card-value" id="total-tpv">—</p>
+                </div>
+            </div>
+            <div class="card card-summary" id="card-total-pnl">
+                <div class="card-icon">📈</div>
+                <div class="card-body">
+                    <h3>Total PnL</h3>
+                    <p class="card-value" id="total-pnl">—</p>
+                </div>
+            </div>
+            <div class="card card-summary" id="card-bots-count">
+                <div class="card-icon">🤖</div>
+                <div class="card-body">
+                    <h3>Боты</h3>
+                    <p class="card-value" id="bots-count">—</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Real Bots -->
+        <section class="section">
+            <h2 class="section-title">🔴 Real Bots</h2>
+            <div class="table-responsive">
+                <table class="table" id="real-bots-table">
+                    <thead>
+                        <tr>
+                            <th>Тикер</th>
+                            <th>TPV</th>
+                            <th>PnL</th>
+                            <th>Циклы</th>
+                            <th>Heartbeat</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Paper Bots -->
+        <section class="section">
+            <h2 class="section-title">📄 Paper Bots</h2>
+            <div class="table-responsive">
+                <table class="table" id="paper-bots-table">
+                    <thead>
+                        <tr>
+                            <th>Тикер</th>
+                            <th>TPV</th>
+                            <th>PnL</th>
+                            <th>Циклы</th>
+                            <th>Heartbeat</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- PM2 Processes -->
+        <section class="section">
+            <h2 class="section-title">⚡ PM2 Процессы</h2>
+            <div class="table-responsive">
+                <table class="table" id="pm2-table">
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Статус</th>
+                            <th>Рестарты</th>
+                            <th>CPU</th>
+                            <th>Память</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Confirm Modal -->
+    <div class="modal" id="confirm-modal">
+        <div class="modal-content">
+            <h3 id="confirm-title">Подтверждение</h3>
+            <p id="confirm-message"></p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-danger" id="confirm-btn">Подтвердить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const REFRESH_SEC = {{ refresh_sec }};
+        const CONTROL_ENABLED = {{ 'true' if control_enabled else 'false' }};
+        const CSRF_TOKEN = "{{ session.csrf_token }}";
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

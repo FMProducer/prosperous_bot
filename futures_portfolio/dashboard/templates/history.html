@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>История — Prosperous Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Prosperous Bot</div>
+        <div class="nav-links">
+            <a href="/">Обзор</a>
+            <a href="/history" class="active">История</a>
+            <a href="/settings">Настройки</a>
+        </div>
+        <div class="nav-user">
+            <a href="/logout" class="btn btn-sm btn-outline">Выход</a>
+        </div>
+        <button class="nav-toggle" onclick="toggleNav()">☰</button>
+    </nav>
+
+    <main class="container">
+        <h1>📊 История PnL</h1>
+
+        <section class="section">
+            <h2 class="section-title">Real Bots — Текущее состояние</h2>
+            <div class="table-responsive">
+                <table class="table" id="history-table">
+                    <thead>
+                        <tr>
+                            <th>Тикер</th>
+                            <th>Дата</th>
+                            <th>TPV</th>
+                            <th>Initial</th>
+                            <th>PnL</th>
+                            <th>PnL %</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/history.js"></script>
+</body>
+</html>

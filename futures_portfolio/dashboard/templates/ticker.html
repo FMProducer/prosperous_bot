@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ ticker }} ({{ mode }}) — Детали</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Prosperous Bot</div>
+        <div class="nav-links">
+            <a href="/">Обзор</a>
+            <a href="/history">История</a>
+            <a href="/settings">Настройки</a>
+        </div>
+        <div class="nav-user">
+            <a href="/logout" class="btn btn-sm btn-outline">Выход</a>
+        </div>
+        <button class="nav-toggle" onclick="toggleNav()">☰</button>
+    </nav>
+
+    <main class="container">
+        <h1>{{ ticker }} <span class="badge badge-{{ mode }}">{{ mode | upper }}</span></h1>
+
+        <!-- Quick stats -->
+        <section class="cards-grid" id="ticker-stats"></section>
+
+        <!-- Positions -->
+        <section class="section">
+            <h2 class="section-title">Позиции</h2>
+            <div id="positions-data"></div>
+        </section>
+
+        <!-- Control buttons -->
+        {% if control_enabled %}
+        <section class="section">
+            <h2 class="section-title">Управление</h2>
+            <div class="control-buttons">
+                <button class="btn btn-success" onclick="pm2Action('pm2_restart', '{{ mode }}-{{ ticker | lower }})">
+                    🔄 Рестарт
+                </button>
+                <button class="btn btn-warning" onclick="pm2Action('pm2_stop', '{{ mode }}-{{ ticker | lower }})">
+                    ⏹ Стоп
+                </button>
+                <button class="btn btn-danger" onclick="emergencyStop('{{ ticker }}', '{{ mode }}')">
+                    🚨 Экстренная остановка
+                </button>
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- Logs -->
+        <section class="section">
+            <h2 class="section-title">Логи</h2>
+            <div class="log-viewer" id="log-viewer">
+                <pre id="log-content">Загрузка...</pre>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal" id="confirm-modal">
+        <div class="modal-content">
+            <h3 id="confirm-title">Подтверждение</h3>
+            <p id="confirm-message"></p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-danger" id="confirm-btn">Подтвердить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TICKER = "{{ ticker }}";
+        const MODE = "{{ mode }}";
+        const REFRESH_SEC = {{ refresh_sec }};
+        const CONTROL_ENABLED = {{ 'true' if control_enabled else 'false' }};
+        const CSRF_TOKEN=*** session.csrf_token }}";
+    </script>
+    <script src="/static/ticker.js"></script>
+</body>
+</html>
