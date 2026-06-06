@@ -36,18 +36,18 @@ def emit_signal(signal_type: str, ticker: str) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
-async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: float, initial_tpv: float, safe_calc_res: dict, cycles: int, logger: logging.Logger) -> None:
+async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: Decimal, initial_tpv: Decimal, safe_calc_res: dict, cycles: int, logger: logging.Logger) -> None:
     """Updates and saves the final profit metrics in the state file before a bot exits."""
     try:
-        logger.info(f"🔄 Санитизация состояния перед выходом. Финальный TPV: {total_tpv_final:.4f}")
+        logger.info(f"🔄 Санитизация состояния перед выходом. Финальный TPV: {float(total_tpv_final):.4f}")
 
         # Полное ребазирование метрик под финальное значение TPV
         state.update({
-            "last_tpv": total_tpv_final,
-            "initial_tpv": total_tpv_final,
-            "reference_tpv": total_tpv_final,
-            "tpv_ath": total_tpv_final,
-            "last_profit": total_tpv_final - initial_tpv,
+            "last_tpv": str(total_tpv_final),
+            "initial_tpv": str(total_tpv_final),
+            "reference_tpv": str(total_tpv_final),
+            "tpv_ath": str(total_tpv_final),
+            "last_profit": str(total_tpv_final - initial_tpv),
             "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
             "last_update": time.time(),
             "rebalance_cycles": cycles,
@@ -58,7 +58,7 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
         })
 
         await save_json(state_file_path, state)
-        logger.info(f"✅ Final metrics saved before exit. Last Profit: {state['last_profit']:.2f}")
+        logger.info(f"✅ Final metrics saved before exit. Last Profit: {float(state['last_profit']):.2f}")
     except Exception as e:
         logger.error(f"Error saving final metrics before exit: {e}")
 
@@ -870,7 +870,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         state["trailing_stop_triggered"] = True
 
                     # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
-                    await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                    await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                     # --------------------------------------------------------------------
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
                     return
@@ -938,7 +938,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 await save_json(paper_state_file_path, paper_state)
 
                                 # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
-                                await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                                await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                                 # --------------------------------------------------------------------
 
                                 # Set paper probation timeout (from probation_period_days)
@@ -1010,7 +1010,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 asyncio.create_task(notifier.send_alert("CRITICAL MARGIN", msg))
                                 emit_signal("stop", base_ticker)
                                 # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
-                                await _update_final_metrics_for_exit(state, state_file_path, tpv_total, initial_tpv, calc_res, cycles, logger)
+                                await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                                 # --------------------------------------------------------------------
                                 await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
                                 return
