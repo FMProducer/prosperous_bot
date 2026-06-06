@@ -155,6 +155,39 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
 
     return to_heal_tickers
 
+async def enforce_invariant_gate(connector: BinanceConnector, config: dict):
+    """
+    Гарантия непрерывности данных: никогда не удаляем тикер из live_swarm, если по нему открыта позиция на бирже.
+    Использует Decimal для строгих финансовых расчетов и Dust Guard фильтрацию.
+    """
+    try:
+        raw_positions = await connector.get_positions()
+        if not raw_positions:
+            return
+
+        dust_threshold_usdt = config.get("min_notional_usdt", 5.5)
+        live_swarm = set(config.get("live_swarm", []))
+
+        # Структурируем позиции (учитывая Hedge Mode: LONG и SHORT)
+        for pos_key, pos_data in raw_positions.items():
+            qty = Decimal(str(pos_data.get("qty", "0.0"))).copy_abs()
+            if qty == Decimal("0"):
+                continue
+
+            price = Decimal(str(pos_data.get("mark_price", pos_data.get("entry_price", "0.0"))))
+            notional_value = qty * price
+
+            # Фильтр Dust Guard по USDT номиналу
+            if notional_value >= Decimal(str(dust_threshold_usdt)):
+                ticker = pos_key.split("_")[0]
+                if ticker not in live_swarm:
+                    live_swarm.add(ticker)
+                    logger.warning(f"🛡️ Invariant Protection Gate: Forced retention of {ticker} in live_swarm due to active exposure (${notional_value:.2f} USDT).")
+
+        config["live_swarm"] = sorted(list(live_swarm))
+    except Exception as e:
+        logger.error(f"Failed to verify exchange exposure tracking in Invariant Gate: {e}")
+
 async def reset_bot_state_files(ticker: str, is_paper: bool, config: dict) -> None:
     """
     Сбрасывает файлы состояния к чистым начальным значениям, используя
@@ -765,20 +798,11 @@ async def manage_swarm():
             await start_bot(ticker, is_paper=False, config=config)
             active_running_keys.add(r_key) # Жестко фиксируем запуск локально
 
-    # --- [INVARIANT GATE] ---
-    # Гарантия непрерывности данных: никогда не удаляем тикер из live_swarm, если по нему открыта позиция на бирже
-    try:
-        final_positions = await connector.get_positions()
-        final_active_tickers = {k.split('_')[0] for k in final_positions.keys()}
-        for act_t in final_active_tickers:
-            if act_t not in target_real_bots:
-                target_real_bots.append(act_t)
-                logger.warning(f"🛡️ Invariant Protection Gate: Forced retention of {act_t} in live_swarm due to active exchange exposure.")
-    except Exception as e:
-        logger.error(f"Failed to verify exchange exposure tracking before saving configuration: {e}")
-
-    # 5. Сохранение конфига (НЕ перезаписываем tickers — они задаются вручную в config.json)
+    # 5. Сохранение конфига: СНАЧАЛА пишем целевой пул, ЗАТЕМ прогоняем через Invariant Gate
     config["live_swarm"] = sorted(target_real_bots)
+
+    # --- [INVARIANT GATE] ---
+    await enforce_invariant_gate(connector, config)
     # Safety: if tickers is empty, restore from scanner to avoid losing all tickers
     if not config.get("tickers"):
         fallback = [r['symbol'] for r in scanner_results[:config.get("max_bots", 20)]]
