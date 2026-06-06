@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Dashboard — Flask сервер для мониторинга и управления Prosperous Bot.
+"""Dashboard — Flask сервер для мониторинга и управления Prosperous Bot.
 
 Запуск:
   python dashboard.py                  # Разработка
@@ -174,6 +173,47 @@ def create_app():
     @login_required
     def settings():
         return render_template("settings.html", config=config)
+
+    @app.route("/health")
+    def health():
+        """Health check endpoint for service-watchdog (no auth required)."""
+        now = datetime.now()
+        # Direct PM2 check without data_collector (avoids shell issues)
+        try:
+            result = subprocess.run(
+                "pm2 jlist", shell=True, capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                procs = json.loads(result.stdout)
+                pm2_list = [
+                    {"name": p.get("name", ""), "status": p.get("pm2_env", {}).get("status", "unknown")}
+                    for p in procs
+                ]
+            else:
+                pm2_list = []
+        except Exception:
+            pm2_list = []
+
+        # Check supervisor alive
+        sup = next((p for p in pm2_list if p.get("name") == "supervisor-service"), None)
+        supervisor_ok = sup is not None and sup.get("status") == "online"
+
+        # Check real bots heartbeat (max 1 stale allowed)
+        from data_collector import get_system_overview
+        overview = get_system_overview()
+        stale_count = sum(1 for b in overview.get("real_bots", []) if not b.get("heartbeat_ok", True))
+        bots_ok = stale_count <= 1
+
+        status = "ok" if (supervisor_ok and bots_ok) else "degraded"
+        code = 200 if status == "ok" else 503
+
+        return jsonify({
+            "status": status,
+            "timestamp": now.isoformat(),
+            "supervisor": "online" if supervisor_ok else "offline",
+            "stale_bots": stale_count,
+            "real_bots": len(overview.get("real_bots", [])),
+        }), code
 
     # ─── API endpoints ─────────────────────────────────────────
 

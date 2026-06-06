@@ -71,12 +71,14 @@
   "live_swarm": [
     "INJUSDT"
   ],
-  "use_real_whitelist": false,
-  "real_whitelist": [],
+  "use_real_whitelist": true,
+  "real_whitelist": [
+    "INJUSDT"
+  ],
   "black_list": [],
   "toxic_cooldown_days": 0.021,
   "toxic_blacklist": {
-    "INJUSDT": 1780687973.0829604
+    "HEIUSDT": 1780755563.6568205
   },
   "tickers": [
     "1000SHIBUSDT",

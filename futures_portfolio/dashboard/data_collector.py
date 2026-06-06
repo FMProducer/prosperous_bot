@@ -340,6 +340,7 @@ def _get_pm2_list() -> list:
         result = subprocess.run(
             ["pm2", "jlist"],
             capture_output=True, text=True, timeout=10,
+            shell=True,  # Required on Windows/MSYS
         )
         if result.returncode == 0:
             procs = json.loads(result.stdout)

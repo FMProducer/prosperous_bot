@@ -10,9 +10,9 @@ server:
 
 auth:
   username: "admin"
-  # Пароль по умолчанию: "prosperous2026"
+  # Пароль по умолчанию: "Rebalancer0ID"
   # Для смены: python -c "import bcrypt; print(bcrypt.hashpw(b'NEW_PASSWORD', bcrypt.gensalt()).decode())"
-  password_hash: "$2b$12$LJ3m4ys3Lk0TSHhPOhQE6OQDMwBqXx0Zz0Zz0Zz0Zz0Zz0Zz0Zz0Z"  # Заменить при первом запуске
+  password_hash: "$2b$12$ERMPfIahTMCp8/Z/fU4AjOMCizUy5.xK1/zNPRMVkXpNgtvsyo3yy"  # Заменить при первом запуске
 
 paths:
   project: "C:\\Python\\Prosperous_Bot\\futures_portfolio"
