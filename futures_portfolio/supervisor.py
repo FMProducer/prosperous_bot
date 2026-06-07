@@ -353,9 +353,13 @@ async def selective_merge_incubator(
         score = _calc_rotation_score(t, p, min_cycles)
         scored_old[t] = score
 
+    # Вычищаем карантинных юнитов из старого пула (строгая изоляция)
+    toxic_blacklist = config.get("toxic_blacklist", {})
+    healthy_old_incubator = [t for t in old_incubator if t not in toxic_blacklist]
+
     # 2. Боты с положительным PnL — ВСЕГДА остаются в рое (не подлежат замене)
-    old_set = set(old_incubator)
-    profitable = {t for t in old_incubator if perf_map.get(t, {}).get("profit", 0) > 0}
+    old_set = set(healthy_old_incubator)
+    profitable = {t for t in healthy_old_incubator if perf_map.get(t, {}).get("profit", 0) > 0}
     # Боты с отрицательным PnL — кандидаты на замену (конкурируют с новыми)
     unprofitable = old_set - profitable
 

@@ -936,6 +936,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 paper_state["short_entry_price"] = 0.0
                                 await save_json(paper_state_file_path, paper_state)
 
+                                # Жестко фиксируем смерть по трейлингу для HEAL Guard
+                                state["trailing_stop_triggered"] = True
+
                                 # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
                                 await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                                 # --------------------------------------------------------------------
