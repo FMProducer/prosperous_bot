@@ -51,10 +51,9 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
             "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
             "last_update": time.time(),
             "rebalance_cycles": cycles,
-            # Очистка триггеров скользящего стопа для предотвращения повторного ложного срабатывания
+            # Очистка триггеров скользящего стопа (но сохраняем сам факт срабатывания для супервайзера)
             "trailing_stop_violation_start": 0.0,
-            "trailing_stop_paper_timeout_end": 0.0,
-            "trailing_stop_triggered": False
+            "trailing_stop_paper_timeout_end": 0.0
         })
 
         await save_json(state_file_path, state)
@@ -957,30 +956,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     logger.info(f"Sent STOP signal. Total Equity {tpv_total:.2f} < Global Initial {global_initial:.2f}. Ticker blacklisted.")
                                 else:
                                     # Trailing stop triggered with PROFIT
-                                    # Add to toxic_blacklist directly (not just exit flag)
+                                    # Delegate toxic_blacklist logic entirely to supervisor via IPC signal
                                     emit_signal("exit", base_ticker)
-                                    # Also write to toxic_blacklist in config for cooldown
-                                    try:
-                                        import json as _json
-                                        cfg_path = Path(config_path)
-                                        if cfg_path.exists():
-                                            cfg_data = _json.loads(cfg_path.read_text())
-                                            toxic = cfg_data.get("toxic_blacklist", {})
-                                            cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
-                                            expiry = time.time() + cooldown_days * 86400
-                                            toxic[base_ticker] = expiry
-                                            cfg_data["toxic_blacklist"] = toxic
-                                            # Remove from live_swarm
-                                            live_swarm = cfg_data.get("live_swarm", [])
-                                            if base_ticker in live_swarm:
-                                                live_swarm.remove(base_ticker)
-                                                cfg_data["live_swarm"] = live_swarm
-                                                logger.info(f"❌ {base_ticker} removed from live_swarm")
-                                            cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
-                                            logger.info(f"✅ {base_ticker} added to toxic_blacklist until {time.ctime(expiry)} ({cooldown_days} days)")
-                                    except Exception as e:
-                                        logger.error(f"Failed to add {base_ticker} to toxic_blacklist: {e}")
-                                    logger.info(f"Sent EXIT signal (with toxic). Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}.")
+                                    logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}.")
 
                                 logger.info("Positions closed and state sanitized for supervisor. Bot stopping.")
                                 break
