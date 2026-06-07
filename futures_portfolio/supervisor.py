@@ -121,6 +121,12 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
 
                 # Инвариант легитимности: у бота есть история или открытый виртуальный объем
                 if state_data.get("rebalance_cycles", 0) > 0 or abs(state_data.get("virt_qty", 0.0)) > 0:
+                    # Защита от воскрешения ботов, остановленных по Trailing Stop
+                    if state_data.get("trailing_stop_triggered", False):
+                        logger.warning(f"⚠️ HEAL REJECTED: {ticker} was stopped by Trailing Stop. Scheduling position liquidation.")
+                        to_close_tickers.add(ticker)
+                        continue
+
                     logger.warning(f"🚨 HEAL TRIGGERED: Active position for {ticker} detected on exchange, but PM2 process is dead. Real state file is valid. Initiating recovery...")
                     to_heal_tickers.add(ticker)
                     continue
@@ -460,24 +466,19 @@ async def manage_swarm():
     cooldown_sec = cooldown_days * 86400
 
     if signals_dir.exists():
-        # Собираем тикеры с stop-сигналом (отрицательный PnL → toxic)
-        for flag_file in signals_dir.glob("stop_*.flag"):
-            ticker = flag_file.stem[5:]  # убираем префикс "stop_"
-            expiry = now_ts + cooldown_sec
-            toxic_blacklist[ticker] = expiry
-            logger.info(f"🚫 STOP signal received for {ticker}. Blacklisted until {time.ctime(expiry)}")
+        # Собираем тикеры со stop-сигналом (убыток) и exit-сигналом (прибыль)
+        for flag_prefix in ["stop_", "exit_"]:
+            for flag_file in signals_dir.glob(f"{flag_prefix}*.flag"):
+                ticker = flag_file.stem[len(flag_prefix):]
+                expiry = now_ts + cooldown_sec
+                toxic_blacklist[ticker] = expiry
+                signal_type = "STOP" if flag_prefix == "stop_" else "EXIT"
+                logger.info(f"🚫 {signal_type} signal received for {ticker}. Blacklisted until {time.ctime(expiry)}")
 
-        # Удаляем все прочитанные флаги (stop и exit)
-        for flag_file in signals_dir.glob("stop_*.flag"):
-            try:
-                flag_file.unlink()
-            except Exception:
-                pass
-        for flag_file in signals_dir.glob("exit_*.flag"):
-            try:
-                flag_file.unlink()
-            except Exception:
-                pass
+                try:
+                    flag_file.unlink()
+                except Exception:
+                    pass
 
         # Prune expired entries from toxic_blacklist
         toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now_ts}
