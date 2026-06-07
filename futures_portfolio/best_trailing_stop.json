@@ -1,0 +1,323 @@
+{
+  "config": {
+    "tickers_count": 50,
+    "days": 3.0,
+    "max_drawdown_limit": 100.0
+  },
+  "trials_total": 300,
+  "trials_completed": 180,
+  "elapsed_sec": 345.2,
+  "avg_profit_pct": 40.0485,
+  "avg_max_dd_pct": 2.23,
+  "worst_max_dd_pct": 5.9,
+  "profit_factor": 17.988,
+  "profitable_tickers": "50/50",
+  "trailing_stop_pct": 2.0,
+  "params": {
+    "equity_trailing_stop_pct": 4.0,
+    "equity_trailing_stop_activation_pct": 4.0,
+    "equity_trailing_stop_timeout_sec": 20
+  },
+  "per_ticker": {
+    "HIGHUSDT": {
+      "profit": 40.30563641146785,
+      "max_dd": 1.6735555410010947,
+      "trailing_stop": false,
+      "cycles": 17
+    },
+    "BANUSDT": {
+      "profit": 43.02577621642227,
+      "max_dd": 5.903975757846539,
+      "trailing_stop": false,
+      "cycles": 13
+    },
+    "ENAUSDT": {
+      "profit": 41.031179032344035,
+      "max_dd": 2.1482916834912062,
+      "trailing_stop": false,
+      "cycles": 13
+    },
+    "COSUSDT": {
+      "profit": 40.744381446635636,
+      "max_dd": 2.849469809620395,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "NFPUSDT": {
+      "profit": 39.70889133978795,
+      "max_dd": 1.7815919931351027,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "XLMUSDT": {
+      "profit": 40.426959913234754,
+      "max_dd": 2.2636274658976836,
+      "trailing_stop": false,
+      "cycles": 11
+    },
+    "VVVUSDT": {
+      "profit": 39.753442841233834,
+      "max_dd": 2.3619738693790584,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "NILUSDT": {
+      "profit": 40.76609902076027,
+      "max_dd": 4.045945843466609,
+      "trailing_stop": false,
+      "cycles": 13
+    },
+    "RIFUSDT": {
+      "profit": 41.48440351361846,
+      "max_dd": 3.137930590483399,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "IOUSDT": {
+      "profit": 39.83225608316418,
+      "max_dd": 1.8194232773106402,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "JELLYJELLYUSDT": {
+      "profit": 39.562455069418064,
+      "max_dd": 0.01249725331226478,
+      "trailing_stop": false,
+      "cycles": 1
+    },
+    "NEARUSDT": {
+      "profit": 40.04465294220072,
+      "max_dd": 1.825473411560339,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "PLUMEUSDT": {
+      "profit": 39.74161671837493,
+      "max_dd": 1.6870327528132656,
+      "trailing_stop": false,
+      "cycles": 3
+    },
+    "CATIUSDT": {
+      "profit": 38.2499494718074,
+      "max_dd": 1.7620325574314615,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "DUSDT": {
+      "profit": 40.611028981538496,
+      "max_dd": 2.9945760518928153,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "HFTUSDT": {
+      "profit": 40.10240266630674,
+      "max_dd": 1.8492484488074903,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "DRIFTUSDT": {
+      "profit": 39.56252541239535,
+      "max_dd": 0.012448680331111645,
+      "trailing_stop": false,
+      "cycles": 1
+    },
+    "HMSTRUSDT": {
+      "profit": 41.16799715605852,
+      "max_dd": 3.3254403234651617,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "ARKMUSDT": {
+      "profit": 40.09649154837045,
+      "max_dd": 1.6626000379344839,
+      "trailing_stop": false,
+      "cycles": 11
+    },
+    "DYDXUSDT": {
+      "profit": 40.15418496283705,
+      "max_dd": 1.7400808114766495,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "PUNDIXUSDT": {
+      "profit": 40.19365441834435,
+      "max_dd": 1.7032541420406084,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "DEXEUSDT": {
+      "profit": 39.561416891883304,
+      "max_dd": 0.012495643244275038,
+      "trailing_stop": false,
+      "cycles": 1
+    },
+    "APEUSDT": {
+      "profit": 40.54164121700232,
+      "max_dd": 2.4462718280053455,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "WALUSDT": {
+      "profit": 39.61835918735708,
+      "max_dd": 2.540216524392787,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "ARCUSDT": {
+      "profit": 39.56245474133713,
+      "max_dd": 0.012493859189124,
+      "trailing_stop": false,
+      "cycles": 1
+    },
+    "VICUSDT": {
+      "profit": 38.834406079119454,
+      "max_dd": 2.6803716766886447,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "DOGSUSDT": {
+      "profit": 39.95454502186855,
+      "max_dd": 1.8128633451310858,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "ONTUSDT": {
+      "profit": 39.55878976570011,
+      "max_dd": 1.9340104923086507,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "MBOXUSDT": {
+      "profit": 40.77706599756876,
+      "max_dd": 3.537385676437309,
+      "trailing_stop": false,
+      "cycles": 17
+    },
+    "INJUSDT": {
+      "profit": 39.438407143239516,
+      "max_dd": 2.1332553875966735,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "LQTYUSDT": {
+      "profit": 41.05112697268281,
+      "max_dd": 3.1959212440249645,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "SUSHIUSDT": {
+      "profit": 40.5021796452337,
+      "max_dd": 2.0771613478873023,
+      "trailing_stop": false,
+      "cycles": 13
+    },
+    "IOTAUSDT": {
+      "profit": 40.438502310917656,
+      "max_dd": 1.9118541708231036,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "ALCHUSDT": {
+      "profit": 40.154520960441275,
+      "max_dd": 1.953752558547056,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "MUBARAKUSDT": {
+      "profit": 39.976433233023556,
+      "max_dd": 1.7032663492434792,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "AGLDUSDT": {
+      "profit": 39.49648077626002,
+      "max_dd": 2.721400285873577,
+      "trailing_stop": false,
+      "cycles": 11
+    },
+    "SKLUSDT": {
+      "profit": 39.969434037115214,
+      "max_dd": 2.4365926658573582,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "ICPUSDT": {
+      "profit": 39.743822959313,
+      "max_dd": 1.7818117207712858,
+      "trailing_stop": false,
+      "cycles": 11
+    },
+    "ACTUSDT": {
+      "profit": 40.647228992019954,
+      "max_dd": 2.1977838402271965,
+      "trailing_stop": false,
+      "cycles": 17
+    },
+    "SAGAUSDT": {
+      "profit": 39.53425234371335,
+      "max_dd": 1.828094165766108,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "PNUTUSDT": {
+      "profit": 40.28232701580112,
+      "max_dd": 2.337302690602035,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "DYMUSDT": {
+      "profit": 40.27121184398113,
+      "max_dd": 2.884024232248828,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "CHZUSDT": {
+      "profit": 39.106810762561835,
+      "max_dd": 1.9209718811219925,
+      "trailing_stop": false,
+      "cycles": 5
+    },
+    "DEEPUSDT": {
+      "profit": 39.93691742311511,
+      "max_dd": 1.9150437177195,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "SIRENUSDT": {
+      "profit": 34.193852521343175,
+      "max_dd": 4.170914523086735,
+      "trailing_stop": true,
+      "cycles": 6
+    },
+    "BOMEUSDT": {
+      "profit": 40.352390292728614,
+      "max_dd": 2.3307635771365054,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "ATHUSDT": {
+      "profit": 40.220961965431144,
+      "max_dd": 1.8527555225131518,
+      "trailing_stop": false,
+      "cycles": 7
+    },
+    "WUSDT": {
+      "profit": 40.36324291128257,
+      "max_dd": 2.419392116308165,
+      "trailing_stop": false,
+      "cycles": 13
+    },
+    "OPUSDT": {
+      "profit": 40.84804556892918,
+      "max_dd": 2.846579102163229,
+      "trailing_stop": false,
+      "cycles": 9
+    },
+    "AXLUSDT": {
+      "profit": 40.92086800208552,
+      "max_dd": 3.1653195741332163,
+      "trailing_stop": false,
+      "cycles": 7
+    }
+  }
+}

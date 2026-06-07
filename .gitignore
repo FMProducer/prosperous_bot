@@ -320,3 +320,4 @@ futures_portfolio/config.json
 futures_portfolio/best_takeprofit_stop.json
 futures_portfolio/history/real_state_*USDT.json.*_*
 futures_portfolio/history/shadow_state_*USDT.json.*_*
+futures_portfolio/docs/backtests_*.md

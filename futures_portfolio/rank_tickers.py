@@ -39,7 +39,7 @@ class TickerRanker:
         # Ожидается MultiIndex DataFrame (ticker, datetime) строго с колонками OHLCV
         self.df = multi_df[['open', 'high', 'low', 'close', 'volume']]
 
-    def calculate_metrics(self, threshold: float = 0.01) -> pd.DataFrame:
+    def calculate_metrics(self, threshold: float = 0.005) -> pd.DataFrame:
         # Векторизованный расчет по cross-section
         grouped = self.df.groupby(level='ticker')
 
@@ -93,7 +93,7 @@ def run_ranker_task(multi_df: pd.DataFrame, threshold: float):
     return metrics_df
 
 class TickerScanner:
-    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.01, scanner_period_days: float = 1.0):
+    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.005, scanner_period_days: float = 1.0):
         self.base_url = "https://fapi.binance.com"
         self.rebalance_threshold = rebalance_threshold
         self.scanner_period_days = scanner_period_days
@@ -213,7 +213,7 @@ async def main(quiet=False, min_volume=20_000_000):
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
-                threshold = 0.01
+                threshold = 0.005
                 scanner_period_days = cfg.get("scanner_period_days", 1.0)
     except: pass
 

@@ -25,7 +25,7 @@ async def main():
             data_dir=data_dir,
             ticker_override=ticker,
             live_mode=True,
-            days=30.0,
+            days=3.0,
             quiet=True
             )
             if res:
