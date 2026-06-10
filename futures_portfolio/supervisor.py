@@ -125,6 +125,18 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
                     if state_data.get("trailing_stop_triggered", False):
                         logger.warning(f"⚠️ HEAL REJECTED: {ticker} was stopped by Trailing Stop. Scheduling position liquidation.")
                         to_close_tickers.add(ticker)
+
+                        # Сброс TS флагов для будущего чистого старта
+                        try:
+                            state_data["trailing_stop_triggered"] = False
+                            state_data["trailing_stop_violation_start"] = 0.0
+                            state_data["trailing_stop_paper_timeout_end"] = 0.0
+                            with open(state_path, "w", encoding="utf-8") as f:
+                                json.dump(state_data, f, indent=2, ensure_ascii=False)
+                            logger.info(f"🔄 TS flags reset in state file for {ticker}")
+                        except Exception as e:
+                            logger.error(f"Failed to reset TS flags for {ticker}: {e}")
+
                         continue
 
                     logger.warning(f"🚨 HEAL TRIGGERED: Active position for {ticker} detected on exchange, but PM2 process is dead. Real state file is valid. Initiating recovery...")
