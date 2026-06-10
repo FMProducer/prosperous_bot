@@ -301,6 +301,7 @@ class PortfolioExecutor:
     async def execute_rebalance(self, action: Dict[str, Any], price: float, step_size: float, limit_order: bool = True, portfolio_cfg: Optional[Dict[str, Any]] = None) -> bool:
         """
         Совместимость со старым кодом: выполнение одного действия ребалансировки.
+        B7 FIX: Используем mid_price для конвертации qty.
         """
         symbol = action["symbol"]
 
@@ -313,9 +314,17 @@ class PortfolioExecutor:
             pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
 
         diff_usdt = Decimal(str(action["diff_usdt"]))
-        dec_price = Decimal(str(price))
+        # B7 FIX: Получаем mid_price для симметричного qty
+        try:
+            order_book = await self.connector.get_order_book(base_symbol, limit=5)
+            best_bid = Decimal(str(order_book["bids"][0][0]))
+            best_ask = Decimal(str(order_book["asks"][0][0]))
+            qty_price = (best_bid + best_ask) / Decimal('2')
+        except Exception as e:
+            logger.warning(f"⚠️ B7 FIX: Failed to get order_book for {base_symbol}: {e}. Falling back to mark price.")
+            qty_price = Decimal(str(price))
         side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-        order_qty = abs(diff_usdt / dec_price)
+        order_qty = abs(diff_usdt / qty_price)
         reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
 
         min_notional = Decimal(str(portfolio_cfg.get("min_notional_usdt", 6.0))) if portfolio_cfg else Decimal('6.0')
@@ -326,18 +335,20 @@ class PortfolioExecutor:
             res = await self.execute_limit_with_fallback(
                 symbol=base_symbol, qty=order_qty, side=side, step_size=dec_step_size,
                 reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
-                timeout_sec=limit_timeout, min_notional=min_notional, price=dec_price
+                timeout_sec=limit_timeout, min_notional=min_notional, price=qty_price
             )
         else:
             res = await self.execute_market_order(
                 symbol=base_symbol, qty=order_qty, side=side, step_size=dec_step_size,
-                reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
+                reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=qty_price
             )
 
         return res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]
 
-    async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None) -> Dict[str, Any]:
-        """Внутренний метод для выполнения одного действия (для gather)."""
+    async def _execute_single_action(self, action: Dict[str, Any], price: float, paper_mode: bool, portfolio_cfg: Dict[str, Any], step_sizes: Dict[str, float], paper_state: Optional[Dict] = None, mid_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
+        """Внутренний метод для выполнения одного действия (для gather).
+        B7 FIX: mid_prices — dict {base_symbol: mid_price} для симметричного qty.
+        """
         if action["type"] == "VIRTUAL_ORDER":
             diff_usdt = action["diff_usdt"]
             side = "BUY" if diff_usdt > 0 else "SELL"
@@ -354,21 +365,27 @@ class PortfolioExecutor:
         pos_side = action.get("position_side")
 
         if not base_symbol or not pos_side:
-            symbol_parts = symbol.split('_')
+            symbol_parts = symbol.split("_")
             base_symbol = symbol_parts[0]
             pos_side = symbol_parts[1] if len(symbol_parts) > 1 else "LONG"
 
         diff_usdt = Decimal(str(action["diff_usdt"]))
-        dec_price = Decimal(str(price))
+        # B7 FIX: Используем mid_price для конвертации qty, если доступен
+        # Это обеспечивает симметричный qty для LONG и SHORT
+        if mid_prices and base_symbol in mid_prices:
+            qty_price = mid_prices[base_symbol]
+        else:
+            qty_price = Decimal(str(price))
         side = ("BUY" if diff_usdt > 0 else "SELL") if pos_side == "LONG" else ("SELL" if diff_usdt > 0 else "BUY")
-        order_qty = abs(diff_usdt / dec_price)
+        order_qty = abs(diff_usdt / qty_price)
         reduce_only = (pos_side == "LONG" and side == "SELL") or (pos_side == "SHORT" and side == "BUY")
         step_size = Decimal(str(step_sizes.get(base_symbol, 0.0))) if step_sizes else Decimal('0.0')
         min_notional = Decimal(str(portfolio_cfg.get("min_notional_usdt", 6.0)))
 
         if paper_mode:
             qty_rounded = self.round_quantity(order_qty, step_size)
-            order_value = qty_rounded * dec_price
+            # B7 FIX: Используем qty_price (mid_price) для расчёта order_value
+            order_value = qty_rounded * qty_price
             
             if order_value < min_notional:
                 return {
@@ -397,16 +414,16 @@ class PortfolioExecutor:
                 old_entry = Decimal(str(paper_state.get(entry_key, price)))
                 if reduce_only:
                     if pos_side == "LONG":
-                        trade_pnl = qty_rounded * (dec_price - old_entry)
+                        trade_pnl = qty_rounded * (qty_price - old_entry)
                     else:
-                        trade_pnl = qty_rounded * (old_entry - dec_price)
+                        trade_pnl = qty_rounded * (old_entry - qty_price)
 
             return {
                 "type": pos_side,
                 "symbol": symbol,
                 "side": side,
                 "qty": float(qty_rounded),
-                "price": float(dec_price),
+                "price": float(qty_price),
                 "status": "SUCCESS",
                 "trade_pnl": float(trade_pnl),
                 "commission": float(commission),
@@ -425,13 +442,13 @@ class PortfolioExecutor:
                     res = await self.execute_limit_with_fallback(
                         symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
                         reduce_only=reduce_only, position_side=pos_side, offset_pct=limit_offset,
-                        timeout_sec=limit_timeout, min_notional=min_notional, price=dec_price
+                        timeout_sec=limit_timeout, min_notional=min_notional, price=qty_price
                     )
                 else:
                     # Передаем Decimal напрямую без кастинга во float!
                     res = await self.execute_market_order(
                         symbol=base_symbol, qty=order_qty, side=side, step_size=step_size,
-                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=dec_price
+                        reduce_only=reduce_only, position_side=pos_side, min_notional=min_notional, price=qty_price
                     )
 
                 # Initialize defaults (fixes UnboundLocalError when res status is not SUCCESS)
@@ -441,7 +458,7 @@ class PortfolioExecutor:
                 if res["status"] in ["SUCCESS", "SUCCESS_LIMIT", "SUCCESS_FALLBACK"]:
                     # Берем строго то, что исполнила биржа
                     executed_qty = res.get("executed_qty", Decimal('0.0'))
-                    avg_price = res.get("avg_price", dec_price)
+                    avg_price = res.get("avg_price", qty_price)
                     trade_pnl = res.get("realized_pnl", Decimal('0.0'))
                     commission = res.get("commission", Decimal('0.0'))
 
@@ -469,7 +486,7 @@ class PortfolioExecutor:
                     "symbol": symbol,
                     "side": side,
                     "qty": float(res.get("executed_qty", Decimal('0.0'))),
-                    "price": float(res.get("avg_price", dec_price)),
+                    "price": float(res.get("avg_price", qty_price)),
                     "status": res["status"],
                     "exec_res": res,
                     "reduce_only": reduce_only,
@@ -481,12 +498,34 @@ class PortfolioExecutor:
         """
         Векторизованное (конкурентное) выполнение действий по ребалансировке с принудительным Market-only исполнением.
         SURPLUS-FIRST: Reductions (SELLs) are executed before Expansions (BUYs).
+        B7 FIX: Используем mid_price (bid+ask)/2 для конвертации diff_usdt в qty,
+        чтобы устранить рассинхрон между LONG и SHORT позициями.
         """
         if not actions:
             return []
 
         if portfolio_cfg:
             portfolio_cfg["limit_order_enabled"] = False
+
+        # B7 FIX: Получаем mid_price для всех уникальных символов
+        # Это обеспечивает симметричный qty для LONG и SHORT
+        mid_prices: Dict[str, Decimal] = {}
+        for action in actions:
+            if action.get("type") == "VIRTUAL_ORDER":
+                continue
+            base_symbol = action.get("base_symbol")
+            if not base_symbol:
+                symbol = action.get("symbol", "")
+                base_symbol = symbol.split("_")[0] if "_" in symbol else symbol
+            if base_symbol and base_symbol not in mid_prices:
+                try:
+                    order_book = await self.connector.get_order_book(base_symbol, limit=5)
+                    best_bid = Decimal(str(order_book["bids"][0][0]))
+                    best_ask = Decimal(str(order_book["asks"][0][0]))
+                    mid_prices[base_symbol] = (best_bid + best_ask) / Decimal('2')
+                except Exception as e:
+                    logger.warning(f"⚠️ B7 FIX: Failed to get order_book for {base_symbol}: {e}. Falling back to mark price.")
+                    mid_prices[base_symbol] = Decimal(str(price))
 
         # Surplus-First Doctrine: Execute SELLs (reductions) before BUYs (expansions)
         reductions = [a for a in actions if a.get("is_reduction")]
@@ -502,7 +541,7 @@ class PortfolioExecutor:
             # Map action IDs to their results
             group_action_ids = [id(a) for a in group]
             tasks = [
-                self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state)
+                self._execute_single_action(action, price, paper_mode, portfolio_cfg or {}, step_sizes or {}, paper_state, mid_prices)
                 for action in group
             ]
 

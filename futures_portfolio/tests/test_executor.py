@@ -129,7 +129,7 @@ async def test_execute_actions_surplus_first(executor, mock_connector):
     # Track order of execution by mocking _execute_single_action
     execution_order = []
     
-    async def mock_execute_single_action(action, price, paper_mode, portfolio_cfg, step_sizes, paper_state):
+    async def mock_execute_single_action(action, price, paper_mode, portfolio_cfg, step_sizes, paper_state, mid_prices=None):
         execution_order.append(action["symbol"])
         return {"status": "SUCCESS", "symbol": action["symbol"]}
 
