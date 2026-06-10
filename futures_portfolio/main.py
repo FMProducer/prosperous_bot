@@ -410,11 +410,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     state['reference_tpv'] = initial_cap
                     state['trailing_stop_triggered'] = False
                     state['trailing_stop_violation_start'] = 0.0
-<<<<<<< HEAD
-=======
                     state['trailing_stop_paper_timeout_end'] = 0.0
                     logger.info(f"🔄 TS flags reset: clean start detected (no open positions)")
->>>>>>> 15c10e2cbebc9542144e31a228891c680d0eb582
                     await save_json(state_file_path, state)
         except Exception as e:
             logger.error(f"State Isolation Protocol failed: {e}")
