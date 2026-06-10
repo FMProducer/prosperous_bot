@@ -77,6 +77,9 @@ class BacktestState:
     cycles: int = 0
     skipped_expansions_counter: int = 0
     liquidations_counter: int = 0
+    stops_counter: int = 0
+    cooldown_until_bar: int = 0
+    dormant_capital: Decimal = Decimal('0')
     
     tpv_ath: float = 0.0
     trailing_stop_violation_start: float = 0.0
@@ -221,6 +224,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         trailing_stop_activation_pct: float = config.get("equity_trailing_stop_activation_pct", 0.0)
         trailing_stop_timeout_sec: int = int(config.get("equity_trailing_stop_timeout_sec", 0))
         min_notional_usdt: Decimal = Decimal(str(config.get("min_notional_usdt", 6.0)))
+        toxic_cooldown_days: float = config.get("toxic_cooldown_days", 0.02)
+        cooldown_bars_duration: int = int(toxic_cooldown_days * 1440)
         
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
         step_sizes = {base_ticker: 0.001}
@@ -260,6 +265,40 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
         for i in range(len(df)):
             mid_price = Decimal(str(close_prices[i]))
+
+            # --- 1.5 Cooldown & Rebase Logic ---
+            if i < state.cooldown_until_bar:
+                state.history.append(float(state.dormant_capital))
+                continue
+
+            if i == state.cooldown_until_bar and state.cooldown_until_bar > 0:
+                if state.dormant_capital < Decimal('5.0'):
+                    logger.critical(f"Bar {i}: Capital too low to restart ({state.dormant_capital:.2f}). Backtest effectively dead.")
+                    state.cooldown_until_bar = len(df) + 1  # Dead forever
+                    state.history.append(float(state.dormant_capital))
+                    continue
+
+                logger.info(f"Bar {i}: Cooldown finished. Reviving bot. Rebased capital: {state.dormant_capital:.2f}")
+                state.initial_capital = state.dormant_capital
+                state.val_cash = state.dormant_capital
+                state.pos_long = Decimal('0')
+                state.pos_short = Decimal('0')
+                state.virt_qty = Decimal('0')
+                state.virt_debt = Decimal('0')
+                state.long_entry_price = Decimal('0')
+                state.short_entry_price = Decimal('0')
+                state.siphoning_reserve = Decimal('0')
+                state.tpv_ath = float(state.dormant_capital)
+                state.trailing_stop_violation_start = 0.0
+                state.trailing_stop_triggered = False
+                state.last_rebalance_price = mid_price
+
+                # Re-init virtual leg
+                target_v_share = Decimal(str(targets["VIRTUAL"]["share"]))
+                virt_cost = target_v_share * state.initial_capital
+                state.virt_qty = virt_cost / mid_price
+                state.virt_debt = virt_cost
+                state.cooldown_until_bar = 0
 
             # --- 2. Portfolio Calculation ---
             margin_long_current = (state.pos_long * state.long_entry_price) / l_lev if state.pos_long > 0 else Decimal('0')
@@ -453,6 +492,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         state.short_entry_price = Decimal('0')
 
                     state.liquidations_counter += 1
+                    state.dormant_capital = Decimal(str(state.get_tpv_fast(float(mid_price)) + float(state.siphoning_reserve)))
+                    state.cooldown_until_bar = i + cooldown_bars_duration
+                    logger.warning(f"Bar {i}: Entering {toxic_cooldown_days}d cooldown after Predictive Liquidation.")
+                    state.history.append(float(state.dormant_capital))
+                    continue
                 elif cross_liq_dist_pct <= liq_distance_warn_pct:
                     logger.debug(f"Bar {i}: CROSS Liquidation Warning! Distance={float(cross_liq_dist_pct):.1f}%")
 
@@ -481,6 +525,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     state.pos_short = Decimal('0')
                     state.short_entry_price = Decimal('0')
                     state.liquidations_counter += 1
+                    state.dormant_capital = Decimal(str(state.account_free_margin + float(state.siphoning_reserve)))
+                    state.cooldown_until_bar = i + cooldown_bars_duration
+                    logger.warning(f"Bar {i}: Entering {toxic_cooldown_days}d cooldown after HARD Liquidation.")
+                    state.history.append(float(state.dormant_capital))
+                    continue
 
             # --- 4. SAFE Siphoning ---
             tpv_f = state.get_tpv_fast(float(mid_price))
@@ -513,10 +562,13 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         elapsed_bars = i - int(state.trailing_stop_violation_start)
                         timeout_bars = max(1, trailing_stop_timeout_sec // 60)
                         if elapsed_bars >= timeout_bars:
-                            logger.warning(f"Bar {i}: Trailing Stop triggered. Stopping backtest.")
+                            logger.warning(f"Bar {i}: Trailing Stop triggered. Entering {toxic_cooldown_days}d cooldown.")
                             state.trailing_stop_triggered = True
-                            state.history.append(float(total_tpv_with_reserve))
-                            break
+                            state.stops_counter += 1
+                            state.dormant_capital = Decimal(str(total_tpv_with_reserve))
+                            state.cooldown_until_bar = i + cooldown_bars_duration
+                            state.history.append(float(state.dormant_capital))
+                            continue
 
             # --- 5. Проверка математического инварианта ---
             virtual_equity = (state.virt_qty * mid_price) - state.virt_debt
@@ -537,9 +589,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
             logger.info(f"Remained Account Free Margin: {state.account_free_margin:.2f} USDT")
-            logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Total Liquidations/Stops: {state.liquidations_counter}")
-            if state.trailing_stop_triggered:
-                logger.info(f"*** TRAILING STOP TRIGGERED ***")
+            logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Stops: {state.stops_counter} | Liqs: {state.liquidations_counter}")
             if sim:
                 s = sim.get_summary()
                 logger.info(f"Market Orders: {s['filled']}/{s['attempted']} filled")
@@ -552,7 +602,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "siphoning_reserve": float(state.siphoning_reserve),
             "skipped_expansions": int(state.skipped_expansions_counter),
             "liquidations": int(state.liquidations_counter),
-            "trailing_stop_triggered": state.trailing_stop_triggered,
+            "trailing_stops": int(state.stops_counter),
+            "trailing_stop_triggered": state.stops_counter > 0,
             "trend_guard_blocks": int(tg_blocked_count)
         }
     except Exception as e:
