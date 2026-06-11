@@ -177,10 +177,15 @@ class PortfolioCalculator:
             current_share = shares[key]
             diff_share = current_share - target_share # Positive if surplus (actual > target)
             
+            # DEBUG: Log exact mathematical state before filters
+            logger.debug(f"[{key}] EVAL: price={float(self.price):.6g}, target={float(target_share):.4f}, current={float(current_share):.4f}, diff_share={float(diff_share):+.5f}")
+
             if not ignore_limits:
                 if diff_share > 0 and abs(diff_share) < dec_threshold_surplus:
+                    logger.debug(f"[{key}] SKIP: Surplus diff {float(abs(diff_share)):.5f} < {float(dec_threshold_surplus):.5f}")
                     continue
                 elif diff_share < 0 and abs(diff_share) < dec_threshold_deficit:
+                    logger.debug(f"[{key}] SKIP: Deficit diff {float(abs(diff_share)):.5f} < {float(dec_threshold_deficit):.5f}")
                     continue
 
             # Calculate theoretical diff_usdt
@@ -246,7 +251,7 @@ class PortfolioCalculator:
                 final_actions.append(act)
                 total_proceeds += abs(Decimal(str(act["diff_equity"])))
             else:
-                logger.debug(f"🚫 FUSE (SURPLUS): {act['key']} blocked. Price {self.price:.6g} vs Limit {limit_price:.6g}")
+                logger.debug(f"🚫 FUSE (SURPLUS): {act['key']} blocked. Price {float(self.price):.6g} vs Limit {float(limit_price):.6g} (last_reb: {float(last_reb):.6g})")
 
         # 3. Calculate available funds for BUYs (Strict Cash Accounting)
         # Use only bot's internal cash (val_cash = TPV - positions).

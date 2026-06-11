@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import logging
+import sys
 from typing import Dict, List, Any, Tuple
 from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
@@ -31,7 +32,7 @@ THRESHOLD_PAIRS: List[Tuple[float, float]] = [
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("Optimizer")
 
-def run_backtest_sync(config_path: str, data_dir: str, ticker: str, threshold_surplus: float, threshold_deficit: float, days: float = 0.125):
+def run_backtest_sync(config_path: str, data_dir: str, ticker: str, threshold_surplus: float, threshold_deficit: float, days: float = 0.125, quiet: bool = True):
     """Sync wrapper to run backtest in a separate process with asymmetric thresholds."""
     try:
         return asyncio.run(run_backtest(
@@ -42,7 +43,7 @@ def run_backtest_sync(config_path: str, data_dir: str, ticker: str, threshold_su
             threshold_surplus_override=threshold_surplus,
             threshold_deficit_override=threshold_deficit,
             days=days,
-            quiet=True
+            quiet=quiet
         ))
     except Exception as e:
         return None
@@ -52,6 +53,8 @@ async def main():
     parser = argparse.ArgumentParser(description="Asymmetric threshold optimizer")
     parser.add_argument("--days", type=float, default=0.125,
                         help="Lookback window in days (default: 0.125 = 3 hours)")
+    parser.add_argument("--debug-ticker", type=str, default=None,
+                        help="Target specific ticker for deep logging to optimization_debug.log")
     parser.add_argument("--config", default="config.json")
     args = parser.parse_args()
 
@@ -67,6 +70,21 @@ async def main():
     if not all_tickers:
         logger.error("No tickers found in config.")
         return
+
+    if args.debug_ticker:
+        # Setup deep debug logging to file
+        fh = logging.FileHandler('optimization_debug.log', mode='w')
+        formatter = logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s')
+        fh.setFormatter(formatter)
+
+        for log_name in ["Optimizer", "Backtest", "calculator"]:
+            l = logging.getLogger(log_name)
+            l.setLevel(logging.DEBUG)
+            l.addHandler(fh)
+
+        logger.info(f"DEBUG MODE ENABLED FOR {args.debug_ticker}. Writing to optimization_debug.log")
+        tickers = [args.debug_ticker]
+        all_tickers = tickers
 
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     
@@ -101,32 +119,57 @@ async def main():
     # Results: (surplus, deficit) -> {avg_profit, avg_cycles}
     results_map: Dict[Tuple[float, float], Dict[str, float]] = {}
 
-    with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8)) as executor:
-        loop = asyncio.get_running_loop()
-        
+    if args.debug_ticker:
+        # Single-threaded execution for clean logs
         for t_surplus, t_deficit in THRESHOLD_PAIRS:
-            logger.info(f"Testing thresholds: surplus={t_surplus:.3f}, deficit={t_deficit:.3f}...")
-            
-            tasks = [
-                loop.run_in_executor(executor, run_backtest_sync, config_path, data_dir, ticker, t_surplus, t_deficit, args.days)
-                for ticker in tickers
-            ]
-            
-            ticker_results = [res for res in await asyncio.gather(*tasks) if res]
-            
-            if ticker_results:
-                avg_profit = sum(res["profit_pct"] for res in ticker_results) / len(ticker_results)
-                avg_cycles = sum(res["cycles"] for res in ticker_results) / len(ticker_results)
-                max_dd = max(res['max_dd_pct'] for res in ticker_results)
-                
+            logger.info(f"--- DEBUG RUN: surplus={t_surplus:.3f}, deficit={t_deficit:.3f} ---")
+            res = await run_backtest(
+                config_path=config_path,
+                data_dir=data_dir,
+                live_mode=False,
+                ticker_override=args.debug_ticker,
+                threshold_surplus_override=t_surplus,
+                threshold_deficit_override=t_deficit,
+                days=args.days,
+                quiet=False
+            )
+            if res:
                 results_map[(t_surplus, t_deficit)] = {
-                    "profit": avg_profit,
-                    "cycles": avg_cycles,
-                    "max_dd": max_dd
+                    "profit": res["profit_pct"],
+                    "cycles": res["cycles"],
+                    "max_dd": res["max_dd_pct"]
                 }
-                logger.info(f"  Result -> Avg Profit: {avg_profit:+.4f}% | Avg Cycles: {avg_cycles:.1f} | Max DD: {max_dd:.2f}%")
-            else:
-                logger.warning(f"  No valid results for thresholds ({t_surplus}, {t_deficit})")
+                logger.info(f"  Result -> Profit: {res['profit_pct']:+.4f}% | Cycles: {res['cycles']} | Max DD: {res['max_dd_pct']:.2f}%")
+
+        logger.info("Debug run complete. Check optimization_debug.log.")
+        sys.exit(0)
+    else:
+        with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 8)) as executor:
+            loop = asyncio.get_running_loop()
+
+            for t_surplus, t_deficit in THRESHOLD_PAIRS:
+                logger.info(f"Testing thresholds: surplus={t_surplus:.3f}, deficit={t_deficit:.3f}...")
+
+                tasks = [
+                    loop.run_in_executor(executor, run_backtest_sync, config_path, data_dir, ticker, t_surplus, t_deficit, args.days)
+                    for ticker in tickers
+                ]
+
+                ticker_results = [res for res in await asyncio.gather(*tasks) if res]
+
+                if ticker_results:
+                    avg_profit = sum(res["profit_pct"] for res in ticker_results) / len(ticker_results)
+                    avg_cycles = sum(res["cycles"] for res in ticker_results) / len(ticker_results)
+                    max_dd = max(res['max_dd_pct'] for res in ticker_results)
+
+                    results_map[(t_surplus, t_deficit)] = {
+                        "profit": avg_profit,
+                        "cycles": avg_cycles,
+                        "max_dd": max_dd
+                    }
+                    logger.info(f"  Result -> Avg Profit: {avg_profit:+.4f}% | Avg Cycles: {avg_cycles:.1f} | Max DD: {max_dd:.2f}%")
+                else:
+                    logger.warning(f"  No valid results for thresholds ({t_surplus}, {t_deficit})")
 
     if not results_map:
         logger.error("Optimization failed: no results collected.")
