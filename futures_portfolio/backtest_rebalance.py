@@ -562,39 +562,11 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         elapsed_bars = i - int(state.trailing_stop_violation_start)
                         timeout_bars = max(1, trailing_stop_timeout_sec // 60)
                         if elapsed_bars >= timeout_bars:
-                            logger.warning(f"Bar {i}: Trailing Stop triggered. Executing terminal market close.")
+                            logger.warning(f"Bar {i}: Trailing Stop triggered. Entering {toxic_cooldown_days}d cooldown.")
                             state.trailing_stop_triggered = True
                             state.stops_counter += 1
-
-                            # Terminal Liquidation
-                            if state.pos_long > 0:
-                                exec_p, comm = sim.simulate_market_execution("SELL", state.pos_long, mid_price)
-                                realized_pnl = state.pos_long * (exec_p - state.long_entry_price)
-                                released_margin = (state.pos_long * state.long_entry_price) / l_lev
-                                state.val_cash += released_margin + realized_pnl - comm
-                                state.pos_long = Decimal('0')
-                                state.long_entry_price = Decimal('0')
-
-                            if state.pos_short > 0:
-                                exec_p, comm = sim.simulate_market_execution("BUY", state.pos_short, mid_price)
-                                realized_pnl = state.pos_short * (state.short_entry_price - exec_p)
-                                released_margin = (state.pos_short * state.short_entry_price) / s_lev
-                                state.val_cash += released_margin + realized_pnl - comm
-                                state.pos_short = Decimal('0')
-                                state.short_entry_price = Decimal('0')
-
-                            if state.virt_qty > 0:
-                                exec_p, comm = sim.simulate_market_execution("SELL", state.virt_qty, mid_price)
-                                v_entry_price = (state.virt_debt / state.virt_qty) if state.virt_qty > 0 else exec_p
-                                allocated_debt_reduction = state.virt_qty * v_entry_price
-                                realized_pnl = state.virt_qty * (exec_p - v_entry_price)
-                                state.val_cash += allocated_debt_reduction + realized_pnl - comm
-                                state.virt_qty = Decimal('0')
-                                state.virt_debt = Decimal('0')
-
-                            final_tpv = float(state.val_cash) + float(state.siphoning_reserve)
-                            state.dormant_capital = Decimal(str(final_tpv))
-                            state.cooldown_until_bar = len(df) + 1  # Dead forever
+                            state.dormant_capital = Decimal(str(total_tpv_with_reserve))
+                            state.cooldown_until_bar = i + cooldown_bars_duration
                             state.history.append(float(state.dormant_capital))
                             continue
 
