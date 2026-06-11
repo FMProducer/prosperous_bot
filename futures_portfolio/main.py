@@ -30,7 +30,9 @@ def sync_read_json(path: str) -> Dict:
 
 def emit_signal(signal_type: str, ticker: str) -> None:
     """Создает пустой файл-флаг для супервайзера."""
-    sig_path = Path("signals") / f"{signal_type}_{ticker}.flag"
+    sig_dir = Path("signals")
+    sig_dir.mkdir(exist_ok=True)
+    sig_path = sig_dir / f"{signal_type}_{ticker}.flag"
     try:
         sig_path.touch(exist_ok=True)
     except Exception as e:
@@ -494,6 +496,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             paper_state_dirty = False
             any_success = False
             try:
+                # Failsafe: if restarted by PM2 with triggered state, exit immediately
+                if state.get("trailing_stop_triggered", False):
+                    logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Entering deep sleep to prevent PM2 restart loop.")
+                    while True: await asyncio.sleep(86400)
+
                 # Dynamic config reload
                 try:
                     current_mtime = os.path.getmtime(config_path)
@@ -876,7 +883,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                     # --------------------------------------------------------------------
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
-                    return
+                    while True: await asyncio.sleep(86400)
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
                     tpv_ath = tpv_total
@@ -967,8 +974,15 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                     emit_signal("exit", base_ticker)
                                     logger.info(f"Sent EXIT signal. Total Equity {tpv_total:.2f} >= Global Initial {global_initial:.2f}.")
 
-                                logger.info("Positions closed and state sanitized for supervisor. Bot stopping.")
-                                break
+                                # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
+                                await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
+                                # --------------------------------------------------------------------
+
+                                # TERMINAL ACTION: Execute emergency liquidation immediately to prevent race condition with supervisor
+                                logger.critical(f"Initiating synchronous emergency liquidation for {base_ticker}...")
+                                # Close positions on exchange, preserve internal state for supervisor review
+                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                                while True: await asyncio.sleep(86400)
                             else:
                                 # Timeout not yet reached — still pending
                                 if i % 5 == 0:
@@ -981,9 +995,8 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 # Check if trailing stop was previously triggered (one-shot)
                 if state.get("trailing_stop_triggered", False):
-                    logger.info(f"Trailing Stop already triggered for {base_ticker}. Skipping trailing stop check.")
-                    # Skip to next iteration — bot should be stopped by supervisor
-                    # But we still need to check margin
+                    logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Entering deep sleep to prevent PM2 restart loop.")
+                    while True: await asyncio.sleep(86400)
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):
                     try:
@@ -998,7 +1011,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                                 # --------------------------------------------------------------------
                                 await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
-                                return
+                                while True: await asyncio.sleep(86400)
                             elif m_ratio < portfolio_cfg.get("margin_ratio_warning", 5.0):
                                 msg = f"Low margin ratio: {m_ratio:.2f}"
                                 logger.warning(msg)
@@ -1352,13 +1365,13 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             await _handle_liquidation_recovery(connector, base_ticker, state, state_file_path,
                                                                 paper_state, paper_state_file_path,
                                                                 config_path, logger, notifier)
-                            return
+                            while True: await asyncio.sleep(86400)
                         if expected_short != 0 and not has_short:
                             logger.error(f"🚨 LIQUIDATION DETECTED: {base_ticker}_SHORT is MISSING on exchange!")
                             await _handle_liquidation_recovery(connector, base_ticker, state, state_file_path,
                                                                 paper_state, paper_state_file_path,
                                                                 config_path, logger, notifier)
-                            return
+                            while True: await asyncio.sleep(86400)
                     except Exception as e:
                         logger.warning(f"Liquidation guard check failed: {e}")
 
