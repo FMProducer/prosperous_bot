@@ -58,12 +58,12 @@
         "trend_min_move_pct": 0.7,
         "trend_eff_threshold": 0.35
       },
-      "rebalance_threshold_surplus": 0.011,
-      "rebalance_threshold_deficit": 0.011,
+      "rebalance_threshold_surplus": 0.025,
+      "rebalance_threshold_deficit": 0.05,
       "ticker_thresholds": {
         "BTCUSDT": {
-          "surplus": 0.011,
-          "deficit": 0.011
+          "surplus": 0.025,
+          "deficit": 0.05
         }
       }
     }

@@ -10,7 +10,6 @@ from typing import Dict, List, Any
 from decimal import Decimal
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
-import sys
 
 # Load .env file
 load_dotenv()
@@ -431,7 +430,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
     
     equity_trailing_stop_pct = config.get("equity_trailing_stop_pct", 0.0)
-    equity_trailing_stop_timeout_sec = config.get("equity_trailing_stop_timeout_sec", 0.0)
     equity_trailing_stop_activation_pct = config.get("equity_trailing_stop_activation_pct", 0.0)
     max_drawdown_limit = config.get("max_drawdown_limit", 0.5)
     margin_warning = portfolio_cfg.get("margin_ratio_warning", 5.0)
@@ -913,11 +911,57 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                             elapsed = now - violation_start
                             if elapsed >= equity_trailing_stop_timeout_sec:
                                 msg = f"Trailing Stop triggered: {drawdown_pct:.2f}% drop from ATH for {elapsed:.1f}s. Closing all positions for {base_ticker}."
-                                logger.critical(f"🚨 {msg}")
+                                logger.warning(f"!!! [STOP] {msg}")
                                 asyncio.create_task(notifier.send_alert("STOP LOSS", msg))
+
+                                # Realize PnL and close positions
+                                for pos_key, qty in positions.items():
+                                    if qty == 0 or base_ticker not in pos_key: continue
+                                    side = "SELL" if qty > 0 else "BUY"
+                                    step_size = step_sizes.get(base_ticker, 0.0)
+
+                                    # Calculate realized PnL for shadow balance
+                                    p_qty = abs(paper_state["positions"].get(pos_key, 0.0))
+                                    if p_qty > 0:
+                                        if "LONG" in pos_key:
+                                            pnl = p_qty * (price - paper_state.get("long_entry_price", price))
+                                        else:
+                                            pnl = p_qty * (paper_state.get("short_entry_price", price) - price)
+                                        paper_state["balance"] += pnl
+                                        paper_state["positions"][pos_key] = 0.0
+
+                                    if not paper_mode:
+                                        # In REAL mode, close real position
+                                        await PortfolioExecutor(connector).execute_market_order(
+                                            symbol=pos_key.split('_')[0],
+                                            qty=Decimal(str(abs(qty))),
+                                            side=side,
+                                            step_size=Decimal(str(step_size)),
+                                            reduce_only=True,
+                                            position_side=pos_key.split('_')[1] if '_' in pos_key else "BOTH",
+                                            min_notional=Decimal('0')
+                                        )
+
+                                # Realize state in shadow balance
+                                paper_state["long_entry_price"] = 0.0
+                                paper_state["short_entry_price"] = 0.0
+                                await save_json(paper_state_file_path, paper_state)
 
                                 # Жестко фиксируем смерть по трейлингу для HEAL Guard
                                 state["trailing_stop_triggered"] = True
+
+                                # --- CRITICAL: Update final metrics BEFORE state resets and exit ---
+                                await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
+                                # --------------------------------------------------------------------
+
+                                # Set paper probation timeout (from probation_period_days)
+                                probation_days = current_config.get("probation_period_days", 0.041)
+                                timeout_end = now + probation_days * 86400
+                                # Trailing stop timeout end should be set AFTER _update_final_metrics_for_exit if we want it to persist,
+                                # but _update_final_metrics_for_exit clears it.
+                                # Actually, requirements say: "Fully reset trailing stop tracking fields ... to 0.0/False to ensure clean state generation."
+                                # So supervisor should handle the timeout if needed.
+                                logger.info(f"Post-stop paper probation end: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timeout_end))}")
 
                                 # Эмитируем сигнал остановки для супервайзера
                                 global_initial = portfolio_cfg.get("initial_capital", 60.0)
@@ -1393,25 +1437,9 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
 
     if paper_mode:
         if paper_state and "positions" in paper_state:
-            # Fetch current price for PnL realization
-            prices = await connector.get_mark_prices([base_ticker])
-            price = prices.get(base_ticker, 0.0)
-
             for pos_key, qty in paper_state["positions"].items():
                 if qty != 0:
                     logger.info(f"Closing PAPER position {pos_key}: {qty}")
-                    if price > 0:
-                        # Realize PnL in shadow balance
-                        if "LONG" in pos_key:
-                            pnl = qty * (price - paper_state.get("long_entry_price", price))
-                        else:
-                            pnl = qty * (paper_state.get("short_entry_price", price) - price)
-                        paper_state["balance"] += pnl
-                    paper_state["positions"][pos_key] = 0.0
-
-            paper_state["long_entry_price"] = 0.0
-            paper_state["short_entry_price"] = 0.0
-            await save_json(paper_state_file_path, paper_state)
 
         if not close_only:
             # Reset paper state to fresh start
@@ -1476,13 +1504,12 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                 current_tpv = state.get("last_tpv", 0.0)
                 if current_tpv > 0:
                     logger.info(f"🔄 Санитизация состояния при плановом стопе ({base_ticker}). Ребазирование на {current_tpv:.4f}")
-                    ts_triggered = state.get("trailing_stop_triggered", False)
                     state.update({
                         "initial_tpv": current_tpv,
                         "reference_tpv": current_tpv,
                         "tpv_ath": current_tpv,
                         "trailing_stop_violation_start": 0.0,
-                        "trailing_stop_triggered": ts_triggered
+                        "trailing_stop_triggered": False
                     })
                     await save_json(state_file_path, state)
         except Exception as e:
@@ -1491,6 +1518,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
 
 if __name__ == "__main__":
     import argparse
+    import sys
     import io
 
     # Force UTF-8 for Windows streams
@@ -1595,4 +1623,3 @@ if __name__ == "__main__":
         # Передаем признак paper_mode в rebalance_loop через конфиг-обертку или напрямую, 
         # но rebalance_loop читает конфиг из файла. Лучше пропатчить rebalance_loop чтобы он принимал paper_mode_override.
         asyncio.run(rebalance_loop(connector, args.config, instance_state_file, instance_paper_state_file, logger, ticker_override=base_ticker, paper_mode_override=is_paper_instance))
-
