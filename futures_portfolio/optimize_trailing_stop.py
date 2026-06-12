@@ -2,7 +2,7 @@
 Optuna-оптимизация параметров трейлинг стопа.
 
 Оптимизируемые параметры (все 3):
-  - equity_trailing_stop_pct            (0.5 - 6.0) — шаг 0.5
+  - equity_trailing_stop_pct            (0.1 - 6.0) — шаг 0.1
   - equity_trailing_stop_activation_pct (3.0 - 10.0) — шаг 0.5
   - equity_trailing_stop_timeout_sec    (10 - 120) — шаг 10
 
@@ -51,8 +51,12 @@ args_days = 3.0
 # SEARCH SPACE — только 3 параметра trailing stop
 # ============================================================
 SEARCH_SPACE = {
-    "equity_trailing_stop_pct":            (0.5, 8.0, 0.1),    # low, high, step
+    "equity_trailing_stop_pct":            (1.0, 6.0, 0.1),    # low, high, step — минимум 1% для реалистичности
 }
+
+# Фиксированные параметры
+FIXED_ACTIVATION_PCT = 0.0
+FIXED_TIMEOUT_SEC = 60
 
 
 def load_config():
@@ -109,9 +113,9 @@ def objective(trial: optuna.Trial) -> float:
         step=SEARCH_SPACE["equity_trailing_stop_pct"][2],
     )
 
-    # Фиксированные параметры (из ручной настройки)
-    ts_act = 6.5
-    ts_timeout = 60
+    # Фиксированные параметры
+    ts_act = FIXED_ACTIVATION_PCT
+    ts_timeout = FIXED_TIMEOUT_SEC
 
     cfg["equity_trailing_stop_pct"] = ts_pct
     cfg["equity_trailing_stop_activation_pct"] = ts_act
@@ -141,11 +145,15 @@ def objective(trial: optuna.Trial) -> float:
         dd = result.get("max_dd_pct", 0.0)
         ts = result.get("trailing_stop_triggered", False)
         cycles = result.get("cycles", 0)
+        tg_blocks = result.get("trend_guard_blocks", 0)
+        vg_blocks = result.get("velocity_guard_blocks", 0)
         per_ticker[ticker] = {
             "profit": profit,
             "max_dd": dd,
             "trailing_stop": ts,
             "cycles": cycles,
+            "tg_blocks": tg_blocks,
+            "vg_blocks": vg_blocks,
         }
 
     if not per_ticker:
@@ -157,6 +165,9 @@ def objective(trial: optuna.Trial) -> float:
     max_dd = max(v["max_dd"] for v in per_ticker.values())
     ts_count = sum(1 for v in per_ticker.values() if v["trailing_stop"])
     total_cycles = sum(v["cycles"] for v in per_ticker.values())
+    total_tg_blocks = sum(v.get("tg_blocks", 0) for v in per_ticker.values())
+    total_vg_blocks = sum(v.get("vg_blocks", 0) for v in per_ticker.values())
+    total_guard_blocks = total_tg_blocks + total_vg_blocks
     profitable = sum(1 for v in per_ticker.values() if v["profit"] > 0)
 
     pf = (avg_profit / avg_dd) if avg_dd > 0.1 else avg_profit / 0.1
@@ -167,6 +178,9 @@ def objective(trial: optuna.Trial) -> float:
     trial.set_user_attr("trailing_stop_count", ts_count)
     trial.set_user_attr("trailing_stop_pct", round(ts_count / n * 100, 1))
     trial.set_user_attr("total_cycles", total_cycles)
+    trial.set_user_attr("total_tg_blocks", total_tg_blocks)
+    trial.set_user_attr("total_vg_blocks", total_vg_blocks)
+    trial.set_user_attr("total_guard_blocks", total_guard_blocks)
     trial.set_user_attr("profitable_tickers", f"{profitable}/{n}")
     trial.set_user_attr("profit_factor", round(pf, 3))
     trial.set_user_attr("errors", errors)
@@ -176,25 +190,38 @@ def objective(trial: optuna.Trial) -> float:
     if trial.should_prune():
         raise optuna.TrialPruned()
 
-    # --- Штрафы ---
+    # --- Целевая метрика: прибыль на TS trigger ---
+    # Если TS ни разу не сработал — считаем ts_count=1 чтобы не делить на 0
+    effective_ts = ts_count if ts_count > 0 else 1
+    score = avg_profit / effective_ts
 
-    # Слишком частое срабатывание TS (>40% тикеров) — штраф
-    if ts_count / n > 0.4:
-        avg_profit *= 0.8
+    # Штраф за guard blocks: если >50% времени бот заблокирован — плохо
+    # total_guard_blocks / total_cycles — доля заблокированных баров
+    if total_cycles > 0:
+        guard_ratio = total_guard_blocks / total_cycles
+        if guard_ratio > 0.5:
+            score *= 0.5
+        elif guard_ratio > 0.3:
+            score *= 0.7
 
-    # Меньше 60% тикеров прибыльных — штраф
-    if profitable < n * 0.6:
-        avg_profit *= 0.6
+    # Менее 70% прибыльных — жёсткий штраф
+    if profitable < n * 0.7:
+        score *= 0.3
 
-    # profit_factor < 1.0 — жёсткий штраф
+    # profit_factor < 1.0 — штраф
     if pf < 1.0:
-        avg_profit *= 0.5
+        score *= 0.3
 
-    # MaxDD > 15% — штраф
-    if max_dd > 15.0:
-        avg_profit *= 0.7
+    # MaxDD > 10% — штраф
+    if max_dd > 10.0:
+        score *= 0.5
 
-    return round(avg_profit, 4)
+    # Минимальная активность: < 10 циклов на тикер — подозрительно
+    avg_cycles = total_cycles / n if n > 0 else 0
+    if avg_cycles < 10:
+        score *= 0.3
+
+    return round(score, 4)
 
 
 def main():
@@ -223,7 +250,7 @@ def main():
     print(f"  Days:     {days} ({days * 24:.1f}h)")
     print(f"  Trials:   {args.n_trials}")
     print(f"  Storage:  {args.storage}")
-    print(f"  Fixed:    activation=6.5%, timeout=60s")
+    print(f"  Fixed:    activation={FIXED_ACTIVATION_PCT}%, timeout={FIXED_TIMEOUT_SEC}s")
     print(f"  Search space:")
     for name, (low, high, step) in SEARCH_SPACE.items():
         print(f"    {name:<40s} [{low} .. {high}] step={step}")
@@ -270,12 +297,14 @@ def main():
     print(f"  Trailing Stops:   {best.user_attrs.get('trailing_stop_count', '?')} "
           f"({best.user_attrs.get('trailing_stop_pct', '?')}%)")
     print(f"  Total Cycles:     {best.user_attrs.get('total_cycles', '?')}")
+    print(f"  TG+VG Blocks:     {best.user_attrs.get('total_guard_blocks', '?')} "
+          f"(TG={best.user_attrs.get('total_tg_blocks', '?')}, VG={best.user_attrs.get('total_vg_blocks', '?')})")
     print(f"  Errors:           {best.user_attrs.get('errors', 0)}")
 
     print(f"\n  Параметры trailing stop:")
     print(f"    equity_trailing_stop_pct            = {best.params['equity_trailing_stop_pct']}")
-    print(f"    equity_trailing_stop_activation_pct = 6.5 (fixed)")
-    print(f"    equity_trailing_stop_timeout_sec    = 60 (fixed)")
+    print(f"    equity_trailing_stop_activation_pct = {FIXED_ACTIVATION_PCT} (fixed)")
+    print(f"    equity_trailing_stop_timeout_sec    = {FIXED_TIMEOUT_SEC} (fixed)")
 
     if best_pt:
         print(f"\n  Per-ticker (best trial):")
@@ -291,13 +320,13 @@ def main():
     top10 = sorted(completed, key=lambda t: t.value or -999, reverse=True)[:10]
     for rank, t in enumerate(top10, 1):
         prof = t.user_attrs.get("profitable_tickers", "?")
-        ts_pct = t.user_attrs.get("trailing_stop_pct", "?")
+        ts_pct_val = t.user_attrs.get("trailing_stop_pct", "?")
         dd = t.user_attrs.get("avg_max_dd_pct", "?")
-        print(f"    #{rank:>2d} Trial {t.number:>4d}: profit={t.value:>8.3f}%  "
-              f"dd={dd:>5}%  profitable={prof}  TS={ts_pct}%  "
-              f"params=({t.params['equity_trailing_stop_pct']:.1f}/"
-              f"{t.params['equity_trailing_stop_activation_pct']:.1f}/"
-              f"{t.params['equity_trailing_stop_timeout_sec']})")
+        cyc = t.user_attrs.get("total_cycles", "?")
+        print(f"    #{rank:>2d} Trial {t.number:>4d}: score={t.value:>8.3f}  "
+              f"profit={t.user_attrs.get('avg_profit_pct', '?'):>8}%  "
+              f"dd={dd:>5}%  profitable={prof}  TS={ts_pct_val}%  "
+              f"cycles={cyc}  ts_pct={t.params['equity_trailing_stop_pct']:.1f}")
 
     # --- Сохранение ---
     output_path = PROJECT_DIR / "best_trailing_stop.json"
@@ -318,8 +347,8 @@ def main():
         "trailing_stop_pct": best.user_attrs.get("trailing_stop_pct"),
         "params": {
             "equity_trailing_stop_pct": best.params["equity_trailing_stop_pct"],
-            "equity_trailing_stop_activation_pct": best.params["equity_trailing_stop_activation_pct"],
-            "equity_trailing_stop_timeout_sec": best.params["equity_trailing_stop_timeout_sec"],
+            "equity_trailing_stop_activation_pct": FIXED_ACTIVATION_PCT,
+            "equity_trailing_stop_timeout_sec": FIXED_TIMEOUT_SEC,
         },
         "per_ticker": best_pt,
     }

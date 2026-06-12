@@ -106,9 +106,9 @@ class StatusAggregator:
                     continue
                 
                 ticker = state.get("base_ticker", "UNKNOWN")
-                profit = state.get("last_profit", 0.0)
-                cycles = state.get("rebalance_cycles", 0)
-                siphoned = state.get("siphoning_reserve", 0.0)
+                profit = float(state.get("last_profit", 0.0))
+                cycles = int(state.get("rebalance_cycles", 0))
+                siphoned = float(state.get("siphoning_reserve", 0.0))
                 
                 # РАСЧЕТ ЭФФЕКТИВНОСТИ (Profit per Cycle)
                 # Используем min_cycles=20 для стабилизации рейтинга новичков

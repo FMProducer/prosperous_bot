@@ -45,11 +45,11 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
 
         # Полное ребазирование метрик под финальное значение TPV
         state.update({
-            "last_tpv": str(total_tpv_final),
-            "initial_tpv": str(total_tpv_final),
-            "reference_tpv": str(total_tpv_final),
-            "tpv_ath": str(total_tpv_final),
-            "last_profit": str(total_tpv_final - initial_tpv),
+            "last_tpv": float(total_tpv_final),
+            "initial_tpv": float(total_tpv_final),
+            "reference_tpv": float(total_tpv_final),
+            "tpv_ath": float(total_tpv_final),
+            "last_profit": float(total_tpv_final - initial_tpv),
             "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
             "last_update": time.time(),
             "rebalance_cycles": cycles,
@@ -112,7 +112,7 @@ async def _handle_liquidation_recovery(connector, base_ticker, state, state_file
         # Update state
         state["positions"] = {}
         state["last_tpv"] = 0.0
-        state["last_profit"] = -state.get("initial_tpv", 180.0)
+        state["last_profit"] = -float(state.get("initial_tpv", 180.0))
         state["total_pnl_pct"] = -100.0
         state["trailing_stop_triggered"] = True
         await save_json(state_file_path, state)
@@ -345,7 +345,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
     # Ensure balance exists (Shadow Balance Migration Guard)
     if "balance" not in paper_state:
-        fallback_bal = state.get("initial_tpv", target_initial_cap)
+        fallback_bal = float(state.get("initial_tpv", target_initial_cap))
         if fallback_bal <= 0: fallback_bal = target_initial_cap
         paper_state["balance"] = fallback_bal
         logger.warning(f"⚠️ 'balance' missing in {paper_state_file_path}. Initialized to {fallback_bal}")
@@ -1410,8 +1410,8 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         paper_state = await load_json(paper_state_file_path, {})
 
         # Ensure final profit is calculated from the *current* state before archiving
-        current_total_tpv_final = state.get("last_tpv", 0.0) # Assume last_tpv is latest TPV
-        current_initial_tpv = state.get("initial_tpv", 0.0)
+        current_total_tpv_final = float(state.get("last_tpv", 0.0))
+        current_initial_tpv = float(state.get("initial_tpv", 0.0))
         final_calculated_profit = current_total_tpv_final - current_initial_tpv
 
         archive_data = {
@@ -1501,7 +1501,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
         try:
             state = await load_json(state_file_path, {})
             if state:
-                current_tpv = state.get("last_tpv", 0.0)
+                current_tpv = float(state.get("last_tpv", 0.0))
                 if current_tpv > 0:
                     logger.info(f"🔄 Санитизация состояния при плановом стопе ({base_ticker}). Ребазирование на {current_tpv:.4f}")
                     state.update({

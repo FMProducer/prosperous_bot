@@ -230,7 +230,7 @@ async def reset_bot_state_files(ticker: str, is_paper: bool, config: dict) -> No
     old_state = await safe_load_json(str(base_state_path), {})
     
     # Динамическое ребазирование: сохраняем накопленный или урезанный стопом капитал
-    final_capital = old_state.get("last_tpv", config_capital) if old_state else config_capital
+    final_capital = float(old_state.get("last_tpv", config_capital)) if old_state else config_capital
 
     if old_state and (old_state.get("trailing_stop_triggered") or old_state.get("trailing_stop_violation_start", 0.0) > 0.0):
         logger.warning(f"📉 Обнаружен Trailing Stop для {ticker}. Капитал ребазирован: {config_capital} -> {final_capital}")
@@ -449,8 +449,8 @@ async def get_bot_efficiency(ticker: str, config: dict) -> dict:
             "trailing_stop_paper_timeout_end": 0.0
         }
 
-    profit_usdt = state.get("last_profit", 0.0)
-    cycles = state.get("rebalance_cycles", 0)
+    profit_usdt = float(state.get("last_profit", 0.0))
+    cycles = int(state.get("rebalance_cycles", 0))
 
     return {
         "profit": profit_usdt,
@@ -611,8 +611,8 @@ async def manage_swarm():
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
             if real_state:
                 p = {
-                    "profit": real_state.get("last_profit", 0.0),
-                    "cycles": real_state.get("rebalance_cycles", 0),
+                    "profit": float(real_state.get("last_profit", 0.0)),
+                    "cycles": int(real_state.get("rebalance_cycles", 0)),
                     "eff": 0.0,
                     "trailing_stop_paper_timeout_end": 0.0,
                 }
@@ -626,7 +626,7 @@ async def manage_swarm():
         is_in_drawdown = False
         if is_running_real:
             real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
-            if real_state.get("last_profit", 0.0) < 0:
+            if float(real_state.get("last_profit", 0.0)) < 0:
                 is_in_drawdown = True
 
         # 3. Trailing Stop Check (Only for paper candidates)

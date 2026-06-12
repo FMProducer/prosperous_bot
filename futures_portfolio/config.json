@@ -14,11 +14,11 @@
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.03,
   "scanner_period_days": 0.125,
-  "max_drawdown_limit": 100.0,
+  "max_drawdown_limit": 0.1,
   "replacement_efficiency_threshold_pct": 50.0,
-  "equity_trailing_stop_pct": 3.7,
-  "equity_trailing_stop_activation_pct": 6.5,
-  "equity_trailing_stop_timeout_sec": 60,
+    "equity_trailing_stop_pct": 0.1,
+    "equity_trailing_stop_activation_pct": 1000000.0,
+    "equity_trailing_stop_timeout_sec": 60,
   "telegram_enabled": true,
   "telegram_use_queue": true,
   "telegram_summary_interval_min": 1,
@@ -58,8 +58,8 @@
         "trend_min_move_pct": 0.7,
         "trend_eff_threshold": 0.35
       },
-      "rebalance_threshold_surplus": 0.025,
-      "rebalance_threshold_deficit": 0.05,
+      "rebalance_threshold_surplus": 0.011,
+      "rebalance_threshold_deficit": 0.015,
       "ticker_thresholds": {
         "BTCUSDT": {
           "surplus": 0.025,
@@ -69,33 +69,38 @@
     }
   ],
   "live_swarm": [
-    "INJUSDT"
+    "HMSTRUSDT"
   ],
   "use_real_whitelist": true,
   "real_whitelist": [
-    "INJUSDT"
+    "HMSTRUSDT"
   ],
   "black_list": [],
   "toxic_cooldown_days": 0.02,
-  "toxic_blacklist": {},
+  "toxic_blacklist": {
+    "INJUSDT": 1781275579.8412528
+  },
   "tickers": [
-    "1000SHIBUSDT",
-    "ATOMUSDT",
-    "BIOUSDT",
     "CHZUSDT",
-    "DASHUSDT",
     "DEXEUSDT",
-    "DOTUSDT",
-    "ETCUSDT",
+    "ENAUSDT",
+    "EPICUSDT",
+    "FIDAUSDT",
     "HBARUSDT",
-    "ICPUSDT",
+    "HMSTRUSDT",
+    "IDUSDT",
     "INJUSDT",
-    "LINKUSDT",
-    "LTCUSDT",
-    "POLUSDT",
-    "PORTALUSDT",
-    "XLMUSDT",
-    "XRPUSDT"
+    "JTOUSDT",
+    "MORPHOUSDT",
+    "NEARUSDT",
+    "PIPPINUSDT",
+    "PYTHUSDT",
+    "SIRENUSDT",
+    "STGUSDT",
+    "VVVUSDT",
+    "WLDUSDT",
+    "XMRUSDT",
+    "ZECUSDT"
   ],
-  "base_ticker": "1000SHIBUSDT"
+  "base_ticker": "CHZUSDT"
 }

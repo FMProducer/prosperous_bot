@@ -155,7 +155,7 @@ async def download_live_data(symbol: str, data_dir: str, days: float = 2.0) -> s
     return file_path
 
 async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False, ticker_override: Optional[str] = None,
-                        days: float = 2.0, commission: float = 0.0004, slippage: float = 0.0002,
+                        days: float = 2.0, commission: float = 0.0004, slippage: float = 0.0005,
                         quiet: bool = False,
                         threshold_surplus_override: Optional[float] = None,
                         threshold_deficit_override: Optional[float] = None,
@@ -226,7 +226,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         min_notional_usdt: Decimal = Decimal(str(config.get("min_notional_usdt", 6.0)))
         toxic_cooldown_days: float = config.get("toxic_cooldown_days", 0.02)
         cooldown_bars_duration: int = int(toxic_cooldown_days * 1440)
-        
+        max_drawdown_limit_pct: float = config.get("max_drawdown_limit", 100.0)  # по умолчанию 100% = отключён
+
         close_prices: npt.NDArray[np.float64] = df['close'].values.astype(np.float64)
         step_sizes = {base_ticker: 0.001}
 
@@ -262,6 +263,13 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         tg_nmg_bars = max(1, tg_nmg_window // 60)
         tg_trend_bars = 30
         tg_blocked_count = 0
+
+        # --- Velocity Guard / Net Move Guard (из safety_guards) ---
+        vg_velocity_pct = guards_cfg.get("max_price_velocity_pct", 2.0) / 100.0
+        vg_window_sec = guards_cfg.get("velocity_window_sec", 60)
+        vg_window_bars = max(1, vg_window_sec // 60)
+        vg_blocked_count = 0
+        vg_cooldown_bars = 0  # оставшиеся бары блокировки от Velocity Guard
 
         for i in range(len(df)):
             mid_price = Decimal(str(close_prices[i]))
@@ -349,6 +357,31 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         if nmg_move > tg_nmg_pct:
                             actions = []
                             tg_blocked_count += 1
+
+            # --- Velocity Guard: блокировка при быстром движении цены ---
+            if actions and vg_cooldown_bars > 0:
+                vg_cooldown_bars -= 1
+                actions = []
+                vg_blocked_count += 1
+            elif actions and i >= vg_window_bars:
+                vg_prices = close_prices[max(0, i - vg_window_bars):i + 1]
+                if len(vg_prices) >= 2:
+                    vg_old = vg_prices[0]
+                    vg_move = abs(close_prices[i] - vg_old) / vg_old if vg_old > 0 else 0
+                    if vg_move > vg_velocity_pct:
+                        actions = []
+                        vg_blocked_count += 1
+                        vg_cooldown_bars = vg_window_bars  # блокируем на окно
+
+            # --- Net Move Guard (из safety_guards): блокировка при сильном одностороннем движении ---
+            if actions and i >= tg_nmg_bars:
+                nmg_prices = close_prices[max(0, i - tg_nmg_bars):i + 1]
+                if len(nmg_prices) >= 2:
+                    nmg_old = nmg_prices[0]
+                    nmg_move = abs(close_prices[i] - nmg_old) / nmg_old if nmg_old > 0 else 0
+                    if nmg_move > tg_nmg_pct:
+                        actions = []
+                        tg_blocked_count += 1
 
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
@@ -590,6 +623,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
             logger.info(f"Remained Account Free Margin: {state.account_free_margin:.2f} USDT")
             logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Stops: {state.stops_counter} | Liqs: {state.liquidations_counter}")
+            logger.info(f"Trend Guard blocks: {tg_blocked_count} | Velocity Guard blocks: {vg_blocked_count}")
             if sim:
                 s = sim.get_summary()
                 logger.info(f"Market Orders: {s['filled']}/{s['attempted']} filled")
@@ -604,7 +638,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "liquidations": int(state.liquidations_counter),
             "trailing_stops": int(state.stops_counter),
             "trailing_stop_triggered": state.stops_counter > 0,
-            "trend_guard_blocks": int(tg_blocked_count)
+            "trend_guard_blocks": int(tg_blocked_count),
+            "velocity_guard_blocks": int(vg_blocked_count)
         }
     except Exception as e:
         logger.error(f"Backtest failed: {e}")
