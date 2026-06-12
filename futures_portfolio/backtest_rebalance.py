@@ -579,7 +579,34 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                     state.val_cash -= Decimal(str(siphon_amount))
                     total_tpv_with_reserve -= siphon_amount
 
-            # --- 4b. Trailing Stop ---
+            # --- 4b. Max Drawdown Limit (Emergency Stop) ---
+            if max_drawdown_limit_pct < 100.0:
+                drawdown_threshold = initial_capital_f * (1.0 - max_drawdown_limit_pct / 100.0)
+                if total_tpv_with_reserve < drawdown_threshold:
+                    logger.warning(f"Bar {i}: MAX DRAWDOWN LIMIT reached! TPV={total_tpv_with_reserve:.2f} < threshold={drawdown_threshold:.2f} ({max_drawdown_limit_pct}% DD). Stopping.")
+                    state.trailing_stop_triggered = True
+                    state.stops_counter += 1
+                    # Закрыть все позиции по текущей цене
+                    if state.pos_long > 0:
+                        exec_p, comm = sim.simulate_market_execution("SELL", state.pos_long, mid_price)
+                        realized_pnl = state.pos_long * (exec_p - state.long_entry_price)
+                        m_l = (state.pos_long * state.long_entry_price) / l_lev
+                        state.val_cash += m_l + realized_pnl - comm
+                        state.pos_long = Decimal('0')
+                        state.long_entry_price = Decimal('0')
+                    if state.pos_short > 0:
+                        exec_p, comm = sim.simulate_market_execution("BUY", state.pos_short, mid_price)
+                        realized_pnl = state.pos_short * (state.short_entry_price - exec_p)
+                        m_s = (state.pos_short * state.short_entry_price) / s_lev
+                        state.val_cash += m_s + realized_pnl - comm
+                        state.pos_short = Decimal('0')
+                        state.short_entry_price = Decimal('0')
+                    state.dormant_capital = Decimal(str(total_tpv_with_reserve))
+                    state.cooldown_until_bar = len(df) + 1  # больше не стартуем
+                    state.history.append(float(state.dormant_capital))
+                    continue
+
+            # --- 4c. Trailing Stop ---
             if total_tpv_with_reserve > state.tpv_ath:
                 state.tpv_ath = total_tpv_with_reserve
                 state.trailing_stop_violation_start = 0.0
@@ -617,10 +644,25 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
         max_dd_pct: float = np.max(dd) * 100 if len(dd) > 0 else 0.0
         asset_chg_pct: float = (close_prices[-1] / (close_prices[0] + 1e-9) - 1) * 100
 
+        # --- Sortino Ratio ---
+        # Средняя доходность за бар / downside deviation
+        if len(equity_curve) > 1:
+            bar_returns = np.diff(equity_curve) / (equity_curve[:-1] + 1e-9)
+            mean_return = np.mean(bar_returns)
+            # Downside deviation: только отрицательные доходности
+            negative_returns = bar_returns[bar_returns < 0]
+            if len(negative_returns) > 0:
+                downside_dev = np.sqrt(np.mean(negative_returns ** 2))
+                sortino_ratio = mean_return / (downside_dev + 1e-9)
+            else:
+                sortino_ratio = mean_return / 1e-9  # нет отрицательных — идеально
+        else:
+            sortino_ratio = 0.0
+
         if not quiet:
             logger.info(f"Refactored Cross-Margin Backtest for {base_ticker}:")
             logger.info(f"Profit: {profit_pct:+.2f}% | MaxDD: {max_dd_pct:.2f}% | Cycles: {state.cycles}")
-            logger.info(f"Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
+            logger.info(f"Sortino: {sortino_ratio:.4f} | Asset Change: {asset_chg_pct:+.2f}% | SAFE Reserve: {state.siphoning_reserve:.2f} USDT")
             logger.info(f"Remained Account Free Margin: {state.account_free_margin:.2f} USDT")
             logger.info(f"Skipped Expansions: {state.skipped_expansions_counter} | Stops: {state.stops_counter} | Liqs: {state.liquidations_counter}")
             logger.info(f"Trend Guard blocks: {tg_blocked_count} | Velocity Guard blocks: {vg_blocked_count}")
@@ -639,7 +681,8 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             "trailing_stops": int(state.stops_counter),
             "trailing_stop_triggered": state.stops_counter > 0,
             "trend_guard_blocks": int(tg_blocked_count),
-            "velocity_guard_blocks": int(vg_blocked_count)
+            "velocity_guard_blocks": int(vg_blocked_count),
+            "sortino_ratio": float(sortino_ratio)
         }
     except Exception as e:
         logger.error(f"Backtest failed: {e}")

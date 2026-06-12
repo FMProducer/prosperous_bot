@@ -51,7 +51,7 @@ args_days = 3.0
 # SEARCH SPACE — только 3 параметра trailing stop
 # ============================================================
 SEARCH_SPACE = {
-    "equity_trailing_stop_pct":            (1.0, 6.0, 0.1),    # low, high, step — минимум 1% для реалистичности
+    "equity_trailing_stop_pct":            (0.3, 6.0, 0.1),    # low, high, step
 }
 
 # Фиксированные параметры
@@ -147,6 +147,7 @@ def objective(trial: optuna.Trial) -> float:
         cycles = result.get("cycles", 0)
         tg_blocks = result.get("trend_guard_blocks", 0)
         vg_blocks = result.get("velocity_guard_blocks", 0)
+        sortino = result.get("sortino_ratio", 0.0)
         per_ticker[ticker] = {
             "profit": profit,
             "max_dd": dd,
@@ -154,6 +155,7 @@ def objective(trial: optuna.Trial) -> float:
             "cycles": cycles,
             "tg_blocks": tg_blocks,
             "vg_blocks": vg_blocks,
+            "sortino": sortino,
         }
 
     if not per_ticker:
@@ -163,6 +165,7 @@ def objective(trial: optuna.Trial) -> float:
     avg_profit = sum(v["profit"] for v in per_ticker.values()) / n
     avg_dd = sum(v["max_dd"] for v in per_ticker.values()) / n
     max_dd = max(v["max_dd"] for v in per_ticker.values())
+    avg_sortino = sum(v.get("sortino", 0.0) for v in per_ticker.values()) / n
     ts_count = sum(1 for v in per_ticker.values() if v["trailing_stop"])
     total_cycles = sum(v["cycles"] for v in per_ticker.values())
     total_tg_blocks = sum(v.get("tg_blocks", 0) for v in per_ticker.values())
@@ -175,6 +178,7 @@ def objective(trial: optuna.Trial) -> float:
     trial.set_user_attr("avg_profit_pct", round(avg_profit, 4))
     trial.set_user_attr("avg_max_dd_pct", round(avg_dd, 2))
     trial.set_user_attr("max_dd_pct", round(max_dd, 2))
+    trial.set_user_attr("avg_sortino", round(avg_sortino, 4))
     trial.set_user_attr("trailing_stop_count", ts_count)
     trial.set_user_attr("trailing_stop_pct", round(ts_count / n * 100, 1))
     trial.set_user_attr("total_cycles", total_cycles)
@@ -190,19 +194,10 @@ def objective(trial: optuna.Trial) -> float:
     if trial.should_prune():
         raise optuna.TrialPruned()
 
-    # --- Целевая метрика: прибыль на TS trigger ---
-    # Если TS ни разу не сработал — считаем ts_count=1 чтобы не делить на 0
-    effective_ts = ts_count if ts_count > 0 else 1
-    score = avg_profit / effective_ts
-
-    # Штраф за guard blocks: если >50% времени бот заблокирован — плохо
-    # total_guard_blocks / total_cycles — доля заблокированных баров
-    if total_cycles > 0:
-        guard_ratio = total_guard_blocks / total_cycles
-        if guard_ratio > 0.5:
-            score *= 0.5
-        elif guard_ratio > 0.3:
-            score *= 0.7
+    # --- Целевая метрика: Sortino Ratio ---
+    # Штрафует за глубокие просадки, но не штрафует за рост
+    # Чем выше — тем лучше
+    score = avg_sortino
 
     # Менее 70% прибыльных — жёсткий штраф
     if profitable < n * 0.7:
@@ -211,10 +206,6 @@ def objective(trial: optuna.Trial) -> float:
     # profit_factor < 1.0 — штраф
     if pf < 1.0:
         score *= 0.3
-
-    # MaxDD > 10% — штраф
-    if max_dd > 10.0:
-        score *= 0.5
 
     # Минимальная активность: < 10 циклов на тикер — подозрительно
     avg_cycles = total_cycles / n if n > 0 else 0
@@ -290,6 +281,7 @@ def main():
 
     print(f"\n  Лучший trial #{best.number}")
     print(f"  Avg Profit:       {best.user_attrs.get('avg_profit_pct', '?')}%")
+    print(f"  Avg Sortino:      {best.user_attrs.get('avg_sortino', '?')}")
     print(f"  Avg Max DD:       {best.user_attrs.get('avg_max_dd_pct', '?')}%")
     print(f"  Worst Max DD:     {best.user_attrs.get('max_dd_pct', '?')}%")
     print(f"  Profit Factor:    {best.user_attrs.get('profit_factor', '?')}")
@@ -325,6 +317,7 @@ def main():
         cyc = t.user_attrs.get("total_cycles", "?")
         print(f"    #{rank:>2d} Trial {t.number:>4d}: score={t.value:>8.3f}  "
               f"profit={t.user_attrs.get('avg_profit_pct', '?'):>8}%  "
+              f"sortino={t.user_attrs.get('avg_sortino', '?'):>7}  "
               f"dd={dd:>5}%  profitable={prof}  TS={ts_pct_val}%  "
               f"cycles={cyc}  ts_pct={t.params['equity_trailing_stop_pct']:.1f}")
 

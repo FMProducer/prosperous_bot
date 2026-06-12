@@ -15,18 +15,18 @@ from backtest_rebalance import run_backtest
 # Surplus: low threshold (aggressive profit taking)
 # Deficit: higher threshold (patient averaging on dips)
 THRESHOLD_PAIRS: List[Tuple[float, float]] = [
-    (0.01, 0.02),
-    (0.01, 0.04),
-    (0.015, 0.03),
-    (0.015, 0.04),
-    (0.02, 0.03),
-    (0.02, 0.04),
-    (0.02, 0.05),
-    (0.025, 0.04),
-    (0.025, 0.05),
-    (0.03, 0.04),
-    (0.03, 0.05),
-    (0.03, 0.06),
+    (0.008, 0.01),
+    (0.008, 0.02),
+    (0.008, 0.03),
+    (0.008, 0.04),
+    (0.008, 0.05),
+    (0.008, 0.06),
+    (0.008, 0.07),
+    (0.008, 0.08),
+    (0.008, 0.09),
+    (0.008, 0.10),
+    (0.008, 0.11),
+    (0.008, 0.12)
 ]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
