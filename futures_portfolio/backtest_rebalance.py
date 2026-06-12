@@ -373,16 +373,6 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                         vg_blocked_count += 1
                         vg_cooldown_bars = vg_window_bars  # блокируем на окно
 
-            # --- Net Move Guard (из safety_guards): блокировка при сильном одностороннем движении ---
-            if actions and i >= tg_nmg_bars:
-                nmg_prices = close_prices[max(0, i - tg_nmg_bars):i + 1]
-                if len(nmg_prices) >= 2:
-                    nmg_old = nmg_prices[0]
-                    nmg_move = abs(close_prices[i] - nmg_old) / nmg_old if nmg_old > 0 else 0
-                    if nmg_move > tg_nmg_pct:
-                        actions = []
-                        tg_blocked_count += 1
-
             if actions:
                 reductions = [a for a in actions if a.get("is_reduction", False)]
                 expansions = [a for a in actions if not a.get("is_reduction", False)]
