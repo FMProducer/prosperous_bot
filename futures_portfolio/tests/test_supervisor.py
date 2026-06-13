@@ -179,7 +179,7 @@ async def test_manage_swarm_toxic_flow():
     config = {
         "tickers": ["BTCUSDT"],
         "max_bots": 2,
-        "toxic_blacklist": {},
+        "toxic_blacklist_paper": {},
         "live_swarm": []
     }
     
@@ -204,15 +204,15 @@ async def test_manage_swarm_toxic_flow():
          patch("supervisor.safe_save_json", AsyncMock()) as mock_save, \
          patch("supervisor.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock())), \
          patch("supervisor.Path.exists", return_value=True), \
-         patch("supervisor.Path.glob", return_value=[MagicMock(stem="stop_ETHUSDT", unlink=MagicMock())]):
+         patch("supervisor.Path.glob", return_value=[MagicMock(stem="stop_paper_ETHUSDT", unlink=MagicMock())]):
         
         await manage_swarm()
         
-        # Check if TRXUSDT was added to toxic_blacklist in saved config
+        # Check if TRXUSDT was added to toxic_blacklist_paper in saved config
         saved_config = mock_save.call_args_list[0][0][1]
-        assert "TRXUSDT" in saved_config["toxic_blacklist"]
+        assert "TRXUSDT" in saved_config["toxic_blacklist_paper"]
         # Check if ETHUSDT (from stop signal) was added
-        assert "ETHUSDT" in saved_config["toxic_blacklist"]
+        assert "ETHUSDT" in saved_config["toxic_blacklist_paper"]
 
 @pytest.mark.asyncio
 async def test_get_running_bots_info():

@@ -16,7 +16,7 @@ from pathlib import Path
 load_dotenv()
 
 from rank_tickers import main as run_scanner
-from storage import safe_load_json, safe_save_json
+from storage import safe_load_json, safe_save_json, safe_load_json_sync, safe_save_json_sync
 from connector import BinanceConnector
 
 # Настройка логирования
@@ -366,7 +366,7 @@ async def selective_merge_incubator(
         scored_old[t] = score
 
     # Вычищаем карантинных юнитов из старого пула (строгая изоляция)
-    toxic_blacklist = config.get("toxic_blacklist", {})
+    toxic_blacklist = config.get("toxic_blacklist_paper", {})
     healthy_old_incubator = [t for t in old_incubator if t not in toxic_blacklist]
 
     # 2. Боты с положительным PnL — ВСЕГДА остаются в рое (не подлежат замене)
@@ -477,28 +477,54 @@ async def manage_swarm():
     # 0.5. Чтение сигналов от ботов (stop/exit flags)
     signals_dir = BASE_PATH / "signals"
     now_ts = time.time()
-    toxic_blacklist = config.get("toxic_blacklist", {})
     cooldown_days = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0))
     cooldown_sec = cooldown_days * 86400
 
+    bl_paper = config.get("toxic_blacklist_paper", {})
+    bl_real = config.get("toxic_blacklist_real", {})
+
     if signals_dir.exists():
         # Собираем тикеры со stop-сигналом (убыток) и exit-сигналом (прибыль)
-        for flag_prefix in ["stop_", "exit_"]:
-            for flag_file in signals_dir.glob(f"{flag_prefix}*.flag"):
-                ticker = flag_file.stem[len(flag_prefix):]
+        for flag_file in signals_dir.glob("*.flag"):
+            parts = flag_file.stem.split("_")
+            if len(parts) >= 3:
+                signal_type = parts[0]
+                mode_tag = parts[1]
+                ticker = "_".join(parts[2:])
                 expiry = now_ts + cooldown_sec
-                toxic_blacklist[ticker] = expiry
-                signal_type = "STOP" if flag_prefix == "stop_" else "EXIT"
-                logger.info(f"🚫 {signal_type} signal received for {ticker}. Blacklisted until {time.ctime(expiry)}")
+
+                if mode_tag == "paper":
+                    bl_paper[ticker] = expiry
+                else:
+                    bl_real[ticker] = expiry
+
+                logger.info(f"🚫 {signal_type.upper()} signal received for {mode_tag.upper()} {ticker}. Blacklisted until {time.ctime(expiry)}")
 
                 try:
                     flag_file.unlink()
                 except Exception:
                     pass
 
-        # Prune expired entries from toxic_blacklist
-        toxic_blacklist = {s: exp for s, exp in toxic_blacklist.items() if exp > now_ts}
-        config["toxic_blacklist"] = toxic_blacklist
+    # Prune expired entries from blacklists and apply Amnesty (reset state)
+    for mode, bl_dict, bl_key in [("paper", bl_paper, "toxic_blacklist_paper"), ("real", bl_real, "toxic_blacklist_real")]:
+        active_bl = {}
+        for t, exp in bl_dict.items():
+            if exp > now_ts:
+                active_bl[t] = exp
+            else:
+                # Amnesty: reset state file flags to allow re-entry
+                state_path = BASE_PATH / f"{mode}_state_{t}.json"
+                if state_path.exists():
+                    try:
+                        s = safe_load_json_sync(str(state_path), {})
+                        if s.get("trailing_stop_triggered"):
+                            s["trailing_stop_triggered"] = False
+                            s["trailing_stop_violation_start"] = 0.0
+                            s["trailing_stop_paper_timeout_end"] = 0.0
+                            safe_save_json_sync(str(state_path), s)
+                            logger.info(f"✨ Amnesty granted for {mode.upper()} {t}. TS flags cleared.")
+                    except Exception as e: pass
+        config[bl_key] = active_bl
 
     # [CACHE] Один вызов pm2 jlist на цикл — результат переиспользуется везде
     running_bots = await get_running_bots_info()
@@ -508,6 +534,25 @@ async def manage_swarm():
         r_key = f"r_{t}"
         if r_key not in running_bots:
             running_bots[r_key] = {"name": f"real-{t.replace('USDT', '').lower()}", "paper": False}
+
+    # [REAPER GUARD] Clean up zombie PM2 processes that hit TS
+    for key, info in list(running_bots.items()):
+        is_paper = info["paper"]
+        # key format is 'p_TICKER' or 'r_TICKER' (see get_running_bots_info)
+        parts = key.split("_")
+        if len(parts) < 2:
+            continue
+        ticker = parts[1]
+        mode_prefix = "paper" if is_paper else "real"
+        state_path = BASE_PATH / f"{mode_prefix}_state_{ticker}.json"
+        if state_path.exists():
+            try:
+                s_data = safe_load_json_sync(str(state_path), {})
+                if s_data.get("trailing_stop_triggered", False):
+                    logger.info(f"🧹 Reaper Guard: Deleting zombie PM2 process for {mode_prefix.upper()} {ticker} (TS Triggered)")
+                    await stop_bot(ticker, is_paper)
+                    running_bots.pop(key, None)
+            except Exception: pass
 
     # 1. Запуск сканера (ЖЕСТКО 20M)
     logger.info("🔍 Running ticker scanner (Min Vol: 20M)...")
@@ -522,25 +567,25 @@ async def manage_swarm():
 
     # 2. Формирование списка Инкубатора (Selective Rotation)
     # Сначала фильтруем сканер от toxic, потом мержим с текущим инкубатором
-    toxic_blacklist = config.get("toxic_blacklist", {})
     now = time.time()
     cooldown_sec = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0)) * 86400
+    bl_paper = config.get("toxic_blacklist_paper", {})
 
     # Обновляем toxic_blacklist от сканера
     for r in scanner_results:
         symbol = r['symbol']
-        if r.get('is_toxic') and symbol not in toxic_blacklist:
+        if r.get('is_toxic') and symbol not in bl_paper:
             expiry = now + cooldown_sec
-            toxic_blacklist[symbol] = expiry
-            logger.info(f"🚫 {symbol} marked toxic by scanner. Blacklisted until {time.ctime(expiry)}")
+            bl_paper[symbol] = expiry
+            logger.info(f"🚫 {symbol} marked toxic by scanner. Blacklisted (PAPER) until {time.ctime(expiry)}")
 
-    config["toxic_blacklist"] = toxic_blacklist
+    config["toxic_blacklist_paper"] = bl_paper
 
     # "Чистый" результат сканера (без toxic) — для selective_merge
     clean_scanner = []
     for r in scanner_results:
         symbol = r['symbol']
-        if symbol in toxic_blacklist:
+        if symbol in bl_paper:
             logger.info(f"⏳ {symbol} is in Toxic Quarantine. Skipping.")
             continue
         clean_scanner.append(r)
