@@ -621,6 +621,11 @@ async def manage_swarm():
     current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
     # Объединяем с только что восстановленными ботами для компенсации задержки старта PM2
     current_real_tickers = list(set(current_real_tickers).union(healed_tickers))
+
+    # [FIX] Удаляем карантинных ботов из пула "текущих", чтобы они не попали в target_real_bots
+    bl_real = config.get("toxic_blacklist_real", {})
+    current_real_tickers = [t for t in current_real_tickers if t not in bl_real]
+
     all_evaluated_tickers = set(final_incubator).union(current_real_tickers)
 
     missing_tickers = [t for t in all_evaluated_tickers if t not in global_perf_map]
@@ -644,6 +649,11 @@ async def manage_swarm():
         # Whitelist check
         if use_whitelist and ticker not in real_whitelist and ticker not in current_real_tickers:
             logger.info(f"🚫 Skipping {ticker}: Not in real_whitelist and not a currently running real bot.")
+            continue
+
+        # Strict Blacklist Guard
+        if ticker in bl_real:
+            logger.info(f"🚫 Skipping {ticker}: In REAL toxic blacklist. Quarantined.")
             continue
 
         # 1. Fetch data
@@ -697,7 +707,8 @@ async def manage_swarm():
     max_real_slots = max(0, config.get("max_bots", 10) - config.get("paper_mode_bots", 9))
 
     # Sophisticated substitution logic: hysteresis, profit protection, and score cushion
-    current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
+    # current_real_tickers is already strictly filtered from bl_real above
+    # current_real_tickers = [k.replace("r_", "") for k in running_bots.keys() if k.startswith("r_")]
 
     # 1. Start with currently running bots
     target_real_bots = list(current_real_tickers)

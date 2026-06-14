@@ -130,13 +130,13 @@ async def _handle_liquidation_recovery(connector, base_ticker, state, state_file
                 if base_ticker in live_swarm:
                     live_swarm.remove(base_ticker)
                     cfg_data["live_swarm"] = live_swarm
-                toxic = cfg_data.get("toxic_blacklist", {})
+                toxic = cfg_data.get("toxic_blacklist_real", {})
                 cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
                 expiry = time.time() + cooldown_days * 86400
                 toxic[base_ticker] = expiry
-                cfg_data["toxic_blacklist"] = toxic
+                cfg_data["toxic_blacklist_real"] = toxic
                 cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
-                logger.info(f"{base_ticker} removed from live_swarm, added to toxic_blacklist")
+                logger.info(f"{base_ticker} removed from live_swarm, added to toxic_blacklist_real")
         except Exception as e:
             logger.error(f"Failed to update config: {e}")
 
@@ -238,12 +238,13 @@ async def _handle_liquidation_guard(
                 if base_ticker not in bl:
                     bl.append(base_ticker)
                     cfg_data["black_list"] = bl
-                # Also add to toxic_blacklist with cooldown
-                toxic = cfg_data.get("toxic_blacklist", {})
+                # Also add to isolated toxic_blacklist with cooldown
+                bl_key = "toxic_blacklist_paper" if is_paper else "toxic_blacklist_real"
+                toxic = cfg_data.get(bl_key, {})
                 cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
                 expiry = time.time() + cooldown_days * 86400
                 toxic[base_ticker] = expiry
-                cfg_data["toxic_blacklist"] = toxic
+                cfg_data[bl_key] = toxic
                 # Remove from live_swarm
                 live_swarm = cfg_data.get("live_swarm", [])
                 if base_ticker in live_swarm:
@@ -1510,8 +1511,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                         "initial_tpv": current_tpv,
                         "reference_tpv": current_tpv,
                         "tpv_ath": current_tpv,
-                        "trailing_stop_violation_start": 0.0,
-                        "trailing_stop_triggered": False
+                        "trailing_stop_violation_start": 0.0
                     })
                     await save_json(state_file_path, state)
         except Exception as e:
