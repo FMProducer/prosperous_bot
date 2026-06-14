@@ -3,10 +3,10 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 5.7,
+  "min_notional_usdt": 6.1,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 6,
+  "min_cycles_for_rank": 20,
   "max_bots": 20,
   "paper_mode_bots": 19,
   "max_replace_per_cycle": 10,
@@ -68,18 +68,22 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "STGUSDT"
+  ],
   "use_real_whitelist": true,
   "real_whitelist": [
-    "RIFUSDT"
+    "STGUSDT"
   ],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {
-    "SIRENUSDT": 1781443919.996739,
-    "ICPUSDT": 1781443919.996739,
-    "FETUSDT": 1781443919.996739
+    "SIRENUSDT": 1781475175.3848543,
+    "TRUMPUSDT": 1781475175.3848543,
+    "RIFUSDT": 1781475618.6284502,
+    "FETUSDT": 1781475618.6284502,
+    "MELANIAUSDT": 1781475618.6284502
   },
   "toxic_blacklist_real": {},
   "tickers": [
