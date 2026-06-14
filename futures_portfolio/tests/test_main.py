@@ -5,7 +5,8 @@ import asyncio
 import copy
 import logging
 from unittest.mock import patch, AsyncMock, MagicMock, mock_open
-from futures_portfolio.main import rebalance_loop
+from futures_portfolio.main import rebalance_loop, emit_signal
+from pathlib import Path
 
 @pytest.fixture
 def mock_config():
@@ -252,3 +253,19 @@ async def test_clean_slate_protocol_activation(mock_config, mock_connector, mock
     assert reset_paper_save is not None
     assert reset_state_save["virt_qty"] == 0.0
     assert reset_state_save["rebalance_cycles"] == 0
+
+def test_emit_signal_file_naming(monkeypatch):
+    """Подтверждает строгую изоляцию генерации сигналов между Paper и Real режимами."""
+    called_paths = []
+
+    def mock_touch(self, *args, **kwargs):
+        called_paths.append(self.name)
+
+    monkeypatch.setattr(Path, "touch", mock_touch)
+    monkeypatch.setattr(Path, "mkdir", MagicMock())
+
+    emit_signal("stop", "BTCUSDT", is_paper=True)
+    emit_signal("exit", "ETHUSDT", is_paper=False)
+
+    assert "stop_paper_BTCUSDT.flag" in called_paths
+    assert "exit_real_ETHUSDT.flag" in called_paths

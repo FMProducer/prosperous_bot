@@ -193,7 +193,7 @@ async def test_manage_swarm_toxic_flow():
     mock_conn.verify_connection = AsyncMock()
     mock_conn.get_positions = AsyncMock(return_value={})
 
-    with patch("supervisor.safe_load_json", AsyncMock(side_effect=[config, {}])), \
+    with patch("supervisor.safe_load_json", AsyncMock(return_value=config)), \
          patch("supervisor.BinanceConnector", return_value=mock_conn), \
          patch("supervisor.enforce_swarm_consistency", AsyncMock()), \
          patch("supervisor.run_scanner", AsyncMock(return_value=scanner_results)), \
@@ -204,15 +204,55 @@ async def test_manage_swarm_toxic_flow():
          patch("supervisor.safe_save_json", AsyncMock()) as mock_save, \
          patch("supervisor.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock())), \
          patch("supervisor.Path.exists", return_value=True), \
-         patch("supervisor.Path.glob", return_value=[MagicMock(stem="stop_paper_ETHUSDT", unlink=MagicMock())]):
+         patch("supervisor.Path.glob", return_value=[MagicMock(stem="stop_paper_TRXUSDT", unlink=MagicMock())]):
         
         await manage_swarm()
         
         # Check if TRXUSDT was added to toxic_blacklist_paper in saved config
         saved_config = mock_save.call_args_list[0][0][1]
         assert "TRXUSDT" in saved_config["toxic_blacklist_paper"]
-        # Check if ETHUSDT (from stop signal) was added
-        assert "ETHUSDT" in saved_config["toxic_blacklist_paper"]
+
+@pytest.mark.asyncio
+async def test_isolated_blacklists_signal_processing():
+    """
+    Однозначно подтверждает функциональность парсинга сигналов супервайзером
+    и их маршрутизацию в строго изолированные списки (toxic_blacklist_real и toxic_blacklist_paper).
+    """
+    config = {
+        "tickers": ["BTCUSDT", "ETHUSDT"],
+        "max_bots": 2,
+        "toxic_blacklist_paper": {},
+        "toxic_blacklist_real": {},
+        "live_swarm": []
+    }
+
+    mock_conn = MagicMock()
+    mock_conn.verify_connection = AsyncMock()
+    mock_conn.get_positions = AsyncMock(return_value={})
+
+    # Эмуляция файлов-сигналов от Paper и Real ботов
+    mock_flag_paper = MagicMock(stem="stop_paper_BTCUSDT", unlink=MagicMock())
+    mock_flag_real = MagicMock(stem="exit_real_ETHUSDT", unlink=MagicMock())
+
+    with patch("supervisor.safe_load_json", AsyncMock(return_value=config)), \
+         patch("supervisor.BinanceConnector", return_value=mock_conn), \
+         patch("supervisor.enforce_swarm_consistency", AsyncMock(return_value=set())), \
+         patch("supervisor.run_scanner", AsyncMock(return_value=[{"symbol": "BTCUSDT"}])), \
+         patch("supervisor.get_bot_efficiency", AsyncMock(return_value={"profit": 0.0, "cycles": 0})), \
+         patch("supervisor.get_running_bots_info", AsyncMock(return_value={})), \
+         patch("supervisor.start_bot", AsyncMock()), \
+         patch("supervisor.stop_bot", AsyncMock()), \
+         patch("supervisor.safe_save_json", AsyncMock()) as mock_save, \
+         patch("supervisor.Path.exists", return_value=True), \
+         patch("supervisor.Path.glob", return_value=[mock_flag_paper, mock_flag_real]):
+
+        await manage_swarm()
+
+        saved_config = mock_save.call_args_list[0][0][1]
+        assert "BTCUSDT" in saved_config["toxic_blacklist_paper"]
+        assert "ETHUSDT" not in saved_config["toxic_blacklist_paper"]
+        assert "ETHUSDT" in saved_config["toxic_blacklist_real"]
+        assert "BTCUSDT" not in saved_config["toxic_blacklist_real"]
 
 @pytest.mark.asyncio
 async def test_get_running_bots_info():
