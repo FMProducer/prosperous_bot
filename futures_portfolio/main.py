@@ -40,6 +40,22 @@ def emit_signal(signal_type: str, ticker: str, is_paper: bool) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
+def self_kill_pm2(ticker: str, is_paper: bool) -> None:
+    """Удаляет себя из PM2 перед выходом, чтобы предотвратить autorestart."""
+    prefix = "paper" if is_paper else "real"
+    proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
+    try:
+        import subprocess
+        subprocess.run(
+            ["pm2", "delete", proc_name],
+            timeout=5,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        logging.info(f"PM2 self-kill: deleted {proc_name}")
+    except Exception as e:
+        logging.warning(f"PM2 self-kill failed for {proc_name}: {e}")
+
 async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: Decimal, initial_tpv: Decimal, safe_calc_res: dict, cycles: int, logger: logging.Logger) -> None:
     """Updates and saves the final profit metrics in the state file before a bot exits."""
     try:
@@ -57,7 +73,8 @@ async def _update_final_metrics_for_exit(state: dict, state_file_path: str, tota
             "rebalance_cycles": cycles,
             # Очистка триггеров скользящего стопа (но сохраняем сам факт срабатывания для супервайзера)
             "trailing_stop_violation_start": 0.0,
-            "trailing_stop_paper_timeout_end": 0.0
+            "trailing_stop_paper_timeout_end": 0.0,
+            "trailing_stop_triggered": True
         })
 
         await save_json(state_file_path, state)
@@ -274,6 +291,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     max_velocity = 0.01 # 1.0%
     velocity_window = 60
     last_config_mtime = 0.0
+    current_config = None
     
     # Обычное чтение конфига без блокировок
     config = safe_load_json_sync(config_path, {})
@@ -502,6 +520,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Failsafe: if restarted by PM2 with triggered state, exit immediately to trigger Reaper
                 if state.get("trailing_stop_triggered", False):
                     logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Exiting process.")
+                    self_kill_pm2(base_ticker, paper_mode)
                     sys.exit(0)
 
                 # Dynamic config reload
@@ -511,7 +530,6 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                         # Unblock the Event Loop only if file changed
                         current_config = await asyncio.to_thread(sync_read_json, config_path)
                         last_config_mtime = current_mtime
-                        
                         portfolio_cfg = current_config["portfolios"][0]
                         targets = portfolio_cfg["targets"]
                         t_surplus = portfolio_cfg.get("rebalance_threshold_surplus", portfolio_cfg.get("rebalance_threshold", 0.02))
@@ -557,7 +575,32 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     logger.error(f"Error reloading config: {e}. Using previous values.")
 
                 # Dynamic initial_tpv update from config
-                if initial_tpv != target_initial and target_initial > 0:
+                # Для тикеров в toxic_blacklist ребазирование зависит от прибыльности:
+                #   убыток (last_profit < 0) → ребаз на initial_capital из конфига
+                #   прибыль (last_profit >= 0) → ребаз на last_tpv (сохраняет прибыль)
+                if current_config is None:
+                    current_config = await asyncio.to_thread(sync_read_json, config_path)
+                _bl_key = "toxic_blacklist_paper" if paper_mode else "toxic_blacklist_real"
+                _bl = current_config.get(_bl_key, {})
+                _now = time.time()
+                _in_blacklist = base_ticker in _bl and _bl.get(base_ticker, 0) > _now
+
+                if _in_blacklist:
+                    _last_profit = float(state.get("last_profit", 0.0))
+                    if _last_profit < 0:
+                        # Убыточный бот → полный сброс на начальный капитал из конфига
+                        _rebase_target = target_initial
+                        logger.info(f"🔄 Blacklist rebase (LOSS): {base_ticker} initial_tpv {initial_tpv} -> {_rebase_target}")
+                    else:
+                        # Прибыльный бот → сохраняем накопленную прибыль
+                        _rebase_target = float(state.get("last_tpv", target_initial))
+                        logger.info(f"🔄 Blacklist rebase (PROFIT): {base_ticker} initial_tpv {initial_tpv} -> {_rebase_target} (last_tpv)")
+                    initial_tpv = _rebase_target
+                    reference_tpv = initial_tpv
+                    state["initial_tpv"] = initial_tpv
+                    state["reference_tpv"] = reference_tpv
+                    state_dirty = True
+                elif initial_tpv != target_initial and target_initial > 0:
                     logger.info(f"🔄 Initial Capital changed in config: {initial_tpv} -> {target_initial}. Updating base.")
                     initial_tpv = target_initial
                     reference_tpv = initial_tpv
@@ -886,6 +929,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                     # --------------------------------------------------------------------
                     await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                    self_kill_pm2(base_ticker, paper_mode)
                     sys.exit(0)
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
@@ -985,6 +1029,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 logger.critical(f"Initiating synchronous emergency liquidation for {base_ticker}...")
                                 # Close positions on exchange, preserve internal state for supervisor review
                                 await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                                self_kill_pm2(base_ticker, paper_mode)
                                 sys.exit(0)
                             else:
                                 # Timeout not yet reached — still pending
@@ -999,6 +1044,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Check if trailing stop was previously triggered (one-shot)
                 if state.get("trailing_stop_triggered", False):
                     logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Exiting process.")
+                    self_kill_pm2(base_ticker, paper_mode)
                     sys.exit(0)
 
                 if not paper_mode and (margin_warning > 0 or margin_critical > 0):

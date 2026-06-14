@@ -1,7 +1,13 @@
+import sys
+import os
 import pytest
 import json
 from unittest.mock import MagicMock, AsyncMock, patch
 from decimal import Decimal
+
+# Добавляем родительскую директорию (futures_portfolio/) в sys.path,
+# чтобы тесты могли импортировать main, supervisor и т.д.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
 
 @pytest.fixture
 def mock_config():

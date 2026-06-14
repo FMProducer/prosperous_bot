@@ -596,6 +596,9 @@ async def manage_swarm():
     running_paper_from_pm2 = [k.replace("p_", "") for k in running_bots.keys() if k.startswith("p_")]
     old_incubator = list(set(config.get("tickers", [])).union(running_paper_from_pm2))
 
+    # Фильтруем тикеры в toxic_blacklist_paper — они не должны попадать в инкубатор
+    old_incubator = [t for t in old_incubator if t not in bl_paper]
+
     # Собираем метрики для старых тикеров (для оценки PnL в ротации)
     old_perf_tasks = [get_bot_efficiency(t, config) for t in old_incubator]
     old_perf_results = await asyncio.gather(*old_perf_tasks)

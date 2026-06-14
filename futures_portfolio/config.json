@@ -12,7 +12,7 @@
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
-  "supervisor_interval_days": 0.03,
+  "supervisor_interval_days": 0.005,
   "scanner_period_days": 0.125,
   "replacement_efficiency_threshold_pct": 50.0,
   "max_drawdown_limit": 30.0,
@@ -25,9 +25,9 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 75.0,
-      "paper_initial_capital": 75.0,
-      "paper_account_free_margin": 100.0,
+      "initial_capital": 70.0,
+      "paper_initial_capital": 70.0,
+      "paper_account_free_margin": 70.0,
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
       "margin_ratio_critical": 1.5,
@@ -68,39 +68,38 @@
       }
     }
   ],
-  "live_swarm": [
-    "RIFUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": true,
   "real_whitelist": [
     "RIFUSDT"
   ],
   "black_list": [],
-  "toxic_cooldown_days": 0.00347,
+  "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {
-    "SIRENUSDT": 1781398435.8373272
+    "SIRENUSDT": 1781443919.996739,
+    "ICPUSDT": 1781443919.996739,
+    "FETUSDT": 1781443919.996739
   },
-  "toxic_blacklist_real": {
-    "RIFUSDT": 1781398435.8373272
-  },
+  "toxic_blacklist_real": {},
   "tickers": [
     "AIOTUSDT",
-    "CHZUSDT",
-    "DEXEUSDT",
-    "DOGEUSDT",
-    "ENAUSDT",
-    "EPICUSDT",
+    "BANANAS31USDT",
+    "FETUSDT",
     "HMSTRUSDT",
-    "INJUSDT",
-    "NEARUSDT",
+    "ICPUSDT",
+    "MELANIAUSDT",
+    "OPUSDT",
     "RIFUSDT",
     "SIRENUSDT",
     "STGUSDT",
+    "SYNUSDT",
+    "TAOUSDT",
+    "TRUMPUSDT",
+    "TSTUSDT",
     "VVVUSDT",
     "WLDUSDT",
-    "XMRUSDT",
-    "ZECUSDT"
+    "XMRUSDT"
   ],
   "base_ticker": "AIOTUSDT"
 }
