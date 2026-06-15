@@ -1,3 +1,6 @@
+class ZombieExit(BaseException):
+    pass
+
 import pytest
 import json
 import os
@@ -61,6 +64,11 @@ def mock_notifier():
     notifier.close = AsyncMock()
     return notifier
 
+def sleep_side_effect(secs, *args):
+    if secs == 86400:
+        raise ZombieExit("ZombieMode")
+    return None
+
 @pytest.mark.asyncio
 async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifier):
     state = {
@@ -92,18 +100,25 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
 
     mock_config["portfolios"][0]["max_capital_usdt"] = 0.0
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
-         patch("os.path.getmtime", return_value=123):
+    # We want to stop the loop after a few iterations
+    loop_count = 0
+    def bounded_sleep(secs, *args):
+        nonlocal loop_count
+        if secs == 86400: raise ZombieExit("ZombieMode")
+        loop_count += 1
+        if loop_count > 5: raise Exception("StopLoop")
+        return None
+
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
+                    with patch("asyncio.sleep", side_effect=bounded_sleep):
                             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
                                 except (Exception, BaseException) as e:
-                                    if str(e) not in ["StopLoop", "ProcessExit"]: raise e
+                                    if str(e) not in ["StopLoop", "ProcessExit", "ZombieMode"]: raise e
     assert len(saves) > 0
 
 @pytest.mark.asyncio
@@ -136,18 +151,16 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
     def save_side_effect(path, data):
         saves.append((path, copy.deepcopy(data)))
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
-         patch("os.path.getmtime", return_value=123):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
                     with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                            with patch("asyncio.sleep", side_effect=[None, None, None, Exception("StopLoop")]):
+                            with patch("asyncio.sleep", side_effect=sleep_side_effect):
                                 try:
                                         await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
                                 except (Exception, BaseException) as e:
-                                    if str(e) not in ["StopLoop", "ProcessExit"]: raise e
+                                    if str(e) not in ["StopLoop", "ProcessExit", "ZombieMode"]: raise e
 
     # Check if any paper_state save has 0 positions
     reset_save = next((s[1] for s in saves if "paper_state" in s[0] and s[1]["positions"].get("BTCUSDT_LONG") == 0.0), None)
@@ -164,18 +177,24 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
         if "s.json" in path: return copy.deepcopy(state)
         return default
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
-         patch("os.path.getmtime", return_value=123):
+    loop_count = 0
+    def bounded_sleep(secs, *args):
+        nonlocal loop_count
+        if secs == 86400: raise ZombieExit("ZombieMode")
+        loop_count += 1
+        if loop_count > 5: raise Exception("StopLoop")
+        return None
+
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock()):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("asyncio.sleep", side_effect=[None, None, None, Exception("StopLoop")]):
+                    with patch("asyncio.sleep", side_effect=bounded_sleep):
                             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
-                                    if str(e) not in ["StopLoop", "ProcessExit"]: raise e
+                                    if str(e) not in ["StopLoop", "ProcessExit", "ZombieMode"]: raise e
     mock_notifier.send_message.assert_any_call("⚠️ <b>WARNING</b>: Low margin ratio: 3.00 (BTCUSDT)")
 
 @pytest.mark.asyncio
@@ -189,18 +208,16 @@ async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_
         if "s.json" in path: return copy.deepcopy(state)
         return default
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
-         patch("os.path.getmtime", return_value=123):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock()):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("asyncio.sleep", side_effect=[None, None, Exception("StopLoop")]):
+                    with patch("asyncio.sleep", side_effect=sleep_side_effect):
                             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
-                                    if str(e) not in ["StopLoop", "ProcessExit"]: raise e
+                                    if str(e) not in ["StopLoop", "ProcessExit", "ZombieMode"]: raise e
     mock_notifier.send_alert.assert_called_with("CRITICAL MARGIN", "Margin ratio 1.50 < 2.0. Emergency stop!")
 
 @pytest.mark.asyncio
@@ -232,18 +249,24 @@ async def test_clean_slate_protocol_activation(mock_config, mock_connector, mock
     def save_side_effect(path, data):
         saves.append((path, copy.deepcopy(data)))
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
-         patch("os.path.getmtime", return_value=123):
+    loop_count = 0
+    def bounded_sleep(secs, *args):
+        nonlocal loop_count
+        if secs == 86400: raise ZombieExit("ZombieMode")
+        loop_count += 1
+        if loop_count > 1: raise Exception("StopLoop")
+        return None
+
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("asyncio.sleep", side_effect=Exception("StopLoop")):
+                    with patch("asyncio.sleep", side_effect=bounded_sleep):
                             with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
-                                    if str(e) not in ["StopLoop", "ProcessExit"]: raise e
+                                    if str(e) not in ["StopLoop", "ProcessExit", "ZombieMode"]: raise e
 
     # Check if a save happened with reset values (the protocol saves them immediately)
     reset_state_save = next((s[1] for s in saves if "s.json" in s[0] and s[1]["tpv_ath"] == 100.0), None)
