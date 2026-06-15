@@ -525,10 +525,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         _pos_long = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
         _pos_short = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
         if _pos_long < 1e-10 and _pos_short < 1e-10:
-            _initial = float(state.get("initial_tpv", target_initial_cap))
-            if float(state.get("tpv_ath", 0.0)) > _initial:
-                logger.info(f"🔄 Clean start detected. Resetting tpv_ath from {state.get('tpv_ath')} to {_initial:.2f} to enable TS activation.")
-                state["tpv_ath"] = _initial
+            _initial = Decimal(str(state.get("initial_tpv", target_initial_cap)))
+            _current_ath = Decimal(str(state.get("tpv_ath", 0.0)))
+            if _current_ath > _initial:
+                logger.info(f"🔄 Clean start detected. Resetting tpv_ath from {_current_ath} to {_initial} to enable TS activation.")
+                state["tpv_ath"] = float(_initial)
                 state["trailing_stop_violation_start"] = 0.0
                 # Synchronous save before entering the main loop
                 await save_json(state_file_path, state)
