@@ -46,11 +46,20 @@ def self_kill_pm2(ticker: str, is_paper: bool) -> None:
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
     try:
         import subprocess
+        import sys
+        if sys.platform == "win32":
+            cmd = f"pm2 delete {proc_name}"
+            is_shell = True
+        else:
+            cmd = ["pm2", "delete", proc_name]
+            is_shell = False
+
         subprocess.run(
-            ["pm2", "delete", proc_name],
+            cmd,
             timeout=5,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            shell=is_shell
         )
         logging.info(f"PM2 self-kill: deleted {proc_name}")
     except Exception as e:
@@ -431,10 +440,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     state['rebalance_cycles'] = 0
                     state['initial_tpv'] = initial_cap
                     state['reference_tpv'] = initial_cap
-                    state['trailing_stop_triggered'] = False
+                    # state['trailing_stop_triggered'] = False  # [RESTRICTION] Manual reset only by supervisor
                     state['trailing_stop_violation_start'] = 0.0
                     state['trailing_stop_paper_timeout_end'] = 0.0
-                    logger.info(f"🔄 TS flags reset: clean start detected (no open positions)")
+                    logger.info(f"🔄 State reset (TS flag preserved): clean start detected (no open positions)")
                     await save_json(state_file_path, state)
         except Exception as e:
             logger.error(f"State Isolation Protocol failed: {e}")
@@ -510,6 +519,20 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     velocity_window = velocity_cfg.get("velocity_window_sec", 60)
     price_history = deque() # Будет хранить (timestamp, price)
     last_io_save = time.time()
+
+    # Sanitize ATH on clean start (when supervisor has explicitly cleared the TS flag)
+    if not state.get("trailing_stop_triggered", False):
+        _pos_long = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
+        _pos_short = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
+        if _pos_long < 1e-10 and _pos_short < 1e-10:
+            _initial = Decimal(str(state.get("initial_tpv", target_initial_cap)))
+            _current_ath = Decimal(str(state.get("tpv_ath", 0.0)))
+            if _current_ath > _initial:
+                logger.info(f"🔄 Clean start detected. Resetting tpv_ath from {_current_ath} to {_initial} to enable TS activation.")
+                state["tpv_ath"] = float(_initial)
+                state["trailing_stop_violation_start"] = 0.0
+                # Synchronous save before entering the main loop
+                await save_json(state_file_path, state)
 
     try:
         while True:
@@ -1539,11 +1562,11 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
             "initial_tpv": 0.0,
             "reference_tpv": 0.0,
             "tpv_ath": 0.0,
-            "trailing_stop_triggered": False,
+            # "trailing_stop_triggered": False, # [RESTRICTION] Manual reset only by supervisor
             "trailing_stop_violation_start": 0.0
         })
         await save_json(state_file_path, state)
-        logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset.")
+        logger.info(f"✅ Emergency stop completed for {base_ticker}. All positions closed and state reset (TS flag preserved).")
     else:
         # При close_only (например, при ротации супервайзером) выполняем санитарию ATH и базы,
         # чтобы при следующем запуске бот не стартанул с глубокой просадки относительно старого ATH.
