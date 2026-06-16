@@ -2,7 +2,7 @@
 Optuna-оптимизация параметров стоплосса для SyntheticMarketNeutral портфеля.
 
 Оптимизируемые параметры:
-  - max_drawdown_limit                  (% от initial_capital)
+  - max_drawdown_limit                  (% от tpv_ath — high-water mark)
   - equity_trailing_stop_pct            (% просадки от ATH)
   - equity_trailing_stop_activation_pct (% роста от initial для активации)
 

@@ -296,7 +296,7 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
                 state.long_entry_price = Decimal('0')
                 state.short_entry_price = Decimal('0')
                 state.siphoning_reserve = Decimal('0')
-                state.tpv_ath = float(state.dormant_capital)
+                state.tpv_ath = max(float(state.dormant_capital), initial_capital_f)
                 state.trailing_stop_violation_start = 0.0
                 state.trailing_stop_triggered = False
                 state.last_rebalance_price = mid_price
@@ -571,9 +571,10 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
 
             # --- 4b. Max Drawdown Limit (Emergency Stop) ---
             if max_drawdown_limit_pct < 100.0:
-                drawdown_threshold = initial_capital_f * (1.0 - max_drawdown_limit_pct / 100.0)
+                _dd_base = state.tpv_ath if state.tpv_ath > 0 else initial_capital_f
+                drawdown_threshold = _dd_base * (1.0 - max_drawdown_limit_pct / 100.0)
                 if total_tpv_with_reserve < drawdown_threshold:
-                    logger.warning(f"Bar {i}: MAX DRAWDOWN LIMIT reached! TPV={total_tpv_with_reserve:.2f} < threshold={drawdown_threshold:.2f} ({max_drawdown_limit_pct}% DD). Stopping.")
+                    logger.warning(f"Bar {i}: MAX DRAWDOWN LIMIT reached! TPV={total_tpv_with_reserve:.2f} < threshold={drawdown_threshold:.2f} ({max_drawdown_limit_pct}% DD from ATH={_dd_base:.2f}). Stopping.")
                     state.trailing_stop_triggered = True
                     state.stops_counter += 1
                     # Закрыть все позиции по текущей цене
@@ -599,6 +600,9 @@ async def run_backtest(config_path: str, data_dir: str, live_mode: bool = False,
             # --- 4c. Trailing Stop ---
             if total_tpv_with_reserve > state.tpv_ath:
                 state.tpv_ath = total_tpv_with_reserve
+                # Floor: tpv_ath cannot be below initial_capital
+                if state.tpv_ath < initial_capital_f:
+                    state.tpv_ath = initial_capital_f
                 state.trailing_stop_violation_start = 0.0
 
             if (trailing_stop_pct > 0

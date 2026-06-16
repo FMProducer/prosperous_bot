@@ -8,16 +8,16 @@
   "max_orders_per_second": 10,
   "min_cycles_for_rank": 20,
   "max_bots": 20,
-  "paper_mode_bots": 19,
+  "paper_mode_bots": 18,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
   "supervisor_interval_days": 0.005,
   "scanner_period_days": 0.125,
   "replacement_efficiency_threshold_pct": 50.0,
-  "max_drawdown_limit": 30.0,
+  "max_drawdown_limit": 20.0,
   "equity_trailing_stop_pct": 0.1,
-  "equity_trailing_stop_activation_pct": 10.0,
+  "equity_trailing_stop_activation_pct": 9.0,
   "equity_trailing_stop_timeout_sec": 40,
   "telegram_enabled": true,
   "telegram_use_queue": true,
@@ -25,8 +25,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 70.0,
-      "paper_initial_capital": 70.0,
+      "initial_capital": 35.0,
+      "paper_initial_capital": 35.0,
       "paper_account_free_margin": 70.0,
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
@@ -56,7 +56,7 @@
         "net_move_block_pct": 2.2,
         "net_move_window_sec": 60,
         "trend_min_move_pct": 0.7,
-        "trend_eff_threshold": 0.35
+        "trend_eff_threshold": 0.45
       },
       "rebalance_threshold_surplus": 0.01,
       "rebalance_threshold_deficit": 0.04,
@@ -69,41 +69,48 @@
     }
   ],
   "live_swarm": [
-    "STGUSDT"
+    "JTOUSDT",
+    "JUPUSDT"
   ],
-  "use_real_whitelist": true,
-  "real_whitelist": [
-    "STGUSDT"
-  ],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {
-    "SIRENUSDT": 1781475175.3848543,
-    "TRUMPUSDT": 1781475175.3848543,
-    "RIFUSDT": 1781475618.6284502,
-    "FETUSDT": 1781475618.6284502,
-    "MELANIAUSDT": 1781475618.6284502
+    "PORTALUSDT": 1781643171.600706,
+    "STGUSDT": 1781643171.600706,
+    "FILUSDT": 1781643176.2783587,
+    "OPUSDT": 1781643176.2783587,
+    "ENAUSDT": 1781643461.5526564,
+    "SUIUSDT": 1781643461.5526564,
+    "SIRENUSDT": 1781643914.779574,
+    "SYNUSDT": 1781643914.779574,
+    "BABYUSDT": 1781643914.779574,
+    "XMRUSDT": 1781643914.779574
   },
   "toxic_blacklist_real": {},
   "tickers": [
-    "AIOTUSDT",
+    "AEROUSDT",
+    "BABYUSDT",
     "BANANAS31USDT",
+    "EIGENUSDT",
+    "FARTCOINUSDT",
     "FETUSDT",
-    "HMSTRUSDT",
-    "ICPUSDT",
-    "MELANIAUSDT",
-    "OPUSDT",
+    "GRASSUSDT",
+    "JELLYJELLYUSDT",
+    "JTOUSDT",
+    "NEARUSDT",
+    "ORDIUSDT",
     "RIFUSDT",
     "SIRENUSDT",
     "STGUSDT",
     "SYNUSDT",
-    "TAOUSDT",
-    "TRUMPUSDT",
-    "TSTUSDT",
     "VVVUSDT",
     "WLDUSDT",
-    "XMRUSDT"
+    "XLMUSDT",
+    "XMRUSDT",
+    "ZROUSDT"
   ],
-  "base_ticker": "AIOTUSDT"
+  "base_ticker": "AEROUSDT"
 }

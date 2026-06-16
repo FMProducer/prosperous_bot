@@ -527,9 +527,12 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
         if _pos_long < 1e-10 and _pos_short < 1e-10:
             _initial = Decimal(str(state.get("initial_tpv", target_initial_cap)))
             _current_ath = Decimal(str(state.get("tpv_ath", 0.0)))
+            # Floor: tpv_ath cannot be below global initial capital
+            _floor = Decimal(str(target_initial_cap))
             if _current_ath > _initial:
-                logger.info(f"🔄 Clean start detected. Resetting tpv_ath from {_current_ath} to {_initial} to enable TS activation.")
-                state["tpv_ath"] = float(_initial)
+                _new_ath = max(_initial, _floor)
+                logger.info(f"🔄 Clean start detected. Resetting tpv_ath from {_current_ath} to {_new_ath} to enable TS activation.")
+                state["tpv_ath"] = float(_new_ath)
                 state["trailing_stop_violation_start"] = 0.0
                 # Synchronous save before entering the main loop
                 await save_json(state_file_path, state)
@@ -928,10 +931,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 now = time.time()
 
-                # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of initial_tpv
-                drawdown_threshold = initial_tpv * (1 - max_drawdown_limit / 100)
-                if initial_tpv > 0 and tpv_total < drawdown_threshold:
-                    msg = f"CRITICAL: Total Equity {tpv_total:.2f} (including SAFE) is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% drawdown limit). EMERGENCY STOP!"
+                # EMERGENCY STOP: If total_tpv (including SAFE) drops below max_drawdown_limit % of tpv_ath (high-water mark)
+                _dd_base = tpv_ath if tpv_ath > 0 else initial_tpv
+                drawdown_threshold = _dd_base * (1 - max_drawdown_limit / 100)
+                if _dd_base > 0 and tpv_total < drawdown_threshold:
+                    msg = f"CRITICAL: Total Equity {tpv_total:.2f} (including SAFE) is less than {drawdown_threshold:.2f} ({max_drawdown_limit}% DD from ATH={_dd_base:.2f}). EMERGENCY STOP!"
                     logger.critical(msg)
                     asyncio.create_task(notifier.send_alert("EMERGENCY STOP", msg))
                     
@@ -959,6 +963,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
 
                 if tpv_ath == 0 or tpv_total > tpv_ath:
                     tpv_ath = tpv_total
+                    # Floor: tpv_ath cannot be below global initial capital
+                    if tpv_ath < target_initial_cap:
+                        tpv_ath = target_initial_cap
                     state["tpv_ath"] = tpv_ath
                     state_dirty = True
 
@@ -1583,10 +1590,12 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                 current_tpv = float(state.get("last_tpv", 0.0))
                 if current_tpv > 0:
                     logger.info(f"🔄 Санитизация состояния при плановом стопе ({base_ticker}). Ребазирование на {current_tpv:.4f}")
+                    # Floor: tpv_ath cannot be below global initial capital
+                    _sanitized_ath = max(current_tpv, target_initial_cap)
                     state.update({
                         "initial_tpv": current_tpv,
                         "reference_tpv": current_tpv,
-                        "tpv_ath": current_tpv,
+                        "tpv_ath": _sanitized_ath,
                         "trailing_stop_violation_start": 0.0
                     })
                     await save_json(state_file_path, state)

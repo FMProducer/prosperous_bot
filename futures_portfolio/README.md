@@ -48,7 +48,7 @@ TPV = Real Equity + (Virtual Quantity × Spot Price)
 Применяются к **TPV всего бота** (все доли вместе), НЕ к отдельным позициям:
 
 - **Trailing Stop** — просадка от ATH TPV ≥ `equity_trailing_stop_pct`
-- **Max Drawdown** — TPV < `initial_tpv × (1 - max_drawdown_limit/100)`
+- **Max Drawdown** — TPV < `tpv_ath × (1 - max_drawdown_limit/100)` (от пика, а не от старта)
 
 После срабатывания стопа:
 - Все позиции закрываются
