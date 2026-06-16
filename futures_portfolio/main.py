@@ -65,17 +65,37 @@ def self_kill_pm2(ticker: str, is_paper: bool) -> None:
     except Exception as e:
         logging.warning(f"PM2 self-kill failed for {proc_name}: {e}")
 
+def _apply_clean_slate(state: dict, paper_state: dict, base_ticker: str, target_cap: float, logger: logging.Logger) -> None:
+    """Enforces clean slate: resets phantom balances and state to target_initial_cap."""
+    paper_state['balance'] = target_cap
+    paper_state['long_entry_price'] = 0.0
+    paper_state['short_entry_price'] = 0.0
+    paper_state['positions'] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+    state['tpv_ath'] = target_cap
+    state['virt_qty'] = 0.0
+    state['virt_debt'] = 0.0  # [FIX] Reset virt_debt to prevent real_equity desync
+    state['rebalance_cycles'] = 0
+    state['initial_tpv'] = target_cap
+    state['reference_tpv'] = target_cap
+    state['trailing_stop_violation_start'] = 0.0
+    state['trailing_stop_paper_timeout_end'] = 0.0
+    logger.info(f"🔄 State reset (TS flag preserved): clean start detected (no open positions)")
+
 async def _update_final_metrics_for_exit(state: dict, state_file_path: str, total_tpv_final: Decimal, initial_tpv: Decimal, safe_calc_res: dict, cycles: int, logger: logging.Logger) -> None:
     """Updates and saves the final profit metrics in the state file before a bot exits."""
     try:
         logger.info(f"🔄 Санитизация состояния перед выходом. Финальный TPV: {float(total_tpv_final):.4f}")
 
         # Полное ребазирование метрик под финальное значение TPV
+        # [FIX] initial_tpv НЕ должен уменьшаться при стопе — сохраняем текущее значение
+        # из state, чтобы при рестарте бот стартовал с target_initial_cap из конфига.
+        _current_initial_tpv = float(state.get("initial_tpv", float(total_tpv_final)))
+        _current_reference_tpv = float(state.get("reference_tpv", float(total_tpv_final)))
         state.update({
             "last_tpv": float(total_tpv_final),
-            "initial_tpv": float(total_tpv_final),
-            "reference_tpv": float(total_tpv_final),
-            "tpv_ath": float(total_tpv_final),
+            "initial_tpv": _current_initial_tpv,
+            "reference_tpv": _current_reference_tpv,
+            "tpv_ath": max(float(total_tpv_final), _current_initial_tpv),
             "last_profit": float(total_tpv_final - initial_tpv),
             "total_pnl_pct": safe_calc_res.get("total_pnl_pct", 0.0),
             "last_update": time.time(),
@@ -413,6 +433,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # [Architectural Safeguard] State Isolation Protocol
     # Если реальных позиций нет, это чистый старт (или рестарт после стопа).
     # Жестко затираем фантомные балансы, чтобы не сломать Trailing Stop.
+    # При чистом старте баланс ВСЕГДА сбрасывается на target_initial_cap из конфига.
     if not paper_mode:
         try:
             raw_positions = await connector.get_positions()
@@ -420,33 +441,48 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
             total_position_size = sum(abs(float(v)) for v in ticker_positions.values())
 
             if total_position_size == 0:
-                initial_cap = target_initial_cap
-
-                # Проверяем оба стейта на наличие фантомного профита
-                current_balance = float(paper_state.get('balance', initial_cap))
-                if abs(current_balance - initial_cap) > 0.1 or float(state.get('virt_qty', 0)) > 0:
+                _clean_balance = float(paper_state.get('balance', target_initial_cap))
+                if abs(_clean_balance - target_initial_cap) > 0.1 or float(state.get('virt_qty', 0)) > 0:
                     logger.warning(f"🧹 Phantom Buffer detected for {base_ticker}. Enforcing Clean Slate for baseline!")
-
-                    # Сброс бумажного стейта (баланс и позиции)
-                    paper_state['balance'] = initial_cap
-                    paper_state['long_entry_price'] = 0.0
-                    paper_state['short_entry_price'] = 0.0
-                    paper_state['positions'] = {f"{base_ticker}_LONG": 0.0, f"{base_ticker}_SHORT": 0.0}
+                    _apply_clean_slate(state, paper_state, base_ticker, target_initial_cap, logger)
                     await save_json(paper_state_file_path, paper_state)
-
-                    # Сброс основного стейта (ATH, V-нога, циклы)
-                    state['tpv_ath'] = initial_cap
-                    state['virt_qty'] = 0.0
-                    state['rebalance_cycles'] = 0
-                    state['initial_tpv'] = initial_cap
-                    state['reference_tpv'] = initial_cap
-                    # state['trailing_stop_triggered'] = False  # [RESTRICTION] Manual reset only by supervisor
-                    state['trailing_stop_violation_start'] = 0.0
-                    state['trailing_stop_paper_timeout_end'] = 0.0
-                    logger.info(f"🔄 State reset (TS flag preserved): clean start detected (no open positions)")
                     await save_json(state_file_path, state)
         except Exception as e:
             logger.error(f"State Isolation Protocol failed: {e}")
+            # [FIX] Fallback: if we can't check positions, still enforce clean slate
+            # when balance is out of sync with target_initial_cap
+            _clean_balance = float(paper_state.get('balance', target_initial_cap))
+            if abs(_clean_balance - target_initial_cap) > 0.1:
+                logger.warning(f"🧹 [FALLBACK] Enforcing Clean Slate for {base_ticker} (balance desync: {_clean_balance:.2f} vs {target_initial_cap:.2f})")
+                _apply_clean_slate(state, paper_state, base_ticker, target_initial_cap, logger)
+                await save_json(paper_state_file_path, paper_state)
+                await save_json(state_file_path, state)
+    else:
+        # Paper mode: check shadow positions for clean slate detection
+        _p_l = abs(paper_state["positions"].get(f"{base_ticker}_LONG", 0.0))
+        _p_s = abs(paper_state["positions"].get(f"{base_ticker}_SHORT", 0.0))
+        if _p_l < 1e-10 and _p_s < 1e-10:
+            _clean_balance = float(paper_state.get('balance', target_initial_cap))
+            if abs(_clean_balance - target_initial_cap) > 0.1 or float(state.get('virt_qty', 0)) > 0:
+                logger.warning(f"🧹 [PAPER] Phantom Buffer detected for {base_ticker}. Enforcing Clean Slate!")
+                _apply_clean_slate(state, paper_state, base_ticker, target_initial_cap, logger)
+                await save_json(paper_state_file_path, paper_state)
+                await save_json(state_file_path, state)
+        else:
+            # [FIX] Shadow positions exist but balance is out of sync with target_initial_cap.
+            # This happens when supervisor restarts bot after stop: shadow positions are
+            # non-zero from previous session, but balance doesn't match target_initial_cap.
+            # Force clean slate when balance desync detected.
+            _clean_balance = float(paper_state.get('balance', target_initial_cap))
+            if abs(_clean_balance - target_initial_cap) > 0.1:
+                logger.warning(
+                    f"🧹 [PAPER] Balance desync detected for {base_ticker} "
+                    f"(balance={_clean_balance:.2f}, target={target_initial_cap:.2f}). "
+                    f"Enforcing Clean Slate!"
+                )
+                _apply_clean_slate(state, paper_state, base_ticker, target_initial_cap, logger)
+                await save_json(paper_state_file_path, paper_state)
+                await save_json(state_file_path, state)
 
     virt_qty = float(state.get("virt_qty", 0.0))
     siphoning_reserve = float(state.get("siphoning_reserve", 0.0))
@@ -626,6 +662,9 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     reference_tpv = initial_tpv
                     state["initial_tpv"] = initial_tpv
                     state["reference_tpv"] = reference_tpv
+                    # Sync shadow balance to match rebased initial_tpv
+                    paper_state["balance"] = _rebase_target
+                    paper_state_dirty = True
                     state_dirty = True
                 elif initial_tpv != target_initial and target_initial > 0:
                     logger.info(f"🔄 Initial Capital changed in config: {initial_tpv} -> {target_initial}. Updating base.")
@@ -633,6 +672,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     reference_tpv = initial_tpv
                     state["initial_tpv"] = initial_tpv
                     state["reference_tpv"] = reference_tpv
+                    # [FIX] Do NOT overwrite paper_state["balance"] — it tracks real
+                    # simulated equity. Only update initial_tpv/reference_tpv so
+                    # calculator uses correct baseline.
+                    paper_state_dirty = True
                     state_dirty = True
 
                 # Use Mark Price for TPV and rebalance triggers as recommended by Audit

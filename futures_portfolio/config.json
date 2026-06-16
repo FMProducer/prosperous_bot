@@ -6,7 +6,7 @@
   "min_notional_usdt": 6.1,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 20,
+  "min_cycles_for_rank": 1,
   "max_bots": 20,
   "paper_mode_bots": 18,
   "max_replace_per_cycle": 10,
@@ -69,25 +69,24 @@
     }
   ],
   "live_swarm": [
-    "JTOUSDT",
-    "JUPUSDT"
+    "JUPUSDT",
+    "ORDIUSDT"
   ],
-  "use_real_whitelist": false,
-  "real_whitelist": [],
+  "use_real_whitelist": true,
+  "real_whitelist": [
+    "JUPUSDT",
+    "ORDIUSDT",
+    "XLMUSDT",
+    "GRASSUSDT"
+  ],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {
-    "PORTALUSDT": 1781643171.600706,
-    "STGUSDT": 1781643171.600706,
-    "FILUSDT": 1781643176.2783587,
-    "OPUSDT": 1781643176.2783587,
-    "ENAUSDT": 1781643461.5526564,
-    "SUIUSDT": 1781643461.5526564,
-    "SIRENUSDT": 1781643914.779574,
-    "SYNUSDT": 1781643914.779574,
-    "BABYUSDT": 1781643914.779574,
-    "XMRUSDT": 1781643914.779574
+    "SIRENUSDT": 1781650660.168253,
+    "TIAUSDT": 1781650660.168253,
+    "BABYUSDT": 1781650660.168253,
+    "SYNUSDT": 1781651111.6716793
   },
   "toxic_blacklist_real": {},
   "tickers": [
