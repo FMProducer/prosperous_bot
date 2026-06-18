@@ -433,12 +433,15 @@ def _calc_rotation_score(ticker: str, p: dict, min_cycles: int) -> float:
         # Чтобы новые тикеры с proxy > 0 могли вытеснить убыточных
         return net_pnl * 0.01  # маленький отрицательный скор
 
-async def get_bot_efficiency(ticker: str, config: dict) -> dict:
+async def get_bot_efficiency(ticker: str, config: dict, is_real: bool = False) -> dict:
     """
     Строгий расчет эффективности на основе непрерывного трека инкубатора.
-    Обеспечивает доктрину параллельного слежения без рассинхронизации.
+    Для REAL ботов читает real_state_{ticker}.json, для paper — paper_state_{ticker}.json.
     """
-    state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
+    if is_real:
+        state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
+    else:
+        state = await safe_load_json(str(BASE_PATH / f"paper_state_{ticker}.json"), {})
     min_cycles = config.get("min_cycles_for_rank", 10)
 
     if not state:
@@ -634,7 +637,8 @@ async def manage_swarm():
     missing_tickers = [t for t in all_evaluated_tickers if t not in global_perf_map]
     if missing_tickers:
         logger.info(f"📊 Fetching missing performance data for {len(missing_tickers)} candidates...")
-        missing_tasks = [get_bot_efficiency(t, config) for t in missing_tickers]
+        # Для REAL ботов читаем real_state, для paper — paper_state
+        missing_tasks = [get_bot_efficiency(t, config, is_real=(t in current_real_tickers)) for t in missing_tickers]
         missing_results = await asyncio.gather(*missing_tasks)
         global_perf_map.update(dict(zip(missing_tickers, missing_results)))
 
@@ -662,30 +666,12 @@ async def manage_swarm():
         # 1. Fetch data
         is_running_real = ticker in current_real_tickers
         p = perf_map.get(ticker)
-
-        # [FIX-3] Fallback Guard: если REAL бот не попал в perf_map,
-        # читаем real_state вместо fallback на нули.
-        if p is None and is_running_real:
-            real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
-            if real_state:
-                p = {
-                    "profit": float(real_state.get("last_profit", 0.0)),
-                    "cycles": int(real_state.get("rebalance_cycles", 0)),
-                    "eff": 0.0,
-                    "trailing_stop_paper_timeout_end": 0.0,
-                }
-                logger.info(f"🛡️ Fallback to real_state for {ticker}: profit={p['profit']:.2f}")
-            else:
-                p = {"profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0}
-        elif p is None:
+        if p is None:
             p = {"profit": 0.0, "cycles": 0, "eff": 0.0, "trailing_stop_paper_timeout_end": 0.0}
 
         # 2. Strict Drawdown Protection (Highest Priority)
-        is_in_drawdown = False
-        if is_running_real:
-            real_state = await safe_load_json(str(BASE_PATH / f"real_state_{ticker}.json"), {})
-            if float(real_state.get("last_profit", 0.0)) < 0:
-                is_in_drawdown = True
+        # Используем profit из perf_map (для REAL ботов — из real_state, для paper — из paper_state)
+        is_in_drawdown = is_running_real and p.get("profit", 0.0) < 0
 
         # 3. Trailing Stop Check (Only for paper candidates)
         if not is_running_real and time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
@@ -787,10 +773,10 @@ async def manage_swarm():
                 logger.info(f"🛡️ Profit Guard: Protecting {ticker} from replacement because it has positive profit (${profit:.2f})")
                 continue
 
-            # Защита 3: Порог изменения скоринга (Score Cushion)
-            SCORE_CUSHION = 0.25
-            if cand_score > (score + SCORE_CUSHION):
-                logger.info(f"♻️ Substitution Triggered: Replacing {ticker} with {best_cand} (Score delta {cand_score - score:.4f} > Cushion {SCORE_CUSHION})")
+            # Защита 3: Порог изменения скоринга (Score Cushion) — из конфига
+            score_cushion = config.get("replacement_efficiency_threshold_pct", 25.0) / 100.0
+            if cand_score > (score + score_cushion):
+                logger.info(f"♻️ Substitution Triggered: Replacing {ticker} with {best_cand} (Score delta {cand_score - score:.4f} > Cushion {score_cushion})")
                 if ticker in target_real_bots:
                     target_real_bots.remove(ticker)
                 target_real_bots.append(best_cand)
@@ -799,7 +785,7 @@ async def manage_swarm():
                 if replacements_count >= max_replace:
                     break
             else:
-                logger.info(f"⏭️ Skipping Replacement: Candidate {best_cand} score is not high enough to warrant rotation (Required cushion: +{SCORE_CUSHION})")
+                logger.info(f"⏭️ Skipping Replacement: Candidate {best_cand} score is not high enough to warrant rotation (Required cushion: +{score_cushion})")
 
     # 3. Final safety check: if we somehow have more bots than slots (e.g. config change), trim the worst ones
     if len(target_real_bots) > max_real_slots:

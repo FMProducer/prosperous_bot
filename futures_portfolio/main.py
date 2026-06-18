@@ -40,27 +40,19 @@ def emit_signal(signal_type: str, ticker: str, is_paper: bool) -> None:
     except Exception as e:
         logging.error(f"Failed to emit signal {signal_type} for {ticker}: {e}")
 
-def self_kill_pm2(ticker: str, is_paper: bool) -> None:
-    """Удаляет себя из PM2 перед выходом, чтобы предотвратить autorestart."""
+async def self_kill_pm2(ticker: str, is_paper: bool) -> None:
+    """Удаляет себя из PM2 перед выходом, чтобы предотвратить autorestart. Асинхронная версия."""
     prefix = "paper" if is_paper else "real"
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
     try:
-        import subprocess
         import sys
-        if sys.platform == "win32":
-            cmd = f"pm2 delete {proc_name}"
-            is_shell = True
-        else:
-            cmd = ["pm2", "delete", proc_name]
-            is_shell = False
-
-        subprocess.run(
+        cmd = f"pm2 delete {proc_name}"
+        proc = await asyncio.create_subprocess_shell(
             cmd,
-            timeout=5,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            shell=is_shell
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        await asyncio.wait_for(proc.communicate(), timeout=5)
         logging.info(f"PM2 self-kill: deleted {proc_name}")
     except Exception as e:
         logging.warning(f"PM2 self-kill failed for {proc_name}: {e}")
@@ -582,7 +574,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Failsafe: if restarted by PM2 with triggered state, exit immediately to trigger Reaper
                 if state.get("trailing_stop_triggered", False):
                     logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Entering Zombie Mode.")
-                    self_kill_pm2(base_ticker, paper_mode)
+                    await self_kill_pm2(base_ticker, paper_mode)
                     while True:
                         await asyncio.sleep(86400)
 
@@ -999,8 +991,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                     # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
                     await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                     # --------------------------------------------------------------------
-                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
-                    self_kill_pm2(base_ticker, paper_mode)
+                    try:
+                        await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                    finally:
+                        await self_kill_pm2(base_ticker, paper_mode)
                     while True:
                         await asyncio.sleep(86400)
 
@@ -1103,8 +1097,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # TERMINAL ACTION: Execute emergency liquidation immediately to prevent race condition with supervisor
                                 logger.critical(f"Initiating synchronous emergency liquidation for {base_ticker}...")
                                 # Close positions on exchange, preserve internal state for supervisor review
-                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
-                                self_kill_pm2(base_ticker, paper_mode)
+                                try:
+                                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                                finally:
+                                    await self_kill_pm2(base_ticker, paper_mode)
                                 while True:
                                     await asyncio.sleep(86400)
                             else:
@@ -1120,7 +1116,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 # Check if trailing stop was previously triggered (one-shot)
                 if state.get("trailing_stop_triggered", False):
                     logger.critical(f"🚨 Trailing Stop already triggered for {base_ticker}. Entering Zombie Mode.")
-                    self_kill_pm2(base_ticker, paper_mode)
+                    await self_kill_pm2(base_ticker, paper_mode)
                     while True:
                         await asyncio.sleep(86400)
 
@@ -1136,7 +1132,10 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                                 # --- CRITICAL: Update final metrics BEFORE emergency stop and exit ---
                                 await _update_final_metrics_for_exit(state, state_file_path, Decimal(str(tpv_total)), Decimal(str(initial_tpv)), calc_res, cycles, logger)
                                 # --------------------------------------------------------------------
-                                await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                                try:
+                                    await emergency_stop(connector, config_path, state_file_path, paper_state_file_path, logger, ticker_override=base_ticker, paper_mode=paper_mode, close_only=True)
+                                finally:
+                                    await self_kill_pm2(base_ticker, paper_mode)
                                 while True:
                                     await asyncio.sleep(86400)
                             elif m_ratio < portfolio_cfg.get("margin_ratio_warning", 5.0):
@@ -1634,7 +1633,7 @@ async def emergency_stop(connector: BinanceConnector, config_path: str, state_fi
                 if current_tpv > 0:
                     logger.info(f"🔄 Санитизация состояния при плановом стопе ({base_ticker}). Ребазирование на {current_tpv:.4f}")
                     # Floor: tpv_ath cannot be below global initial capital
-                    _sanitized_ath = max(current_tpv, target_initial_cap)
+                    _sanitized_ath = max(current_tpv, initial_capital)
                     state.update({
                         "initial_tpv": current_tpv,
                         "reference_tpv": current_tpv,
