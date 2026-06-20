@@ -10,6 +10,9 @@ import re
 import sys
 import time
 import argparse
+import uuid
+import tempfile
+import atexit
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -42,31 +45,27 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logger = logging.getLogger("OptunaTrend")
 
 def generate_patched_backtester() -> str:
-    """
-    Dynamically patches backtest_rebalance.py to read window parameters from config
-    and return history logs for visualization, bypassing the need to modify the original file.
-    """
     original_path = PROJECT_DIR / "backtest_rebalance.py"
-    patched_path = PROJECT_DIR / "_patched_backtest.py"
+    unique_id = uuid.uuid4().hex[:8]
+    module_name = f"_patched_backtest_{unique_id}"
+    patched_path = PROJECT_DIR / f"{module_name}.py"
 
     with open(original_path, "r", encoding="utf-8") as f:
         code = f.read()
 
-    # Inject config lookups for hardcoded local variables
+    # Robust regex with spacing tolerances
     code = re.sub(
-        r"tg_nmg_bars = max\(1, tg_nmg_window // 60\)",
+        r"tg_nmg_bars\s*=\s*max\(1,\s*tg_nmg_window\s*//\s*60\)",
         r"tg_nmg_bars = max(1, trend_guard_cfg.get('net_move_window_sec', 60) // 60)",
         code
     )
     code = re.sub(
-        r"tg_trend_bars = 30",
+        r"tg_trend_bars\s*=\s*30",
         r"tg_trend_bars = trend_guard_cfg.get('lookback_bars', 30)",
         code
     )
-
-    # Expose history and logs in the return dictionary
     code = re.sub(
-        r"\"sortino_ratio\": float\(sortino_ratio\)",
+        r"\"sortino_ratio\":\s*float\(sortino_ratio\)",
         r'"sortino_ratio": float(sortino_ratio),\n            "history": state.history,\n            "rebalance_log": state.rebalance_log',
         code
     )
@@ -74,12 +73,23 @@ def generate_patched_backtester() -> str:
     with open(patched_path, "w", encoding="utf-8") as f:
         f.write(code)
 
-    return "_patched_backtest"
+    return module_name
 
-# Patch and import dynamically
 patched_module_name = generate_patched_backtester()
 sys.path.insert(0, str(PROJECT_DIR))
 patched_backtest = __import__(patched_module_name)
+
+def cleanup_patched_module():
+    """Ensure the temporary module is deleted and cleared from cache on exit."""
+    p_path = PROJECT_DIR / f"{patched_module_name}.py"
+    if p_path.exists():
+        try:
+            p_path.unlink()
+        except OSError:
+            pass
+    sys.modules.pop(patched_module_name, None)
+
+atexit.register(cleanup_patched_module)
 
 def load_config() -> Dict[str, Any]:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -105,14 +115,15 @@ def evaluate_ticker(cfg: Dict[str, Any], ticker: str, days: float, trend_params:
         "lookback_bars": trend_params["trend_lookback_bars"]
     }
 
-    tmp_config = PROJECT_DIR / f"_tmp_cfg_{ticker}.json"
-    with open(tmp_config, "w", encoding="utf-8") as f:
+    # Thread-safe temporary file creation
+    fd, tmp_config_path = tempfile.mkstemp(suffix=".json", prefix=f"tmp_cfg_{ticker}_", dir=str(PROJECT_DIR))
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(patched_cfg, f)
 
     try:
         result = asyncio.run(
             patched_backtest.run_backtest(
-                config_path=str(tmp_config),
+                config_path=tmp_config_path,
                 data_dir=str(DATA_DIR),
                 live_mode=False,
                 ticker_override=ticker,
@@ -122,8 +133,10 @@ def evaluate_ticker(cfg: Dict[str, Any], ticker: str, days: float, trend_params:
         )
         return result or {}
     finally:
-        if tmp_config.exists():
-            tmp_config.unlink()
+        try:
+            os.remove(tmp_config_path)
+        except OSError:
+            pass
 
 def calculate_sortino(history: list, risk_free_rate: float = 0.0, min_downside: float = 0.001) -> float:
     """
@@ -376,11 +389,6 @@ def main():
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"\nResults saved to {output_path}")
-
-    # Cleanup temporary patch
-    patched_path = PROJECT_DIR / "_patched_backtest.py"
-    if patched_path.exists():
-        patched_path.unlink()
 
 if __name__ == "__main__":
     main()
