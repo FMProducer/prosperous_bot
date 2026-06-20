@@ -34,9 +34,9 @@ def load_tickers() -> List[str]:
         return [line.strip() for line in f if line.strip()]
 
 ALL_TICKERS = load_tickers()
-split_idx = int(len(ALL_TICKERS) * 0.8)
-TRAIN_TICKERS = ALL_TICKERS[:split_idx]
-VALIDATION_TICKERS = ALL_TICKERS[split_idx:]
+# Validation = first 10 tickers (most volatile), Train = remaining 40
+VALIDATION_TICKERS = ALL_TICKERS[:10]
+TRAIN_TICKERS = ALL_TICKERS[10:]
 
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logger = logging.getLogger("OptunaTrend")
@@ -125,10 +125,11 @@ def evaluate_ticker(cfg: Dict[str, Any], ticker: str, days: float, trend_params:
         if tmp_config.exists():
             tmp_config.unlink()
 
-def calculate_sortino(history: list, risk_free_rate: float = 0.0) -> float:
+def calculate_sortino(history: list, risk_free_rate: float = 0.0, min_downside: float = 0.001) -> float:
     """
     Calculate Sortino ratio from equity curve.
     Sortino = (Mean_Return - RF) / Downside_Deviation
+    min_downside: minimum downside deviation to prevent division by near-zero (default 0.1%)
     """
     if len(history) < 2:
         return 0.0
@@ -151,13 +152,13 @@ def calculate_sortino(history: list, risk_free_rate: float = 0.0) -> float:
     # Downside deviation: std of negative returns only
     negative_returns = returns[returns < 0]
     if len(negative_returns) == 0:
-        # No downside — return is infinitely good, cap at large number
-        return mean_return * 1000.0 if mean_return > 0 else 0.0
+        # No downside — return is good, cap at reasonable number
+        return mean_return * 100.0 if mean_return > 0 else 0.0
 
     downside_std = np.std(negative_returns, ddof=1) if len(negative_returns) > 1 else np.std(negative_returns)
 
-    if downside_std == 0:
-        return mean_return * 1000.0 if mean_return > 0 else 0.0
+    # Prevent explosion: minimum downside deviation
+    downside_std = max(downside_std, min_downside)
 
     sortino = (mean_return - risk_free_rate) / downside_std
     return float(sortino)
