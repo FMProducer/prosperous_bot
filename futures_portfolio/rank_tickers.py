@@ -19,7 +19,7 @@ logger = logging.getLogger("Scanner")
 CACHE_FILE = "scan_cache.json"
 CONFIG_FILE = "config.json"
 
-def retry_on_network_error(retries: int = 3, delay: float = 1.0):
+def retry_on_network_error(retries: int = 3, delay: float = 0.125):
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
             for attempt in range(retries):
@@ -93,7 +93,7 @@ def run_ranker_task(multi_df: pd.DataFrame, threshold: float):
     return metrics_df
 
 class TickerScanner:
-    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.005, scanner_period_days: float = 1.0):
+    def __init__(self, concurrent_requests: int = 15, rebalance_threshold: float = 0.005, scanner_period_days: float = 0.125):
         self.base_url = "https://fapi.binance.com"
         self.rebalance_threshold = rebalance_threshold
         self.scanner_period_days = scanner_period_days
@@ -131,7 +131,7 @@ class TickerScanner:
         df['time'] = pd.to_datetime(df['time'], unit='ms')
         return df.set_index(['ticker', 'time'])
 
-    async def get_top_tickers(self, min_volume: float = 20_000_000) -> List[Dict[str, Any]]:
+    async def get_top_tickers(self, min_volume: float = 30_000_000) -> List[Dict[str, Any]]:
         logger.info(f"Market Scan (Min Vol: {min_volume/1e6:.0f}M, Threshold: {self.rebalance_threshold*100}%)...")
         
         white_list = set()
@@ -206,15 +206,15 @@ class TickerScanner:
             
             return ranked_list
 
-async def main(quiet=False, min_volume=20_000_000):
+async def main(quiet=False, min_volume=30_000_000):
     threshold = 0.02
-    scanner_period_days = 1.0
+    scanner_period_days = 0.125
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
                 threshold = 0.005
-                scanner_period_days = cfg.get("scanner_period_days", 1.0)
+                scanner_period_days = cfg.get("scanner_period_days", 0.125)
     except: pass
 
     scanner = TickerScanner(concurrent_requests=20, rebalance_threshold=threshold, scanner_period_days=scanner_period_days)

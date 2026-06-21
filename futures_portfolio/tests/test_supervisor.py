@@ -282,3 +282,124 @@ async def test_start_bot():
         assert mock_reset.called
         assert "pm2 start main.py" in mock_shell.call_args[0][0]
         assert "--paper" in mock_shell.call_args[0][0]
+
+
+# ============================================================
+# Rotation Guard: immature bots (cycles < min_cycles_for_rotation)
+# защищены от замены новыми кандидатами из сканера
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_rotation_guard_immature_unprofitable_protected():
+    """
+    Убыточный paper-бот с cycles=3 < min_cycles_for_rotation=6
+    НЕ должен быть вытеснен новым кандидатом из сканера.
+    """
+    config = {
+        "max_bots": 4,
+        "max_replace_per_cycle": 2,
+        "min_cycles_for_rank": 5,
+        "min_cycles_for_rotation": 6,
+    }
+    old_incubator = ["A", "B", "C", "D"]
+    perf_map = {
+        "A": {"profit": 10.0, "cycles": 10},   # Прибыльный — всегда остаётся
+        "B": {"profit": -5.0, "cycles": 3},     # Убыточный, но НЕЗРЕЛЫЙ (3 < 6) — ЗАЩИЩЁН
+        "C": {"profit": -10.0, "cycles": 10},   # Убыточный зрелый — кандидат на замену
+        "D": {"profit": -20.0, "cycles": 10},   # Убыточный зрелый — кандидат на замену
+    }
+    scanner_results = [
+        {"symbol": "A"}, {"symbol": "B"}, {"symbol": "E"}, {"symbol": "F"},
+    ]
+    res = await selective_merge_incubator(old_incubator, scanner_results, config, perf_map)
+    # A (прибыльный) + B (незрелый защищённый) — оба остаются
+    assert "A" in res, "Profitable bot A must stay"
+    assert "B" in res, "Immature bot B (cycles=3 < 6) must be PROTECTED from replacement"
+    # C и D — зрелые убыточные, конкурируют с E, F
+    # Итог: A, B + 2 из {C, D, E, F}
+    assert len(res) == 4
+
+
+@pytest.mark.asyncio
+async def test_rotation_guard_immature_profitable_protected():
+    """
+    Прибыльный paper-бот с cycles=2 < min_cycles_for_rotation=6
+    тоже защищён (прибыльные и так всегда остаются,
+    но проверяем что логика не сломана).
+    """
+    config = {
+        "max_bots": 3,
+        "max_replace_per_cycle": 2,
+        "min_cycles_for_rank": 5,
+        "min_cycles_for_rotation": 6,
+    }
+    old_incubator = ["A", "B", "C"]
+    perf_map = {
+        "A": {"profit": 1.0, "cycles": 2},     # Прибыльный незрелый
+        "B": {"profit": -5.0, "cycles": 10},    # Убыточный зрелый
+        "C": {"profit": -10.0, "cycles": 10},   # Убыточный зрелый
+    }
+    scanner_results = [
+        {"symbol": "A"}, {"symbol": "D"}, {"symbol": "E"},
+    ]
+    res = await selective_merge_incubator(old_incubator, scanner_results, config, perf_map)
+    assert "A" in res, "Profitable bot A must stay regardless of cycles"
+    assert len(res) == 3
+
+
+@pytest.mark.asyncio
+async def test_rotation_guard_mature_unprofitable_replaced():
+    """
+    Убыточный paper-бот с cycles=8 >= min_cycles_for_rotation=6
+    НЕ защищён — может быть вытеснен новым кандидатом.
+    """
+    config = {
+        "max_bots": 3,
+        "max_replace_per_cycle": 2,
+        "min_cycles_for_rank": 5,
+        "min_cycles_for_rotation": 6,
+    }
+    old_incubator = ["A", "B", "C"]
+    perf_map = {
+        "A": {"profit": 10.0, "cycles": 10},   # Прибыльный — остаётся
+        "B": {"profit": -5.0, "cycles": 8},     # Убыточный ЗРЕЛЫЙ (8 >= 6) — НЕ защищён
+        "C": {"profit": -10.0, "cycles": 10},   # Убыточный зрелый — НЕ защищён
+    }
+    scanner_results = [
+        {"symbol": "A"}, {"symbol": "D"}, {"symbol": "E"},
+    ]
+    res = await selective_merge_incubator(old_incubator, scanner_results, config, perf_map)
+    assert "A" in res, "Profitable bot A must stay"
+    # B и C — зрелые убыточные, D и E — новые с score=0
+    # B имеет score = -5 * 0.01 = -0.05, C = -10 * 0.01 = -0.10
+    # D, E имеют score=0 — они вытеснят B и C (0 > -0.05 > -0.10)
+    assert "D" in res, "New candidate D should replace mature unprofitable"
+    assert "E" in res, "New candidate E should replace mature unprofitable"
+    assert "B" not in res, "Mature unprofitable B (cycles=8 >= 6) should be replaced"
+    assert "C" not in res, "Mature unprofitable C should be replaced"
+
+
+@pytest.mark.asyncio
+async def test_rotation_guard_default_min_cycles_for_rotation():
+    """
+    Если min_cycles_for_rotation НЕ указан в config,
+    используется дефолт=6 (из .get default).
+    """
+    config = {
+        "max_bots": 3,
+        "max_replace_per_cycle": 2,
+        "min_cycles_for_rank": 5,
+        # min_cycles_for_rotation НЕ задан — дефолт 6
+    }
+    old_incubator = ["A", "B", "C"]
+    perf_map = {
+        "A": {"profit": -1.0, "cycles": 5},  # 5 < 6 — незрелый, защищён
+        "B": {"profit": -5.0, "cycles": 10}, # зрелый убыточный
+        "C": {"profit": -10.0, "cycles": 10},# зрелый убыточный
+    }
+    scanner_results = [
+        {"symbol": "A"}, {"symbol": "D"}, {"symbol": "E"},
+    ]
+    res = await selective_merge_incubator(old_incubator, scanner_results, config, perf_map)
+    assert "A" in res, "Immature bot A (cycles=5 < default 6) must be protected"
+    assert len(res) == 3

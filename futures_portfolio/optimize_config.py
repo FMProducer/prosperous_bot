@@ -105,16 +105,16 @@ def objective(trial: optuna.Trial, days: float) -> float:
 
     # Search Space Definition
     params = {
-        "rebalance_threshold_surplus": trial.suggest_float("rebalance_threshold_surplus", 0.005, 0.05, step=0.005),
-        "rebalance_threshold_deficit": trial.suggest_float("rebalance_threshold_deficit", 0.01, 0.08, step=0.005),
+        "rebalance_threshold_surplus": trial.suggest_float("rebalance_threshold_surplus", 0.01, 0.01, step=0.01),
+        "rebalance_threshold_deficit": trial.suggest_float("rebalance_threshold_deficit", 0.01, 0.09, step=0.01),
         "equity_trailing_stop_activation_pct": trial.suggest_float("equity_trailing_stop_activation_pct", 5.0, 15.0, step=1.0),
-        "virtual_share": trial.suggest_float("virtual_share", 0.0, 0.3, step=0.05),
-        "leverage": trial.suggest_int("leverage", 4, 10, step=1)
+        "virtual_share": trial.suggest_float("virtual_share", 0.0, 0.0, step=0.05),
+        "leverage": trial.suggest_int("leverage", 7, 7, step=1)
     }
 
     # Dependent variable constraint: Trailing stop MUST be less than activation
     max_ts = min(params["equity_trailing_stop_activation_pct"] - 1.0, 8.0)
-    params["equity_trailing_stop_pct"] = trial.suggest_float("equity_trailing_stop_pct", 0.5, max_ts, step=0.5)
+    params["equity_trailing_stop_pct"] = trial.suggest_float("equity_trailing_stop_pct", 0.0001, max_ts, step=0.0001)
 
     scores = []
     for ticker in TRAIN_TICKERS:

@@ -347,6 +347,7 @@ async def selective_merge_incubator(
     max_bots = config.get("max_bots", 20)
     max_replace = config.get("max_replace_per_cycle", max_bots // 2)
     min_cycles = config.get("min_cycles_for_rank", 10)
+    min_cycles_rotation = config.get("min_cycles_for_rotation", 6)
 
     # Топ-max_bots из сканера (ранжированы по волатильности)
     scanner_top = [r['symbol'] for r in scanner_results[:max_bots]]
@@ -369,21 +370,32 @@ async def selective_merge_incubator(
     toxic_blacklist = config.get("toxic_blacklist_paper", {})
     healthy_old_incubator = [t for t in old_incubator if t not in toxic_blacklist]
 
-    # 2. Боты с положительным PnL — ВСЕГДА остаются в рое (не подлежат замене)
+    # 2. Классификация текущих ботов по трем группам:
     old_set = set(healthy_old_incubator)
+    # Группа A: Прибыльные — ВСЕГДА остаются (не подлежат замене)
     profitable = {t for t in healthy_old_incubator if perf_map.get(t, {}).get("profit", 0) > 0}
-    # Боты с отрицательным PnL — кандидаты на замену (конкурируют с новыми)
-    unprofitable = old_set - profitable
+    # Группа B: Незрелые (cycles < min_cycles_for_rotation) — ЗАЩИЩЕНЫ от замены,
+    # даже если убыточные. Нужно наработать статистику.
+    immature = {
+        t for t in healthy_old_incubator
+        if t not in profitable
+        and perf_map.get(t, {}).get("cycles", 0) < min_cycles_rotation
+    }
+    # Группа C: Зрелые убыточные — кандидаты на замену (конкурируют с новыми)
+    unprofitable_mature = old_set - profitable - immature
+
+    if immature:
+        logger.info(f"🛡️ Rotation Guard: Protecting immature bots (cycles < {min_cycles_rotation}): {sorted(immature)}")
 
     # 3. Новые тикеры из сканера получают score 0 (нейтральный)
     scanner_new = [t for t in scanner_top if t not in old_set]
 
-    # 4. Формируем финал: сначала прибыльные (всегда остаются), потом лучшие из остальных
-    final = list(profitable)  # Прибыльные боты — бессрочно в рое
+    # 4. Формируем финал: прибыльные + незримые (оба защищены), потом конкуренция
+    final = list(profitable) + list(immature)  # Защищённые боты — всегда в рое
 
-    # 5. Слоты для остальных: конкуренция между убыточными старыми и новыми
-    # Ранжируем убыточных по score
-    unprofiled_scored = [(t, scored_old[t]) for t in unprofitable]
+    # 5. Слоты для остальных: конкуренция между зрелыми убыточными и новыми
+    # Ранжируем зрелых убыточных по score
+    unprofiled_scored = [(t, scored_old[t]) for t in unprofitable_mature]
     unprofiled_scored.sort(key=lambda x: x[1], reverse=True)
 
     # Новые с score 0

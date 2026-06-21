@@ -323,3 +323,7 @@ futures_portfolio/history/shadow_state_*USDT.json.*_*
 futures_portfolio/docs/backtests_*.md
 futures_portfolio/docs/PROMPT_B1_TS_flag_persistence.md
 futures_portfolio/best_trend_guard.json
+futures_portfolio/optimize_config.py
+futures_portfolio/config.json
+futures_portfolio/best_core_config.json
+.gitignore
