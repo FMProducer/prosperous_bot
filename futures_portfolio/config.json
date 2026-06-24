@@ -16,7 +16,7 @@
   "supervisor_interval_days": 0.005,
   "scanner_period_days": 0.125,
   "replacement_efficiency_threshold_pct": 50.0,
-  "max_drawdown_limit": 50.0,
+  "max_drawdown_limit": 100.0,
   "equity_trailing_stop_pct": 0.001,
   "equity_trailing_stop_activation_pct": 9.0,
   "equity_trailing_stop_timeout_sec": 40,
@@ -72,7 +72,11 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "DEXEUSDT",
+    "IDUSDT",
+    "JUPUSDT"
+  ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
