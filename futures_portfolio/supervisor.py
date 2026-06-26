@@ -75,6 +75,72 @@ async def get_running_bots_info() -> Dict[str, dict]:
         logger.error(f"Failed to get PM2 list: {e}")
         return {}
 
+async def get_pm2_processes() -> List[Dict[str, Any]]:
+    """
+    Получает текущий слепок процессов из PM2.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "pm2", "jlist", "--no-color",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await proc.communicate()
+        if not stdout:
+            return []
+        return json.loads(stdout.decode('utf-8', errors='replace'))
+    except (Exception, json.JSONDecodeError) as e:
+        logger.error(f"Критическая ошибка чтения стейта PM2: {e}")
+        return []
+
+async def reconcile_swarm_state(target_tickers: List[str], mode: str) -> None:
+    """
+    Reaper Guard: Математическая сверка декларативного стейта (config)
+    и фактического стейта (PM2) с изоляцией Paper/Real сред.
+    Вычисляет orphaned-процессы за O(1) и ликвидирует их.
+    """
+    # Формируем целевое множество имен процессов (напр. 'paper-aliceusdt')
+    target_set: Set[str] = {f"{mode}-{ticker.replace('USDT', '').lower()}" for ticker in target_tickers}
+
+    pm2_procs = await get_pm2_processes()
+
+    # Формируем фактическое множество процессов для заданного режима
+    running_set: Set[str] = {
+        proc["name"] for proc in pm2_procs
+        if proc.get("name", "").startswith(f"{mode}-")
+        and proc.get("pm2_env", {}).get("status") in ["online", "stopping", "stopped"]
+    }
+
+    # Вычисляем дельту (процессы в PM2, которых нет в конфиге)
+    orphans_to_kill: Set[str] = running_set - target_set
+
+    if orphans_to_kill:
+        logger.warning(f"🚨 [REAPER GUARD] Обнаружен рассинхрон. Orphaned процессы в режиме {mode}: {orphans_to_kill}")
+        for orphan in orphans_to_kill:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "pm2", "delete", orphan,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                await proc.wait()
+                logger.info(f"💀 [HEAL] Процесс {orphan} успешно уничтожен.")
+            except Exception as e:
+                logger.error(f"Ошибка ликвидации процесса {orphan}: {e}")
+
+        # Обновляем дамп PM2 после зачистки, чтобы предотвратить воскрешение при ребуте
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "pm2", "save",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.wait()
+        except Exception:
+            pass
+    else:
+        logger.debug(f"✅ Swarm стейт ({mode}) синхронизирован. Орфанов нет.")
+
 async def stop_bot(ticker: str, is_paper: bool = False):
     prefix = "paper" if is_paper else "real"
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
@@ -826,7 +892,14 @@ async def manage_swarm():
 
     # 4. Исполнение в PM2: Доктрина Параллельного Слежения (Защищенная версия)
     # -------------------------------------------------------------------------
+    # [REAPER GUARD] Phase: Reconciling PM2 state with target configuration.
+    logger.info("⚔️ [REAPER GUARD] Phase: Reconciling PM2 state with target configuration.")
+    await reconcile_swarm_state(final_incubator, "paper")
+    real_cleanup_pool = list(set(target_real_bots).union(set(config.get("real_whitelist", []))))
+    await reconcile_swarm_state(real_cleanup_pool, "real")
 
+    # Обновляем кэш процессов после тотальной зачистки орфанов
+    running_bots = await get_running_bots_info()
     # Создаем мутабельное множество текущих запущенных ключей для исключения рассинхрона
     active_running_keys = set(running_bots.keys())
 
