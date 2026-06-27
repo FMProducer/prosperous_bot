@@ -26,3 +26,5 @@ torch
 gymnasium
 seaborn
 tenacity
+onnxruntime
+python-dotenv
