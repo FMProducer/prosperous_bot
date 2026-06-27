@@ -115,6 +115,7 @@ if not hasattr(_bi.all, "_bool_patch"):
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+from decimal import Decimal
 from .logging_config import configure_root # Настройка корневого логгера
 configure_root()
 from .utils import get_lot_step
@@ -763,11 +764,12 @@ def run_backtest(params_dict, data_path, is_optimizer_call=True, trial_id_for_re
 
                     # ---- проверяем, что округленное значение < 1e-6 USDT ----------
                     if current_price > 0:
-                        asset_qty_unrounded = abs(usdt_value_to_trade) / current_price
+                        asset_qty_unrounded = Decimal(str(abs(usdt_value_to_trade))) / Decimal(str(current_price))
                         rounded_asset_qty = (
-                            round(asset_qty_unrounded / lot_step_val) * lot_step_val
-                            if lot_step_val > 0 else asset_qty_unrounded
+                            (asset_qty_unrounded / lot_step_val).quantize(Decimal("1"), rounding="ROUND_FLOOR") * lot_step_val
+                            if lot_step_val > 0 else Decimal(str(asset_qty_unrounded))
                         )
+                        rounded_asset_qty = float(rounded_asset_qty)
                         value_of_rounded_asset_qty = rounded_asset_qty * current_price
                         if abs(value_of_rounded_asset_qty) < 1e-6:
                             logging.info(

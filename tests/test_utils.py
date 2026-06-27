@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 import os
 from unittest.mock import patch, MagicMock
+from decimal import Decimal
 
 # Tests for to_gate_pair
 @pytest.mark.parametrize("test_input, expected_output", [
@@ -37,9 +38,9 @@ def test_to_binance_symbol(test_input, expected_output):
 
 # Tests for _qty_for_tests
 @pytest.mark.parametrize("asset_key, delta_usdt, p_spot", [
-    ("spot", 100, 50000),
-    ("BTCUSDT", 100, 50000),
-    ("unknown", 100, 50000),
+    ("spot", Decimal("100"), Decimal("50000")),
+    ("BTCUSDT", Decimal("100"), Decimal("50000")),
+    ("unknown", Decimal("100"), Decimal("50000")),
 ])
 def test_qty_for_tests(asset_key, delta_usdt, p_spot):
     assert _qty_for_tests(asset_key, delta_usdt, p_spot) == abs(delta_usdt)
@@ -68,12 +69,12 @@ def test_get_lot_step_api_success(mock_gate_client):
     mock_pair = MagicMock()
     mock_pair.min_base_amount = '0.001'
     mock_gate_client.spot_api.list_spot_pairs.return_value = [mock_pair]
-    assert get_lot_step("BTC") == 0.001
+    assert get_lot_step("BTC") == Decimal("0.001")
     mock_gate_client.spot_api.list_spot_pairs.assert_called_with(currency_pair="BTC_USDT")
 
 @patch('prosperous_bot.exchange_gate.gate_client')
 def test_get_lot_step_api_fail_fallback(mock_gate_client):
     get_lot_step.cache_clear()
     mock_gate_client.spot_api.list_spot_pairs.side_effect = Exception("API Error")
-    assert get_lot_step("BTC") == 0.0001
-    assert get_lot_step("UNKNOWN") == 1e-8
+    assert get_lot_step("BTC") == Decimal("0.0001")
+    assert get_lot_step("UNKNOWN") == Decimal("1e-8")

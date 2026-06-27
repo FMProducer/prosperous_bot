@@ -4,6 +4,7 @@ import requests
 import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
+from decimal import Decimal
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -16,16 +17,16 @@ logger = logging.getLogger(__name__)
 #  3) Абсолютный минимум 1e-8 (крипто) / 1e-3 (акции)
 # ────────────────────────────────────────────────────────────────
 FALLBACK_LOT_STEPS = {
-    "BTC": 0.0001,
-    "ETH": 0.001,
-    "BNB": 0.01,
-    "SOL": 0.01,
+    "BTC": Decimal("0.0001"),
+    "ETH": Decimal("0.001"),
+    "BNB": Decimal("0.01"),
+    "SOL": Decimal("0.01"),
 }
 
 # -----------------------------------------------------------------
 #  Helpers for unit-tests (qty ≥ 1 rule)
 # -----------------------------------------------------------------
-def _qty_for_tests(asset_key: str, delta_usdt: float, p_spot: float) -> float:
+def _qty_for_tests(asset_key: str, delta_usdt: Decimal, p_spot: Decimal) -> Decimal:
     return abs(delta_usdt)
 
 # ─────── NEW: convert helpers ───────────────────────────────────
@@ -51,7 +52,7 @@ def to_binance_symbol(pair: str) -> str:
     return p
 
 @lru_cache(maxsize=32)
-def get_lot_step(symbol: str) -> float:
+def get_lot_step(symbol: str) -> Decimal:
     """
     Return lot size step for *symbol*.
 
@@ -69,9 +70,9 @@ def get_lot_step(symbol: str) -> float:
             pair = to_gate_pair(sym)
 
         info = gate_client.spot_api.list_spot_pairs(currency_pair=pair)[0]
-        return float(info.min_base_amount)
+        return Decimal(str(info.min_base_amount))
     except Exception:
-        return FALLBACK_LOT_STEPS.get(symbol.upper(), 1e-8)
+        return FALLBACK_LOT_STEPS.get(symbol.upper(), Decimal("1e-8"))
 
 # Кэш для топ-символов
 top_symbols_cache = {

@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 
 class PortfolioManager:
     """Simplified portfolio manager used in unit/property tests."""
@@ -8,20 +9,20 @@ class PortfolioManager:
         self.futures_api = futures_api
         self._base = base_currency
 
-    async def get_value_distribution_usdt(self, p_spot: float, p_contract: float | None = None, leverage: float = 5.0):
+    async def get_value_distribution_usdt(self, p_spot: Decimal, p_contract: Decimal | None = None, leverage: Decimal = Decimal("5.0")):
         acc_raw = self.spot_api.spot.get_account_detail()
         accounts = await acc_raw if asyncio.iscoroutine(acc_raw) else acc_raw
 
-        spot_qty = sum(float(a.available or 0) for a in accounts if getattr(a, "currency", "") == self._base)
+        spot_qty = sum(Decimal(str(a.available or "0")) for a in accounts if getattr(a, "currency", "") == self._base)
         spot_val = spot_qty * p_spot
 
         pos_raw = self.futures_api.futures.list_positions()
         positions = await pos_raw if asyncio.iscoroutine(pos_raw) else pos_raw
 
-        long_val = short_val = 0.0                      # notional in USDT
+        long_val = short_val = Decimal("0.0")                      # notional in USDT
         for p in positions:
-            size = float(p.size)
-            margin = float(getattr(p, "margin", 0.0))
+            size = Decimal(str(p.size))
+            margin = Decimal(str(getattr(p, "margin", "0.0")))
             if p_contract is not None:
                 notional = abs(size) * p_contract
             else:
@@ -34,7 +35,7 @@ class PortfolioManager:
         # Recalculate total based on new notional values for accurate weighting
         total = spot_val + long_val + short_val
         if total == 0:  # Avoid division by zero
-            return {f"{self._base}_SPOT": 0.0, f"{self._base}_PERP_LONG": 0.0, f"{self._base}_PERP_SHORT": 0.0}
+            return {f"{self._base}_SPOT": Decimal("0.0"), f"{self._base}_PERP_LONG": Decimal("0.0"), f"{self._base}_PERP_SHORT": Decimal("0.0")}
 
         return {
             f"{self._base}_SPOT"       : spot_val / total,
@@ -42,5 +43,5 @@ class PortfolioManager:
             f"{self._base}_PERP_SHORT" : short_val / total,
         }
 
-    def get_value_distribution_sync(self, p_spot: float, p_contract: float, leverage: float = 5.0):
+    def get_value_distribution_sync(self, p_spot: Decimal, p_contract: Decimal, leverage: Decimal = Decimal("5.0")):
         return asyncio.run(self.get_value_distribution_usdt(p_spot, p_contract, leverage))
