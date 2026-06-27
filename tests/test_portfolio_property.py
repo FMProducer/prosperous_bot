@@ -4,12 +4,13 @@ from prosperous_bot.portfolio_manager import PortfolioManager
 from unittest.mock import Mock
 import asyncio
 from hypothesis import given, strategies as st
+from decimal import Decimal
 
 @given(
-    spot=st.floats(0.01, 1),
+    spot=st.decimals("0.01", "1"),
     short=st.integers(1, 10),
     long=st.integers(1, 10),
-    price=st.floats(10000, 60000)
+    price=st.decimals("10000", "60000")
 )
 def test_value_distribution_valid(spot, short, long, price):
     spot_api = Mock()
@@ -24,8 +25,8 @@ def test_value_distribution_valid(spot, short, long, price):
         ]
     )
     pm = PortfolioManager(spot_api, fut_api)
-    leverage = 5.0  # Default leverage
-    values = asyncio.run(pm.get_value_distribution_usdt(price, 250, leverage=leverage))
+    leverage = Decimal("5.0")  # Default leverage
+    values = asyncio.run(pm.get_value_distribution_usdt(price, Decimal("250"), leverage=leverage))
     total = sum(values.values())
     assert all(v >= 0 for v in values.values())
     assert total > 0

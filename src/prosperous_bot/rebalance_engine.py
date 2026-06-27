@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from decimal import Decimal
 from .logging_config import configure_root # This will be adjusted by hand later if patch fails
 configure_root()
 from prosperous_bot.utils import get_lot_step, to_gate_pair, _qty_for_tests
@@ -32,8 +33,8 @@ class RebalanceEngine:
         spot_asset_symbol: str = "",
         futures_contract_symbol_base: str = "",
         *,
-        base_threshold_pct: float = 0.005,
-        threshold_pct: float | None = None,
+        base_threshold_pct: Decimal = Decimal("0.005"),
+        threshold_pct: Decimal | None = None,
         exchange_client=None,
         params: Optional[dict] = None, # Added params
     ):
@@ -97,41 +98,75 @@ class RebalanceEngine:
         # Threshold from params or direct argument
         # Direct threshold_pct (legacy) or base_threshold_pct argument takes precedence
         if threshold_pct is not None:
-            self.base_threshold_pct = threshold_pct
-            logging.info(f"RebalanceEngine: Using direct legacy 'threshold_pct': {threshold_pct}")
+            self.base_threshold_pct = Decimal(str(threshold_pct))
+            logging.info(f"RebalanceEngine: Using direct legacy 'threshold_pct': {self.base_threshold_pct}")
         elif base_threshold_pct is not None and 'base_threshold_pct' not in self.params: # direct base_threshold_pct but not in params
-            self.base_threshold_pct = base_threshold_pct
-            logging.info(f"RebalanceEngine: Using direct 'base_threshold_pct': {base_threshold_pct}")
+            self.base_threshold_pct = Decimal(str(base_threshold_pct))
+            logging.info(f"RebalanceEngine: Using direct 'base_threshold_pct': {self.base_threshold_pct}")
         else: # Fallback to params or the default of the direct argument if not in params
-            self.base_threshold_pct = self.params.get('rebalance_threshold', base_threshold_pct)
+            val = self.params.get('rebalance_threshold', base_threshold_pct)
+            self.base_threshold_pct = Decimal(str(val))
             logging.info(f"RebalanceEngine: Using 'rebalance_threshold' from params or default: {self.base_threshold_pct}")
 
 
         # ---------- helpers -------------------------------------------------
 
     @staticmethod
-    def _dynamic_threshold(base_thr: float, atr_24h_pct: Optional[float]) -> float:
+    def _dynamic_threshold(base_thr: Decimal, atr_24h_pct: Optional[Decimal]) -> Decimal:
         """Возвращает адаптивный порог."""
-        return max(base_thr, 0.2 * atr_24h_pct) if atr_24h_pct is not None else base_thr
+        if atr_24h_pct is not None:
+            return max(base_thr, Decimal("0.2") * Decimal(str(atr_24h_pct)))
+        return base_thr
 
     @staticmethod
-    def _round_lot(qty_float: float, lot_step: float) -> float:
+    def _round_lot(qty: Decimal, lot_step: Decimal) -> Decimal:
         """Округление до шага лота."""
-        return round(qty_float / lot_step) * lot_step
+        if not lot_step:
+            return qty
+        return (qty / lot_step).quantize(Decimal("1"), rounding="ROUND_FLOOR") * lot_step
+
+    def calculate_nav(self, exchange_state: dict) -> Decimal:
+        """
+        Calculates NAV using the provided formula:
+        NAV = sum(Position_Size_i * Mark_Price_i) + Free_USDT
+        """
+        free_usdt = exchange_state.get("free_usdt", Decimal("0"))
+        positions = exchange_state.get("positions", [])
+
+        pos_value = Decimal("0")
+        for pos in positions:
+            size = pos.get("size", Decimal("0"))
+            mark_price = pos.get("mark_price", Decimal("0"))
+            pos_value += size * mark_price
+
+        return free_usdt + pos_value
+
+    def simulate_virtual_leg(self, allocation_usdt: Decimal, entry_price: Decimal) -> Decimal:
+        """
+        Virtual leg tracks physical quantity, not USDT allocation.
+        """
+        if not entry_price:
+            return Decimal("0")
+        return allocation_usdt / entry_price
 
     # ---------- public API ---------------------------------------------
 
     async def build_orders(
         self,
         *,
-        p_spot: float,
-        p_contract: Optional[float] = None,
-        atr_24h_pct: Optional[float] = None,
+        p_spot: Decimal,
+        p_contract: Optional[Decimal] = None,
+        atr_24h_pct: Optional[Decimal] = None,
     ) -> list[dict]:
         """ # noqa: D205
         Формирует список словарей-ордеров:
           {symbol, side, qty, notional_usdt, asset_key}
         """
+        p_spot = Decimal(str(p_spot))
+        if p_contract is not None:
+            p_contract = Decimal(str(p_contract))
+        if atr_24h_pct is not None:
+            atr_24h_pct = Decimal(str(atr_24h_pct))
         # --- дебаунс -----------------------------------------------------
         now_ts = datetime.utcnow()
         if (
@@ -146,8 +181,8 @@ class RebalanceEngine:
         self._last_rebalance_attempt_ts = now_ts
         lot_step = get_lot_step(self.params.get("main_asset_symbol", "BTC"))
 
-        leverage = self.params.get("futures_leverage", 5.0)
-        effective_leverage = leverage if leverage > 0 else 1e-9
+        leverage = Decimal(str(self.params.get("futures_leverage", "5.0")))
+        effective_leverage = leverage if leverage > 0 else Decimal("1e-9")
         p_contract_adjusted = p_contract * effective_leverage if p_contract else None
         if hasattr(self.portfolio, "get_nav_usdt"):
             nav = await self.portfolio.get_nav_usdt(p_spot=p_spot, p_contract=p_contract)
@@ -165,7 +200,7 @@ class RebalanceEngine:
 
         orders = []
         for asset_key, w_target in self.target_weights.items():
-            w_cur = dist.get(asset_key, 0.0)
+            w_cur = dist.get(asset_key, Decimal("0.0"))
             diff = w_target - w_cur
             if abs(diff) <= thr:
                 continue
@@ -173,7 +208,7 @@ class RebalanceEngine:
             delta_usdt = diff * nav
             if asset_key.endswith("_SPOT"):
                 symbol = self.spot_asset_symbol
-                qty_float = delta_usdt / p_spot
+                qty_val = delta_usdt / p_spot
                 base_asset_spot = symbol.split('_')[0]
                 lot_step = get_lot_step(base_asset_spot)
             else: # PERP
@@ -181,8 +216,8 @@ class RebalanceEngine:
                     logging.warning("p_contract not provided — пропуск %s", asset_key)
                     continue
                 symbol = self.futures_contract_symbol_base
-                qty_float = delta_usdt / p_contract
-                lot_step = 1.0 # For PERP, lot_step is 1 (whole contract)
+                qty_val = delta_usdt / p_contract
+                lot_step = Decimal("1.0") # For PERP, lot_step is 1 (whole contract)
 
             # -----------------------------------------------------------------
             #  Unit-tests используют пустой params → interpret as “test-mode”
@@ -196,11 +231,11 @@ class RebalanceEngine:
             if is_unit_test_ctx:                     # ➜ pytest context
                 qty_lot = _qty_for_tests(asset_key, delta_usdt, p_spot)
             else:                                   # normal production path
-                qty_lot = self._round_lot(abs(qty_float), lot_step)
+                qty_lot = self._round_lot(abs(qty_val), lot_step)
             side = "buy" if delta_usdt > 0 else "sell" # Corrected side based on delta_usdt
 
             # пропускаем ордера меньше заданного порога
-            min_ord = self.params.get("min_order_notional_usdt", 10.0)
+            min_ord = Decimal(str(self.params.get("min_order_notional_usdt", "10.0")))
             if abs(delta_usdt) < min_ord:
                 continue
 
@@ -232,7 +267,7 @@ class RebalanceEngine:
 
         exec_log = []
         for o in orders:
-            status, price_exec, commission = "failed", None, 0.0
+            status, price_exec, commission = "failed", None, Decimal("0.0")
             symbol, side, qty = o["symbol"], o["side"], o["qty"]
             try:
                 if post_only:

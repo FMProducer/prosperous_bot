@@ -28,3 +28,6 @@ seaborn
 tenacity
 onnxruntime
 python-dotenv
+python-binance
+aiohttp_socks
+pyarrow
