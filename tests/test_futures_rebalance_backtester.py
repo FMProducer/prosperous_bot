@@ -772,3 +772,58 @@ def test_load_signal_data_headers_only(tmp_path):
     
     # 2) Вызываем функцию и проверяем, что она возвращает None, покрывая ветку if df_signals.empty:
     assert load_signal_data(str(headers_only_csv)) is None
+
+def test_run_backtest_missing_target_weights(tmp_path):
+    """
+    Проверяет обработку отсутствующих целевых весов.
+    """
+    data_csv = tmp_path / "data.csv"
+    df = pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "close": [100]})
+    df.to_csv(data_csv, index=False)
+
+    params = {
+        "main_asset_symbol": "BTC",
+        "rebalance_threshold": 0.01,
+        # 'target_weights_normal' is missing
+    }
+    metrics = run_backtest(params, str(data_csv))
+    assert "status" in metrics
+    assert "Ошибка конфигурации" in metrics["status"]
+
+def test_run_backtest_leverage_zero(tmp_path):
+    """
+    Проверяет обработку плеча <= 0.
+    """
+    data_csv = tmp_path / "data.csv"
+    df = pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "close": [100]})
+    df.to_csv(data_csv, index=False)
+
+    params = {
+        "main_asset_symbol": "BTC",
+        "rebalance_threshold": 0.01,
+        "futures_leverage": 0,
+        "target_weights_normal": {"USDT": 1.0},
+        "report_path_prefix": str(tmp_path),
+        "use_fixed_report_path": True,
+    }
+    metrics = run_backtest(params, str(data_csv))
+    assert metrics["status"] == "Завершено"
+
+def test_run_backtest_missing_initial_value(tmp_path):
+    """
+    Проверяет варнинг при отсутствии initial_portfolio_value_usdt.
+    """
+    data_csv = tmp_path / "data.csv"
+    df = pd.DataFrame({"timestamp": [pd.Timestamp.now(tz="UTC")], "close": [100]})
+    df.to_csv(data_csv, index=False)
+
+    params = {
+        "main_asset_symbol": "BTC",
+        "rebalance_threshold": 0.01,
+        "target_weights_normal": {"USDT": 1.0},
+        "report_path_prefix": str(tmp_path),
+        "use_fixed_report_path": True,
+        # initial_portfolio_value_usdt is missing
+    }
+    metrics = run_backtest(params, str(data_csv))
+    assert metrics["status"] == "Завершено"

@@ -116,17 +116,20 @@ async def reconcile_swarm_state(target_tickers: List[str], mode: str) -> None:
 
     if orphans_to_kill:
         logger.warning(f"🚨 [REAPER GUARD] Обнаружен рассинхрон. Orphaned процессы в режиме {mode}: {orphans_to_kill}")
-        for orphan in orphans_to_kill:
+
+        async def kill_orphan(orphan_name: str) -> None:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "pm2", "delete", orphan,
+                    "pm2", "delete", orphan_name,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL
                 )
                 await proc.wait()
-                logger.info(f"💀 [HEAL] Процесс {orphan} успешно уничтожен.")
+                logger.info(f"💀 [HEAL] Процесс {orphan_name} успешно уничтожен.")
             except Exception as e:
-                logger.error(f"Ошибка ликвидации процесса {orphan}: {e}")
+                logger.error(f"Ошибка ликвидации процесса {orphan_name}: {e}")
+
+        await asyncio.gather(*(kill_orphan(orphan) for orphan in orphans_to_kill))
 
         # Обновляем дамп PM2 после зачистки, чтобы предотвратить воскрешение при ребуте
         try:
