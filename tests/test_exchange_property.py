@@ -3,6 +3,7 @@ import pytest_asyncio # Implicitly used by @pytest.mark.asyncio
 from unittest.mock import Mock as UMMock # Using an alias to avoid potential conflicts
 
 import gate_api
+from decimal import Decimal
 from hypothesis import given, settings, strategies as st
 from hypothesis import settings, HealthCheck
 
@@ -10,10 +11,10 @@ from hypothesis import settings, HealthCheck
 # from prosperous_bot.exchange_gate import ExchangeAPI # Not needed if exch fixture provides it
 
 # Strategies (assuming these are defined as they were previously)
-qty_st = st.integers(min_value=1, max_value=100_000)
+qty_st = st.integers(min_value=1, max_value=100_000).map(Decimal)
 order_type_st = st.sampled_from(["OPEN_LONG", "CLOSE_LONG", "OPEN_SHORT", "CLOSE_SHORT"]) # For futures
 spot_side_st = st.sampled_from(["buy", "sell"]) # For spot
-price_st = st.one_of(st.none(), st.floats(min_value=0.01, max_value=1_000_000, allow_nan=False, allow_infinity=False))
+price_st = st.one_of(st.none(), st.decimals(min_value=Decimal("0.01"), max_value=Decimal("1000000")))
 post_only_st = st.booleans()
 
 @pytest.mark.asyncio
@@ -98,13 +99,13 @@ async def test_create_spot_order_property(exch, mocker, qty, side, price, post_o
     mocker.patch.object(exch.spot_api, "create_order", side_effect=_echo_spot)
 
     # Act
-    res = await exch.create_spot_order("BTC_USDT", side, float(qty), price=price, post_only=post_only)
+    res = await exch.create_spot_order("BTC_USDT", side, qty, price=price, post_only=post_only)
 
     # Assert
     assert res.id == "spot123"
     assert res.currency_pair == "BTC_USDT"
     assert res.side == side
-    assert res.amount == str(qty) # Order amount is string
+    assert res.amount == (str(int(qty)) if qty.to_integral_value() == qty else str(qty))
     expected_type = 'limit' if price else 'market'
     assert res.type == expected_type
     if price and post_only:

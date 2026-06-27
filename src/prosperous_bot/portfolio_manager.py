@@ -10,6 +10,11 @@ class PortfolioManager:
         self._base = base_currency
 
     async def get_value_distribution_usdt(self, p_spot: Decimal, p_contract: Decimal | None = None, leverage: Decimal = Decimal("5.0")):
+        p_spot = Decimal(str(p_spot))
+        if p_contract is not None:
+            p_contract = Decimal(str(p_contract))
+        leverage = Decimal(str(leverage))
+
         acc_raw = self.spot_api.spot.get_account_detail()
         accounts = await acc_raw if asyncio.iscoroutine(acc_raw) else acc_raw
 
