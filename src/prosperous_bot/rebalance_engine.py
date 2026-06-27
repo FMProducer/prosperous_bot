@@ -156,7 +156,7 @@ class RebalanceEngine:
                 dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
             except TypeError:
                 dist_abs = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted)
-                nav = sum(dist_abs.values())
+            nav = sum(dist_abs.values())
         try:
             dist = await self.portfolio.get_value_distribution_usdt(p_spot=p_spot, p_contract=p_contract_adjusted, leverage=leverage)
         except TypeError:
