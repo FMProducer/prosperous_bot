@@ -88,11 +88,15 @@ class BacktestState:
     history: List[float] = field(default_factory=list)
     rebalance_log: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Leverage values from config (added to fix hardcoded 5x in TPV calc)
+    l_lev: Decimal = Decimal('5')
+    s_lev: Decimal = Decimal('5')
+
     def get_tpv(self, price: Decimal) -> Decimal:
         unrealized_pnl_long = self.pos_long * (price - self.long_entry_price) if self.pos_long > 0 else Decimal('0')
         unrealized_pnl_short = self.pos_short * (self.short_entry_price - price) if self.pos_short > 0 else Decimal('0')
-        margin_long = (self.pos_long * self.long_entry_price) / Decimal('5') if self.pos_long > 0 else Decimal('0')
-        margin_short = (self.pos_short * self.short_entry_price) / Decimal('5') if self.pos_short > 0 else Decimal('0')
+        margin_long = (self.pos_long * self.long_entry_price) / self.l_lev if self.pos_long > 0 else Decimal('0')
+        margin_short = (self.pos_short * self.short_entry_price) / self.s_lev if self.pos_short > 0 else Decimal('0')
         virtual_equity = (self.virt_qty * price) - self.virt_debt
         return self.val_cash + margin_long + unrealized_pnl_long + margin_short + unrealized_pnl_short + virtual_equity
 
@@ -105,11 +109,13 @@ class BacktestState:
         v_qty = float(self.virt_qty)
         v_debt = float(self.virt_debt)
         cash = float(self.val_cash)
+        l_lev = float(self.l_lev)
+        s_lev = float(self.s_lev)
 
         upnl_l = pos_l * (p - l_entry) if pos_l > 0 else 0.0
         upnl_s = pos_s * (s_entry - p) if pos_s > 0 else 0.0
-        m_l = (pos_l * l_entry) / 5.0 if pos_l > 0 else 0.0
-        m_s = (pos_s * s_entry) / 5.0 if pos_s > 0 else 0.0
+        m_l = (pos_l * l_entry) / l_lev if pos_l > 0 else 0.0
+        m_s = (pos_s * s_entry) / s_lev if pos_s > 0 else 0.0
         v_eq = (v_qty * p) - v_debt
         return cash + m_l + upnl_l + m_s + upnl_s + v_eq
 

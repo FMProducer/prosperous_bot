@@ -326,4 +326,4 @@ futures_portfolio/best_trend_guard.json
 futures_portfolio/optimize_config.py
 futures_portfolio/config.json
 futures_portfolio/best_core_config.json
-.gitignore
+futures_portfolio/scan_cache.json

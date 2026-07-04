@@ -3,10 +3,10 @@
   "limit_order_enabled": false,
   "limit_offset_pct": 0.1,
   "limit_timeout_sec": 30,
-  "min_notional_usdt": 10.0,
+  "min_notional_usdt": 6.1,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 3,
+  "min_cycles_for_rank": 1,
   "min_cycles_for_rotation": 6,
   "max_bots": 20,
   "paper_mode_bots": 17,
@@ -28,8 +28,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 30.0,
-      "paper_initial_capital": 30.0,
+      "initial_capital": 18.0,
+      "paper_initial_capital": 18.0,
       "paper_account_free_margin": 90.0,
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
@@ -72,7 +72,11 @@
       }
     }
   ],
-  "live_swarm": [],
+  "live_swarm": [
+    "FARTCOINUSDT",
+    "MANTAUSDT",
+    "WLDUSDT"
+  ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
@@ -81,25 +85,26 @@
   "toxic_blacklist_paper": {},
   "toxic_blacklist_real": {},
   "tickers": [
-    "AAVEUSDT",
-    "ADAUSDT",
-    "AVAXUSDT",
-    "BCHUSDT",
-    "DOGEUSDT",
+    "ACTUSDT",
+    "AGLDUSDT",
+    "CHZUSDT",
     "DOTUSDT",
-    "ETHUSDT",
-    "LINKUSDT",
-    "LTCUSDT",
-    "NEARUSDT",
-    "ONDOUSDT",
-    "SOLUSDT",
-    "SUIUSDT",
-    "TRUMPUSDT",
-    "UNIUSDT",
+    "ENAUSDT",
+    "FARTCOINUSDT",
+    "FILUSDT",
+    "GUSDT",
+    "HEIUSDT",
+    "JTOUSDT",
+    "MANTAUSDT",
+    "ONGUSDT",
+    "ORDIUSDT",
+    "POWRUSDT",
+    "SYNUSDT",
+    "TIAUSDT",
+    "VVVUSDT",
+    "WIFUSDT",
     "WLDUSDT",
-    "WLFIUSDT",
-    "XLMUSDT",
-    "XRPUSDT"
+    "XLMUSDT"
   ],
-  "base_ticker": "AAVEUSDT"
+  "base_ticker": "ACTUSDT"
 }
