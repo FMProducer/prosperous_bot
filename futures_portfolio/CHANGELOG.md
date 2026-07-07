@@ -2,6 +2,55 @@
 
 ---
 
+## [Unreleased] — 2026-07-07
+
+### Supervisor: WinError 2 Fix (Windows pm2 .cmd Execution)
+
+**Problem:** Supervisor logs showed recurring `PM2: [WinError 2] Не удается найти указанный файл` errors every cycle (every ~7 min). The `reconcile_swarm_state` (Reaper Guard) and `enforce_swarm_consistency` functions couldn't read PM2 process state.
+
+**Root Cause:** On Windows, `pm2` is a `.cmd` batch file (`C:\Users\svsma\AppData\Roaming\npm\pm2.cmd`), not an `.exe`. `asyncio.create_subprocess_exec` only works with executable files, not batch scripts. Hence WinError 2 ("The system cannot find the file specified").
+
+**Solution:** Replaced `create_subprocess_exec` with `create_subprocess_shell` in two functions in `supervisor.py`:
+- `get_pm2_processes()` (line 78-94) — used by Reaper Guard for PM2 state reconciliation
+- `get_running_bots_info()` (line 54-76) — used by Swarm Consistency check
+
+`shell=True` allows `cmd.exe` to properly execute the `.cmd` batch file.
+
+**Files Changed:**
+- `supervisor.py` — 2 functions updated with Windows-specific comment
+
+**Result:**
+- `get_pm2_processes()` returns 28 processes (was: error → empty list)
+- `get_running_bots_info()` returns 25 bots (was: error → empty list)
+- REAPER GUARD correctly reconciles swarm state
+- WinError 2 errors eliminated from supervisor logs after restart
+
+---
+
+## [Unreleased] — 2026-07-07
+
+### Supervisor: UnicodeEncodeError Fix (Windows cp1251 Console)
+
+**Problem:** `UnicodeEncodeError: 'charmap' codec can't encode characters` — emoji in logs (`🛡️`, `⚔️`, `🚫`) couldn't be encoded in cp1251 (Windows default console encoding). Crash occurred in `StreamHandler(sys.stdout)` when writing log messages.
+
+**Solution:** Forced `sys.stdout` to UTF-8 with `errors="replace"` fallback:
+```python
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+```
+
+`errors="replace"` ensures unsupported characters become `?` instead of raising an exception.
+
+**Files Changed:**
+- `supervisor.py` — Added `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` before `setup_logger()`
+
+**Result:**
+- Emoji in logs (`🛡️`, `⚔️`, `🚫`, `❌`, `⚖️`) render correctly
+- Supervisor cycles complete without `UnicodeEncodeError`
+- Two consecutive cycles (19:04, 19:12) — `Cycle Complete` clean
+
+---
+
 ## [Unreleased] — 2026-06-03
 
 ### Net Move Guard (NMG) — Pump/Dump Protection

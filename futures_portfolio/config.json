@@ -6,10 +6,10 @@
   "min_notional_usdt": 6.1,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 1,
+  "min_cycles_for_rank": 3,
   "min_cycles_for_rotation": 6,
   "max_bots": 20,
-  "paper_mode_bots": 17,
+  "paper_mode_bots": 15,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -18,7 +18,7 @@
   "replacement_efficiency_threshold_pct": 50.0,
   "max_drawdown_limit": 100.0,
   "equity_trailing_stop_pct": 0.001,
-  "equity_trailing_stop_activation_pct": 9.0,
+  "equity_trailing_stop_activation_pct": 5.0,
   "equity_trailing_stop_timeout_sec": 40,
   "use_v2_scoring": true,
   "scoring_drawdown_weight": 2.0,
@@ -73,16 +73,17 @@
     }
   ],
   "live_swarm": [
-    "FARTCOINUSDT",
-    "MANTAUSDT",
-    "WLDUSDT"
+    "AGLDUSDT",
+    "SYNUSDT"
   ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
-  "toxic_blacklist_paper": {},
+  "toxic_blacklist_paper": {
+    "SYNUSDT": 1783445621.2208285
+  },
   "toxic_blacklist_real": {},
   "tickers": [
     "ACTUSDT",

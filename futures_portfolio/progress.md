@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-07-07 — Supervisor: WinError 2 fix (pm2 .cmd execution on Windows)
+
+### Что сделано
+1. **Диагностика ошибки `PM2: [WinError 2] Не удается найти указанный файл`** — повторялась в логах supervisor-service каждые 7 минут при цикле REAPER GUARD
+2. **Корневая причина**: На Windows `pm2` — это `.cmd` батник (`C:\Users\svsma\AppData\Roaming\npm\pm2.cmd`), а не `.exe`. Функция `asyncio.create_subprocess_exec` не может запускать `.cmd` файлы напрямую — она работает только с исполняемыми файлами. Поэтому возникала ошибка WinError 2 (файл не найден).
+3. **Решение**: Заменил `create_subprocess_exec` на `create_subprocess_shell` в двух функциях `supervisor.py`:
+   - `get_pm2_processes()` (стр. 78-94)
+   - `get_running_bots_info()` (стр. 54-76)
+   - `shell=True` позволяет `cmd.exe` корректно выполнить `.cmd` батник
+
+### Изменённые файлы
+| Файл | Изменение |
+|------|-----------|
+| `supervisor.py` | `get_pm2_processes()`: `create_subprocess_exec` → `create_subprocess_shell` с комментарием |
+| `supervisor.py` | `get_running_bots_info()`: добавлен комментарий, уже использовал `shell` |
+
+### Результат
+- `get_pm2_processes()` теперь возвращает 28 процессов (было: ошибка → пустой список)
+- `get_running_bots_info()` возвращает 25 ботов (было: ошибка → пустой список)
+- REAPER GUARD синхронизирует swarm корректно
+- Ошибки `WinError 2` в логах исчезли после `pm2 restart supervisor-service`
+
+---
+
+## 2026-07-07 — Supervisor: UnicodeEncodeError fix (Windows cp1251 console)
+
+### Что сделано
+1. **Ошибка**: `UnicodeEncodeError: 'charmap' codec can't encode characters` — эмодзи в логах (`🛡️`, `⚔️`, `🚫`) не кодировались в cp1251 (Windows default console encoding). Краш происходит в `StreamHandler(sys.stdout)` при попытке вывести log message.
+2. **Решение**: Добавлено принудительное переключение `sys.stdout` на UTF-8 с `errors="replace"`:
+   ```python
+   if hasattr(sys.stdout, "reconfigure"):
+       sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+   ```
+3. `errors="replace"` — fallback: неподдерживаемые символы заменяются на `?` вместо исключения.
+
+### Изменённые файлы
+| Файл | Изменение |
+|------|-----------|
+| `supervisor.py` | Добавлен `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` перед `setup_logger()` |
+
+### Результат
+- Эмодзи в логах (`🛡️`, `⚔️`, `🚫`, `❌`, `⚖️`) выводятся корректно
+- Циклы супервайзера проходят без `UnicodeEncodeError`
+- Два последовательных цикла (19:04, 19:12) — `Cycle Complete` без ошибок
+
+---
+
 ## 2026-07-16 — Dashboard: убийство зомби-процессов + чистка кода
 
 ### Что сделано

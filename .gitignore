@@ -327,3 +327,5 @@ futures_portfolio/optimize_config.py
 futures_portfolio/config.json
 futures_portfolio/best_core_config.json
 futures_portfolio/scan_cache.json
+futures_portfolio/config.json
+futures_portfolio/signals/telegram_queue/msg_*_*.error
