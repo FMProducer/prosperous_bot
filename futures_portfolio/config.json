@@ -6,10 +6,10 @@
   "min_notional_usdt": 6.1,
   "paper_mode": false,
   "max_orders_per_second": 10,
-  "min_cycles_for_rank": 3,
+  "min_cycles_for_rank": 6,
   "min_cycles_for_rotation": 6,
   "max_bots": 20,
-  "paper_mode_bots": 15,
+  "paper_mode_bots": 20,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -18,7 +18,7 @@
   "replacement_efficiency_threshold_pct": 50.0,
   "max_drawdown_limit": 100.0,
   "equity_trailing_stop_pct": 0.001,
-  "equity_trailing_stop_activation_pct": 5.0,
+  "equity_trailing_stop_activation_pct": 9.0,
   "equity_trailing_stop_timeout_sec": 40,
   "use_v2_scoring": true,
   "scoring_drawdown_weight": 2.0,
@@ -28,8 +28,8 @@
   "portfolios": [
     {
       "name": "SyntheticMarketNeutral",
-      "initial_capital": 18.0,
-      "paper_initial_capital": 18.0,
+      "initial_capital": 20.0,
+      "paper_initial_capital": 20.0,
       "paper_account_free_margin": 90.0,
       "paper_min_free_margin_pct": 15.0,
       "margin_ratio_warning": 3.0,
@@ -66,19 +66,13 @@
       "rebalance_threshold_deficit": 0.04,
       "ticker_thresholds": {
         "BTCUSDT": {
-          "surplus": 0.025,
-          "deficit": 0.05
+          "surplus": 0.01,
+          "deficit": 0.04
         }
       }
     }
   ],
-  "live_swarm": [
-    "AGLDUSDT",
-    "ENAUSDT",
-    "MANTAUSDT",
-    "ORDIUSDT",
-    "VVVUSDT"
-  ],
+  "live_swarm": [],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
@@ -86,27 +80,6 @@
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {},
   "toxic_blacklist_real": {},
-  "tickers": [
-    "ACTUSDT",
-    "AGLDUSDT",
-    "CHZUSDT",
-    "DOTUSDT",
-    "ENAUSDT",
-    "FARTCOINUSDT",
-    "FILUSDT",
-    "GUSDT",
-    "HEIUSDT",
-    "JTOUSDT",
-    "MANTAUSDT",
-    "ONGUSDT",
-    "ORDIUSDT",
-    "POWRUSDT",
-    "SYNUSDT",
-    "TIAUSDT",
-    "VVVUSDT",
-    "WIFUSDT",
-    "WLDUSDT",
-    "XLMUSDT"
-  ],
-  "base_ticker": "ACTUSDT"
+  "tickers": [],
+  "base_ticker": ""
 }

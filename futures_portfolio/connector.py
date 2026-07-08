@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import time
 from typing import Dict, List, Callable, Any
 
 from binance.client import Client
@@ -97,45 +96,6 @@ class BinanceConnector:
             self.futures_client = self.client
 
         await asyncio.to_thread(self.futures_client.ping)
-
-        # Синхронизация времени с сервером Binance (fix для -1021 Timestamp error)
-        await self._sync_time()
-
-    async def _sync_time(self):
-        """Синхронизация локального времени с сервером Binance.
-        Устанавливает client.time_offset для корректных timestamp в подписанных запросах.
-        """
-        try:
-            # Получаем серверное время Binance (в миллисекундах)
-            server_time_resp = await asyncio.to_thread(self.futures_client.futures_time)
-            server_time = server_time_resp.get('serverTime')
-            if server_time is None:
-                logger.warning("Binance server time response missing 'serverTime'")
-                return
-
-            # Локальное время в миллисекундах
-            local_time = int(time.time() * 1000)
-
-            # Смещение: server_time - local_time (положительное = локальные часы отстают)
-            time_offset = server_time - local_time
-
-            # Применяем к обоим клиентам (spot и futures)
-            self.client.time_offset = time_offset
-            self.futures_client.time_offset = time_offset
-
-            logger.info(f"⏰ Time synced with Binance: offset={time_offset}ms (server={server_time}, local={local_time})")
-
-        except Exception as e:
-            logger.error(f"Failed to sync time with Binance: {e}")
-
-    async def _periodic_time_sync(self, interval_sec: int = 300):
-        """Периодическая пересинхронизация времени (по умолчанию каждые 5 мин)."""
-        while True:
-            await asyncio.sleep(interval_sec)
-            try:
-                await self._sync_time()
-            except Exception as e:
-                logger.warning(f"Periodic time sync failed: {e}")
 
     @retry_on_network_error(retries=5, delay=3.0)
     async def get_positions(self) -> Dict[str, Dict]:

@@ -24,13 +24,6 @@ BASE_PATH = Path(__file__).resolve().parent
 log_dir = BASE_PATH / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
 
-# Windows: force stdout to UTF-8 to handle emoji in logs
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-
 def setup_logger():
     l = logging.getLogger("Supervisor")
     l.setLevel(logging.INFO)
@@ -45,7 +38,7 @@ def setup_logger():
     fh.setFormatter(formatter)
     l.addHandler(fh)
     
-    # Stream Handler - use stderr which may have better encoding support
+    # Stream Handler
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(formatter)
     l.addHandler(sh)
@@ -60,7 +53,6 @@ CONFIG_PATH = str(BASE_PATH / "config.json")
 
 async def get_running_bots_info() -> Dict[str, dict]:
     try:
-        # Windows: pm2 is a .cmd file, must use shell to execute
         proc = await asyncio.create_subprocess_shell(
             "pm2 jlist",
             stdout=asyncio.subprocess.PIPE,
@@ -88,9 +80,8 @@ async def get_pm2_processes() -> List[Dict[str, Any]]:
     Получает текущий слепок процессов из PM2.
     """
     try:
-        # Windows: pm2 is a .cmd file, must use shell to execute
-        proc = await asyncio.create_subprocess_shell(
-            "pm2 jlist --no-color",
+        proc = await asyncio.create_subprocess_exec(
+            "pm2", "jlist", "--no-color",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
