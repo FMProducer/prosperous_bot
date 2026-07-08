@@ -74,16 +74,17 @@
   ],
   "live_swarm": [
     "AGLDUSDT",
-    "SYNUSDT"
+    "ENAUSDT",
+    "MANTAUSDT",
+    "ORDIUSDT",
+    "VVVUSDT"
   ],
   "use_real_whitelist": false,
   "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
-  "toxic_blacklist_paper": {
-    "SYNUSDT": 1783445621.2208285
-  },
+  "toxic_blacklist_paper": {},
   "toxic_blacklist_real": {},
   "tickers": [
     "ACTUSDT",
