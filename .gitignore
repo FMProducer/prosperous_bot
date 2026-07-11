@@ -330,3 +330,4 @@ futures_portfolio/scan_cache.json
 futures_portfolio/config.json
 futures_portfolio/signals/telegram_queue/msg_*_*.error
 ПОЛНОЕ ЗАВИСАНИЕ ПК — 10.07.2026 --- ПЛАН УСТРАНЕНИЯ.md
+futures_portfolio/proc_check.ps1

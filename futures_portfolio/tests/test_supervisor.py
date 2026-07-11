@@ -403,3 +403,164 @@ async def test_rotation_guard_default_min_cycles_for_rotation():
     res = await selective_merge_incubator(old_incubator, scanner_results, config, perf_map)
     assert "A" in res, "Immature bot A (cycles=5 < default 6) must be protected"
     assert len(res) == 3
+
+
+# ============================================================
+# B1 FIX TEST: stop_bot MUST be called BEFORE TS flag reset
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_b1_stop_bot_called_before_ts_flag_reset():
+    """
+    B1 FIX VERIFICATION:
+    When enforce_swarm_consistency encounters a ticker with
+    trailing_stop_triggered=True and a dead PM2 process, it MUST
+    call stop_bot() to kill the zombie BEFORE resetting the TS
+    flags in the state file. Otherwise Reaper Guard (later in
+    the loop) won't find the zombie because flags are already False.
+    """
+    ticker = "GRASSUSDT"
+    config = {"live_swarm": [ticker]}
+    state_data = {
+        "trailing_stop_triggered": True,
+        "trailing_stop_violation_start": 12345.0,
+        "rebalance_cycles": 10,
+        "virt_qty": 0.0
+    }
+
+    connector = MagicMock()
+    connector.get_positions = AsyncMock(return_value={
+        f"{ticker}_LONG": {"qty": 1.0}
+    })
+
+    # Track call order: stop_bot vs file write
+    call_order = []
+
+    async def fake_stop_bot(t, is_paper=False):
+        call_order.append(("stop_bot", t))
+
+    # Mock open to capture file writes
+    original_builtin_open = open
+    import io
+    def tracking_open(path, *args, **kwargs):
+        if "real_state_" in str(path) and "w" in str(args):
+            def write_and_track(content):
+                call_order.append(("file_write", str(path)))
+                return len(content)
+            buf = io.StringIO()
+            buf.write = write_and_track
+            return buf
+        return original_builtin_open(path, *args, **kwargs)
+
+    import json as _json
+
+    with patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})), \
+         patch(f"{M}.stop_bot", side_effect=fake_stop_bot) as mock_stop, \
+         patch(f"{M}.start_bot", AsyncMock()), \
+         patch(f"{M}.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock(wait=AsyncMock()))), \
+         patch(f"{M}.Path.exists", return_value=True), \
+         patch("builtins.open", side_effect=tracking_open):
+
+        original_load = _json.load
+        def fake_load(f, *args, **kwargs):
+            if "real_state_" in str(getattr(f, 'name', '')):
+                return dict(state_data)
+            return original_load(f, *args, **kwargs)
+
+        with patch("json.load", side_effect=fake_load):
+            await enforce_swarm_consistency(connector, config)
+
+    # Verify stop_bot was called
+    mock_stop.assert_called_once_with(ticker, is_paper=False)
+
+    # Verify stop_bot was called BEFORE file write
+    stop_idx = next((i for i, (op, _) in enumerate(call_order) if op == "stop_bot"), None)
+    write_idx = next((i for i, (op, _) in enumerate(call_order) if op == "file_write"), None)
+
+    assert stop_idx is not None, "stop_bot was never called"
+    assert write_idx is not None, "State file was never written"
+    assert stop_idx < write_idx, (
+        f"B1 BUG: stop_bot (idx={stop_idx}) must be called BEFORE "
+        f"file write (idx={write_idx}). Zombie would survive!"
+    )
+
+
+@pytest.mark.asyncio
+async def test_b1_ts_flag_reset_after_stop_bot():
+    """
+    B1 FIX VERIFICATION (flag state):
+    After enforce_swarm_consistency, the state file must have
+    trailing_stop_triggered=False — but ONLY AFTER stop_bot was called.
+    """
+    ticker = "VVVUSDT"
+    config = {"live_swarm": [ticker]}
+    state_data = {
+        "trailing_stop_triggered": True,
+        "trailing_stop_violation_start": 99999.0,
+        "rebalance_cycles": 5,
+        "virt_qty": 0.0
+    }
+
+    connector = MagicMock()
+    connector.get_positions = AsyncMock(return_value={
+        f"{ticker}_SHORT": {"qty": -0.5}
+    })
+
+    stop_called = False
+    written_state = {}
+
+    async def fake_stop_bot(t, is_paper=False):
+        nonlocal stop_called
+        stop_called = True
+
+    original_builtin_open2 = open
+    import io
+    def tracking_open2(path, *args, **kwargs):
+        if "real_state_" in str(path) and "w" in str(args):
+            buf = io.StringIO()
+            original_write = buf.write
+            def accumulate_write(content):
+                original_write(content)
+                return len(content)
+            buf.write = accumulate_write
+            # On close, capture the full content
+            original_close = buf.close
+            def capture_and_close():
+                nonlocal written_state
+                try:
+                    buf.seek(0)
+                    written_state = _json.loads(buf.read())
+                except:
+                    pass
+                original_close()
+            buf.close = capture_and_close
+            return buf
+        return original_builtin_open2(path, *args, **kwargs)
+
+    import json as _json
+
+    with patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})), \
+         patch(f"{M}.stop_bot", side_effect=fake_stop_bot), \
+         patch(f"{M}.start_bot", AsyncMock()), \
+         patch(f"{M}.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock(wait=AsyncMock()))), \
+         patch(f"{M}.Path.exists", return_value=True), \
+         patch("builtins.open", side_effect=tracking_open2):
+
+        original_load2 = _json.load
+        def fake_load2(f, *args, **kwargs):
+            if "real_state_" in str(getattr(f, 'name', '')):
+                return dict(state_data)
+            return original_load2(f, *args, **kwargs)
+
+        with patch("json.load", side_effect=fake_load2):
+            await enforce_swarm_consistency(connector, config)
+
+    # stop_bot MUST have been called
+    assert stop_called, "stop_bot was not called — zombie survives!"
+
+    # State file MUST have trailing_stop_triggered=False
+    assert written_state.get("trailing_stop_triggered") is False, (
+        f"TS flag was not reset! Got: {written_state.get('trailing_stop_triggered')}"
+    )
+    # Violation start MUST be cleared
+    assert written_state.get("trailing_stop_violation_start") == 0.0

@@ -195,6 +195,10 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
                         logger.warning(f"⚠️ HEAL REJECTED: {ticker} was stopped by Trailing Stop. Scheduling position liquidation.")
                         to_close_tickers.add(ticker)
 
+                        # [B1 FIX] Kill zombie PM2 process BEFORE resetting TS flags
+                        # so Reaper Guard (later in the loop) won't find a stale zombie.
+                        await stop_bot(ticker, is_paper=False)
+
                         # Сброс TS флагов для будущего чистого старта
                         try:
                             state_data["trailing_stop_triggered"] = False

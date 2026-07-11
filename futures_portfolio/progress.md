@@ -1,7 +1,42 @@
 Progress Log — Market-Neutral Futures Portfolio Rebalancer
 Формат: Дата → Что сделали → Почему → Результат Читаемые первые 50 строк = последние 50 строк (свежее сверху).
 
-2026-07-11 — Per-ticker min_notional + 2% buffer
+2026-07-21 — B1 Fix: TS Flag Persistence (zombie process kill)
+Что сделано
+Исправлен критический баг B1 (Score 8.3): после срабатывания trailing stop и рестарта supervisor, зомби-процесс never cleaned up. Причина: HEAL REJECTED в enforce_swarm_consistency() сбрасывал TS флаги ДО того, как Reaper Guard успевал убить зомби. Reaper Guard проверял state файл — флаги уже False — не видел зомби.
+
+Фикс: 1 строка в supervisor.py:197-199 — await stop_bot(ticker, is_paper=False) в HEAL REJECTED блоке ДО сброса флагов. stop_bot вызывает pm2 delete, убивая зомби-процесс.
+
+Изменения
+supervisor.py:197-199 — +await stop_bot(ticker, is_paper=False)
+tests/test_supervisor.py — +2 unit-теста (call order tracking + flag state verification)
+
+Результат
+19/19 тестов пройдены (17 существующих + 2 новых B1). Фикс атомарный, минимально инвазивный. B1 помечен как ✅ ИСПРАВЛЕН в ROADMAP.md.
+
+2026-07-21 — Documentation sync (ROADMAP, STATUS, PROJECT_INDEX)
+Что сделано
+ROADMAP.md описывал "1 REAL bot (INJUSDT)" — актуально: 4 бота (GRASS, UNI, VVV, YFI). STATUS.md устарел по тикерам, PROJECT_INDEX.md по конфиг-параметрам.
+
+Обновлены все три документа до актуального состояния из config.json (SSOT).
+
+Изменения
+ROADMAP.md — Текущее состояние: 4 REAL bots, 20 USDT/bot, ~7 min interval, TS OFF, KPI таблица
+STATUS.md — Live Swarm: GRASS/UNI/VVV/YFI, TS=0.001% (OFF), guards=6 active, blacklists
+PROJECT_INDEX.md — Config params, tickers, changelog entries, updated date
+
+2026-07-21 — Hermes Agent upgrade 0.17.0 → 0.18.2
+Что сделано
+Portable USB venv (D:\Hermes-USB-Portable-main\data\hermes-agent\venv) обновлён с 0.17.0 до 0.18.2. Config migrated: v24 → v33.
+
+Изменения
+hermes-agent: 0.17.0 → 0.18.2
+cryptography: 48.0.0 → 46.0.7 (required by hermes 0.18.2)
+Config: v24 → v33 (model_catalog.ttl_hours, agent.verify_on_stop)
+
+Ключевые улучшения v0.18.2: stream-stale circuit breaker, PTY session management, approval gate fixes, MCP stability.
+
+2026-07-16 — Dashboard: убийство зомби-процессов + чистка кода
 Что сделано
 Глобальный min_notional_usdt: 6.1 блокировал GRASSUSDT (Binance 5.03) и VVVUSDT (5.05) при 3-4% отклонениях. Config задавал единый порог для всех тикеров, хотя Binance minimums у каждого свои.
 

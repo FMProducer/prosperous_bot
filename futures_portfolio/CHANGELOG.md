@@ -1,4 +1,33 @@
 CHANGELOG — Prosperous BOT Futures Portfolio
+[21 Jul 2026] — B1 Fix: TS Flag Persistence (zombie process kill)
+Problem: After trailing stop triggers and supervisor restarts, the flag trailing_stop_triggered=True persists in real_state JSON. In enforce_swarm_consistency(), HEAL REJECTED path resets TS flags BEFORE Reaper Guard runs. Reaper Guard checks state file — flags already False — doesn't kill the zombie. Result: zombie PM2 process sleeps forever (while True: asyncio.sleep(86400)), never cleaned up.
+
+Root cause: Call order in supervisor.py — enforce_swarm_consistency (line 559) runs BEFORE Reaper Guard (line 622+). HEAL REJECTED resets flags at line 200, Reaper Guard at line 635 can't see them anymore.
+
+Solution: Added await stop_bot(ticker, is_paper=False) in HEAL REJECTED path (supervisor.py:197-199) — kills zombie PM2 process via pm2 delete BEFORE resetting TS flags. Atomic 1-line fix.
+
+Changes:
+supervisor.py:197-199 — +await stop_bot(ticker, is_paper=False) in HEAL REJECTED block
+tests/test_supervisor.py — +2 unit tests (test_b1_stop_bot_called_before_ts_flag_reset, test_b1_ts_flag_reset_after_stop_bot)
+
+Test results: 19/19 passed (17 existing + 2 new B1 tests)
+Status: B1 Score 8.3 → ✅ ИСПРАВЛЕН. Активируется при включении TS.
+
+[21 Jul 2026] — Documentation sync (ROADMAP, STATUS, PROJECT_INDEX)
+Problem: ROADMAP.md described "1 REAL bot (INJUSDT)" — actual: 4 bots (GRASS, UNI, VVV, YFI). STATUS.md had stale tickers, PROJECT_INDEX.md had wrong config values.
+
+Solution: Updated all three documents to match actual config.json state (SSOT).
+
+Changes:
+ROADMAP.md — Текущее состояние: 4 REAL bots, 20 USDT/bot, ~7 min interval, TS OFF
+STATUS.md — Live Swarm: GRASS/UNI/VVV/YFI, TS=0.001% (OFF), guards=6 active
+PROJECT_INDEX.md — Config params, tickers, changelog entries
+
+[21 Jul 2026] — Hermes Agent upgrade 0.17.0 → 0.18.2
+Portable USB venv (D:\Hermes-USB-Portable-main\data\hermes-agent\venv) upgraded.
+Config migrated: v24 → v33.
+Key changes: stream-stale circuit breaker, PTY session management, approval gate fixes.
+
 [11 Jul 2026] — Per-ticker min_notional + 2% buffer
 Problem: Global min_notional_usdt: 6.1 blocked GRASSUSDT (Binance min=5.03) and VVVUSDT (5.05) — they couldn't rebalance at 3-4% deviations. Config set a single threshold for all tickers, though Binance minimums differ per ticker.
 

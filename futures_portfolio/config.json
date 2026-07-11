@@ -86,26 +86,20 @@
   "toxic_blacklist_paper": {},
   "toxic_blacklist_real": {},
   "tickers": [
-    "APEUSDT",
-    "BLURUSDT",
+    "1000BONKUSDT",
+    "1000PEPEUSDT",
+    "ARBUSDT",
     "DEXEUSDT",
-    "EIGENUSDT",
-    "EPICUSDT",
-    "ETHFIUSDT",
-    "GRASSUSDT",
-    "HMSTRUSDT",
-    "JTOUSDT",
-    "KAITOUSDT",
-    "LDOUSDT",
-    "PENDLEUSDT",
-    "RIFUSDT",
-    "SPELLUSDT",
+    "ENAUSDT",
+    "SKLUSDT",
     "SYNUSDT",
+    "TIAUSDT",
     "TLMUSDT",
     "UNIUSDT",
     "VANRYUSDT",
-    "VVVUSDT",
-    "YFIUSDT"
+    "VIRTUALUSDT",
+    "WLDUSDT",
+    "ZECUSDT"
   ],
-  "base_ticker": "APEUSDT"
+  "base_ticker": "1000BONKUSDT"
 }
