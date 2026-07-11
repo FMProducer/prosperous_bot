@@ -157,27 +157,7 @@ async def _handle_liquidation_recovery(connector, base_ticker, state, state_file
         state["trailing_stop_triggered"] = True
         await save_json(state_file_path, state)
 
-        # Remove from live_swarm and add to toxic_blacklist
-        try:
-            import json as _json
-            from pathlib import Path
-            cfg_path = Path(config_path)
-            if cfg_path.exists():
-                cfg_data = _json.loads(cfg_path.read_text())
-                live_swarm = cfg_data.get("live_swarm", [])
-                if base_ticker in live_swarm:
-                    live_swarm.remove(base_ticker)
-                    cfg_data["live_swarm"] = live_swarm
-                toxic = cfg_data.get("toxic_blacklist_real", {})
-                cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
-                expiry = time.time() + cooldown_days * 86400
-                toxic[base_ticker] = expiry
-                cfg_data["toxic_blacklist_real"] = toxic
-                cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
-                logger.info(f"{base_ticker} removed from live_swarm, added to toxic_blacklist_real")
-        except Exception as e:
-            logger.error(f"Failed to update config: {e}")
-
+        # [SSOT] Delegate config mutation to supervisor via signal
         emit_signal("stop", base_ticker, is_paper=False)
 
         try:
@@ -262,39 +242,12 @@ async def _handle_liquidation_guard(
             f"(dist={dist:.1f}%, liq={liq_price:.8f})"
         )
 
-        # After closing one side in critical zone → add to blacklist
-        # This prevents the bot from continuing on a failing ticker
-        try:
-            import json as _json
-            from pathlib import Path
-            # Find config path from notifier or use default
-            _cfg_path = Path("config.json")
-            if _cfg_path.exists():
-                cfg_data = _json.loads(_cfg_path.read_text())
-                # Add to black_list (permanent) — ticker is too volatile for this strategy
-                bl = cfg_data.get("black_list", [])
-                if base_ticker not in bl:
-                    bl.append(base_ticker)
-                    cfg_data["black_list"] = bl
-                # Also add to isolated toxic_blacklist with cooldown
-                bl_key = "toxic_blacklist_paper" if is_paper else "toxic_blacklist_real"
-                toxic = cfg_data.get(bl_key, {})
-                cooldown_days = cfg_data.get("toxic_cooldown_days", 0.02)
-                expiry = time.time() + cooldown_days * 86400
-                toxic[base_ticker] = expiry
-                cfg_data[bl_key] = toxic
-                # Remove from live_swarm
-                live_swarm = cfg_data.get("live_swarm", [])
-                if base_ticker in live_swarm:
-                    live_swarm.remove(base_ticker)
-                    cfg_data["live_swarm"] = live_swarm
-                _cfg_path.write_text(_json.dumps(cfg_data, indent=2, ensure_ascii=False))
-                logger.critical(
-                    f"🚫 {base_ticker} added to black_list + toxic_blacklist. "
-                    f"Removed from live_swarm."
-                )
-        except Exception as e:
-            logger.error(f"Failed to blacklist {base_ticker}: {e}")
+        # [SSOT] Delegate config mutation to supervisor via signal
+        emit_signal("stop", base_ticker, is_paper=is_paper)
+        logger.critical(
+            f"🚫 {base_ticker} signal 'stop' emitted. "
+            f"Awaiting supervisor to blacklist and remove from live_swarm."
+        )
 
     elif dist <= liquidation_distance_warn:
         logger.warning(

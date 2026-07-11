@@ -78,8 +78,13 @@
     "VVVUSDT",
     "YFIUSDT"
   ],
-  "use_real_whitelist": false,
-  "real_whitelist": [],
+  "use_real_whitelist": true,
+  "real_whitelist": [
+    "GRASSUSDT",
+    "UNIUSDT",
+    "VVVUSDT",
+    "YFIUSDT"
+  ],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
@@ -101,5 +106,7 @@
     "WLDUSDT",
     "ZECUSDT"
   ],
-  "base_ticker": "1000BONKUSDT"
+  "base_ticker": "1000BONKUSDT",
+  "probation_paper": {},
+  "probation_real": {}
 }

@@ -388,3 +388,99 @@ class TestEffectiveMinNotional:
         with pytest.raises(ValueError, match="min_notional_usdt must be set"):
             if config_min is None:
                 raise ValueError("min_notional_usdt must be set in config.json")
+
+
+# =====================================================================
+# B6: SSOT — main.py no longer writes to config.json (2026-07-11)
+# =====================================================================
+
+import pytest
+import json
+import asyncio
+from unittest.mock import patch, AsyncMock, MagicMock
+from pathlib import Path
+from futures_portfolio.main import _handle_liquidation_recovery, _handle_liquidation_guard
+
+
+@pytest.mark.asyncio
+async def test_handle_liquidation_recovery_no_config_write():
+    """B6: _handle_liquidation_recovery does NOT write to config.json (SSOT)"""
+    connector = MagicMock()
+    connector.get_position_risk = AsyncMock(return_value={})
+    base_ticker = "BTCUSDT"
+    state = {"initial_tpv": 180.0, "positions": {}}
+    paper_state = {"balance": 100.0}
+    logger = MagicMock()
+    notifier = MagicMock()
+    notifier.send_alert = AsyncMock()
+
+    config_write_called = False
+    original_write_text = Path.write_text
+
+    def tracking_write_text(self, *args, **kwargs):
+        nonlocal config_write_called
+        if "config" in str(self).lower():
+            config_write_called = True
+        return original_write_text(self, *args, **kwargs)
+
+    with patch("futures_portfolio.main.save_json", AsyncMock()),          patch("futures_portfolio.main.emit_signal") as mock_emit,          patch.object(Path, "write_text", tracking_write_text):
+
+        await _handle_liquidation_recovery(
+            connector=connector,
+            base_ticker=base_ticker,
+            state=state,
+            state_file_path="test_state.json",
+            paper_state=paper_state,
+            paper_state_file_path="test_paper_state.json",
+            config_path="config.json",
+            logger=logger,
+            notifier=notifier,
+        )
+
+    # SSOT: emit_signal must be called, config.json must NOT be written
+    mock_emit.assert_called_once_with("stop", base_ticker, is_paper=False)
+    assert not config_write_called, "VIOLATION: _handle_liquidation_recovery wrote to config.json!"
+
+
+@pytest.mark.asyncio
+async def test_handle_liquidation_guard_no_config_write():
+    """B6: _handle_liquidation_guard does NOT write to config.json (SSOT)"""
+    connector = MagicMock()
+    logger = MagicMock()
+    notifier = MagicMock()
+    notifier.send_alert = AsyncMock()
+
+    config_write_called = False
+    original_write_text = Path.write_text
+
+    def tracking_write_text(self, *args, **kwargs):
+        nonlocal config_write_called
+        if "config" in str(self).lower():
+            config_write_called = True
+        return original_write_text(self, *args, **kwargs)
+
+    with patch("futures_portfolio.main.PortfolioExecutor") as mock_exec_cls,          patch("futures_portfolio.main.emit_signal") as mock_emit,          patch.object(Path, "write_text", tracking_write_text):
+
+        mock_exec = MagicMock()
+        mock_exec.execute_market_order = AsyncMock()
+        mock_exec_cls.return_value = mock_exec
+
+        await _handle_liquidation_guard(
+            pos_key="BTCUSDT_LONG",
+            dist=5.0,
+            liq_price=60000.0,
+            liquidation_distance_warn=15.0,
+            liquidation_distance_crit=8.0,
+            is_paper=False,
+            raw_positions={"BTCUSDT_LONG": {"qty": 0.1}},
+            paper_state={"positions": {"BTCUSDT_LONG": 0.1}, "balance": 100.0},
+            connector=connector,
+            base_ticker="BTCUSDT",
+            step_sizes={"BTCUSDT": 0.001},
+            notifier=notifier,
+            logger=logger,
+        )
+
+    # dist=5.0 <= crit=8.0 → should emit stop signal
+    mock_emit.assert_called_once_with("stop", "BTCUSDT", is_paper=False)
+    assert not config_write_called, "VIOLATION: _handle_liquidation_guard wrote to config.json!"

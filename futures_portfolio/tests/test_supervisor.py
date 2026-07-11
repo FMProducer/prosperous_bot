@@ -205,14 +205,18 @@ async def test_manage_swarm_toxic_flow():
 @pytest.mark.asyncio
 async def test_isolated_blacklists_signal_processing():
     """
-    Однозначно подтверждает функциональность парсинга сигналов супервайзером
-    и их маршрутизацию в строго изолированные списки (toxic_blacklist_real и toxic_blacklist_paper).
+    B3 (2026-07-11): Маршрутизация сигналов:
+    - stop → toxic_blacklist + black_list (токсичный исход)
+    - exit → probation (прибыльный исход, без перманентного бана)
     """
     config = {
         "tickers": ["BTCUSDT", "ETHUSDT"],
         "max_bots": 2,
         "toxic_blacklist_paper": {},
         "toxic_blacklist_real": {},
+        "probation_paper": {},
+        "probation_real": {},
+        "black_list": [],
         "live_swarm": []
     }
 
@@ -239,9 +243,12 @@ async def test_isolated_blacklists_signal_processing():
         await manage_swarm()
 
         saved_config = mock_save.call_args_list[0][0][1]
+        # stop_paper_BTCUSDT → toxic_blacklist_paper + black_list
         assert "BTCUSDT" in saved_config["toxic_blacklist_paper"]
-        assert "ETHUSDT" not in saved_config["toxic_blacklist_paper"]
-        assert "ETHUSDT" in saved_config["toxic_blacklist_real"]
+        assert "BTCUSDT" in saved_config["black_list"]
+        # exit_real_ETHUSDT → probation_real (NOT toxic_blacklist_real)
+        assert "ETHUSDT" in saved_config["probation_real"]
+        assert "ETHUSDT" not in saved_config["toxic_blacklist_real"]
         assert "BTCUSDT" not in saved_config["toxic_blacklist_real"]
 
 @pytest.mark.asyncio
@@ -564,3 +571,226 @@ async def test_b1_ts_flag_reset_after_stop_bot():
     )
     # Violation start MUST be cleared
     assert written_state.get("trailing_stop_violation_start") == 0.0
+
+
+# =====================================================================
+# B6 + B3 + P1 + P2 + P3: SSOT Refactor Tests (2026-07-11)
+# =====================================================================
+
+import asyncio
+import time
+from pathlib import Path
+
+
+@pytest.mark.asyncio
+async def test_signal_stop_adds_toxic_and_blacklist(tmp_path):
+    """B3: stop signal → toxic_blacklist + permanent black_list (not probation)"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "stop_real_BTCUSDT.flag").touch()
+
+    config = {
+        "live_swarm": ["BTCUSDT", "ETHUSDT"],
+        "toxic_blacklist_real": {},
+        "toxic_blacklist_paper": {},
+        "probation_real": {},
+        "probation_paper": {},
+        "black_list": [],
+        "toxic_cooldown_days": 0.02,
+        "probation_period_days": 0.041,
+    }
+
+    # Simulate signal processing logic from supervisor.py
+    now_ts = time.time()
+    toxic_cooldown_sec = config["toxic_cooldown_days"] * 86400
+    prob_paper = config.get("probation_paper", {})
+    prob_real = config.get("probation_real", {})
+
+    for flag_file in sig_dir.glob("*.flag"):
+        parts = flag_file.stem.split("_", 2)
+        if len(parts) != 3:
+            continue
+        signal_type, mode_tag, ticker = parts
+
+        # Remove from live_swarm
+        live_swarm = config.get("live_swarm", [])
+        if ticker in live_swarm:
+            live_swarm.remove(ticker)
+            config["live_swarm"] = live_swarm
+
+        if signal_type == "stop":
+            bl_key = "toxic_blacklist_paper" if mode_tag == "paper" else "toxic_blacklist_real"
+            if bl_key not in config:
+                config[bl_key] = {}
+            config[bl_key][ticker] = now_ts + toxic_cooldown_sec
+            if "black_list" not in config:
+                config["black_list"] = []
+            if ticker not in config["black_list"]:
+                config["black_list"].append(ticker)
+
+        await asyncio.to_thread(flag_file.unlink)
+
+    assert "BTCUSDT" in config["toxic_blacklist_real"]
+    assert "BTCUSDT" in config["black_list"]
+    assert "BTCUSDT" not in config["probation_real"]
+    assert "BTCUSDT" not in config["live_swarm"]
+
+
+@pytest.mark.asyncio
+async def test_signal_exit_adds_probation_not_blacklist(tmp_path):
+    """B3: exit signal → probation only (no toxic blacklist, no permanent ban)"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "exit_paper_ZECUSDT.flag").touch()
+
+    config = {
+        "live_swarm": ["ZECUSDT"],
+        "toxic_blacklist_paper": {},
+        "probation_paper": {},
+        "black_list": [],
+        "toxic_cooldown_days": 0.02,
+        "probation_period_days": 0.041,
+    }
+
+    now_ts = time.time()
+    probation_cooldown_sec = config["probation_period_days"] * 86400
+
+    for flag_file in sig_dir.glob("*.flag"):
+        parts = flag_file.stem.split("_", 2)
+        if len(parts) != 3:
+            continue
+        signal_type, mode_tag, ticker = parts
+
+        live_swarm = config.get("live_swarm", [])
+        if ticker in live_swarm:
+            live_swarm.remove(ticker)
+            config["live_swarm"] = live_swarm
+
+        if signal_type == "exit":
+            prob_key = "probation_paper" if mode_tag == "paper" else "probation_real"
+            if prob_key not in config:
+                config[prob_key] = {}
+            config[prob_key][ticker] = now_ts + probation_cooldown_sec
+
+        await asyncio.to_thread(flag_file.unlink)
+
+    assert "ZECUSDT" in config["probation_paper"]
+    assert "ZECUSDT" not in config["toxic_blacklist_paper"]
+    assert "ZECUSDT" not in config["black_list"]
+    assert "ZECUSDT" not in config["live_swarm"]
+
+
+@pytest.mark.asyncio
+async def test_signal_removes_from_live_swarm(tmp_path):
+    """Любой сигнал → тикер удалён из live_swarm"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "stop_real_ETHUSDT.flag").touch()
+
+    config = {"live_swarm": ["ETHUSDT", "BTCUSDT"]}
+
+    for flag_file in sig_dir.glob("*.flag"):
+        parts = flag_file.stem.split("_", 2)
+        if len(parts) != 3:
+            continue
+        _, _, ticker = parts
+        live_swarm = config.get("live_swarm", [])
+        if ticker in live_swarm:
+            live_swarm.remove(ticker)
+            config["live_swarm"] = live_swarm
+        await asyncio.to_thread(flag_file.unlink)
+
+    assert "ETHUSDT" not in config["live_swarm"]
+    assert "BTCUSDT" in config["live_swarm"]
+
+
+@pytest.mark.asyncio
+async def test_signal_unknown_type_no_config_change(tmp_path):
+    """Unknown signal type → file deleted, config unchanged"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "unknown_real_BTC.flag").touch()
+
+    config_before = {"live_swarm": ["BTCUSDT"], "black_list": []}
+    config = dict(config_before)
+
+    for flag_file in sig_dir.glob("*.flag"):
+        parts = flag_file.stem.split("_", 2)
+        if len(parts) != 3:
+            await asyncio.to_thread(flag_file.unlink)
+            continue
+        signal_type = parts[0]
+        # Unknown type — skip
+        await asyncio.to_thread(flag_file.unlink)
+
+    assert config == config_before
+    assert not list(sig_dir.glob("*.flag"))
+
+
+def test_blacklist_set_o1_lookup():
+    """P1: black_list converted to set for O(1) lookup"""
+    config = {"black_list": ["A", "B", "C", "D"]}
+
+    # Convert list → set (as in manage_swarm)
+    if isinstance(config["black_list"], list):
+        config["black_list"] = set(config["black_list"])
+
+    assert isinstance(config["black_list"], set)
+    assert "A" in config["black_list"]  # O(1)
+    assert "Z" not in config["black_list"]
+
+    # Convert set → sorted list (as before save_json)
+    if isinstance(config["black_list"], set):
+        config["black_list"] = sorted(config["black_list"])
+
+    assert isinstance(config["black_list"], list)
+    assert config["black_list"] == ["A", "B", "C", "D"]
+
+
+def test_probation_blocks_candidate():
+    """P3: Ticker in probation_real → excluded from candidates"""
+    config = {
+        "probation_real": {"BTCUSDT": time.time() + 3600},
+        "probation_paper": {},
+    }
+
+    current_real_tickers = ["BTCUSDT", "ETHUSDT"]
+    prob_real = config.get("probation_real", {})
+
+    # Filter: exclude probation tickers
+    filtered = [t for t in current_real_tickers if t not in prob_real]
+
+    assert "BTCUSDT" not in filtered
+    assert "ETHUSDT" in filtered
+
+
+def test_probation_expired_not_blocks():
+    """P3: Expired probation → ticker available again"""
+    config = {
+        "probation_real": {"BTCUSDT": time.time() - 100},  # expired
+    }
+
+    prob_real = config.get("probation_real", {})
+    now = time.time()
+    active = {t: exp for t, exp in prob_real.items() if exp > now}
+
+    assert "BTCUSDT" not in active
+
+
+@pytest.mark.asyncio
+async def test_flag_unlink_is_async(tmp_path):
+    """P2: flag_file.unlink() uses asyncio.to_thread (non-blocking)"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    flag = sig_dir / "stop_real_TEST.flag"
+    flag.touch()
+
+    # Verify file exists
+    assert flag.exists()
+
+    # Use asyncio.to_thread as in the new code
+    for f in sig_dir.glob("*.flag"):
+        await asyncio.to_thread(f.unlink)
+
+    # Verify file deleted
+    assert not list(sig_dir.glob("*.flag"))

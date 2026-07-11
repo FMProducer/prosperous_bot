@@ -230,9 +230,8 @@ async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -
     for ticker in to_heal_tickers:
         logger.info(f"⚡ Relaunching crashed REAL process for {ticker} from saved state.")
         if "live_swarm" not in config:
-            config["live_swarm"] = []
-        if ticker not in config["live_swarm"]:
-            config["live_swarm"].append(ticker)
+            config["live_swarm"] = set()
+        config["live_swarm"].add(ticker)
 
         # Перезапускаем. Так как real_state_{ticker}.json существует, start_bot НЕ сотрет его данные
         await start_bot(ticker, is_paper=False, config=config)
@@ -552,6 +551,12 @@ async def manage_swarm():
     config = await safe_load_json(CONFIG_PATH, {})
     if not config: return
 
+    # [P1] O(1) lookup: конвертируем list → set для проверок в runtime
+    if "black_list" in config and isinstance(config["black_list"], list):
+        config["black_list"] = set(config["black_list"])
+    if "live_swarm" in config and isinstance(config["live_swarm"], list):
+        config["live_swarm"] = set(config["live_swarm"])
+
     # Инициализация коннектора для операций на бирже
     api_key = os.environ.get("BINANCE_API_KEY", config.get("api_key", ""))
     secret_key = os.environ.get("BINANCE_SECRET_KEY", config.get("secret_key", ""))
@@ -562,36 +567,76 @@ async def manage_swarm():
     # 0. Принудительная проверка согласованности роя с биржевыми позициями
     healed_tickers = await enforce_swarm_consistency(connector, config)
 
-    # 0.5. Чтение сигналов от ботов (stop/exit flags)
+    # 0.5. [SSOT] Чтение и маршрутизация сигналов от ботов (stop/exit flags)
+    # Worker → Read-Only + Signal. Supervisor — единственный мутатор config.json.
     signals_dir = BASE_PATH / "signals"
     now_ts = time.time()
-    cooldown_days = config.get("toxic_cooldown_days", config.get("scanner_period_days", 1.0))
-    cooldown_sec = cooldown_days * 86400
+    toxic_cooldown_sec = config.get("toxic_cooldown_days", 0.02) * 86400
+    probation_cooldown_sec = config.get("probation_period_days", 0.041) * 86400
 
     bl_paper = config.get("toxic_blacklist_paper", {})
     bl_real = config.get("toxic_blacklist_real", {})
+    prob_paper = config.get("probation_paper", {})
+    prob_real = config.get("probation_real", {})
 
     if signals_dir.exists():
-        # Собираем тикеры со stop-сигналом (убыток) и exit-сигналом (прибыль)
         for flag_file in signals_dir.glob("*.flag"):
-            parts = flag_file.stem.split("_")
-            if len(parts) >= 3:
-                signal_type = parts[0]
-                mode_tag = parts[1]
-                ticker = "_".join(parts[2:])
-                expiry = now_ts + cooldown_sec
+            parts = flag_file.stem.split("_", 2)
+            if len(parts) != 3:
+                await asyncio.to_thread(flag_file.unlink)
+                continue
 
-                if mode_tag == "paper":
-                    bl_paper[ticker] = expiry
-                else:
-                    bl_real[ticker] = expiry
+            signal_type, mode_tag, ticker = parts
 
-                logger.info(f"🚫 {signal_type.upper()} signal received for {mode_tag.upper()} {ticker}. Blacklisted until {time.ctime(expiry)}")
+            # 1. Удаляем из live_swarm в любом случае
+            live_swarm = config.get("live_swarm", [])
+            if ticker in live_swarm:
+                live_swarm.remove(ticker)
+                config["live_swarm"] = live_swarm
+                logger.info(f"🗑️ {ticker} removed from live_swarm (signal: {signal_type})")
 
-                try:
-                    flag_file.unlink()
-                except Exception:
-                    pass
+            # 2. Маршрутизация по типу сигнала
+            if signal_type == "stop":
+                # Токсичный исход (Убыток/Ликвидация) → toxic_blacklist + permanent black_list
+                bl_key = "toxic_blacklist_paper" if mode_tag == "paper" else "toxic_blacklist_real"
+                if bl_key not in config:
+                    config[bl_key] = {}
+                config[bl_key][ticker] = now_ts + toxic_cooldown_sec
+
+                if "black_list" not in config:
+                    config["black_list"] = set()
+                config["black_list"].add(ticker)
+
+                logger.critical(
+                    f"🚫 STOP signal: {ticker} ({mode_tag}) → {bl_key} + black_list "
+                    f"(expires {time.ctime(now_ts + toxic_cooldown_sec)})"
+                )
+
+            elif signal_type == "exit":
+                # Прибыльный исход (Пробация) → probation (мягкий cooldown, без перманентного бана)
+                prob_key = "probation_paper" if mode_tag == "paper" else "probation_real"
+                if prob_key not in config:
+                    config[prob_key] = {}
+                config[prob_key][ticker] = now_ts + probation_cooldown_sec
+
+                logger.info(
+                    f"✅ EXIT signal: {ticker} ({mode_tag}) → {prob_key} "
+                    f"(expires {time.ctime(now_ts + probation_cooldown_sec)})"
+                )
+            else:
+                logger.warning(f"⚠️ Unknown signal type '{signal_type}' for {ticker}. Ignoring.")
+
+            # 3. Удаляем обработанный флаг (async — не блокируем event loop)
+            try:
+                await asyncio.to_thread(flag_file.unlink)
+            except OSError:
+                pass
+
+    # Сохраняем обновлённые списки в config для последующей логики
+    config["toxic_blacklist_paper"] = bl_paper
+    config["toxic_blacklist_real"] = bl_real
+    config["probation_paper"] = prob_paper
+    config["probation_real"] = prob_real
 
     # Prune expired entries from blacklists and apply Amnesty (reset state)
     for mode, bl_dict, bl_key in [("paper", bl_paper, "toxic_blacklist_paper"), ("real", bl_real, "toxic_blacklist_real")]:
@@ -613,6 +658,12 @@ async def manage_swarm():
                             logger.info(f"✨ Amnesty granted for {mode.upper()} {t}. TS flags cleared.")
                     except Exception as e: pass
         config[bl_key] = active_bl
+
+    # Prune expired probation entries (soft cooldown — no Amnesty state reset needed)
+    for prob_key in ["probation_paper", "probation_real"]:
+        prob_dict = config.get(prob_key, {})
+        if prob_dict:
+            config[prob_key] = {t: exp for t, exp in prob_dict.items() if exp > now_ts}
 
     # [CACHE] Один вызов pm2 jlist на цикл — результат переиспользуется везде
     running_bots = await get_running_bots_info()
@@ -758,9 +809,11 @@ async def manage_swarm():
         # Используем profit из perf_map (для REAL ботов — из real_state, для paper — из paper_state)
         is_in_drawdown = is_running_real and p.get("profit", 0.0) < 0
 
-        # 3. Trailing Stop Check (Only for paper candidates)
-        if not is_running_real and time.time() < p.get('trailing_stop_paper_timeout_end', 0.0):
-            logger.info(f"⏳ Skipping {ticker}: Still in trailing stop paper timeout.")
+        # 3. [P3] Probation Check — единый источник кулдаунов в config (не в state-файле)
+        prob_key = "probation_paper" if not is_running_real else "probation_real"
+        prob_dict = config.get(prob_key, {})
+        if ticker in prob_dict and time.time() < prob_dict[ticker]:
+            logger.info(f"⏳ Skipping {ticker}: In {prob_key} until {time.ctime(prob_dict[ticker])}.")
             continue
 
         # 4. Scoring Logic
@@ -963,6 +1016,13 @@ async def manage_swarm():
         config["tickers"] = sorted(fallback)
         config["base_ticker"] = config["tickers"][0] if config["tickers"] else "ALGOUSDT"
         logger.warning(f"⚠️ tickers was empty — restored {len(config['tickers'])} tickers from scanner")
+
+    # [P1] Конвертируем set → sorted list для JSON-сериализации
+    if "black_list" in config and isinstance(config["black_list"], set):
+        config["black_list"] = sorted(config["black_list"])
+    if "live_swarm" in config and isinstance(config["live_swarm"], set):
+        config["live_swarm"] = sorted(config["live_swarm"])
+
     await safe_save_json(CONFIG_PATH, config)
     await (await asyncio.create_subprocess_shell("pm2 save")).wait()
     logger.info(f"Cycle Complete. REAL Swarm: {config['live_swarm']}")
