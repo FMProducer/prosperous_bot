@@ -1,6 +1,27 @@
 Progress Log — Market-Neutral Futures Portfolio Rebalancer
 Формат: Дата → Что сделали → Почему → Результат Читаемые первые 50 строк = последние 50 строк (свежее сверху).
 
+2026-07-11 — B6/B3 SSOT Refactor: Race Condition + Exit/Stop Isolation
+Что сделано
+Устранены две архитектурные уязвимости:
+1. B6 (Race Condition): main.py напрямую писал в config.json в _handle_liquidation_recovery и _handle_liquidation_guard. Параллельные процессы (main.py + supervisor.py) вызывали гонку данных — потеря toxic-записей и live_swarm изменений. Фикс: удалены блоки записи из main.py, эмиссия emit_signal("stop") вместо прямой мутации. Worker → Read-Only + Signal.
+2. B3 (Exit/Stop Propagation): supervisor.py не различал exit и stop — прибыльные тикеры попадали в toxic_blacklist вместо probation. Фикс: маршрутизация сигналов — stop→toxic+blacklist (токсичный), exit→probation (мягкий cooldown).
+3. P1 (O(1) Lookup): black_list и live_swarm конвертируются в set при загрузке (O(1) проверка in), обратно в sorted list при сохранении.
+4. P2 (Async I/O): flag_file.unlink() → asyncio.to_thread — event loop не блокируется при каскадных ликвидациях.
+5. P3 (Probation SSOT): trailing_stop_paper_timeout_end из state-файла заменён на probation_* ключи в config.json. Supervisor — единственный контроллер кулдаунов.
+6. Silent Failure: stop_bot bare except:pass → конкретные исключения (FileNotFoundError, OSError).
+
+Изменения
+main.py: -50 строк (удалены блоки записи config.json)
+supervisor.py: +85 строк (B3 маршрутизация, P1 set, P2 async, P3 probation, error handling)
+config.json: +2 ключа (probation_paper, probation_real)
+tests/test_supervisor.py: +8 тестов, 1 обновлён
+tests/test_main.py: +2 теста
+CLAUDE.md: Change Log обновлён
+
+Результат
+30/30 тестов пройдены за 4.82s. SSOT-паттерн внедрён. Race condition устранён. Exit/stop изоляция работает. Async I/O не блокирует event loop.
+
 2026-07-21 — B1 Fix: TS Flag Persistence (zombie process kill)
 Что сделано
 Исправлен критический баг B1 (Score 8.3): после срабатывания trailing stop и рестарта supervisor, зомби-процесс never cleaned up. Причина: HEAL REJECTED в enforce_swarm_consistency() сбрасывал TS флаги ДО того, как Reaper Guard успевал убить зомби. Reaper Guard проверял state файл — флаги уже False — не видел зомби.
@@ -210,4 +231,3 @@ Bugs: 'str' object has no attribute 'get' при итерации по dict keys
 Добавлено распознавание голосовых сообщений в Telegram-боте (Vosk + ffmpeg).
 
 Результат
-STT работает, качество приемлемое для коротких команд.

@@ -149,7 +149,12 @@ async def stop_bot(ticker: str, is_paper: bool = False):
     proc_name = f"{prefix}-{ticker.replace('USDT', '').lower()}"
     try:
         await (await asyncio.create_subprocess_shell(f"pm2 delete {proc_name}")).wait()
-    except: pass
+    except FileNotFoundError:
+        logger.error(f"PM2 binary not found — cannot delete {proc_name}")
+    except OSError as e:
+        logger.error(f"OS error deleting {proc_name}: {e}")
+    except Exception as e:
+        logger.error(f"Failed to delete {proc_name}: {e}")
 
 async def enforce_swarm_consistency(connector: BinanceConnector, config: dict) -> Set[str]:
     """

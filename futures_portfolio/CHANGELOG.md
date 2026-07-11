@@ -1,4 +1,33 @@
 CHANGELOG — Prosperous BOT Futures Portfolio
+[11 Jul 2026] — B6/B3 SSOT Refactor: Race Condition + Exit/Stop Isolation
+Problem: main.py directly writes to config.json in _handle_liquidation_recovery and _handle_liquidation_guard (non-atomic write_text). Parallel processes (main.py + supervisor.py) cause race condition → data loss (toxic records, live_swarm changes). Additionally, supervisor.py treats exit and stop signals identically — profitable tickers get permanently blacklisted instead of probation.
+
+Root cause: Violation of SSOT invariant (only supervisor.py should write config.json). No signal type differentiation in supervisor signal processing loop.
+
+Solution: Three-layer refactoring:
+- B6: Removed all config.json write blocks from main.py. Worker → Read-Only + Signal (emit_signal). Supervisor = single mutator.
+- B3: Signal routing — stop → toxic_blacklist + black_list (toxic outcome), exit → probation_* (profitable outcome, soft cooldown).
+- P1: black_list/live_swarm converted to set (O(1) lookup) on load, back to sorted list on save.
+- P2: flag_file.unlink() → asyncio.to_thread (non-blocking I/O in event loop).
+- P3: trailing_stop_paper_timeout_end from worker state replaced by probation_* in config.json (supervisor as single cooldown controller).
+
+Changes:
+main.py:160-179 — removed config.json write block from _handle_liquidation_recovery
+main.py:267-297 — removed config.json write block from _handle_liquidation_guard
+supervisor.py:565-640 — rewritten signal processing (stop→toxic+blacklist, exit→probation, async unlink)
+supervisor.py:555-559 — P1: list→set conversion on config load
+supervisor.py:1022-1025 — P1: set→sorted list on config save
+supervisor.py:814-818 — P3: trailing_stop_paper_timeout_end → probation_* check
+supervisor.py:147-157 — stop_bot: bare except:pass → specific exception handling (FileNotFoundError, OSError)
+supervisor.py:232-234 — enforce_swarm_consistency: append → add (set compatibility)
+supervisor.py:656-660 — probation pruning (expired entries cleanup)
+config.json:110-111 — probation_paper and probation_real keys
+tests/test_supervisor.py — 8 new tests + 1 updated (B3 routing, P1 set, P2 async, P3 probation)
+tests/test_main.py — 2 new tests (B6 config write verification)
+
+Test results: 30/30 passed (27 supervisor + 3 main). pre-existing timeout in test_rebalance_loop_trailing_stop (unrelated).
+Status: SSOT pattern enforced. Race condition eliminated. Exit/Stop isolation restored.
+
 [21 Jul 2026] — B1 Fix: TS Flag Persistence (zombie process kill)
 Problem: After trailing stop triggers and supervisor restarts, the flag trailing_stop_triggered=True persists in real_state JSON. In enforce_swarm_consistency(), HEAL REJECTED path resets TS flags BEFORE Reaper Guard runs. Reaper Guard checks state file — flags already False — doesn't kill the zombie. Result: zombie PM2 process sleeps forever (while True: asyncio.sleep(86400)), never cleaned up.
 
@@ -145,4 +174,3 @@ Added .env.example and .gitignore
 [30 May 2026]
 Liquidation Guard & Supervisor Auto-Restart
 Per-position liquidation distance monitoring (warn ≤15%, critical ≤8%)
-Supervisor auto-relaunch for missing real bots
