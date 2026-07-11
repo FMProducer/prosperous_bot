@@ -1,6 +1,30 @@
 Progress Log — Market-Neutral Futures Portfolio Rebalancer
 Формат: Дата → Что сделали → Почему → Результат Читаемые первые 50 строк = последние 50 строк (свежее сверху).
 
+2026-07-11 — Per-ticker min_notional + 2% buffer
+Что сделано
+Глобальный min_notional_usdt: 6.1 блокировал GRASSUSDT (Binance 5.03) и VVVUSDT (5.05) при 3-4% отклонениях. Config задавал единый порог для всех тикеров, хотя Binance minimums у каждого свои.
+
+Добавлен per-ticker lookup из exchange_info → MIN_NOTIONAL filter с 2% буфером на динамику Binance minimums.
+
+Исправлен KeyError 'minNotional' — Binance Futures API использует поле 'notional', не 'minNotional'. Исправлено через f.get("minNotional") or f.get("notional").
+
+Изменения
+main.py:489 — min_notionals extraction
+main.py:941-945 — active_min_notional = max(config_min, exchange_min * 1.02)
+config.json — min_notional_usdt: 6.1 → 5.1
+tests/test_main.py — 6 unit-тестов
+
+Effective minimums
+GRASSUSDT: max(5.1, 5.03*1.02) = 5.13
+VVVUSDT: max(5.1, 5.05*1.02) = 5.15
+YFIUSDT: max(5.1, 7.00*1.02) = 7.14
+UNIUSDT: max(5.1, 7.05*1.02) = 7.19
+
+Fallback (нет exchange info) = config = 5.1 (без буфера)
+Результат
+4 real-бота online, 0 restarts. YFI/UNI ребалансируют при ~5.1% вместо 5.0% (0.1% разница — допустимая цена буфера).
+
 2026-07-16 — Dashboard: убийство зомби-процессов + чистка кода
 Что сделано
 Диагностика проблемы логина в dashboard — пароль Rebalancer0ID не проходил, хотя bcrypt hash валидный

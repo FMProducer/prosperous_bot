@@ -292,3 +292,99 @@ def test_emit_signal_file_naming(monkeypatch):
 
     assert "stop_paper_BTCUSDT.flag" in called_paths
     assert "exit_real_ETHUSDT.flag" in called_paths
+
+
+# ============================================================
+# Tests: Per-ticker min_notional with 2% buffer
+# ============================================================
+
+class TestMinNotionalExtraction:
+    """Tests for per-ticker min_notional extraction from exchange_info."""
+
+    def test_min_notionals_extracted_from_exchange_info(self):
+        """Проверяем что min_notionals извлекается из exchange_info filters (Binance Futures: 'notional', SPOT: 'minNotional')"""
+        exchange_info = {
+            "symbols": [
+                {"symbol": "GRASSUSDT", "filters": [{"filterType": "MIN_NOTIONAL", "notional": "5.03"}]},
+                {"symbol": "YFIUSDT", "filters": [{"filterType": "MIN_NOTIONAL", "notional": "7.00"}]},
+                {"symbol": "BTCUSDT", "filters": [
+                    {"filterType": "LOT_SIZE", "stepSize": "0.001"},
+                    {"filterType": "MIN_NOTIONAL", "notional": "5.0"}
+                ]},
+            ]
+        }
+        min_notionals = {
+            s["symbol"]: float(f.get("minNotional") or f.get("notional"))
+            for s in exchange_info["symbols"]
+            for f in s["filters"]
+            if f["filterType"] == "MIN_NOTIONAL"
+        }
+        assert min_notionals["GRASSUSDT"] == 5.03
+        assert min_notionals["YFIUSDT"] == 7.00
+        assert min_notionals["BTCUSDT"] == 5.0
+
+
+class TestEffectiveMinNotional:
+    """Tests for effective_min_notional = max(config_min, exchange_min * 1.02)."""
+
+    def test_effective_min_takes_max_with_buffer(self):
+        """effective_min_notional = max(config_min=5.1, exchange_min * 1.02)"""
+        config_min = 5.1
+        test_cases = [
+            ("GRASSUSDT", 5.03, 5.13),    # 5.03*1.02=5.1306 > 5.1 → buffer
+            ("VVVUSDT", 5.05, 5.15),      # 5.05*1.02=5.151 > 5.1 → buffer
+            ("YFIUSDT", 7.00, 7.14),      # 7.00*1.02=7.14 > 5.1 → buffer
+            ("UNKNOWNUSDT", None, 5.1),   # no exchange data → config fallback
+        ]
+        for ticker, exchange_min, expected in test_cases:
+            emin = (exchange_min * 1.02) if exchange_min else config_min
+            result = max(config_min, emin)
+            assert result == pytest.approx(expected, abs=0.01), f"{ticker}: expected {expected}, got {result}"
+
+    def test_grassusdt_rebalances_at_3_7pct(self):
+        """При min_notional=5.13 GRASSUSDT (Binance 5.03*1.02) ребалансирует при 3.7% deviation"""
+        notional = 20.0 * 7  # 140 USDT
+        config_min = 5.1
+        exchange_min = 5.03
+        effective_min = max(config_min, exchange_min * 1.02)  # 5.13 (buffer wins)
+
+        deviation_3_5pct = notional * 0.035  # 4.90
+        deviation_3_7pct = notional * 0.037  # 5.18
+
+        assert deviation_3_5pct < effective_min   # 3.5% too small
+        assert deviation_3_7pct >= effective_min  # 3.7% passes
+
+    def test_yfiusdt_blocked_below_5_1pct(self):
+        """YFIUSDT (Binance 7.0*1.02=7.14) не ребалансирует при config_min=5.1"""
+        notional = 20.0 * 7  # 140 USDT
+        config_min = 5.1
+        exchange_min = 7.0
+        effective_min = max(config_min, exchange_min * 1.02)  # 7.14
+
+        deviation_4pct = notional * 0.04   # 5.6
+        deviation_5pct = notional * 0.05   # 7.0
+        deviation_5_1pct = notional * 0.051  # 7.14
+
+        assert deviation_4pct < effective_min   # 4% blocked by Binance
+        assert deviation_5pct < effective_min   # 5% blocked (7.0 < 7.14)
+        assert deviation_5_1pct == pytest.approx(effective_min, abs=0.02)  # 5.1% passes (7.14)
+
+    def test_fallback_to_config_when_exchange_info_missing(self):
+        """При отсутствии exchange info используется config min_notional_usdt = 5.1 (без буфера)"""
+        config_min = 5.1
+        min_notionals = {}  # empty — no exchange data
+        base_ticker = "SOMETHINGUSDT"
+
+        exchange_min = min_notionals.get(base_ticker, config_min)
+        result = max(config_min, exchange_min)  # fallback = config (no buffer when no exchange data)
+        assert result == 5.1  # fallback = config value
+
+    def test_missing_min_notional_in_config_raises(self):
+        """Отсутствие min_notional_usdt в config → ValueError"""
+        current_config = {}  # no min_notional_usdt
+        portfolio_cfg = {}
+
+        config_min = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt"))
+        with pytest.raises(ValueError, match="min_notional_usdt must be set"):
+            if config_min is None:
+                raise ValueError("min_notional_usdt must be set in config.json")

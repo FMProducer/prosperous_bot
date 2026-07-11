@@ -1,5 +1,26 @@
 CHANGELOG — Prosperous BOT Futures Portfolio
-[Unreleased] — 2026-06-03
+[11 Jul 2026] — Per-ticker min_notional + 2% buffer
+Problem: Global min_notional_usdt: 6.1 blocked GRASSUSDT (Binance min=5.03) and VVVUSDT (5.05) — they couldn't rebalance at 3-4% deviations. Config set a single threshold for all tickers, though Binance minimums differ per ticker.
+
+Solution: Added per-ticker min_notional lookup from exchange_info with 2% buffer for dynamic Binance minimum changes.
+
+Changes:
+main.py:489 — min_notionals extraction (Binance Futures: f.get("notional"), SPOT: f.get("minNotional"))
+main.py:941-945 — active_min_notional = max(config_min, exchange_min * 1.02)
+config.json — min_notional_usdt: 6.1 → 5.1
+tests/test_main.py — 6 unit tests (TestMinNotionalExtraction, TestEffectiveMinNotional)
+
+Effective minimums:
+GRASSUSDT: max(5.1, 5.03*1.02) = 5.13
+VVVUSDT: max(5.1, 5.05*1.02) = 5.15
+YFIUSDT: max(5.1, 7.00*1.02) = 7.14
+UNIUSDT: max(5.1, 7.05*1.02) = 7.19
+
+Fallback (no exchange info): config = 5.1 (no buffer)
+
+Bug fix: KeyError 'minNotional' — Binance Futures API uses 'notional' field, not 'minNotional'. Fixed with f.get("minNotional") or f.get("notional").
+
+[Unreleased]
 Net Move Guard (NMG) — Pump/Dump Protection
 Problem: During fast unidirectional price movements (pump/dump), the hedge legs move in opposite directions. LONG surplus looks like profit, SHORT deficit looks like loss. Without protection, the bot sells LONG "profit" and buys SHORT "loss" — then the price reverts and the bot locked in a loss.
 

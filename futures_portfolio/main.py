@@ -486,6 +486,7 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
     # Инфо о бирже
     exchange_info = await connector.get_exchange_info()
     step_sizes = {s["symbol"]: float(f["stepSize"]) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "LOT_SIZE"}
+    min_notionals = {s["symbol"]: float(f.get("minNotional") or f.get("notional")) for s in exchange_info["symbols"] for f in s["filters"] if f["filterType"] == "MIN_NOTIONAL"}
     
     equity_trailing_stop_pct = config.get("equity_trailing_stop_pct", 0.0)
     equity_trailing_stop_activation_pct = config.get("equity_trailing_stop_activation_pct", 0.0)
@@ -937,7 +938,11 @@ async def rebalance_loop(connector: BinanceConnector, config_path: str, state_fi
                 ignore_limits = (abs(positions.get(f"{base_ticker}_LONG", 0)) + abs(positions.get(f"{base_ticker}_SHORT", 0)) == 0)
                 
                 # Fetch min_notional once to reuse
-                active_min_notional = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt", 6.0))
+                config_min = portfolio_cfg.get("min_notional_usdt", current_config.get("min_notional_usdt"))
+                if config_min is None:
+                    raise ValueError("min_notional_usdt must be set in config.json")
+                exchange_min = min_notionals.get(base_ticker, config_min)
+                active_min_notional = max(config_min, exchange_min * 1.02)  # 2% buffer for dynamic Binance minimums
 
                 calc = PortfolioCalculator(
                     positions=positions,
