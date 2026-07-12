@@ -151,12 +151,22 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
     def save_side_effect(path, data):
         saves.append((path, copy.deepcopy(data)))
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+    loop_count = 0
+    def bounded_sleep(secs, *args):
+        nonlocal loop_count
+        if secs == 86400: raise ZombieExit("ZombieMode")
+        loop_count += 1
+        if loop_count > 5: raise Exception("StopLoop")
+        return None
+
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
+         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
+         patch("os.path.getmtime", return_value=123):
         with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
             with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
                 with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
                     with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                            with patch("asyncio.sleep", side_effect=sleep_side_effect):
+                            with patch("asyncio.sleep", side_effect=bounded_sleep):
                                 try:
                                         await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
                                 except (Exception, BaseException) as e:

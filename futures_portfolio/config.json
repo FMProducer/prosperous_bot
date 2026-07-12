@@ -75,11 +75,16 @@
   "live_swarm": [
     "GRASSUSDT",
     "UNIUSDT",
-    "VVVUSDT",
-    "YFIUSDT"
+    "VANRYUSDT",
+    "VVVUSDT"
   ],
-  "use_real_whitelist": false,
-  "real_whitelist": [],
+  "use_real_whitelist": true,
+  "real_whitelist": [
+    "TLMUSDT",
+    "AGLDUSDT",
+    "VANRYUSDT",
+    "TUSDT"
+  ],
   "black_list": [
     "BTCUSDT"
   ],

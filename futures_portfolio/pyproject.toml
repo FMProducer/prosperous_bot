@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "futures_portfolio"
+version = "0.1.0"
+description = "Market Neutral Futures Trading System — Binance Futures"
+requires-python = ">=3.11"
+
+# ──────────────────────────────────────────────
+#  Pytest & Coverage
+# ──────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".."]
+asyncio_mode = "auto"
+addopts = "-ra -v --tb=short"
+markers = [
+    "integration: tests requiring historical data or backtest; skip in CI probe branches",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "backtest_rebalance.py",
+    "__pycache__/*",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "pass",
+    "except Exception",
+]
