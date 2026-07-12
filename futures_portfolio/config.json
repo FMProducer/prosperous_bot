@@ -78,18 +78,19 @@
     "VVVUSDT",
     "YFIUSDT"
   ],
-  "use_real_whitelist": true,
-  "real_whitelist": [
-    "GRASSUSDT",
-    "UNIUSDT",
-    "VVVUSDT",
-    "YFIUSDT"
+  "use_real_whitelist": false,
+  "real_whitelist": [],
+  "black_list": [
+    "BTCUSDT"
   ],
-  "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
-  "toxic_blacklist_paper": {},
-  "toxic_blacklist_real": {},
+  "toxic_blacklist_paper": {
+    "BTCUSDT": 1783855583.3614156
+  },
+  "toxic_blacklist_real": {
+    "BTCUSDT": 1783855583.3614156
+  },
   "tickers": [
     "1000BONKUSDT",
     "1000PEPEUSDT",

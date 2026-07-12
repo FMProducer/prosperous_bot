@@ -58,10 +58,10 @@ def check_state_files():
 
     results = {}
     for fpath in real_states:
+        ticker = fpath.stem.replace("real_state_", "")
         try:
             with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            ticker = fpath.stem.replace("real_state_", "")
             results[ticker] = {
                 "tpv": round(data.get("last_tpv", 0), 2),
                 "profit": round(data.get("last_profit", 0), 2),
