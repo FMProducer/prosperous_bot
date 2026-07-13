@@ -73,10 +73,7 @@
     }
   ],
   "live_swarm": [
-    "TUSDT",
-    "UNIUSDT",
-    "VANRYUSDT",
-    "VVVUSDT"
+    "VANRYUSDT"
   ],
   "use_real_whitelist": true,
   "real_whitelist": [
@@ -86,30 +83,13 @@
     "SKLUSDT",
     "TUSDT"
   ],
-  "black_list": [
-    "BTCUSDT"
-  ],
+  "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},
   "toxic_blacklist_paper": {},
   "toxic_blacklist_real": {},
-  "tickers": [
-    "1000BONKUSDT",
-    "1000PEPEUSDT",
-    "ARBUSDT",
-    "DEXEUSDT",
-    "ENAUSDT",
-    "SKLUSDT",
-    "SYNUSDT",
-    "TIAUSDT",
-    "TLMUSDT",
-    "UNIUSDT",
-    "VANRYUSDT",
-    "VIRTUALUSDT",
-    "WLDUSDT",
-    "ZECUSDT"
-  ],
-  "base_ticker": "1000BONKUSDT",
+  "tickers": [],
+  "base_ticker": "",
   "probation_paper": {},
   "probation_real": {}
 }
