@@ -78,13 +78,8 @@
     "TUSDT",
     "VANRYUSDT"
   ],
-  "use_real_whitelist": true,
-  "real_whitelist": [
-    "TLMUSDT",
-    "AGLDUSDT",
-    "VANRYUSDT",
-    "TUSDT"
-  ],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
   "black_list": [
     "BTCUSDT"
   ],
