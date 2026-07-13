@@ -1,6 +1,8 @@
 import pytest
 import json
 import os
+import io
+import sys
 import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -142,12 +144,17 @@ def test_check_recent_errors(tmp_path):
             assert res[0]["file"] == "err_active.log"
             assert res[0]["last_errors"] == ["line 2", "line 3", "line 4", "line 5", "line 6"]
 
-def test_main(tmp_path, capsys):
-    with patch("futures_portfolio.health_check.STATE_DIR", tmp_path):
-        with patch("futures_portfolio.health_check.LOG_DIR", tmp_path):
-            with patch("futures_portfolio.health_check.check_pm2", return_value={"status": "ok"}):
-                health_check.main()
-                captured = capsys.readouterr()
-                data = json.loads(captured.out)
-                assert "timestamp" in data
-                assert data["pm2"] == {"status": "ok"}
+def test_main(tmp_path):
+    captured_output = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = captured_output
+    try:
+        with patch("futures_portfolio.health_check.STATE_DIR", tmp_path), \
+             patch("futures_portfolio.health_check.LOG_DIR", tmp_path), \
+             patch("futures_portfolio.health_check.check_pm2", return_value={"status": "ok"}):
+            health_check.main()
+    finally:
+        sys.stdout = old_stdout
+    data = json.loads(captured_output.getvalue())
+    assert "timestamp" in data
+    assert data["pm2"] == {"status": "ok"}

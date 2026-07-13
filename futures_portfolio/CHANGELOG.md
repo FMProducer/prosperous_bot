@@ -52,6 +52,24 @@ ROADMAP.md — Текущее состояние: 4 REAL bots, 20 USDT/bot, ~7 m
 STATUS.md — Live Swarm: GRASS/UNI/VVV/YFI, TS=0.001% (OFF), guards=6 active
 PROJECT_INDEX.md — Config params, tickers, changelog entries
 
+[13 Jul 2026] — Test Coverage Phase 1: Prod Scripts ≥89%
+Problem: Test coverage at 34.2% overall. 3 FAIL tests blocking progress. rank_tickers.py at 22%, telegram_sender.py at 81%, send_monitor_report.py at 0%.
+
+Solution: Fix 3 FAIL tests, then expand coverage for all prod-critical scripts.
+
+Phase 0 (prior session): 15 dead test files removed, capsys bugs fixed, bounded_sleep→async (6 instances), pyproject.toml coverage omit updated.
+
+Phase 1 (this session):
+- Fixed test_coverage_paper_cross_margin_check (infinite loop via bounded_sleep continue@L827)
+- Fixed test_coverage_liquidation_guard_missing_long: get_positions mock returned qty as string "-1.0" instead of float -1.0 (TypeError → exception → guard never reached)
+- Fixed test_coverage_emergency_stop_full: saves filter "state.json" in s[0] matched "paper_state.json" (substring) → state_save was paper_state dict without virt_qty
+- telegram_sender.py: 81% → 100% (+5 tests: rate limit invalid JSON, timeout, connection error, missing credentials, empty queue, send failure, success path, API error)
+- rank_tickers.py: 22% → 100% (+17 tests: retry decorator exhaustion, TickerRanker init/metrics/momentum, run_ranker_task, fetch non-200/exception, fetch_klines too few/empty, get_top_tickers blacklist/whitelist/volume/non-ascii/empty_dfs, main quiet/not-quiet/with-config)
+- send_monitor_report.py: 0% → 100% (+6 tests: no state files, paper+real, guard active, old heartbeat, sends request, no alerts)
+
+Test results: 333 collected, 331 passed, 2 pre-existing FAIL (test_supervisor B1 TS flag — unrelated).
+Coverage: Prod scripts 93% (2823 stmts, 195 miss). All 14 prod scripts ≥89%.
+
 [21 Jul 2026] — Hermes Agent upgrade 0.17.0 → 0.18.2
 Portable USB venv (D:\Hermes-USB-Portable-main\data\hermes-agent\venv) upgraded.
 Config migrated: v24 → v33.

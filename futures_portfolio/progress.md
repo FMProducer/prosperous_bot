@@ -1,6 +1,24 @@
 Progress Log — Market-Neutral Futures Portfolio Rebalancer
 Формат: Дата → Что сделали → Почему → Результат Читаемые первые 50 строк = последние 50 строк (свежее сверху).
 
+2026-07-13 — Test Coverage Phase 1: Prod Scripts ≥89%
+Что сделано
+Исправлены 3 FAIL теста и доведено покрытие всех prod-скриптов до ≥89%.
+
+Фиксы:
+1. test_coverage_paper_cross_margin_check — bounded_sleep с continue@L827 пропускает sleep@L1476, loop_count не инкрементируется → infinite loop. Исправлено в предыдущей сессии.
+2. test_coverage_liquidation_guard_missing_long — get_positions mock возвращал qty как строку "-1.0" вместо float -1.0. abs("-1.0") → TypeError → exception → liquidation guard никогда не достигается. Фикс: qty改为float.
+3. test_coverage_emergency_stop_full — фильтр saves "state.json" in s[0] матчил "paper_state.json" (подстрока). state_save оказывался paper_state dict без ключа virt_qty. Фикс: s[0] == "state.json" (exact match).
+
+Покрытие (prod-скрипты):
+  telegram_sender.py:      81% → 100%  (+7 тестов)
+  rank_tickers.py:         22% → 100%  (+17 тестов)
+  send_monitor_report.py:   0% → 100%  (+6 тестов)
+  Всего prod: 93% (2823 stmts, 195 miss). Все 14 prod-скриптов ≥89%.
+
+Результат
+333 collected, 331 passed, 2 pre-existing FAIL (test_supervisor B1 TS flag). Offline-тулы (optimize_*, download_*, run_*, phase1) — 1399 stmts, сознательно не покрываются (не prod).
+
 2026-07-11 — B6/B3 SSOT Refactor: Race Condition + Exit/Stop Isolation
 Что сделано
 Устранены две архитектурные уязвимости:

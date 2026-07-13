@@ -385,7 +385,7 @@ async def test_coverage_virtual_order_processing():
         saves.append((str(path), copy.deepcopy(data)))
 
     loop_count = [0]
-    def bounded_sleep(secs, *args):
+    async def bounded_sleep(secs, *args):
         if secs == 86400: raise ZombieExit("ZombieMode")
         loop_count[0] += 1
         if loop_count[0] > 3: raise Exception("StopLoop")
@@ -459,7 +459,7 @@ async def test_coverage_paper_stop_closes_positions():
         saves.append((str(path), copy.deepcopy(data)))
 
     loop_count = [0]
-    def bounded_sleep(secs, *args):
+    async def bounded_sleep(secs, *args):
         if secs == 86400: raise ZombieExit("ZombieMode")
         loop_count[0] += 1
         if loop_count[0] > 3: raise Exception("StopLoop")
@@ -805,7 +805,7 @@ async def test_coverage_config_reload_detection():
          patch(f"{M}.PortfolioCalculator", return_value=calc_mock), \
          patch(f"{M}.BinanceConnector", return_value=mock_connector):
         loop_count = [0]
-        def bounded_sleep(secs, *args):
+        async def bounded_sleep(secs, *args):
             if secs == 86400: raise ZombieExit("ZombieMode")
             loop_count[0] += 1
             if loop_count[0] > 3: raise Exception("StopLoop")
@@ -846,7 +846,7 @@ async def test_coverage_liquidation_guard_missing_long():
     connector.get_free_balance = AsyncMock(return_value=100.0)
     # Only SHORT exists on exchange -> LONG was liquidated
     connector.get_positions = AsyncMock(return_value={
-        "BTCUSDT_SHORT": {"qty": "-1.0", "entry_price": 60000.0}
+        "BTCUSDT_SHORT": {"qty": -1.0, "entry_price": 60000.0}
     })
     connector.get_margin_ratio = AsyncMock(return_value={"margin_ratio": 10.0, "total_wallet_balance": 100.0})
     connector.get_bnb_balance = AsyncMock(return_value=1.0)
@@ -864,18 +864,32 @@ async def test_coverage_liquidation_guard_missing_long():
         }
     })
 
+    # calc_mock must return actions that pass min_notional filter
+    # and enough fields for heartbeat logging
     calc_mock = MagicMock()
     calc_mock.calculate_rebalance.return_value = {
-        "total_tpv": 100.0, "tpv": 100.0, "actions": [], "total_pnl_pct": 0.0
+        "total_tpv": 100.0, "tpv": 100.0,
+        "actions": [{"type": "ORDER", "position_side": "LONG", "diff_usdt": 10.0,
+                      "symbol": "BTCUSDT", "side": "BUY"}],
+        "total_pnl_pct": 0.0,
+        "share_long_pct": 40.0, "share_short_pct": 40.0, "share_virt_pct": 20.0,
+        "share_cash_pct": 0.0,
+        "val_long": 40.0, "val_short": 40.0, "val_virt": 20.0, "val_cash": 0.0,
     }
     calc_mock.tpv = 100.0
+
+    # executor mock must return SUCCESS to set any_success = True
+    executor_mock = MagicMock()
+    executor_mock.execute_actions = AsyncMock(return_value=[
+        {"status": "SUCCESS", "type": "ORDER", "symbol": "BTCUSDT"}
+    ])
 
     recovery_called = [False]
     async def fake_recovery(*args, **kwargs):
         recovery_called[0] = True
 
     loop_count = [0]
-    def bounded_sleep(secs, *args):
+    async def bounded_sleep(secs, *args):
         if secs == 86400: raise ZombieExit("ZombieMode")
         loop_count[0] += 1
         if loop_count[0] > 3: raise Exception("StopLoop")
@@ -902,6 +916,7 @@ async def test_coverage_liquidation_guard_missing_long():
          patch(f"{M}.TelegramNotifier", return_value=notifier), \
          patch("asyncio.sleep", side_effect=bounded_sleep), \
          patch(f"{M}.PortfolioCalculator", return_value=calc_mock), \
+         patch(f"{M}.PortfolioExecutor", return_value=executor_mock), \
          patch(f"{M}._handle_liquidation_recovery", fake_recovery), \
          patch(f"{M}.BinanceConnector", return_value=connector):
         try:
@@ -961,7 +976,7 @@ async def test_coverage_blacklist_rebase_loss():
         saves.append((str(path), copy.deepcopy(data)))
 
     loop_count = [0]
-    def bounded_sleep(secs, *args):
+    async def bounded_sleep(secs, *args):
         if secs == 86400: raise ZombieExit("ZombieMode")
         loop_count[0] += 1
         if loop_count[0] > 3: raise Exception("StopLoop")
@@ -1035,10 +1050,23 @@ async def test_coverage_paper_cross_margin_check():
     connector.set_margin_type = AsyncMock()
 
     loop_count = [0]
-    def bounded_sleep(secs, *args):
+    async def bounded_sleep(secs, *args):
         if secs == 86400: raise ZombieExit("ZombieMode")
         loop_count[0] += 1
         if loop_count[0] > 3: raise Exception("StopLoop")
+
+    async def bounded_to_thread(func, *args, **kwargs):
+        """Safety net: when 'continue' skips asyncio.sleep, to_thread still fires."""
+        loop_count[0] += 1
+        if loop_count[0] > 6: raise Exception("StopLoop")
+        return func(*args, **kwargs)
+
+    # CRITICAL: continue on line 827 skips asyncio.sleep (line 1476).
+    # get_mark_prices is the ONLY async call on every iteration in this path.
+    async def mark_prices_side_effect(*args, **kwargs):
+        loop_count[0] += 1
+        if loop_count[0] > 5: raise Exception("StopLoop")
+        return {"BTCUSDT": 60000.0}
 
     def load_side_effect(path, default=None):
         if "paper_state" in str(path):
@@ -1046,6 +1074,8 @@ async def test_coverage_paper_cross_margin_check():
         if "state" in str(path) and "paper" not in str(path):
             return copy.deepcopy(state)
         return default
+
+    connector.get_mark_prices = AsyncMock(side_effect=mark_prices_side_effect)
 
     with patch(f"{M}.safe_load_json_sync", return_value=config), \
          patch("builtins.open", mock_open(read_data=json.dumps(config))), \
@@ -1057,6 +1087,7 @@ async def test_coverage_paper_cross_margin_check():
              send_message=AsyncMock(), send_alert=AsyncMock(),
              send_status=AsyncMock(), close=AsyncMock())), \
          patch("asyncio.sleep", side_effect=bounded_sleep), \
+         patch("asyncio.to_thread", side_effect=bounded_to_thread), \
          patch(f"{M}.PortfolioCalculator", return_value=calc_mock), \
          patch(f"{M}.BinanceConnector", return_value=connector):
         try:
@@ -1115,9 +1146,15 @@ async def test_coverage_emergency_stop_full():
 
     connector = MagicMock()
     connector.get_positions = AsyncMock(return_value={
-        "BTCUSDT_LONG": {"qty": "0.01", "entry_price": 60000.0, "positionSide": "LONG"},
+        "BTCUSDT_LONG": {"qty": 0.01, "entry_price": 60000.0, "positionSide": "LONG"},
     })
     connector.get_futures_prices = AsyncMock(return_value={"BTCUSDT": 60000.0})
+    connector.get_exchange_info = AsyncMock(return_value={
+        "symbols": [{"symbol": "BTCUSDT", "filters": [
+            {"filterType": "LOT_SIZE", "stepSize": "0.001"},
+            {"filterType": "MIN_NOTIONAL", "notional": "5.0"},
+        ]}]
+    })
 
     state = {
         "virt_qty": 0.033,
@@ -1151,8 +1188,8 @@ async def test_coverage_emergency_stop_full():
         )
 
     # Verify state was reset
-    state_save = next((s[1] for s in saves if "state.json" in s[0]), None)
-    paper_save = next((s[1] for s in saves if "paper_state" in s[0]), None)
+    state_save = next((s[1] for s in saves if s[0] == "state.json"), None)
+    paper_save = next((s[1] for s in saves if "paper_state" in s[0] and s[0] != "state.json"), None)
     assert state_save is not None
     assert state_save["virt_qty"] == 0.0
     assert state_save["initial_tpv"] == 0.0
@@ -1170,9 +1207,15 @@ async def test_coverage_emergency_stop_close_only():
 
     connector = MagicMock()
     connector.get_positions = AsyncMock(return_value={
-        "BTCUSDT_LONG": {"qty": "0.01", "entry_price": 60000.0, "positionSide": "LONG"},
+        "BTCUSDT_LONG": {"qty": 0.01, "entry_price": 60000.0, "positionSide": "LONG"},
     })
     connector.get_futures_prices = AsyncMock(return_value={"BTCUSDT": 60000.0})
+    connector.get_exchange_info = AsyncMock(return_value={
+        "symbols": [{"symbol": "BTCUSDT", "filters": [
+            {"filterType": "LOT_SIZE", "stepSize": "0.001"},
+            {"filterType": "MIN_NOTIONAL", "notional": "5.0"},
+        ]}]
+    })
 
     state = {
         "virt_qty": 0.033,
