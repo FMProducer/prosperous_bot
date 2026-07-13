@@ -171,6 +171,31 @@ API keys moved to env vars (BINANCE_API_KEY, BINANCE_SECRET_KEY)
 Margin ratio monitoring added (warning ≤5x, critical ≤2x)
 Hysteresis fix: reference_tpd as fixed baseline
 Added .env.example and .gitignore
+[13 Jul 2026] — Coverage Push: supervisor.py 66%→95%, main.py 65%→77%
+Problem: Test coverage below 85% fail_under threshold. supervisor.py at 66%, main.py at 65%.
+
+Root cause: integration tests for manage_swarm() not covering signal processing, rotation, scoring, and reaper logic. main.py tests not covering trailing stop closure, emergency stop function, liquidation guard, and blacklist rebase paths.
+
+Solution: Two-phase coverage push targeting highest-impact uncovered blocks.
+
+Phase 1 — supervisor.py (66% → 95%):
+- Rewrote all manage_swarm() integration tests with proper CONFIG_PATH monkeypatch (module-level constant at line 52 loads config from disk, not from test locals)
+- Fixed 5 failing tests: replaced_unprofitable (drawdown protection via inf score), real_stop_drops_bot (whitelist filter), authoritative_cleanup_stray (early return on empty scanner), safety_trim (whitelist guard)
+- Added tests for: signal processing (stop→toxic, exit→probation), scoring pipeline, rotation with candidates, reaper guard, amnesty logic
+
+Phase 2 — main.py (65% → 77%):
+- Created test_main_coverage.py with 21 tests targeting: trailing stop trigger + closure (lines 978-1067), emergency stop / max drawdown (931-957), liquidation guard (1421-1460), VIRTUAL_ORDER accounting (1191-1233), stop/close logic (1525-1601), paper cross-margin check (814-827), blacklist rebase (598-625), emergency_stop function (1561-1601), _handle_liquidation_recovery (130-148)
+- Key pattern: rebalance_loop() creates its own BinanceConnector internally but accepts connector param; PortfolioCalculator must be mocked to control tpv_total for trailing stop / drawdown activation
+
+Changes:
+tests/test_supervisor.py — 18 integration tests added (manage_swarm signal processing, scoring, rotation, reaper, amnesty)
+tests/test_main_coverage.py — 21 tests added (trailing stop, emergency stop, liquidation guard, VIRTUAL_ORDER, emergency_stop function)
+pyproject.toml — unchanged (fail_under=85, addopts with -p no:capture)
+tests/test_supervisor_coverage.py — 377 lines (unit-level tests for get_pm2_processes, reconcile_swarm_state, stop_bot, enforce_invariant_gate)
+
+Test results: 72/72 supervisor + main tests pass. Coverage: supervisor.py 95.08%, main.py 77.14%.
+
+Remaining main.py gaps (need +8%): liquidation guard get_position_risk flow (1421-1460), trailing stop position closure real-mode path (994-1009), stop/close logic in emergency_stop function (1532-1601), blacklist rebase profit path (616-625).
 [30 May 2026]
 Liquidation Guard & Supervisor Auto-Restart
 Per-position liquidation distance monitoring (warn ≤15%, critical ≤8%)

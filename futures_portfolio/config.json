@@ -73,7 +73,7 @@
     }
   ],
   "live_swarm": [
-    "GRASSUSDT",
+    "TUSDT",
     "UNIUSDT",
     "VANRYUSDT",
     "VVVUSDT"
@@ -83,6 +83,7 @@
     "TLMUSDT",
     "AGLDUSDT",
     "VANRYUSDT",
+    "SKLUSDT",
     "TUSDT"
   ],
   "black_list": [

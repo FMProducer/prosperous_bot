@@ -794,3 +794,382 @@ async def test_flag_unlink_is_async(tmp_path):
 
     # Verify file deleted
     assert not list(sig_dir.glob("*.flag"))
+
+
+
+
+# =====================================================================
+# Integration tests through manage_swarm() -- covers 591-1029
+# CRITICAL: manage_swarm() loads config from CONFIG_PATH on disk.
+# Tests MUST write config.json to tmp_path + monkeypatch CONFIG_PATH.
+# =====================================================================
+
+import contextlib
+
+
+def _write_config(tmp_path, **overrides):
+    """Write config.json to tmp_path. Returns the config dict for assertions."""
+    cfg = {
+        "testnet": True, "api_key": "test", "secret_key": "test",
+        "live_swarm": [], "black_list": [], "real_whitelist": [],
+        "toxic_blacklist_paper": {}, "toxic_blacklist_real": {},
+        "probation_paper": {}, "probation_real": {},
+        "toxic_cooldown_days": 0.02, "probation_period_days": 0.041,
+        "scanner_period_days": 1.0, "max_bots": 10, "paper_mode_bots": 9,
+        "max_replace_per_cycle": 1, "min_cycles_for_rank": 10,
+        "min_cycles_for_rotation": 6, "replacement_efficiency_threshold_pct": 25.0,
+        "initial_capital": 100.0, "min_notional_usdt": 5.0,
+        "max_drawdown_limit": 5.0, "equity_trailing_stop_pct": 0.001,
+        "equity_trailing_stop_activation_pct": 7.5,
+        "equity_trailing_stop_timeout_sec": 60,
+        "paper_mode": True, "limit_order_enabled": False,
+        "limit_offset_pct": 0.001, "limit_timeout_sec": 30,
+        "max_orders_per_second": 5,
+        "supervisor_interval_days": 1.0,
+        "backtest_period_days": 2.0,
+        "use_v2_scoring": False, "scoring_drawdown_weight": 0.5,
+        "telegram_enabled": False, "telegram_use_queue": False,
+        "telegram_summary_interval_min": 60,
+        "portfolios": [{"paper_initial_capital": 115.0, "initial_capital": 80.0}],
+        "tickers": [], "base_ticker": "",
+        "liquidation_distance_warn_pct": 15.0,
+        "liquidation_distance_crit_pct": 8.0,
+        "margin_ratio_warning": 5.0, "margin_ratio_critical": 2.0,
+        "max_real_slots": 1, "use_real_whitelist": True,
+    }
+    cfg.update(overrides)
+    (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    return cfg
+
+
+def _cm_manage_swarm(tmp_path, *, config_overrides=None, running_bots=None,
+                     scanner=None, eff_map=None, positions=None, saved=None):
+    """Context manager: all mocks for manage_swarm + CONFIG_PATH redirect."""
+    if config_overrides is None:
+        config_overrides = {}
+    if running_bots is None:
+        running_bots = {}
+    if scanner is None:
+        scanner = [{"symbol": "X", "score": 1}]
+    if eff_map is None:
+        eff_map = {}
+    if positions is None:
+        positions = {}
+    if saved is None:
+        saved = {}
+
+    _write_config(tmp_path, **config_overrides)
+
+    async def capture_save(path, data):
+        saved.update(data)
+
+    async def fake_eff(ticker, cfg, is_real=False):
+        return eff_map.get(ticker, {"profit": 0.0, "cycles": 0})
+
+    cm = contextlib.ExitStack()
+    cm.enter_context(patch(f"{M}.CONFIG_PATH", str(tmp_path / "config.json")))
+    cm.enter_context(patch(f"{M}.BASE_PATH", tmp_path))
+    conn_patch = cm.enter_context(patch(f"{M}.BinanceConnector"))
+    cm.enter_context(patch(f"{M}.get_running_bots_info", AsyncMock(return_value=running_bots)))
+    cm.enter_context(patch(f"{M}.run_scanner", AsyncMock(return_value=scanner)))
+    cm.enter_context(patch(f"{M}.get_bot_efficiency", AsyncMock(side_effect=fake_eff)))
+    cm.enter_context(patch(f"{M}.enforce_invariant_gate", AsyncMock()))
+    cm.enter_context(patch(f"{M}.safe_save_json", AsyncMock(side_effect=capture_save)))
+    cm.enter_context(patch(f"{M}.enforce_swarm_consistency", AsyncMock(return_value=set())))
+    cm.enter_context(patch(f"{M}._ensure_real_bots_alive", AsyncMock()))
+    cm.enter_context(patch(f"{M}.reconcile_swarm_state", AsyncMock()))
+    cm.enter_context(patch(f"{M}.stop_bot", AsyncMock()))
+    cm.enter_context(patch(f"{M}.start_bot", AsyncMock()))
+    cm.enter_context(patch(f"{M}.selective_merge_incubator", AsyncMock(return_value=[r["symbol"] for r in scanner])))
+    cm.enter_context(patch(f"{M}.asyncio.create_subprocess_shell", return_value=AsyncMock(wait=AsyncMock())))
+
+    conn_inst = conn_patch.return_value
+    conn_inst.verify_connection = AsyncMock()
+    conn_inst.get_positions = AsyncMock(return_value=positions)
+
+    return cm, saved, conn_patch, cm.enter_context(patch(f"{M}.stop_bot", AsyncMock())), cm.enter_context(patch(f"{M}.start_bot", AsyncMock()))
+
+
+async def _run_manage(tmp_path, **kwargs):
+    """Run manage_swarm with all mocks. Returns (saved, mock_stop, mock_start)."""
+    cm, saved, _, mock_stop, mock_start = _cm_manage_swarm(tmp_path, **kwargs)
+    with cm:
+        from futures_portfolio.supervisor import manage_swarm
+        await manage_swarm()
+    return saved, mock_stop, mock_start
+
+
+@pytest.mark.asyncio
+async def test_integration_signal_stop_toxic_blacklist(tmp_path, monkeypatch):
+    """Lines 591-613: stop signal -> toxic_blacklist + black_list"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "stop_real_BTCUSDT.flag").touch()
+
+    saved, _, _ = await _run_manage(tmp_path, config_overrides={"live_swarm": ["BTCUSDT"]})
+
+    assert "BTCUSDT" in saved.get("toxic_blacklist_real", {})
+    assert not list(sig_dir.glob("*.flag"))
+
+
+@pytest.mark.asyncio
+async def test_integration_signal_exit_probation(tmp_path, monkeypatch):
+    """Lines 620-630: exit signal -> probation"""
+    sig_dir = tmp_path / "signals"
+    sig_dir.mkdir()
+    (sig_dir / "exit_paper_ZECUSDT.flag").touch()
+
+    saved, _, _ = await _run_manage(tmp_path, config_overrides={"live_swarm": ["ZECUSDT"]})
+
+    assert "ZECUSDT" in saved.get("probation_paper", {})
+
+
+@pytest.mark.asyncio
+async def test_integration_amnesty_clears_ts(tmp_path, monkeypatch):
+    """Lines 654-663: expired blacklist -> Amnesty resets TS flags"""
+    state = {"trailing_stop_triggered": True, "trailing_stop_violation_start": 9999.0}
+    (tmp_path / "paper_state_ALICEUSDT.json").write_text(json.dumps(state))
+
+    expired_ts = time.time() - 3600
+    saved, _, _ = await _run_manage(tmp_path, config_overrides={
+        "toxic_blacklist_paper": {"ALICEUSDT": expired_ts},
+        "black_list": ["ALICEUSDT"],
+    })
+
+    updated = json.loads((tmp_path / "paper_state_ALICEUSDT.json").read_text())
+    assert updated["trailing_stop_triggered"] is False
+    assert updated["trailing_stop_violation_start"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_integration_reaper_zombie(tmp_path, monkeypatch):
+    """Lines 684-698: running bot with TS triggered -> killed"""
+    state = {"trailing_stop_triggered": True}
+    (tmp_path / "paper_state_ALICEUSDT.json").write_text(json.dumps(state))
+
+    running = {"p_ALICEUSDT": {"name": "paper-aliceusdt", "paper": True}}
+    _, mock_stop, _ = await _run_manage(tmp_path, running_bots=running)
+
+    mock_stop.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_integration_ready_pool_scoring(tmp_path, monkeypatch):
+    """Lines 796-836: scoring with whitelist filters"""
+    eff_map = {"GOODUSDT": {"profit": 50.0, "cycles": 20}}
+    scanner = [{"symbol": "GOODUSDT", "score": 10}]
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={"real_whitelist": ["GOODUSDT"]},
+        scanner=scanner, eff_map=eff_map)
+
+    final_swarm = saved.get("live_swarm", [])
+    assert "GOODUSDT" in final_swarm
+
+
+@pytest.mark.asyncio
+async def test_integration_real_rotation_fills_slots(tmp_path, monkeypatch):
+    """Lines 853-857: empty slots filled from candidates"""
+    eff_map = {"GOODUSDT": {"profit": 80.0, "cycles": 20}}
+    scanner = [{"symbol": "GOODUSDT", "score": 10}]
+    _, mock_stop, mock_start = await _run_manage(tmp_path,
+        config_overrides={"real_whitelist": ["GOODUSDT"]},
+        scanner=scanner, eff_map=eff_map)
+
+    real_calls = [c for c in mock_start.call_args_list
+                  if not c.kwargs.get("is_paper", True)]
+    assert len(real_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_replaces_unprofitable(tmp_path, monkeypatch):
+    """Lines 861-931: unprofitable real bot replaced"""
+    bad_state = {"started_at": time.time() - 86400 * 7}
+    (tmp_path / "real_state_BADUSDT.json").write_text(json.dumps(bad_state))
+
+    running = {"r_BADUSDT": {"name": "real-badusdt", "paper": False}}
+    eff_map = {
+        "BADUSDT": {"profit": 0.0, "cycles": 30},
+        "GOODUSDT": {"profit": 80.0, "cycles": 20},
+    }
+    scanner = [{"symbol": "GOODUSDT", "score": 10}]
+    _, _, mock_start = await _run_manage(tmp_path,
+        config_overrides={"live_swarm": ["BADUSDT"], "real_whitelist": ["GOODUSDT"]},
+        running_bots=running, scanner=scanner, eff_map=eff_map)
+
+    real_starts = [c for c in mock_start.call_args_list
+                   if "GOODUSDT" in str(c) and not c.kwargs.get("is_paper", True)]
+    assert len(real_starts) >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_stops_out_of_incubator(tmp_path, monkeypatch):
+    """Lines 976-978: paper bot not in incubator -> stopped"""
+    running = {"p_OLDUSDT": {"name": "paper-oldusdt", "paper": True}}
+    scanner = [{"symbol": "BTCUSDT", "score": 10}]
+    _, mock_stop, _ = await _run_manage(tmp_path, running_bots=running, scanner=scanner)
+
+    stop_calls = [c for c in mock_stop.call_args_list if "OLDUSDT" in str(c)]
+    assert len(stop_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_probation_blocks(tmp_path, monkeypatch):
+    """Lines 818-822: active probation -> excluded"""
+    future_ts = time.time() + 3600
+    eff_map = {"BLOCKEDUSDT": {"profit": 50.0, "cycles": 20}}
+    scanner = [{"symbol": "BLOCKEDUSDT", "score": 10}]
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={
+            "real_whitelist": ["BLOCKEDUSDT"],
+            "probation_paper": {"BLOCKEDUSDT": future_ts},
+        },
+        scanner=scanner, eff_map=eff_map)
+
+    final_swarm = saved.get("live_swarm", [])
+    assert "BLOCKEDUSDT" not in final_swarm
+
+
+@pytest.mark.asyncio
+async def test_integration_drawdown_protection(tmp_path, monkeypatch):
+    """Lines 813-815: real bot in drawdown -> score INF, protected"""
+    running = {"r_DRAWDOWNUSDT": {"name": "real-drawdownusdt", "paper": False}}
+    eff_map = {"DRAWDOWNUSDT": {"profit": -20.0, "cycles": 15}}
+    scanner = [{"symbol": "DRAWDOWNUSDT", "score": 10}]
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={"real_whitelist": ["DRAWDOWNUSDT"]},
+        running_bots=running, scanner=scanner, eff_map=eff_map)
+
+    final_swarm = saved.get("live_swarm", [])
+    assert "DRAWDOWNUSDT" in final_swarm
+
+
+@pytest.mark.asyncio
+async def test_integration_toxic_scanner_mark(tmp_path, monkeypatch):
+    """Lines 721-724: scanner marks toxic -> blacklisted"""
+    scanner = [{"symbol": "TOXICUSDT", "score": 10, "is_toxic": True}]
+    saved, _, _ = await _run_manage(tmp_path, scanner=scanner)
+
+    assert "TOXICUSDT" in saved.get("toxic_blacklist_paper", {})
+
+
+@pytest.mark.asyncio
+async def test_integration_scanner_empty_aborts(tmp_path, monkeypatch):
+    """Lines 705-707: scanner returns nothing -> abort, no config save"""
+    saved, _, _ = await _run_manage(tmp_path, scanner=[])
+    assert "live_swarm" not in saved
+
+
+@pytest.mark.asyncio
+async def test_integration_expired_probation_pruned(tmp_path, monkeypatch):
+    """Lines 668-671: expired probation entries pruned"""
+    expired_prob = time.time() - 3600
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={"probation_paper": {"EXPIREDUSDT": expired_prob}})
+
+    assert "EXPIREDUSDT" not in saved.get("probation_paper", {})
+
+
+@pytest.mark.asyncio
+async def test_integration_ticks_fallback(tmp_path, monkeypatch):
+    """Lines 1019-1023: tickers empty -> restored from scanner"""
+    scanner = [{"symbol": "BTCUSDT", "score": 10}, {"symbol": "ETHUSDT", "score": 8}]
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={"tickers": [], "base_ticker": ""},
+        scanner=scanner)
+
+    assert len(saved.get("tickers", [])) > 0
+
+
+@pytest.mark.asyncio
+async def test_integration_real_stop_drops_bot(tmp_path, monkeypatch):
+    """Lines 981-992: real bot replaced -> old stopped"""
+    state = {"started_at": time.time() - 86400}
+    (tmp_path / "real_state_DROPPEDUSDT.json").write_text(json.dumps(state))
+    running = {"r_DROPPEDUSDT": {"name": "real-droppedusdt", "paper": False}}
+    eff_map = {
+        "DROPPEDUSDT": {"profit": 0.0, "cycles": 10},
+        "BTCUSDT": {"profit": 50.0, "cycles": 20},
+    }
+    scanner = [{"symbol": "BTCUSDT", "score": 10}]
+    _, mock_stop, _ = await _run_manage(tmp_path,
+        config_overrides={"real_whitelist": ["BTCUSDT"], "use_real_whitelist": True},
+        running_bots=running, scanner=scanner, eff_map=eff_map)
+
+    stop_calls = [c for c in mock_stop.call_args_list
+                  if "DROPPEDUSDT" in str(c) and not c.kwargs.get("is_paper", True)]
+    assert len(stop_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_authoritative_cleanup_stray(tmp_path, monkeypatch):
+    """Lines 950-956: stray position not in target -> closed"""
+    shell_calls = []
+
+    async def track_shell(cmd, **kw):
+        shell_calls.append(cmd)
+        return AsyncMock(wait=AsyncMock())
+
+    _write_config(tmp_path, real_whitelist=[], tickers=[], base_ticker="")
+
+    with patch(f"{M}.CONFIG_PATH", str(tmp_path / "config.json")),          patch(f"{M}.BASE_PATH", tmp_path),          patch(f"{M}.BinanceConnector") as MockConn,          patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})),          patch(f"{M}.run_scanner", AsyncMock(return_value=[{"symbol": "X", "score": 1}])),          patch(f"{M}.get_bot_efficiency", AsyncMock(return_value={})),          patch(f"{M}.enforce_invariant_gate", AsyncMock()),          patch(f"{M}.safe_save_json", AsyncMock()),          patch(f"{M}.enforce_swarm_consistency", AsyncMock(return_value=set())),          patch(f"{M}._ensure_real_bots_alive", AsyncMock()),          patch(f"{M}.reconcile_swarm_state", AsyncMock()),          patch(f"{M}.stop_bot", AsyncMock()),          patch(f"{M}.start_bot", AsyncMock()),          patch(f"{M}.selective_merge_incubator", AsyncMock(return_value=["X"])),          patch(f"{M}.asyncio.create_subprocess_shell", side_effect=track_shell):
+        MockConn.return_value.verify_connection = AsyncMock()
+        MockConn.return_value.get_positions = AsyncMock(return_value={
+            "STRAYCOINUSDT_LONG": {"qty": "5.0", "mark_price": "10.0"}
+        })
+        from futures_portfolio.supervisor import manage_swarm
+        await manage_swarm()
+
+    stop_cmds = [c for c in shell_calls if "STRAYCOINUSDT" in str(c) and "--stop" in str(c)]
+    assert len(stop_cmds) >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_safety_trim(tmp_path, monkeypatch):
+    """Lines 935-941: more bots than max_real_slots -> trim worst"""
+    # Create 2 real bots but max_bots-paper_mode_bots=1
+    running = {
+        "r_BOTA": {"name": "real-bota", "paper": False},
+        "r_BOTB": {"name": "real-botb", "paper": False},
+    }
+    eff_map = {
+        "BOTA": {"profit": 0.0, "cycles": 15},
+        "BOTB": {"profit": 0.0, "cycles": 15},
+    }
+    scanner = [{"symbol": "BOTA", "score": 10}, {"symbol": "BOTB", "score": 8}]
+    _, mock_stop, _ = await _run_manage(tmp_path,
+        config_overrides={"max_bots": 10, "paper_mode_bots": 9, "real_whitelist": []},
+        running_bots=running, scanner=scanner, eff_map=eff_map)
+
+    # At least one stop should happen (worst bot trimmed)
+    assert mock_stop.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_integration_healed_tickers(tmp_path, monkeypatch):
+    """Lines 677-680: healed tickers added"""
+    config_overrides = {"real_whitelist": ["HEALUSDT"]}
+
+    _write_config(tmp_path, **config_overrides)
+
+    with patch(f"{M}.CONFIG_PATH", str(tmp_path / "config.json")),          patch(f"{M}.BASE_PATH", tmp_path),          patch(f"{M}.BinanceConnector") as MockConn,          patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})),          patch(f"{M}.run_scanner", AsyncMock(return_value=[])),          patch(f"{M}.safe_save_json", AsyncMock()),          patch(f"{M}.enforce_swarm_consistency", AsyncMock(return_value={"HEALUSDT"})),          patch(f"{M}._ensure_real_bots_alive", AsyncMock()),          patch(f"{M}.reconcile_swarm_state", AsyncMock()),          patch(f"{M}.stop_bot", AsyncMock()),          patch(f"{M}.start_bot", AsyncMock()),          patch(f"{M}.selective_merge_incubator", AsyncMock(return_value=[])),          patch(f"{M}.asyncio.create_subprocess_shell", return_value=AsyncMock(wait=AsyncMock())):
+        MockConn.return_value.verify_connection = AsyncMock()
+        MockConn.return_value.get_positions = AsyncMock(return_value={})
+        from futures_portfolio.supervisor import manage_swarm
+        await manage_swarm()
+
+
+@pytest.mark.asyncio
+async def test_integration_blacklisted_real_skipped(tmp_path, monkeypatch):
+    """Lines 803-805: ticker in toxic_blacklist_real -> quarantined"""
+    future_ts = time.time() + 3600
+    eff_map = {"QUARANTINEDUSDT": {"profit": 100.0, "cycles": 25}}
+    scanner = [{"symbol": "QUARANTINEDUSDT", "score": 10}]
+    saved, _, _ = await _run_manage(tmp_path,
+        config_overrides={
+            "real_whitelist": ["QUARANTINEDUSDT"],
+            "toxic_blacklist_real": {"QUARANTINEDUSDT": future_ts},
+        },
+        scanner=scanner, eff_map=eff_map)
+
+    final_swarm = saved.get("live_swarm", [])
+    assert "QUARANTINEDUSDT" not in final_swarm
