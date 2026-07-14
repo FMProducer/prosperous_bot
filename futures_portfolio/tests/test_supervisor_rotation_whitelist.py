@@ -3,7 +3,7 @@ import pytest
 import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
-from futures_portfolio.supervisor import manage_swarm
+from futures_portfolio.supervisor.swarm_manager import manage_swarm
 
 @pytest.mark.asyncio
 async def test_manage_swarm_respects_whitelist_during_rotation():
@@ -21,19 +21,19 @@ async def test_manage_swarm_respects_whitelist_during_rotation():
     }
 
     # Mock dependencies
-    with patch("futures_portfolio.supervisor.safe_load_json", AsyncMock(return_value=config)), \
-         patch("futures_portfolio.supervisor.safe_save_json", AsyncMock()), \
-         patch("futures_portfolio.supervisor.BinanceConnector") as MockConnector, \
-         patch("futures_portfolio.supervisor.run_scanner", AsyncMock(return_value=[{"symbol": "BTCUSDT", "score": 100}])), \
-         patch("futures_portfolio.supervisor.get_running_bots_info", AsyncMock(return_value={
+    with patch("futures_portfolio.supervisor.swarm_manager.safe_load_json", AsyncMock(return_value=config)), \
+         patch("futures_portfolio.supervisor.swarm_manager.safe_save_json", AsyncMock()), \
+         patch("futures_portfolio.supervisor.swarm_manager.BinanceConnector") as MockConnector, \
+         patch("futures_portfolio.supervisor.swarm_manager.run_scanner", AsyncMock(return_value=[{"symbol": "BTCUSDT", "score": 100}])), \
+         patch("futures_portfolio.supervisor.swarm_manager.get_running_bots_info", AsyncMock(return_value={
              "r_BTCUSDT": {"name": "real-btc", "paper": False},
              "r_ETHUSDT": {"name": "real-eth", "paper": False}
          })), \
-         patch("futures_portfolio.supervisor.get_bot_efficiency", AsyncMock(return_value={"profit": 10.0, "cycles": 20})), \
-         patch("futures_portfolio.supervisor.stop_bot", AsyncMock()) as mock_stop_bot, \
-         patch("futures_portfolio.supervisor.start_bot", AsyncMock()), \
+         patch("futures_portfolio.supervisor.swarm_manager.get_bot_efficiency", AsyncMock(return_value={"profit": 10.0, "cycles": 20})), \
+         patch("futures_portfolio.supervisor.swarm_manager.stop_bot", AsyncMock()) as mock_stop_bot, \
+         patch("futures_portfolio.supervisor.swarm_manager.start_bot", AsyncMock()), \
          patch("asyncio.create_subprocess_shell", AsyncMock()) as mock_shell, \
-         patch("futures_portfolio.supervisor.enforce_swarm_consistency", AsyncMock()):
+         patch("futures_portfolio.supervisor.swarm_manager.enforce_swarm_consistency", AsyncMock()):
 
         mock_connector = MockConnector.return_value
         mock_connector.verify_connection = AsyncMock()

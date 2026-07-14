@@ -3,7 +3,7 @@ import json
 import os
 import pytest
 from unittest.mock import patch, AsyncMock
-from futures_portfolio.supervisor import get_bot_efficiency
+from futures_portfolio.supervisor.swarm_manager import get_bot_efficiency
 from pathlib import Path
 
 BASE_PATH = Path(__file__).resolve().parent.parent / "futures_portfolio"
@@ -13,7 +13,7 @@ async def test_get_bot_efficiency_no_state():
     config = {"min_cycles_for_rank": 10}
     ticker = "BTCUSDT"
 
-    with patch("futures_portfolio.supervisor.safe_load_json", AsyncMock(return_value={})):
+    with patch("futures_portfolio.supervisor.swarm_manager.safe_load_json", AsyncMock(return_value={})):
         result = await get_bot_efficiency(ticker, config)
 
     assert result == {
@@ -33,7 +33,7 @@ async def test_get_bot_efficiency_with_state():
         "trailing_stop_paper_timeout_end": 123456789.0
     }
 
-    with patch("futures_portfolio.supervisor.safe_load_json", AsyncMock(return_value=state)):
+    with patch("futures_portfolio.supervisor.swarm_manager.safe_load_json", AsyncMock(return_value=state)):
         result = await get_bot_efficiency(ticker, config)
 
     assert result == {
@@ -53,7 +53,7 @@ async def test_get_bot_efficiency_min_cycles():
         "trailing_stop_paper_timeout_end": 0.0
     }
 
-    with patch("futures_portfolio.supervisor.safe_load_json", AsyncMock(return_value=state)):
+    with patch("futures_portfolio.supervisor.swarm_manager.safe_load_json", AsyncMock(return_value=state)):
         result = await get_bot_efficiency(ticker, config)
 
     assert result == {

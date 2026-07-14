@@ -1,8 +1,9 @@
 # План: Multi-Repo Split — Реорганизация prosperous_bot
 
 > Дата: 2026-07-13
-> Статус: ОЖИДАНИЕ — ждём инвентарь от Jules
+> Статус: ЭТАП 3 ЗАВЕРШЁН — структурирование выполнено
 > Решение: Вариант B (Multi-Repo Split), старт с futures_portfolio
+> Новое имя: futures-portfolio (GitHub)
 
 ---
 
@@ -27,14 +28,14 @@
 
 ```
 futures-portfolio/
-├── src/                        — Ядро системы
+├── core/                       — Ядро системы (was src/)
 │   ├── main.py                 — Entry point, 24h auto-pilot
 │   ├── connector.py            — Binance Futures API wrapper
 │   ├── calculator.py           — Position sizing & rebalancing math
 │   ├── executor.py             — Order execution
 │   └── storage.py              — JSON state persistence
 ├── supervisor/                 — Supervision layer
-│   ├── supervisor.py           — Swarm manager (SSOT config.json)
+│   ├── swarm_manager.py        — Swarm manager (was supervisor.py)
 │   ├── supervisor_service.py   — PM2 service wrapper
 │   ├── aggregator.py           — Portfolio aggregation
 │   └── swarm_analyzer.py       — Swarm performance analysis
@@ -71,7 +72,7 @@ futures-portfolio/
 │   └── check_market_data.py
 ├── tests/                      — Unit tests
 │   ├── conftest.py
-│   └── test_*.py
+│   └── test_*.py (24 files)
 ├── scripts/                    — BAT-скрипты запуска
 │   ├── start_bot.bat
 │   ├── stop_bot.bat
@@ -88,6 +89,7 @@ futures-portfolio/
 │   └── *.md
 ├── config.json                 — SSOT конфигурация
 ├── config_signal.json          — Signal config (если нужен)
+├── ecosystem.config.js         — PM2 конфиг
 ├── pyproject.toml              — Dependencies
 ├── requirements.txt            — Lock file
 ├── .gitignore                  — Чистые правила
@@ -121,20 +123,20 @@ futures-portfolio/
 
 | Файл                               | Тип       | Действие     |
 |------------------------------------|-----------|--------------|
-| `connector.py_time.py`            | Debug copy | Удалить      |
-| `main.py_time.py`                 | Debug copy | Удалить      |
-| `test_dd.py`                       | One-off    | Удалить      |
-| `run_debug.py`                     | Debug      | Удалить      |
-| `debug_scan.py`                    | Debug      | В tools/     |
-| `check_json_encoding.py`          | Debug      | Удалить      |
-| `check_market_data.py`            | Utility    | В tools/     |
-| `full_reset.py`                   | Destructive| Удалить      |
-| `download_30d.py`                 | Data tool  | В tools/     |
-| `phase1_validate.py`              | One-off    | Удалить      |
-| `update_white_list.py`           | One-off    | Удалить      |
-| `save_cache.py`                   | Utility    | В tools/     |
-| `nul`                             | Windows artifact | Удалить |
-| `progress.md`                     | Temp doc   | Удалить      |
+| `connector.py_time.py`            | Debug copy | ✅ Удалено   |
+| `main.py_time.py`                 | Debug copy | ✅ Удалено   |
+| `test_dd.py`                       | One-off    | ✅ Удалено   |
+| `run_debug.py`                     | Debug      | ✅ Удалено   |
+| `debug_scan.py`                    | Debug      | → tools/     |
+| `check_json_encoding.py`          | Debug      | ✅ Удалено   |
+| `check_market_data.py`            | Utility    | → tools/     |
+| `full_reset.py`                   | Destructive| ✅ Удалено   |
+| `download_30d.py`                 | Data tool  | → tools/     |
+| `phase1_validate.py`              | One-off    | ✅ Удалено   |
+| `update_white_list.py`           | One-off    | ✅ Удалено   |
+| `save_cache.py`                   | Utility    | → tools/     |
+| `nul`                             | Windows artifact | ✅ Удалено |
+| `progress.md`                     | Temp doc   | ✅ Удалено   |
 
 ---
 
@@ -151,17 +153,20 @@ futures-portfolio/
 - [ ] Определить имя нового репозитория на GitHub
 
 ### Этап 2: Очистка futures_portfolio
-- [ ] Удалить debug-копии (*_time.py, test_dd.py, run_debug.py)
-- [ ] Удалить Windows-артефакты (nul)
-- [ ] Удалить one-off скрипты (full_reset, phase1_validate, etc.)
-- [ ] Переместить utility-скрипты в tools/ или удалить
-- [ ] Удалить progress.md, CHANGELOG.md (проверить актуальность)
+- [x] Удалить debug-копии (*_time.py, test_dd.py, run_debug.py)
+- [x] Удалить Windows-артефакты (nul)
+- [x] Удалить one-off скрипты (full_reset, phase1_validate, etc.)
+- [x] Переместить utility-скрипты в tools/ или удалить
+- [x] Удалить progress.md, CHANGELOG.md (проверить актуальность)
 
-### Этап 3: Структурирование
-- [ ] Создать src/, supervisor/, scanner/, optimization/, backtest/, monitoring/
-- [ ] Переместить .py файлы по поддиректориям
-- [ ] Обновить import paths во всех файлах
-- [ ] Обновить тесты (conftest.py, test_*.py)
+### Этап 3: Структурирование ✅
+- [x] Создать core/, supervisor/, scanner/, optimization/, backtest/, monitoring/, tools/, scripts/
+- [x] Переместить .py файлы по поддиректориям (git mv + mv)
+- [x] Переименовать supervisor.py → supervisor/swarm_manager.py
+- [x] Обновить import paths во всех файлах (src→core, flat→package)
+- [x] Обновить тесты (24 test-файлов, 318/320 passed)
+- [x] Исправить BASE_PATH/PROJECT_DIR для поддиректорий
+- [x] Обновить ecosystem.config.js (PM2 script paths)
 
 ### Этап 4: Конфигурация нового репо
 - [ ] Создать чистый .gitignore (30 строк, не 200)

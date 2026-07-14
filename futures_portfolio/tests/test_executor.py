@@ -3,8 +3,8 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
 from decimal import Decimal
 
-from futures_portfolio.executor import PortfolioExecutor
-from futures_portfolio.connector import BinanceConnector
+from futures_portfolio.core.executor import PortfolioExecutor
+from futures_portfolio.core.connector import BinanceConnector
 
 @pytest.fixture
 def mock_connector():

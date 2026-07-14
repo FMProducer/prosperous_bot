@@ -1,4 +1,81 @@
 CHANGELOG — Prosperous BOT Futures Portfolio
+
+[14 Jul 2026 — 17:05] — State File Path Deduplication (SSOT for core/)
+Problem: State-файлы (paper_state_*, paper_shadow_*, real_state_*, shadow_state_*) дублировались в корне futures_portfolio/ и в core/. Swarm_manager.py использовал BASE_PATH (корень) для чтения/записи, а main.py — os.path.dirname(__file__) (core/). Итого: 41 stale-файл в корне при 17 live-ботах.
+
+Root cause: CORE_PATH не существовал. Все 10 ссылок в swarm_manager.py на state-файлы шли через BASE_PATH.
+
+Fix:
+- Добавлен CORE_PATH = BASE_PATH / "core" (swarm_manager.py:24)
+- Переключены 10 ссылок: enforce_swarm_consistency, reset_bot_state_files, start_bot, get_bot_efficiency, amnesty-блок, get_running_bots_info
+- 41 stale-файл перемещён из корня в history/
+- Тесты: patched CORE_PATH в test_supervisor.py (1) + test_supervisor_coverage.py (6)
+
+Result: 327/327 passed. State-файлы существуют ТОЛЬКО в core/. Источник дублирования устранён.
+
+[14 Jul 2026 — 16:42] — Supervisor PM2 Log Spam Elimination
+Problem: manage_swarm() запускает ~19 ботов за цикл. Каждый pm2 start/delete/save без stdout-редиректа выводил PM2 box-drawing таблицу в лог супервайзера. Итого ~400 строк мусора за один цикл.
+
+Root cause: 6 точек в swarm_manager.py использовали create_subprocess_shell() без stdout=DEVNULL:
+1. start_bot() — pm2 start (главный источник: 19 таблиц)
+2. stop_bot() — pm2 delete
+3. enforce_swarm_consistency → cmd_stop — закрытие stray-позиций
+4. manage_swarm → cmd_stop #1 — Authoritative Cleanup
+5. manage_swarm → cmd_stop #2 — Stopping Combat REAL
+6. pm2 save — сохранение дампа
+
+Fix: Все 6 вызовов дополнены stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL.
+get_running_bots_info() и get_pm2_processes() оставлены с PIPE — они читают данные из pm2 jlist.
+
+Result: 327/327 tests passed. Лог супервайзера теперь чистый — только бизнес-события.
+
+[14 Jul 2026] — Этап 3: Модульная структура (Multi-Repo Split)
+Problem: Плоская структура ~30 .py файлов в корне futures_portfolio/. Непрозрачная навигация, конфликт имён supervisor.py/supervisor/ на Windows, теневой src/ в .venv.
+
+Solution: Модульная структура с поддиректориями core/, supervisor/, scanner/, optimization/, backtest/, monitoring/, tools/, scripts/.
+
+Changes:
+- supervisor.py → supervisor/swarm_manager.py (разрешение конфликта имён)
+- src/ → core/ (устранение теневого src/ в .venv)
+- Все import paths переведены на пакетный стиль (futures_portfolio.core.*, futures_portfolio.supervisor.*)
+- Удалены sys.path.insert хаки из production-кода
+- ecosystem.config.js: script paths обновлены (supervisor/supervisor_service.py, supervisor/aggregator.py, monitoring/telegram_sender.py)
+- swarm_manager.py: start_bot запускает core/main.py (было main.py)
+- dashboard/dashboard.py: PM2 команда обновлена на core/main.py
+- BASE_PATH в swarm_manager.py: parent.parent (было parent)
+- PROJECT_DIR в optimization/*.py: parent.parent (было parent)
+- data_dir в backtest/*.py: dirname(dirname(...)) (было dirname(...))
+- Все mock paths в тестах обновлены
+- 24 тестовых файла, 318/320 passed
+
+Status: Этап 3 завершён. Система готова к перезапуску с новой структурой. 327/327 passed.
+
+[14 Jul 2026] — Баг-фиксы Этапа 3: stderr crash + 3 failing tests
+Problem 1: Python 3.13 + pytest крашится на "lost sys.stderr" при сборке всех тестов.
+Root cause: supervisor_service.py и aggregator.py перехватывали sys.stderr на module level.
+Fix: sys.stderr/stdout перехват перенесён в if __name__ == "__main__".
+
+Problem 2: test_generate_swarm_section — assert 0.0 == 10.0.
+Root cause: pytest создаёт два отдельных module object (supervisor.aggregator и futures_portfolio.supervisor.aggregator). Mock патчит не тот.
+Fix: patch paths изменены с futures_portfolio.supervisor.aggregator → supervisor.aggregator.
+
+Problem 3: B1 тесты (test_b1_stop_bot_called, test_b1_ts_flag_reset) — stop_bot не вызывается.
+Root cause: tracking_open mock перехватывал только WRITE операции. READ падал на original_builtin_open → FileNotFoundError → B1 ветка недостижима.
+Fix: tracking_open перехватывает READ для real_state_* файлов, возвращает StringIO с mock данными.
+
+Problem 4: test_supervisor_new.py — assert "pm2 start main.py" не найден.
+Root cause: start_bot в swarm_manager.py обновлён на core/main.py, тест не обновлён.
+Fix: assertion обновлён на "pm2 start core/main.py".
+
+Result: 327 passed, 0 failed, 0 errors.
+
+[14 Jul 2026] — PYTHONPATH для subprocess в swarm_manager.py
+Problem: enforce_swarm_consistency вызывает core/main.py через subprocess.
+Из temp-директории pytest модуль core/ не найден (ModuleNotFoundError).
+В production PM2 --cwd обеспечивает правильный CWD, но subprocess脆弱ен.
+Fix: все 3 subprocess-вызова теперь передают env с PYTHONPATH=BASE_PATH.
+Result: 327/327, ModuleNotFoundError исчез.
+
 [11 Jul 2026] — B6/B3 SSOT Refactor: Race Condition + Exit/Stop Isolation
 Problem: main.py directly writes to config.json in _handle_liquidation_recovery and _handle_liquidation_guard (non-atomic write_text). Parallel processes (main.py + supervisor.py) cause race condition → data loss (toxic records, live_swarm changes). Additionally, supervisor.py treats exit and stop signals identically — profitable tickers get permanently blacklisted instead of probation.
 

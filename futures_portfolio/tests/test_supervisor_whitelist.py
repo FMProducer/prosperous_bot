@@ -2,7 +2,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from futures_portfolio.supervisor import enforce_swarm_consistency
+from futures_portfolio.supervisor.swarm_manager import enforce_swarm_consistency
 
 @pytest.mark.asyncio
 async def test_enforce_swarm_consistency_respects_whitelist():
@@ -22,7 +22,7 @@ async def test_enforce_swarm_consistency_respects_whitelist():
 
     # We want to check if it tries to close SOLUSDT but NOT BTCUSDT or ETHUSDT
     with patch("asyncio.create_subprocess_shell", new_callable=AsyncMock) as mock_shell, \
-         patch("futures_portfolio.supervisor.get_running_bots_info", AsyncMock(return_value={"r_BTCUSDT": {}, "r_ETHUSDT": {}})):
+         patch("futures_portfolio.supervisor.swarm_manager.get_running_bots_info", AsyncMock(return_value={"r_BTCUSDT": {}, "r_ETHUSDT": {}})):
         mock_process = AsyncMock()
         mock_shell.return_value.wait = AsyncMock(return_value=0)
         mock_shell.return_value = mock_process
@@ -51,7 +51,7 @@ async def test_enforce_swarm_consistency_all_allowed():
     }
 
     with patch("asyncio.create_subprocess_shell", new_callable=AsyncMock) as mock_shell, \
-         patch("futures_portfolio.supervisor.get_running_bots_info", AsyncMock(return_value={"r_BTCUSDT": {}, "r_ETHUSDT": {}})):
+         patch("futures_portfolio.supervisor.swarm_manager.get_running_bots_info", AsyncMock(return_value={"r_BTCUSDT": {}, "r_ETHUSDT": {}})):
         await enforce_swarm_consistency(connector, config)
 
         assert mock_shell.call_count == 0

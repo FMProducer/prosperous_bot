@@ -1,0 +1,13 @@
+{
+  "balance": 19.9442,
+  "positions": {
+    "DEXEUSDT_LONG": 1.7,
+    "DEXEUSDT_SHORT": 1.7
+  },
+  "last_price": 40.89692143,
+  "base_ticker": "DEXEUSDT",
+  "long_entry_price": 41.055,
+  "short_entry_price": 41.055,
+  "long_liquidation_price": 0.0,
+  "short_liquidation_price": 99.69695647
+}

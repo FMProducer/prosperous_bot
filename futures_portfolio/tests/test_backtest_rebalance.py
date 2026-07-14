@@ -5,8 +5,8 @@ import sys
 import pandas as pd
 from decimal import Decimal
 from unittest.mock import patch, AsyncMock, MagicMock
-from futures_portfolio import backtest_rebalance
-from futures_portfolio.backtest_rebalance import (
+from futures_portfolio.backtest import backtest_rebalance
+from futures_portfolio.backtest.backtest_rebalance import (
     MarketOrderSlippageSimulator,
     quantize_qty,
     validate_notional,
@@ -276,7 +276,7 @@ def test_cli_execution(tmp_path):
     df.to_feather(tmp_path / "BTCUSDT_live.feather")
 
     with patch("sys.argv", ["backtest_rebalance.py", "--config", str(config_file), "--ticker", "BTCUSDT", "--days", "0.01"]):
-        with patch("futures_portfolio.backtest_rebalance.run_backtest", AsyncMock(return_value={"profit_pct": 1.0})) as mock_run:
+        with patch("futures_portfolio.backtest.backtest_rebalance.run_backtest", AsyncMock(return_value={"profit_pct": 1.0})) as mock_run:
             # We trigger the block inside if __name__ == "__main__":
             # by executing python's main flow or manually calling main block
             with patch("asyncio.run") as mock_asyncio_run:

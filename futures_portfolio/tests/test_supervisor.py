@@ -3,10 +3,10 @@ import math
 import json
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
 from futures_portfolio import supervisor
-from futures_portfolio.supervisor import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_bot_state_files, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
+from futures_portfolio.supervisor.swarm_manager import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_bot_state_files, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
 
 # Префикс для всех patch-путей — модуль supervisor как он виден тесту
-M = "futures_portfolio.supervisor"
+M = "futures_portfolio.supervisor.swarm_manager"
 
 def test_calculate_bot_score():
     # is_in_drawdown=True -> INF
@@ -287,7 +287,7 @@ async def test_start_bot():
          patch(f"{M}.Path.exists", return_value=False):
         await supervisor.start_bot("BTCUSDT", is_paper=True, config=config)
         assert mock_reset.called
-        assert "pm2 start main.py" in mock_shell.call_args[0][0]
+        assert "pm2 start core/main.py" in mock_shell.call_args[0][0]
         assert "--paper" in mock_shell.call_args[0][0]
 
 
@@ -446,20 +446,25 @@ async def test_b1_stop_bot_called_before_ts_flag_reset():
     async def fake_stop_bot(t, is_paper=False):
         call_order.append(("stop_bot", t))
 
-    # Mock open to capture file writes
+    # Mock open to capture file reads and writes
     original_builtin_open = open
     import io
     def tracking_open(path, *args, **kwargs):
-        if "real_state_" in str(path) and "w" in str(args):
-            def write_and_track(content):
-                call_order.append(("file_write", str(path)))
-                return len(content)
-            buf = io.StringIO()
-            buf.write = write_and_track
-            return buf
+        path_str = str(path)
+        if "real_state_" in path_str:
+            if "w" in str(args):
+                def write_and_track(content):
+                    call_order.append(("file_write", path_str))
+                    return len(content)
+                buf = io.StringIO()
+                buf.write = write_and_track
+                return buf
+            else:
+                # READ: return fake state data as file object
+                fake = io.StringIO(json.dumps(state_data))
+                fake.name = path_str
+                return fake
         return original_builtin_open(path, *args, **kwargs)
-
-    import json as _json
 
     with patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})), \
          patch(f"{M}.stop_bot", side_effect=fake_stop_bot) as mock_stop, \
@@ -467,15 +472,7 @@ async def test_b1_stop_bot_called_before_ts_flag_reset():
          patch(f"{M}.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock(wait=AsyncMock()))), \
          patch(f"{M}.Path.exists", return_value=True), \
          patch("builtins.open", side_effect=tracking_open):
-
-        original_load = _json.load
-        def fake_load(f, *args, **kwargs):
-            if "real_state_" in str(getattr(f, 'name', '')):
-                return dict(state_data)
-            return original_load(f, *args, **kwargs)
-
-        with patch("json.load", side_effect=fake_load):
-            await enforce_swarm_consistency(connector, config)
+        await enforce_swarm_consistency(connector, config)
 
     # Verify stop_bot was called
     mock_stop.assert_called_once_with(ticker, is_paper=False)
@@ -523,28 +520,33 @@ async def test_b1_ts_flag_reset_after_stop_bot():
     original_builtin_open2 = open
     import io
     def tracking_open2(path, *args, **kwargs):
-        if "real_state_" in str(path) and "w" in str(args):
-            buf = io.StringIO()
-            original_write = buf.write
-            def accumulate_write(content):
-                original_write(content)
-                return len(content)
-            buf.write = accumulate_write
-            # On close, capture the full content
-            original_close = buf.close
-            def capture_and_close():
-                nonlocal written_state
-                try:
-                    buf.seek(0)
-                    written_state = _json.loads(buf.read())
-                except:
-                    pass
-                original_close()
-            buf.close = capture_and_close
-            return buf
+        path_str = str(path)
+        if "real_state_" in path_str:
+            if "w" in str(args):
+                buf = io.StringIO()
+                original_write = buf.write
+                def accumulate_write(content):
+                    original_write(content)
+                    return len(content)
+                buf.write = accumulate_write
+                # On close, capture the full content
+                original_close = buf.close
+                def capture_and_close():
+                    nonlocal written_state
+                    try:
+                        buf.seek(0)
+                        written_state = json.loads(buf.read())
+                    except:
+                        pass
+                    original_close()
+                buf.close = capture_and_close
+                return buf
+            else:
+                # READ: return fake state data as file object
+                fake = io.StringIO(json.dumps(state_data))
+                fake.name = path_str
+                return fake
         return original_builtin_open2(path, *args, **kwargs)
-
-    import json as _json
 
     with patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})), \
          patch(f"{M}.stop_bot", side_effect=fake_stop_bot), \
@@ -552,15 +554,7 @@ async def test_b1_ts_flag_reset_after_stop_bot():
          patch(f"{M}.asyncio.create_subprocess_shell", AsyncMock(return_value=AsyncMock(wait=AsyncMock()))), \
          patch(f"{M}.Path.exists", return_value=True), \
          patch("builtins.open", side_effect=tracking_open2):
-
-        original_load2 = _json.load
-        def fake_load2(f, *args, **kwargs):
-            if "real_state_" in str(getattr(f, 'name', '')):
-                return dict(state_data)
-            return original_load2(f, *args, **kwargs)
-
-        with patch("json.load", side_effect=fake_load2):
-            await enforce_swarm_consistency(connector, config)
+        await enforce_swarm_consistency(connector, config)
 
     # stop_bot MUST have been called
     assert stop_called, "stop_bot was not called — zombie survives!"
@@ -869,6 +863,7 @@ def _cm_manage_swarm(tmp_path, *, config_overrides=None, running_bots=None,
     cm = contextlib.ExitStack()
     cm.enter_context(patch(f"{M}.CONFIG_PATH", str(tmp_path / "config.json")))
     cm.enter_context(patch(f"{M}.BASE_PATH", tmp_path))
+    cm.enter_context(patch(f"{M}.CORE_PATH", tmp_path))  # State-файлы в tmp_path
     conn_patch = cm.enter_context(patch(f"{M}.BinanceConnector"))
     cm.enter_context(patch(f"{M}.get_running_bots_info", AsyncMock(return_value=running_bots)))
     cm.enter_context(patch(f"{M}.run_scanner", AsyncMock(return_value=scanner)))
@@ -894,7 +889,7 @@ async def _run_manage(tmp_path, **kwargs):
     """Run manage_swarm with all mocks. Returns (saved, mock_stop, mock_start)."""
     cm, saved, _, mock_stop, mock_start = _cm_manage_swarm(tmp_path, **kwargs)
     with cm:
-        from futures_portfolio.supervisor import manage_swarm
+        from futures_portfolio.supervisor.swarm_manager import manage_swarm
         await manage_swarm()
     return saved, mock_stop, mock_start
 
@@ -1116,7 +1111,7 @@ async def test_integration_authoritative_cleanup_stray(tmp_path, monkeypatch):
         MockConn.return_value.get_positions = AsyncMock(return_value={
             "STRAYCOINUSDT_LONG": {"qty": "5.0", "mark_price": "10.0"}
         })
-        from futures_portfolio.supervisor import manage_swarm
+        from futures_portfolio.supervisor.swarm_manager import manage_swarm
         await manage_swarm()
 
     stop_cmds = [c for c in shell_calls if "STRAYCOINUSDT" in str(c) and "--stop" in str(c)]
@@ -1154,7 +1149,7 @@ async def test_integration_healed_tickers(tmp_path, monkeypatch):
     with patch(f"{M}.CONFIG_PATH", str(tmp_path / "config.json")),          patch(f"{M}.BASE_PATH", tmp_path),          patch(f"{M}.BinanceConnector") as MockConn,          patch(f"{M}.get_running_bots_info", AsyncMock(return_value={})),          patch(f"{M}.run_scanner", AsyncMock(return_value=[])),          patch(f"{M}.safe_save_json", AsyncMock()),          patch(f"{M}.enforce_swarm_consistency", AsyncMock(return_value={"HEALUSDT"})),          patch(f"{M}._ensure_real_bots_alive", AsyncMock()),          patch(f"{M}.reconcile_swarm_state", AsyncMock()),          patch(f"{M}.stop_bot", AsyncMock()),          patch(f"{M}.start_bot", AsyncMock()),          patch(f"{M}.selective_merge_incubator", AsyncMock(return_value=[])),          patch(f"{M}.asyncio.create_subprocess_shell", return_value=AsyncMock(wait=AsyncMock())):
         MockConn.return_value.verify_connection = AsyncMock()
         MockConn.return_value.get_positions = AsyncMock(return_value={})
-        from futures_portfolio.supervisor import manage_swarm
+        from futures_portfolio.supervisor.swarm_manager import manage_swarm
         await manage_swarm()
 
 

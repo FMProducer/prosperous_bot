@@ -1,0 +1,13 @@
+{
+  "balance": 19.9442,
+  "positions": {
+    "EGLDUSDT_LONG": 19.6,
+    "EGLDUSDT_SHORT": 19.6
+  },
+  "last_price": 3.57161333,
+  "base_ticker": "EGLDUSDT",
+  "long_entry_price": 3.5615,
+  "short_entry_price": 3.5615,
+  "long_liquidation_price": 0.0,
+  "short_liquidation_price": 8.64787645
+}

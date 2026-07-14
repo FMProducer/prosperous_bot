@@ -4,7 +4,7 @@ import sys
 import os
 import json
 from unittest.mock import MagicMock, patch
-from swarm_analyzer import analyze_swarm
+from futures_portfolio.supervisor.swarm_analyzer import analyze_swarm
 
 
 def test_analyze_swarm():
@@ -26,8 +26,8 @@ def test_analyze_swarm():
     old_stdout = sys.stdout
     sys.stdout = captured
     try:
-        with patch("swarm_analyzer.safe_load_json_sync", side_effect=[config, state_data, state_data]), \
-             patch("swarm_analyzer.glob.glob", return_value=["real_state_BTCUSDT.json"]), \
+        with patch("futures_portfolio.supervisor.swarm_analyzer.safe_load_json_sync", side_effect=[config, state_data, state_data]), \
+             patch("futures_portfolio.supervisor.swarm_analyzer.glob.glob", return_value=["real_state_BTCUSDT.json"]), \
              patch("os.path.exists", return_value=True):
             analyze_swarm()
     finally:
@@ -44,8 +44,8 @@ def test_analyze_swarm_missing_config():
     old_stdout = sys.stdout
     sys.stdout = captured
     try:
-        with patch("swarm_analyzer.safe_load_json_sync", return_value={}), \
-             patch("swarm_analyzer.glob.glob", return_value=[]):
+        with patch("futures_portfolio.supervisor.swarm_analyzer.safe_load_json_sync", return_value={}), \
+             patch("futures_portfolio.supervisor.swarm_analyzer.glob.glob", return_value=[]):
             analyze_swarm()
     finally:
         sys.stdout = old_stdout

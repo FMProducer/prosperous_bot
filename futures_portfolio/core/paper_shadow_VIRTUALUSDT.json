@@ -1,0 +1,13 @@
+{
+  "balance": 19.944,
+  "positions": {
+    "VIRTUALUSDT_LONG": 120.0,
+    "VIRTUALUSDT_SHORT": 120.0
+  },
+  "last_price": 0.5837,
+  "base_ticker": "VIRTUALUSDT",
+  "long_entry_price": 0.58285,
+  "short_entry_price": 0.58285,
+  "long_liquidation_price": 0.0,
+  "short_liquidation_price": 1.41378289
+}

@@ -3,7 +3,7 @@ import os
 import json
 import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
-from futures_portfolio.notifier import TelegramNotifier
+from futures_portfolio.core.notifier import TelegramNotifier
 
 @pytest.fixture
 def env_setup():
@@ -35,8 +35,8 @@ async def test_session_creation(env_setup):
     notifier = TelegramNotifier()
     # Mock ProxyConnector and ClientSession
     mock_connector = MagicMock()
-    with patch("futures_portfolio.notifier.ProxyConnector.from_url", return_value=mock_connector) as mock_from_url:
-        with patch("futures_portfolio.notifier.aiohttp.ClientSession") as mock_session_cls:
+    with patch("futures_portfolio.core.notifier.ProxyConnector.from_url", return_value=mock_connector) as mock_from_url:
+        with patch("futures_portfolio.core.notifier.aiohttp.ClientSession") as mock_session_cls:
             session = await notifier._get_session()
             mock_from_url.assert_called_with("socks5://127.0.0.1:10808", ssl=False)
             mock_session_cls.assert_called_once_with(connector=mock_connector, trust_env=False)

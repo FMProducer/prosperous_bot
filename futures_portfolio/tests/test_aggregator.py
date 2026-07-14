@@ -3,11 +3,11 @@ import json
 import os
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
-from aggregator import StatusAggregator
+from supervisor.aggregator import StatusAggregator
 
 @pytest.fixture
 def aggregator():
-    with patch("aggregator.os.makedirs"):
+    with patch("supervisor.aggregator.os.makedirs"):
         return StatusAggregator(config_path="test_config.json")
 
 def test_load_config_valid(aggregator):
@@ -28,10 +28,10 @@ async def test_process_telegram_queue(aggregator):
     aggregator.notifier = AsyncMock()
     aggregator.notifier.send_message.return_value = True
     
-    with patch("aggregator.glob.glob", return_value=["signals/telegram_queue/1.json"]), \
+    with patch("supervisor.aggregator.glob.glob", return_value=["signals/telegram_queue/1.json"]), \
          patch("builtins.open", mock_open(read_data=json.dumps(msg_data))), \
-         patch("aggregator.os.path.exists", return_value=True), \
-         patch("aggregator.os.remove") as mock_remove:
+         patch("supervisor.aggregator.os.path.exists", return_value=True), \
+         patch("supervisor.aggregator.os.remove") as mock_remove:
         
         # We need to break the infinite loop
         with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
@@ -56,7 +56,7 @@ async def test_generate_swarm_section(aggregator):
         "siphoning_reserve": 5.0
     }
     
-    with patch("aggregator.safe_load_json", AsyncMock(return_value=state_data)), \
+    with patch("supervisor.aggregator.safe_load_json", AsyncMock(return_value=state_data)), \
          patch.object(aggregator, "load_config", return_value={"min_cycles_for_rank": 20}):
         
         text, profit, safe = await aggregator._generate_swarm_section(files, live_swarm, active_tickers, "INCUBATOR")
@@ -81,8 +81,8 @@ async def test_collect_and_send(aggregator):
     aggregator.notifier = AsyncMock()
     
     with patch.object(aggregator, "load_config", return_value=config), \
-         patch("aggregator.BinanceConnector") as mock_conn_cls, \
-         patch("aggregator.glob.glob", side_effect=[["paper_state_BTCUSDT.json"], ["real_state_BTCUSDT.json"]]), \
+         patch("supervisor.aggregator.BinanceConnector") as mock_conn_cls, \
+         patch("supervisor.aggregator.glob.glob", side_effect=[["paper_state_BTCUSDT.json"], ["real_state_BTCUSDT.json"]]), \
          patch.object(aggregator, "_generate_swarm_section", AsyncMock(side_effect=[
              ("COMBAT TEXT", 20.0, 0.0),
              ("INCUBATOR TEXT", 10.0, 0.0)
@@ -118,10 +118,10 @@ async def test_process_telegram_queue_photo(aggregator):
     aggregator.notifier = AsyncMock()
     aggregator.notifier.send_photo.return_value = True
     
-    with patch("aggregator.glob.glob", return_value=["signals/telegram_queue/1.json"]), \
+    with patch("supervisor.aggregator.glob.glob", return_value=["signals/telegram_queue/1.json"]), \
          patch("builtins.open", mock_open(read_data=json.dumps(msg_data))), \
-         patch("aggregator.os.path.exists", return_value=True), \
-         patch("aggregator.os.remove") as mock_remove:
+         patch("supervisor.aggregator.os.path.exists", return_value=True), \
+         patch("supervisor.aggregator.os.remove") as mock_remove:
         
         with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
             try:

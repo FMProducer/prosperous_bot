@@ -1,4 +1,5 @@
 import pytest
+import importlib
 import asyncio
 import aiohttp
 import json
@@ -7,7 +8,7 @@ import time
 import pandas as pd
 import numpy as np
 from unittest.mock import patch, AsyncMock, MagicMock, mock_open
-from futures_portfolio.rank_tickers import TickerScanner, TickerRanker, run_ranker_task, retry_on_network_error
+from futures_portfolio.scanner.rank_tickers import TickerScanner, TickerRanker, run_ranker_task, retry_on_network_error
 
 
 @pytest.fixture
@@ -323,13 +324,13 @@ async def test_main_with_config():
     mock_result = [{"symbol": "BTCUSDT", "cycles": 20, "net_change": 5.0,
                      "max_spurt": 10.0, "trend": 2.0, "funding": 0.01}]
     cfg_content = json.dumps({"scanner_period_days": 0.25})
-    with patch("rank_tickers.TickerScanner") as MockScanner:
+    with patch("futures_portfolio.scanner.rank_tickers.TickerScanner") as MockScanner:
         mock_scanner = AsyncMock()
         mock_scanner.get_top_tickers.return_value = mock_result
         MockScanner.return_value = mock_scanner
         with patch("builtins.open", mock_open(read_data=cfg_content)):
             with patch("os.path.exists", return_value=True):
-                result = await __import__("rank_tickers").main(quiet=True)
+                result = await importlib.import_module("futures_portfolio.scanner.rank_tickers").main(quiet=True)
     assert result == mock_result
 
 
@@ -340,13 +341,13 @@ async def test_main_quiet():
     """main() quiet=True doesn't print."""
     mock_result = [{"symbol": "BTCUSDT", "cycles": 20, "net_change": 5.0,
                      "max_spurt": 10.0, "trend": 2.0, "funding": 0.01}]
-    with patch("rank_tickers.TickerScanner") as MockScanner:
+    with patch("futures_portfolio.scanner.rank_tickers.TickerScanner") as MockScanner:
         mock_scanner = AsyncMock()
         mock_scanner.get_top_tickers.return_value = mock_result
         MockScanner.return_value = mock_scanner
         with patch("builtins.open", mock_open()):
             with patch("os.path.exists", return_value=False):
-                result = await __import__("rank_tickers").main(quiet=True)
+                result = await importlib.import_module("futures_portfolio.scanner.rank_tickers").main(quiet=True)
     assert result == mock_result
 
 
@@ -355,24 +356,24 @@ async def test_main_not_quiet():
     """main() quiet=False prints results."""
     mock_result = [{"symbol": "BTCUSDT", "cycles": 20, "net_change": 5.0,
                      "max_spurt": 10.0, "trend": 2.0, "funding": 0.01}]
-    with patch("rank_tickers.TickerScanner") as MockScanner:
+    with patch("futures_portfolio.scanner.rank_tickers.TickerScanner") as MockScanner:
         mock_scanner = AsyncMock()
         mock_scanner.get_top_tickers.return_value = mock_result
         MockScanner.return_value = mock_scanner
         with patch("builtins.open", mock_open()):
             with patch("os.path.exists", return_value=False):
-                result = await __import__("rank_tickers").main(quiet=False)
+                result = await importlib.import_module("futures_portfolio.scanner.rank_tickers").main(quiet=False)
     assert result == mock_result
 
 
 @pytest.mark.asyncio
 async def test_main_empty():
     """main() with empty result."""
-    with patch("rank_tickers.TickerScanner") as MockScanner:
+    with patch("futures_portfolio.scanner.rank_tickers.TickerScanner") as MockScanner:
         mock_scanner = AsyncMock()
         mock_scanner.get_top_tickers.return_value = []
         MockScanner.return_value = mock_scanner
         with patch("builtins.open", mock_open()):
             with patch("os.path.exists", return_value=False):
-                result = await __import__("rank_tickers").main(quiet=True)
+                result = await importlib.import_module("futures_portfolio.scanner.rank_tickers").main(quiet=True)
     assert result == []

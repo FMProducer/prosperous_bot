@@ -3,10 +3,10 @@ import math
 import json
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
 from futures_portfolio import supervisor
-from futures_portfolio.supervisor import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_bot_state_files, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
+from futures_portfolio.supervisor.swarm_manager import calculate_bot_score, _calc_rotation_score, selective_merge_incubator, get_bot_efficiency, reset_bot_state_files, enforce_swarm_consistency, _ensure_real_bots_alive, manage_swarm
 
 # Префикс для всех patch-путей — модуль supervisor как он виден тесту
-M = "futures_portfolio.supervisor"
+M = "futures_portfolio.supervisor.swarm_manager"
 
 def test_calculate_bot_score():
     # is_in_drawdown=True -> INF
@@ -287,7 +287,7 @@ async def test_start_bot():
          patch(f"{M}.Path.exists", return_value=False):
         await supervisor.start_bot("BTCUSDT", is_paper=True, config=config)
         assert mock_reset.called
-        assert "pm2 start main.py" in mock_shell.call_args[0][0]
+        assert "pm2 start core/main.py" in mock_shell.call_args[0][0]
         assert "--paper" in mock_shell.call_args[0][0]
 
 

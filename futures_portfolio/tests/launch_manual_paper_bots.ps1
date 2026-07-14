@@ -20,7 +20,7 @@ foreach ($t in $tickers) {
     Write-Host "Starting $name for $t..."
     
     # We use cmd /c to ensure PM2 receives arguments correctly on Windows/PowerShell
-    $cmd = "pm2 start main.py --name $name --cwd ""$currentDir"" --interpreter ""$pythonExe"" -- --config config.json --ticker $t --paper"
+    $cmd = "pm2 start core/main.py --name $name --cwd ""$currentDir"" --interpreter ""$pythonExe"" -- --config config.json --ticker $t --paper"
     cmd /c $cmd
 }
 

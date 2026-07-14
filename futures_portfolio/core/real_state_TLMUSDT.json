@@ -1,0 +1,20 @@
+{
+  "virt_qty": 0.0,
+  "base_ticker": "TLMUSDT",
+  "siphoning_reserve": 0.0,
+  "balance": 20.0,
+  "initial_tpv": 20.0,
+  "reference_tpv": 20.0,
+  "tpv_ath": 20.0,
+  "trailing_stop_violation_start": 0.0,
+  "trailing_stop_paper_timeout_end": 0.0,
+  "trailing_stop_triggered": false,
+  "rebalance_cycles": 0,
+  "last_rebalance_price": 0.0,
+  "started_at": 1784043730.2852206,
+  "virt_debt": 0.0,
+  "last_tpv": 14.221105040958665,
+  "last_profit": -5.7788949590413345,
+  "total_pnl_pct": -28.89447479520667,
+  "last_update": 1784043882.8283398
+}

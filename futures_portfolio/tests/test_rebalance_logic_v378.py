@@ -1,7 +1,7 @@
 
 import pytest
 from decimal import Decimal
-from calculator import PortfolioCalculator
+from futures_portfolio.core.calculator import PortfolioCalculator
 
 def test_rebalance_logic_v378():
     # Targets based on User's model

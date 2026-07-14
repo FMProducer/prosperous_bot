@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from futures_portfolio.calculator import PortfolioCalculator
+from futures_portfolio.core.calculator import PortfolioCalculator
 
 @pytest.fixture
 def targets():

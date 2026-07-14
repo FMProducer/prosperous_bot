@@ -19,10 +19,10 @@ class ZombieExit(BaseException):
     pass
 
 
-from futures_portfolio.main import rebalance_loop
+from futures_portfolio.core.main import rebalance_loop
 
 
-M = "futures_portfolio.main"
+M = "futures_portfolio.core.main"
 
 
 def _make_config(**overrides):
@@ -824,7 +824,7 @@ async def test_coverage_config_reload_detection():
 @pytest.mark.asyncio
 async def test_coverage_liquidation_guard_missing_long():
     """Lines 1421-1460: real mode, expected LONG missing on exchange -> recovery"""
-    from futures_portfolio.main import _handle_liquidation_recovery
+    from futures_portfolio.core.main import _handle_liquidation_recovery
 
     config = _make_config(paper_mode=False, equity_trailing_stop_pct=0.0, max_drawdown_limit=100.0)
     state = _make_state(
@@ -1142,7 +1142,7 @@ async def test_coverage_trailing_stop_closure_paper_positions():
 @pytest.mark.asyncio
 async def test_coverage_emergency_stop_full():
     """Lines 1561-1601: emergency_stop with close_only=False -> full state reset"""
-    from futures_portfolio.main import emergency_stop
+    from futures_portfolio.core.main import emergency_stop
 
     connector = MagicMock()
     connector.get_positions = AsyncMock(return_value={
@@ -1203,7 +1203,7 @@ async def test_coverage_emergency_stop_full():
 @pytest.mark.asyncio
 async def test_coverage_emergency_stop_close_only():
     """Lines 1584-1601: emergency_stop close_only=True -> sanitize state"""
-    from futures_portfolio.main import emergency_stop
+    from futures_portfolio.core.main import emergency_stop
 
     connector = MagicMock()
     connector.get_positions = AsyncMock(return_value={
@@ -1262,7 +1262,7 @@ async def test_coverage_emergency_stop_close_only():
 @pytest.mark.asyncio
 async def test_coverage_handle_liquidation_recovery_closes_positions():
     """Lines 130-148: _handle_liquidation_recovery closes remaining position"""
-    from futures_portfolio.main import _handle_liquidation_recovery
+    from futures_portfolio.core.main import _handle_liquidation_recovery
 
     connector = MagicMock()
     connector.get_position_risk = AsyncMock(return_value={

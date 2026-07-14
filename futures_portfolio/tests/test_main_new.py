@@ -9,7 +9,7 @@ import copy
 import logging
 from decimal import Decimal
 from unittest.mock import patch, AsyncMock, MagicMock, mock_open
-from futures_portfolio.main import rebalance_loop, emit_signal
+from futures_portfolio.core.main import rebalance_loop, emit_signal
 from pathlib import Path
 
 @pytest.fixture
@@ -122,12 +122,12 @@ async def test_rebalance_loop_siphoning(mock_config, mock_connector, mock_notifi
         if loop_count > 5: raise Exception("StopLoop")
         return None
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-                with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock(side_effect=save_side_effect)):
+                with patch("futures_portfolio.core.main.sys.exit", side_effect=BaseException("ProcessExit")):
                     with patch("asyncio.sleep", side_effect=bounded_sleep):
-                            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                            with patch("futures_portfolio.core.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
                                 except (Exception, BaseException) as e:
@@ -164,12 +164,12 @@ async def test_rebalance_loop_trailing_stop(mock_config, mock_connector, mock_no
     def save_side_effect(path, data):
         saves.append((path, copy.deepcopy(data)))
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-                with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
-                        with patch("futures_portfolio.main.self_kill_pm2", AsyncMock()):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock(side_effect=save_side_effect)):
+                with patch("futures_portfolio.core.main.sys.exit", side_effect=BaseException("ProcessExit")):
+                    with patch("futures_portfolio.core.main.TelegramNotifier", return_value=mock_notifier):
+                        with patch("futures_portfolio.core.main.self_kill_pm2", AsyncMock()):
                             with patch("asyncio.sleep", side_effect=make_bounded_sleep(max_loops=10)):
                                 try:
                                         await rebalance_loop(mock_connector, "config.json", "state.json", "paper_state.json", MagicMock())
@@ -199,12 +199,12 @@ async def test_rebalance_loop_margin_warning(mock_config, mock_connector, mock_n
         if loop_count > 5: raise Exception("StopLoop")
         return None
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock()):
-                with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock()):
+                with patch("futures_portfolio.core.main.sys.exit", side_effect=BaseException("ProcessExit")):
                     with patch("asyncio.sleep", side_effect=bounded_sleep):
-                            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                            with patch("futures_portfolio.core.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
@@ -222,13 +222,13 @@ async def test_rebalance_loop_margin_critical(mock_config, mock_connector, mock_
         if "s.json" in path: return copy.deepcopy(state)
         return default
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock()):
-                with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
-                    with patch("futures_portfolio.main.self_kill_pm2", AsyncMock()):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock()):
+                with patch("futures_portfolio.core.main.sys.exit", side_effect=BaseException("ProcessExit")):
+                    with patch("futures_portfolio.core.main.self_kill_pm2", AsyncMock()):
                         with patch("asyncio.sleep", side_effect=make_bounded_sleep(max_loops=10)):
-                            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                            with patch("futures_portfolio.core.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
@@ -272,12 +272,12 @@ async def test_clean_slate_protocol_activation(mock_config, mock_connector, mock
         if loop_count > 1: raise Exception("StopLoop")
         return None
 
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock(side_effect=save_side_effect)):
-                with patch("futures_portfolio.main.sys.exit", side_effect=BaseException("ProcessExit")):
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))),          patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config),          patch("os.path.getmtime", return_value=123):
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock(side_effect=save_side_effect)):
+                with patch("futures_portfolio.core.main.sys.exit", side_effect=BaseException("ProcessExit")):
                     with patch("asyncio.sleep", side_effect=bounded_sleep):
-                            with patch("futures_portfolio.main.TelegramNotifier", return_value=mock_notifier):
+                            with patch("futures_portfolio.core.main.TelegramNotifier", return_value=mock_notifier):
                                 try:
                                     await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
                                 except (Exception, BaseException) as e:
@@ -310,7 +310,7 @@ def test_emit_signal_file_naming(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_self_kill_pm2_flow():
-    from futures_portfolio.main import self_kill_pm2
+    from futures_portfolio.core.main import self_kill_pm2
     mock_proc = AsyncMock()
     mock_proc.communicate = AsyncMock(return_value=(b"", b""))
     with patch("asyncio.create_subprocess_shell", return_value=mock_proc) as mock_shell:
@@ -323,12 +323,12 @@ async def test_self_kill_pm2_flow():
 
 @pytest.mark.asyncio
 async def test_update_final_metrics_for_exit_flow(tmp_path):
-    from futures_portfolio.main import _update_final_metrics_for_exit
+    from futures_portfolio.core.main import _update_final_metrics_for_exit
     state_file = tmp_path / "state.json"
     state = {"initial_tpv": 100.0, "reference_tpv": 100.0}
     safe_calc_res = {"total_pnl_pct": 5.5}
     
-    with patch("futures_portfolio.main.save_json", AsyncMock()) as mock_save:
+    with patch("futures_portfolio.core.main.save_json", AsyncMock()) as mock_save:
         await _update_final_metrics_for_exit(
             state, str(state_file), Decimal("105.0"), Decimal("100.0"), safe_calc_res, 42, MagicMock()
         )
@@ -339,7 +339,7 @@ async def test_update_final_metrics_for_exit_flow(tmp_path):
 
 @pytest.mark.asyncio
 async def test_handle_liquidation_recovery_flow(tmp_path):
-    from futures_portfolio.main import _handle_liquidation_recovery
+    from futures_portfolio.core.main import _handle_liquidation_recovery
     
     connector = MagicMock()
     connector.get_position_risk = AsyncMock(return_value={
@@ -364,8 +364,8 @@ async def test_handle_liquidation_recovery_flow(tmp_path):
     notifier = MagicMock()
     notifier.send_alert = AsyncMock()
     
-    with patch("futures_portfolio.main.save_json", AsyncMock()) as mock_save:
-        with patch("futures_portfolio.main.emit_signal") as mock_signal:
+    with patch("futures_portfolio.core.main.save_json", AsyncMock()) as mock_save:
+        with patch("futures_portfolio.core.main.emit_signal") as mock_signal:
             await _handle_liquidation_recovery(
                 connector, "BTCUSDT", state, str(state_file),
                 paper_state, str(paper_state_file), str(config_file),
@@ -387,11 +387,11 @@ async def test_rebalance_loop_zombie_on_startup(mock_config, mock_connector, moc
         return default
 
     with patch("builtins.open", mock_open(read_data=json.dumps(mock_config))), \
-         patch("futures_portfolio.main.safe_load_json_sync", return_value=mock_config), \
+         patch("futures_portfolio.core.main.safe_load_json_sync", return_value=mock_config), \
          patch("os.path.getmtime", return_value=123):
-        with patch("futures_portfolio.main.load_json", AsyncMock(side_effect=load_side_effect)):
-            with patch("futures_portfolio.main.save_json", AsyncMock()):
-                with patch("futures_portfolio.main.self_kill_pm2", AsyncMock()) as mock_kill:
+        with patch("futures_portfolio.core.main.load_json", AsyncMock(side_effect=load_side_effect)):
+            with patch("futures_portfolio.core.main.save_json", AsyncMock()):
+                with patch("futures_portfolio.core.main.self_kill_pm2", AsyncMock()) as mock_kill:
                     with patch("asyncio.sleep", side_effect=ZombieExit("Zombie")):
                         try:
                             await rebalance_loop(mock_connector, "c.json", "s.json", "p.json", MagicMock())
@@ -401,7 +401,7 @@ async def test_rebalance_loop_zombie_on_startup(mock_config, mock_connector, moc
 
 @pytest.mark.asyncio
 async def test_handle_liquidation_guard_paper_critical():
-    from futures_portfolio.main import _handle_liquidation_guard
+    from futures_portfolio.core.main import _handle_liquidation_guard
     paper_state = {
         "balance": 100.0,
         "positions": {"BTCUSDT_LONG": 1.0, "BTCUSDT_SHORT": 1.0},
@@ -428,7 +428,7 @@ async def test_handle_liquidation_guard_paper_critical():
 
 @pytest.mark.asyncio
 async def test_handle_liquidation_guard_real_critical():
-    from futures_portfolio.main import _handle_liquidation_guard
+    from futures_portfolio.core.main import _handle_liquidation_guard
     
     raw_positions = {
         "BTCUSDT_LONG": {"qty": 1.5},
@@ -439,7 +439,7 @@ async def test_handle_liquidation_guard_real_critical():
     notifier.send_alert = AsyncMock()
     logger = MagicMock()
     
-    with patch("futures_portfolio.main.PortfolioExecutor") as mock_exec_cls:
+    with patch("futures_portfolio.core.main.PortfolioExecutor") as mock_exec_cls:
         mock_executor = MagicMock()
         mock_executor.execute_market_order = AsyncMock()
         mock_exec_cls.return_value = mock_executor
@@ -455,7 +455,7 @@ async def test_handle_liquidation_guard_real_critical():
 
 @pytest.mark.asyncio
 async def test_handle_liquidation_guard_warning():
-    from futures_portfolio.main import _handle_liquidation_guard
+    from futures_portfolio.core.main import _handle_liquidation_guard
     notifier = MagicMock()
     logger = MagicMock()
     

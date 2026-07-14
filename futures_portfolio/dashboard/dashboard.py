@@ -296,7 +296,7 @@ def create_app():
         try:
             if action == "pm2_start" and ticker:
                 cmd = [
-                    "pm2", "start", "main.py",
+                    "pm2", "start", "core/main.py",
                     "--name", f"paper-{ticker.lower()}",
                     "--cwd", str(PROJECT_PATH),
                     "--interpreter", "python",

@@ -3,7 +3,7 @@ import os
 import json
 import asyncio
 from unittest.mock import patch, mock_open, AsyncMock
-from storage import safe_load_json, safe_load_json_sync, safe_save_json, safe_save_json_sync
+from futures_portfolio.core.storage import safe_load_json, safe_load_json_sync, safe_save_json, safe_save_json_sync
 
 def test_safe_load_json_sync_file_exists():
     data = {"key": "value"}
@@ -33,7 +33,7 @@ def test_safe_load_json_sync_corrupted_json():
 @pytest.mark.asyncio
 async def test_safe_load_json_async():
     data = {"key": "value"}
-    with patch("storage.safe_load_json_sync", return_value=data):
+    with patch("futures_portfolio.core.storage.safe_load_json_sync", return_value=data):
         res = await safe_load_json("test.json", {})
         assert res == data
 
@@ -58,13 +58,13 @@ def test_safe_save_json_sync_permission_error():
 
 @pytest.mark.asyncio
 async def test_safe_save_json_async():
-    with patch("storage.safe_save_json_sync") as mock_sync:
+    with patch("futures_portfolio.core.storage.safe_save_json_sync") as mock_sync:
         await safe_save_json("test.json", {"data": 1})
         mock_sync.assert_called_once_with("test.json", {"data": 1})
 
 @pytest.mark.asyncio
 async def test_safe_load_json_retries_and_timeout():
-    with patch("storage.safe_load_json_sync", side_effect=Exception("Failed")), \
+    with patch("futures_portfolio.core.storage.safe_load_json_sync", side_effect=Exception("Failed")), \
          patch("asyncio.sleep", AsyncMock()) as mock_sleep:
         res = await safe_load_json("test.json", {"default": True}, retries=3)
         assert res == {"default": True}

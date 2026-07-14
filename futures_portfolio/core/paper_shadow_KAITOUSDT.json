@@ -1,0 +1,13 @@
+{
+  "balance": 19.944,
+  "positions": {
+    "KAITOUSDT_LONG": 93.5,
+    "KAITOUSDT_SHORT": 93.5
+  },
+  "last_price": 0.7507,
+  "base_ticker": "KAITOUSDT",
+  "long_entry_price": 0.7481,
+  "short_entry_price": 0.7481,
+  "long_liquidation_price": 0.0,
+  "short_liquidation_price": 1.81454587
+}

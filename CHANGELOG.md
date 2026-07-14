@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026-07-14] — Test Safety Net: автоблокировка тестов при живой системе
+
+**Проблема:** Тесты теоретически могли навредить реальным ботам — human factor (случайный сброс мока, тест без изоляции).
+
+**Решение:** Safety Net в `conftest.py`:
+- `pytest_configure()` хук проверяет PM2 через `pm2 jlist` (shell=True для Windows .cmd)
+- Если обнаружены `real-*` / `paper-*` / `supervisor` процессы → `pytest.exit()` с блокировкой
+- `--ignore-safety` — принудительный запуск (только для осознанного использования)
+- Пространство имён: `--ignore-safety` добавлен через `pytest_addoption`
+
+**Слои защиты тестов (итого 5):**
+1. `conftest.py:autouse=True` — глобальный mock `binance.client.Client`
+2. Все файловые чтения — `mock_open()` / `patch("safe_load_json_sync")`
+3. Все сетевые вызовы — `patch("aiohttp.ClientSession")` / `patch("asyncio.to_thread")`
+4. Все PM2-вызовы — `patch("create_subprocess_shell")` / `patch("start_bot")`
+5. **[NEW]** Safety Net — PM2-детекция при старте pytest
+
+**Команда:** `pytest` (с автоблокировкой) / `pytest --ignore-safety` (принудительно)
+**Тесты:** 327/327 passed.
+
+---
+
 ## [YYYY-MM-DD] - Refactor and Enhance RL Trading System
 
 ### Architectural Changes

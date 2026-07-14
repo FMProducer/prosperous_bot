@@ -6,7 +6,7 @@ import sys
 import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from futures_portfolio import health_check
+from futures_portfolio.monitoring import health_check
 
 # Mock CREATE_NO_WINDOW before any health_check calls if not on Windows
 if not hasattr(subprocess, "CREATE_NO_WINDOW"):
@@ -76,7 +76,7 @@ def test_check_state_files(tmp_path):
     with open(bad_state_file, "w", encoding="utf-8") as f:
         f.write("invalid json")
 
-    with patch("futures_portfolio.health_check.STATE_DIR", tmp_path):
+    with patch("futures_portfolio.monitoring.health_check.STATE_DIR", tmp_path):
         res = health_check.check_state_files()
         print("Returned state files:", res)
         assert "BTCUSDT" in res
@@ -97,13 +97,13 @@ def test_check_blacklist(tmp_path):
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config_data, f)
 
-    with patch("futures_portfolio.health_check.STATE_DIR", tmp_path):
+    with patch("futures_portfolio.monitoring.health_check.STATE_DIR", tmp_path):
         res = health_check.check_blacklist()
         assert res["blacklisted"] == ["XRPUSDT", "SOLUSDT"]
         assert res["toxic_cooldown_days"] == 3
 
 def test_check_blacklist_missing(tmp_path):
-    with patch("futures_portfolio.health_check.STATE_DIR", tmp_path):
+    with patch("futures_portfolio.monitoring.health_check.STATE_DIR", tmp_path):
         res = health_check.check_blacklist()
         assert res["blacklisted"] == []
 
@@ -137,7 +137,7 @@ def test_check_recent_errors(tmp_path):
             return mock_stat_obj
         return orig_stat(path, *args, **kwargs)
 
-    with patch("futures_portfolio.health_check.LOG_DIR", log_dir):
+    with patch("futures_portfolio.monitoring.health_check.LOG_DIR", log_dir):
         with patch("os.stat", side_effect=mock_stat):
             res = health_check.check_recent_errors()
             assert len(res) == 1
@@ -149,9 +149,9 @@ def test_main(tmp_path):
     old_stdout = sys.stdout
     sys.stdout = captured_output
     try:
-        with patch("futures_portfolio.health_check.STATE_DIR", tmp_path), \
-             patch("futures_portfolio.health_check.LOG_DIR", tmp_path), \
-             patch("futures_portfolio.health_check.check_pm2", return_value={"status": "ok"}):
+        with patch("futures_portfolio.monitoring.health_check.STATE_DIR", tmp_path), \
+             patch("futures_portfolio.monitoring.health_check.LOG_DIR", tmp_path), \
+             patch("futures_portfolio.monitoring.health_check.check_pm2", return_value={"status": "ok"}):
             health_check.main()
     finally:
         sys.stdout = old_stdout

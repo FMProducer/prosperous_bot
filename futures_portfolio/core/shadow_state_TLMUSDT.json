@@ -1,0 +1,13 @@
+{
+  "balance": 20.0,
+  "positions": {
+    "TLMUSDT_LONG": 0.0,
+    "TLMUSDT_SHORT": 0.0
+  },
+  "last_price": 0.0,
+  "base_ticker": "TLMUSDT",
+  "long_entry_price": 0.0,
+  "short_entry_price": 0.0,
+  "long_liquidation_price": 0.0,
+  "short_liquidation_price": 0.0
+}

@@ -4,7 +4,7 @@ import os
 import asyncio
 import aiohttp
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
-import telegram_sender
+from futures_portfolio.monitoring import telegram_sender
 
 @pytest.mark.asyncio
 async def test_send_to_telegram_success():
@@ -16,8 +16,8 @@ async def test_send_to_telegram_success():
     mock_post_cm.__aenter__.return_value = mock_response
     session.post.return_value = mock_post_cm
     
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"):
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"):
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is True
 
@@ -32,8 +32,8 @@ async def test_send_to_telegram_rate_limit():
     mock_post_cm.__aenter__.return_value = mock_response
     session.post.return_value = mock_post_cm
     
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"), \
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"), \
          patch("asyncio.sleep", AsyncMock()) as mock_sleep:
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is False
@@ -51,8 +51,8 @@ async def test_send_to_telegram_rate_limit_invalid_json():
     mock_post_cm.__aenter__.return_value = mock_response
     session.post.return_value = mock_post_cm
 
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"), \
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"), \
          patch("asyncio.sleep", AsyncMock()) as mock_sleep:
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is False
@@ -67,8 +67,8 @@ async def test_send_to_telegram_timeout():
     mock_post_cm.__aenter__.side_effect = asyncio.TimeoutError()
     session.post.return_value = mock_post_cm
 
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"):
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"):
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is False
 
@@ -81,8 +81,8 @@ async def test_send_to_telegram_connection_error():
     mock_post_cm.__aenter__.side_effect = aiohttp.ClientError("connection refused")
     session.post.return_value = mock_post_cm
 
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"):
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"):
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is False
 
@@ -90,8 +90,8 @@ async def test_send_to_telegram_connection_error():
 @pytest.mark.asyncio
 async def test_worker_missing_credentials():
     """Line 62-63: worker returns early when TOKEN or CHAT_ID is missing."""
-    with patch("telegram_sender.TOKEN", None), \
-         patch("telegram_sender.CHAT_ID", "test_chat"):
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", None), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"):
         await telegram_sender.worker()
     # Should return without doing anything
 
@@ -99,10 +99,10 @@ async def test_worker_missing_credentials():
 @pytest.mark.asyncio
 async def test_worker_empty_queue():
     """Line 74-75: worker sleeps when queue is empty."""
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"), \
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"), \
          patch("pathlib.Path.mkdir"), \
-         patch("telegram_sender.ProxyConnector.from_url"), \
+         patch("futures_portfolio.monitoring.telegram_sender.ProxyConnector.from_url"), \
          patch("aiohttp.ClientSession") as mock_session_cls, \
          patch("pathlib.Path.glob", return_value=[]), \
          patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
@@ -117,14 +117,14 @@ async def test_worker_empty_queue():
 @pytest.mark.asyncio
 async def test_worker_send_failure():
     """Line 91: worker retries on send failure."""
-    with patch("telegram_sender.TOKEN", "test_token"), \
-        patch("telegram_sender.CHAT_ID", "test_chat"), \
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+        patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"), \
         patch("pathlib.Path.mkdir"), \
-        patch("telegram_sender.ProxyConnector.from_url"), \
+        patch("futures_portfolio.monitoring.telegram_sender.ProxyConnector.from_url"), \
         patch("aiohttp.ClientSession") as mock_session_cls, \
         patch("pathlib.Path.glob", return_value=[MagicMock(suffix=".json", name="msg_1.json")]), \
         patch("builtins.open", mock_open(read_data='{"text": "msg"}')), \
-        patch("telegram_sender.send_to_telegram", AsyncMock(return_value=False)), \
+        patch("futures_portfolio.monitoring.telegram_sender.send_to_telegram", AsyncMock(return_value=False)), \
         patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
        mock_session = MagicMock()
        mock_session_cls.return_value.__aenter__.return_value = mock_session
@@ -146,8 +146,8 @@ async def test_send_to_telegram_api_error():
     mock_post_cm.__aenter__.return_value = mock_response
     session.post.return_value = mock_post_cm
 
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"):
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"):
         res = await telegram_sender.send_to_telegram(session, {"text": "hello"})
         assert res is False
 
@@ -155,14 +155,14 @@ async def test_send_to_telegram_api_error():
 @pytest.mark.asyncio
 async def test_worker_success():
     """Lines 85-88: worker removes file and sleeps after successful send."""
-    with patch("telegram_sender.TOKEN", "test_token"), \
-         patch("telegram_sender.CHAT_ID", "test_chat"), \
+    with patch("futures_portfolio.monitoring.telegram_sender.TOKEN", "test_token"), \
+         patch("futures_portfolio.monitoring.telegram_sender.CHAT_ID", "test_chat"), \
          patch("pathlib.Path.mkdir"), \
-         patch("telegram_sender.ProxyConnector.from_url"), \
+         patch("futures_portfolio.monitoring.telegram_sender.ProxyConnector.from_url"), \
          patch("aiohttp.ClientSession") as mock_session_cls, \
          patch("pathlib.Path.glob", return_value=[MagicMock(suffix=".json", name="msg_1.json")]), \
          patch("builtins.open", mock_open(read_data='{"text": "msg"}')), \
-         patch("telegram_sender.send_to_telegram", AsyncMock(return_value=True)), \
+         patch("futures_portfolio.monitoring.telegram_sender.send_to_telegram", AsyncMock(return_value=True)), \
          patch("os.remove") as mock_remove, \
          patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
         mock_session = MagicMock()

@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from calculator import PortfolioCalculator
+from futures_portfolio.core.calculator import PortfolioCalculator
 
 def test_portfolio_convergence_and_churn():
     # Initial setup

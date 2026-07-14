@@ -12,9 +12,9 @@ from io import BytesIO
 @pytest.fixture(autouse=True)
 def clean_module():
     """Remove send_monitor_report from sys.modules before/after each test."""
-    sys.modules.pop("send_monitor_report", None)
+    sys.modules.pop("futures_portfolio.monitoring.send_monitor_report", None)
     yield
-    sys.modules.pop("send_monitor_report", None)
+    sys.modules.pop("futures_portfolio.monitoring.send_monitor_report", None)
 
 
 def _mock_env():
@@ -67,7 +67,7 @@ def test_monitor_no_state_files():
          patch("pathlib.Path.exists", return_value=False), \
          patch("urllib.request.build_opener") as mock_builder:
         mock_builder.return_value.open = mock_open
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert "N/A" in mod.msg
     assert "No real state" in mod.msg
@@ -113,7 +113,7 @@ def test_monitor_with_paper_and_real():
 
     # Simpler: just check the module constructs correct message parts
     # by testing with Path.exists mocked at module level
-    sys.modules.pop("send_monitor_report", None)
+    sys.modules.pop("futures_portfolio.monitoring.send_monitor_report", None)
 
     with patch.dict(os.environ, _mock_env()), \
          patch("pathlib.Path.exists", return_value=True), \
@@ -149,7 +149,7 @@ def test_monitor_with_paper_and_real():
         mock_builder.return_value.open = mock_open
         mock_stat.return_value.st_mtime = time.time() - 60  # 1 min ago
 
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert "105.0" in mod.msg or "105" in mod.msg
     assert "HEIUSDT" in mod.msg
@@ -185,7 +185,7 @@ def test_monitor_guard_active():
         mock_builder.return_value.open = mock_open
         mock_stat.return_value.st_mtime = time.time() - 30
 
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert "PnL GUARD is active" in mod.msg
     assert "⚠️" in mod.msg
@@ -221,7 +221,7 @@ def test_monitor_old_heartbeat():
         mock_builder.return_value.open = mock_open
         mock_stat.return_value.st_mtime = time.time() - 600  # 10 min ago
 
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert "heartbeat" in mod.msg.lower() or "STOPPED" in mod.msg
 
@@ -234,7 +234,7 @@ def test_monitor_sends_request():
          patch("pathlib.Path.exists", return_value=False), \
          patch("urllib.request.build_opener") as mock_builder:
         mock_builder.return_value.open = mock_open
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert captured["req"].method == "POST"
     assert captured["timeout"] == 20
@@ -270,6 +270,6 @@ def test_monitor_no_alerts():
         mock_builder.return_value.open = mock_open
         mock_stat.return_value.st_mtime = time.time() - 30  # recent
 
-        mod = importlib.import_module("send_monitor_report")
+        mod = importlib.import_module("futures_portfolio.monitoring.send_monitor_report")
 
     assert "No alerts" in mod.msg

@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch, AsyncMock
 import asyncio
 import aiohttp
 import json
-from futures_portfolio.connector import BinanceConnector, retry_on_network_error
+from futures_portfolio.core.connector import BinanceConnector, retry_on_network_error
 from binance.exceptions import BinanceAPIException
 import requests.exceptions
 
@@ -15,7 +15,7 @@ def make_binance_exception(status_code, code, msg):
 
 @pytest.fixture
 def connector():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
         # Mocking Client and futures_client as if verify_connection was called
         conn.client = mock_client.return_value
@@ -134,7 +134,7 @@ async def test_place_limit_maker_order(connector):
     assert res["orderId"] == 456
 
 def test_connector_init_real_mode():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="k", secret_key="s", testnet=False)
         assert conn.testnet is False
 
@@ -142,7 +142,7 @@ def test_connector_init_real_mode():
 
 @pytest.mark.asyncio
 async def test_verify_connection_testnet_true():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
         assert conn.client is None
 
@@ -158,7 +158,7 @@ async def test_verify_connection_testnet_true():
 
 @pytest.mark.asyncio
 async def test_verify_connection_testnet_false():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=False)
         await conn.verify_connection()
 
@@ -174,7 +174,7 @@ async def test_verify_connection_testnet_false():
 
 @pytest.mark.asyncio
 async def test_verify_connection_already_initialized():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
         mock_client_inst = mock_client.return_value
         conn.client = mock_client_inst
@@ -186,7 +186,7 @@ async def test_verify_connection_already_initialized():
 
 @pytest.mark.asyncio
 async def test_verify_connection_init_binance_api_exception():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         mock_client.side_effect = make_binance_exception(400, -1000, "Invalid API Key")
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
         with pytest.raises(BinanceAPIException):
@@ -194,7 +194,7 @@ async def test_verify_connection_init_binance_api_exception():
 
 @pytest.mark.asyncio
 async def test_verify_connection_init_request_exception():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         mock_client.side_effect = requests.exceptions.RequestException("Connection error")
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
         with pytest.raises(requests.exceptions.RequestException):
@@ -202,7 +202,7 @@ async def test_verify_connection_init_request_exception():
 
 @pytest.mark.asyncio
 async def test_verify_connection_ping_binance_api_exception():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         mock_client_inst = mock_client.return_value
         mock_client_inst.ping.side_effect = make_binance_exception(502, -1001, "Bad Gateway")
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
@@ -211,7 +211,7 @@ async def test_verify_connection_ping_binance_api_exception():
 
 @pytest.mark.asyncio
 async def test_verify_connection_ping_request_exception():
-    with patch("futures_portfolio.connector.Client") as mock_client:
+    with patch("futures_portfolio.core.connector.Client") as mock_client:
         mock_client_inst = mock_client.return_value
         mock_client_inst.ping.side_effect = requests.exceptions.RequestException("Ping failed")
         conn = BinanceConnector(api_key="test_key", secret_key="test_secret", testnet=True)
@@ -592,7 +592,7 @@ async def test_retry_on_network_error_aiohttp_client_error():
 
 @pytest.mark.asyncio
 async def test_binance_connector_mock():
-    from futures_portfolio.connector import BinanceConnectorMock
+    from futures_portfolio.core.connector import BinanceConnectorMock
     mock_conn = BinanceConnectorMock()
 
     assert await mock_conn.get_exchange_info() == {"symbols": []}

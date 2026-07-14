@@ -3,7 +3,7 @@ import json
 import os
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
-from supervisor_service import get_sleep_interval, main
+from futures_portfolio.supervisor.supervisor_service import get_sleep_interval, main
 
 def test_get_sleep_interval_valid():
     config = {"supervisor_interval_days": 1.0}
@@ -30,7 +30,7 @@ async def test_supervisor_service_main():
     mock_proc.returncode = 0
     mock_proc.communicate.return_value = (b"success", b"")
     
-    with patch("supervisor_service.get_sleep_interval", return_value=300), \
+    with patch("futures_portfolio.supervisor.supervisor_service.get_sleep_interval", return_value=300), \
          patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
          patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
         try:
