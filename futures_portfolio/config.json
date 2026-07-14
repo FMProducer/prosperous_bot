@@ -9,7 +9,7 @@
   "min_cycles_for_rank": 6,
   "min_cycles_for_rotation": 6,
   "max_bots": 20,
-  "paper_mode_bots": 17,
+  "paper_mode_bots": 16,
   "max_replace_per_cycle": 10,
   "probation_period_days": 0.01,
   "backtest_period_days": 0.125,
@@ -77,12 +77,8 @@
     "VANRYUSDT",
     "ZECUSDT"
   ],
-  "use_real_whitelist": true,
-  "real_whitelist": [
-    "TLMUSDT",
-    "VANRYUSDT",
-    "ZECUSDT"
-  ],
+  "use_real_whitelist": false,
+  "real_whitelist": [],
   "black_list": [],
   "toxic_cooldown_days": 0.01,
   "toxic_blacklist": {},

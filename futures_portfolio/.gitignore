@@ -5,6 +5,8 @@
 # State files
 state.json
 paper_state.json
+core/*.json
+!core/config.json
 
 # Logs
 logs/
